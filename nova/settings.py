@@ -272,14 +272,6 @@ class Settings:
             openai_api_key=os.getenv(openai_api_key_env, "").strip(),
         )
 
-    @classmethod
-    def from_sources(cls) -> "Settings":
-        return cls.load_config()
-
-    @classmethod
-    def from_env(cls) -> "Settings":
-        return cls.load_config()
-
     def ensure_directories(self) -> None:
         self.home.mkdir(parents=True, exist_ok=True)
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
