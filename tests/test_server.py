@@ -71,7 +71,7 @@ def test_create_app_returns_fastapi_app(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server")
     monkeypatch.setenv("NOVA_HOST", "0.0.0.0")
     monkeypatch.setenv("NOVA_BACKEND_PORT", "9000")
-    settings = Settings.from_env()
+    settings = Settings.load_config()
 
     app = create_app(settings=settings)
 
@@ -82,7 +82,7 @@ def test_create_app_returns_fastapi_app(monkeypatch):
 
 def test_health_endpoint(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-health")
-    app = create_app(settings=Settings.from_env())
+    app = create_app(settings=Settings.load_config())
     client = TestClient(app)
 
     response = client.get("/health")
@@ -94,7 +94,7 @@ def test_health_endpoint(monkeypatch):
 @pytest.mark.asyncio
 async def test_sessions_endpoint_returns_saved_sessions(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
-    settings = Settings.from_env()
+    settings = Settings.load_config()
     db = await init_db(DatabaseConfig(path=str(settings.database_path)))
     await db.save_session(Session(id="sess-1", title="Server Test"))
 
@@ -115,7 +115,7 @@ async def test_sessions_endpoint_returns_saved_sessions(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_session_messages_endpoint_returns_history(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
-    settings = Settings.from_env()
+    settings = Settings.load_config()
     db = await init_db(DatabaseConfig(path=str(settings.database_path)))
     await db.save_session(Session(id="sess-2", title="History Test"))
     await db.add_message("sess-2", "user", "hello")
@@ -138,7 +138,7 @@ async def test_session_messages_endpoint_returns_history(monkeypatch, tmp_path):
 
 def test_chat_endpoint_returns_completed_response(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-chat")
-    app = create_app(settings=Settings.from_env())
+    app = create_app(settings=Settings.load_config())
     app.state.chat_service = FakeChatService(
         chat_payload={
             "request_id": "req_fake",
@@ -161,7 +161,7 @@ def test_chat_endpoint_returns_completed_response(monkeypatch):
 
 def test_chat_stream_endpoint_returns_sse_events(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-stream")
-    app = create_app(settings=Settings.from_env())
+    app = create_app(settings=Settings.load_config())
     app.state.chat_service = FakeChatService(
         stream_events=[
             EventStub("session.started", "req_fake", "sess-stream", 1, {"session_id": "sess-stream"}),
@@ -190,7 +190,7 @@ def test_chat_stream_endpoint_returns_sse_events(monkeypatch):
 
 def test_chat_stream_endpoint_includes_tool_event_fields(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-tool-stream")
-    app = create_app(settings=Settings.from_env())
+    app = create_app(settings=Settings.load_config())
     app.state.chat_service = FakeChatService(
         stream_events=[
             EventStub("session.started", "req_fake", "sess-stream", 1, {"session_id": "sess-stream"}),
@@ -237,7 +237,7 @@ def test_chat_stream_endpoint_includes_tool_event_fields(monkeypatch):
 
 def test_chat_stream_openapi_documents_sse_response(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-openapi-stream")
-    app = create_app(settings=Settings.from_env())
+    app = create_app(settings=Settings.load_config())
     client = TestClient(app)
 
     response = client.get("/openapi.json")
@@ -258,7 +258,7 @@ def test_chat_stream_openapi_documents_sse_response(monkeypatch):
 @pytest.mark.asyncio
 async def test_chat_service_session_started_event_keeps_single_session_id(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-chat-service-session")
-    settings = Settings.from_env()
+    settings = Settings.load_config()
     fake_agent = FakeAgent(
         [
             (AgentEvent.SESSION, "sess-stream"),
@@ -286,7 +286,7 @@ async def test_chat_service_session_started_event_keeps_single_session_id(monkey
 
 def test_chat_endpoint_rejects_invalid_json(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-invalid-json")
-    app = create_app(settings=Settings.from_env())
+    app = create_app(settings=Settings.load_config())
     client = TestClient(app)
 
     response = client.post(
@@ -301,7 +301,7 @@ def test_chat_endpoint_rejects_invalid_json(monkeypatch):
 
 def test_chat_endpoint_rejects_non_object_json(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-invalid-json-list")
-    app = create_app(settings=Settings.from_env())
+    app = create_app(settings=Settings.load_config())
     client = TestClient(app)
 
     response = client.post(
@@ -316,7 +316,7 @@ def test_chat_endpoint_rejects_non_object_json(monkeypatch):
 @pytest.mark.asyncio
 async def test_interrupt_endpoint_interrupts_registered_request(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-interrupt")
-    app = create_app(settings=Settings.from_env())
+    app = create_app(settings=Settings.load_config())
     app.state.chat_service = FakeChatService(interrupt_result=True)
     client = TestClient(app)
 
@@ -328,7 +328,7 @@ async def test_interrupt_endpoint_interrupts_registered_request(monkeypatch):
 
 def test_unknown_route_returns_404(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-404")
-    app = create_app(settings=Settings.from_env())
+    app = create_app(settings=Settings.load_config())
     client = TestClient(app)
 
     response = client.get("/missing")
@@ -339,7 +339,7 @@ def test_unknown_route_returns_404(monkeypatch):
 @pytest.mark.asyncio
 async def test_run_server_starts_uvicorn(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-run")
-    settings = Settings.from_env()
+    settings = Settings.load_config()
     captured = {}
 
     class FakeConfig:

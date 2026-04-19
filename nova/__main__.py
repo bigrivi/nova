@@ -28,10 +28,11 @@ def _build_effective_settings(
 def main():
     parser = argparse.ArgumentParser(description="Nova CLI/Desktop agent runtime")
     settings = get_settings()
+    provider_names = settings.provider_names or [settings.provider]
     parser.add_argument("mode", nargs="?", choices=["cli", "serve"], default="cli",
                         help="Run mode. 'serve' is reserved for future backend service mode.")
-    parser.add_argument("--provider", "-p", choices=["openai", "ollama"], default=settings.provider,
-                        help="LLM provider (default: env-configured provider)")
+    parser.add_argument("--provider", "-p", choices=provider_names, default=settings.provider,
+                        help="LLM provider alias from ~/.nova/config.json")
     parser.add_argument("--model", "-m", default=None,
                         help="Model name. Optional for OpenAI-compatible services that already fix the model server-side.")
     args = parser.parse_args()

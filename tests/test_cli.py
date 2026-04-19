@@ -36,7 +36,7 @@ def test_novacli_builds_runtime_from_settings(monkeypatch):
         fake_build_agent,
     )
     settings = replace(
-        Settings.from_env(),
+        Settings.load_config(),
         provider="openai",
         model="gpt-4o",
         openai_base_url="http://openai.local/v1",

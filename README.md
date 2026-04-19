@@ -81,16 +81,18 @@ With Ollama:
 python -m nova cli --provider ollama --model gemma4:26b
 ```
 
-With an OpenAI-compatible endpoint:
+With a configured OpenAI-compatible provider alias:
 
 ```bash
-python -m nova cli --provider openai --model gpt-4o
+python -m nova cli --provider openai --model gpt-5.4
 ```
 
 Runtime argument resolution:
 
-- `NOVA_PROVIDER` and `NOVA_MODEL` define the environment defaults.
-- `--provider` and `--model` override those defaults for the current process only.
+- `~/.nova/config.json` defines the default `model`, `model_provider`, and provider registry.
+- If `~/.nova/config.json` does not exist, Nova creates it automatically on first startup.
+- `--provider` and `--model` override the config defaults for the current process only.
+- Environment variables are still supported as fallbacks for legacy setups and operational settings.
 - Nova resolves those values into one in-memory runtime settings object before it starts CLI or server mode.
 - The resolved settings are then passed through `__main__ -> run_cli/run_server -> build_agent`.
 
@@ -110,10 +112,10 @@ With explicit Ollama settings:
 python -m nova serve --provider ollama --model gemma4:26b
 ```
 
-With explicit OpenAI-compatible settings:
+With an explicit configured OpenAI-compatible provider alias:
 
 ```bash
-python -m nova serve --provider openai --model gpt-4o
+python -m nova serve --provider openai --model gpt-5.4
 ```
 
 Server endpoints:
@@ -330,11 +332,57 @@ Override the home directory with:
 export NOVA_HOME=/path/to/custom/home
 ```
 
-Relevant environment variables:
+Primary runtime config file:
+
+```json
+{
+  "model": "gpt-5.4",
+  "model_provider": "openai",
+  "providers": {
+    "openai": {
+      "type": "openai-compatible",
+      "name": "OpenAI",
+      "options": {
+        "base_url": "https://api.openai.com/v1",
+        "api_key_env": "OPENAI_API_KEY"
+      },
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4",
+          "tools": true,
+          "max_tokens": 128000,
+          "tool_calling": true
+        }
+      }
+    },
+    "ollama": {
+      "type": "ollama",
+      "name": "Ollama (local)",
+      "options": {
+        "base_url": "http://localhost:11434"
+      },
+      "models": {
+        "gemma4:26b": {
+          "name": "gemma4:26b",
+          "tools": true
+        }
+      }
+    }
+  }
+}
+```
+
+Config notes:
+
+- `model_provider` is the selected provider alias, not the protocol type.
+- `providers.<name>.type` controls runtime dispatch. Current supported values are `ollama` and `openai-compatible`.
+- `providers.<name>.models.<key>.name` can map a user-facing model key to the actual upstream model name sent to the provider.
+- `providers.<name>.models.<key>` should use snake_case for extra fields such as `max_tokens` or `tool_calling`.
+- `api_key_env` stores the environment variable name, not the secret value itself.
+
+Relevant environment variables that remain as fallbacks or runtime-only settings:
 
 - `NOVA_HOME`
-- `NOVA_PROVIDER`
-- `NOVA_MODEL`
 - `NOVA_HOST`
 - `NOVA_BACKEND_PORT`
 - `NOVA_UI_PORT`

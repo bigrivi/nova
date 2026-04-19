@@ -13,27 +13,33 @@ def build_llm(settings: Settings | None = None) -> LLMProvider:
     settings = settings or get_settings()
     llm_settings = settings.llm
     resolved_provider = llm_settings.provider.strip() or llm_settings.provider
-    if resolved_provider == "ollama":
-        return OllamaProvider(base_url=llm_settings.ollama_base_url)
-    if resolved_provider == "openai":
+    provider_config = settings.get_provider_config(resolved_provider)
+    provider_type = provider_config.type.strip() or llm_settings.provider_type
+
+    if provider_type == "ollama":
+        base_url = str(provider_config.options.get("base_url", llm_settings.ollama_base_url)).strip()
+        return OllamaProvider(base_url=base_url)
+    if provider_type == "openai-compatible":
+        base_url = str(provider_config.options.get("base_url", llm_settings.openai_base_url)).strip()
         return OpenAIProvider(
-            api_key=llm_settings.openai_api_key,
-            base_url=llm_settings.openai_base_url,
+            api_key=settings.get_provider_api_key(resolved_provider),
+            base_url=base_url,
         )
-    raise ValueError(f"Unsupported provider: {resolved_provider}")
+    raise ValueError(f"Unsupported provider type: {provider_type}")
 
 
 def build_agent(settings: Settings | None = None) -> Agent:
     settings = settings or get_settings()
     llm_settings = settings.llm
     resolved_provider = llm_settings.provider.strip() or llm_settings.provider
-    resolved_model = llm_settings.model
-    if resolved_provider == "ollama":
+    resolved_model = settings.resolve_model_name(llm_settings.model, provider_name=resolved_provider)
+    provider_type = settings.get_provider_config(resolved_provider).type.strip() or llm_settings.provider_type
+    if provider_type == "ollama":
         resolved_model = resolved_model or "gemma4:26b"
-    elif resolved_provider == "openai":
+    elif provider_type == "openai-compatible":
         resolved_model = resolved_model or ""
     else:
-        raise ValueError(f"Unsupported provider: {resolved_provider}")
+        raise ValueError(f"Unsupported provider type: {provider_type}")
 
     llm = build_llm(settings=settings)
     agent = Agent(
