@@ -1,0 +1,7 @@
+aiohttp
+aiosqlite
+fastapi
+httpx
+prompt_toolkit
+rich
+uvicorn
