@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from nova.agent import AgentEvent
-from nova.app import AgentRuntime, build_runtime
+from nova.agent import Agent
+from nova.app import build_agent
 from nova.settings import Settings, get_settings
 from nova.cli.ui import EscapeKeyMonitor, PROMPT_TOOLKIT_AVAILABLE, PromptToolkitInputUI
 
@@ -184,32 +185,11 @@ def _exit_process(code: int = 130) -> None:
 
 
 class NovaCLI:
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        model: str = "gpt-4o",
-        provider: str = "openai",
-        settings: Optional[Settings] = None,
-        runtime: Optional[AgentRuntime] = None,
-    ):
+    def __init__(self, settings: Optional[Settings] = None):
         self.settings = settings or get_settings()
-        self.runtime = runtime
         log.info(
-            f"Initializing NovaCLI with provider={provider}, model={model}, base_url={base_url}")
-        if self.runtime is None:
-            runtime_provider = provider
-            runtime_model = model
-            if api_key is not None or base_url is not None:
-                runtime_provider = provider
-                runtime_model = model
-            self.runtime = build_runtime(
-                provider=runtime_provider,
-                model=runtime_model,
-                settings=self.settings,
-            )
-
-        self.agent = self.runtime.agent
+            f"Initializing NovaCLI with provider={self.settings.provider}, model={self.settings.model}")
+        self.agent = build_agent(settings=self.settings)
 
         self._input_ui = PromptToolkitInputUI() if PROMPT_TOOLKIT_AVAILABLE else None
         self._running = False
@@ -498,7 +478,7 @@ async def main():
     from nova.cli.main import run_cli
 
     settings = get_settings()
-    await run_cli(provider=settings.provider, model=settings.model, settings=settings)
+    await run_cli(settings=settings)
 
 
 if __name__ == "__main__":

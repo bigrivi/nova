@@ -1,31 +1,54 @@
-from nova.app import build_runtime
+from nova.app import build_agent, build_llm
 from nova.llm.ollama import OllamaProvider
 from nova.llm.openai import OpenAIProvider
 from nova.settings import Settings
 
 
-def test_build_runtime_for_ollama(monkeypatch):
+def test_build_llm_for_ollama(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-runtime-ollama")
     settings = Settings.from_env()
 
-    runtime = build_runtime(provider="ollama", model=None, settings=settings)
+    llm = build_llm(settings=settings)
 
-    assert runtime.provider == "ollama"
-    assert runtime.model == "gemma4:26b"
-    assert isinstance(runtime.llm, OllamaProvider)
-    assert runtime.agent.llm is runtime.llm
+    assert isinstance(llm, OllamaProvider)
 
 
-def test_build_runtime_for_openai(monkeypatch):
+def test_build_agent_for_ollama(monkeypatch):
+    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-runtime-agent-ollama")
+    settings = Settings.from_env()
+
+    agent = build_agent(settings=settings)
+
+    assert agent.config.model == "gemma4:26b"
+    assert isinstance(agent.llm, OllamaProvider)
+
+
+def test_build_llm_for_openai(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-runtime-openai")
+    monkeypatch.setenv("NOVA_PROVIDER", "openai")
+    monkeypatch.setenv("NOVA_MODEL", "gpt-test")
     monkeypatch.setenv("NOVA_OPENAI_API_KEY", "secret")
     monkeypatch.setenv("NOVA_OPENAI_BASE_URL", "http://openai.local/v1")
     settings = Settings.from_env()
 
-    runtime = build_runtime(provider="openai", model="gpt-test", settings=settings)
+    llm = build_llm(settings=settings)
 
-    assert runtime.provider == "openai"
-    assert runtime.model == "gpt-test"
-    assert isinstance(runtime.llm, OpenAIProvider)
-    assert runtime.llm.api_key == "secret"
-    assert runtime.llm.base_url == "http://openai.local/v1"
+    assert isinstance(llm, OpenAIProvider)
+    assert llm.api_key == "secret"
+    assert llm.base_url == "http://openai.local/v1"
+
+
+def test_build_agent_for_openai(monkeypatch):
+    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-runtime-agent-openai")
+    monkeypatch.setenv("NOVA_PROVIDER", "openai")
+    monkeypatch.setenv("NOVA_MODEL", "gpt-test")
+    monkeypatch.setenv("NOVA_OPENAI_API_KEY", "secret")
+    monkeypatch.setenv("NOVA_OPENAI_BASE_URL", "http://openai.local/v1")
+    settings = Settings.from_env()
+
+    agent = build_agent(settings=settings)
+
+    assert agent.config.model == "gpt-test"
+    assert isinstance(agent.llm, OpenAIProvider)
+    assert agent.llm.api_key == "secret"
+    assert agent.llm.base_url == "http://openai.local/v1"

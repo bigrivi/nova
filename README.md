@@ -87,6 +87,214 @@ With an OpenAI-compatible endpoint:
 python -m nova cli --provider openai --model gpt-4o
 ```
 
+Runtime argument resolution:
+
+- `NOVA_PROVIDER` and `NOVA_MODEL` define the environment defaults.
+- `--provider` and `--model` override those defaults for the current process only.
+- Nova resolves those values into one in-memory runtime settings object before it starts CLI or server mode.
+- The resolved settings are then passed through `__main__ -> run_cli/run_server -> build_agent`.
+
+That means command-line overrides do not persist anywhere; they only affect the current run.
+
+## Run the Server
+
+Server mode uses the same resolved runtime settings object as CLI mode:
+
+```bash
+python -m nova serve
+```
+
+With explicit Ollama settings:
+
+```bash
+python -m nova serve --provider ollama --model gemma4:26b
+```
+
+With explicit OpenAI-compatible settings:
+
+```bash
+python -m nova serve --provider openai --model gpt-4o
+```
+
+Server endpoints:
+
+- `GET /health`
+- `GET /api/sessions`
+- `GET /api/sessions/{session_id}/messages`
+- `POST /api/chat`
+- `POST /api/chat/stream`
+- `POST /api/chat/{request_id}/interrupt`
+
+## Server API
+
+### `POST /api/chat`
+
+Request body:
+
+```json
+{
+  "session_id": "sess_existing_optional",
+  "message": "Hello",
+  "provider": "ollama",
+  "model": "gemma4:26b",
+  "metadata": {}
+}
+```
+
+Request rules:
+
+- `message` is required
+- `session_id` is optional; omit it to start a new session
+- `provider` and `model` are optional per-request overrides for the current call
+- `metadata` is accepted but is not yet interpreted by the server
+
+Terminal JSON response:
+
+```json
+{
+  "request_id": "req_xxx",
+  "session_id": "sess_xxx",
+  "status": "completed",
+  "message": "Hello from Nova"
+}
+```
+
+Current `status` values:
+
+- `completed`
+- `cancelled`
+- `input_required`
+- `error`
+
+### `POST /api/chat/stream`
+
+Request body shape is the same as `POST /api/chat`.
+
+Response:
+
+- HTTP 200
+- `Content-Type: text/event-stream`
+- body is a standard SSE stream
+
+### `GET /api/sessions`
+
+Response shape:
+
+```json
+{
+  "items": [
+    {
+      "id": "sess_xxx",
+      "title": "Optional title",
+      "status": "active",
+      "updated_at": 1713510000
+    }
+  ]
+}
+```
+
+### `GET /api/sessions/{session_id}/messages`
+
+Response shape:
+
+```json
+{
+  "items": [
+    {
+      "id": "msg_xxx",
+      "session_id": "sess_xxx",
+      "role": "user",
+      "content": "Hello",
+      "tool_call_id": null,
+      "tool_calls": [],
+      "time_created": 1713510000
+    }
+  ]
+}
+```
+
+Notes:
+
+- current server output only returns persisted `user` and `assistant` messages here
+- tool execution artifacts are still stored internally, but the session history endpoint currently hides `tool` role rows
+
+### `POST /api/chat/{request_id}/interrupt`
+
+Response shape:
+
+```json
+{
+  "request_id": "req_xxx",
+  "interrupted": true
+}
+```
+
+## Error Responses
+
+Current server-side error behavior:
+
+- `422 Unprocessable Entity`
+  returned when the request body is not valid JSON, the top-level JSON value is not an object, or required request fields do not satisfy the `ChatRequest` schema
+- `200 OK` with `response.error` event in SSE
+  returned when the streaming request is accepted but the backend fails during generation
+
+Examples:
+
+```json
+{
+  "detail": [
+    {
+      "type": "missing",
+      "loc": ["message"],
+      "msg": "Field required"
+    }
+  ]
+}
+```
+
+## SSE Stream Protocol
+
+`POST /api/chat/stream` uses standard Server-Sent Events:
+
+- response header: `Content-Type: text/event-stream`
+- each chunk follows the SSE frame format: `event: ...`, `data: ...`, blank line
+- `event` carries the event type
+- `data` is a flat JSON object and always includes `request_id`, `session_id`, and `sequence`
+
+Example:
+
+```text
+event: message.delta
+data: {"request_id":"req_xxx","session_id":"sess_xxx","sequence":3,"delta":"hello"}
+```
+
+Current event contract:
+
+- `session.started`
+  `data = { request_id, session_id, sequence }`
+- `response.started`
+  `data = { request_id, session_id, sequence }`
+- `message.delta`
+  `data = { request_id, session_id, sequence, delta }`
+- `tool.call`
+  `data = { request_id, session_id, sequence, tool_name, tool_call_id, arguments }`
+- `tool.result`
+  `data = { request_id, session_id, sequence, tool_name, tool_call_id, success, content, error, requires_input }`
+- `response.completed`
+  `data = { request_id, session_id, sequence, content }`
+- `response.cancelled`
+  `data = { request_id, session_id, sequence, message }`
+- `input.required`
+  `data = { request_id, session_id, sequence, message }`
+- `response.error`
+  `data = { request_id, session_id, sequence, message }`
+
+Notes:
+
+- `sequence` is monotonic within a single streaming response.
+- `session_id` may be `null` before the session is established, but after `session.started` it is expected to remain stable for the rest of the stream.
+- this is stable SSE over HTTP, not the `assistant-ui` Data Stream Protocol.
+
 ## CLI Commands
 
 Inside CLI mode:

@@ -22,13 +22,35 @@ def test_main_dispatches_serve_mode(monkeypatch):
     assert called["settings"].backend_port == called["settings"].backend_port
 
 
+def test_main_dispatches_serve_mode_with_effective_settings(monkeypatch):
+    called = {}
+
+    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-main-serve-effective")
+    monkeypatch.setattr(
+        nova_main,
+        "run_server",
+        lambda settings: called.update({"settings": settings}),
+    )
+    monkeypatch.setattr(nova_main.asyncio, "run", lambda coro: coro)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["nova", "serve", "--provider", "openai", "--model", "gpt-4o"],
+    )
+
+    nova_main.main()
+
+    assert called["settings"].provider == "openai"
+    assert called["settings"].model == "gpt-4o"
+
+
 def test_main_serve_mode_skips_cli(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-main-serve-skip")
     monkeypatch.setattr(nova_main, "run_server", lambda settings: None)
     monkeypatch.setattr(
         nova_main,
         "run_cli",
-        lambda provider, model, settings: (_ for _ in ()).throw(AssertionError("run_cli should not be called")),
+        lambda settings: (_ for _ in ()).throw(AssertionError("run_cli should not be called")),
     )
     monkeypatch.setattr(nova_main.asyncio, "run", lambda coro: coro)
     monkeypatch.setattr(sys, "argv", ["nova", "serve"])

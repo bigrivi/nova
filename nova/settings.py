@@ -12,6 +12,30 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 
+@dataclass(frozen=True)
+class RuntimePaths:
+    home: Path
+    workspace_dir: Path
+    logs_dir: Path
+    database_path: Path
+
+
+@dataclass(frozen=True)
+class ServerSettings:
+    host: str
+    backend_port: int
+    ui_port: int
+
+
+@dataclass(frozen=True)
+class LLMSettings:
+    provider: str
+    model: str
+    ollama_base_url: str
+    openai_base_url: str
+    openai_api_key: str
+
+
 def _env_int(name: str, default: int) -> int:
     raw = os.getenv(name)
     if raw is None:
@@ -21,14 +45,21 @@ def _env_int(name: str, default: int) -> int:
 
 @dataclass(frozen=True)
 class Settings:
+    # Filesystem/runtime paths shared across CLI and server modes.
     home: Path
-    host: str
-    backend_port: int
-    ui_port: int
-    log_level: str
     workspace_dir: Path
     logs_dir: Path
     database_path: Path
+
+    # Server-side network bindings.
+    host: str
+    backend_port: int
+    ui_port: int
+
+    # Process-level operational defaults.
+    log_level: str
+
+    # LLM runtime defaults and provider credentials.
     provider: str
     model: str
     ollama_base_url: str
@@ -73,6 +104,33 @@ class Settings:
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
 
+    @property
+    def paths(self) -> RuntimePaths:
+        return RuntimePaths(
+            home=self.home,
+            workspace_dir=self.workspace_dir,
+            logs_dir=self.logs_dir,
+            database_path=self.database_path,
+        )
+
+    @property
+    def server(self) -> ServerSettings:
+        return ServerSettings(
+            host=self.host,
+            backend_port=self.backend_port,
+            ui_port=self.ui_port,
+        )
+
+    @property
+    def llm(self) -> LLMSettings:
+        return LLMSettings(
+            provider=self.provider,
+            model=self.model,
+            ollama_base_url=self.ollama_base_url,
+            openai_base_url=self.openai_base_url,
+            openai_api_key=self.openai_api_key,
+        )
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
@@ -89,7 +147,7 @@ def configure_logging(settings: Settings) -> None:
     )
 
     file_handler = TimedRotatingFileHandler(
-        settings.logs_dir / "nova.log",
+        settings.paths.logs_dir / "nova.log",
         when="midnight",
         interval=1,
         backupCount=30,

@@ -10,17 +10,15 @@ def test_main_defaults_to_cli(monkeypatch):
     monkeypatch.setattr(
         nova_main,
         "run_cli",
-        lambda provider, model, settings: called.update(
-            {"provider": provider, "model": model, "settings": settings}
-        ),
+        lambda settings: called.update({"settings": settings}),
     )
     monkeypatch.setattr(nova_main.asyncio, "run", lambda coro: coro)
     monkeypatch.setattr(sys, "argv", ["nova"])
 
     nova_main.main()
 
-    assert called["provider"] == called["settings"].provider
-    assert called["model"] is None
+    assert called["settings"].provider == "ollama"
+    assert called["settings"].model == "gemma4:26b"
 
 
 def test_main_accepts_cli_mode_argument(monkeypatch):
@@ -30,9 +28,7 @@ def test_main_accepts_cli_mode_argument(monkeypatch):
     monkeypatch.setattr(
         nova_main,
         "run_cli",
-        lambda provider, model, settings: called.update(
-            {"provider": provider, "model": model, "settings": settings}
-        ),
+        lambda settings: called.update({"settings": settings}),
     )
     monkeypatch.setattr(nova_main.asyncio, "run", lambda coro: coro)
     monkeypatch.setattr(
@@ -43,5 +39,5 @@ def test_main_accepts_cli_mode_argument(monkeypatch):
 
     nova_main.main()
 
-    assert called["provider"] == "openai"
-    assert called["model"] == "gpt-4o"
+    assert called["settings"].provider == "openai"
+    assert called["settings"].model == "gpt-4o"

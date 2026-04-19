@@ -49,6 +49,12 @@ def test_app_settings_from_env(monkeypatch):
     assert settings.ollama_base_url == "http://ollama.local"
     assert settings.openai_base_url == "http://openai.local/v1"
     assert settings.openai_api_key == "secret"
+    assert settings.paths.home == Path("/tmp/nova-home")
+    assert settings.paths.database_path == Path("/tmp/nova-home/nova.db")
+    assert settings.server.host == "0.0.0.0"
+    assert settings.server.backend_port == 9001
+    assert settings.llm.provider == "openai"
+    assert settings.llm.model == "gpt-test"
 
 
 def test_providers_use_cached_app_settings_defaults(monkeypatch):
@@ -95,7 +101,7 @@ def test_configure_logging_uses_daily_rotation_with_30_day_retention(monkeypatch
         assert len(root.handlers) == 1
         handler = root.handlers[0]
         assert isinstance(handler, TimedRotatingFileHandler)
-        assert Path(handler.baseFilename) == settings.logs_dir / "nova.log"
+        assert Path(handler.baseFilename) == settings.paths.logs_dir / "nova.log"
         assert handler.when == "MIDNIGHT"
         assert handler.interval == 60 * 60 * 24
         assert handler.backupCount == 30

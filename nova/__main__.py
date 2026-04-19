@@ -6,10 +6,23 @@ Launch command: python -m nova
 
 import asyncio
 import argparse
+from dataclasses import replace
 
 from nova.cli.main import run_cli
 from nova.server import run_server
-from nova.settings import configure_logging, get_settings
+from nova.settings import Settings, configure_logging, get_settings
+
+
+def _build_effective_settings(
+    settings: Settings,
+    provider: str,
+    model: str | None,
+) -> Settings:
+    return replace(
+        settings,
+        provider=provider,
+        model=settings.model if model is None else model,
+    )
 
 
 def main():
@@ -22,19 +35,18 @@ def main():
     parser.add_argument("--model", "-m", default=None,
                         help="Model name. Optional for OpenAI-compatible services that already fix the model server-side.")
     args = parser.parse_args()
+    effective_settings = _build_effective_settings(
+        settings=settings,
+        provider=args.provider,
+        model=args.model,
+    )
 
-    configure_logging(settings)
+    configure_logging(effective_settings)
     if args.mode == "serve":
-        asyncio.run(run_server(settings=settings))
+        asyncio.run(run_server(settings=effective_settings))
         return
 
-    asyncio.run(
-        run_cli(
-            provider=args.provider,
-            model=args.model,
-            settings=settings,
-        )
-    )
+    asyncio.run(run_cli(settings=effective_settings))
 
 
 if __name__ == "__main__":

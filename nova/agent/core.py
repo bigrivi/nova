@@ -354,8 +354,20 @@ class Agent:
                         content=result.content,
                         tool_call_id=tc.id if hasattr(tc, 'id') else str(tc),
                     )
-                    await self._emit(AgentEvent.TOOL_RESULT, {"tool": tc.name if hasattr(tc, 'name') else str(tc), "result": result})
-                    yield AgentEvent.TOOL_RESULT, {"tool": tc.name if hasattr(tc, 'name') else str(tc), "result": result}
+                    tool_call_id = tc.id if hasattr(tc, 'id') else str(tc)
+                    await self._emit(
+                        AgentEvent.TOOL_RESULT,
+                        {
+                            "tool": tc.name if hasattr(tc, 'name') else str(tc),
+                            "tool_call_id": tool_call_id,
+                            "result": result,
+                        },
+                    )
+                    yield AgentEvent.TOOL_RESULT, {
+                        "tool": tc.name if hasattr(tc, 'name') else str(tc),
+                        "tool_call_id": tool_call_id,
+                        "result": result,
+                    }
                     if not result.success:
                         tool_name = tc.name if hasattr(tc, 'name') else str(tc)
                         failure_message = self._build_tool_unavailable_message(

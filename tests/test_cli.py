@@ -2,6 +2,9 @@ import pytest
 
 from nova.agent.core import AgentEvent
 from nova.cli.interactive import NovaCLI, _looks_like_error_message, parse_options
+from dataclasses import replace
+
+from nova.settings import Settings
 
 
 class _FakeMonitor:
@@ -19,6 +22,34 @@ class _FakeAgent:
     async def chat_stream(self, user_input, session_id=None):
         for item in self._events:
             yield item
+
+
+def test_novacli_builds_runtime_from_settings(monkeypatch):
+    captured = {}
+
+    def fake_build_agent(settings):
+        captured["settings"] = settings
+        return _FakeAgent([])
+
+    monkeypatch.setattr(
+        "nova.cli.interactive.build_agent",
+        fake_build_agent,
+    )
+    settings = replace(
+        Settings.from_env(),
+        provider="openai",
+        model="gpt-4o",
+        openai_base_url="http://openai.local/v1",
+        openai_api_key="secret",
+    )
+
+    cli = NovaCLI(settings=settings)
+
+    assert cli.settings.provider == "openai"
+    assert cli.settings.model == "gpt-4o"
+    assert cli.settings.openai_base_url == "http://openai.local/v1"
+    assert cli.settings.openai_api_key == "secret"
+    assert captured["settings"] == cli.settings
 
 
 def test_looks_like_error_message():
