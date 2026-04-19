@@ -33,6 +33,105 @@ STREAM_RESPONSE_EXAMPLE = (
     'data: {"request_id":"req_xxx","session_id":"sess_xxx","sequence":4,"content":"hello"}\n\n'
 )
 
+STREAM_EVENT_DOCS = [
+    {
+        "event": "session.started",
+        "data_model": "SessionStartedEventData",
+        "fields": ["request_id", "session_id", "sequence"],
+        "example": {"request_id": "req_xxx", "session_id": "sess_xxx", "sequence": 1},
+    },
+    {
+        "event": "response.started",
+        "data_model": "ResponseStartedEventData",
+        "fields": ["request_id", "session_id", "sequence"],
+        "example": {"request_id": "req_xxx", "session_id": "sess_xxx", "sequence": 2},
+    },
+    {
+        "event": "message.delta",
+        "data_model": "MessageDeltaEventData",
+        "fields": ["request_id", "session_id", "sequence", "delta"],
+        "example": {"request_id": "req_xxx", "session_id": "sess_xxx", "sequence": 3, "delta": "hello"},
+    },
+    {
+        "event": "tool.call",
+        "data_model": "ToolCallEventData",
+        "fields": ["request_id", "session_id", "sequence", "tool_name", "tool_call_id", "arguments"],
+        "example": {
+            "request_id": "req_xxx",
+            "session_id": "sess_xxx",
+            "sequence": 4,
+            "tool_name": "bash",
+            "tool_call_id": "call_1",
+            "arguments": "{\"command\":\"pwd\"}",
+        },
+    },
+    {
+        "event": "tool.result",
+        "data_model": "ToolResultEventData",
+        "fields": [
+            "request_id",
+            "session_id",
+            "sequence",
+            "tool_name",
+            "tool_call_id",
+            "success",
+            "content",
+            "error",
+            "requires_input",
+        ],
+        "example": {
+            "request_id": "req_xxx",
+            "session_id": "sess_xxx",
+            "sequence": 5,
+            "tool_name": "bash",
+            "tool_call_id": "call_1",
+            "success": True,
+            "content": "/tmp",
+            "error": "",
+            "requires_input": False,
+        },
+    },
+    {
+        "event": "response.completed",
+        "data_model": "ResponseCompletedEventData",
+        "fields": ["request_id", "session_id", "sequence", "content"],
+        "example": {"request_id": "req_xxx", "session_id": "sess_xxx", "sequence": 6, "content": "hello"},
+    },
+    {
+        "event": "response.cancelled",
+        "data_model": "ResponseCancelledEventData",
+        "fields": ["request_id", "session_id", "sequence", "message"],
+        "example": {
+            "request_id": "req_xxx",
+            "session_id": "sess_xxx",
+            "sequence": 6,
+            "message": "Stopped by user",
+        },
+    },
+    {
+        "event": "input.required",
+        "data_model": "InputRequiredEventData",
+        "fields": ["request_id", "session_id", "sequence", "message"],
+        "example": {
+            "request_id": "req_xxx",
+            "session_id": "sess_xxx",
+            "sequence": 6,
+            "message": "User input required",
+        },
+    },
+    {
+        "event": "response.error",
+        "data_model": "ResponseErrorEventData",
+        "fields": ["request_id", "session_id", "sequence", "message"],
+        "example": {
+            "request_id": "req_xxx",
+            "session_id": "sess_xxx",
+            "sequence": 6,
+            "message": "provider error",
+        },
+    },
+]
+
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or get_settings()
@@ -76,44 +175,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             }
         },
         openapi_extra={
-            "x-nova-stream-events": [
-                {
-                    "event": "session.started",
-                    "data_model": "SessionStartedEventData",
-                },
-                {
-                    "event": "response.started",
-                    "data_model": "ResponseStartedEventData",
-                },
-                {
-                    "event": "message.delta",
-                    "data_model": "MessageDeltaEventData",
-                },
-                {
-                    "event": "tool.call",
-                    "data_model": "ToolCallEventData",
-                },
-                {
-                    "event": "tool.result",
-                    "data_model": "ToolResultEventData",
-                },
-                {
-                    "event": "response.completed",
-                    "data_model": "ResponseCompletedEventData",
-                },
-                {
-                    "event": "response.cancelled",
-                    "data_model": "ResponseCancelledEventData",
-                },
-                {
-                    "event": "input.required",
-                    "data_model": "InputRequiredEventData",
-                },
-                {
-                    "event": "response.error",
-                    "data_model": "ResponseErrorEventData",
-                },
-            ]
+            "x-nova-stream-events": STREAM_EVENT_DOCS
         },
     )
     async def chat_stream(chat_request: ChatRequest):

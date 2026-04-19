@@ -6,8 +6,12 @@ import pytest
 from starlette.types import ASGIApp
 
 from nova.db.database import DatabaseConfig, Session, close_db, init_db
+from nova.agent import AgentEvent
 import nova.server.app as server_app
+import nova.server.chat_service as server_chat_service
 from nova.server import create_app, run_server
+from nova.server.chat_service import ChatService
+from nova.server.schemas import ChatRequest
 from nova.settings import Settings, get_settings
 
 
@@ -43,6 +47,15 @@ class FakeChatService:
 
     async def interrupt(self, request_id: str) -> bool:
         return self._interrupt_result
+
+
+class FakeAgent:
+    def __init__(self, events):
+        self._events = events
+
+    async def chat_stream(self, user_input: str, session_id: str = None):
+        for event in self._events:
+            yield event
 
 
 @pytest.fixture(autouse=True)
@@ -235,7 +248,40 @@ def test_chat_stream_openapi_documents_sse_response(monkeypatch):
     stream_response = stream_post["responses"]["200"]["content"]["text/event-stream"]
     assert "event: session.started" in stream_response["example"]
     assert "event: response.completed" in stream_response["example"]
-    assert stream_post["x-nova-stream-events"]
+    event_docs = stream_post["x-nova-stream-events"]
+    assert event_docs
+    assert event_docs[0]["event"] == "session.started"
+    assert "session_id" in event_docs[0]["fields"]
+    assert event_docs[0]["example"]["session_id"] == "sess_xxx"
+
+
+@pytest.mark.asyncio
+async def test_chat_service_session_started_event_keeps_single_session_id(monkeypatch):
+    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-chat-service-session")
+    settings = Settings.from_env()
+    fake_agent = FakeAgent(
+        [
+            (AgentEvent.SESSION, "sess-stream"),
+            (AgentEvent.LLM_START, None),
+            (AgentEvent.TEXT_DELTA, "hello"),
+            (AgentEvent.DONE, "hello"),
+        ]
+    )
+    monkeypatch.setattr(server_chat_service, "build_agent", lambda settings: fake_agent)
+    service = ChatService(settings=settings)
+
+    events = [event async for event in service.chat_stream(ChatRequest(message="hello"))]
+
+    assert [event.type for event in events] == [
+        "session.started",
+        "response.started",
+        "message.delta",
+        "response.completed",
+    ]
+    assert events[0].data.session_id == "sess-stream"
+    assert events[0].data.sequence == 1
+    assert events[-1].data.session_id == "sess-stream"
+    assert events[-1].data.sequence == 4
 
 
 def test_chat_endpoint_rejects_invalid_json(monkeypatch):
