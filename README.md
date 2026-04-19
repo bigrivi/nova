@@ -344,14 +344,14 @@ Primary runtime config file:
       "name": "OpenAI",
       "options": {
         "base_url": "https://api.openai.com/v1",
-        "api_key_env": "OPENAI_API_KEY"
+        "api_key": "sk-example"
       },
       "models": {
         "gpt-5.4": {
           "name": "gpt-5.4",
           "tools": true,
-          "max_tokens": 128000,
-          "tool_calling": true
+          "maxTokens": 128000,
+          "toolCalling": true
         }
       }
     },
@@ -377,8 +377,8 @@ Config notes:
 - `model_provider` is the selected provider alias, not the protocol type.
 - `providers.<name>.type` controls runtime dispatch. Current supported values are `ollama` and `openai-compatible`.
 - `providers.<name>.models.<key>.name` can map a user-facing model key to the actual upstream model name sent to the provider.
-- `providers.<name>.models.<key>` should use snake_case for extra fields such as `max_tokens` or `tool_calling`.
-- `api_key_env` stores the environment variable name, not the secret value itself.
+- `providers.<name>.models.<key>` keeps whatever extra keys you write in the file; Nova does not rename them.
+- `providers.<name>.options.api_key` stores the provider secret directly in the user-local config file.
 
 Relevant environment variables that remain as fallbacks or runtime-only settings:
 

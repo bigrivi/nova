@@ -93,7 +93,7 @@ def test_build_llm_for_openai_compatible_provider(monkeypatch, tmp_path):
                     "name": "wbz",
                     "options": {
                         "base_url": "http://openai.local/v1",
-                        "api_key_env": "WBZ_API_KEY",
+                        "api_key": "secret",
                     },
                     "models": {
                         "gpt-test": {
@@ -106,7 +106,6 @@ def test_build_llm_for_openai_compatible_provider(monkeypatch, tmp_path):
         },
     )
     monkeypatch.setenv("NOVA_HOME", str(home))
-    monkeypatch.setenv("WBZ_API_KEY", "secret")
     settings = Settings.load_config()
 
     llm = build_llm(settings=settings)
@@ -129,7 +128,7 @@ def test_build_agent_for_openai_compatible_provider_resolves_model_alias(monkeyp
                     "name": "wbz",
                     "options": {
                         "base_url": "http://openai.local/v1",
-                        "api_key_env": "WBZ_API_KEY",
+                        "api_key": "secret",
                     },
                     "models": {
                         "gpt-test": {
@@ -142,7 +141,6 @@ def test_build_agent_for_openai_compatible_provider_resolves_model_alias(monkeyp
         },
     )
     monkeypatch.setenv("NOVA_HOME", str(home))
-    monkeypatch.setenv("WBZ_API_KEY", "secret")
     settings = Settings.load_config()
 
     agent = build_agent(settings=settings)

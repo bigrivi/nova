@@ -7,7 +7,6 @@ from __future__ import annotations
 import logging
 import os
 import json
-import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from logging.handlers import TimedRotatingFileHandler
@@ -56,27 +55,18 @@ def _env_int(name: str, default: int) -> int:
         return default
     return int(raw.strip())
 
-
-_CAMEL_BOUNDARY_1 = re.compile(r"(.)([A-Z][a-z]+)")
-_CAMEL_BOUNDARY_2 = re.compile(r"([a-z0-9])([A-Z])")
-
-
-def _to_snake_case(key: str) -> str:
-    normalized = _CAMEL_BOUNDARY_1.sub(r"\1_\2", key)
-    normalized = _CAMEL_BOUNDARY_2.sub(r"\1_\2", normalized)
-    return normalized.replace("-", "_").lower()
-
-
 def _default_model_for_provider_type(provider_type: str) -> str:
     if provider_type == "ollama":
         return "gemma4:26b"
     return ""
 
 
-def _resolve_openai_api_key_env() -> str:
-    if os.getenv("NOVA_OPENAI_API_KEY"):
-        return "NOVA_OPENAI_API_KEY"
-    return "OPENAI_API_KEY"
+def _resolve_openai_api_key() -> str:
+    return (
+        os.getenv("NOVA_OPENAI_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+        or ""
+    ).strip()
 
 
 def _resolve_ollama_base_url() -> str:
@@ -122,7 +112,7 @@ def _build_default_config_payload() -> dict[str, Any]:
                 "name": "OpenAI Compatible",
                 "options": {
                     "base_url": _resolve_openai_base_url(),
-                    "api_key_env": _resolve_openai_api_key_env(),
+                    "api_key": _resolve_openai_api_key(),
                 },
                 "models": {
                     (openai_model or "gpt-5.4"): {
@@ -178,17 +168,10 @@ def _parse_provider_configs(raw_providers: Any) -> dict[str, ProviderConfig]:
         if not isinstance(raw_models, dict):
             raise ValueError(f"Invalid Nova config: provider '{key}' models must be an object")
         normalized_options = dict(options)
-        if "base_url" not in normalized_options and "baseURL" in normalized_options:
-            normalized_options["base_url"] = normalized_options["baseURL"]
-        if "api_key_env" not in normalized_options and "apiKeyEnv" in normalized_options:
-            normalized_options["api_key_env"] = normalized_options["apiKeyEnv"]
         normalized_models: dict[str, dict[str, Any]] = {}
         for model_key, model_value in raw_models.items():
             if isinstance(model_value, dict):
-                normalized_models[model_key] = {
-                    _to_snake_case(str(entry_key)): entry_value
-                    for entry_key, entry_value in model_value.items()
-                }
+                normalized_models[model_key] = dict(model_value)
             else:
                 normalized_models[model_key] = {"name": model_value}
         providers[key] = ProviderConfig(
@@ -251,7 +234,10 @@ class Settings:
         selected_openai_provider = provider_config if provider_config.type == "openai-compatible" else openai_provider
         selected_ollama_provider = provider_config if provider_config.type == "ollama" else ollama_provider
         openai_base_url = str((selected_openai_provider.options.get("base_url") if selected_openai_provider else "") or _resolve_openai_base_url()).strip()
-        openai_api_key_env = str((selected_openai_provider.options.get("api_key_env") if selected_openai_provider else "") or _resolve_openai_api_key_env()).strip()
+        selected_openai_api_key = ""
+        if selected_openai_provider is not None:
+            selected_openai_api_key = str(selected_openai_provider.options.get("api_key", "")).strip()
+        openai_api_key = selected_openai_api_key or _resolve_openai_api_key()
         ollama_base_url = str((selected_ollama_provider.options.get("base_url") if selected_ollama_provider else "") or _resolve_ollama_base_url()).strip()
         return cls(
             home=home,
@@ -269,7 +255,7 @@ class Settings:
             provider_type=provider_config.type,
             ollama_base_url=ollama_base_url,
             openai_base_url=openai_base_url,
-            openai_api_key=os.getenv(openai_api_key_env, "").strip(),
+            openai_api_key=openai_api_key,
         )
 
     def ensure_directories(self) -> None:
@@ -331,10 +317,8 @@ class Settings:
         return provider_config.options.get(key, default)
 
     def get_provider_api_key(self, provider_name: str) -> str:
-        api_key_env = str(self.get_provider_option(provider_name, "api_key_env", "")).strip()
-        if not api_key_env:
-            return ""
-        return os.getenv(api_key_env, "").strip()
+        api_key = str(self.get_provider_option(provider_name, "api_key", "")).strip()
+        return api_key
 
     def get_model_config(self, model_name: str, provider_name: str | None = None) -> dict[str, Any]:
         resolved_provider = provider_name or self.provider

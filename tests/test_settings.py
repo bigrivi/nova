@@ -48,7 +48,7 @@ def test_app_settings_from_config_and_env(monkeypatch, tmp_path):
                     "name": "wbz",
                     "options": {
                         "base_url": "http://openai.local/v1",
-                        "api_key_env": "WBZ_API_KEY",
+                        "api_key": "secret",
                     },
                     "models": {
                         "gpt-test": {
@@ -75,7 +75,7 @@ def test_app_settings_from_config_and_env(monkeypatch, tmp_path):
                     "name": "OpenAI Compatible",
                     "options": {
                         "base_url": "http://openai.cached/v1",
-                        "api_key_env": "NOVA_OPENAI_API_KEY",
+                        "api_key": "cached-key",
                     },
                     "models": {
                         "gpt-5.4": {
@@ -92,9 +92,6 @@ def test_app_settings_from_config_and_env(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_BACKEND_PORT", "9001")
     monkeypatch.setenv("NOVA_UI_PORT", "9010")
     monkeypatch.setenv("NOVA_LOG_LEVEL", "debug")
-    monkeypatch.setenv("WBZ_API_KEY", "secret")
-    monkeypatch.setenv("NOVA_OPENAI_API_KEY", "cached-key")
-
     settings = Settings.load_config()
 
     assert settings.home == home
@@ -159,42 +156,7 @@ def test_existing_config_is_not_overwritten(monkeypatch, tmp_path):
     assert json.loads(config_path.read_text(encoding="utf-8")) == original_payload
 
 
-def test_settings_accept_legacy_camel_case_option_keys(monkeypatch, tmp_path):
-    home = tmp_path / "nova-legacy-home"
-    _write_config(
-        home,
-        {
-            "model": "gpt-5.4",
-            "model_provider": "wbz",
-            "providers": {
-                "wbz": {
-                    "type": "openai-compatible",
-                    "name": "wbz",
-                    "options": {
-                        "baseURL": "http://legacy-openai.local/v1",
-                        "apiKeyEnv": "WBZ_API_KEY",
-                    },
-                    "models": {
-                        "gpt-5.4": {
-                            "name": "gpt-5.4",
-                            "tools": True,
-                        }
-                    },
-                }
-            },
-        },
-    )
-    monkeypatch.setenv("NOVA_HOME", str(home))
-    monkeypatch.setenv("WBZ_API_KEY", "legacy-secret")
-
-    settings = Settings.load_config()
-
-    assert settings.openai_base_url == "http://legacy-openai.local/v1"
-    assert settings.get_provider_option("wbz", "base_url") == "http://legacy-openai.local/v1"
-    assert settings.get_provider_api_key("wbz") == "legacy-secret"
-
-
-def test_settings_normalize_model_entry_keys_to_snake_case(monkeypatch, tmp_path):
+def test_settings_preserve_model_entry_keys(monkeypatch, tmp_path):
     home = tmp_path / "nova-model-key-home"
     _write_config(
         home,
@@ -207,7 +169,7 @@ def test_settings_normalize_model_entry_keys_to_snake_case(monkeypatch, tmp_path
                     "name": "OpenAI",
                     "options": {
                         "base_url": "https://api.openai.com/v1",
-                        "api_key_env": "OPENAI_API_KEY",
+                        "api_key": "sk-example",
                     },
                     "models": {
                         "gpt-5.4": {
@@ -227,9 +189,9 @@ def test_settings_normalize_model_entry_keys_to_snake_case(monkeypatch, tmp_path
     model_config = settings.get_model_config("gpt-5.4", provider_name="openai")
 
     assert model_config["name"] == "gpt-5.4"
-    assert model_config["tool_calling"] is True
-    assert model_config["max_tokens"] == 128000
-    assert model_config["context_window"] == 200000
+    assert model_config["toolCalling"] is True
+    assert model_config["maxTokens"] == 128000
+    assert model_config["contextWindow"] == 200000
 
 
 def test_providers_use_cached_app_settings_defaults(monkeypatch, tmp_path):
@@ -259,7 +221,7 @@ def test_providers_use_cached_app_settings_defaults(monkeypatch, tmp_path):
                     "name": "OpenAI Compatible",
                     "options": {
                         "base_url": "http://openai.cached/v1",
-                        "api_key_env": "NOVA_OPENAI_API_KEY",
+                        "api_key": "cached-key",
                     },
                     "models": {
                         "gpt-5.4": {
@@ -272,8 +234,6 @@ def test_providers_use_cached_app_settings_defaults(monkeypatch, tmp_path):
         },
     )
     monkeypatch.setenv("NOVA_HOME", str(home))
-    monkeypatch.setenv("NOVA_OPENAI_API_KEY", "cached-key")
-
     ollama = OllamaProvider()
     openai = OpenAIProvider()
 
