@@ -33,9 +33,10 @@ class EventStub:
 
 
 class FakeChatService:
-    def __init__(self, chat_payload=None, stream_events=None, interrupt_result=False):
+    def __init__(self, chat_payload=None, stream_events=None, stream_chunks=None, interrupt_result=False):
         self._chat_payload = chat_payload
         self._stream_events = stream_events or []
+        self._stream_chunks = stream_chunks or []
         self._interrupt_result = interrupt_result
 
     async def chat(self, request):
@@ -44,6 +45,10 @@ class FakeChatService:
     async def chat_stream(self, request):
         for event in self._stream_events:
             yield event
+
+    async def chat_stream_ai_sdk(self, request):
+        for chunk in self._stream_chunks:
+            yield chunk
 
     async def interrupt(self, request_id: str) -> bool:
         return self._interrupt_result
@@ -163,12 +168,17 @@ def test_chat_stream_endpoint_returns_sse_events(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-stream")
     app = create_app(settings=Settings.load_config())
     app.state.chat_service = FakeChatService(
-        stream_events=[
-            EventStub("session.started", "req_fake", "sess-stream", 1, {"session_id": "sess-stream"}),
-            EventStub("response.started", "req_fake", "sess-stream", 2, {}),
-            EventStub("message.delta", "req_fake", "sess-stream", 3, {"delta": "part-1"}),
-            EventStub("message.delta", "req_fake", "sess-stream", 4, {"delta": "part-2"}),
-            EventStub("response.completed", "req_fake", "sess-stream", 5, {"content": "final text"}),
+        stream_chunks=[
+            b'data: {"type":"data-nova-session","data":{"sessionId":"sess-stream"}}\n\n',
+            b'data: {"type":"start","messageId":"msg_fake"}\n\n',
+            b'data: {"type":"start-step"}\n\n',
+            b'data: {"type":"text-start","id":"text_fake"}\n\n',
+            b'data: {"type":"text-delta","id":"text_fake","delta":"part-1"}\n\n',
+            b'data: {"type":"text-delta","id":"text_fake","delta":"part-2"}\n\n',
+            b'data: {"type":"text-end","id":"text_fake"}\n\n',
+            b'data: {"type":"finish-step"}\n\n',
+            b'data: {"type":"finish"}\n\n',
+            b"data: [DONE]\n\n",
         ]
     )
     client = TestClient(app)
@@ -177,48 +187,26 @@ def test_chat_stream_endpoint_returns_sse_events(monkeypatch):
         body = "".join(chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk for chunk in response.iter_text())
 
     assert response.status_code == 200
-    assert "event: session.started" in body
-    assert "event: response.started" in body
-    assert "event: message.delta" in body
-    assert "event: response.completed" in body
-    assert '"session_id":"sess-stream"' in body
+    assert '"type":"data-nova-session"' in body
+    assert '"type":"start"' in body
+    assert '"type":"text-delta"' in body
+    assert '"type":"finish"' in body
+    assert '"sessionId":"sess-stream"' in body
     assert '"delta":"part-1"' in body
-    assert '"content":"final text"' in body
-    assert '"request_id":"req_fake"' in body
-    assert '"sequence":5' in body
+    assert '"delta":"part-2"' in body
+    assert 'data: [DONE]' in body
 
 
 def test_chat_stream_endpoint_includes_tool_event_fields(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-tool-stream")
     app = create_app(settings=Settings.load_config())
     app.state.chat_service = FakeChatService(
-        stream_events=[
-            EventStub("session.started", "req_fake", "sess-stream", 1, {"session_id": "sess-stream"}),
-            EventStub(
-                "tool.call",
-                "req_fake",
-                "sess-stream",
-                2,
-                {
-                    "tool_name": "bash",
-                    "tool_call_id": "call_1",
-                    "arguments": "{\"command\":\"pwd\"}",
-                },
-            ),
-            EventStub(
-                "tool.result",
-                "req_fake",
-                "sess-stream",
-                3,
-                {
-                    "tool_name": "bash",
-                    "tool_call_id": "call_1",
-                    "success": True,
-                    "content": "/tmp",
-                    "error": "",
-                    "requires_input": False,
-                },
-            ),
+        stream_chunks=[
+            b'data: {"type":"tool-input-start","toolCallId":"call_1","toolName":"bash"}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"call_1","toolName":"bash","input":{"command":"pwd"}}\n\n',
+            b'data: {"type":"tool-output-available","toolCallId":"call_1","output":{"content":"/tmp"}}\n\n',
+            b'data: {"type":"finish"}\n\n',
+            b"data: [DONE]\n\n",
         ]
     )
     client = TestClient(app)
@@ -227,11 +215,12 @@ def test_chat_stream_endpoint_includes_tool_event_fields(monkeypatch):
         body = "".join(chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk for chunk in response.iter_text())
 
     assert response.status_code == 200
-    assert "event: tool.call" in body
-    assert "event: tool.result" in body
-    assert '"tool_name":"bash"' in body
-    assert '"tool_call_id":"call_1"' in body
-    assert '"success":true' in body
+    assert '"type":"tool-input-start"' in body
+    assert '"type":"tool-input-available"' in body
+    assert '"type":"tool-output-available"' in body
+    assert '"toolName":"bash"' in body
+    assert '"toolCallId":"call_1"' in body
+    assert '"command":"pwd"' in body
     assert '"content":"/tmp"' in body
 
 
@@ -246,13 +235,9 @@ def test_chat_stream_openapi_documents_sse_response(monkeypatch):
     schema = response.json()
     stream_post = schema["paths"]["/api/chat/stream"]["post"]
     stream_response = stream_post["responses"]["200"]["content"]["text/event-stream"]
-    assert "event: session.started" in stream_response["example"]
-    assert "event: response.completed" in stream_response["example"]
-    event_docs = stream_post["x-nova-stream-events"]
-    assert event_docs
-    assert event_docs[0]["event"] == "session.started"
-    assert "session_id" in event_docs[0]["fields"]
-    assert event_docs[0]["example"]["session_id"] == "sess_xxx"
+    assert '"type":"start"' in stream_response["example"]
+    assert '"type":"finish"' in stream_response["example"]
+    assert "x-nova-stream-events" not in stream_post
 
 
 @pytest.mark.asyncio

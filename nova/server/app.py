@@ -18,119 +18,19 @@ from nova.server.schemas import (
     MessageListResponse,
     SessionListResponse,
 )
-from nova.server.sse import encode_sse_bytes
 from nova.settings import Settings, get_settings
 
 
 STREAM_RESPONSE_EXAMPLE = (
-    "event: session.started\n"
-    'data: {"request_id":"req_xxx","session_id":"sess_xxx","sequence":1}\n\n'
-    "event: response.started\n"
-    'data: {"request_id":"req_xxx","session_id":"sess_xxx","sequence":2}\n\n'
-    "event: message.delta\n"
-    'data: {"request_id":"req_xxx","session_id":"sess_xxx","sequence":3,"delta":"hello"}\n\n'
-    "event: response.completed\n"
-    'data: {"request_id":"req_xxx","session_id":"sess_xxx","sequence":4,"content":"hello"}\n\n'
+    'data: {"type":"start","messageId":"msg_xxx"}\n\n'
+    'data: {"type":"start-step"}\n\n'
+    'data: {"type":"text-start","id":"text_xxx"}\n\n'
+    'data: {"type":"text-delta","id":"text_xxx","delta":"hello"}\n\n'
+    'data: {"type":"text-end","id":"text_xxx"}\n\n'
+    'data: {"type":"finish-step"}\n\n'
+    'data: {"type":"finish"}\n\n'
+    "data: [DONE]\n\n"
 )
-
-STREAM_EVENT_DOCS = [
-    {
-        "event": "session.started",
-        "data_model": "SessionStartedEventData",
-        "fields": ["request_id", "session_id", "sequence"],
-        "example": {"request_id": "req_xxx", "session_id": "sess_xxx", "sequence": 1},
-    },
-    {
-        "event": "response.started",
-        "data_model": "ResponseStartedEventData",
-        "fields": ["request_id", "session_id", "sequence"],
-        "example": {"request_id": "req_xxx", "session_id": "sess_xxx", "sequence": 2},
-    },
-    {
-        "event": "message.delta",
-        "data_model": "MessageDeltaEventData",
-        "fields": ["request_id", "session_id", "sequence", "delta"],
-        "example": {"request_id": "req_xxx", "session_id": "sess_xxx", "sequence": 3, "delta": "hello"},
-    },
-    {
-        "event": "tool.call",
-        "data_model": "ToolCallEventData",
-        "fields": ["request_id", "session_id", "sequence", "tool_name", "tool_call_id", "arguments"],
-        "example": {
-            "request_id": "req_xxx",
-            "session_id": "sess_xxx",
-            "sequence": 4,
-            "tool_name": "bash",
-            "tool_call_id": "call_1",
-            "arguments": "{\"command\":\"pwd\"}",
-        },
-    },
-    {
-        "event": "tool.result",
-        "data_model": "ToolResultEventData",
-        "fields": [
-            "request_id",
-            "session_id",
-            "sequence",
-            "tool_name",
-            "tool_call_id",
-            "success",
-            "content",
-            "error",
-            "requires_input",
-        ],
-        "example": {
-            "request_id": "req_xxx",
-            "session_id": "sess_xxx",
-            "sequence": 5,
-            "tool_name": "bash",
-            "tool_call_id": "call_1",
-            "success": True,
-            "content": "/tmp",
-            "error": "",
-            "requires_input": False,
-        },
-    },
-    {
-        "event": "response.completed",
-        "data_model": "ResponseCompletedEventData",
-        "fields": ["request_id", "session_id", "sequence", "content"],
-        "example": {"request_id": "req_xxx", "session_id": "sess_xxx", "sequence": 6, "content": "hello"},
-    },
-    {
-        "event": "response.cancelled",
-        "data_model": "ResponseCancelledEventData",
-        "fields": ["request_id", "session_id", "sequence", "message"],
-        "example": {
-            "request_id": "req_xxx",
-            "session_id": "sess_xxx",
-            "sequence": 6,
-            "message": "Stopped by user",
-        },
-    },
-    {
-        "event": "input.required",
-        "data_model": "InputRequiredEventData",
-        "fields": ["request_id", "session_id", "sequence", "message"],
-        "example": {
-            "request_id": "req_xxx",
-            "session_id": "sess_xxx",
-            "sequence": 6,
-            "message": "User input required",
-        },
-    },
-    {
-        "event": "response.error",
-        "data_model": "ResponseErrorEventData",
-        "fields": ["request_id", "session_id", "sequence", "message"],
-        "example": {
-            "request_id": "req_xxx",
-            "session_id": "sess_xxx",
-            "sequence": 6,
-            "message": "provider error",
-        },
-    },
-]
 
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
@@ -166,7 +66,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         "/api/chat/stream",
         responses={
             200: {
-                "description": "SSE stream of chat lifecycle events.",
+                "description": "AI SDK UI compatible SSE stream.",
                 "content": {
                     "text/event-stream": {
                         "example": STREAM_RESPONSE_EXAMPLE,
@@ -174,14 +74,11 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 },
             }
         },
-        openapi_extra={
-            "x-nova-stream-events": STREAM_EVENT_DOCS
-        },
     )
     async def chat_stream(chat_request: ChatRequest):
         async def event_stream():
-            async for event in app.state.chat_service.chat_stream(chat_request):
-                yield encode_sse_bytes(event)
+            async for chunk in app.state.chat_service.chat_stream_ai_sdk(chat_request):
+                yield chunk
 
         return StreamingResponse(
             event_stream(),
@@ -189,6 +86,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
+                "x-vercel-ai-ui-message-stream": "v1",
             },
         )
 

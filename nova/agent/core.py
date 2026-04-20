@@ -17,18 +17,30 @@ log = logging.getLogger(__name__)
 
 
 class AgentEvent(Enum):
+    # Emitted once per run after the session is created or loaded.
     SESSION = "session"
-    START = "start"
+    # Emitted right before one LLM streaming turn starts.
     LLM_START = "llm_start"
-    LLM_OUTPUT = "llm_output"
+    # Emitted once after one LLM streaming turn finishes.
     LLM_END = "llm_end"
+    # Emitted immediately before a tool starts executing.
     TOOL_CALL = "tool_call"
+    # Emitted after a tool finishes executing and its result is available.
     TOOL_RESULT = "tool_result"
+    # Emitted for each streamed text chunk from the model.
     TEXT_DELTA = "text_delta"
-    RESPONSE = "response"
+    # Emitted when the run ends in an error, with a structured {reason, message} payload.
     ERROR = "error"
+    # Emitted when the run finishes, with a structured {reason, content} payload.
     DONE = "done"
-    STREAM_END = "stream_end"
+
+
+def _done_payload(reason: str, content: Optional[str] = None) -> dict[str, Any]:
+    return {"reason": reason, "content": content}
+
+
+def _error_payload(reason: str, message: str) -> dict[str, Any]:
+    return {"reason": reason, "message": message}
 
 
 @dataclass
@@ -80,12 +92,12 @@ class Agent:
         """Check whether execution has been interrupted."""
         return self._abort_event.is_set()
 
-    async def _wait_if_aborted(self) -> Optional[str]:
-        """Return an interrupt message when execution should stop."""
+    async def _wait_if_aborted(self) -> Optional[dict[str, Any]]:
+        """Return a done payload when execution should stop."""
         if self._abort_event.is_set():
-            message = "Stopped by user"
-            await self._emit(AgentEvent.DONE, message)
-            return message
+            payload = _done_payload("stopped", "Stopped by user")
+            await self._emit(AgentEvent.DONE, payload)
+            return payload
         return None
 
     def on(self, event: AgentEvent, handler: Callable) -> None:
@@ -223,8 +235,6 @@ class Agent:
         yield AgentEvent.SESSION, current_session.id if current_session else None
 
         await self.session.add_message(role="user", content=user_input)
-        await self._emit(AgentEvent.START)
-        yield AgentEvent.START, None
 
         tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else None
 
@@ -241,9 +251,9 @@ class Agent:
         turn_count = 0
         for _ in range(self.config.max_iterations):
             turn_count += 1
-            interrupt_message = await self._wait_if_aborted()
-            if interrupt_message:
-                yield AgentEvent.DONE, interrupt_message
+            done_payload = await self._wait_if_aborted()
+            if done_payload:
+                yield AgentEvent.DONE, done_payload
                 return
 
             messages = await self._get_messages()
@@ -251,7 +261,6 @@ class Agent:
             accumulated_content = ""
             accumulated_tool_calls: dict[str, Any] = {}
             final_done_content = ""
-            llm_output_emitted = False
 
             log.info(
                 f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}")
@@ -265,27 +274,19 @@ class Agent:
                         model=self.config.model,
                         tools=tool_schemas,
                     ):
-                        interrupt_message = await self._wait_if_aborted()
-                        if interrupt_message:
-                            yield AgentEvent.DONE, interrupt_message
+                        done_payload = await self._wait_if_aborted()
+                        if done_payload:
+                            yield AgentEvent.DONE, done_payload
                             return
 
                         if hasattr(chunk, 'type'):
                             if chunk.type == "text_delta":
-                                if not llm_output_emitted:
-                                    llm_output_emitted = True
-                                    await self._emit(AgentEvent.LLM_OUTPUT)
-                                    yield AgentEvent.LLM_OUTPUT, None
                                 accumulated_content += chunk.content
                                 yield AgentEvent.TEXT_DELTA, chunk.content
                             elif chunk.type == "done":
                                 final_done_content = getattr(
                                     chunk, "content", "") or final_done_content
                             elif chunk.type == "tool_call":
-                                if not llm_output_emitted:
-                                    llm_output_emitted = True
-                                    await self._emit(AgentEvent.LLM_OUTPUT)
-                                    yield AgentEvent.LLM_OUTPUT, None
                                 chunk_id = getattr(chunk, "id", None) or getattr(
                                     chunk, "name", "")
                                 if chunk_id:
@@ -293,10 +294,6 @@ class Agent:
                                         chunk_id)] = chunk
 
                         if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
-                            if not llm_output_emitted:
-                                llm_output_emitted = True
-                                await self._emit(AgentEvent.LLM_OUTPUT)
-                                yield AgentEvent.LLM_OUTPUT, None
                             for tc in chunk.tool_calls:
                                 tc_id = getattr(tc, "id", None) or getattr(
                                     tc, "name", "")
@@ -309,10 +306,9 @@ class Agent:
                 await self._emit(AgentEvent.LLM_END)
                 if not generator_closing:
                     yield AgentEvent.LLM_END, None
-            yield AgentEvent.STREAM_END, None
-            interrupt_message = await self._wait_if_aborted()
-            if interrupt_message:
-                yield AgentEvent.DONE, interrupt_message
+            done_payload = await self._wait_if_aborted()
+            if done_payload:
+                yield AgentEvent.DONE, done_payload
                 return
             log.info(
                 f"[Turn {turn_count}] After LLM loop: accumulated_content={len(accumulated_content)}, tool_calls={len(accumulated_tool_calls)}")
@@ -338,15 +334,15 @@ class Agent:
                         tc, 'model_dump') else tc for tc in final_tool_calls],
                 )
                 for tc in final_tool_calls:
-                    interrupt_message = await self._wait_if_aborted()
-                    if interrupt_message:
-                        yield AgentEvent.DONE, interrupt_message
+                    done_payload = await self._wait_if_aborted()
+                    if done_payload:
+                        yield AgentEvent.DONE, done_payload
                         return
                     await self._emit(AgentEvent.TOOL_CALL, tc)
                     yield AgentEvent.TOOL_CALL, tc
-                    interrupt_message = await self._wait_if_aborted()
-                    if interrupt_message:
-                        yield AgentEvent.DONE, interrupt_message
+                    done_payload = await self._wait_if_aborted()
+                    if done_payload:
+                        yield AgentEvent.DONE, done_payload
                         return
                     result = await self._execute_tool(tc)
                     await self.session.add_message(
@@ -372,28 +368,29 @@ class Agent:
                         tool_name = tc.name if hasattr(tc, 'name') else str(tc)
                         failure_message = self._build_tool_unavailable_message(
                             tool_name, result)
+                        done_payload = _done_payload("tool_failed", failure_message)
                         await self.session.add_message(role="assistant", content=failure_message)
-                        await self._emit(AgentEvent.RESPONSE, failure_message)
-                        await self._emit(AgentEvent.DONE, failure_message)
+                        await self._emit(AgentEvent.DONE, done_payload)
                         log.info(
                             f"[Turn {turn_count}] Stopped after failed tool: {tool_name}")
-                        yield AgentEvent.DONE, failure_message
+                        yield AgentEvent.DONE, done_payload
                         return
                     if result.requires_input:
                         log.info(f"[Turn {turn_count}] Paused for user input")
-                        yield AgentEvent.DONE, "User input required"
+                        yield AgentEvent.DONE, _done_payload("requires_input", "User input required")
                         return
             else:
                 await self.session.add_message(role="assistant", content=final_content)
-                await self._emit(AgentEvent.RESPONSE, final_content)
-                await self._emit(AgentEvent.DONE)
+                done_payload = _done_payload("completed", final_content)
+                await self._emit(AgentEvent.DONE, done_payload)
                 log.info(f"[Turn {turn_count}] Completed without tool calls")
-                yield AgentEvent.DONE, final_content
+                yield AgentEvent.DONE, done_payload
                 return
 
-        await self._emit(AgentEvent.ERROR, "Max iterations reached")
+        error_payload = _error_payload("max_iterations", "Maximum iterations reached")
+        await self._emit(AgentEvent.ERROR, error_payload)
         log.warning(f"[Turn {turn_count}] Maximum iterations reached")
-        yield AgentEvent.ERROR, "Maximum iterations reached"
+        yield AgentEvent.ERROR, error_payload
 
     def register_tool(self, func: Callable, name: str = None) -> None:
         self.tool_registry.register(func, name)

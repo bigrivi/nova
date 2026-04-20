@@ -235,7 +235,6 @@ class OpenAIProvider(LLMProvider):
                             "OpenAI provider stream request failed: %s", error_message)
                         yield Done(content=f"Error: {error_message}", tool_calls=[])
                         return
-
                     async for line in resp.content:
                         line = line.decode("utf-8").strip()
                         if not line or line == "data: [DONE]":

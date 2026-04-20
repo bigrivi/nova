@@ -10,6 +10,18 @@ from nova.llm import ToolResult
 from nova.llm.provider import Done, LLMProvider, TextDelta, ToolCall
 
 
+def _done_reason(data) -> str:
+    return data.get("reason", "") if isinstance(data, dict) else ""
+
+
+def _done_content(data) -> str:
+    if isinstance(data, dict):
+        return data.get("content", "") or ""
+    if isinstance(data, str):
+        return data
+    return ""
+
+
 class ScriptedProvider(LLMProvider):
     def __init__(self, scripts: list[list[object]]):
         self._scripts = scripts
@@ -73,7 +85,12 @@ async def test_interrupt_during_text_stream_stops_without_rolling_back_history(d
         if event == AgentEvent.TEXT_DELTA:
             agent.interrupt()
 
-    assert (AgentEvent.DONE, "Stopped by user") in events
+    assert any(
+        event == AgentEvent.DONE
+        and _done_reason(data) == "stopped"
+        and _done_content(data) == "Stopped by user"
+        for event, data in events
+    )
     assert events[-1] == (AgentEvent.LLM_END, None)
 
     messages = await agent.session.get_messages(session_id=session_id)
@@ -108,7 +125,12 @@ async def test_interrupt_after_tool_call_stops_before_tool_execution(db):
         if event == AgentEvent.TOOL_CALL:
             agent.interrupt()
 
-    assert (AgentEvent.DONE, "Stopped by user") in events
+    assert any(
+        event == AgentEvent.DONE
+        and _done_reason(data) == "stopped"
+        and _done_content(data) == "Stopped by user"
+        for event, data in events
+    )
 
     messages = await agent.session.get_messages()
     assert [(msg.role, msg.content) for msg in messages] == [
@@ -147,7 +169,12 @@ async def test_interrupt_after_tool_result_stops_agent_loop_before_next_iteratio
         if event == AgentEvent.TOOL_RESULT:
             agent.interrupt()
 
-    assert (AgentEvent.DONE, "Stopped by user") in events
+    assert any(
+        event == AgentEvent.DONE
+        and _done_reason(data) == "stopped"
+        and _done_content(data) == "Stopped by user"
+        for event, data in events
+    )
     assert (AgentEvent.TEXT_DELTA, "should not run") not in events
 
     messages = await agent.session.get_messages()
@@ -173,7 +200,7 @@ async def test_breaking_after_stopped_by_user_does_not_raise_generator_exit(db):
     async for event, data in agent.chat_stream("stop early"):
         if event == AgentEvent.TEXT_DELTA:
             agent.interrupt()
-        if event == AgentEvent.DONE and data == "Stopped by user":
+        if event == AgentEvent.DONE and _done_reason(data) == "stopped":
             break
 
 
@@ -206,7 +233,10 @@ async def test_tool_failure_stops_agent_loop_and_reports_unavailable(db):
         events.append((event, data))
 
     done_payloads = [data for event, data in events if event == AgentEvent.DONE]
-    assert done_payloads[-1] == "Tool `failing_tool` is currently unavailable. Search error: Illegal header value b'Bearer '."
+    assert done_payloads[-1] == {
+        "reason": "tool_failed",
+        "content": "Tool `failing_tool` is currently unavailable. Search error: Illegal header value b'Bearer '.",
+    }
     assert (AgentEvent.TEXT_DELTA, "should not run") not in events
 
     messages = await agent.session.get_messages()
@@ -237,7 +267,10 @@ async def test_done_content_is_preserved_when_provider_returns_error_without_tex
         events.append((event, data))
 
     done_payloads = [data for event, data in events if event == AgentEvent.DONE]
-    assert done_payloads[-1] == "Error: HTTP 400 from provider: bad request"
+    assert done_payloads[-1] == {
+        "reason": "completed",
+        "content": "Error: HTTP 400 from provider: bad request",
+    }
 
     messages = await agent.session.get_messages()
     assert [(msg.role, msg.content) for msg in messages] == [
