@@ -23,6 +23,8 @@ _spinner_thread: Optional[threading.Thread] = None
 _spinner_stop = threading.Event()
 _spinner_started_at: Optional[float] = None
 _spinner_last_render_width = 0
+_spinner_message = "Thinking..."
+_MAX_RENDERED_DIFF_LINES = 80
 
 
 COMMANDS = [
@@ -116,6 +118,52 @@ def _render_tool_call(tc: object) -> str:
     return f"{bullet} {title}\n  {args_line}"
 
 
+def _render_diff_block(text: str) -> str:
+    lines = text.splitlines()
+    if len(lines) > _MAX_RENDERED_DIFF_LINES:
+        hidden = len(lines) - _MAX_RENDERED_DIFF_LINES
+        lines = lines[:_MAX_RENDERED_DIFF_LINES]
+        lines.append(f"... ({hidden} more diff lines not shown)")
+
+    rendered: list[str] = []
+
+    for line in lines:
+        if line.startswith(("--- ", "+++ ")):
+            rendered.append(f"\033[1;36m{line}\033[0m")
+        elif line.startswith("@@"):
+            rendered.append(f"\033[1;33m{line}\033[0m")
+        elif line.startswith("+") and not line.startswith("+++ "):
+            rendered.append(f"\033[32m{line}\033[0m")
+        elif line.startswith("-") and not line.startswith("--- "):
+            rendered.append(f"\033[31m{line}\033[0m")
+        else:
+            rendered.append(line)
+
+    return "\n".join(rendered)
+
+
+def _render_tool_result(tool_name: object, content: object) -> Optional[str]:
+    if not isinstance(tool_name, str) or not isinstance(content, str):
+        return None
+
+    normalized_name = tool_name.strip().lower()
+    if normalized_name not in {"edit", "write"}:
+        return None
+
+    stripped = content.strip()
+    if not stripped:
+        return None
+
+    if "\n--- " in content and "\n+++ " in content and "\n@@ " in content:
+        headline, _, diff_body = stripped.partition("\n\n")
+        rendered_diff = _render_diff_block(diff_body or headline)
+        label = normalized_name.upper()
+        title = f"\033[1;35m[{label} DIFF]\033[0m {headline}"
+        return f"{title}\n{rendered_diff}"
+
+    return stripped
+
+
 def _looks_like_error_message(text: object) -> bool:
     if not isinstance(text, str):
         return False
@@ -124,6 +172,32 @@ def _looks_like_error_message(text: object) -> bool:
         return False
     lowered = stripped.lower()
     return lowered.startswith("error:")
+
+
+def _parse_done_payload(payload: object) -> tuple[Optional[str], Optional[str]]:
+    if isinstance(payload, dict):
+        reason = payload.get("reason")
+        content = payload.get("content")
+        return (
+            reason if isinstance(reason, str) else None,
+            content if isinstance(content, str) else None,
+        )
+    if isinstance(payload, str):
+        return None, payload
+    return None, None
+
+
+def _parse_error_payload(payload: object) -> tuple[Optional[str], Optional[str]]:
+    if isinstance(payload, dict):
+        reason = payload.get("reason")
+        message = payload.get("message")
+        return (
+            reason if isinstance(reason, str) else None,
+            message if isinstance(message, str) else None,
+        )
+    if isinstance(payload, str):
+        return None, payload
+    return None, None
 
 
 def _run_spinner() -> None:
@@ -135,7 +209,7 @@ def _run_spinner() -> None:
         elapsed = 0.0 if _spinner_started_at is None else max(
             0.0, time.monotonic() - _spinner_started_at)
         line = (
-            f"\033[1;97m{frame} Thinking...\033[0m "
+            f"\033[1;97m{frame} {_spinner_message}\033[0m "
             f"\033[97m{int(elapsed)}s\033[0m "
             f"\033[37m• Esc to interrupt\033[0m "
         )
@@ -144,17 +218,6 @@ def _run_spinner() -> None:
         sys.stderr.flush()
         idx += 1
         _spinner_stop.wait(0.1)
-
-
-def _start_spinner() -> None:
-    global _spinner_thread, _spinner_started_at, _spinner_last_render_width
-    if _spinner_thread is not None and _spinner_thread.is_alive():
-        return
-    _spinner_started_at = time.monotonic()
-    _spinner_last_render_width = 0
-    _spinner_stop.clear()
-    _spinner_thread = threading.Thread(target=_run_spinner, daemon=True)
-    _spinner_thread.start()
 
 
 def _stop_spinner() -> None:
@@ -169,6 +232,28 @@ def _stop_spinner() -> None:
     sys.stderr.write("\r" + (" " * clear_width) + "\r")
     sys.stderr.flush()
     _spinner_last_render_width = 0
+
+
+def _start_spinner(message: str) -> None:
+    global _spinner_thread, _spinner_started_at, _spinner_last_render_width, _spinner_message
+    if _spinner_thread is not None and _spinner_thread.is_alive():
+        if _spinner_message == message:
+            return
+        _stop_spinner()
+    _spinner_message = message
+    _spinner_started_at = time.monotonic()
+    _spinner_last_render_width = 0
+    _spinner_stop.clear()
+    _spinner_thread = threading.Thread(target=_run_spinner, daemon=True)
+    _spinner_thread.start()
+
+
+def _start_llm_spinner() -> None:
+    _start_spinner("Thinking...")
+
+
+def _start_tool_spinner(tool_name: str) -> None:
+    _start_spinner(f"Running {tool_name}...")
 
 
 def _exit_process(code: int = 130) -> None:
@@ -250,19 +335,15 @@ class NovaCLI:
         try:
             async for event, data in self.agent.chat_stream(user_input, session_id=self._current_session_id):
                 if event == AgentEvent.TEXT_DELTA:
+                    _stop_spinner()
                     text_output_seen = True
                     _stream_text(data)
                     continue
-                elif event == AgentEvent.LLM_OUTPUT:
-                    _stop_spinner()
-                    log.info(f"Event: {event.value}")
-                    continue
+                elif event == AgentEvent.LLM_START:
+                    log.info("LLM call started")
+                    _start_llm_spinner()
                 elif event == AgentEvent.LLM_END:
                     _stop_spinner()
-                    _flush_stream()
-                    log.info(f"Event: {event.value}")
-                    continue
-                elif event == AgentEvent.STREAM_END:
                     _flush_stream()
                     log.info(f"Event: {event.value}")
                     continue
@@ -271,44 +352,59 @@ class NovaCLI:
                     _flush_stream()
                     self._current_session_id = data
                     log.info(f"Session ID: {self._current_session_id}")
-                elif event == AgentEvent.LLM_START:
-                    log.info("LLM call started")
-                    _start_spinner()
                 elif event == AgentEvent.TOOL_CALL:
+                    _stop_spinner()
                     _flush_stream()
                     tool_calls_seen.append(data)
                     tc_name = data.name if hasattr(data, 'name') else str(data)
                     print(_render_tool_call(data))
                     print()
                     log.info(f"Tool call: {tc_name}")
+                    _start_tool_spinner(tc_name)
                 elif event == AgentEvent.TOOL_RESULT:
+                    _stop_spinner()
                     _flush_stream()
+                    tool_name = data.get("tool")
                     result = data["result"]
                     content = result.content
                     if result.requires_input:
                         self._pending_input = {"content": content}
                     if not result.success and content:
                         self._show_error(content)
+                    elif rendered := _render_tool_result(tool_name, content):
+                        print(rendered)
+                        print()
                     log.info(
-                        f"Tool result success={result.success}, content_len={len(content)}, requires_input={result.requires_input}")
-                elif event == AgentEvent.RESPONSE:
-                    log.info(f"RESPONSE: {data[:100] if data else 'empty'}")
+                        f"Tool result tool={tool_name}, success={result.success}, content_len={len(content)}, requires_input={result.requires_input}")
                 elif event == AgentEvent.DONE:
                     _stop_spinner()
                     _flush_stream()
+                    reason, content = _parse_done_payload(data)
                     log.info(
-                        f"DONE: tool_calls={len(tool_calls_seen)}")
-                    if data == "Stopped by user":
+                        f"DONE: tool_calls={len(tool_calls_seen)}, reason={reason}")
+                    if reason == "stopped" or content == "Stopped by user":
                         self._show_error("Current run cancelled.")
                         return
-                    if _looks_like_error_message(data):
-                        self._show_error(data)
+                    if reason == "tool_failed":
+                        if content:
+                            self._show_error(content)
                         return
-                    if data and tool_calls_seen and not text_output_seen:
-                        self._show_info(data)
+                    if _looks_like_error_message(content):
+                        self._show_error(content)
                         return
-                    if not data and not tool_calls_seen:
+                    if content and tool_calls_seen and not text_output_seen:
+                        self._show_info(content)
+                        return
+                    if not content and not tool_calls_seen:
                         log.warning("Empty response with no tool calls")
+                elif event == AgentEvent.ERROR:
+                    _stop_spinner()
+                    _flush_stream()
+                    reason, message = _parse_error_payload(data)
+                    log.info(f"ERROR: reason={reason}")
+                    if message:
+                        self._show_error(message)
+                    return
         finally:
             if self._stream_cancel_monitor is not None:
                 self._stream_cancel_monitor.stop()

@@ -75,6 +75,13 @@ python -m nova
 python -m nova cli
 ```
 
+Current CLI behavior highlights:
+
+- streamed assistant text is printed directly to terminal scrollback
+- each tool call is shown as it starts
+- successful `edit` and `write` calls print a unified diff so file changes are visible immediately in the terminal
+- long diffs are truncated in the terminal view to keep scrollback readable
+
 With Ollama:
 
 ```bash

@@ -1,10 +1,16 @@
 import pytest
 
 from nova.agent.core import AgentEvent
-from nova.cli.interactive import NovaCLI, _looks_like_error_message, parse_options
+from nova.cli.interactive import (
+    NovaCLI,
+    _looks_like_error_message,
+    _render_tool_result,
+    parse_options,
+)
 from dataclasses import replace
 
 from nova.settings import Settings
+from nova.llm.provider import ToolResult
 
 
 class _FakeMonitor:
@@ -57,6 +63,37 @@ def test_looks_like_error_message():
     assert _looks_like_error_message(" error: bad request ")
     assert not _looks_like_error_message("")
     assert not _looks_like_error_message("Hello world")
+
+
+def test_render_tool_result_formats_edit_diff():
+    rendered = _render_tool_result(
+        "edit",
+        "Changes applied to foo.py:\n\n--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new\n",
+    )
+
+    assert rendered is not None
+    assert "\033[1;35m[EDIT DIFF]\033[0m Changes applied to foo.py:" in rendered
+    assert "\033[1;36m--- a/foo.py\033[0m" in rendered
+    assert "\033[1;36m+++ b/foo.py\033[0m" in rendered
+    assert "\033[31m-old\033[0m" in rendered
+    assert "\033[32m+new\033[0m" in rendered
+
+
+def test_render_tool_result_ignores_other_tools():
+    assert _render_tool_result("bash", "stdout here") is None
+
+
+def test_render_tool_result_truncates_long_diff():
+    diff_lines = ["--- a/foo.py", "+++ b/foo.py", "@@ -1 +1 @@"]
+    diff_lines.extend(f"+line {i}" for i in range(100))
+    rendered = _render_tool_result(
+        "write",
+        "File updated - foo.py:\n\n" + "\n".join(diff_lines) + "\n",
+    )
+
+    assert rendered is not None
+    assert "\033[1;35m[WRITE DIFF]\033[0m File updated - foo.py:" in rendered
+    assert "... (23 more diff lines not shown)" in rendered
 
 
 @pytest.mark.asyncio
@@ -141,7 +178,7 @@ async def test_run_stream_shows_provider_error(monkeypatch):
 
     monkeypatch.setattr("nova.cli.interactive._stop_spinner", lambda: None)
     monkeypatch.setattr("nova.cli.interactive._flush_stream", lambda: None)
-    monkeypatch.setattr("nova.cli.interactive._start_spinner", lambda: None)
+    monkeypatch.setattr("nova.cli.interactive._start_spinner", lambda *args, **kwargs: None)
 
     await repl.run_stream("hi")
 
@@ -171,13 +208,58 @@ async def test_run_stream_does_not_repeat_assistant_message_after_streaming(monk
 
     monkeypatch.setattr("nova.cli.interactive._stop_spinner", lambda: None)
     monkeypatch.setattr("nova.cli.interactive._flush_stream", lambda: None)
-    monkeypatch.setattr("nova.cli.interactive._start_spinner", lambda: None)
+    monkeypatch.setattr("nova.cli.interactive._start_spinner", lambda *args, **kwargs: None)
     monkeypatch.setattr("nova.cli.interactive._stream_text", lambda text: None)
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: None)
 
     await repl.run_stream("hi")
 
     assert captured == []
+
+
+@pytest.mark.asyncio
+async def test_run_stream_shows_edit_diff_on_success(monkeypatch):
+    repl = NovaCLI.__new__(NovaCLI)
+    repl.agent = _FakeAgent(
+        [
+            (AgentEvent.TOOL_CALL, type("ToolCallStub", (), {"name": "edit", "arguments": '{"filePath":"foo.py"}'})()),
+            (
+                AgentEvent.TOOL_RESULT,
+                {
+                    "tool": "edit",
+                    "tool_call_id": "call_1",
+                    "result": ToolResult(
+                        success=True,
+                        content="Changes applied to foo.py:\n\n--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new\n",
+                    ),
+                },
+            ),
+            (AgentEvent.DONE, {"reason": "completed", "content": "Finished"}),
+        ]
+    )
+    repl._current_session_id = None
+    repl._pending_input = None
+    repl._streaming = False
+    repl._stop_requested = False
+    repl._stream_cancel_monitor = None
+    repl._create_stream_cancel_monitor = lambda callback: _FakeMonitor()
+
+    captured = []
+    repl._show_info = lambda text: captured.append(text)
+    repl._show_error = lambda text: captured.append(f"ERROR::{text}")
+
+    monkeypatch.setattr("nova.cli.interactive._stop_spinner", lambda: None)
+    monkeypatch.setattr("nova.cli.interactive._flush_stream", lambda: None)
+    monkeypatch.setattr("nova.cli.interactive._start_spinner", lambda *args, **kwargs: None)
+    monkeypatch.setattr("builtins.print", lambda *args, **kwargs: captured.append(" ".join(str(arg) for arg in args)))
+
+    await repl.run_stream("hi")
+
+    diff_output = "\n".join(captured)
+    assert "\033[1;36m--- a/foo.py\033[0m" in diff_output
+    assert "\033[1;36m+++ b/foo.py\033[0m" in diff_output
+    assert "\033[31m-old\033[0m" in diff_output
+    assert "\033[32m+new\033[0m" in diff_output
 
 
 @pytest.mark.asyncio
