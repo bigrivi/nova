@@ -4,48 +4,17 @@ import select
 import sys
 import threading
 import time
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Callable
 
-if TYPE_CHECKING:
-    from prompt_toolkit.application import Application as PTApplication
-    from prompt_toolkit.key_binding import KeyBindings as PTKeyBindings
-    from prompt_toolkit.styles import Style as PTStyle
-    from prompt_toolkit.widgets import TextArea as PTTextArea
-
-try:
-    from prompt_toolkit.application import Application
-    from prompt_toolkit.formatted_text import FormattedText
-    from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.layout import Dimension, HSplit, Layout
-    from prompt_toolkit.layout.containers import VerticalAlign
-    from prompt_toolkit.styles import Style
-    from prompt_toolkit.widgets import Box, TextArea
-
-    PROMPT_TOOLKIT_AVAILABLE = True
-except ImportError:  # pragma: no cover - optional dependency
-    Application = None
-    FormattedText = None
-    KeyBindings = None
-    Dimension = None
-    HSplit = None
-    Layout = None
-    VerticalAlign = None
-    Style = None
-    Box = None
-    TextArea = None
-    PROMPT_TOOLKIT_AVAILABLE = False
-
-if TYPE_CHECKING:
-    TextAreaT = PTTextArea
-    KeyBindingsT = PTKeyBindings
-    StyleT = PTStyle
-    ApplicationT = PTApplication
-else:
-    TextAreaT = Any
-    KeyBindingsT = Any
-    StyleT = Any
-    ApplicationT = Any
-
+from prompt_toolkit.application import Application
+from prompt_toolkit.completion import Completer
+from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.layout import Dimension, HSplit, Layout
+from prompt_toolkit.layout.containers import Float, FloatContainer, VerticalAlign
+from prompt_toolkit.layout.menus import CompletionsMenu
+from prompt_toolkit.styles import Style
+from prompt_toolkit.widgets import Box, TextArea
 
 PROMPT_STYLE = Style.from_dict(
     {
@@ -56,6 +25,20 @@ PROMPT_STYLE = Style.from_dict(
         "padding": "bg:#16263d #16263d",
     }
 )
+
+
+def _build_continuation_prefix(line_number: int):
+    if line_number < 1:
+        return FormattedText(
+            [
+                ("class:padding", " "),
+            ]
+        )
+    return FormattedText(
+        [
+            ("class:padding", "   "),
+        ]
+    )
 
 
 class EscapeKeyMonitor:
@@ -103,7 +86,8 @@ class EscapeKeyMonitor:
         try:
             tty.setcbreak(fd)
             while not self._stop_event.is_set():
-                readable, _, _ = select.select([fd], [], [], self._poll_interval)
+                readable, _, _ = select.select(
+                    [fd], [], [], self._poll_interval)
                 if not readable:
                     continue
                 char = sys.stdin.read(1)
@@ -146,6 +130,9 @@ class EscapeKeyMonitor:
 class PromptToolkitInputUI:
     """Input-only prompt_toolkit UI that leaves output to normal terminal scrollback."""
 
+    def __init__(self, completer: Completer | None = None):
+        self._completer = completer
+
     async def prompt(self, prompt_label: str, body: str = "") -> str:
         if body:
             print(f"\n{body}")
@@ -158,28 +145,40 @@ class PromptToolkitInputUI:
             style="class:input-field",
             prompt=FormattedText(
                 [
-                    ("class:padding", " "),
                     ("class:input-prompt", prompt_label),
                 ]
             ),
-            height=Dimension(min=2, max=5),
+            get_line_prefix=lambda line_number, wrap_count: _build_continuation_prefix(
+                line_number),
+            height=Dimension(min=1, max=5),
             dont_extend_height=True,
+            completer=self._completer,
+            complete_while_typing=self._completer is not None,
         )
 
         app = Application(
             layout=Layout(
-                HSplit(
-                    [
-                        Box(
-                            input_area,
-                            padding_left=0,
-                            padding_right=0,
-                            padding_top=1,
-                            padding_bottom=0,
-                            style="class:input-box",
+                FloatContainer(
+                    content=HSplit(
+                        [
+                            Box(
+                                input_area,
+                                padding_left=0,
+                                padding_right=0,
+                                padding_top=1,
+                                padding_bottom=1,
+                                style="class:input-box",
+                            )
+                        ],
+                        align=VerticalAlign.TOP,
+                    ),
+                    floats=[
+                        Float(
+                            xcursor=True,
+                            ycursor=True,
+                            content=CompletionsMenu(max_height=8),
                         )
                     ],
-                    align=VerticalAlign.TOP,
                 ),
                 focused_element=input_area,
             ),
@@ -192,13 +191,21 @@ class PromptToolkitInputUI:
         return result["text"]
 
     @staticmethod
-    def _build_key_bindings(input_area: "TextAreaT", result: dict[str, str]) -> "KeyBindingsT":
+    def _build_key_bindings(input_area: TextArea, result: dict[str, str]) -> KeyBindings:
         bindings = KeyBindings()
 
         @bindings.add("enter")
         def _(event) -> None:
             result["text"] = input_area.text
             event.app.exit()
+
+        @bindings.add("tab")
+        def _(event) -> None:
+            buffer = event.current_buffer
+            if buffer.complete_state:
+                buffer.complete_next()
+                return
+            buffer.start_completion(select_first=False)
 
         @bindings.add("escape", "enter")
         def _(event) -> None:

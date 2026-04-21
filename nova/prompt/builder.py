@@ -10,12 +10,11 @@ Builds a detailed system prompt inspired by CheetahClaws:
 6. Session context
 """
 
-import os
-import subprocess
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
+
+from nova.settings import get_settings
 
 
 @dataclass
@@ -105,17 +104,19 @@ When calling a tool, you must use STRICT JSON format:
 Do not output anything else when making a tool call.
 
 ## When to Use Tools
-- User asks "what directory am I in" → use bash tool with "pwd"
 - User asks to create a file → use write tool
 - User asks to find files → use glob tool
 - User asks for web search → use web_search tool
-- Always prefer tool usage over describing actions. If you don't know something like the current directory, use the bash tool to find out.
+- Runtime path context is already provided below. Do not call bash `pwd` just to learn Nova's home or workspace.
+- Only use bash `pwd` when the user explicitly asks for the shell process working directory.
+- Always prefer tool usage over describing actions when the needed runtime fact is not already present in the prompt.
 
 # Environment
 - Current date: {date}
-- Working directory: {cwd}
+- Nova home: {home}
+- Nova workspace: {workspace_dir}
 - Platform: {platform}
-{git_info}"""
+"""
 
     def __init__(self, config: Optional[PromptConfig] = None):
         self.config = config or PromptConfig()
@@ -127,6 +128,7 @@ Do not output anything else when making a tool call.
         context_stats: ContextStats = None,
     ) -> str:
         parts = []
+        settings = get_settings()
 
         tools_section = self._build_tools_section(tools_schemas) if tools_schemas else ""
         
@@ -134,9 +136,9 @@ Do not output anything else when making a tool call.
             persona=self.config.persona,
             tools=tools_section,
             date=datetime.now().strftime("%Y-%m-%d %A"),
-            cwd=os.getcwd(),
+            home=settings.home,
+            workspace_dir=settings.workspace_dir,
             platform=self._get_platform(),
-            git_info=self._get_git_info(),
         ))
 
         if session_context and self.config.include_session_context:
@@ -150,22 +152,6 @@ Do not output anything else when making a tool call.
     def _get_platform(self) -> str:
         import platform
         return platform.system()
-
-    def _get_git_info(self) -> str:
-        try:
-            branch = subprocess.check_output(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                stderr=subprocess.DEVNULL, text=True).strip()
-            status = subprocess.check_output(
-                ["git", "status", "--short"],
-                stderr=subprocess.DEVNULL, text=True).strip()
-            parts = [f"- Git branch: {branch}"]
-            if status:
-                lines = status.split('\n')[:10]
-                parts.append("- Git status:\n" + "\n".join(f"  {l}" for l in lines))
-            return "\n".join(parts) + "\n"
-        except Exception:
-            return ""
 
     def _build_tools_section(self, tools_schemas: list[dict]) -> str:
         if not tools_schemas:

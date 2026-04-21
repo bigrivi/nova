@@ -1,14 +1,21 @@
 import pytest
+from prompt_toolkit.document import Document
+import re
 
 from nova.agent.core import AgentEvent
+from nova.cli.commands import CommandRegistry
+from nova.cli.completion import CommandCompleter
 from nova.cli.interactive import (
     NovaCLI,
+    _print_history_transcript,
+    _render_history_message,
     _looks_like_error_message,
     _render_tool_result,
     parse_options,
 )
 from dataclasses import replace
 
+from nova.db.database import Message
 from nova.settings import Settings
 from nova.llm.provider import ToolResult
 
@@ -24,6 +31,7 @@ class _FakeMonitor:
 class _FakeAgent:
     def __init__(self, events):
         self._events = events
+        self.session = None
 
     async def chat_stream(self, user_input, session_id=None):
         for item in self._events:
@@ -83,6 +91,62 @@ def test_render_tool_result_ignores_other_tools():
     assert _render_tool_result("bash", "stdout here") is None
 
 
+def test_render_history_message_formats_user_visible_roles():
+    ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+    rendered_width = 20
+    clean_len = lambda s: len(ansi_re.sub("", s))
+    from nova.cli import interactive as cli_interactive
+    original_width = cli_interactive._user_history_block_width
+    cli_interactive._user_history_block_width = lambda: rendered_width
+    try:
+        rendered_user = _render_history_message("user", " Hello ")
+        assert rendered_user is not None
+        assert "❯ " in rendered_user
+        assert "Hello" in rendered_user
+        assert "\033[" in rendered_user
+        assert rendered_user.endswith("\033[0m")
+        user_lines = rendered_user.splitlines()
+        assert len(user_lines) == 3
+        assert clean_len(user_lines[0]) == rendered_width
+        assert "❯ Hello" in ansi_re.sub("", user_lines[1])
+        assert clean_len(user_lines[1]) == rendered_width
+        assert clean_len(user_lines[2]) == rendered_width
+        assert _render_history_message("assistant", "Hi there") == "Hi there"
+        rendered_multiline = _render_history_message("user", "line 1\nline 2")
+        assert rendered_multiline is not None
+        assert "line 1" in rendered_multiline
+        assert "line 2" in rendered_multiline
+        assert len(rendered_multiline.splitlines()) == 4
+        assert all(clean_len(line) == rendered_width for line in rendered_multiline.splitlines())
+        assert _render_history_message("tool", "ignored") == "Tool: ignored"
+        assert _render_history_message("user", "   ") is None
+    finally:
+        cli_interactive._user_history_block_width = original_width
+
+
+def test_print_history_transcript_uses_chat_like_spacing(monkeypatch):
+    captured = []
+    ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+    monkeypatch.setattr("nova.cli.interactive._user_history_block_width", lambda: 20)
+    monkeypatch.setattr("builtins.print", lambda *args, **kwargs: captured.append(" ".join(str(arg) for arg in args)))
+
+    _print_history_transcript(
+        [
+            Message(id="m1", session_id="sess-1", role="user", content="hello"),
+            Message(id="m2", session_id="sess-1", role="assistant", content="hi"),
+        ]
+    )
+
+    assert len(captured) == 4
+    assert captured[0] == ""
+    block_lines = captured[1].splitlines()
+    assert len(block_lines) == 3
+    assert "❯ hello" in ansi_re.sub("", block_lines[1])
+    assert all(len(ansi_re.sub("", line)) == 20 for line in block_lines)
+    assert captured[2] == ""
+    assert captured[3] == "hi"
+
+
 def test_render_tool_result_truncates_long_diff():
     diff_lines = ["--- a/foo.py", "+++ b/foo.py", "@@ -1 +1 @@"]
     diff_lines.extend(f"+line {i}" for i in range(100))
@@ -137,6 +201,185 @@ Please enter the city name directly, for example:
 """
 
     assert parse_options(content) == []
+
+
+def test_command_registry_parses_slash_and_bare_commands():
+    registry = CommandRegistry()
+
+    parsed_slash = registry.parse("/load 2")
+    assert parsed_slash is not None
+    assert parsed_slash.spec.id == "load"
+    assert parsed_slash.args == "2"
+
+    parsed_bare = registry.parse("q")
+    assert parsed_bare is not None
+    assert parsed_bare.spec.id == "quit"
+
+    assert registry.parse("hello nova") is None
+
+
+def test_command_completer_suggests_new_for_n_prefix():
+    completer = CommandCompleter(CommandRegistry())
+    completions = list(completer.get_completions(Document("n", cursor_position=1), None))
+
+    assert completions
+    assert completions[0].display_text == "new"
+    assert completions[0].text == "/new"
+
+
+def test_command_completer_suggests_slash_command_for_slash_prefix():
+    completer = CommandCompleter(CommandRegistry())
+    completions = list(completer.get_completions(Document("/se", cursor_position=3), None))
+
+    assert completions
+    assert completions[0].display_text == "sessions"
+    assert completions[0].text == "/sessions"
+
+
+def test_command_completer_suggests_load_session_indexes_from_cached_sessions():
+    sessions = [
+        {"id": "sess-1-abcdef", "title": "First session"},
+        {"id": "sess-2-ghijkl", "title": "Second session"},
+    ]
+    completer = CommandCompleter(
+        CommandRegistry(),
+        load_candidates_provider=lambda: sessions,
+    )
+
+    completions = list(completer.get_completions(Document("/load ", cursor_position=6), None))
+
+    assert [item.display_text for item in completions] == ["1", "2"]
+    assert completions[0].text == "/load 1"
+    assert completions[0].display_meta_text == "First session [sess-1-a]"
+
+
+def test_command_completer_filters_load_session_indexes_by_prefix():
+    sessions = [{"id": f"sess-{idx}", "title": f"Session {idx}"} for idx in range(1, 13)]
+    completer = CommandCompleter(
+        CommandRegistry(),
+        load_candidates_provider=lambda: sessions,
+    )
+
+    completions = list(completer.get_completions(Document("/load 1", cursor_position=7), None))
+
+    assert [item.display_text for item in completions] == ["1", "10", "11", "12"]
+    assert completions[1].text == "/load 10"
+
+
+def test_command_completer_matches_load_sessions_by_title():
+    sessions = [
+        {"id": "sess-1-abcdef", "title": "First draft"},
+        {"id": "sess-2-ghijkl", "title": "Fix login flow"},
+        {"id": "sess-3-mnopqr", "title": "Final polish"},
+    ]
+    completer = CommandCompleter(
+        CommandRegistry(),
+        load_candidates_provider=lambda: sessions,
+    )
+
+    completions = list(completer.get_completions(Document("/load fi", cursor_position=8), None))
+
+    assert [item.display_text for item in completions] == ["1", "2", "3"]
+    assert [item.text for item in completions] == ["/load 1", "/load 2", "/load 3"]
+    assert completions[1].display_meta_text == "Fix login flow [sess-2-g]"
+
+
+def test_command_completer_matches_load_sessions_by_title_case_insensitively():
+    sessions = [
+        {"id": "sess-1-abcdef", "title": "Alpha review"},
+        {"id": "sess-2-ghijkl", "title": "Feature Branch"},
+    ]
+    completer = CommandCompleter(
+        CommandRegistry(),
+        load_candidates_provider=lambda: sessions,
+    )
+
+    completions = list(completer.get_completions(Document("/load BRAN", cursor_position=10), None))
+
+    assert [item.display_text for item in completions] == ["2"]
+    assert completions[0].text == "/load 2"
+
+
+@pytest.mark.asyncio
+async def test_load_session_reads_history_messages_from_db(monkeypatch):
+    ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+    class _FakeSessionManager:
+        async def load_session(self, session_id):
+            return {"id": session_id}
+
+    class _FakeDb:
+        async def get_history_messages(self, session_id):
+            assert session_id == "sess-1"
+            return [
+                Message(id="m1", session_id=session_id, role="user", content="hello"),
+                Message(id="m2", session_id=session_id, role="assistant", content="hi"),
+            ]
+
+    repl = NovaCLI.__new__(NovaCLI)
+    repl.agent = _FakeAgent([])
+    repl.agent.session = _FakeSessionManager()
+    repl._cached_sessions = [{"id": "sess-1", "title": "Greeting"}]
+    repl._current_session_id = None
+
+    captured = []
+    repl._show_info = lambda text: captured.append(text)
+    repl._show_error = lambda text: captured.append(f"ERROR::{text}")
+    printed = []
+    monkeypatch.setattr("nova.cli.interactive._user_history_block_width", lambda: 20)
+    monkeypatch.setattr("builtins.print", lambda *args, **kwargs: printed.append(" ".join(str(arg) for arg in args)))
+
+    async def fake_ensure_db():
+        return _FakeDb()
+
+    monkeypatch.setattr("nova.db.database.ensure_db", fake_ensure_db)
+
+    await repl._load_session(0)
+
+    assert repl._current_session_id == "sess-1"
+    assert captured == [
+        "Loaded session: Greeting",
+    ]
+    assert len(printed) == 4
+    assert printed[0] == ""
+    block_lines = printed[1].splitlines()
+    assert len(block_lines) == 3
+    assert "❯ hello" in ansi_re.sub("", block_lines[1])
+    assert all(len(ansi_re.sub("", line)) == 20 for line in block_lines)
+    assert printed[2] == ""
+    assert printed[3] == "hi"
+
+
+@pytest.mark.asyncio
+async def test_load_session_reports_missing_history(monkeypatch):
+    class _FakeSessionManager:
+        async def load_session(self, session_id):
+            return {"id": session_id}
+
+    class _FakeDb:
+        async def get_history_messages(self, session_id):
+            return []
+
+    repl = NovaCLI.__new__(NovaCLI)
+    repl.agent = _FakeAgent([])
+    repl.agent.session = _FakeSessionManager()
+    repl._cached_sessions = [{"id": "sess-2", "title": "Empty"}]
+    repl._current_session_id = None
+
+    captured = []
+    repl._show_info = lambda text: captured.append(text)
+    repl._show_error = lambda text: captured.append(f"ERROR::{text}")
+
+    async def fake_ensure_db():
+        return _FakeDb()
+
+    monkeypatch.setattr("nova.db.database.ensure_db", fake_ensure_db)
+
+    await repl._load_session(0)
+
+    assert captured == [
+        "Loaded session: Empty",
+        "No messages found",
+    ]
 
 
 def test_parse_options_parses_explicit_options_block():

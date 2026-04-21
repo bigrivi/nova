@@ -5,9 +5,33 @@ Test PromptBuilder
 import pytest
 
 from nova.prompt import PromptBuilder, SessionContext, ContextStats, build_system_prompt
+from nova.settings import Settings
 
 
 class TestPromptBuilder:
+    @pytest.fixture(autouse=True)
+    def _stub_settings(self, monkeypatch, tmp_path):
+        home = tmp_path / "nova-home"
+        workspace = home / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        settings = Settings(
+            home=home,
+            workspace_dir=workspace,
+            logs_dir=home / "logs",
+            database_path=home / "nova.db",
+            host="127.0.0.1",
+            backend_port=8765,
+            ui_port=8501,
+            log_level="INFO",
+            provider="ollama",
+            model="gemma4:26b",
+            ollama_base_url="http://localhost:11434",
+            openai_base_url="https://api.openai.com/v1",
+            openai_api_key="",
+        )
+        monkeypatch.setattr("nova.prompt.builder.get_settings", lambda: settings)
+        return settings
+
     def test_basic_prompt(self):
         builder = PromptBuilder()
         prompt = builder.build()
@@ -16,6 +40,11 @@ class TestPromptBuilder:
         assert "tool is currently unavailable" in prompt
         assert "STRICT JSON format" in prompt
         assert '"tool": "<tool_name>"' in prompt
+        assert "Nova home:" in prompt
+        assert "Nova workspace:" in prompt
+        assert "shell process working directory" in prompt
+        assert 'what directory am I in" → use bash tool with "pwd"' not in prompt
+        assert "Git branch:" not in prompt
 
     def test_with_tools(self):
         tools = [
@@ -107,3 +136,9 @@ class TestPromptBuilder:
         assert "bash" in prompt
         assert "Development Task" in prompt
         assert "Context Status" in prompt
+
+    def test_prompt_uses_settings_runtime_paths(self, _stub_settings):
+        builder = PromptBuilder()
+        prompt = builder.build()
+        assert f"Nova home: {_stub_settings.home}" in prompt
+        assert f"Nova workspace: {_stub_settings.workspace_dir}" in prompt

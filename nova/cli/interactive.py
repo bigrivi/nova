@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import sys
 import logging
 import threading
@@ -12,8 +13,14 @@ from typing import Optional
 from nova.agent import AgentEvent
 from nova.agent import Agent
 from nova.app import build_agent
+from nova.cli.commands import CommandDispatcher, CommandRegistry, ParsedCommand
+from nova.cli.completion import CommandCompleter
+from nova.cli.prompt_blocks import render_user_prompt_history_block
 from nova.settings import Settings, get_settings
-from nova.cli.ui import EscapeKeyMonitor, PROMPT_TOOLKIT_AVAILABLE, PromptToolkitInputUI
+from nova.cli.ui import (
+    EscapeKeyMonitor,
+    PromptToolkitInputUI,
+)
 
 log = logging.getLogger(__name__)
 
@@ -27,12 +34,8 @@ _spinner_message = "Thinking..."
 _MAX_RENDERED_DIFF_LINES = 80
 
 
-COMMANDS = [
-    {"id": "new", "label": "New Session", "description": "Start a new conversation"},
-    {"id": "sessions", "label": "Sessions", "description": "Show all sessions"},
-    {"id": "clear", "label": "Clear", "description": "Clear the screen"},
-    {"id": "quit", "label": "Quit", "description": "Exit the application"},
-]
+def _user_history_block_width() -> int:
+    return max(shutil.get_terminal_size(fallback=(170, 24)).columns, 20)
 
 
 @dataclass(frozen=True)
@@ -116,6 +119,44 @@ def _render_tool_call(tc: object) -> str:
         compact_args = compact_args[:137] + "..."
     args_line = f"\033[2;37m{compact_args}\033[0m"
     return f"{bullet} {title}\n  {args_line}"
+
+
+def _render_history_message(role: object, content: object) -> Optional[str]:
+    if not isinstance(role, str) or not isinstance(content, str):
+        return None
+    stripped = content.strip()
+    if not stripped:
+        return None
+
+    normalized_role = role.strip().lower()
+    if normalized_role == "user":
+        return render_user_prompt_history_block(
+            submitted_text=stripped,
+            prompt_label="❯ ",
+            width=_user_history_block_width(),
+        )
+    if normalized_role in {"assistant", "system"}:
+        return stripped
+    return f"{role.strip().title() or 'Message'}: {stripped}"
+
+
+def _print_history_transcript(messages: list[object]) -> None:
+    rendered_messages = []
+    for message in messages:
+        role = getattr(message, "role", None)
+        content = getattr(message, "content", None)
+        rendered = _render_history_message(role, content)
+        if rendered:
+            rendered_messages.append(rendered)
+
+    if not rendered_messages:
+        return
+
+    print()
+    for index, rendered in enumerate(rendered_messages):
+        if index > 0:
+            print()
+        print(rendered)
 
 
 def _render_diff_block(text: str) -> str:
@@ -275,14 +316,51 @@ class NovaCLI:
         log.info(
             f"Initializing NovaCLI with provider={self.settings.provider}, model={self.settings.model}")
         self.agent = build_agent(settings=self.settings)
+        self._command_registry = CommandRegistry()
+        self._command_dispatcher = CommandDispatcher(
+            registry=self._command_registry,
+            handlers={
+                "quit": self._handle_quit_command,
+                "new": self._handle_new_command,
+                "clear": self._handle_clear_command,
+                "sessions": self._handle_sessions_command,
+                "load": self._handle_load_command,
+            },
+        )
 
-        self._input_ui = PromptToolkitInputUI() if PROMPT_TOOLKIT_AVAILABLE else None
+        self._input_ui = PromptToolkitInputUI(
+            completer=CommandCompleter(
+                self._command_registry,
+                load_candidates_provider=self._get_load_completion_candidates,
+            )
+        )
         self._running = False
         self._current_session_id = None
         self._pending_input: Optional[dict] = None
         self._streaming = False
         self._stop_requested = False
         self._stream_cancel_monitor: Optional[EscapeKeyMonitor] = None
+
+    def _ensure_command_runtime(self) -> None:
+        if not hasattr(self, "_command_registry"):
+            self._command_registry = CommandRegistry()
+        if not hasattr(self, "_command_dispatcher"):
+            self._command_dispatcher = CommandDispatcher(
+                registry=self._command_registry,
+                handlers={
+                    "quit": self._handle_quit_command,
+                    "new": self._handle_new_command,
+                    "clear": self._handle_clear_command,
+                    "sessions": self._handle_sessions_command,
+                    "load": self._handle_load_command,
+                },
+            )
+
+    def _get_load_completion_candidates(self) -> list[dict]:
+        sessions = getattr(self, "_cached_sessions", None)
+        if not isinstance(sessions, list):
+            return []
+        return [session for session in sessions if isinstance(session, dict)]
 
     async def _show_sessions(self) -> None:
         """Show all sessions."""
@@ -316,9 +394,23 @@ class NovaCLI:
             return
 
         sess = self._cached_sessions[idx]
-        self._current_session_id = sess['id']
+        session_id = sess["id"]
+        loaded = await self.agent.session.load_session(session_id)
+        if loaded is None:
+            self._show_error("Failed to load session")
+            return
+
+        from nova.db.database import ensure_db
+
+        db = await ensure_db()
+        history = await db.get_history_messages(session_id)
+        self._current_session_id = session_id
         title = sess.get('title') or 'Untitled'
         self._show_info(f"Loaded session: {title}")
+        if not history:
+            self._show_info("No messages found")
+            return
+        _print_history_transcript(history)
 
     async def run_stream(self, user_input: str) -> None:
         log.info(
@@ -442,45 +534,42 @@ class NovaCLI:
             return await self._input_ui.prompt("❯ ", body=content)
         return await asyncio.to_thread(input, f"\n{content}\n> ")
 
-    async def _handle_command(self, user_input: str) -> bool:
-        if user_input.startswith('/'):
-            cmd = user_input[1:]
-            if cmd == "quit" or cmd == "q":
-                print("Bye.")
-                log.info("User requested exit")
-                self._running = False
-                _exit_process(0)
-                return True
-            elif cmd == "new":
-                self._current_session_id = None
-                return True
-            elif cmd == "clear":
-                return True
-            elif cmd == "sessions":
-                await self._show_sessions()
-                return True
-            elif cmd.startswith("load "):
-                parts = cmd.split(" ", 1)
-                if len(parts) == 2:
-                    idx = int(parts[1]) - 1
-                    await self._load_session(idx)
-                return True
-            return True
+    async def _handle_quit_command(self, command: ParsedCommand) -> bool:
+        print("Bye.")
+        log.info("User requested exit")
+        self._running = False
+        _exit_process(0)
+        return True
 
-        if user_input.lower() in ("exit", "quit", "q"):
-            print("Bye.")
-            log.info("User requested exit")
-            self._running = False
-            _exit_process(0)
-            return True
+    async def _handle_new_command(self, command: ParsedCommand) -> bool:
+        self._current_session_id = None
+        return True
 
-        return False
+    async def _handle_clear_command(self, command: ParsedCommand) -> bool:
+        return True
+
+    async def _handle_sessions_command(self, command: ParsedCommand) -> bool:
+        await self._show_sessions()
+        return True
+
+    async def _handle_load_command(self, command: ParsedCommand) -> bool:
+        if not command.args:
+            self._show_error("Usage: /load <n>")
+            return True
+        try:
+            idx = int(command.args) - 1
+        except ValueError:
+            self._show_error("Usage: /load <n>")
+            return True
+        await self._load_session(idx)
+        return True
 
     async def run(self) -> None:
+        self._ensure_command_runtime()
         sys.stdout.write("\033[?25h")
         print("Nova CLI")
         print("Type 'exit' or 'quit' to leave.")
-        print("Use /new, /sessions, /load <n>, /clear, or /quit for commands.")
+        print(self._command_registry.banner_text())
         print()
         log.info("CLI started, entering main loop")
         self._running = True
@@ -519,7 +608,7 @@ class NovaCLI:
                 if not user_input:
                     continue
 
-                if await self._handle_command(user_input):
+                if await self._command_dispatcher.dispatch(user_input):
                     continue
                 print()
                 await self.run_stream(user_input)
