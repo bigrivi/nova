@@ -157,6 +157,7 @@ def _print_history_transcript(messages: list[object]) -> None:
         if index > 0:
             print()
         print(rendered)
+    print()
 
 
 def _render_diff_block(text: str) -> str:
