@@ -122,6 +122,8 @@ def test_render_history_message_formats_user_visible_roles():
         assert "line 2" in rendered_multiline
         assert len(rendered_multiline.splitlines()) == 4
         assert all(clean_len(line) == rendered_width for line in rendered_multiline.splitlines())
+        multiline_lines = rendered_multiline.splitlines()
+        assert "  line 2" in ansi_re.sub("", multiline_lines[2])
         assert _render_history_message("assistant", "line 1\nline 2") == "• line 1\n  line 2"
         assert _render_history_message("tool", "ignored") == "Tool: ignored"
         assert _render_history_message("user", "   ") is None
@@ -155,6 +157,7 @@ def test_print_history_transcript_uses_chat_like_spacing(monkeypatch):
 
 def test_print_history_transcript_shows_ask_user_and_edit_diff(monkeypatch):
     captured = []
+    ansi_re = re.compile(r"\x1b\[[0-9;]*m")
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: captured.append(" ".join(str(arg) for arg in args)))
 
     _print_history_transcript(
@@ -182,7 +185,8 @@ def test_print_history_transcript_shows_ask_user_and_edit_diff(monkeypatch):
     )
 
     output = "\n".join(captured)
-    assert "Current City\nPlease choose a city" in output
+    clean_output = ansi_re.sub("", output)
+    assert "  ? Current City\n  Please choose a city" in clean_output
     assert "[EDIT DIFF]" in output
     assert "--- a/foo.py" in output
     assert "• Done" in output
@@ -638,6 +642,49 @@ async def test_run_stream_shows_edit_diff_on_success(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_stream_skips_redundant_requires_input_done_message(monkeypatch):
+    repl = NovaCLI.__new__(NovaCLI)
+    repl.agent = _FakeAgent(
+        [
+            (AgentEvent.TOOL_CALL, type("ToolCallStub", (), {"name": "ask_user", "arguments": '{"question":"city"}'})()),
+            (
+                AgentEvent.TOOL_RESULT,
+                {
+                    "tool": "ask_user",
+                    "tool_call_id": "call_1",
+                    "result": ToolResult(
+                        success=True,
+                        requires_input=True,
+                        content='{"question":{"header":"Current City","question":"Please tell me which city you want the weather for.","input_type":"text","options":[]}}',
+                    ),
+                },
+            ),
+            (AgentEvent.DONE, {"reason": "requires_input", "content": "User input required"}),
+        ]
+    )
+    repl._current_session_id = None
+    repl._pending_input = None
+    repl._streaming = False
+    repl._stop_requested = False
+    repl._stream_cancel_monitor = None
+    repl._create_stream_cancel_monitor = lambda callback: _FakeMonitor()
+
+    captured = []
+    repl._show_info = lambda text: captured.append(text)
+    repl._show_error = lambda text: captured.append(f"ERROR::{text}")
+
+    monkeypatch.setattr("nova.cli.interactive._stop_spinner", lambda: None)
+    monkeypatch.setattr("nova.cli.interactive._flush_stream", lambda: None)
+    monkeypatch.setattr("nova.cli.interactive._start_spinner", lambda *args, **kwargs: None)
+    monkeypatch.setattr("builtins.print", lambda *args, **kwargs: None)
+
+    await repl.run_stream("weather")
+
+    assert captured == []
+    assert repl._pending_input is not None
+
+
+@pytest.mark.asyncio
 async def test_pending_input_json_uses_human_prompt(monkeypatch):
     repl = NovaCLI.__new__(NovaCLI)
     repl.agent = _FakeAgent([])
@@ -670,7 +717,8 @@ async def test_pending_input_json_uses_human_prompt(monkeypatch):
 
     await repl.run()
 
-    assert prompted == ["Current City\nPlease tell me which city you want the weather for."]
+    clean_prompted = [re.sub(r"\x1b\[[0-9;]*m", "", text) for text in prompted]
+    assert clean_prompted == ["  ? Current City\n  Please tell me which city you want the weather for."]
 
 
 @pytest.mark.asyncio

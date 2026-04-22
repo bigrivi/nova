@@ -31,12 +31,12 @@ def _build_continuation_prefix(line_number: int):
     if line_number < 1:
         return FormattedText(
             [
-                ("class:padding", " "),
+                ("class:padding", ""),
             ]
         )
     return FormattedText(
         [
-            ("class:padding", "   "),
+            ("class:padding", "  "),
         ]
     )
 
@@ -135,7 +135,7 @@ class PromptToolkitInputUI:
 
     async def prompt(self, prompt_label: str, body: str = "") -> str:
         if body:
-            print(f"\n{body}")
+            print(f"{body}\n")
 
         result = {"text": ""}
         input_area = TextArea(

@@ -114,7 +114,7 @@ def render_user_prompt_history_block(
     width: int = 80,
 ) -> str:
     width = max(width, 1)
-    side_padding = 1
+    side_padding = 0
     content_width = max(width - (side_padding * 2), 1)
     prompt_width = _display_width(prompt_label)
     first_line_width = max(content_width - prompt_width, 0)
@@ -143,9 +143,11 @@ def render_user_prompt_history_block(
     rendered_lines.append(first_row)
 
     for line in continuation_lines:
-        fill = max(content_width - _display_width(line), 0)
+        continuation_indent = " " * prompt_width
+        fill = max(content_width - prompt_width - _display_width(line), 0)
         continuation_row = (
             _styled_segment(_USER_PROMPT_HISTORY_PADDING_STYLE, " " * side_padding)
+            + _styled_segment(_USER_PROMPT_HISTORY_PROMPT_STYLE, continuation_indent)
             + _styled_segment(_USER_PROMPT_HISTORY_TEXT_STYLE, line)
             + _styled_segment(_USER_PROMPT_HISTORY_TRAILING_STYLE, " " * fill)
             + _styled_segment(_USER_PROMPT_HISTORY_PADDING_STYLE, " " * side_padding)

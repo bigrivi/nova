@@ -61,9 +61,21 @@ def _parse_ask_user_question(content: str) -> dict:
 def _render_question_prompt(question: dict) -> str:
     header = str(question.get("header", "")).strip()
     body = str(question.get("question", "")).strip()
+    prompt_marker = "\033[1;36m? \033[0m"
+
+    def _format_header(value: str) -> str:
+        return f"  {prompt_marker}\033[1m{value}\033[0m"
+
+    def _format_body(value: str) -> str:
+        return f"  {value.replace('\n', '\n  ')}"
+
     if header and body:
-        return f"{header}\n{body}"
-    return header or body
+        return f"{_format_header(header)}\n{_format_body(body)}"
+    if header:
+        return _format_header(header)
+    if body:
+        return _format_body(body)
+    return ""
 
 
 def parse_options(content: str) -> list[PromptOption]:
@@ -594,7 +606,8 @@ class NovaCLI:
                     tool_calls_seen.append(data)
                     tc_name = data.name if hasattr(data, 'name') else str(data)
                     print(_render_tool_call(data))
-                    print()
+                    if tc_name.strip().lower() != "ask_user":
+                        print()
                     log.info(f"Tool call: {tc_name}")
                     _start_tool_spinner(tc_name)
                 elif event == AgentEvent.TOOL_RESULT:
@@ -627,6 +640,8 @@ class NovaCLI:
                         return
                     if _looks_like_error_message(content):
                         self._show_error(content)
+                        return
+                    if reason == "requires_input":
                         return
                     if content and tool_calls_seen and not text_output_seen:
                         self._show_info(content)
@@ -676,7 +691,7 @@ class NovaCLI:
     async def _prompt_followup(self, content: str) -> str:
         if self._input_ui is not None:
             return await self._input_ui.prompt("❯ ", body=content)
-        return await asyncio.to_thread(input, f"\n{content}\n> ")
+        return await asyncio.to_thread(input, f"{content}\n\n> ")
 
     async def _handle_quit_command(self, command: ParsedCommand) -> bool:
         print("Bye.")
@@ -745,7 +760,6 @@ class NovaCLI:
                         )
                         user_input = await self._prompt_followup(prompt_body)
                     self._pending_input = None
-                    print()
                     await self.run_stream(user_input)
                     print()
                     continue
