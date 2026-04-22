@@ -9,9 +9,12 @@ from nova.cli.interactive import (
     NovaCLI,
     _clear_terminal,
     _print_history_transcript,
+    _render_assistant_message,
     _render_history_message,
     _looks_like_error_message,
+    _reset_assistant_stream_state,
     _render_tool_result,
+    _stream_assistant_text,
     parse_options,
 )
 from dataclasses import replace
@@ -112,13 +115,14 @@ def test_render_history_message_formats_user_visible_roles():
         assert "❯ Hello" in ansi_re.sub("", user_lines[1])
         assert clean_len(user_lines[1]) == rendered_width
         assert clean_len(user_lines[2]) == rendered_width
-        assert _render_history_message("assistant", "Hi there") == "Hi there"
+        assert _render_history_message("assistant", "Hi there") == "• Hi there"
         rendered_multiline = _render_history_message("user", "line 1\nline 2")
         assert rendered_multiline is not None
         assert "line 1" in rendered_multiline
         assert "line 2" in rendered_multiline
         assert len(rendered_multiline.splitlines()) == 4
         assert all(clean_len(line) == rendered_width for line in rendered_multiline.splitlines())
+        assert _render_history_message("assistant", "line 1\nline 2") == "• line 1\n  line 2"
         assert _render_history_message("tool", "ignored") == "Tool: ignored"
         assert _render_history_message("user", "   ") is None
     finally:
@@ -145,7 +149,7 @@ def test_print_history_transcript_uses_chat_like_spacing(monkeypatch):
     assert "❯ hello" in ansi_re.sub("", block_lines[1])
     assert all(len(ansi_re.sub("", line)) == 20 for line in block_lines)
     assert captured[2] == ""
-    assert captured[3] == "hi"
+    assert captured[3] == "• hi"
     assert captured[4] == ""
 
 
@@ -181,8 +185,52 @@ def test_print_history_transcript_shows_ask_user_and_edit_diff(monkeypatch):
     assert "Current City\nPlease choose a city" in output
     assert "[EDIT DIFF]" in output
     assert "--- a/foo.py" in output
-    assert "Done" in output
+    assert "• Done" in output
     assert "/tmp" not in output
+
+
+def test_stream_assistant_text_adds_prefix_only_once(monkeypatch):
+    captured: list[str] = []
+    monkeypatch.setattr("nova.cli.interactive._stream_text", lambda text: captured.append(text))
+
+    _reset_assistant_stream_state()
+    _stream_assistant_text("Hello", is_first_chunk=True)
+    _stream_assistant_text(" world", is_first_chunk=False)
+
+    assert captured == ["• Hello", " world"]
+
+
+def test_render_assistant_message_indents_continuation_lines():
+    assert _render_assistant_message("line 1\nline 2\nline 3") == "• line 1\n  line 2\n  line 3"
+
+
+def test_render_assistant_message_wraps_long_lines(monkeypatch):
+    monkeypatch.setattr("nova.cli.interactive._user_history_block_width", lambda: 10)
+
+    assert _render_assistant_message("abcdefghijk") == "• abcdefghij\n  k"
+
+
+def test_stream_assistant_text_indents_multiline_followups(monkeypatch):
+    captured: list[str] = []
+    monkeypatch.setattr("nova.cli.interactive._stream_text", lambda text: captured.append(text))
+
+    _reset_assistant_stream_state()
+    _stream_assistant_text("line 1\nline", is_first_chunk=True)
+    _stream_assistant_text(" 2\nline 3", is_first_chunk=False)
+
+    assert captured == ["• line 1\n  line", " 2\n  line 3"]
+
+
+def test_stream_assistant_text_wraps_auto_lines(monkeypatch):
+    captured: list[str] = []
+    monkeypatch.setattr("nova.cli.interactive._stream_text", lambda text: captured.append(text))
+    monkeypatch.setattr("nova.cli.interactive._user_history_block_width", lambda: 10)
+
+    _reset_assistant_stream_state()
+    _stream_assistant_text("abcdefgh", is_first_chunk=True)
+    _stream_assistant_text("ijk", is_first_chunk=False)
+
+    assert captured == ["• abcdefgh", "ij\n  k"]
 
 
 def test_render_tool_result_truncates_long_diff():
@@ -429,7 +477,7 @@ async def test_load_session_reads_history_messages_from_db(monkeypatch):
     assert "❯ hello" in ansi_re.sub("", block_lines[1])
     assert all(len(ansi_re.sub("", line)) == 20 for line in block_lines)
     assert printed[2] == ""
-    assert printed[3] == "hi"
+    assert printed[3] == "• hi"
     assert printed[4] == ""
 
 

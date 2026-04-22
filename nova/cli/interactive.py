@@ -9,6 +9,7 @@ import threading
 import time
 from dataclasses import dataclass
 from typing import Optional
+from prompt_toolkit.utils import get_cwidth
 
 from nova.agent import AgentEvent
 from nova.agent import Agent
@@ -32,6 +33,8 @@ _spinner_started_at: Optional[float] = None
 _spinner_last_render_width = 0
 _spinner_message = "Thinking..."
 _MAX_RENDERED_DIFF_LINES = 80
+_ASSISTANT_MESSAGE_PREFIX = "• "
+_assistant_stream_line_start = True
 
 
 def _user_history_block_width() -> int:
@@ -89,6 +92,91 @@ def _stream_text(chunk: str) -> None:
     print(chunk, end="", flush=True)
 
 
+def _assistant_continuation_prefix() -> str:
+    return " " * len(_ASSISTANT_MESSAGE_PREFIX)
+
+
+def _assistant_content_width() -> int:
+    return max(_user_history_block_width() - get_cwidth(_ASSISTANT_MESSAGE_PREFIX), 10)
+
+
+def _render_assistant_message(content: str) -> str:
+    return _format_assistant_text(content, is_first_chunk=True)
+
+
+def _reset_assistant_stream_state() -> None:
+    global _assistant_stream_line_start
+    _assistant_stream_line_start = True
+    _stream_assistant_text._line_width = 0
+
+
+def _wrap_assistant_chunk(
+    chunk: str,
+    *,
+    current_width: int,
+    is_first_chunk: bool,
+    is_line_start: bool,
+) -> tuple[str, int, bool]:
+    if not chunk:
+        return "", current_width, is_line_start
+
+    rendered_parts: list[str] = []
+    line_width = current_width
+    line_start = is_line_start
+    available_width = _assistant_content_width()
+    first_prefix = _ASSISTANT_MESSAGE_PREFIX
+    continuation_prefix = _assistant_continuation_prefix()
+
+    for char in chunk:
+        if line_start:
+            prefix = first_prefix if is_first_chunk else continuation_prefix
+            rendered_parts.append(prefix)
+            line_width = 0
+            line_start = False
+            is_first_chunk = False
+
+        if char == "\n":
+            rendered_parts.append(char)
+            line_width = 0
+            line_start = True
+            continue
+
+        char_width = get_cwidth(char)
+        if line_width > 0 and char_width > 0 and line_width + char_width > available_width:
+            rendered_parts.append("\n")
+            rendered_parts.append(continuation_prefix)
+            line_width = 0
+
+        rendered_parts.append(char)
+        if char_width > 0:
+            line_width += char_width
+
+    return "".join(rendered_parts), line_width, line_start
+
+
+def _format_assistant_text(content: str, *, is_first_chunk: bool) -> str:
+    rendered, _, _ = _wrap_assistant_chunk(
+        content,
+        current_width=0,
+        is_first_chunk=is_first_chunk,
+        is_line_start=True,
+    )
+    return rendered
+
+
+def _stream_assistant_text(chunk: str, *, is_first_chunk: bool) -> None:
+    global _assistant_stream_line_start
+    rendered, line_width, line_start = _wrap_assistant_chunk(
+        chunk,
+        current_width=0 if _assistant_stream_line_start else getattr(_stream_assistant_text, "_line_width", 0),
+        is_first_chunk=is_first_chunk,
+        is_line_start=_assistant_stream_line_start,
+    )
+    _stream_assistant_text._line_width = line_width
+    _assistant_stream_line_start = line_start
+    _stream_text(rendered)
+
+
 def _flush_stream() -> None:
     """Commit buffered text to screen."""
     had_output = bool(_accumulated_text)
@@ -144,7 +232,7 @@ def _render_history_message(role: object, content: object) -> Optional[str]:
             width=_user_history_block_width(),
         )
     if normalized_role in {"assistant", "system"}:
-        return stripped
+        return _render_assistant_message(stripped)
     return f"{role.strip().title() or 'Message'}: {stripped}"
 
 
@@ -472,6 +560,7 @@ class NovaCLI:
             f"Starting run_stream with session_id={self._current_session_id}")
         tool_calls_seen = []
         text_output_seen = False
+        _reset_assistant_stream_state()
         self._streaming = True
         self._stop_requested = False
         loop = asyncio.get_running_loop()
@@ -483,8 +572,8 @@ class NovaCLI:
             async for event, data in self.agent.chat_stream(user_input, session_id=self._current_session_id):
                 if event == AgentEvent.TEXT_DELTA:
                     _stop_spinner()
+                    _stream_assistant_text(data, is_first_chunk=not text_output_seen)
                     text_output_seen = True
-                    _stream_text(data)
                     continue
                 elif event == AgentEvent.LLM_START:
                     log.info("LLM call started")
