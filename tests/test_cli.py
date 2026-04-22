@@ -7,6 +7,7 @@ from nova.cli.commands import CommandRegistry
 from nova.cli.completion import CommandCompleter
 from nova.cli.interactive import (
     NovaCLI,
+    _clear_terminal,
     _print_history_transcript,
     _render_history_message,
     _looks_like_error_message,
@@ -137,7 +138,7 @@ def test_print_history_transcript_uses_chat_like_spacing(monkeypatch):
         ]
     )
 
-    assert len(captured) == 4
+    assert len(captured) == 5
     assert captured[0] == ""
     block_lines = captured[1].splitlines()
     assert len(block_lines) == 3
@@ -145,6 +146,43 @@ def test_print_history_transcript_uses_chat_like_spacing(monkeypatch):
     assert all(len(ansi_re.sub("", line)) == 20 for line in block_lines)
     assert captured[2] == ""
     assert captured[3] == "hi"
+    assert captured[4] == ""
+
+
+def test_print_history_transcript_shows_ask_user_and_edit_diff(monkeypatch):
+    captured = []
+    monkeypatch.setattr("builtins.print", lambda *args, **kwargs: captured.append(" ".join(str(arg) for arg in args)))
+
+    _print_history_transcript(
+        [
+            Message(id="m1", session_id="sess-1", role="assistant", content="", tool_calls=[{"id": "call_1", "name": "ask_user"}]),
+            Message(
+                id="m2",
+                session_id="sess-1",
+                role="tool",
+                tool_call_id="call_1",
+                content='{"question":{"header":"Current City","question":"Please choose a city","input_type":"select","options":[]}}',
+            ),
+            Message(id="m3", session_id="sess-1", role="assistant", content="", tool_calls=[{"id": "call_2", "name": "edit"}]),
+            Message(
+                id="m4",
+                session_id="sess-1",
+                role="tool",
+                tool_call_id="call_2",
+                content="Changes applied to foo.py:\n\n--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new\n",
+            ),
+            Message(id="m5", session_id="sess-1", role="assistant", content="Done"),
+            Message(id="m6", session_id="sess-1", role="assistant", content="", tool_calls=[{"id": "call_3", "name": "bash"}]),
+            Message(id="m7", session_id="sess-1", role="tool", tool_call_id="call_3", content="/tmp"),
+        ]
+    )
+
+    output = "\n".join(captured)
+    assert "Current City\nPlease choose a city" in output
+    assert "[EDIT DIFF]" in output
+    assert "--- a/foo.py" in output
+    assert "Done" in output
+    assert "/tmp" not in output
 
 
 def test_render_tool_result_truncates_long_diff():
@@ -187,6 +225,30 @@ async def test_run_shows_cli_banner_with_slash_commands(monkeypatch):
     assert "Use /new, /sessions, /load <n>, /clear, or /quit for commands." in captured
 
 
+@pytest.mark.asyncio
+async def test_clear_command_redraws_banner(monkeypatch):
+    repl = NovaCLI.__new__(NovaCLI)
+    repl._command_registry = CommandRegistry()
+
+    captured = []
+    monkeypatch.setattr(
+        "nova.cli.interactive._clear_terminal",
+        lambda: captured.append("__cleared__"),
+    )
+    monkeypatch.setattr(
+        "builtins.print",
+        lambda *args, **kwargs: captured.append(" ".join(str(arg) for arg in args)),
+    )
+
+    handled = await repl._handle_clear_command(None)
+
+    assert handled is True
+    assert captured[0] == "__cleared__"
+    assert "Nova CLI" in captured
+    assert "Type 'exit' or 'quit' to leave." in captured
+    assert "Use /new, /sessions, /load <n>, /clear, or /quit for commands." in captured
+
+
 def test_parse_options_requires_json_payload():
     content = """## Questions
 
@@ -216,6 +278,27 @@ def test_command_registry_parses_slash_and_bare_commands():
     assert parsed_bare.spec.id == "quit"
 
     assert registry.parse("hello nova") is None
+
+
+def test_clear_terminal_resets_screen(monkeypatch):
+    written: list[str] = []
+    flushed = {"called": False}
+
+    monkeypatch.setattr("nova.cli.interactive._stop_spinner", lambda: None)
+    monkeypatch.setattr("nova.cli.interactive._flush_stream", lambda: None)
+    monkeypatch.setattr(
+        "nova.cli.interactive.sys.stdout.write",
+        lambda text: written.append(text),
+    )
+    monkeypatch.setattr(
+        "nova.cli.interactive.sys.stdout.flush",
+        lambda: flushed.__setitem__("called", True),
+    )
+
+    _clear_terminal()
+
+    assert written == ["\033[2J\033[H\033[3J"]
+    assert flushed["called"] is True
 
 
 def test_command_completer_suggests_new_for_n_prefix():
@@ -308,7 +391,7 @@ async def test_load_session_reads_history_messages_from_db(monkeypatch):
             return {"id": session_id}
 
     class _FakeDb:
-        async def get_history_messages(self, session_id):
+        async def get_messages(self, session_id):
             assert session_id == "sess-1"
             return [
                 Message(id="m1", session_id=session_id, role="user", content="hello"),
@@ -339,7 +422,7 @@ async def test_load_session_reads_history_messages_from_db(monkeypatch):
     assert captured == [
         "Loaded session: Greeting",
     ]
-    assert len(printed) == 4
+    assert len(printed) == 5
     assert printed[0] == ""
     block_lines = printed[1].splitlines()
     assert len(block_lines) == 3
@@ -347,6 +430,7 @@ async def test_load_session_reads_history_messages_from_db(monkeypatch):
     assert all(len(ansi_re.sub("", line)) == 20 for line in block_lines)
     assert printed[2] == ""
     assert printed[3] == "hi"
+    assert printed[4] == ""
 
 
 @pytest.mark.asyncio
@@ -356,7 +440,7 @@ async def test_load_session_reports_missing_history(monkeypatch):
             return {"id": session_id}
 
     class _FakeDb:
-        async def get_history_messages(self, session_id):
+        async def get_messages(self, session_id):
             return []
 
     repl = NovaCLI.__new__(NovaCLI)

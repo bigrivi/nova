@@ -97,6 +97,14 @@ def _flush_stream() -> None:
         print()
 
 
+def _clear_terminal() -> None:
+    """Clear the visible terminal and reset the cursor position."""
+    _stop_spinner()
+    _flush_stream()
+    sys.stdout.write("\033[2J\033[H\033[3J")
+    sys.stdout.flush()
+
+
 def _render_tool_call(tc: object) -> str:
     name = tc.name if hasattr(tc, "name") else str(tc)
     arguments = tc.arguments if hasattr(tc, "arguments") else ""
@@ -140,12 +148,58 @@ def _render_history_message(role: object, content: object) -> Optional[str]:
     return f"{role.strip().title() or 'Message'}: {stripped}"
 
 
+def _tool_call_id(tool_call: object) -> Optional[str]:
+    if isinstance(tool_call, dict):
+        value = tool_call.get("id")
+    else:
+        value = getattr(tool_call, "id", None)
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _tool_call_name(tool_call: object) -> Optional[str]:
+    if isinstance(tool_call, dict):
+        value = tool_call.get("name")
+    else:
+        value = getattr(tool_call, "name", None)
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _render_history_tool_message(tool_name: object, content: object) -> Optional[str]:
+    if not isinstance(tool_name, str) or not isinstance(content, str):
+        return None
+
+    normalized_name = tool_name.strip().lower()
+    if normalized_name == "ask_user":
+        question = _parse_ask_user_question(content)
+        if question:
+            return _render_question_prompt(question)
+        stripped = content.strip()
+        return stripped or None
+
+    return _render_tool_result(normalized_name, content)
+
+
 def _print_history_transcript(messages: list[object]) -> None:
+    tool_call_names: dict[str, str] = {}
     rendered_messages = []
     for message in messages:
         role = getattr(message, "role", None)
+        tool_calls = getattr(message, "tool_calls", None)
+        if isinstance(tool_calls, list):
+            for tool_call in tool_calls:
+                tool_call_id = _tool_call_id(tool_call)
+                tool_name = _tool_call_name(tool_call)
+                if tool_call_id and tool_name:
+                    tool_call_names[tool_call_id] = tool_name
+
         content = getattr(message, "content", None)
-        rendered = _render_history_message(role, content)
+        if isinstance(role, str) and role.strip().lower() == "tool":
+            rendered = _render_history_tool_message(
+                tool_call_names.get(getattr(message, "tool_call_id", None), ""),
+                content,
+            )
+        else:
+            rendered = _render_history_message(role, content)
         if rendered:
             rendered_messages.append(rendered)
 
@@ -404,7 +458,7 @@ class NovaCLI:
         from nova.db.database import ensure_db
 
         db = await ensure_db()
-        history = await db.get_history_messages(session_id)
+        history = await db.get_messages(session_id)
         self._current_session_id = session_id
         title = sess.get('title') or 'Untitled'
         self._show_info(f"Loaded session: {title}")
@@ -546,7 +600,15 @@ class NovaCLI:
         self._current_session_id = None
         return True
 
+    def _print_banner(self) -> None:
+        print("Nova CLI")
+        print("Type 'exit' or 'quit' to leave.")
+        print(self._command_registry.banner_text())
+        print()
+
     async def _handle_clear_command(self, command: ParsedCommand) -> bool:
+        _clear_terminal()
+        self._print_banner()
         return True
 
     async def _handle_sessions_command(self, command: ParsedCommand) -> bool:
@@ -568,10 +630,7 @@ class NovaCLI:
     async def run(self) -> None:
         self._ensure_command_runtime()
         sys.stdout.write("\033[?25h")
-        print("Nova CLI")
-        print("Type 'exit' or 'quit' to leave.")
-        print(self._command_registry.banner_text())
-        print()
+        self._print_banner()
         log.info("CLI started, entering main loop")
         self._running = True
 
