@@ -3,20 +3,13 @@ from prompt_toolkit.document import Document
 import re
 
 from nova.agent.core import AgentEvent
-from nova.cli.commands import CommandRegistry
+from nova.cli.commands import CommandDispatcher, CommandRegistry
 from nova.cli.completion import CommandCompleter
-from nova.cli.interactive import (
-    NovaCLI,
-    _clear_terminal,
-    _print_history_transcript,
-    _render_assistant_message,
-    _render_history_message,
-    _looks_like_error_message,
-    _reset_assistant_stream_state,
-    _render_tool_result,
-    _stream_assistant_text,
-    parse_options,
-)
+from nova.cli.repl import NovaCLI, parse_options
+from nova.cli.session_manager import SessionManager
+from nova.cli.terminal_display import TerminalDisplay
+from nova.cli.tool_rendering import render_tool_result
+from nova.cli.utils import looks_like_error_message
 from dataclasses import replace
 
 from nova.db.database import Message
@@ -36,10 +29,31 @@ class _FakeAgent:
     def __init__(self, events):
         self._events = events
         self.session = None
+        self.interrupted = False
 
     async def chat_stream(self, user_input, session_id=None):
         for item in self._events:
             yield item
+
+    def interrupt(self):
+        self.interrupted = True
+
+
+def _make_test_display(*, width: int = 20) -> TerminalDisplay:
+    return TerminalDisplay(width_provider=lambda: width)
+
+
+def _init_test_repl(repl: NovaCLI, *, width: int = 20) -> NovaCLI:
+    repl._display = _make_test_display(width=width)
+    repl._session_manager = SessionManager(
+        agent=repl.agent,
+        display=repl._display,
+    )
+    return repl
+
+
+def _make_test_session_manager(repl: NovaCLI) -> SessionManager:
+    return SessionManager(agent=repl.agent, display=repl._display)
 
 
 def test_novacli_builds_runtime_from_settings(monkeypatch):
@@ -50,7 +64,7 @@ def test_novacli_builds_runtime_from_settings(monkeypatch):
         return _FakeAgent([])
 
     monkeypatch.setattr(
-        "nova.cli.interactive.build_agent",
+        "nova.cli.repl.build_agent",
         fake_build_agent,
     )
     settings = replace(
@@ -71,14 +85,14 @@ def test_novacli_builds_runtime_from_settings(monkeypatch):
 
 
 def test_looks_like_error_message():
-    assert _looks_like_error_message("Error: HTTP 400 from provider")
-    assert _looks_like_error_message(" error: bad request ")
-    assert not _looks_like_error_message("")
-    assert not _looks_like_error_message("Hello world")
+    assert looks_like_error_message("Error: HTTP 400 from provider")
+    assert looks_like_error_message(" error: bad request ")
+    assert not looks_like_error_message("")
+    assert not looks_like_error_message("Hello world")
 
 
 def test_render_tool_result_formats_edit_diff():
-    rendered = _render_tool_result(
+    rendered = render_tool_result(
         "edit",
         "Changes applied to foo.py:\n\n--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new\n",
     )
@@ -92,52 +106,50 @@ def test_render_tool_result_formats_edit_diff():
 
 
 def test_render_tool_result_ignores_other_tools():
-    assert _render_tool_result("bash", "stdout here") is None
+    rendered = render_tool_result("bash", "stdout here")
+    assert rendered is not None
+    assert "stdout here" in rendered
 
 
 def test_render_history_message_formats_user_visible_roles():
     ansi_re = re.compile(r"\x1b\[[0-9;]*m")
     rendered_width = 20
     clean_len = lambda s: len(ansi_re.sub("", s))
-    from nova.cli import interactive as cli_interactive
-    original_width = cli_interactive._user_history_block_width
-    cli_interactive._user_history_block_width = lambda: rendered_width
-    try:
-        rendered_user = _render_history_message("user", " Hello ")
-        assert rendered_user is not None
-        assert "❯ " in rendered_user
-        assert "Hello" in rendered_user
-        assert "\033[" in rendered_user
-        assert rendered_user.endswith("\033[0m")
-        user_lines = rendered_user.splitlines()
-        assert len(user_lines) == 3
-        assert clean_len(user_lines[0]) == rendered_width
-        assert "❯ Hello" in ansi_re.sub("", user_lines[1])
-        assert clean_len(user_lines[1]) == rendered_width
-        assert clean_len(user_lines[2]) == rendered_width
-        assert _render_history_message("assistant", "Hi there") == "• Hi there"
-        rendered_multiline = _render_history_message("user", "line 1\nline 2")
-        assert rendered_multiline is not None
-        assert "line 1" in rendered_multiline
-        assert "line 2" in rendered_multiline
-        assert len(rendered_multiline.splitlines()) == 4
-        assert all(clean_len(line) == rendered_width for line in rendered_multiline.splitlines())
-        multiline_lines = rendered_multiline.splitlines()
-        assert "  line 2" in ansi_re.sub("", multiline_lines[2])
-        assert _render_history_message("assistant", "line 1\nline 2") == "• line 1\n  line 2"
-        assert _render_history_message("tool", "ignored") == "Tool: ignored"
-        assert _render_history_message("user", "   ") is None
-    finally:
-        cli_interactive._user_history_block_width = original_width
+    display = _make_test_display(width=rendered_width)
+
+    rendered_user = display.render_history_message("user", " Hello ")
+    assert rendered_user is not None
+    assert "❯ " in rendered_user
+    assert "Hello" in rendered_user
+    assert "\033[" in rendered_user
+    assert rendered_user.endswith("\033[0m")
+    user_lines = rendered_user.splitlines()
+    assert len(user_lines) == 3
+    assert clean_len(user_lines[0]) == rendered_width
+    assert "❯ Hello" in ansi_re.sub("", user_lines[1])
+    assert clean_len(user_lines[1]) == rendered_width
+    assert clean_len(user_lines[2]) == rendered_width
+    assert display.render_history_message("assistant", "Hi there") == "• Hi there"
+    rendered_multiline = display.render_history_message("user", "line 1\nline 2")
+    assert rendered_multiline is not None
+    assert "line 1" in rendered_multiline
+    assert "line 2" in rendered_multiline
+    assert len(rendered_multiline.splitlines()) == 4
+    assert all(clean_len(line) == rendered_width for line in rendered_multiline.splitlines())
+    multiline_lines = rendered_multiline.splitlines()
+    assert "  line 2" in ansi_re.sub("", multiline_lines[2])
+    assert display.render_history_message("assistant", "line 1\nline 2") == "• line 1\n  line 2"
+    assert display.render_history_message("tool", "ignored") == "Tool: ignored"
+    assert display.render_history_message("user", "   ") is None
 
 
 def test_print_history_transcript_uses_chat_like_spacing(monkeypatch):
     captured = []
     ansi_re = re.compile(r"\x1b\[[0-9;]*m")
-    monkeypatch.setattr("nova.cli.interactive._user_history_block_width", lambda: 20)
+    display = _make_test_display(width=20)
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: captured.append(" ".join(str(arg) for arg in args)))
 
-    _print_history_transcript(
+    display.print_history_transcript(
         [
             Message(id="m1", session_id="sess-1", role="user", content="hello"),
             Message(id="m2", session_id="sess-1", role="assistant", content="hi"),
@@ -158,9 +170,10 @@ def test_print_history_transcript_uses_chat_like_spacing(monkeypatch):
 def test_print_history_transcript_shows_ask_user_and_edit_diff(monkeypatch):
     captured = []
     ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+    display = _make_test_display(width=20)
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: captured.append(" ".join(str(arg) for arg in args)))
 
-    _print_history_transcript(
+    display.print_history_transcript(
         [
             Message(id="m1", session_id="sess-1", role="assistant", content="", tool_calls=[{"id": "call_1", "name": "ask_user"}]),
             Message(
@@ -190,49 +203,51 @@ def test_print_history_transcript_shows_ask_user_and_edit_diff(monkeypatch):
     assert "[EDIT DIFF]" in output
     assert "--- a/foo.py" in output
     assert "• Done" in output
-    assert "/tmp" not in output
+    assert "└ /tmp" in clean_output
 
 
 def test_stream_assistant_text_adds_prefix_only_once(monkeypatch):
     captured: list[str] = []
-    monkeypatch.setattr("nova.cli.interactive._stream_text", lambda text: captured.append(text))
+    display = _make_test_display()
+    monkeypatch.setattr(display, "_stream_text", lambda text: captured.append(text))
 
-    _reset_assistant_stream_state()
-    _stream_assistant_text("Hello", is_first_chunk=True)
-    _stream_assistant_text(" world", is_first_chunk=False)
+    display.reset()
+    display.write_text_chunk("Hello", is_first=True)
+    display.write_text_chunk(" world", is_first=False)
 
     assert captured == ["• Hello", " world"]
 
 
 def test_render_assistant_message_indents_continuation_lines():
-    assert _render_assistant_message("line 1\nline 2\nline 3") == "• line 1\n  line 2\n  line 3"
+    display = _make_test_display()
+    assert display.render_assistant_message("line 1\nline 2\nline 3") == "• line 1\n  line 2\n  line 3"
 
 
 def test_render_assistant_message_wraps_long_lines(monkeypatch):
-    monkeypatch.setattr("nova.cli.interactive._user_history_block_width", lambda: 10)
-
-    assert _render_assistant_message("abcdefghijk") == "• abcdefghij\n  k"
+    display = _make_test_display(width=10)
+    assert display.render_assistant_message("abcdefghijk") == "• abcdefghij\n  k"
 
 
 def test_stream_assistant_text_indents_multiline_followups(monkeypatch):
     captured: list[str] = []
-    monkeypatch.setattr("nova.cli.interactive._stream_text", lambda text: captured.append(text))
+    display = _make_test_display()
+    monkeypatch.setattr(display, "_stream_text", lambda text: captured.append(text))
 
-    _reset_assistant_stream_state()
-    _stream_assistant_text("line 1\nline", is_first_chunk=True)
-    _stream_assistant_text(" 2\nline 3", is_first_chunk=False)
+    display.reset()
+    display.write_text_chunk("line 1\nline", is_first=True)
+    display.write_text_chunk(" 2\nline 3", is_first=False)
 
     assert captured == ["• line 1\n  line", " 2\n  line 3"]
 
 
 def test_stream_assistant_text_wraps_auto_lines(monkeypatch):
     captured: list[str] = []
-    monkeypatch.setattr("nova.cli.interactive._stream_text", lambda text: captured.append(text))
-    monkeypatch.setattr("nova.cli.interactive._user_history_block_width", lambda: 10)
+    display = _make_test_display(width=10)
+    monkeypatch.setattr(display, "_stream_text", lambda text: captured.append(text))
 
-    _reset_assistant_stream_state()
-    _stream_assistant_text("abcdefgh", is_first_chunk=True)
-    _stream_assistant_text("ijk", is_first_chunk=False)
+    display.reset()
+    display.write_text_chunk("abcdefgh", is_first=True)
+    display.write_text_chunk("ijk", is_first=False)
 
     assert captured == ["• abcdefgh", "ij\n  k"]
 
@@ -240,7 +255,7 @@ def test_stream_assistant_text_wraps_auto_lines(monkeypatch):
 def test_render_tool_result_truncates_long_diff():
     diff_lines = ["--- a/foo.py", "+++ b/foo.py", "@@ -1 +1 @@"]
     diff_lines.extend(f"+line {i}" for i in range(100))
-    rendered = _render_tool_result(
+    rendered = render_tool_result(
         "write",
         "File updated - foo.py:\n\n" + "\n".join(diff_lines) + "\n",
     )
@@ -250,15 +265,53 @@ def test_render_tool_result_truncates_long_diff():
     assert "... (23 more diff lines not shown)" in rendered
 
 
+def test_print_tool_result_skips_ask_user_payload(monkeypatch):
+    display = _make_test_display()
+    captured: list[str] = []
+    monkeypatch.setattr("builtins.print", lambda *args, **kwargs: captured.append(" ".join(str(arg) for arg in args)))
+
+    display.print_tool_result(
+        "ask_user",
+        '{"question":{"header":"需要位置信息","question":"请告诉我城市","input_type":"text","options":[]}}',
+    )
+
+    assert captured == []
+
+
+def test_print_tool_call_simplifies_ask_user(monkeypatch):
+    display = _make_test_display()
+    captured: list[str] = []
+    tool_call = type(
+        "ToolCallStub",
+        (),
+        {
+            "name": "ask_user",
+            "arguments": '{"question":{"header":"需要位置信息","question":"请告诉我城市","input_type":"text","options":[]}}',
+        },
+    )()
+    monkeypatch.setattr("builtins.print", lambda *args, **kwargs: captured.append(" ".join(str(arg) for arg in args)))
+
+    display.print_tool_call(tool_call, "ask_user")
+
+    assert len(captured) == 1
+    assert "Asking for user input" in captured[0]
+    assert "需要位置信息" not in captured[0]
+    assert '"question"' not in captured[0]
+
+
 @pytest.mark.asyncio
 async def test_run_shows_cli_banner_with_slash_commands(monkeypatch):
     repl = NovaCLI.__new__(NovaCLI)
     repl.agent = _FakeAgent([])
-    repl._current_session_id = None
+    _init_test_repl(repl)
+    repl._command_registry = CommandRegistry()
+    repl._command_dispatcher = CommandDispatcher(
+        registry=repl._command_registry,
+        handlers={},
+    )
     repl._pending_input = None
     repl._streaming = False
     repl._stop_requested = False
-    repl._stream_cancel_monitor = None
     repl._running = False
     repl._input_ui = None
 
@@ -280,13 +333,12 @@ async def test_run_shows_cli_banner_with_slash_commands(monkeypatch):
 @pytest.mark.asyncio
 async def test_clear_command_redraws_banner(monkeypatch):
     repl = NovaCLI.__new__(NovaCLI)
+    repl.agent = _FakeAgent([])
+    _init_test_repl(repl)
     repl._command_registry = CommandRegistry()
 
     captured = []
-    monkeypatch.setattr(
-        "nova.cli.interactive._clear_terminal",
-        lambda: captured.append("__cleared__"),
-    )
+    monkeypatch.setattr(repl._display, "clear_terminal", lambda: captured.append("__cleared__"))
     monkeypatch.setattr(
         "builtins.print",
         lambda *args, **kwargs: captured.append(" ".join(str(arg) for arg in args)),
@@ -335,19 +387,20 @@ def test_command_registry_parses_slash_and_bare_commands():
 def test_clear_terminal_resets_screen(monkeypatch):
     written: list[str] = []
     flushed = {"called": False}
+    display = _make_test_display()
 
-    monkeypatch.setattr("nova.cli.interactive._stop_spinner", lambda: None)
-    monkeypatch.setattr("nova.cli.interactive._flush_stream", lambda: None)
+    monkeypatch.setattr(display.spinner, "stop", lambda: None)
+    monkeypatch.setattr(display, "flush", lambda: None)
     monkeypatch.setattr(
-        "nova.cli.interactive.sys.stdout.write",
+        "nova.cli.terminal_display.sys.stdout.write",
         lambda text: written.append(text),
     )
     monkeypatch.setattr(
-        "nova.cli.interactive.sys.stdout.flush",
+        "nova.cli.terminal_display.sys.stdout.flush",
         lambda: flushed.__setitem__("called", True),
     )
 
-    _clear_terminal()
+    display.clear_terminal()
 
     assert written == ["\033[2J\033[H\033[3J"]
     assert flushed["called"] is True
@@ -453,14 +506,14 @@ async def test_load_session_reads_history_messages_from_db(monkeypatch):
     repl = NovaCLI.__new__(NovaCLI)
     repl.agent = _FakeAgent([])
     repl.agent.session = _FakeSessionManager()
-    repl._cached_sessions = [{"id": "sess-1", "title": "Greeting"}]
-    repl._current_session_id = None
+    _init_test_repl(repl)
 
     captured = []
-    repl._show_info = lambda text: captured.append(text)
-    repl._show_error = lambda text: captured.append(f"ERROR::{text}")
+    repl._session_manager = _make_test_session_manager(repl)
+    monkeypatch.setattr(repl._display, "info", lambda text: captured.append(text))
+    monkeypatch.setattr(repl._display, "error", lambda text: captured.append(f"ERROR::{text}"))
+    repl._session_manager.set_cached_sessions_for_tests([{"id": "sess-1", "title": "Greeting"}])
     printed = []
-    monkeypatch.setattr("nova.cli.interactive._user_history_block_width", lambda: 20)
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: printed.append(" ".join(str(arg) for arg in args)))
 
     async def fake_ensure_db():
@@ -468,9 +521,9 @@ async def test_load_session_reads_history_messages_from_db(monkeypatch):
 
     monkeypatch.setattr("nova.db.database.ensure_db", fake_ensure_db)
 
-    await repl._load_session(0)
+    await repl._session_manager.load_session(0)
 
-    assert repl._current_session_id == "sess-1"
+    assert repl._session_manager.current_id == "sess-1"
     assert captured == [
         "Loaded session: Greeting",
     ]
@@ -498,19 +551,20 @@ async def test_load_session_reports_missing_history(monkeypatch):
     repl = NovaCLI.__new__(NovaCLI)
     repl.agent = _FakeAgent([])
     repl.agent.session = _FakeSessionManager()
-    repl._cached_sessions = [{"id": "sess-2", "title": "Empty"}]
-    repl._current_session_id = None
+    _init_test_repl(repl)
 
     captured = []
-    repl._show_info = lambda text: captured.append(text)
-    repl._show_error = lambda text: captured.append(f"ERROR::{text}")
+    repl._session_manager = _make_test_session_manager(repl)
+    monkeypatch.setattr(repl._display, "info", lambda text: captured.append(text))
+    monkeypatch.setattr(repl._display, "error", lambda text: captured.append(f"ERROR::{text}"))
+    repl._session_manager.set_cached_sessions_for_tests([{"id": "sess-2", "title": "Empty"}])
 
     async def fake_ensure_db():
         return _FakeDb()
 
     monkeypatch.setattr("nova.db.database.ensure_db", fake_ensure_db)
 
-    await repl._load_session(0)
+    await repl._session_manager.load_session(0)
 
     assert captured == [
         "Loaded session: Empty",
@@ -544,20 +598,21 @@ def test_parse_options_respects_input_type_text():
 async def test_run_stream_shows_provider_error(monkeypatch):
     repl = NovaCLI.__new__(NovaCLI)
     repl.agent = _FakeAgent([(AgentEvent.DONE, "Error: HTTP 400 from provider: bad request")])
-    repl._current_session_id = None
+    _init_test_repl(repl)
     repl._pending_input = None
     repl._streaming = False
     repl._stop_requested = False
-    repl._stream_cancel_monitor = None
-    repl._create_stream_cancel_monitor = lambda callback: _FakeMonitor()
+    repl._input_ui = None
+    repl.create_cancel_monitor = lambda callback: _FakeMonitor()
 
     captured = []
-    repl._show_info = lambda text: captured.append(text)
-    repl._show_error = lambda text: captured.append(f"ERROR::{text}")
+    monkeypatch.setattr(repl._display, "info", lambda text: captured.append(text))
+    monkeypatch.setattr(repl._display, "error", lambda text: captured.append(f"ERROR::{text}"))
 
-    monkeypatch.setattr("nova.cli.interactive._stop_spinner", lambda: None)
-    monkeypatch.setattr("nova.cli.interactive._flush_stream", lambda: None)
-    monkeypatch.setattr("nova.cli.interactive._start_spinner", lambda *args, **kwargs: None)
+    monkeypatch.setattr(repl._display.spinner, "stop", lambda: None)
+    monkeypatch.setattr(repl._display, "flush", lambda: None)
+    monkeypatch.setattr(repl._display.spinner, "start_llm", lambda *args, **kwargs: None)
+    monkeypatch.setattr(repl._display.spinner, "start_tool", lambda *args, **kwargs: None)
 
     await repl.run_stream("hi")
 
@@ -574,21 +629,22 @@ async def test_run_stream_does_not_repeat_assistant_message_after_streaming(monk
             (AgentEvent.DONE, "Current path:\n\n`/Users/andy/Workspace/codes/ai/nova`"),
         ]
     )
-    repl._current_session_id = None
+    _init_test_repl(repl)
     repl._pending_input = None
     repl._streaming = False
     repl._stop_requested = False
-    repl._stream_cancel_monitor = None
-    repl._create_stream_cancel_monitor = lambda callback: _FakeMonitor()
+    repl._input_ui = None
+    repl.create_cancel_monitor = lambda callback: _FakeMonitor()
 
     captured = []
-    repl._show_info = lambda text: captured.append(text)
-    repl._show_error = lambda text: captured.append(f"ERROR::{text}")
+    monkeypatch.setattr(repl._display, "info", lambda text: captured.append(text))
+    monkeypatch.setattr(repl._display, "error", lambda text: captured.append(f"ERROR::{text}"))
 
-    monkeypatch.setattr("nova.cli.interactive._stop_spinner", lambda: None)
-    monkeypatch.setattr("nova.cli.interactive._flush_stream", lambda: None)
-    monkeypatch.setattr("nova.cli.interactive._start_spinner", lambda *args, **kwargs: None)
-    monkeypatch.setattr("nova.cli.interactive._stream_text", lambda text: None)
+    monkeypatch.setattr(repl._display.spinner, "stop", lambda: None)
+    monkeypatch.setattr(repl._display, "flush", lambda: None)
+    monkeypatch.setattr(repl._display.spinner, "start_llm", lambda *args, **kwargs: None)
+    monkeypatch.setattr(repl._display.spinner, "start_tool", lambda *args, **kwargs: None)
+    monkeypatch.setattr(repl._display, "_stream_text", lambda text: None)
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: None)
 
     await repl.run_stream("hi")
@@ -616,20 +672,21 @@ async def test_run_stream_shows_edit_diff_on_success(monkeypatch):
             (AgentEvent.DONE, {"reason": "completed", "content": "Finished"}),
         ]
     )
-    repl._current_session_id = None
+    _init_test_repl(repl)
     repl._pending_input = None
     repl._streaming = False
     repl._stop_requested = False
-    repl._stream_cancel_monitor = None
-    repl._create_stream_cancel_monitor = lambda callback: _FakeMonitor()
+    repl._input_ui = None
+    repl.create_cancel_monitor = lambda callback: _FakeMonitor()
 
     captured = []
-    repl._show_info = lambda text: captured.append(text)
-    repl._show_error = lambda text: captured.append(f"ERROR::{text}")
+    monkeypatch.setattr(repl._display, "info", lambda text: captured.append(text))
+    monkeypatch.setattr(repl._display, "error", lambda text: captured.append(f"ERROR::{text}"))
 
-    monkeypatch.setattr("nova.cli.interactive._stop_spinner", lambda: None)
-    monkeypatch.setattr("nova.cli.interactive._flush_stream", lambda: None)
-    monkeypatch.setattr("nova.cli.interactive._start_spinner", lambda *args, **kwargs: None)
+    monkeypatch.setattr(repl._display.spinner, "stop", lambda: None)
+    monkeypatch.setattr(repl._display, "flush", lambda: None)
+    monkeypatch.setattr(repl._display.spinner, "start_llm", lambda *args, **kwargs: None)
+    monkeypatch.setattr(repl._display.spinner, "start_tool", lambda *args, **kwargs: None)
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: captured.append(" ".join(str(arg) for arg in args)))
 
     await repl.run_stream("hi")
@@ -662,20 +719,21 @@ async def test_run_stream_skips_redundant_requires_input_done_message(monkeypatc
             (AgentEvent.DONE, {"reason": "requires_input", "content": "User input required"}),
         ]
     )
-    repl._current_session_id = None
+    _init_test_repl(repl)
     repl._pending_input = None
     repl._streaming = False
     repl._stop_requested = False
-    repl._stream_cancel_monitor = None
-    repl._create_stream_cancel_monitor = lambda callback: _FakeMonitor()
+    repl._input_ui = None
+    repl.create_cancel_monitor = lambda callback: _FakeMonitor()
 
     captured = []
-    repl._show_info = lambda text: captured.append(text)
-    repl._show_error = lambda text: captured.append(f"ERROR::{text}")
+    monkeypatch.setattr(repl._display, "info", lambda text: captured.append(text))
+    monkeypatch.setattr(repl._display, "error", lambda text: captured.append(f"ERROR::{text}"))
 
-    monkeypatch.setattr("nova.cli.interactive._stop_spinner", lambda: None)
-    monkeypatch.setattr("nova.cli.interactive._flush_stream", lambda: None)
-    monkeypatch.setattr("nova.cli.interactive._start_spinner", lambda *args, **kwargs: None)
+    monkeypatch.setattr(repl._display.spinner, "stop", lambda: None)
+    monkeypatch.setattr(repl._display, "flush", lambda: None)
+    monkeypatch.setattr(repl._display.spinner, "start_llm", lambda *args, **kwargs: None)
+    monkeypatch.setattr(repl._display.spinner, "start_tool", lambda *args, **kwargs: None)
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: None)
 
     await repl.run_stream("weather")
@@ -688,15 +746,20 @@ async def test_run_stream_skips_redundant_requires_input_done_message(monkeypatc
 async def test_pending_input_json_uses_human_prompt(monkeypatch):
     repl = NovaCLI.__new__(NovaCLI)
     repl.agent = _FakeAgent([])
-    repl._current_session_id = None
+    _init_test_repl(repl)
+    repl._command_registry = CommandRegistry()
+    repl._command_dispatcher = CommandDispatcher(
+        registry=repl._command_registry,
+        handlers={},
+    )
     repl._pending_input = {
         "content": '{"question":{"header":"Current City","question":"Please tell me which city you want the weather for.","input_type":"text","options":[]}}'
     }
     repl._streaming = False
     repl._stop_requested = False
-    repl._stream_cancel_monitor = None
     repl._running = True
-    repl._create_stream_cancel_monitor = lambda callback: _FakeMonitor()
+    repl._input_ui = None
+    repl.create_cancel_monitor = lambda callback: _FakeMonitor()
     repl._prompt_followup = lambda body: body
     repl.run_stream = lambda user_input: None
 
@@ -725,16 +788,25 @@ async def test_pending_input_json_uses_human_prompt(monkeypatch):
 async def test_pending_input_invalid_payload_shows_error(monkeypatch):
     repl = NovaCLI.__new__(NovaCLI)
     repl.agent = _FakeAgent([])
-    repl._current_session_id = None
+    _init_test_repl(repl)
+    repl._command_registry = CommandRegistry()
+    repl._command_dispatcher = CommandDispatcher(
+        registry=repl._command_registry,
+        handlers={},
+    )
     repl._pending_input = {"content": "not-json"}
     repl._streaming = False
     repl._stop_requested = False
-    repl._stream_cancel_monitor = None
     repl._running = True
-    repl._create_stream_cancel_monitor = lambda callback: _FakeMonitor()
+    repl._input_ui = None
+    repl.create_cancel_monitor = lambda callback: _FakeMonitor()
 
     captured = []
-    repl._show_error = lambda text: (captured.append(text), setattr(repl, "_running", False))
+    monkeypatch.setattr(
+        repl._display,
+        "error",
+        lambda text: (captured.append(text), setattr(repl, "_running", False)),
+    )
 
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: None)
 
@@ -747,18 +819,27 @@ async def test_pending_input_invalid_payload_shows_error(monkeypatch):
 async def test_pending_input_old_array_payload_shows_error(monkeypatch):
     repl = NovaCLI.__new__(NovaCLI)
     repl.agent = _FakeAgent([])
-    repl._current_session_id = None
+    _init_test_repl(repl)
+    repl._command_registry = CommandRegistry()
+    repl._command_dispatcher = CommandDispatcher(
+        registry=repl._command_registry,
+        handlers={},
+    )
     repl._pending_input = {
         "content": '{"questions":[{"header":"Question 1","question":"First question","input_type":"text","options":[]},{"header":"Question 2","question":"Second question","input_type":"text","options":[]}]}'
     }
     repl._streaming = False
     repl._stop_requested = False
-    repl._stream_cancel_monitor = None
     repl._running = True
-    repl._create_stream_cancel_monitor = lambda callback: _FakeMonitor()
+    repl._input_ui = None
+    repl.create_cancel_monitor = lambda callback: _FakeMonitor()
 
     captured = []
-    repl._show_error = lambda text: (captured.append(text), setattr(repl, "_running", False))
+    monkeypatch.setattr(
+        repl._display,
+        "error",
+        lambda text: (captured.append(text), setattr(repl, "_running", False)),
+    )
 
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: None)
 

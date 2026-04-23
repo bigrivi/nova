@@ -2,6 +2,6 @@
 CLI module.
 """
 
-from .interactive import NovaCLI
+from .repl import NovaCLI
 
 __all__ = ["NovaCLI"]
