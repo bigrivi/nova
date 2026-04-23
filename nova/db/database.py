@@ -1,21 +1,20 @@
 """
-Database management - simplified version.
+Database management.
 """
 
+from __future__ import annotations
+
 import asyncio
-import contextvars
 import json
 import time
 import uuid
-from pathlib import Path
-from typing import Optional, Any
-import aiosqlite
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Optional
+
+import aiosqlite
 
 from nova.settings import get_settings
-
-
-_db_conn: contextvars.ContextVar[Optional[aiosqlite.Connection]] = contextvars.ContextVar("db_conn")
 
 
 @dataclass
@@ -63,110 +62,177 @@ class DatabaseConfig:
     path: str = ""
 
 
+@dataclass
+class MessageFilter:
+    include_compacted: bool = False
+    exclude_tool_role: bool = False
+    only_non_summary: bool = False
+    limit: Optional[int] = None
+
+
+_DDL = """
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    parent_id TEXT,
+    summary_goal TEXT,
+    summary_accomplished TEXT,
+    summary_remaining TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    compacted_at INTEGER,
+    message_count INTEGER DEFAULT 0,
+    turn_count INTEGER DEFAULT 0,
+    metadata TEXT
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    agent TEXT,
+    model TEXT,
+    format TEXT,
+    variant TEXT,
+    summary INTEGER DEFAULT 0,
+    compacted INTEGER DEFAULT 0,
+    finish TEXT,
+    error TEXT,
+    cost REAL,
+    tokens_input INTEGER,
+    tokens_output INTEGER,
+    time_created INTEGER NOT NULL,
+    data TEXT,
+    tool_calls TEXT,
+    tool_call_id TEXT,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+
+CREATE TABLE IF NOT EXISTS memories (
+    id TEXT PRIMARY KEY,
+    key TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    session_id TEXT,
+    memory_type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    tags TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_key_scope_session
+ON memories(key, scope, COALESCE(session_id, ''));
+
+CREATE INDEX IF NOT EXISTS idx_memories_updated_at ON memories(updated_at DESC);
+"""
+
+
 class Database:
-    def __init__(self, config: DatabaseConfig = None):
+    def __init__(self, config: DatabaseConfig | None = None):
         self.config = config or DatabaseConfig()
         self._conn: Optional[aiosqlite.Connection] = None
         self._lock = asyncio.Lock()
-    
-    async def connect(self):
-        if self._conn is None:
-            if self.config.path and self.config.path != ":memory:":
-                Path(self.config.path).expanduser().parent.mkdir(parents=True, exist_ok=True)
-            self._conn = await aiosqlite.connect(self.config.path)
-            self._conn.row_factory = aiosqlite.Row
-            await self._init_tables()
-    
-    async def _init_tables(self):
-        await self._conn.executescript("""
-            CREATE TABLE IF NOT EXISTS sessions (
-                id TEXT PRIMARY KEY,
-                title TEXT,
-                status TEXT NOT NULL DEFAULT 'active',
-                parent_id TEXT,
-                summary_goal TEXT,
-                summary_accomplished TEXT,
-                summary_remaining TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                compacted_at INTEGER,
-                message_count INTEGER DEFAULT 0,
-                turn_count INTEGER DEFAULT 0,
-                metadata TEXT
-            );
-            
-            CREATE TABLE IF NOT EXISTS messages (
-                id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                role TEXT NOT NULL,
-                agent TEXT,
-                model TEXT,
-                format TEXT,
-                variant TEXT,
-                summary INTEGER DEFAULT 0,
-                compacted INTEGER DEFAULT 0,
-                finish TEXT,
-                error TEXT,
-                cost REAL,
-                tokens_input INTEGER,
-                tokens_output INTEGER,
-                time_created INTEGER NOT NULL,
-                data TEXT,
-                tool_calls TEXT,
-                tool_call_id TEXT,
-                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 
-            CREATE TABLE IF NOT EXISTS memories (
-                id TEXT PRIMARY KEY,
-                key TEXT NOT NULL,
-                scope TEXT NOT NULL,
-                session_id TEXT,
-                memory_type TEXT NOT NULL,
-                content TEXT NOT NULL,
-                summary TEXT NOT NULL,
-                tags TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            );
-
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_key_scope_session
-            ON memories(key, scope, COALESCE(session_id, ''));
-
-            CREATE INDEX IF NOT EXISTS idx_memories_updated_at ON memories(updated_at DESC);
-        """)
+    async def connect(self) -> None:
+        if self._conn is not None:
+            return
+        path = self.config.path
+        if path and path != ":memory:":
+            Path(path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+        self._conn = await aiosqlite.connect(path)
+        self._conn.row_factory = aiosqlite.Row
+        await self._conn.executescript(_DDL)
         await self._conn.commit()
-    
-    async def close(self):
+
+    async def close(self) -> None:
         if self._conn:
             await self._conn.close()
             self._conn = None
 
-    async def _ensure_connected(self):
+    async def _ensure_connected(self) -> None:
         if self._conn is None:
             await self.connect()
 
+    @staticmethod
+    def _parse_tool_calls(raw: Optional[str]) -> Optional[list]:
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+
+    @staticmethod
+    def _serialize_tool_calls(tool_calls: Optional[list]) -> Optional[str]:
+        if not tool_calls:
+            return None
+        items: list[object] = []
+        for tool_call in tool_calls:
+            if hasattr(tool_call, "model_dump"):
+                items.append(tool_call.model_dump())
+            elif isinstance(tool_call, dict):
+                items.append(tool_call)
+            else:
+                items.append(str(tool_call))
+        return json.dumps(items)
+
+    @staticmethod
+    def _row_to_message(row_dict: dict[str, Any]) -> Message:
+        return Message(
+            id=row_dict["id"],
+            session_id=row_dict["session_id"],
+            role=row_dict["role"],
+            content=row_dict["data"],
+            tool_calls=Database._parse_tool_calls(row_dict.get("tool_calls")),
+            tool_call_id=row_dict.get("tool_call_id"),
+            time_created=row_dict["time_created"],
+            summary=row_dict.get("summary", 0),
+            compacted=row_dict.get("compacted", 0),
+        )
+
+    @staticmethod
+    def _row_to_session(row: aiosqlite.Row) -> dict[str, Any]:
+        return dict(row)
+
+    @staticmethod
+    def _to_ms_timestamp(value: Any) -> int:
+        if hasattr(value, "timestamp"):
+            return int(value.timestamp() * 1000)
+        return int(value)
+
+    @staticmethod
+    def _normalize_status(value: Any) -> str:
+        if hasattr(value, "value"):
+            return str(value.value)
+        return str(value)
+
+    async def _fetch_messages(self, sql: str, params: tuple[object, ...]) -> list[Message]:
+        cursor = await self._conn.execute(sql, params)
+        rows = await cursor.fetchall()
+        return [self._row_to_message(dict(row)) for row in rows]
+
     async def save_session(self, session: Any) -> None:
         await self._ensure_connected()
-        status = session.status.value if hasattr(session.status, 'value') else str(session.status)
         await self._conn.execute(
-            """INSERT OR REPLACE INTO sessions 
-            (id, title, status, parent_id, summary_goal, summary_accomplished, 
-            summary_remaining, created_at, updated_at, compacted_at, message_count, 
+            """INSERT OR REPLACE INTO sessions
+            (id, title, status, parent_id, summary_goal, summary_accomplished,
+            summary_remaining, created_at, updated_at, compacted_at, message_count,
             turn_count, metadata)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.id,
                 session.title,
-                status,
+                self._normalize_status(session.status),
                 session.parent_id,
                 session.summary_goal,
                 session.summary_accomplished,
                 session.summary_remaining,
-                int(session.created_at.timestamp() * 1000) if hasattr(session.created_at, 'timestamp') else session.created_at,
-                int(session.updated_at.timestamp() * 1000) if hasattr(session.updated_at, 'timestamp') else session.updated_at,
+                self._to_ms_timestamp(session.created_at),
+                self._to_ms_timestamp(session.updated_at),
                 session.compacted_at,
                 session.message_count,
                 session.turn_count,
@@ -176,18 +242,22 @@ class Database:
         await self._conn.commit()
 
     async def get_session(self, session_id: str) -> Optional[dict]:
-        cursor = await self._conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,))
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "SELECT * FROM sessions WHERE id = ?",
+            (session_id,),
+        )
         row = await cursor.fetchone()
-        return dict(row) if row else None
+        return self._row_to_session(row) if row else None
 
     async def get_all_sessions(self, limit: int = 50) -> list[dict]:
-        """Return all sessions ordered by most recent update time."""
+        await self._ensure_connected()
         cursor = await self._conn.execute(
             "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?",
-            (limit,)
+            (limit,),
         )
         rows = await cursor.fetchall()
-        return [dict(row) for row in rows]
+        return [self._row_to_session(row) for row in rows]
 
     async def add_message(
         self,
@@ -198,30 +268,31 @@ class Database:
         tool_call_id: Optional[str] = None,
         summary: bool = False,
     ) -> Message:
+        await self._ensure_connected()
         msg_id = str(uuid.uuid4())
         now = int(time.time() * 1000)
-        
-        tool_calls_for_json = []
-        if tool_calls:
-            for tc in tool_calls:
-                if hasattr(tc, 'model_dump'):
-                    tool_calls_for_json.append(tc.model_dump())
-                elif isinstance(tc, dict):
-                    tool_calls_for_json.append(tc)
-                else:
-                    tool_calls_for_json.append(str(tc))
-        
-        tool_calls_json = json.dumps(tool_calls_for_json) if tool_calls_for_json else None
+
         await self._conn.execute(
-            """INSERT INTO messages (id, session_id, role, data, tool_calls, tool_call_id, time_created, summary)
+            """INSERT INTO messages
+            (id, session_id, role, data, tool_calls, tool_call_id, time_created, summary)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (msg_id, session_id, role, content, tool_calls_json, tool_call_id, now, 1 if summary else 0)
+            (
+                msg_id,
+                session_id,
+                role,
+                content,
+                self._serialize_tool_calls(tool_calls),
+                tool_call_id,
+                now,
+                1 if summary else 0,
+            ),
         )
         await self._conn.execute(
             "UPDATE sessions SET updated_at = ?, message_count = message_count + 1 WHERE id = ?",
-            (now, session_id)
+            (now, session_id),
         )
         await self._conn.commit()
+
         return Message(
             id=msg_id,
             session_id=session_id,
@@ -233,126 +304,97 @@ class Database:
             summary=1 if summary else 0,
         )
 
-    async def get_messages(self, session_id: str, limit: Optional[int] = None, include_compacted: bool = False) -> list[Message]:
-        if include_compacted:
-            sql = "SELECT * FROM messages WHERE session_id = ? ORDER BY time_created ASC"
-        else:
-            sql = "SELECT * FROM messages WHERE session_id = ? AND (summary = 1 OR (compacted = 0 AND summary = 0)) ORDER BY time_created ASC"
-        if limit:
-            sql += f" LIMIT {limit}"
-        cursor = await self._conn.execute(sql, (session_id,))
-        rows = await cursor.fetchall()
-        messages = []
-        for row in rows:
-            row_dict = dict(row)
-            tool_calls = None
-            if row_dict.get("tool_calls"):
-                try:
-                    tool_calls = json.loads(row_dict["tool_calls"])
-                except json.JSONDecodeError:
-                    pass
-            messages.append(Message(
-                id=row_dict["id"],
-                session_id=row_dict["session_id"],
-                role=row_dict["role"],
-                content=row_dict["data"],
-                tool_calls=tool_calls,
-                tool_call_id=row_dict.get("tool_call_id"),
-                time_created=row_dict["time_created"],
-                summary=row_dict.get("summary", 0),
-                compacted=row_dict.get("compacted", 0),
-            ))
-        return messages
+    async def get_messages(
+        self,
+        session_id: str,
+        msg_filter: MessageFilter | None = None,
+    ) -> list[Message]:
+        await self._ensure_connected()
+        filter_value = msg_filter or MessageFilter()
 
-    async def get_history_messages(self, session_id: str, limit: Optional[int] = None) -> list[Message]:
-        """Return user-visible history messages, excluding tool messages and summaries."""
-        sql = "SELECT * FROM messages WHERE session_id = ? AND summary = 0 AND role != 'tool' ORDER BY time_created ASC"
-        if limit:
-            sql += f" LIMIT {limit}"
-        cursor = await self._conn.execute(sql, (session_id,))
-        rows = await cursor.fetchall()
-        messages = []
-        for row in rows:
-            row_dict = dict(row)
-            tool_calls = None
-            if row_dict.get("tool_calls"):
-                try:
-                    tool_calls = json.loads(row_dict["tool_calls"])
-                except json.JSONDecodeError:
-                    pass
-            messages.append(Message(
-                id=row_dict["id"],
-                session_id=row_dict["session_id"],
-                role=row_dict["role"],
-                content=row_dict["data"],
-                tool_calls=tool_calls,
-                tool_call_id=row_dict.get("tool_call_id"),
-                time_created=row_dict["time_created"],
-                summary=row_dict.get("summary", 0),
-                compacted=row_dict.get("compacted", 0),
-            ))
-        return messages
+        conditions = ["session_id = ?"]
+        params: list[object] = [session_id]
+
+        if not filter_value.include_compacted:
+            conditions.append("(summary = 1 OR (compacted = 0 AND summary = 0))")
+
+        if filter_value.exclude_tool_role:
+            conditions.append("role != 'tool'")
+
+        if filter_value.only_non_summary:
+            conditions.append("summary = 0")
+
+        sql = f"SELECT * FROM messages WHERE {' AND '.join(conditions)} ORDER BY time_created ASC"
+        if filter_value.limit is not None:
+            sql += " LIMIT ?"
+            params.append(filter_value.limit)
+
+        return await self._fetch_messages(sql, tuple(params))
 
     async def compress_messages(self, session_id: str, target_count: int = 50) -> None:
+        await self._ensure_connected()
         cursor = await self._conn.execute(
-            "SELECT COUNT(*) FROM messages WHERE session_id = ?", (session_id,)
+            "SELECT COUNT(*) FROM messages WHERE session_id = ?",
+            (session_id,),
         )
         row = await cursor.fetchone()
-        count = row[0] if row else 0
+        count = int(row[0]) if row else 0
         if count <= target_count:
             return
+
         delete_count = count - target_count
         await self._conn.execute(
-            """UPDATE messages SET summary = 1 
+            """UPDATE messages SET summary = 1
             WHERE id IN (
-                SELECT id FROM messages WHERE session_id = ? AND summary = 0 
-                ORDER BY time_created ASC LIMIT ?
+                SELECT id FROM messages
+                WHERE session_id = ? AND summary = 0
+                ORDER BY time_created ASC
+                LIMIT ?
             )""",
-            (session_id, delete_count)
+            (session_id, delete_count),
         )
         await self._conn.execute(
             "UPDATE sessions SET compacted_at = ? WHERE id = ?",
-            (int(time.time() * 1000), session_id)
+            (int(time.time() * 1000), session_id),
         )
         await self._conn.commit()
 
     async def mark_messages_compacted(self, session_id: str) -> None:
-        """Mark all uncompacted messages in the session as compacted."""
+        await self._ensure_connected()
         await self._conn.execute(
             "UPDATE messages SET compacted = 1 WHERE session_id = ? AND compacted = 0 AND summary = 0",
-            (session_id,)
+            (session_id,),
         )
         await self._conn.commit()
 
     async def mark_messages_compacted_by_ids(self, session_id: str, message_ids: list[str]) -> None:
-        """Mark the specified message IDs as compacted."""
+        await self._ensure_connected()
         if not message_ids:
             return
         placeholders = ",".join("?" * len(message_ids))
         await self._conn.execute(
             f"UPDATE messages SET compacted = 1 WHERE session_id = ? AND id IN ({placeholders})",
-            (session_id, *message_ids)
+            (session_id, *message_ids),
         )
         await self._conn.commit()
 
     async def update_session_compacted_at(self, session_id: str, timestamp: int) -> None:
-        """Update the session compaction timestamp."""
+        await self._ensure_connected()
         await self._conn.execute(
             "UPDATE sessions SET compacted_at = ? WHERE id = ?",
-            (timestamp, session_id)
+            (timestamp, session_id),
         )
         await self._conn.commit()
 
     async def update_message_content(self, message_id: str, content: str) -> None:
-        """Update message content."""
+        await self._ensure_connected()
         await self._conn.execute(
             "UPDATE messages SET data = ? WHERE id = ?",
-            (content, message_id)
+            (content, message_id),
         )
         await self._conn.commit()
 
     async def delete_messages(self, session_id: str, message_ids: list[str]) -> int:
-        """Delete specific messages from a session and keep counters in sync."""
         await self._ensure_connected()
         if not message_ids:
             return 0
@@ -372,15 +414,13 @@ class Database:
             (session_id, *message_ids),
         )
         await self._conn.execute(
-            """
-            UPDATE sessions
+            """UPDATE sessions
             SET updated_at = ?,
                 message_count = CASE
                     WHEN message_count >= ? THEN message_count - ?
                     ELSE 0
                 END
-            WHERE id = ?
-            """,
+            WHERE id = ?""",
             (int(time.time() * 1000), deleted_count, deleted_count, session_id),
         )
         await self._conn.commit()
@@ -389,13 +429,6 @@ class Database:
 
 _db: Optional[Database] = None
 _init_lock = asyncio.Lock()
-
-
-def get_db() -> Database:
-    global _db
-    if _db is None:
-        _db = Database(DatabaseConfig(path=str(get_settings().database_path)))
-    return _db
 
 
 async def ensure_db() -> Database:
@@ -408,7 +441,7 @@ async def ensure_db() -> Database:
     return _db
 
 
-async def init_db(config: DatabaseConfig = None) -> Database:
+async def init_db(config: DatabaseConfig | None = None) -> Database:
     global _db
     _db = Database(config)
     await _db.connect()

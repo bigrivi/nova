@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from nova.db import database
+from nova.db.database import MessageFilter
 
 
 class SessionManager:
@@ -58,7 +59,10 @@ class SessionManager:
             return
 
         db = await database.ensure_db()
-        history = await db.get_messages(session_id)
+        history = await db.get_messages(
+            session_id,
+            MessageFilter(include_compacted=True),
+        )
         self.current_id = session_id
         title = sess.get("title") or "Untitled"
         self._display.info(f"Loaded session: {title}")

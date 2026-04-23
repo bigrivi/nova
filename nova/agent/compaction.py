@@ -167,7 +167,7 @@ async def maybe_compact(
     if message_count == 0:
         return False
 
-    messages = await db.get_messages(session_id, include_compacted=False)
+    messages = await db.get_messages(session_id)
     if not messages:
         return False
 
@@ -224,7 +224,7 @@ async def compact(
     5. Mark the old messages as compacted.
     6. Update the session compaction timestamp.
     """
-    messages = await db.get_messages(session_id, include_compacted=False)
+    messages = await db.get_messages(session_id)
 
     if not messages:
         return

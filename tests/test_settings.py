@@ -3,6 +3,8 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
+import pytest
+
 from nova.settings import Settings, configure_logging, get_settings
 from nova.db import database as db_module
 from nova.db.database import Database
@@ -244,18 +246,19 @@ def test_providers_use_cached_app_settings_defaults(monkeypatch, tmp_path):
     get_settings.cache_clear()
 
 
-def test_get_db_uses_settings_database_path(monkeypatch, tmp_path):
+@pytest.mark.asyncio
+async def test_ensure_db_uses_settings_database_path(monkeypatch, tmp_path):
     get_settings.cache_clear()
     home = tmp_path / "nova-db-home"
     monkeypatch.setenv("NOVA_HOME", str(home))
     db_module._db = None
 
-    db = db_module.get_db()
+    db = await db_module.ensure_db()
 
     assert isinstance(db, Database)
     assert db.config.path == str(home / "nova.db")
 
-    db_module._db = None
+    await db_module.close_db()
     get_settings.cache_clear()
 
 

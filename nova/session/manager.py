@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any, Optional
 import uuid
 
-from nova.db.database import get_db, ensure_db, Message
+from nova.db.database import Message, MessageFilter, ensure_db
 from nova.llm import Message as LLMMessage
 
 
@@ -172,7 +172,7 @@ class SessionManager:
             return []
         async with self._lock:
             db = await ensure_db()
-            return await db.get_messages(sid, limit=limit)
+            return await db.get_messages(sid, MessageFilter(limit=limit))
 
     async def compress_history(self, target_count: int = 50) -> None:
         session = self.get_current_session()

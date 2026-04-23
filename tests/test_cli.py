@@ -531,7 +531,7 @@ async def test_load_session_reads_history_messages_from_db(monkeypatch):
             return {"id": session_id}
 
     class _FakeDb:
-        async def get_messages(self, session_id):
+        async def get_messages(self, session_id, msg_filter=None):
             assert session_id == "sess-1"
             return [
                 Message(id="m1", session_id=session_id, role="user", content="hello"),
@@ -580,7 +580,7 @@ async def test_load_session_reports_missing_history(monkeypatch):
             return {"id": session_id}
 
     class _FakeDb:
-        async def get_messages(self, session_id):
+        async def get_messages(self, session_id, msg_filter=None):
             return []
 
     repl = NovaCLI.__new__(NovaCLI)
