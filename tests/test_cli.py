@@ -49,6 +49,7 @@ def _init_test_repl(repl: NovaCLI, *, width: int = 20) -> NovaCLI:
         agent=repl.agent,
         display=repl._display,
     )
+    repl._exit_code = None
     return repl
 
 
@@ -328,6 +329,40 @@ async def test_run_shows_cli_banner_with_slash_commands(monkeypatch):
     assert "Nova CLI" in captured
     assert "Type 'exit' or 'quit' to leave." in captured
     assert "Use /new, /sessions, /load <n>, /clear, or /quit for commands." in captured
+
+
+@pytest.mark.asyncio
+async def test_run_closes_session_manager_on_exit(monkeypatch):
+    repl = NovaCLI.__new__(NovaCLI)
+    repl.agent = _FakeAgent([])
+    _init_test_repl(repl)
+    repl._command_registry = CommandRegistry()
+    repl._command_dispatcher = CommandDispatcher(
+        registry=repl._command_registry,
+        handlers={},
+    )
+    repl._pending_input = None
+    repl._streaming = False
+    repl._stop_requested = False
+    repl._running = False
+    repl._input_ui = None
+
+    closed = {"called": False}
+
+    async def fake_close_session_manager():
+        closed["called"] = True
+
+    monkeypatch.setattr("nova.cli.repl.close_session_manager", fake_close_session_manager)
+    monkeypatch.setattr("builtins.print", lambda *args, **kwargs: None)
+
+    async def fake_prompt():
+        raise EOFError
+
+    repl._prompt_chat = fake_prompt
+
+    await repl.run()
+
+    assert closed["called"] is True
 
 
 @pytest.mark.asyncio

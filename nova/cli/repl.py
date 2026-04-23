@@ -17,6 +17,7 @@ from nova.cli.session_manager import SessionManager
 from nova.cli.stream_controller import StreamController, StreamControlProtocol
 from nova.cli.terminal_display import TerminalDisplay
 from nova.cli.utils import exit_process as _exit_process
+from nova.session import close_session_manager
 from nova.settings import Settings, get_settings
 from nova.cli.ui import (
     EscapeKeyMonitor,
@@ -56,6 +57,7 @@ class NovaCLI(StreamControlProtocol):
         self._pending_input: Optional[dict] = None
         self._streaming = False
         self._stop_requested = False
+        self._exit_code: Optional[int] = None
         self._session_manager = SessionManager(
             agent=self.agent,
             display=self._display,
@@ -120,11 +122,17 @@ class NovaCLI(StreamControlProtocol):
         return await asyncio.to_thread(input, f"{content}\n\n> ")
 
     async def _handle_quit_command(self, command: ParsedCommand) -> bool:
-        print("Bye.")
+        print("Bye. 👋")
         log.info("User requested exit")
         self._running = False
-        _exit_process(0)
+        self._exit_code = 0
         return True
+
+    async def _cleanup_runtime(self) -> None:
+        try:
+            await close_session_manager()
+        except Exception:
+            log.exception("Failed to close session manager")
 
     async def _handle_new_command(self, command: ParsedCommand) -> bool:
         self._session_manager.reset()
@@ -198,29 +206,36 @@ class NovaCLI(StreamControlProtocol):
         self._print_banner()
         log.info("CLI started, entering main loop")
         self._running = True
+        self._exit_code = None
 
-        while self._running:
-            try:
-                if await self._handle_pending_input_turn():
-                    continue
-                await self._handle_user_turn()
+        try:
+            while self._running:
+                try:
+                    if await self._handle_pending_input_turn():
+                        continue
+                    await self._handle_user_turn()
 
-            except EOFError:
-                log.info("EOF received")
-                break
-            except KeyboardInterrupt:
-                log.info("Keyboard interrupt - exiting CLI")
-                self._shutdown(message="\nInterrupted. Exiting.")
-                _exit_process(130)
-            except SystemExit:
-                log.info("SystemExit raised - exiting CLI")
-                self._shutdown()
-                _exit_process(130)
-            except Exception as e:
-                log.error(f"Error: {e}", exc_info=True)
-                print(f"Error: {e}")
-
-        log.info("CLI loop ended")
+                except EOFError:
+                    log.info("EOF received")
+                    break
+                except KeyboardInterrupt:
+                    log.info("Keyboard interrupt - exiting CLI")
+                    self._shutdown(message="\nInterrupted. Exiting.")
+                    self._exit_code = 130
+                    break
+                except SystemExit:
+                    log.info("SystemExit raised - exiting CLI")
+                    self._shutdown()
+                    self._exit_code = 130
+                    break
+                except Exception as e:
+                    log.error(f"Error: {e}", exc_info=True)
+                    print(f"Error: {e}")
+        finally:
+            await self._cleanup_runtime()
+            log.info("CLI loop ended")
+            if self._exit_code is not None:
+                _exit_process(self._exit_code)
 
     def _present_options(self, question: str, options: list[PromptOption]) -> str:
         from rich.prompt import Prompt
