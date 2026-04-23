@@ -10,6 +10,7 @@ from nova.tools.web_search import TOOL as web_search
 from nova.tools.web_fetch import TOOL as web_fetch
 from nova.tools.todo_write import TOOL as todo_write
 from nova.tools.ask_user import TOOL as ask_user
+from nova.memory.tools import save_memory, search_memory, delete_memory, list_memories
 
 __all__ = [
     "ToolRegistry",
@@ -25,4 +26,8 @@ __all__ = [
     "web_fetch",
     "todo_write",
     "ask_user",
+    "save_memory",
+    "search_memory",
+    "delete_memory",
+    "list_memories",
 ]

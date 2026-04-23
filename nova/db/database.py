@@ -118,6 +118,24 @@ class Database:
             );
             
             CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+
+            CREATE TABLE IF NOT EXISTS memories (
+                id TEXT PRIMARY KEY,
+                key TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                session_id TEXT,
+                memory_type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                tags TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_key_scope_session
+            ON memories(key, scope, COALESCE(session_id, ''));
+
+            CREATE INDEX IF NOT EXISTS idx_memories_updated_at ON memories(updated_at DESC);
         """)
         await self._conn.commit()
     
