@@ -36,13 +36,18 @@ from nova.tools.registry import tool
     },
 )
 async def todo_write(todos: List[dict]) -> ToolResult:
-    status_icons = {"pending": "○", "in_progress": "◐", "completed": "●", "cancelled": "✗"}
-    priority_colors = {"high": "🔴", "medium": "🟡", "low": "⚪"}
+    status_markers = {
+        "completed": "✅",
+        "in_progress": "🕒",
+        "pending": "⚪",
+        "cancelled": "❌",
+    }
     lines = ["## Tasks\n"]
     for i, t in enumerate(todos, 1):
-        icon = status_icons.get(t.get("status", "pending"), "○")
-        priority = priority_colors.get(t.get("priority", "medium"), "⚪")
-        lines.append(f"{i}. {icon} [{t.get('status', 'pending')}] {priority} {t.get('content', '')}")
+        status = str(t.get("status", "pending")).strip() or "pending"
+        content = str(t.get("content", "")).strip()
+        marker = status_markers.get(status, "⚪")
+        lines.append(f"{i}. {marker} [{status}] {content}")
     return ToolResult(success=True, content="\n".join(lines))
 
 

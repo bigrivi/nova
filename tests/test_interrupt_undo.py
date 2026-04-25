@@ -205,7 +205,7 @@ async def test_breaking_after_stopped_by_user_does_not_raise_generator_exit(db):
 
 
 @pytest.mark.asyncio
-async def test_tool_failure_stops_agent_loop_and_reports_unavailable(db):
+async def test_tool_failure_returns_to_model_context_and_allows_next_iteration(db):
     provider = ScriptedProvider(
         [
             [
@@ -234,17 +234,17 @@ async def test_tool_failure_stops_agent_loop_and_reports_unavailable(db):
 
     done_payloads = [data for event, data in events if event == AgentEvent.DONE]
     assert done_payloads[-1] == {
-        "reason": "tool_failed",
-        "content": "Tool `failing_tool` is currently unavailable. Search error: Illegal header value b'Bearer '.",
+        "reason": "completed",
+        "content": "should not run",
     }
-    assert (AgentEvent.TEXT_DELTA, "should not run") not in events
+    assert (AgentEvent.TEXT_DELTA, "should not run") in events
 
     messages = await agent.session.get_messages()
     assert [(msg.role, msg.content) for msg in messages] == [
         ("user", "run failing tool"),
         ("assistant", ""),
         ("tool", "Search error: Illegal header value b'Bearer '."),
-        ("assistant", "Tool `failing_tool` is currently unavailable. Search error: Illegal header value b'Bearer '."),
+        ("assistant", "should not run"),
     ]
 
 

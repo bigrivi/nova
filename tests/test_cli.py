@@ -5,6 +5,7 @@ import re
 from nova.agent.core import AgentEvent
 from nova.cli.commands import CommandDispatcher, CommandRegistry
 from nova.cli.completion import CommandCompleter
+from nova.cli.history_render import render_question_prompt
 from nova.cli.repl import NovaCLI, parse_options
 from nova.cli.session_manager import SessionManager
 from nova.cli.terminal_display import TerminalDisplay
@@ -734,6 +735,20 @@ Please enter the city name directly, for example:
 """
 
     assert parse_options(content) == []
+
+
+def test_render_question_prompt_omits_header_line_when_header_missing():
+    rendered = render_question_prompt(
+        {
+            "header": "",
+            "question": "Please tell me which city you want the weather for.",
+            "input_type": "text",
+            "options": [],
+        }
+    )
+
+    clean_rendered = re.sub(r"\x1b\[[0-9;]*m", "", rendered)
+    assert clean_rendered == "  Please tell me which city you want the weather for."
 
 
 def test_command_registry_parses_slash_and_bare_commands():

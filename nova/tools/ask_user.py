@@ -16,54 +16,58 @@ from nova.tools.registry import tool
     parameters={
         "type": "object",
         "properties": {
+            "header": {
+                "type": "string",
+                "description": "Short label shown before the question.",
+            },
             "question": {
-                "type": "object",
-                "description": "The single blocking question to ask the user.",
-                "properties": {
-                    "question": {"type": "string", "description": "Complete question shown to the user."},
-                    "header": {"type": "string", "description": "Short label shown before the question."},
-                    "input_type": {
-                        "type": "string",
-                        "description": "Required. Use 'text' for free-form typed input. Use 'select' only when the user must choose from the provided options.",
-                        "enum": ["text", "select"],
+                "type": "string",
+                "description": "Complete question shown to the user.",
+            },
+            "input_type": {
+                "type": "string",
+                "description": "Required. Use 'text' for free-form typed input. Use 'select' only when the user must choose from the provided options.",
+                "enum": ["text", "select"],
+            },
+            "options": {
+                "type": "array",
+                "description": "Choice list for select questions. For input_type='text', this must be an empty array.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "label": {"type": "string", "description": "Short display text for one selectable option."},
+                        "description": {"type": "string", "description": "Short explanation for that option."},
                     },
-                    "options": {
-                        "type": "array",
-                        "description": "Choice list for select questions. For input_type='text', this must be an empty array.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "label": {"type": "string", "description": "Short display text for one selectable option."},
-                                "description": {"type": "string", "description": "Short explanation for that option."},
-                            },
-                            "required": ["label", "description"],
-                        },
-                    },
-                    "multiple": {"type": "boolean", "description": "Allow multiple selections. Only meaningful for input_type='select'."},
+                    "required": ["label", "description"],
                 },
-                "required": ["question", "header", "input_type", "options"],
+            },
+            "multiple": {
+                "type": "boolean",
+                "description": "Allow multiple selections. Only meaningful for input_type='select'.",
             },
         },
-        "required": ["question"],
+        "required": ["question", "input_type", "options"],
     },
 )
-async def ask_user(question: dict) -> ToolResult:
-    if not isinstance(question, dict):
-        question = {}
-
-    input_type = str(question.get("input_type", "text")).strip().lower()
-    if input_type not in {"text", "select"}:
-        input_type = "text"
+async def ask_user(
+    question: str,
+    input_type: str,
+    options: list,
+    header: str = "",
+    multiple: bool = False,
+) -> ToolResult:
+    normalized_input_type = str(input_type).strip().lower()
+    if normalized_input_type not in {"text", "select"}:
+        normalized_input_type = "text"
 
     normalized = {
-        "header": str(question.get("header", "")).strip(),
-        "question": str(question.get("question", "")).strip(),
-        "input_type": input_type,
+        "header": str(header).strip(),
+        "question": str(question).strip(),
+        "input_type": normalized_input_type,
         "options": [],
     }
 
-    if input_type == "select":
-        options = question.get("options")
+    if normalized_input_type == "select":
         if isinstance(options, list):
             normalized["options"] = [
                 {
@@ -73,7 +77,7 @@ async def ask_user(question: dict) -> ToolResult:
                 for option in options
                 if isinstance(option, dict) and str(option.get("label", "")).strip()
             ]
-        normalized["multiple"] = bool(question.get("multiple", False))
+        normalized["multiple"] = bool(multiple)
 
     payload = {"question": normalized}
     return ToolResult(

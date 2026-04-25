@@ -209,12 +209,6 @@ class Agent:
             log.error(f"Tool {tool_name} error: {e}")
             return ToolResult(success=False, content=f"Tool error: {e}")
 
-    def _build_tool_unavailable_message(self, tool_name: str, result: ToolResult) -> str:
-        detail = (result.content or result.error or "").strip()
-        if detail:
-            return f"Tool `{tool_name}` is currently unavailable. {detail}"
-        return f"Tool `{tool_name}` is currently unavailable."
-
     async def chat_stream(self, user_input: str, session_id: str = None) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         self._abort_event.clear()
 
@@ -366,15 +360,9 @@ class Agent:
                     }
                     if not result.success:
                         tool_name = tc.name if hasattr(tc, 'name') else str(tc)
-                        failure_message = self._build_tool_unavailable_message(
-                            tool_name, result)
-                        done_payload = _done_payload("tool_failed", failure_message)
-                        await self.session.add_message(role="assistant", content=failure_message)
-                        await self._emit(AgentEvent.DONE, done_payload)
                         log.info(
-                            f"[Turn {turn_count}] Stopped after failed tool: {tool_name}")
-                        yield AgentEvent.DONE, done_payload
-                        return
+                            f"[Turn {turn_count}] Tool failed and will be returned to model context: {tool_name}")
+                        continue
                     if result.requires_input:
                         log.info(f"[Turn {turn_count}] Paused for user input")
                         yield AgentEvent.DONE, _done_payload("requires_input", "User input required")
