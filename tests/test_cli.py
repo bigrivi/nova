@@ -8,12 +8,13 @@ from nova.cli.completion import CommandCompleter
 from nova.cli.repl import NovaCLI, parse_options
 from nova.cli.session_manager import SessionManager
 from nova.cli.terminal_display import TerminalDisplay
+from nova.cli.ui import INPUT_UI_REFRESH_INTERVAL, ModelGroup, ModelSelection, PromptToolkitInputUI
 from nova.cli.tool_rendering import render_tool_result
 from nova.cli.utils import looks_like_error_message
 from dataclasses import replace
 
 from nova.db.database import Message
-from nova.settings import Settings
+from nova.settings import ProviderConfig, Settings
 from nova.llm.provider import ToolResult
 
 
@@ -83,6 +84,324 @@ def test_novacli_builds_runtime_from_settings(monkeypatch):
     assert cli.settings.openai_base_url == "http://openai.local/v1"
     assert cli.settings.openai_api_key == "secret"
     assert captured["settings"] == cli.settings
+
+
+def test_novacli_current_model_label_resolves_configured_model_alias():
+    base_settings = Settings.load_config()
+    settings = replace(
+        base_settings,
+        provider="openai",
+        model="gpt-5.4",
+        providers={
+            "openai": ProviderConfig(
+                type="openai-compatible",
+                name="OpenAI Compatible",
+                options={"base_url": "http://openai.local/v1", "api_key": "secret"},
+                models={"gpt-5.4": {"name": "gpt-5.4-mini"}},
+            )
+        },
+        provider_type="openai-compatible",
+        openai_base_url="http://openai.local/v1",
+        openai_api_key="secret",
+    )
+    repl = NovaCLI.__new__(NovaCLI)
+    repl.settings = settings
+
+    assert repl._current_model_label() == "gpt-5.4-mini"
+
+
+def test_novacli_rebuild_runtime_updates_agent_and_session_manager(monkeypatch):
+    built_agents: list[object] = []
+
+    def fake_build_agent(settings):
+        agent = _FakeAgent([])
+        built_agents.append((settings, agent))
+        return agent
+
+    monkeypatch.setattr("nova.cli.repl.build_agent", fake_build_agent)
+
+    settings = replace(Settings.load_config(), model="gemma4:26b")
+    cli = NovaCLI(settings=settings)
+    original_agent = cli.agent
+
+    cli._rebuild_runtime(provider="openai", model="gpt-5.4")
+
+    assert cli.settings.provider == "openai"
+    assert cli.settings.model == "gpt-5.4"
+    assert cli.agent is built_agents[-1][1]
+    assert cli.agent is not original_agent
+    assert cli._session_manager._agent is cli.agent
+
+
+def test_novacli_find_model_provider_returns_matching_provider():
+    settings = replace(
+        Settings.load_config(),
+        providers={
+            "ollama": ProviderConfig(
+                type="ollama",
+                name="Ollama",
+                options={"base_url": "http://localhost:11434"},
+                models={"gemma4:26b": {"name": "gemma4:26b"}},
+            ),
+            "openai": ProviderConfig(
+                type="openai-compatible",
+                name="OpenAI Compatible",
+                options={"base_url": "http://openai.local/v1", "api_key": "secret"},
+                models={"gpt-5.4": {"name": "gpt-5.4"}},
+            ),
+        },
+    )
+def test_prompt_toolkit_input_ui_builds_model_fragments():
+    ui = PromptToolkitInputUI(model_label="gpt-5.4")
+
+    assert ui._build_model_fragments() == [("class:model-info", "  gpt-5.4")]
+
+
+def test_prompt_toolkit_input_ui_uses_dynamic_model_label_provider():
+    current_model = {"value": "gpt-5.4"}
+    ui = PromptToolkitInputUI(
+        model_label_provider=lambda: current_model["value"],
+    )
+
+    assert ui._build_model_fragments() == [("class:model-info", "  gpt-5.4")]
+
+    current_model["value"] = "gemma4:26b"
+
+    assert ui._build_model_fragments() == [("class:model-info", "  gemma4:26b")]
+
+
+@pytest.mark.asyncio
+async def test_prompt_toolkit_input_ui_prompt_model_selection_enables_periodic_refresh(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _FakeApplication:
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+
+        async def run_async(self):
+            return None
+
+    monkeypatch.setattr("nova.cli.ui.Application", _FakeApplication)
+
+    ui = PromptToolkitInputUI(model_label_provider=lambda: "gpt-5.4")
+    result = await ui.prompt_model_selection(
+        [ModelGroup(provider="openai", models=["gpt-5.4"])],
+        current_provider="openai",
+        current_model="gpt-5.4",
+    )
+
+    assert result is None
+    assert captured["refresh_interval"] == INPUT_UI_REFRESH_INTERVAL
+    assert captured["erase_when_done"] is True
+
+
+@pytest.mark.asyncio
+async def test_prompt_toolkit_input_ui_prompt_model_selection_keeps_last_model_visible(monkeypatch):
+    captured_render = {"text": ""}
+
+    class _FakeApplication:
+        def __init__(self, *args, **kwargs):
+            def _find_control(container):
+                if hasattr(container, "content") and hasattr(container.content, "text"):
+                    return container.content
+                if hasattr(container, "body"):
+                    control = _find_control(container.body)
+                    if control is not None:
+                        return control
+                for child in getattr(container, "children", []):
+                    control = _find_control(child)
+                    if control is not None:
+                        return control
+                return None
+
+            layout = kwargs["layout"]
+            control = _find_control(layout.container)
+            assert control is not None
+            fragments = control.text()
+            captured_render["text"] = "".join(part for _, part in fragments)
+
+        async def run_async(self):
+            return None
+
+    monkeypatch.setattr("nova.cli.ui.Application", _FakeApplication)
+
+    ui = PromptToolkitInputUI()
+    await ui.prompt_model_selection(
+        [
+            ModelGroup(provider="ollama", models=["gemma4:26b"]),
+            ModelGroup(provider="openai", models=["gpt-5.4"]),
+        ],
+        current_provider="ollama",
+        current_model="gemma4:26b",
+    )
+
+    assert "└─ openai" in captured_render["text"]
+    assert "   • gpt-5.4" in captured_render["text"]
+
+
+@pytest.mark.asyncio
+async def test_prompt_toolkit_input_ui_enables_periodic_refresh(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _FakeApplication:
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+
+        async def run_async(self):
+            return None
+
+    monkeypatch.setattr("nova.cli.ui.Application", _FakeApplication)
+
+    ui = PromptToolkitInputUI(model_label_provider=lambda: "gpt-5.4")
+    result = await ui.prompt("❯ ")
+
+    assert result == ""
+    assert captured["refresh_interval"] == INPUT_UI_REFRESH_INTERVAL
+    assert captured["erase_when_done"] is True
+
+
+@pytest.mark.asyncio
+async def test_models_command_uses_selector_and_switches_runtime(monkeypatch):
+    repl = NovaCLI.__new__(NovaCLI)
+    repl.agent = _FakeAgent([])
+    repl.settings = replace(
+        Settings.load_config(),
+        provider="openai",
+        model="gpt-5.4",
+        providers={
+            "ollama": ProviderConfig(
+                type="ollama",
+                name="Ollama",
+                options={"base_url": "http://localhost:11434"},
+                models={"gemma4:26b": {"name": "gemma4:26b"}},
+            ),
+            "openai": ProviderConfig(
+                type="openai-compatible",
+                name="OpenAI Compatible",
+                options={"base_url": "http://openai.local/v1", "api_key": "secret"},
+                models={
+                    "gpt-5.4": {"name": "gpt-5.4"},
+                    "gpt-5.4-mini": {"name": "gpt-5.4-mini"},
+                },
+            ),
+        },
+    )
+    repl._display = _make_test_display()
+    repl._input_ui = PromptToolkitInputUI()
+    repl._session_manager = SessionManager(agent=repl.agent, display=repl._display)
+
+    captured_groups: dict[str, object] = {}
+    messages: list[str] = []
+    called: dict[str, str] = {}
+
+    async def fake_prompt_model_selection(groups, *, current_provider, current_model):
+        captured_groups["groups"] = groups
+        captured_groups["current_provider"] = current_provider
+        captured_groups["current_model"] = current_model
+        return ModelSelection(provider="ollama", model="gemma4:26b")
+
+    def fake_rebuild_runtime(*, provider: str | None = None, model: str | None = None) -> None:
+        called["provider"] = provider or ""
+        called["model"] = model or ""
+        repl.settings = replace(
+            repl.settings,
+            provider=provider or repl.settings.provider,
+            model=model or repl.settings.model,
+        )
+
+    monkeypatch.setattr(repl._input_ui, "prompt_model_selection", fake_prompt_model_selection)
+    monkeypatch.setattr(repl, "_rebuild_runtime", fake_rebuild_runtime)
+    monkeypatch.setattr(repl._display, "info", lambda text: messages.append(text))
+
+    handled = await repl._handle_models_command(type("Cmd", (), {"args": ""})())
+
+    assert handled is True
+    assert captured_groups == {
+        "groups": [
+            ModelGroup(provider="ollama", models=["gemma4:26b"]),
+            ModelGroup(provider="openai", models=["gpt-5.4", "gpt-5.4-mini"]),
+        ],
+        "current_provider": "openai",
+        "current_model": "gpt-5.4",
+    }
+    assert called == {"provider": "ollama", "model": "gemma4:26b"}
+    assert messages == [
+        "Model switched to: gemma4:26b",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_models_command_handles_empty_model_list(monkeypatch):
+    repl = NovaCLI.__new__(NovaCLI)
+    repl.agent = _FakeAgent([])
+    repl.settings = replace(
+        Settings.load_config(),
+        provider="openai",
+        model="",
+        providers={
+            "ollama": ProviderConfig(
+                type="ollama",
+                name="Ollama",
+                options={"base_url": "http://localhost:11434"},
+                models={},
+            ),
+            "openai": ProviderConfig(
+                type="openai-compatible",
+                name="OpenAI Compatible",
+                options={"base_url": "http://openai.local/v1", "api_key": "secret"},
+                models={},
+            ),
+        },
+    )
+    repl._display = _make_test_display()
+    repl._input_ui = PromptToolkitInputUI()
+    repl._session_manager = SessionManager(agent=repl.agent, display=repl._display)
+
+    messages: list[str] = []
+    monkeypatch.setattr(repl._display, "info", lambda text: messages.append(text))
+
+    handled = await repl._handle_models_command(type("Cmd", (), {"args": ""})())
+
+    assert handled is True
+    assert messages == [
+        "Configured models:",
+        "\033[1m├─ ollama\033[0m",
+        "│  No configured models",
+        "\033[1m└─ openai\033[0m",
+        "   No configured models",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_models_command_handles_selector_cancel(monkeypatch):
+    repl = NovaCLI.__new__(NovaCLI)
+    repl.agent = _FakeAgent([])
+    repl.settings = replace(
+        Settings.load_config(),
+        provider="openai",
+        model="gpt-5.4",
+        providers={
+            "openai": ProviderConfig(
+                type="openai-compatible",
+                name="OpenAI Compatible",
+                options={"base_url": "http://openai.local/v1", "api_key": "secret"},
+                models={"gpt-5.4": {"name": "gpt-5.4"}},
+            ),
+        },
+    )
+    repl._display = _make_test_display()
+    repl._input_ui = PromptToolkitInputUI()
+    repl._session_manager = SessionManager(agent=repl.agent, display=repl._display)
+
+    async def fake_prompt_model_selection(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(repl._input_ui, "prompt_model_selection", fake_prompt_model_selection)
+    monkeypatch.setattr(repl._display, "info", lambda text: (_ for _ in ()).throw(AssertionError(text)))
+
+    handled = await repl._handle_models_command(type("Cmd", (), {"args": ""})())
+
+    assert handled is True
 
 
 def test_looks_like_error_message():
@@ -207,6 +526,19 @@ def test_print_history_transcript_shows_ask_user_and_edit_diff(monkeypatch):
     assert "└ /tmp" in clean_output
 
 
+def test_print_user_message_renders_user_transcript(monkeypatch):
+    display = _make_test_display(width=20)
+    captured: list[str] = []
+    ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+    monkeypatch.setattr("builtins.print", lambda *args, **kwargs: captured.append(" ".join(str(arg) for arg in args)))
+
+    display.print_user_message("hello")
+
+    assert captured[0] == ""
+    assert "❯ hello" in ansi_re.sub("", captured[1])
+    assert captured[2] == ""
+
+
 def test_stream_assistant_text_adds_prefix_only_once(monkeypatch):
     captured: list[str] = []
     display = _make_test_display()
@@ -328,7 +660,7 @@ async def test_run_shows_cli_banner_with_slash_commands(monkeypatch):
 
     assert "Nova CLI" in captured
     assert "Type 'exit' or 'quit' to leave." in captured
-    assert "Use /new, /sessions, /load <n>, /clear, or /quit for commands." in captured
+    assert "Use /new, /sessions, /load <n>, /clear, /models, or /quit for commands." in captured
 
 
 @pytest.mark.asyncio
@@ -385,7 +717,7 @@ async def test_clear_command_redraws_banner(monkeypatch):
     assert captured[0] == "__cleared__"
     assert "Nova CLI" in captured
     assert "Type 'exit' or 'quit' to leave." in captured
-    assert "Use /new, /sessions, /load <n>, /clear, or /quit for commands." in captured
+    assert "Use /new, /sessions, /load <n>, /clear, /models, or /quit for commands." in captured
 
 
 def test_parse_options_requires_json_payload():
@@ -817,6 +1149,39 @@ async def test_pending_input_json_uses_human_prompt(monkeypatch):
 
     clean_prompted = [re.sub(r"\x1b\[[0-9;]*m", "", text) for text in prompted]
     assert clean_prompted == ["  ? Current City\n  Please tell me which city you want the weather for."]
+
+
+@pytest.mark.asyncio
+async def test_handle_user_turn_renders_user_message_before_stream(monkeypatch):
+    repl = NovaCLI.__new__(NovaCLI)
+    repl.agent = _FakeAgent([])
+    _init_test_repl(repl)
+    repl._command_registry = CommandRegistry()
+    repl._command_dispatcher = CommandDispatcher(
+        registry=repl._command_registry,
+        handlers={},
+    )
+
+    events: list[tuple[str, str]] = []
+
+    async def fake_prompt():
+        return "hello"
+
+    async def fake_run_stream(user_input):
+        events.append(("run_stream", user_input))
+
+    monkeypatch.setattr(repl._display, "print_user_message", lambda text: events.append(("print_user_message", text)))
+    monkeypatch.setattr("builtins.print", lambda *args, **kwargs: None)
+
+    repl._prompt_chat = fake_prompt
+    repl.run_stream = fake_run_stream
+
+    await repl._handle_user_turn()
+
+    assert events == [
+        ("print_user_message", "hello"),
+        ("run_stream", "hello"),
+    ]
 
 
 @pytest.mark.asyncio

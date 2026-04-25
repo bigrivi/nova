@@ -2,6 +2,7 @@ import asyncio
 import re
 import sys
 import logging
+from dataclasses import replace
 from typing import Optional
 
 from nova.app import build_agent
@@ -21,6 +22,7 @@ from nova.session import close_session_manager
 from nova.settings import Settings, get_settings
 from nova.cli.ui import (
     EscapeKeyMonitor,
+    ModelGroup,
     PromptToolkitInputUI,
 )
 
@@ -41,6 +43,7 @@ class NovaCLI(StreamControlProtocol):
                 "quit": self._handle_quit_command,
                 "new": self._handle_new_command,
                 "clear": self._handle_clear_command,
+                "models": self._handle_models_command,
                 "sessions": self._handle_sessions_command,
                 "load": self._handle_load_command,
             },
@@ -50,7 +53,8 @@ class NovaCLI(StreamControlProtocol):
             completer=CommandCompleter(
                 self._command_registry,
                 load_candidates_provider=self._get_load_completion_candidates,
-            )
+            ),
+            model_label_provider=self._current_model_label,
         )
         self._display = TerminalDisplay()
         self._running = False
@@ -80,6 +84,20 @@ class NovaCLI(StreamControlProtocol):
             return self._input_ui.create_escape_monitor(on_escape)
         return EscapeKeyMonitor(on_escape)
 
+    def _current_model_label(self) -> str:
+        provider = self.settings.provider
+        model = self.settings.resolve_model_name(
+            self.settings.model,
+            provider_name=provider,
+        ).strip()
+        return model or "(server default)"
+
+    def _model_groups(self) -> list[ModelGroup]:
+        return [
+            ModelGroup(provider=provider_name, models=list(provider_config.models.keys()))
+            for provider_name, provider_config in self.settings.providers.items()
+        ]
+
     def request_stop(self) -> None:
         if self._stop_requested:
             return
@@ -87,6 +105,21 @@ class NovaCLI(StreamControlProtocol):
         self._display.spinner.stop()
         self.agent.interrupt()
         log.info("Escape pressed - stop requested for current run")
+
+    def _rebuild_runtime(
+        self,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        updated_settings = replace(
+            self.settings,
+            provider=self.settings.provider if provider is None else provider,
+            model=self.settings.model if model is None else model,
+        )
+        self.settings = updated_settings
+        self.agent = build_agent(settings=self.settings)
+        self._session_manager.set_agent(self.agent)
 
     async def run_stream(self, user_input: str) -> None:
         self._streaming = True
@@ -149,6 +182,32 @@ class NovaCLI(StreamControlProtocol):
         self._print_banner()
         return True
 
+    async def _handle_models_command(self, command: ParsedCommand) -> bool:
+        groups = self._model_groups()
+        if not any(group.models for group in groups):
+            self._display.info("Configured models:")
+            for group_index, group in enumerate(groups):
+                provider_branch = "└─" if group_index == len(groups) - 1 else "├─"
+                model_indent = "   " if group_index == len(groups) - 1 else "│  "
+                self._display.info(f"\033[1m{provider_branch} {group.provider}\033[0m")
+                self._display.info(f"{model_indent}No configured models")
+            return True
+
+        if self._input_ui is None:
+            self._display.info("Interactive model selection requires prompt_toolkit input.")
+            return True
+
+        selection = await self._input_ui.prompt_model_selection(
+            groups,
+            current_provider=self.settings.provider,
+            current_model=self.settings.model,
+        )
+        if selection is None:
+            return True
+        self._rebuild_runtime(provider=selection.provider, model=selection.model)
+        self._display.info(f"Model switched to: {self._current_model_label()}")
+        return True
+
     async def _handle_sessions_command(self, command: ParsedCommand) -> bool:
         await self._session_manager.show_sessions()
         return True
@@ -182,7 +241,7 @@ class NovaCLI(StreamControlProtocol):
             prompt_body = _render_question_prompt(question)
             user_input = await self._prompt_followup(prompt_body)
         self._pending_input = None
-        print()
+        self._display.print_user_message(user_input)
         await self.run_stream(user_input)
         print()
         return True
@@ -197,7 +256,7 @@ class NovaCLI(StreamControlProtocol):
 
         if await self._command_dispatcher.dispatch(user_input):
             return
-        print()
+        self._display.print_user_message(user_input)
         await self.run_stream(user_input)
         print()
 

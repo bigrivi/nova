@@ -19,6 +19,9 @@ class SessionManager:
         self.current_id: Optional[str] = None
         self._cached_sessions: list[dict] = []
 
+    def set_agent(self, agent: object) -> None:
+        self._agent = agent
+
     def get_load_completion_candidates(self) -> list[dict]:
         return [session for session in self._cached_sessions if isinstance(session, dict)]
 

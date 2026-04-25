@@ -52,6 +52,12 @@ DEFAULT_COMMAND_SPECS: tuple[CommandSpec, ...] = (
         usage="/clear",
     ),
     CommandSpec(
+        id="models",
+        label="Models",
+        description="Show available models",
+        usage="/models",
+    ),
+    CommandSpec(
         id="quit",
         label="Quit",
         description="Exit the application",

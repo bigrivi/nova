@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import select
 import sys
 import threading
@@ -8,23 +9,45 @@ from typing import Callable
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.completion import Completer
+from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import Dimension, HSplit, Layout
-from prompt_toolkit.layout.containers import Float, FloatContainer, VerticalAlign
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.containers import ConditionalContainer, Float, FloatContainer, VerticalAlign
 from prompt_toolkit.layout.menus import CompletionsMenu
+from prompt_toolkit.layout import Window
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Box, TextArea
 
 PROMPT_STYLE = Style.from_dict(
     {
-        "": "bg:#020617 #e2e8f0",
         "input-box": "bg:#16263d",
         "input-field": "bg:#16263d #f8fafc",
         "input-prompt": "bg:#16263d #8bd3ff bold",
         "padding": "bg:#16263d #16263d",
+        "model-info": "#6b7280",
+        "selector-title": "#9ca3af",
+        "selector-provider": "bold #9ca3af",
+        "selector-item": "#9ca3af",
+        "selector-current": "#6b7280",
+        "selector-selected": "reverse #9ca3af",
     }
 )
+
+INPUT_UI_REFRESH_INTERVAL = 0.2
+
+
+@dataclass(frozen=True)
+class ModelGroup:
+    provider: str
+    models: list[str]
+
+
+@dataclass(frozen=True)
+class ModelSelection:
+    provider: str
+    model: str
 
 
 def _build_continuation_prefix(line_number: int):
@@ -130,8 +153,141 @@ class EscapeKeyMonitor:
 class PromptToolkitInputUI:
     """Input-only prompt_toolkit UI that leaves output to normal terminal scrollback."""
 
-    def __init__(self, completer: Completer | None = None):
+    def __init__(
+        self,
+        completer: Completer | None = None,
+        model_label: str = "",
+        model_label_provider: Callable[[], str] | None = None,
+    ):
         self._completer = completer
+        self._model_label = model_label.strip()
+        self._model_label_provider = model_label_provider
+
+    def _get_model_label(self) -> str:
+        if self._model_label_provider is not None:
+            return self._model_label_provider().strip()
+        return self._model_label
+
+    def _build_model_fragments(self) -> FormattedText:
+        model_label = self._get_model_label()
+        return FormattedText(
+            [
+                ("class:model-info", f"  {model_label}"),
+            ]
+        )
+
+    async def prompt_model_selection(
+        self,
+        groups: list[ModelGroup],
+        *,
+        current_provider: str,
+        current_model: str,
+    ) -> ModelSelection | None:
+        selectable_items = [
+            ModelSelection(provider=group.provider, model=model_name)
+            for group in groups
+            for model_name in group.models
+        ]
+        if not selectable_items:
+            return None
+
+        initial_index = 0
+        for index, item in enumerate(selectable_items):
+            if item.provider == current_provider and item.model == current_model:
+                initial_index = index
+                break
+
+        state = {"index": initial_index}
+        result: dict[str, ModelSelection | None] = {"selection": None}
+
+        def build_selection_fragments() -> FormattedText:
+            selected_item = selectable_items[state["index"]]
+            fragments: list[tuple[str, str]] = [
+                ("class:selector-title", "Select a model\n"),
+            ]
+            for group_index, group in enumerate(groups):
+                provider_branch = "└─" if group_index == len(
+                    groups) - 1 else "├─"
+                model_indent = "   " if group_index == len(
+                    groups) - 1 else "│  "
+                fragments.append(("class:selector-provider",
+                                 f"{provider_branch} {group.provider}\n"))
+                if not group.models:
+                    fragments.append(
+                        ("class:selector-current", f"{model_indent}No configured models\n"))
+                    continue
+                for model_name in group.models:
+                    is_selected = (
+                        group.provider == selected_item.provider
+                        and model_name == selected_item.model
+                    )
+                    is_current = (
+                        group.provider == current_provider
+                        and model_name == current_model
+                    )
+                    marker = " (current)" if is_current else ""
+                    style = "class:selector-selected" if is_selected else "class:selector-item"
+                    fragments.append(
+                        (style, f"{model_indent}• {model_name}{marker}\n"))
+            if fragments and fragments[-1][1].endswith("\n"):
+                last_style, last_text = fragments[-1]
+                fragments[-1] = (last_style, last_text[:-1])
+            return FormattedText(fragments)
+
+        def move_selection(step: int) -> None:
+            state["index"] = (state["index"] + step) % len(selectable_items)
+
+        bindings = KeyBindings()
+
+        @bindings.add("up")
+        @bindings.add("c-p")
+        def _(event) -> None:
+            move_selection(-1)
+            event.app.invalidate()
+
+        @bindings.add("down")
+        @bindings.add("c-n")
+        def _(event) -> None:
+            move_selection(1)
+            event.app.invalidate()
+
+        @bindings.add("enter")
+        def _(event) -> None:
+            result["selection"] = selectable_items[state["index"]]
+            event.app.exit()
+
+        @bindings.add("escape")
+        def _(event) -> None:
+            event.app.exit()
+
+        @bindings.add("c-c")
+        def _(event) -> None:
+            event.app.exit(exception=SystemExit(130))
+
+        app = Application(
+            layout=Layout(
+                Box(
+                    body=Window(
+                        content=FormattedTextControl(
+                            build_selection_fragments),
+                        always_hide_cursor=True,
+                    ),
+                    padding_left=0,
+                    padding_right=0,
+                    padding_top=1,
+                    padding_bottom=1,
+                    style="class:input-box",
+                )
+            ),
+            key_bindings=bindings,
+            style=PROMPT_STYLE,
+            full_screen=False,
+            mouse_support=False,
+            refresh_interval=INPUT_UI_REFRESH_INTERVAL,
+            erase_when_done=True,
+        )
+        await app.run_async()
+        return result["selection"]
 
     async def prompt(self, prompt_label: str, body: str = "") -> str:
         if body:
@@ -156,20 +312,30 @@ class PromptToolkitInputUI:
             complete_while_typing=self._completer is not None,
         )
 
+        prompt_children = [
+            Box(
+                input_area,
+                padding_left=0,
+                padding_right=0,
+                padding_top=1,
+                padding_bottom=1,
+                style="class:input-box",
+            ),
+            ConditionalContainer(
+                content=Window(
+                    content=FormattedTextControl(self._build_model_fragments),
+                    height=1,
+                    dont_extend_height=True,
+                ),
+                filter=Condition(lambda: bool(self._get_model_label())),
+            ),
+        ]
+
         app = Application(
             layout=Layout(
                 FloatContainer(
                     content=HSplit(
-                        [
-                            Box(
-                                input_area,
-                                padding_left=0,
-                                padding_right=0,
-                                padding_top=1,
-                                padding_bottom=1,
-                                style="class:input-box",
-                            )
-                        ],
+                        prompt_children,
                         align=VerticalAlign.TOP,
                     ),
                     floats=[
@@ -186,6 +352,8 @@ class PromptToolkitInputUI:
             style=PROMPT_STYLE,
             full_screen=False,
             mouse_support=False,
+            refresh_interval=INPUT_UI_REFRESH_INTERVAL,
+            erase_when_done=True,
         )
         await app.run_async()
         return result["text"]

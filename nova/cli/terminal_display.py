@@ -95,6 +95,14 @@ class TerminalDisplay(StreamRenderProtocol):
             assistant_renderer=self.render_assistant_message,
         )
 
+    def print_user_message(self, content: str) -> None:
+        rendered = self.render_history_message("user", content)
+        if not rendered:
+            return
+        print()
+        print(rendered)
+        print()
+
     def render_history_tool_message(self, tool_name: object, content: object) -> Optional[str]:
         if not isinstance(tool_name, str) or not isinstance(content, str):
             return None
