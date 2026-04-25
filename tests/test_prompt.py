@@ -37,9 +37,10 @@ class TestPromptBuilder:
         prompt = builder.build()
         assert "Nova" in prompt
         assert "You are Nova" in prompt
-        assert "tool is currently unavailable" in prompt
+        assert "read the tool error carefully and continue from that result" in prompt
         assert "STRICT JSON format" in prompt
-        assert '"tool": "<tool_name>"' in prompt
+        assert '"name": "<tool_name>"' in prompt
+        assert '"tool": "<tool_name>"' not in prompt
         assert "Nova home:" in prompt
         assert "Nova workspace:" in prompt
         assert "shell process working directory" in prompt

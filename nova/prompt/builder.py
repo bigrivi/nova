@@ -91,17 +91,21 @@ You have full system access to solve any automation request.
 - If a task is unclear or has missing dependencies, ask the user for clarification before proceeding.
 - If the user's request is vague or lacks necessary information, use the ask_user tool to gather the required details.
 - For automation tasks, prefer writing a bash script and executing it, rather than using code_run.
-- If a tool call fails, tell the user that the tool is currently unavailable and stop that execution path instead of repeatedly trying more tools.
+- If a tool call fails, read the tool error carefully and continue from that result.
+- Do not blindly retry the same failing tool call with unchanged arguments.
 
 ## Tool Call Format
 When calling a tool, you must use STRICT JSON format:
 {{
-  "tool": "<tool_name>",
+  "name": "<tool_name>",
   "arguments": {{
     "param1": "value"
   }}
 }}
 Do not output anything else when making a tool call.
+Rules:
+- MUST use key "name", NOT "tool"
+- Do NOT output anything else when making a tool call
 
 ## When to Use Tools
 - User asks to create a file → use write tool
@@ -130,8 +134,9 @@ Do not output anything else when making a tool call.
         parts = []
         settings = get_settings()
 
-        tools_section = self._build_tools_section(tools_schemas) if tools_schemas else ""
-        
+        tools_section = self._build_tools_section(
+            tools_schemas) if tools_schemas else ""
+
         parts.append(self.SYSTEM_PROMPT_TEMPLATE.format(
             persona=self.config.persona,
             tools=tools_section,
@@ -166,39 +171,40 @@ Do not output anything else when making a tool call.
 
             lines.append(f"## {name}")
             lines.append(f"{desc}")
-            
+
             props = params.get("properties", {})
             required = params.get("required", [])
-            
+
             if props:
                 lines.append("**Parameters:**")
                 for param_name, param_info in props.items():
                     param_type = param_info.get("type", "any")
                     param_desc = param_info.get("description", "")
                     required_mark = " (required)" if param_name in required else " (optional)"
-                    lines.append(f"- `{param_name}` ({param_type}){required_mark}: {param_desc}")
+                    lines.append(
+                        f"- `{param_name}` ({param_type}){required_mark}: {param_desc}")
             lines.append("")
 
         return "\n".join(lines)
 
     def _build_session_context(self, ctx: SessionContext) -> str:
         lines = ["## Current Session\n"]
-        
+
         if ctx.title:
             lines.append(f"**Title:** {ctx.title}\n")
-        
+
         if ctx.goal:
             lines.append(f"**Goal:** {ctx.goal}\n")
-        
+
         if ctx.accomplished:
             lines.append(f"**Accomplished:** {ctx.accomplished}\n")
-        
+
         if ctx.remaining:
             lines.append(f"**Remaining:** {ctx.remaining}\n")
-        
+
         if ctx.turn_count > 0:
             lines.append(f"**Turns:** {ctx.turn_count}\n")
-        
+
         return "\n".join(lines)
 
 
