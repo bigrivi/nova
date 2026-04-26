@@ -22,22 +22,23 @@ class SessionManager:
     def set_agent(self, agent: object) -> None:
         self._agent = agent
 
-    def get_load_completion_candidates(self) -> list[dict]:
-        return [session for session in self._cached_sessions if isinstance(session, dict)]
-
     def reset(self) -> None:
         self.current_id = None
 
-    async def show_sessions(self) -> None:
+    async def list_sessions(self) -> list[dict]:
         db = await database.ensure_db()
         sessions = await db.get_all_sessions()
+        self._cached_sessions = [session for session in sessions if isinstance(session, dict)]
+        return self._cached_sessions
+
+    async def show_sessions(self) -> None:
+        sessions = await self.list_sessions()
 
         if not sessions:
             self._display.info("No sessions found")
             return
 
         self._display.info(f"Sessions ({len(sessions)} total)")
-        self._cached_sessions = sessions
         for i, sess in enumerate(sessions, 1):
             title = sess.get("title") or "Untitled"
             is_active = sess["id"] == self.current_id
@@ -47,15 +48,21 @@ class SessionManager:
             self._display.info(f"  {i}. {title}{marker}")
             self._display.info(f"      {sess['id'][:8]}... - {time_str}")
 
-        self._display.info("Type /load <n> to load a session")
-
-    async def load_session(self, idx: int) -> None:
-        if idx < 0 or idx >= len(self._cached_sessions):
-            self._display.info("Invalid session index")
+    async def load_session_by_id(self, session_id: str) -> None:
+        sess = next(
+            (session for session in self._cached_sessions if session.get("id") == session_id),
+            None,
+        )
+        if sess is None:
+            sessions = await self.list_sessions()
+            sess = next(
+                (session for session in sessions if session.get("id") == session_id),
+                None,
+            )
+        if sess is None:
+            self._display.error("Session not found")
             return
 
-        sess = self._cached_sessions[idx]
-        session_id = sess["id"]
         loaded = await self._agent.session.load_session(session_id)
         if loaded is None:
             self._display.error("Failed to load session")

@@ -9,7 +9,15 @@ from nova.cli.history_render import render_question_prompt
 from nova.cli.repl import NovaCLI, parse_options
 from nova.cli.session_manager import SessionManager
 from nova.cli.terminal_display import TerminalDisplay
-from nova.cli.ui import INPUT_UI_REFRESH_INTERVAL, ModelGroup, ModelSelection, PromptToolkitInputUI
+from nova.cli.ui import (
+    INPUT_UI_REFRESH_INTERVAL,
+    ModelGroup,
+    ModelSelection,
+    PromptToolkitInputUI,
+    SessionSelection,
+    _format_relative_time,
+    _session_conversation_width,
+)
 from nova.cli.tool_rendering import render_tool_result
 from nova.cli.utils import looks_like_error_message
 from dataclasses import replace
@@ -197,6 +205,30 @@ async def test_prompt_toolkit_input_ui_prompt_model_selection_enables_periodic_r
 
 
 @pytest.mark.asyncio
+async def test_prompt_toolkit_input_ui_prompt_session_selection_enables_periodic_refresh(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _FakeApplication:
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+
+        async def run_async(self):
+            return None
+
+    monkeypatch.setattr("nova.cli.ui.Application", _FakeApplication)
+
+    ui = PromptToolkitInputUI(model_label_provider=lambda: "gpt-5.4")
+    result = await ui.prompt_session_selection(
+        [{"id": "sess-1", "title": "Greeting", "updated_at": 1714118400000}],
+        current_session_id="sess-1",
+    )
+
+    assert result is None
+    assert captured["refresh_interval"] == INPUT_UI_REFRESH_INTERVAL
+    assert captured["erase_when_done"] is True
+
+
+@pytest.mark.asyncio
 async def test_prompt_toolkit_input_ui_prompt_model_selection_keeps_last_model_visible(monkeypatch):
     captured_render = {"text": ""}
 
@@ -238,6 +270,171 @@ async def test_prompt_toolkit_input_ui_prompt_model_selection_keeps_last_model_v
 
     assert "└─ openai" in captured_render["text"]
     assert "   • gpt-5.4" in captured_render["text"]
+
+
+@pytest.mark.asyncio
+async def test_prompt_toolkit_input_ui_prompt_session_selection_renders_current_marker(monkeypatch):
+    captured_render = {"text": "", "fragments": []}
+
+    class _FakeApplication:
+        def __init__(self, *args, **kwargs):
+            def _find_control(container):
+                if hasattr(container, "content") and hasattr(container.content, "text"):
+                    return container.content
+                if hasattr(container, "body"):
+                    control = _find_control(container.body)
+                    if control is not None:
+                        return control
+                for child in getattr(container, "children", []):
+                    control = _find_control(child)
+                    if control is not None:
+                        return control
+                return None
+
+            layout = kwargs["layout"]
+            control = _find_control(layout.container)
+            assert control is not None
+            fragments = control.text()
+            captured_render["fragments"] = fragments
+            captured_render["text"] = "".join(part for _, part in fragments)
+
+        async def run_async(self):
+            return None
+
+    monkeypatch.setattr("nova.cli.ui.Application", _FakeApplication)
+
+    ui = PromptToolkitInputUI()
+    await ui.prompt_session_selection(
+        [
+            {"id": "sess-1", "title": "Greeting", "created_at": 1714114800000, "updated_at": 1714118400000},
+            {"id": "sess-2", "title": "Follow up", "created_at": 1714118400000, "updated_at": 1714122000000},
+        ],
+        current_session_id="sess-2",
+    )
+
+    assert "Select a session" in captured_render["text"]
+    assert "Created" in captured_render["text"]
+    assert "Updated" in captured_render["text"]
+    assert "Conversation" in captured_render["text"]
+    assert "Follow up" in captured_render["text"]
+    assert "›" in captured_render["text"]
+    assert ("class:selector-current-session", "•") in captured_render["fragments"]
+
+
+@pytest.mark.asyncio
+async def test_prompt_toolkit_input_ui_prompt_session_selection_uses_windowed_rendering(monkeypatch):
+    captured_render = {"text": ""}
+
+    class _FakeApplication:
+        def __init__(self, *args, **kwargs):
+            def _find_control(container):
+                if hasattr(container, "content") and hasattr(container.content, "text"):
+                    return container.content
+                if hasattr(container, "body"):
+                    control = _find_control(container.body)
+                    if control is not None:
+                        return control
+                for child in getattr(container, "children", []):
+                    control = _find_control(child)
+                    if control is not None:
+                        return control
+                return None
+
+            layout = kwargs["layout"]
+            control = _find_control(layout.container)
+            assert control is not None
+            fragments = control.text()
+            captured_render["text"] = "".join(part for _, part in fragments)
+
+        async def run_async(self):
+            return None
+
+    monkeypatch.setattr("nova.cli.ui.Application", _FakeApplication)
+
+    sessions = [
+        {
+            "id": f"sess-{idx}",
+            "title": f"Session {idx}",
+            "created_at": 1714114800000 + idx * 1000,
+            "updated_at": 1714118400000 + idx * 1000,
+        }
+        for idx in range(1, 12)
+    ]
+    ui = PromptToolkitInputUI()
+    await ui.prompt_session_selection(
+        sessions,
+        current_session_id="sess-11",
+    )
+
+    assert "↑ 3 earlier sessions" in captured_render["text"]
+    assert "↓" not in captured_render["text"]
+    assert "Session 11" in captured_render["text"]
+    assert "›" in captured_render["text"]
+    assert "Session 2                        " not in captured_render["text"]
+
+
+def test_format_relative_time_uses_friendly_labels():
+    assert _format_relative_time(0) == "unknown"
+    assert _format_relative_time(1714118400000, now_ts=1714118405) == "just now"
+    assert _format_relative_time(1714118400000, now_ts=1714118460) == "1 minute ago"
+    assert _format_relative_time(1714118400000, now_ts=1714118520) == "2 minutes ago"
+    assert _format_relative_time(1714118400000, now_ts=1714122000) == "1 hour ago"
+    assert _format_relative_time(1714118400000, now_ts=1714204800) == "1 day ago"
+    assert _format_relative_time(1714118400000, now_ts=1714291200) == "2 days ago"
+
+
+def test_session_conversation_width_adapts_to_terminal_columns():
+    assert _session_conversation_width(80) >= 24
+    assert _session_conversation_width(120) > _session_conversation_width(80)
+
+
+@pytest.mark.asyncio
+async def test_prompt_toolkit_input_ui_prompt_session_selection_keeps_current_label_visible_for_long_titles(monkeypatch):
+    captured_render = {"text": "", "fragments": []}
+
+    class _FakeApplication:
+        def __init__(self, *args, **kwargs):
+            def _find_control(container):
+                if hasattr(container, "content") and hasattr(container.content, "text"):
+                    return container.content
+                if hasattr(container, "body"):
+                    control = _find_control(container.body)
+                    if control is not None:
+                        return control
+                for child in getattr(container, "children", []):
+                    control = _find_control(child)
+                    if control is not None:
+                        return control
+                return None
+
+            layout = kwargs["layout"]
+            control = _find_control(layout.container)
+            assert control is not None
+            fragments = control.text()
+            captured_render["fragments"] = fragments
+            captured_render["text"] = "".join(part for _, part in fragments)
+
+        async def run_async(self):
+            return None
+
+    monkeypatch.setattr("nova.cli.ui.Application", _FakeApplication)
+    monkeypatch.setattr("nova.cli.ui._session_conversation_width", lambda terminal_columns=None: 24)
+
+    ui = PromptToolkitInputUI()
+    await ui.prompt_session_selection(
+        [
+            {
+                "id": "sess-1",
+                "title": "This is a very long conversation title that should be truncated safely",
+                "created_at": 1714114800000,
+                "updated_at": 1714118400000,
+            }
+        ],
+        current_session_id="sess-1",
+    )
+
+    assert "›" in captured_render["text"]
+    assert ("class:selector-current-session", " ") in captured_render["fragments"] or ("class:selector-current-session", "•") in captured_render["fragments"]
 
 
 @pytest.mark.asyncio
@@ -403,6 +600,41 @@ async def test_models_command_handles_selector_cancel(monkeypatch):
     handled = await repl._handle_models_command(type("Cmd", (), {"args": ""})())
 
     assert handled is True
+
+
+@pytest.mark.asyncio
+async def test_sessions_command_uses_selector_and_loads_session(monkeypatch):
+    repl = NovaCLI.__new__(NovaCLI)
+    repl.agent = _FakeAgent([])
+    repl.settings = Settings.load_config()
+    repl._display = _make_test_display()
+    repl._input_ui = PromptToolkitInputUI()
+    repl._session_manager = SessionManager(agent=repl.agent, display=repl._display)
+
+    async def fake_list_sessions():
+        return [
+            {"id": "sess-1", "title": "Greeting", "updated_at": 1714118400000},
+            {"id": "sess-2", "title": "Follow up", "updated_at": 1714122000000},
+        ]
+
+    async def fake_prompt_session_selection(sessions, *, current_session_id):
+        assert current_session_id is None
+        assert len(sessions) == 2
+        return SessionSelection(session_id="sess-2")
+
+    loaded: list[str] = []
+
+    async def fake_load_session_by_id(session_id: str):
+        loaded.append(session_id)
+
+    monkeypatch.setattr(repl._session_manager, "list_sessions", fake_list_sessions)
+    monkeypatch.setattr(repl._input_ui, "prompt_session_selection", fake_prompt_session_selection)
+    monkeypatch.setattr(repl._session_manager, "load_session_by_id", fake_load_session_by_id)
+
+    handled = await repl._handle_sessions_command(type("Cmd", (), {"args": ""})())
+
+    assert handled is True
+    assert loaded == ["sess-2"]
 
 
 def test_looks_like_error_message():
@@ -661,7 +893,7 @@ async def test_run_shows_cli_banner_with_slash_commands(monkeypatch):
 
     assert "Nova CLI" in captured
     assert "Type 'exit' or 'quit' to leave." in captured
-    assert "Use /new, /sessions, /load <n>, /clear, /models, or /quit for commands." in captured
+    assert "Use /new, /sessions, /clear, /models, or /quit for commands." in captured
 
 
 @pytest.mark.asyncio
@@ -718,7 +950,7 @@ async def test_clear_command_redraws_banner(monkeypatch):
     assert captured[0] == "__cleared__"
     assert "Nova CLI" in captured
     assert "Type 'exit' or 'quit' to leave." in captured
-    assert "Use /new, /sessions, /load <n>, /clear, /models, or /quit for commands." in captured
+    assert "Use /new, /sessions, /clear, /models, or /quit for commands." in captured
 
 
 def test_parse_options_requires_json_payload():
@@ -754,10 +986,10 @@ def test_render_question_prompt_omits_header_line_when_header_missing():
 def test_command_registry_parses_slash_and_bare_commands():
     registry = CommandRegistry()
 
-    parsed_slash = registry.parse("/load 2")
+    parsed_slash = registry.parse("/sessions")
     assert parsed_slash is not None
-    assert parsed_slash.spec.id == "load"
-    assert parsed_slash.args == "2"
+    assert parsed_slash.spec.id == "sessions"
+    assert parsed_slash.args == ""
 
     parsed_bare = registry.parse("q")
     assert parsed_bare is not None
@@ -806,72 +1038,8 @@ def test_command_completer_suggests_slash_command_for_slash_prefix():
     assert completions[0].text == "/sessions"
 
 
-def test_command_completer_suggests_load_session_indexes_from_cached_sessions():
-    sessions = [
-        {"id": "sess-1-abcdef", "title": "First session"},
-        {"id": "sess-2-ghijkl", "title": "Second session"},
-    ]
-    completer = CommandCompleter(
-        CommandRegistry(),
-        load_candidates_provider=lambda: sessions,
-    )
-
-    completions = list(completer.get_completions(Document("/load ", cursor_position=6), None))
-
-    assert [item.display_text for item in completions] == ["1", "2"]
-    assert completions[0].text == "/load 1"
-    assert completions[0].display_meta_text == "First session [sess-1-a]"
-
-
-def test_command_completer_filters_load_session_indexes_by_prefix():
-    sessions = [{"id": f"sess-{idx}", "title": f"Session {idx}"} for idx in range(1, 13)]
-    completer = CommandCompleter(
-        CommandRegistry(),
-        load_candidates_provider=lambda: sessions,
-    )
-
-    completions = list(completer.get_completions(Document("/load 1", cursor_position=7), None))
-
-    assert [item.display_text for item in completions] == ["1", "10", "11", "12"]
-    assert completions[1].text == "/load 10"
-
-
-def test_command_completer_matches_load_sessions_by_title():
-    sessions = [
-        {"id": "sess-1-abcdef", "title": "First draft"},
-        {"id": "sess-2-ghijkl", "title": "Fix login flow"},
-        {"id": "sess-3-mnopqr", "title": "Final polish"},
-    ]
-    completer = CommandCompleter(
-        CommandRegistry(),
-        load_candidates_provider=lambda: sessions,
-    )
-
-    completions = list(completer.get_completions(Document("/load fi", cursor_position=8), None))
-
-    assert [item.display_text for item in completions] == ["1", "2", "3"]
-    assert [item.text for item in completions] == ["/load 1", "/load 2", "/load 3"]
-    assert completions[1].display_meta_text == "Fix login flow [sess-2-g]"
-
-
-def test_command_completer_matches_load_sessions_by_title_case_insensitively():
-    sessions = [
-        {"id": "sess-1-abcdef", "title": "Alpha review"},
-        {"id": "sess-2-ghijkl", "title": "Feature Branch"},
-    ]
-    completer = CommandCompleter(
-        CommandRegistry(),
-        load_candidates_provider=lambda: sessions,
-    )
-
-    completions = list(completer.get_completions(Document("/load BRAN", cursor_position=10), None))
-
-    assert [item.display_text for item in completions] == ["2"]
-    assert completions[0].text == "/load 2"
-
-
 @pytest.mark.asyncio
-async def test_load_session_reads_history_messages_from_db(monkeypatch):
+async def test_load_session_by_id_reads_history_messages_from_db(monkeypatch):
     ansi_re = re.compile(r"\x1b\[[0-9;]*m")
     class _FakeSessionManager:
         async def load_session(self, session_id):
@@ -903,7 +1071,7 @@ async def test_load_session_reads_history_messages_from_db(monkeypatch):
 
     monkeypatch.setattr("nova.db.database.ensure_db", fake_ensure_db)
 
-    await repl._session_manager.load_session(0)
+    await repl._session_manager.load_session_by_id("sess-1")
 
     assert repl._session_manager.current_id == "sess-1"
     assert captured == [
@@ -921,7 +1089,7 @@ async def test_load_session_reads_history_messages_from_db(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_load_session_reports_missing_history(monkeypatch):
+async def test_load_session_by_id_reports_missing_history(monkeypatch):
     class _FakeSessionManager:
         async def load_session(self, session_id):
             return {"id": session_id}
@@ -946,7 +1114,7 @@ async def test_load_session_reports_missing_history(monkeypatch):
 
     monkeypatch.setattr("nova.db.database.ensure_db", fake_ensure_db)
 
-    await repl._session_manager.load_session(0)
+    await repl._session_manager.load_session_by_id("sess-2")
 
     assert captured == [
         "Loaded session: Empty",

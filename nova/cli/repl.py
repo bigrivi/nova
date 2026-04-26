@@ -45,15 +45,11 @@ class NovaCLI(StreamControlProtocol):
                 "clear": self._handle_clear_command,
                 "models": self._handle_models_command,
                 "sessions": self._handle_sessions_command,
-                "load": self._handle_load_command,
             },
         )
 
         self._input_ui = PromptToolkitInputUI(
-            completer=CommandCompleter(
-                self._command_registry,
-                load_candidates_provider=self._get_load_completion_candidates,
-            ),
+            completer=CommandCompleter(self._command_registry),
             model_label_provider=self._current_model_label,
         )
         self._display = TerminalDisplay()
@@ -66,9 +62,6 @@ class NovaCLI(StreamControlProtocol):
             agent=self.agent,
             display=self._display,
         )
-
-    def _get_load_completion_candidates(self) -> list[dict]:
-        return self._session_manager.get_load_completion_candidates()
 
     def get_session_id(self) -> Optional[str]:
         return self._session_manager.current_id
@@ -209,19 +202,21 @@ class NovaCLI(StreamControlProtocol):
         return True
 
     async def _handle_sessions_command(self, command: ParsedCommand) -> bool:
-        await self._session_manager.show_sessions()
-        return True
+        sessions = await self._session_manager.list_sessions()
+        if not sessions:
+            self._display.info("No sessions found")
+            return True
+        if self._input_ui is None:
+            await self._session_manager.show_sessions()
+            return True
 
-    async def _handle_load_command(self, command: ParsedCommand) -> bool:
-        if not command.args:
-            self._display.error("Usage: /load <n>")
+        selection = await self._input_ui.prompt_session_selection(
+            sessions,
+            current_session_id=self._session_manager.current_id,
+        )
+        if selection is None:
             return True
-        try:
-            idx = int(command.args) - 1
-        except ValueError:
-            self._display.error("Usage: /load <n>")
-            return True
-        await self._session_manager.load_session(idx)
+        await self._session_manager.load_session_by_id(selection.session_id)
         return True
 
     async def _handle_pending_input_turn(self) -> bool:

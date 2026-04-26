@@ -35,15 +35,9 @@ DEFAULT_COMMAND_SPECS: tuple[CommandSpec, ...] = (
     CommandSpec(
         id="sessions",
         label="Sessions",
-        description="Show all sessions",
+        description="Browse and load sessions",
         aliases=("ls",),
         usage="/sessions",
-    ),
-    CommandSpec(
-        id="load",
-        label="Load Session",
-        description="Load a session by index",
-        usage="/load <n>",
     ),
     CommandSpec(
         id="clear",
