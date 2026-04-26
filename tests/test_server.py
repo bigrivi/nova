@@ -113,7 +113,6 @@ async def test_sessions_endpoint_returns_saved_sessions(monkeypatch, tmp_path):
     assert len(payload["items"]) == 1
     assert payload["items"][0]["id"] == "sess-1"
     assert payload["items"][0]["title"] == "Server Test"
-    assert payload["items"][0]["status"] == "active"
     assert isinstance(payload["items"][0]["updated_at"], int)
 
 

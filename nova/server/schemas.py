@@ -25,7 +25,6 @@ class ChatResponse(BaseModel):
 class SessionSummary(BaseModel):
     id: str
     title: str | None = None
-    status: str
     updated_at: int
 
 

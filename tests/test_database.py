@@ -1,19 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from enum import Enum
-
 import pytest
 import pytest_asyncio
 
 from nova.db import database as db_module
 from nova.db.database import Database, DatabaseConfig, MessageFilter, Session
 from nova.settings import get_settings
-
-
-class _Status(Enum):
-    ARCHIVED = "archived"
-
 
 class _ToolCall:
     def __init__(self, name: str):
@@ -32,13 +25,12 @@ async def db():
 
 
 @pytest.mark.asyncio
-async def test_save_session_roundtrip_normalizes_status_and_timestamps(db: Database):
+async def test_save_session_roundtrip_preserves_timestamps_and_metadata(db: Database):
     created_at = datetime(2026, 4, 23, tzinfo=timezone.utc)
     updated_at = datetime(2026, 4, 24, tzinfo=timezone.utc)
     session = Session(
         id="session-1",
         title="Test Session",
-        status=_Status.ARCHIVED,
         created_at=created_at,
         updated_at=updated_at,
         metadata={"source": "test"},
@@ -49,7 +41,6 @@ async def test_save_session_roundtrip_normalizes_status_and_timestamps(db: Datab
     stored = await db.get_session("session-1")
 
     assert stored is not None
-    assert stored["status"] == "archived"
     assert stored["created_at"] == int(created_at.timestamp() * 1000)
     assert stored["updated_at"] == int(updated_at.timestamp() * 1000)
     assert stored["metadata"] == '{"source": "test"}'

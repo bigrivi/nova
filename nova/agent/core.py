@@ -79,13 +79,6 @@ class Agent:
     def interrupt(self) -> None:
         """Interrupt the current execution; the user can trigger this at any time."""
         self._abort_event.set()
-        session = self.session.get_current_session()
-        if session:
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(self.session.pause(session.id))
-            except RuntimeError:
-                pass
         log.info("Agent interrupted")
 
     def _check_abort(self) -> bool:
@@ -245,9 +238,9 @@ class Agent:
         turn_count = 0
         for _ in range(self.config.max_iterations):
             turn_count += 1
-            done_payload = await self._wait_if_aborted()
-            if done_payload:
-                yield AgentEvent.DONE, done_payload
+            stop_payload = await self._wait_if_aborted()
+            if stop_payload:
+                yield AgentEvent.DONE, stop_payload
                 return
 
             messages = await self._get_messages()
@@ -268,9 +261,9 @@ class Agent:
                         model=self.config.model,
                         tools=tool_schemas,
                     ):
-                        done_payload = await self._wait_if_aborted()
-                        if done_payload:
-                            yield AgentEvent.DONE, done_payload
+                        stop_payload = await self._wait_if_aborted()
+                        if stop_payload:
+                            yield AgentEvent.DONE, stop_payload
                             return
 
                         if hasattr(chunk, 'type'):
@@ -300,9 +293,9 @@ class Agent:
                 await self._emit(AgentEvent.LLM_END)
                 if not generator_closing:
                     yield AgentEvent.LLM_END, None
-            done_payload = await self._wait_if_aborted()
-            if done_payload:
-                yield AgentEvent.DONE, done_payload
+            stop_payload = await self._wait_if_aborted()
+            if stop_payload:
+                yield AgentEvent.DONE, stop_payload
                 return
             log.info(
                 f"[Turn {turn_count}] After LLM loop: accumulated_content={len(accumulated_content)}, tool_calls={len(accumulated_tool_calls)}")
@@ -328,15 +321,15 @@ class Agent:
                         tc, 'model_dump') else tc for tc in final_tool_calls],
                 )
                 for tc in final_tool_calls:
-                    done_payload = await self._wait_if_aborted()
-                    if done_payload:
-                        yield AgentEvent.DONE, done_payload
+                    stop_payload = await self._wait_if_aborted()
+                    if stop_payload:
+                        yield AgentEvent.DONE, stop_payload
                         return
                     await self._emit(AgentEvent.TOOL_CALL, tc)
                     yield AgentEvent.TOOL_CALL, tc
-                    done_payload = await self._wait_if_aborted()
-                    if done_payload:
-                        yield AgentEvent.DONE, done_payload
+                    stop_payload = await self._wait_if_aborted()
+                    if stop_payload:
+                        yield AgentEvent.DONE, stop_payload
                         return
                     result = await self._execute_tool(tc)
                     await self.session.add_message(

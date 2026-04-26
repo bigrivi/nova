@@ -203,7 +203,6 @@ async def test_breaking_after_stopped_by_user_does_not_raise_generator_exit(db):
         if event == AgentEvent.DONE and _done_reason(data) == "stopped":
             break
 
-
 @pytest.mark.asyncio
 async def test_tool_failure_returns_to_model_context_and_allows_next_iteration(db):
     provider = ScriptedProvider(

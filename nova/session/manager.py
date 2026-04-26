@@ -3,26 +3,17 @@ import json
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from enum import Enum
 from typing import Any, Optional
 import uuid
 
 from nova.db.database import Message, MessageFilter, ensure_db
 from nova.llm import Message as LLMMessage
 
-
-class SessionStatus(Enum):
-    ACTIVE = "active"
-    IDLE = "idle"
-    TERMINATED = "terminated"
-
-
 @dataclass
 class SessionContext:
     id: str
     created_at: datetime
     updated_at: datetime
-    status: SessionStatus = SessionStatus.ACTIVE
     metadata: dict = field(default_factory=dict)
     title: Optional[str] = None
     parent_id: Optional[str] = None
@@ -102,7 +93,6 @@ class SessionManager:
                     title=session_data.get("title"),
                     created_at=session_data["created_at"],
                     updated_at=session_data["updated_at"],
-                    status=SessionStatus(session_data.get("status", "active")),
                     metadata=json.loads(session_data["metadata"]) if session_data.get(
                         "metadata") else {},
                     parent_id=session_data.get("parent_id"),
@@ -181,41 +171,6 @@ class SessionManager:
         async with self._lock:
             db = await ensure_db()
             await db.compress_messages(session.id, target_count)
-
-    async def pause(self, session_id: str) -> None:
-        """Pause a session."""
-        session = self.get_current_session()
-        if session and session.id == session_id:
-            session.status = SessionStatus.IDLE
-            await self.save_session(session)
-
-    async def resume(self, session_id: str) -> Optional[SessionContext]:
-        """Resume a session."""
-        async with self._lock:
-            db = await ensure_db()
-            session_data = await db.get_session(session_id)
-            if session_data:
-                session = SessionContext(
-                    id=session_data["id"],
-                    title=session_data.get("title"),
-                    created_at=session_data["created_at"],
-                    updated_at=session_data["updated_at"],
-                    status=SessionStatus.ACTIVE,
-                    metadata=json.loads(session_data["metadata"]) if session_data.get(
-                        "metadata") else {},
-                    parent_id=session_data.get("parent_id"),
-                    summary_goal=session_data.get("summary_goal"),
-                    summary_accomplished=session_data.get(
-                        "summary_accomplished"),
-                    summary_remaining=session_data.get("summary_remaining"),
-                    compacted_at=session_data.get("compacted_at"),
-                    message_count=session_data.get("message_count", 0),
-                    turn_count=session_data.get("turn_count", 0),
-                )
-                self.set_current_session(session)
-                await self.save_session(session)
-                return session
-            return None
 
 
 _manager: Optional[SessionManager] = None

@@ -56,7 +56,6 @@ class ChatService:
             SessionSummary(
                 id=session["id"],
                 title=session.get("title"),
-                status=session.get("status", "active"),
                 updated_at=session.get("updated_at", 0),
             )
             for session in sessions

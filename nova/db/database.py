@@ -44,7 +44,6 @@ class Message:
 class Session:
     id: str
     title: Optional[str] = None
-    status: str = "active"
     parent_id: Optional[str] = None
     summary_goal: Optional[str] = None
     summary_accomplished: Optional[str] = None
@@ -74,7 +73,6 @@ _DDL = """
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     title TEXT,
-    status TEXT NOT NULL DEFAULT 'active',
     parent_id TEXT,
     summary_goal TEXT,
     summary_accomplished TEXT,
@@ -204,12 +202,6 @@ class Database:
             return int(value.timestamp() * 1000)
         return int(value)
 
-    @staticmethod
-    def _normalize_status(value: Any) -> str:
-        if hasattr(value, "value"):
-            return str(value.value)
-        return str(value)
-
     async def _fetch_messages(self, sql: str, params: tuple[object, ...]) -> list[Message]:
         cursor = await self._conn.execute(sql, params)
         rows = await cursor.fetchall()
@@ -219,14 +211,12 @@ class Database:
         await self._ensure_connected()
         await self._conn.execute(
             """INSERT OR REPLACE INTO sessions
-            (id, title, status, parent_id, summary_goal, summary_accomplished,
-            summary_remaining, created_at, updated_at, compacted_at, message_count,
-            turn_count, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, title, parent_id, summary_goal, summary_accomplished, summary_remaining,
+            created_at, updated_at, compacted_at, message_count, turn_count, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.id,
                 session.title,
-                self._normalize_status(session.status),
                 session.parent_id,
                 session.summary_goal,
                 session.summary_accomplished,
