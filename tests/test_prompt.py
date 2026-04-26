@@ -36,9 +36,11 @@ class TestPromptBuilder:
         builder = PromptBuilder()
         prompt = builder.build()
         assert "Nova" in prompt
-        assert "You are Nova" in prompt
-        assert "read the tool error carefully and continue from that result" in prompt
-        assert "STRICT JSON format" in prompt
+        assert "You are Nova, a personal AI assistant and autonomous AI agent." in prompt
+        assert "complete a wide range of practical tasks" in prompt
+        assert "If a tool call fails, use the error to adjust the next step." in prompt
+        assert "If clarification is needed during execution, use `ask_user`." in prompt
+        assert "output JSON only" in prompt
         assert '"name": "<tool_name>"' in prompt
         assert '"tool": "<tool_name>"' not in prompt
         assert "Nova home:" in prompt
@@ -46,6 +48,7 @@ class TestPromptBuilder:
         assert "shell process working directory" in prompt
         assert 'what directory am I in" → use bash tool with "pwd"' not in prompt
         assert "Git branch:" not in prompt
+        assert "Capabilities & Autonomy" not in prompt
 
     def test_with_tools(self):
         tools = [
