@@ -1,8 +1,8 @@
 import asyncio
 import json
+import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any, Optional
 import uuid
 
@@ -12,8 +12,8 @@ from nova.llm import Message as LLMMessage
 @dataclass
 class SessionContext:
     id: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: int
+    updated_at: int
     metadata: dict = field(default_factory=dict)
     title: Optional[str] = None
     parent_id: Optional[str] = None
@@ -26,7 +26,7 @@ class SessionContext:
 
     @classmethod
     def create(cls) -> "SessionContext":
-        now = datetime.now(timezone.utc)
+        now = int(time.time() * 1000)
         return cls(
             id=str(uuid.uuid4()),
             created_at=now,
@@ -128,7 +128,7 @@ class SessionManager:
                 tool_calls=tool_calls,
                 tool_call_id=tool_call_id,
             )
-            session.updated_at = datetime.now(timezone.utc)
+            session.updated_at = int(time.time() * 1000)
             session.turn_count += 1
             return msg
 
@@ -147,7 +147,7 @@ class SessionManager:
             deleted_count = await db.delete_messages(sid, message_ids)
             session = self.get_current_session()
             if session and session.id == sid and deleted_count:
-                session.updated_at = datetime.now(timezone.utc)
+                session.updated_at = int(time.time() * 1000)
                 session.turn_count = max(0, session.turn_count - deleted_count)
             return deleted_count
 
