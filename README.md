@@ -39,6 +39,7 @@ nova/
   llm/        provider abstraction and implementations
   prompt/     system prompt builder
   session/    session lifecycle management
+  skills/     skill runtime, catalog, and loading logic
   settings.py runtime settings and logging
   tools/      built-in tools and registry
 ```
@@ -47,6 +48,50 @@ Notes:
 
 - `cli/` is the only real user-facing mode right now.
 - there is no `desktop/` directory yet, but the runtime is being shaped so that it can be added cleanly.
+
+## Skills
+
+Nova keeps framework-side skill logic in `nova/skills/`.
+
+Runtime skill content is loaded from `NOVA_HOME/skills`:
+
+```text
+~/.nova/skills/
+  some-skill/
+    SKILL.md
+    references/
+    scripts/
+    assets/
+```
+
+Current skill loading behavior:
+
+- `scan_skills()` scans the runtime skills directory and rebuilds the in-memory catalog
+- the runtime scans skills during initialization and again after `install_skill` succeeds
+- edits under `NOVA_HOME/skills` are not auto-rescanned by `write` or `edit`; they appear after the next initialization or explicit rescan
+- the system prompt includes the current available skill summaries from the in-memory catalog
+- `list_skills` returns the current in-memory catalog without rescanning on every call
+- `load_skill` loads the full `SKILL.md` for one known skill name
+- CLI terminal preview hides the `load_skill` body while still returning the full `SKILL.md` content to the model
+- `SKILL.md` frontmatter is parsed with a constrained regex-based parser
+- no dedicated skill database tables are used; skill definitions stay in the filesystem
+
+Install a skill from ClawHub with the CLI:
+
+```text
+/install-skill <slug-or-url>
+/install-skill <slug-or-url> --force
+```
+
+Current installation behavior:
+
+- downloads the latest ClawHub skill package by slug
+- uses `https://wry-manatee-359.convex.site/api/v1/download` as the default download endpoint
+- installs into `NOVA_HOME/skills/<slug>`
+- refreshes the in-memory skill catalog immediately after install
+- refuses to overwrite an existing skill directory unless `--force` is provided
+- the agent can also use `install_skill` when the user explicitly asks to install a skill
+- `install_skill` returns installation metadata only and does not include the full `SKILL.md` content
 
 ## Installation
 

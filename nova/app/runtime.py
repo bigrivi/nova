@@ -7,6 +7,7 @@ from __future__ import annotations
 from nova.agent import Agent, AgentConfig
 from nova.llm import LLMProvider, OllamaProvider, OpenAIProvider
 from nova.settings import Settings, get_settings
+from nova.skills import initialize_skill_service
 
 
 def build_llm(settings: Settings | None = None) -> LLMProvider:
@@ -42,6 +43,7 @@ def build_agent(settings: Settings | None = None) -> Agent:
         raise ValueError(f"Unsupported provider type: {provider_type}")
 
     llm = build_llm(settings=settings)
+    initialize_skill_service(settings=settings)
     agent = Agent(
         config=AgentConfig(model=resolved_model),
         llm_provider=llm,

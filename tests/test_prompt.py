@@ -6,6 +6,7 @@ import pytest
 
 from nova.prompt import PromptBuilder, SessionContext, ContextStats, build_system_prompt
 from nova.settings import Settings
+from nova.skills.models import SkillSummary
 
 
 class TestPromptBuilder:
@@ -46,6 +47,15 @@ class TestPromptBuilder:
         assert "Nova home:" in prompt
         assert "Nova workspace:" in prompt
         assert "shell process working directory" in prompt
+        assert "Skills are dynamic." in prompt
+        assert "Current Available Skills" in prompt
+        assert "Call `list_skills`" in prompt
+        assert "call `list_skills` early" in prompt
+        assert "Call `load_skill`" in prompt
+        assert "call `load_skill` before doing the workflow from memory" in prompt
+        assert "Only call `install_skill`" in prompt
+        assert "call `list_skills` before `install_skill`" in prompt
+        assert "prefer `load_skill` instead of reinstalling" in prompt
         assert 'what directory am I in" → use bash tool with "pwd"' not in prompt
         assert "Git branch:" not in prompt
         assert "Capabilities & Autonomy" not in prompt
@@ -72,6 +82,35 @@ class TestPromptBuilder:
         assert "# Available Tools" in prompt
         assert "read" in prompt
         assert "filePath" in prompt
+
+    def test_prompt_includes_available_skill_summaries(self):
+        builder = PromptBuilder()
+        prompt = builder.build(
+            available_skills=[
+                SkillSummary(
+                    name="code-review",
+                    description="Review code changes.",
+                    path="/tmp/skills/code-review",
+                    skill_md_path="/tmp/skills/code-review/SKILL.md",
+                ),
+                SkillSummary(
+                    name="12306",
+                    description="Help with railway ticket workflows.",
+                    path="/tmp/skills/12306",
+                    skill_md_path="/tmp/skills/12306/SKILL.md",
+                ),
+            ]
+        )
+
+        assert "- code-review: Review code changes." in prompt
+        assert "- 12306: Help with railway ticket workflows." in prompt
+        assert "call `load_skill` with the exact skill name" in prompt
+
+    def test_prompt_mentions_when_no_skills_are_installed(self):
+        builder = PromptBuilder()
+        prompt = builder.build(available_skills=[])
+
+        assert "- No skills currently installed in the runtime catalog." in prompt
 
     def test_with_session_context(self):
         ctx = SessionContext(

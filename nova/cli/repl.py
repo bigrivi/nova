@@ -1,5 +1,6 @@
 import asyncio
 import re
+import shlex
 import sys
 import logging
 from dataclasses import replace
@@ -20,6 +21,8 @@ from nova.cli.terminal_display import TerminalDisplay
 from nova.cli.utils import exit_process as _exit_process
 from nova.session import close_session_manager
 from nova.settings import Settings, get_settings
+from nova.skills import initialize_skill_service
+from nova.skills.installer import SkillInstallError
 from nova.cli.ui import (
     EscapeKeyMonitor,
     ModelGroup,
@@ -44,6 +47,7 @@ class NovaCLI(StreamControlProtocol):
                 "new": self._handle_new_command,
                 "clear": self._handle_clear_command,
                 "models": self._handle_models_command,
+                "install-skill": self._handle_install_skill_command,
                 "sessions": self._handle_sessions_command,
             },
         )
@@ -199,6 +203,44 @@ class NovaCLI(StreamControlProtocol):
             return True
         self._rebuild_runtime(provider=selection.provider, model=selection.model)
         self._display.info(f"Model switched to: {self._current_model_label()}")
+        return True
+
+    @staticmethod
+    def _parse_install_skill_args(raw_args: str) -> tuple[str, bool]:
+        try:
+            tokens = shlex.split(raw_args)
+        except ValueError as exc:
+            raise SkillInstallError(f"Invalid install arguments: {exc}") from exc
+
+        skill_ref = ""
+        force = False
+        for token in tokens:
+            if token == "--force":
+                force = True
+                continue
+            if token.startswith("-"):
+                raise SkillInstallError(f"Unsupported option: {token}")
+            if skill_ref:
+                raise SkillInstallError("Usage: /install-skill <slug-or-url> [--force]")
+            skill_ref = token
+
+        if not skill_ref:
+            raise SkillInstallError("Usage: /install-skill <slug-or-url> [--force]")
+        return skill_ref, force
+
+    async def _handle_install_skill_command(self, command: ParsedCommand) -> bool:
+        try:
+            skill_ref, force = self._parse_install_skill_args(command.args)
+            service = initialize_skill_service(settings=self.settings)
+            result = await service.install_from_clawhub(skill_ref, force=force)
+        except SkillInstallError as exc:
+            self._display.error(str(exc))
+            return True
+
+        action = "Updated" if result.replaced else "Installed"
+        self._display.info(
+            f"{action} skill '{result.skill_name}' at {result.installed_path}"
+        )
         return True
 
     async def _handle_sessions_command(self, command: ParsedCommand) -> bool:

@@ -156,6 +156,8 @@ def build_tool_preview_lines(tool_name: str, content: str) -> Optional[list[str]
         return preview_counted_list(lines, fallback_title="Search matches", item_limit=3)
     if tool_name == "read":
         return preview_read_result(lines)
+    if tool_name == "load_skill":
+        return preview_load_skill_result(lines)
     if tool_name == "web_search":
         return preview_web_search_result(lines)
     if tool_name == "web_fetch":
@@ -209,6 +211,28 @@ def preview_read_result(lines: list[str]) -> list[str]:
         preview_lines.append(f"... ({len(visible_lines) - 3} more lines)")
     first_line = preview_lines[0]
     return [f"Read {len(visible_lines)} lines", first_line, *preview_lines[1:]]
+
+
+def preview_load_skill_result(lines: list[str]) -> list[str]:
+    metadata_lines: list[str] = []
+    saw_full_content_marker = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped == "Full SKILL.md:":
+            saw_full_content_marker = True
+            break
+        metadata_lines.append(stripped)
+
+    if not metadata_lines:
+        metadata_lines = ["Skill loaded"]
+
+    preview = metadata_lines[:6]
+    if saw_full_content_marker:
+        preview.append("(full SKILL.md hidden in terminal preview)")
+    return preview
 
 
 def preview_counted_list(lines: list[str], fallback_title: str, item_limit: int) -> list[str]:

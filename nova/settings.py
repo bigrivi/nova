@@ -20,6 +20,7 @@ class RuntimePaths:
     workspace_dir: Path
     logs_dir: Path
     database_path: Path
+    skills_dir: Path
 
 
 @dataclass(frozen=True)
@@ -262,9 +263,14 @@ class Settings:
         self.home.mkdir(parents=True, exist_ok=True)
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.skills_dir.mkdir(parents=True, exist_ok=True)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         if self.config_path is not None:
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def skills_dir(self) -> Path:
+        return self.home / "skills"
 
     @property
     def paths(self) -> RuntimePaths:
@@ -273,6 +279,7 @@ class Settings:
             workspace_dir=self.workspace_dir,
             logs_dir=self.logs_dir,
             database_path=self.database_path,
+            skills_dir=self.skills_dir,
         )
 
     @property

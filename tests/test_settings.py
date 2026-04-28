@@ -104,9 +104,11 @@ def test_app_settings_from_config_and_env(monkeypatch, tmp_path):
     assert settings.workspace_dir == home / "workspace"
     assert settings.logs_dir == home / "logs"
     assert settings.database_path == home / "nova.db"
+    assert settings.skills_dir == home / "skills"
     assert settings.home.is_dir()
     assert settings.workspace_dir.is_dir()
     assert settings.logs_dir.is_dir()
+    assert settings.skills_dir.is_dir()
     assert settings.database_path.parent.is_dir()
     assert settings.provider == "wbz"
     assert settings.model_provider == "wbz"
@@ -118,6 +120,7 @@ def test_app_settings_from_config_and_env(monkeypatch, tmp_path):
     assert settings.get_provider_api_key("wbz") == "secret"
     assert settings.paths.home == home
     assert settings.paths.database_path == home / "nova.db"
+    assert settings.paths.skills_dir == home / "skills"
     assert settings.server.host == "0.0.0.0"
     assert settings.server.backend_port == 9001
     assert settings.llm.provider == "wbz"

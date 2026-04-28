@@ -116,6 +116,9 @@ class Agent:
     def _build_system_prompt(self, session_ctx: Any = None) -> str:
         """Build the dynamic system prompt."""
         tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else []
+        from nova.skills.service import get_skill_service
+
+        available_skills = get_skill_service().list_skills()
 
         ctx = None
         if session_ctx:
@@ -148,6 +151,7 @@ class Agent:
             tools_schemas=tool_schemas,
             session_context=ctx,
             context_stats=stats,
+            available_skills=available_skills,
         )
 
     def _get_max_tokens(self) -> int:

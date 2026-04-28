@@ -76,7 +76,7 @@ async def edit(filePath: str, oldString: str, newString: str, replaceAll: bool =
         
         if final_content and not final_content.endswith("\n"):
             final_content += "\n"
-        
+
         p.write_text(final_content, encoding="utf-8")
         
         old_lines = old_content_final.splitlines(keepends=True)

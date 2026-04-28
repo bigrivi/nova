@@ -25,6 +25,7 @@ from dataclasses import replace
 from nova.db.database import Message
 from nova.settings import ProviderConfig, Settings
 from nova.llm.provider import ToolResult
+from nova.skills.models import SkillInstallResult
 
 
 class _FakeMonitor:
@@ -664,6 +665,30 @@ def test_render_tool_result_ignores_other_tools():
     assert "stdout here" in rendered
 
 
+def test_render_tool_result_hides_load_skill_body_in_terminal_preview():
+    rendered = render_tool_result(
+        "load_skill",
+        "Skill loaded: code-review\n"
+        "Path: /tmp/skills/code-review\n"
+        "SKILL.md: /tmp/skills/code-review/SKILL.md\n"
+        "Description: Review code changes.\n"
+        "Allowed tools: read, grep\n"
+        "\n"
+        "Full SKILL.md:\n"
+        "---\n"
+        "name: code-review\n"
+        "---\n"
+        "# Code Review\n"
+        "Use the checklist.\n",
+    )
+
+    assert rendered is not None
+    assert "Skill loaded: code-review" in rendered
+    assert "(full SKILL.md hidden in terminal preview)" in rendered
+    assert "# Code Review" not in rendered
+    assert "Use the checklist." not in rendered
+
+
 def test_render_history_message_formats_user_visible_roles():
     ansi_re = re.compile(r"\x1b\[[0-9;]*m")
     rendered_width = 20
@@ -844,6 +869,19 @@ def test_print_tool_result_skips_ask_user_payload(monkeypatch):
     assert captured == []
 
 
+def test_print_tool_result_skips_install_skill_payload(monkeypatch):
+    display = _make_test_display()
+    captured: list[str] = []
+    monkeypatch.setattr("builtins.print", lambda *args, **kwargs: captured.append(" ".join(str(arg) for arg in args)))
+
+    display.print_tool_result(
+        "install_skill",
+        '{"status":"ok","action":"installed","skill_name":"12306","skill_md_content_included":false}',
+    )
+
+    assert captured == []
+
+
 def test_print_tool_call_simplifies_ask_user(monkeypatch):
     display = _make_test_display()
     captured: list[str] = []
@@ -893,7 +931,7 @@ async def test_run_shows_cli_banner_with_slash_commands(monkeypatch):
 
     assert "Nova CLI" in captured
     assert "Type 'exit' or 'quit' to leave." in captured
-    assert "Use /new, /sessions, /clear, /models, or /quit for commands." in captured
+    assert "Use /new, /sessions, /clear, /models, /install-skill, or /quit for commands." in captured
 
 
 @pytest.mark.asyncio
@@ -950,7 +988,7 @@ async def test_clear_command_redraws_banner(monkeypatch):
     assert captured[0] == "__cleared__"
     assert "Nova CLI" in captured
     assert "Type 'exit' or 'quit' to leave." in captured
-    assert "Use /new, /sessions, /clear, /models, or /quit for commands." in captured
+    assert "Use /new, /sessions, /clear, /models, /install-skill, or /quit for commands." in captured
 
 
 def test_parse_options_requires_json_payload():
@@ -1036,6 +1074,61 @@ def test_command_completer_suggests_slash_command_for_slash_prefix():
     assert completions
     assert completions[0].display_text == "sessions"
     assert completions[0].text == "/sessions"
+
+
+def test_parse_install_skill_args_accepts_force_flag():
+    assert NovaCLI._parse_install_skill_args("review-skill --force") == ("review-skill", True)
+
+
+@pytest.mark.asyncio
+async def test_install_skill_command_uses_skill_service_and_reports_success(monkeypatch):
+    repl = NovaCLI.__new__(NovaCLI)
+    repl.settings = Settings.load_config()
+    repl._display = _make_test_display()
+
+    info_messages: list[str] = []
+    error_messages: list[str] = []
+    monkeypatch.setattr(repl._display, "info", lambda text: info_messages.append(text))
+    monkeypatch.setattr(repl._display, "error", lambda text: error_messages.append(text))
+
+    captured: dict[str, object] = {}
+
+    class _FakeSkillService:
+        async def install_from_clawhub(self, skill_ref: str, *, force: bool = False):
+            captured["skill_ref"] = skill_ref
+            captured["force"] = force
+            return SkillInstallResult(
+                slug="review-skill",
+                skill_name="review-skill",
+                installed_path="/tmp/review-skill",
+                skill_md_path="/tmp/review-skill/SKILL.md",
+                source_url="https://clawhub.ai/api/v1/download?slug=review-skill",
+                replaced=True,
+            )
+
+    monkeypatch.setattr("nova.cli.repl.initialize_skill_service", lambda settings=None: _FakeSkillService())
+
+    handled = await repl._handle_install_skill_command(type("Cmd", (), {"args": "review-skill --force"})())
+
+    assert handled is True
+    assert captured == {"skill_ref": "review-skill", "force": True}
+    assert error_messages == []
+    assert info_messages == ["Updated skill 'review-skill' at /tmp/review-skill"]
+
+
+@pytest.mark.asyncio
+async def test_install_skill_command_reports_usage_error(monkeypatch):
+    repl = NovaCLI.__new__(NovaCLI)
+    repl.settings = Settings.load_config()
+    repl._display = _make_test_display()
+
+    error_messages: list[str] = []
+    monkeypatch.setattr(repl._display, "error", lambda text: error_messages.append(text))
+
+    handled = await repl._handle_install_skill_command(type("Cmd", (), {"args": ""})())
+
+    assert handled is True
+    assert error_messages == ["Usage: /install-skill <slug-or-url> [--force]"]
 
 
 @pytest.mark.asyncio

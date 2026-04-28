@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from nova.settings import get_settings
 
@@ -90,6 +90,16 @@ When calling a tool, output JSON only:
 - Prefer tool usage when the required runtime fact is not already present in the prompt.
 - Runtime path context is already provided below. Do not call bash `pwd` just to learn Nova's home or workspace.
 - Only use bash `pwd` when the user explicitly asks for the shell process working directory.
+- Skills are dynamic. Call `list_skills` when you need the current available skills from the runtime catalog.
+- If the user asks to use a skill, asks what skills are available, mentions a likely skill name, or the task sounds like a reusable workflow, call `list_skills` early.
+- Call `load_skill` only after you know the exact skill name and need the full `SKILL.md`.
+- If `list_skills` shows a relevant match, call `load_skill` before doing the workflow from memory.
+- Only call `install_skill` when the user explicitly asks you to install a ClawHub skill.
+- If you are unsure whether a skill is already installed locally, call `list_skills` before `install_skill`.
+- If the skill is already installed and the user did not ask to update or replace it, prefer `load_skill` instead of reinstalling.
+
+# Current Available Skills
+{available_skills}
 
 # Environment
 - Current date: {date}
@@ -106,16 +116,19 @@ When calling a tool, output JSON only:
         tools_schemas: list[dict] = None,
         session_context: SessionContext = None,
         context_stats: ContextStats = None,
+        available_skills: list[Any] | None = None,
     ) -> str:
         parts = []
         settings = get_settings()
 
         tools_section = self._build_tools_section(
             tools_schemas) if tools_schemas else ""
+        available_skills_section = self._build_available_skills_section(available_skills)
 
         parts.append(self.SYSTEM_PROMPT_TEMPLATE.format(
             persona=self.config.persona,
             tools=tools_section,
+            available_skills=available_skills_section,
             date=datetime.now().strftime("%Y-%m-%d %A"),
             home=settings.home,
             workspace_dir=settings.workspace_dir,
@@ -163,6 +176,18 @@ When calling a tool, output JSON only:
 
         return "\n".join(lines)
 
+    def _build_available_skills_section(self, available_skills: list[Any] | None) -> str:
+        if not available_skills:
+            return "- No skills currently installed in the runtime catalog."
+
+        lines = []
+        for skill in available_skills:
+            name = str(getattr(skill, "name", "") or "").strip() or "unknown-skill"
+            description = str(getattr(skill, "description", "") or "").strip() or "(no description)"
+            lines.append(f"- {name}: {description}")
+        lines.append("- If one of these matches the task, call `load_skill` with the exact skill name before using it.")
+        return "\n".join(lines)
+
     def _build_session_context(self, ctx: SessionContext) -> str:
         lines = ["## Current Session\n"]
 
@@ -189,6 +214,7 @@ def build_system_prompt(
     session_context: SessionContext = None,
     context_stats: ContextStats = None,
     config: PromptConfig = None,
+    available_skills: list[Any] | None = None,
 ) -> str:
     builder = PromptBuilder(config)
-    return builder.build(tools_schemas, session_context, context_stats)
+    return builder.build(tools_schemas, session_context, context_stats, available_skills)

@@ -134,7 +134,10 @@ class TerminalDisplay(StreamRenderProtocol):
             print()
 
     def print_tool_result(self, tool_name: object, content: object) -> None:
-        if isinstance(tool_name, str) and tool_name.strip().lower() == "ask_user":
+        if (
+            isinstance(tool_name, str)
+            and tool_name.strip().lower() in {"ask_user", "install_skill"}
+        ):
             return
         rendered = render_tool_result(tool_name, content)
         if rendered:
