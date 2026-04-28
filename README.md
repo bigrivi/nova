@@ -17,6 +17,7 @@ Todo list:
 - [x] SQLite-backed local persistence
 - [x] file-based rotating logs
 - [x] provider support for Ollama and OpenAI-compatible APIs
+- [x] runtime skill catalog with on-demand loading and ClawHub install flow
 - [ ] desktop application shell
 - [ ] packaged release metadata such as `pyproject.toml`
 
@@ -26,7 +27,7 @@ Roadmap:
 
 - Now: CLI is the only implemented product surface.
 - Next: add a desktop shell on top of the same runtime.
-- Shared core: `app/runtime.py`, `agent/`, `tools/`, `session/`, and `db/` are being kept reusable so new surfaces do not fork the core logic.
+- Shared core: `nova/app/runtime.py`, `nova/agent/`, `nova/tools/`, `nova/session/`, and `nova/db/` are being kept reusable so new surfaces do not fork the core logic.
 
 ## Current Project Layout
 
@@ -64,17 +65,16 @@ Runtime skill content is loaded from `NOVA_HOME/skills`:
     assets/
 ```
 
-Current skill loading behavior:
+Current runtime skill behavior:
 
-- `scan_skills()` scans the runtime skills directory and rebuilds the in-memory catalog
-- the runtime scans skills during initialization and again after `install_skill` succeeds
-- edits under `NOVA_HOME/skills` are not auto-rescanned by `write` or `edit`; they appear after the next initialization or explicit rescan
+- Nova keeps an in-memory skill catalog built from the filesystem; there are no dedicated skill database tables
+- the runtime scans `NOVA_HOME/skills` during initialization and scans again immediately after a successful skill install
+- ad-hoc edits under `NOVA_HOME/skills` are not auto-rescanned by `write` or `edit`; they show up on the next initialization
 - the system prompt includes the current available skill summaries from the in-memory catalog
+- the runtime exposes three skill-facing tools: `list_skills`, `load_skill`, and `install_skill`
 - `list_skills` returns the current in-memory catalog without rescanning on every call
-- `load_skill` loads the full `SKILL.md` for one known skill name
-- CLI terminal preview hides the `load_skill` body while still returning the full `SKILL.md` content to the model
-- `SKILL.md` frontmatter is parsed with a constrained regex-based parser
-- no dedicated skill database tables are used; skill definitions stay in the filesystem
+- `load_skill` returns the full `SKILL.md` for a known skill name to the model, while the CLI preview hides the large body in terminal output
+- `SKILL.md` frontmatter is parsed with a constrained regex-based parser instead of a YAML dependency
 
 Install a skill from ClawHub with the CLI:
 
@@ -126,6 +126,7 @@ Current CLI behavior highlights:
 - each tool call is shown as it starts
 - successful `edit` and `write` calls print a unified diff so file changes are visible immediately in the terminal
 - long diffs are truncated in the terminal view to keep scrollback readable
+- current available runtime skills are summarized in the system prompt so the model can decide when to call `list_skills` or `load_skill`
 
 With Ollama:
 
@@ -355,6 +356,8 @@ Inside CLI mode:
 
 - type normal text to chat with Nova
 - use `/new` to start a new session
+- use `/models` to switch between configured models
+- use `/install-skill <slug-or-url> [--force]` to install one skill into the local runtime
 - use `/sessions` to list known sessions
 - use `/load <n>` to switch to a listed session
 - use `/clear` to clear the screen
@@ -376,6 +379,7 @@ Derived paths:
 
 - database: `~/.nova/nova.db`
 - logs: `~/.nova/logs/nova.log`
+- skills: `~/.nova/skills/`
 - workspace: `~/.nova/workspace/`
 
 Override the home directory with:
@@ -473,6 +477,7 @@ Nova currently ships with tools for:
 - globbing and regex search
 - web search and web fetch
 - asking the user follow-up questions
+- listing, loading, and installing runtime skills
 - writing structured todo lists
 
 ### `ask_user` Protocol
