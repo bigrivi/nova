@@ -46,6 +46,19 @@ class MessageListResponse(BaseModel):
     items: list[MessageRecord]
 
 
+class ModelRecord(BaseModel):
+    id: str
+    provider: str
+    provider_name: str
+    model: str
+    label: str
+    tools: bool = False
+
+
+class ModelListResponse(BaseModel):
+    items: list[ModelRecord]
+
+
 class InterruptResponse(BaseModel):
     request_id: str
     interrupted: bool

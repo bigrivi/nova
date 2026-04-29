@@ -96,6 +96,75 @@ def test_health_endpoint(monkeypatch):
     assert response.json() == {"status": "ok", "service": "nova", "mode": "server"}
 
 
+def test_models_endpoint_returns_configured_models(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-models"
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.json").write_text(
+        """
+{
+  "model": "gpt-5.4",
+  "model_provider": "openai",
+  "providers": {
+    "openai": {
+      "type": "openai-compatible",
+      "name": "OpenAI Compatible",
+      "options": {
+        "base_url": "https://api.openai.com/v1"
+      },
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4",
+          "tools": true
+        }
+      }
+    },
+    "ollama": {
+      "type": "ollama",
+      "name": "Ollama (local)",
+      "options": {
+        "base_url": "http://localhost:11434"
+      },
+      "models": {
+        "gemma4:26b": {
+          "name": "gemma4:26b",
+          "tools": true
+        }
+      }
+    }
+  }
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.get("/api/models")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"] == [
+        {
+            "id": "openai:gpt-5.4",
+            "provider": "openai",
+            "provider_name": "OpenAI Compatible",
+            "model": "gpt-5.4",
+            "label": "gpt-5.4",
+            "tools": True,
+        },
+        {
+            "id": "ollama:gemma4:26b",
+            "provider": "ollama",
+            "provider_name": "Ollama (local)",
+            "model": "gemma4:26b",
+            "label": "gemma4:26b",
+            "tools": True,
+        },
+    ]
+
+
 @pytest.mark.asyncio
 async def test_sessions_endpoint_returns_saved_sessions(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))

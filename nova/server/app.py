@@ -15,6 +15,8 @@ from nova.server.schemas import (
     ChatRequest,
     ChatResponse,
     InterruptResponse,
+    ModelListResponse,
+    ModelRecord,
     MessageListResponse,
     SessionListResponse,
 )
@@ -56,6 +58,24 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     async def session_messages(session_id: str) -> MessageListResponse:
         response = await app.state.chat_service.list_messages(session_id)
         return response
+
+    @app.get("/api/models", response_model=ModelListResponse)
+    async def models() -> ModelListResponse:
+        items: list[ModelRecord] = []
+        for provider_key, provider_config in app.state.settings.providers.items():
+            for model_key, model_config in provider_config.models.items():
+                configured_name = str(model_config.get("name", "")).strip() or model_key
+                items.append(
+                    ModelRecord(
+                        id=f"{provider_key}:{model_key}",
+                        provider=provider_key,
+                        provider_name=provider_config.name,
+                        model=model_key,
+                        label=configured_name,
+                        tools=bool(model_config.get("tools") or model_config.get("toolCalling")),
+                    )
+                )
+        return ModelListResponse(items=items)
 
     @app.post("/api/chat", response_model=ChatResponse)
     async def chat(chat_request: ChatRequest) -> ChatResponse:
