@@ -1,26 +1,134 @@
 "use client";
 
 import "@assistant-ui/react-markdown/styles/dot.css";
+import "prismjs/themes/prism.css";
 
 import {
   type CodeHeaderProps,
   MarkdownTextPrimitive,
+  type SyntaxHighlighterProps,
   unstable_memoizeMarkdownComponents as memoizeMarkdownComponents,
   useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
+import Prism from "prismjs";
+import "prismjs/components/prism-bash";
+import "prismjs/components/prism-csharp";
+import "prismjs/components/prism-diff";
+import "prismjs/components/prism-docker";
+import "prismjs/components/prism-go";
+import "prismjs/components/prism-java";
+import "prismjs/components/prism-json";
+import "prismjs/components/prism-jsx";
+import "prismjs/components/prism-markdown";
+import "prismjs/components/prism-python";
+import "prismjs/components/prism-ruby";
+import "prismjs/components/prism-rust";
+import "prismjs/components/prism-sql";
+import "prismjs/components/prism-typescript";
+import "prismjs/components/prism-tsx";
+import "prismjs/components/prism-yaml";
 import remarkGfm from "remark-gfm";
-import { type FC, memo, useState } from "react";
+import { type FC, memo, useMemo, useState } from "react";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { cn } from "@/lib/utils";
+
+const PRISM_LANGUAGE_ALIASES: Record<string, string> = {
+  csharp: "csharp",
+  docker: "docker",
+  dockerfile: "docker",
+  js: "javascript",
+  jsx: "jsx",
+  md: "markdown",
+  py: "python",
+  rb: "ruby",
+  rs: "rust",
+  sh: "bash",
+  shell: "bash",
+  ts: "typescript",
+  tsx: "tsx",
+  yml: "yaml",
+  zsh: "bash",
+};
+
+function normalizePrismLanguage(language: string | undefined) {
+  if (!language) {
+    return null;
+  }
+
+  const normalized = language
+    .replace(/^language-/, "")
+    .trim()
+    .toLowerCase()
+    .split(/[\s{]/)[0]
+
+  if (!normalized) {
+    return null;
+  }
+
+  return PRISM_LANGUAGE_ALIASES[normalized] ?? normalized
+}
+
+function ensurePrismLanguage(language: string | undefined) {
+  const normalized = normalizePrismLanguage(language)
+  if (!normalized) {
+    return null
+  }
+
+  return Prism.languages[normalized] ? normalized : null
+}
+
+const MarkdownSyntaxHighlighter: FC<SyntaxHighlighterProps> = ({
+  components: { Pre, Code },
+  language,
+  code,
+}) => {
+  const resolvedLanguage = useMemo(
+    () => ensurePrismLanguage(language),
+    [language],
+  )
+  const className = resolvedLanguage ? `language-${resolvedLanguage}` : undefined
+  const highlightedHtml = useMemo(() => {
+    if (!resolvedLanguage) {
+      return null
+    }
+
+    const grammar = Prism.languages[resolvedLanguage]
+    if (!grammar) {
+      return null
+    }
+
+    return Prism.highlight(code, grammar, resolvedLanguage)
+  }, [code, resolvedLanguage])
+
+  if (!highlightedHtml) {
+    return (
+      <Pre className={className}>
+        <Code className={className}>{code}</Code>
+      </Pre>
+    )
+  }
+
+  return (
+    <Pre className={className}>
+      <Code
+        className={className}
+        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+      />
+    </Pre>
+  )
+}
 
 const MarkdownTextImpl = () => {
   return (
     <MarkdownTextPrimitive
       remarkPlugins={[remarkGfm]}
       className="aui-md"
-      components={defaultComponents}
+      components={{
+        ...defaultComponents,
+        SyntaxHighlighter: MarkdownSyntaxHighlighter,
+      }}
     />
   );
 };
@@ -227,7 +335,8 @@ const defaultComponents = memoizeMarkdownComponents({
     />
   ),
   code: function Code({ className, ...props }) {
-    const isCodeBlock = useIsMarkdownCodeBlock();
+    const isCodeBlock =
+      useIsMarkdownCodeBlock() || Boolean(className?.includes("language-"));
     return (
       <code
         className={cn(
