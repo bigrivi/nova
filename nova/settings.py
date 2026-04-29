@@ -62,6 +62,17 @@ def _default_model_for_provider_type(provider_type: str) -> str:
     return ""
 
 
+def _deep_merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        existing = merged.get(key)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            merged[key] = _deep_merge_dicts(existing, value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def _resolve_openai_api_key() -> str:
     return (
         os.getenv("NOVA_OPENAI_API_KEY")
@@ -326,6 +337,34 @@ class Settings:
     def get_provider_api_key(self, provider_name: str) -> str:
         api_key = str(self.get_provider_option(provider_name, "api_key", "")).strip()
         return api_key
+
+    def get_request_options(self, model_name: str | None = None, provider_name: str | None = None) -> dict[str, Any]:
+        resolved_provider = provider_name or self.provider
+        provider_config = self.get_provider_config(resolved_provider)
+        merged: dict[str, Any] = {}
+
+        provider_request_options = provider_config.options.get("request_options")
+        if isinstance(provider_request_options, dict):
+            merged = _deep_merge_dicts(merged, provider_request_options)
+
+        provider_extra_body = provider_config.options.get("extra_body")
+        if isinstance(provider_extra_body, dict):
+            merged = _deep_merge_dicts(merged, {"extra_body": provider_extra_body})
+
+        if model_name is None:
+            return merged
+
+        model_entry = self.get_model_config(model_name, provider_name=resolved_provider)
+
+        model_request_options = model_entry.get("request_options")
+        if isinstance(model_request_options, dict):
+            merged = _deep_merge_dicts(merged, model_request_options)
+
+        model_extra_body = model_entry.get("extra_body")
+        if isinstance(model_extra_body, dict):
+            merged = _deep_merge_dicts(merged, {"extra_body": model_extra_body})
+
+        return merged
 
     def get_model_config(self, model_name: str, provider_name: str | None = None) -> dict[str, Any]:
         resolved_provider = provider_name or self.provider

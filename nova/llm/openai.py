@@ -19,12 +19,14 @@ class OpenAIProvider(LLMProvider):
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
+        request_options: Optional[dict] = None,
         timeout: int = 120,
     ):
         settings = get_settings()
         self.api_key = api_key if api_key is not None else settings.openai_api_key
         resolved_base_url = base_url or settings.openai_base_url
         self.base_url = resolved_base_url.rstrip("/")
+        self.request_options = dict(request_options or {})
         self.timeout = timeout
         self._max_tokens = {
             "gpt-4o": 128000,
@@ -66,6 +68,32 @@ class OpenAIProvider(LLMProvider):
         if tools:
             body["tools"] = tools
         return body
+
+    @staticmethod
+    def _deep_merge_dicts(base: dict, override: dict) -> dict:
+        merged = dict(base)
+        for key, value in override.items():
+            existing = merged.get(key)
+            if isinstance(existing, dict) and isinstance(value, dict):
+                merged[key] = OpenAIProvider._deep_merge_dicts(existing, value)
+            else:
+                merged[key] = value
+        return merged
+
+    @classmethod
+    def _normalize_request_options(cls, request_options: Optional[dict]) -> dict:
+        if not isinstance(request_options, dict):
+            return {}
+        normalized = dict(request_options)
+        extra_body = normalized.pop("extra_body", None)
+        if isinstance(extra_body, dict):
+            normalized = cls._deep_merge_dicts(normalized, extra_body)
+        return normalized
+
+    def _resolve_request_options(self, request_options: Optional[dict]) -> dict:
+        defaults = self._normalize_request_options(self.request_options)
+        overrides = self._normalize_request_options(request_options)
+        return self._deep_merge_dicts(defaults, overrides)
 
     @staticmethod
     def _normalize_tool_call(tool_call: dict) -> dict:
@@ -148,6 +176,7 @@ class OpenAIProvider(LLMProvider):
         **kwargs
     ) -> Done:
         formatted_messages = self._format_messages(messages)
+        request_options = self._resolve_request_options(kwargs)
 
         headers = self._build_headers()
         body = self._build_body(
@@ -155,7 +184,7 @@ class OpenAIProvider(LLMProvider):
             model=model,
             stream=stream,
             tools=tools,
-            **kwargs,
+            **request_options,
         )
 
         url = f"{self.base_url}/chat/completions"
@@ -177,7 +206,12 @@ class OpenAIProvider(LLMProvider):
                         return Done(content=f"Error: {error_message}", tool_calls=[])
 
                     data = await resp.json()
-                    choice = data.get("choices", [{}])[0]
+                    choices = data.get("choices")
+                    if not isinstance(choices, list) or not choices:
+                        log.debug(
+                            "OpenAI provider response omitted choices: %s", data)
+                        return Done(content="", tool_calls=[])
+                    choice = choices[0]
                     msg = choice.get("message", {})
 
                     tool_calls = []
@@ -206,19 +240,19 @@ class OpenAIProvider(LLMProvider):
         **kwargs
     ) -> AsyncGenerator[Done, None]:
         formatted_messages = self._format_messages(messages)
+        request_options = self._resolve_request_options(kwargs)
         headers = self._build_headers()
         body = self._build_body(
             messages=formatted_messages,
             model=model,
             stream=True,
             tools=tools,
-            **kwargs,
+            **request_options,
         )
 
         url = f"{self.base_url}/chat/completions"
         accumulated_content = ""
         accumulated_tool_calls: dict[int, dict[str, str | bool]] = {}
-
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -239,13 +273,19 @@ class OpenAIProvider(LLMProvider):
                         line = line.decode("utf-8").strip()
                         if not line or line == "data: [DONE]":
                             continue
+                        log.debug("OpenAI provider stream chunk: %s", line)
 
                         if line.startswith("data: "):
                             line = line[6:]
 
                         try:
                             data = json.loads(line)
-                            choice = data.get("choices", [{}])[0]
+                            choices = data.get("choices")
+                            if not isinstance(choices, list) or not choices:
+                                log.debug(
+                                    "OpenAI provider stream chunk omitted choices: %s", data)
+                                continue
+                            choice = choices[0]
                             delta = choice.get("delta", {})
                             if "tool_calls" in delta:
                                 for tc in delta["tool_calls"]:

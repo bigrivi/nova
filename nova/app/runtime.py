@@ -22,9 +22,14 @@ def build_llm(settings: Settings | None = None) -> LLMProvider:
         return OllamaProvider(base_url=base_url)
     if provider_type == "openai-compatible":
         base_url = str(provider_config.options.get("base_url", llm_settings.openai_base_url)).strip()
+        request_options = settings.get_request_options(
+            model_name=llm_settings.model,
+            provider_name=resolved_provider,
+        )
         return OpenAIProvider(
             api_key=settings.get_provider_api_key(resolved_provider),
             base_url=base_url,
+            request_options=request_options,
         )
     raise ValueError(f"Unsupported provider type: {provider_type}")
 

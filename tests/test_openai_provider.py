@@ -44,6 +44,66 @@ def test_openai_provider_includes_model_and_auth_when_provided():
     assert "tools" in body
 
 
+def test_openai_provider_flattens_extra_body_request_options():
+    provider = OpenAIProvider(
+        api_key="",
+        base_url="http://localhost:8080",
+        request_options={
+            "temperature": 0.2,
+            "extra_body": {
+                "chat_template_kwargs": {
+                    "enable_thinking": False,
+                }
+            },
+        },
+    )
+
+    body = provider._build_body(
+        messages=[{"role": "user", "content": "hi"}],
+        model="Qwen/Qwen3.6-35B-A3B",
+        **provider._resolve_request_options({}),
+    )
+
+    assert body["temperature"] == 0.2
+    assert body["chat_template_kwargs"] == {"enable_thinking": False}
+    assert "extra_body" not in body
+
+
+def test_openai_provider_merges_default_and_call_request_options():
+    provider = OpenAIProvider(
+        api_key="",
+        base_url="http://localhost:8080",
+        request_options={
+            "temperature": 0.2,
+            "extra_body": {
+                "chat_template_kwargs": {
+                    "enable_thinking": False,
+                    "reasoning_effort": "low",
+                }
+            },
+        },
+    )
+
+    request_options = provider._resolve_request_options(
+        {
+            "temperature": 0.5,
+            "extra_body": {
+                "chat_template_kwargs": {
+                    "reasoning_effort": "minimal",
+                }
+            },
+        }
+    )
+
+    assert request_options == {
+        "temperature": 0.5,
+        "chat_template_kwargs": {
+            "enable_thinking": False,
+            "reasoning_effort": "minimal",
+        },
+    }
+
+
 def test_openai_provider_formats_stored_tool_calls_for_openai():
     provider = OpenAIProvider(api_key="", base_url="http://localhost:8080")
 
@@ -275,3 +335,54 @@ async def test_openai_stream_accumulates_tool_arguments(monkeypatch):
     assert done_events
     assert done_events[-1].tool_calls
     assert done_events[-1].tool_calls[0].arguments == '{"command": "pwd"}'
+
+
+@pytest.mark.asyncio
+async def test_openai_stream_ignores_usage_only_chunks(monkeypatch):
+    provider = OpenAIProvider(api_key="", base_url="http://localhost:8080")
+
+    def chunk(payload: dict) -> bytes:
+        return f"data: {json.dumps(payload)}\n".encode()
+
+    chunks = [
+        chunk(
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"content": "hello"},
+                        "finish_reason": None,
+                    }
+                ]
+            }
+        ),
+        chunk(
+            {
+                "choices": [],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 2,
+                    "total_tokens": 12,
+                },
+            }
+        ),
+        b"data: [DONE]\n",
+    ]
+
+    monkeypatch.setattr(
+        "nova.llm.openai.aiohttp.ClientSession",
+        lambda *args, **kwargs: _FakeSession(_FakeStreamResponse(chunks)),
+    )
+
+    events = []
+    async for event in provider.chat_stream(
+        messages=[{"role": "user", "content": "where am I"}],
+        model="",
+        tools=[],
+    ):
+        events.append(event)
+
+    assert len(events) == 2
+    assert events[0].content == "hello"
+    assert isinstance(events[1], Done)
+    assert events[1].content == "hello"

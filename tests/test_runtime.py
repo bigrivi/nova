@@ -106,11 +106,26 @@ def test_build_llm_for_openai_compatible_provider(monkeypatch, tmp_path):
                     "options": {
                         "base_url": "http://openai.local/v1",
                         "api_key": "secret",
+                        "request_options": {
+                            "temperature": 0.2,
+                            "extra_body": {
+                                "chat_template_kwargs": {
+                                    "reasoning_effort": "low",
+                                }
+                            },
+                        },
                     },
                     "models": {
                         "gpt-test": {
                             "name": "gpt-4o",
                             "tools": True,
+                            "request_options": {
+                                "extra_body": {
+                                    "chat_template_kwargs": {
+                                        "enable_thinking": False,
+                                    }
+                                }
+                            },
                         }
                     },
                 }
@@ -125,6 +140,15 @@ def test_build_llm_for_openai_compatible_provider(monkeypatch, tmp_path):
     assert isinstance(llm, OpenAIProvider)
     assert llm.api_key == "secret"
     assert llm.base_url == "http://openai.local/v1"
+    assert llm.request_options == {
+        "temperature": 0.2,
+        "extra_body": {
+            "chat_template_kwargs": {
+                "reasoning_effort": "low",
+                "enable_thinking": False,
+            }
+        },
+    }
 
 
 def test_build_agent_for_openai_compatible_provider_resolves_model_alias(monkeypatch, tmp_path):
