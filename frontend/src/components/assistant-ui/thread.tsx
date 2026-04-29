@@ -1,4 +1,5 @@
 import { UserMessageAttachments } from "@/components/assistant-ui/attachment";
+import { AskUserTool } from "@/components/assistant-ui/ask-user-tool";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
@@ -15,6 +16,7 @@ import {
   MessagePrimitive,
   SuggestionPrimitive,
   ThreadPrimitive,
+  useAssistantToolUI,
   useAuiState,
 } from "@assistant-ui/react";
 import {
@@ -32,41 +34,53 @@ import { type FC } from "react";
 
 export const Thread: FC = () => {
   return (
-    <ThreadPrimitive.Root
-      className="aui-root aui-thread-root @container flex h-full min-h-0 flex-col bg-background"
-      style={{
-        ["--thread-max-width" as string]: "44rem",
-        ["--composer-radius" as string]: "24px",
-        ["--composer-padding" as string]: "10px",
-      }}
-    >
-      <ThreadPrimitive.Viewport
-        turnAnchor="top"
-        autoScroll
-        data-slot="aui_thread-viewport"
-        className="relative flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth"
+    <>
+      <AskUserToolUIRegistry />
+      <ThreadPrimitive.Root
+        className="aui-root aui-thread-root @container flex h-full min-h-0 flex-col bg-background"
+        style={{
+          ["--thread-max-width" as string]: "44rem",
+          ["--composer-radius" as string]: "24px",
+          ["--composer-padding" as string]: "10px",
+        }}
       >
-        <div className="mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-4">
-          <AuiIf condition={(s) => s.thread.isEmpty}>
-            <ThreadWelcome />
-          </AuiIf>
+        <ThreadPrimitive.Viewport
+          turnAnchor="top"
+          autoScroll
+          data-slot="aui_thread-viewport"
+          className="relative flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth"
+        >
+          <div className="mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-4">
+            <AuiIf condition={(s) => s.thread.isEmpty}>
+              <ThreadWelcome />
+            </AuiIf>
 
-          <div
-            data-slot="aui_message-group"
-            className="mb-10 flex flex-col gap-y-8 empty:hidden"
-          >
-            <ThreadPrimitive.Messages>
-              {() => <ThreadMessage />}
-            </ThreadPrimitive.Messages>
+            <div
+              data-slot="aui_message-group"
+              className="mb-10 flex flex-col gap-y-8 empty:hidden"
+            >
+              <ThreadPrimitive.Messages>
+                {() => <ThreadMessage />}
+              </ThreadPrimitive.Messages>
+            </div>
+
+            <ThreadPrimitive.ViewportFooter className="pointer-events-none sticky bottom-0 z-10 mt-auto flex min-h-0 overflow-visible pb-4 md:pb-6">
+              <ThreadScrollToBottom />
+            </ThreadPrimitive.ViewportFooter>
           </div>
-
-          <ThreadPrimitive.ViewportFooter className="pointer-events-none sticky bottom-0 z-10 mt-auto flex min-h-0 overflow-visible pb-4 md:pb-6">
-            <ThreadScrollToBottom />
-          </ThreadPrimitive.ViewportFooter>
-        </div>
-      </ThreadPrimitive.Viewport>
-    </ThreadPrimitive.Root>
+        </ThreadPrimitive.Viewport>
+      </ThreadPrimitive.Root>
+    </>
   );
+};
+
+const AskUserToolUIRegistry: FC = () => {
+  useAssistantToolUI({
+    toolName: "ask_user",
+    render: AskUserTool,
+  });
+
+  return null;
 };
 
 const ThreadMessage: FC = () => {

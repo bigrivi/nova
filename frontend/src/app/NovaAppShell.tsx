@@ -18,7 +18,9 @@ import { Button } from '../components/ui/button'
 import { TooltipProvider } from '../components/ui/tooltip'
 import { listMessages, listModels, listSessions, streamChat } from '../lib/nova-api'
 import type {
+  NovaJsonObject,
   NovaModelRecord,
+  NovaMessageRecord,
   NovaSessionSummary,
   NovaThreadSummary,
 } from '../types/nova'
@@ -35,6 +37,59 @@ function createTextMessage(
     role,
     content: text,
     createdAt: new Date(),
+  }
+}
+
+function createAssistantMessage(id?: string): ThreadMessageLike {
+  return {
+    id: id ?? crypto.randomUUID(),
+    role: 'assistant',
+    content: [],
+    createdAt: new Date(),
+  }
+}
+
+type AssistantPart = Exclude<ThreadMessageLike['content'], string>[number]
+
+type ToolCallLike = {
+  id: string
+  name: string
+  arguments: string
+}
+
+function parseToolCallLike(value: unknown): ToolCallLike | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const raw = value as Record<string, unknown>
+  const id = String(raw.id ?? '').trim()
+  const name = String(raw.name ?? '').trim()
+  const argumentsText = String(raw.arguments ?? '').trim()
+  if (!name) {
+    return null
+  }
+
+  return {
+    id: id || crypto.randomUUID(),
+    name,
+    arguments: argumentsText,
+  }
+}
+
+function parseJsonObject(value: string): NovaJsonObject {
+  const text = value.trim()
+  if (!text) {
+    return {}
+  }
+
+  try {
+    const parsed = JSON.parse(text)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as NovaJsonObject)
+      : {}
+  } catch {
+    return {}
   }
 }
 
@@ -59,11 +114,49 @@ function toThreadSummary(session: NovaSessionSummary): NovaThreadSummary {
 }
 
 function toThreadMessages(
-  messages: Array<{ id: string; role: 'user' | 'assistant'; content: string }>,
+  messages: NovaMessageRecord[],
 ): ThreadMessageLike[] {
-  return messages.map((message) =>
-    createTextMessage(message.role, message.content, message.id),
-  )
+  return messages.flatMap((message) => {
+    if (message.role === 'user') {
+      return [createTextMessage('user', message.content, message.id)]
+    }
+
+    if (message.role !== 'assistant') {
+      return []
+    }
+
+    const content: AssistantPart[] = []
+    if (message.content) {
+      content.push({ type: 'text', text: message.content })
+    }
+
+    for (const toolCall of message.tool_calls) {
+      const parsed = parseToolCallLike(toolCall)
+      if (!parsed) {
+        continue
+      }
+      content.push({
+        type: 'tool-call',
+        toolCallId: parsed.id,
+        toolName: parsed.name,
+        args: parseJsonObject(parsed.arguments),
+        argsText: parsed.arguments,
+      })
+    }
+
+    if (content.length === 0) {
+      return []
+    }
+
+    return [
+      {
+        id: message.id,
+        role: 'assistant',
+        content,
+        createdAt: new Date(message.time_created),
+      },
+    ]
+  })
 }
 
 function upsertThread(
@@ -95,10 +188,87 @@ function setAssistantText(
       return message
     }
 
-    const currentText = typeof message.content === 'string' ? message.content : ''
+    const parts =
+      typeof message.content === 'string'
+        ? message.content
+          ? [{ type: 'text' as const, text: message.content }]
+          : []
+        : [...message.content]
+    const textPartIndex = parts.findLastIndex((part) => part.type === 'text')
+    const currentText =
+      textPartIndex >= 0 && parts[textPartIndex]?.type === 'text'
+        ? parts[textPartIndex].text
+        : ''
+    const nextText = updater(currentText)
+
+    if (textPartIndex >= 0) {
+      parts[textPartIndex] = { type: 'text', text: nextText }
+    } else if (nextText) {
+      parts.push({ type: 'text', text: nextText })
+    }
+
     return {
       ...message,
-      content: updater(currentText),
+      content: parts,
+    }
+  })
+}
+
+function upsertAssistantToolCall(
+  messages: ThreadMessageLike[],
+  assistantMessageId: string,
+  payload: {
+    toolCallId: string
+    toolName?: string
+    input?: NovaJsonObject
+    output?: unknown
+  },
+) {
+  return messages.map((message) => {
+    if (message.id !== assistantMessageId || message.role !== 'assistant') {
+      return message
+    }
+
+    const parts =
+      typeof message.content === 'string'
+        ? message.content
+          ? [{ type: 'text' as const, text: message.content }]
+          : []
+        : [...message.content]
+    const toolIndex = parts.findIndex(
+      (part) => part.type === 'tool-call' && part.toolCallId === payload.toolCallId,
+    )
+
+    const current =
+      toolIndex >= 0 && parts[toolIndex]?.type === 'tool-call'
+        ? parts[toolIndex]
+        : null
+
+    const nextPart: AssistantPart = {
+      type: 'tool-call',
+      toolCallId: payload.toolCallId,
+      toolName: payload.toolName || current?.toolName || 'tool',
+      args:
+        payload.input ??
+        current?.args ??
+        {},
+      argsText:
+        payload.input !== undefined
+          ? JSON.stringify(payload.input)
+          : current?.argsText ?? '',
+      ...(payload.output !== undefined ? { result: payload.output } : current?.result !== undefined ? { result: current.result } : {}),
+      ...(current?.isError !== undefined ? { isError: current.isError } : {}),
+    }
+
+    if (toolIndex >= 0) {
+      parts[toolIndex] = nextPart
+    } else {
+      parts.push(nextPart)
+    }
+
+    return {
+      ...message,
+      content: parts,
     }
   })
 }
@@ -256,8 +426,9 @@ export function NovaAppShell() {
     const userMessageId = crypto.randomUUID()
     const assistantMessageId = crypto.randomUUID()
     const userMessage = createTextMessage('user', prompt, userMessageId)
-    const assistantMessage = createTextMessage('assistant', '', assistantMessageId)
+    const assistantMessage = createAssistantMessage(assistantMessageId)
     let activeThreadId = originThreadId
+    let requiresInput = false
 
     setIsRunning(true)
     setStatusText('Streaming response...')
@@ -315,15 +486,55 @@ export function NovaAppShell() {
             return
           }
 
-          if (event.type === 'data-nova-input-required') {
-            const messageText = String(event.data?.message || 'User input required')
+          if (event.type === 'tool-input-start') {
+            if (!event.toolCallId) {
+              return
+            }
+            const toolCallId = event.toolCallId
+
             setThreadMessages(activeThreadId, (previous) =>
-              setAssistantText(
-                previous,
-                assistantMessageId,
-                (text) => `${text}\n\n${messageText}`.trim(),
-              ),
+              upsertAssistantToolCall(previous, assistantMessageId, {
+                toolCallId,
+                toolName: event.toolName,
+              }),
             )
+            return
+          }
+
+          if (event.type === 'tool-input-available') {
+            if (!event.toolCallId) {
+              return
+            }
+            const toolCallId = event.toolCallId
+
+            setThreadMessages(activeThreadId, (previous) =>
+              upsertAssistantToolCall(previous, assistantMessageId, {
+                toolCallId,
+                toolName: event.toolName,
+                input: event.input,
+              }),
+            )
+            return
+          }
+
+          if (event.type === 'tool-output-available') {
+            if (!event.toolCallId) {
+              return
+            }
+            const toolCallId = event.toolCallId
+
+            setThreadMessages(activeThreadId, (previous) =>
+              upsertAssistantToolCall(previous, assistantMessageId, {
+                toolCallId,
+                output: event.output,
+              }),
+            )
+            return
+          }
+
+          if (event.type === 'data-nova-input-required') {
+            requiresInput = true
+            setStatusText(String(event.data?.message || 'User input required'))
             return
           }
 
@@ -333,7 +544,9 @@ export function NovaAppShell() {
         },
       })
 
-      if (activeThreadId !== DRAFT_THREAD_ID) {
+      if (requiresInput) {
+        await refreshSessions()
+      } else if (activeThreadId !== DRAFT_THREAD_ID) {
         await Promise.all([loadThread(activeThreadId), refreshSessions()])
       } else {
         setStatusText('Ready')

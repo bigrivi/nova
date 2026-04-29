@@ -1,3 +1,11 @@
+import type {
+  ReadonlyJSONObject,
+  ReadonlyJSONValue,
+} from 'assistant-stream/utils'
+
+export type NovaJsonObject = ReadonlyJSONObject
+export type NovaJsonValue = ReadonlyJSONValue
+
 export type NovaSessionSummary = {
   id: string
   title: string | null
@@ -7,10 +15,10 @@ export type NovaSessionSummary = {
 export type NovaMessageRecord = {
   id: string
   session_id: string
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool'
   content: string
   tool_call_id: string | null
-  tool_calls: Array<Record<string, unknown>>
+  tool_calls: NovaJsonObject[]
   time_created: number
 }
 
@@ -31,7 +39,11 @@ export type NovaThreadSummary = {
 
 export type NovaStreamEvent = {
   type: string
-  data?: Record<string, unknown>
+  data?: NovaJsonObject
   delta?: string
   errorText?: string
+  toolCallId?: string
+  toolName?: string
+  input?: NovaJsonObject
+  output?: NovaJsonValue
 }

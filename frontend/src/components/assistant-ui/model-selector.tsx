@@ -1,12 +1,78 @@
-import { ChevronDownIcon } from 'lucide-react'
-
 import type { NovaModelRecord } from '../../types/nova'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '../ui/select'
 
 type ModelSelectorProps = {
   models: NovaModelRecord[]
   selectedModelId: string | null
   onSelect: (modelId: string) => void
   compact?: boolean
+}
+
+type ModelGroup = {
+  provider: string
+  providerName: string
+  models: NovaModelRecord[]
+}
+
+function groupModels(models: NovaModelRecord[]): ModelGroup[] {
+  const groups = new Map<string, ModelGroup>()
+
+  for (const model of models) {
+    const existing = groups.get(model.provider)
+    if (existing) {
+      existing.models.push(model)
+      continue
+    }
+
+    groups.set(model.provider, {
+      provider: model.provider,
+      providerName: model.provider_name,
+      models: [model],
+    })
+  }
+
+  return [...groups.values()]
+}
+
+function renderGroupedItems(groups: ModelGroup[]) {
+  return groups.flatMap((group, index) => {
+    const parts = [
+      <SelectGroup key={group.provider}>
+        <SelectLabel className="px-2.5 pt-2 pb-1 font-semibold text-[10px] uppercase tracking-[0.14em] text-foreground/65">
+          {group.providerName}
+        </SelectLabel>
+        {group.models.map((model) => (
+          <SelectItem
+            key={model.id}
+            value={model.id}
+            className="pl-5"
+          >
+            <span className="inline-block pl-1">{model.label}</span>
+          </SelectItem>
+        ))}
+      </SelectGroup>,
+    ]
+
+    if (index < groups.length - 1) {
+      parts.push(
+        <SelectSeparator
+          key={`${group.provider}-separator`}
+          className="my-1.5"
+        />,
+      )
+    }
+
+    return parts
+  })
 }
 
 export function ModelSelector({
@@ -17,31 +83,34 @@ export function ModelSelector({
 }: ModelSelectorProps) {
   const hasModels = models.length > 0
   const selectId = compact ? 'nova-model-select-inline' : 'nova-model-select'
+  const groupedModels = groupModels(models)
   const selectedModel =
     models.find((model) => model.id === selectedModelId) ?? models[0] ?? null
+  const selectedValue = selectedModel?.id
 
   if (compact) {
     return (
-      <div className="relative">
+      <div>
         <label className="sr-only" htmlFor={selectId}>
           Active model
         </label>
-        <select
-          id={selectId}
-          title={selectedModel?.label || 'No models available'}
-          className="h-8 w-32 appearance-none rounded-full border border-border/60 bg-background/85 px-2.5 pr-7 text-[11px] font-medium text-muted-foreground shadow-none outline-none transition-colors hover:bg-muted/35 focus:border-ring focus:bg-background focus:text-foreground focus:ring-2 focus:ring-ring/15 disabled:cursor-not-allowed disabled:opacity-50 sm:w-36"
-          value={selectedModelId || ''}
-          onChange={(event) => onSelect(event.target.value)}
+        <Select
+          value={selectedValue}
+          onValueChange={onSelect}
           disabled={!hasModels}
         >
-          {!hasModels && <option value="">No models available</option>}
-          {models.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+          <SelectTrigger
+            id={selectId}
+            aria-label="Active model"
+            title={selectedModel?.label || 'No models available'}
+            className="h-8 w-32 rounded-full border-border/60 bg-background/85 px-2.5 py-0 text-[11px] font-medium text-muted-foreground shadow-none hover:bg-muted/35 focus:bg-background focus:text-foreground focus-visible:ring-ring/15 sm:w-36"
+          >
+            <SelectValue placeholder="No models available" />
+          </SelectTrigger>
+          <SelectContent align="end">
+            {renderGroupedItems(groupedModels)}
+          </SelectContent>
+        </Select>
       </div>
     )
   }
@@ -61,22 +130,23 @@ export function ModelSelector({
         </p>
       </div>
 
-      <div className="relative">
-        <select
-          id={selectId}
-          className="h-10 w-full appearance-none rounded-xl border bg-background px-3 pr-10 text-sm shadow-xs outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
-          value={selectedModelId || ''}
-          onChange={(event) => onSelect(event.target.value)}
+      <div>
+        <Select
+          value={selectedValue}
+          onValueChange={onSelect}
           disabled={!hasModels}
         >
-          {!hasModels && <option value="">No models available</option>}
-          {models.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.provider_name} / {model.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDownIcon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <SelectTrigger
+            id={selectId}
+            aria-label="Active model"
+            className="h-10 w-full rounded-xl"
+          >
+            <SelectValue placeholder="No models available" />
+          </SelectTrigger>
+          <SelectContent>
+            {renderGroupedItems(groupedModels)}
+          </SelectContent>
+        </Select>
       </div>
     </div>
   )
