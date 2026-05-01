@@ -5,6 +5,7 @@ import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Reasoning, ReasoningGroup } from "@/components/assistant-ui/reasoning";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -22,6 +23,7 @@ import {
 } from "@assistant-ui/react";
 import {
   ArrowDownIcon,
+  BotIcon,
   CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -32,6 +34,8 @@ import {
   RefreshCwIcon,
 } from "lucide-react";
 import { type FC } from "react";
+
+const ASSISTANT_NAME = "Nova";
 
 export const Thread: FC = () => {
   return (
@@ -182,11 +186,28 @@ const AssistantMessage: FC = () => {
     <MessagePrimitive.Root
       data-slot="aui_assistant-message-root"
       data-role="assistant"
-      className="fade-in slide-in-from-bottom-1 relative animate-in duration-150"
+      className="fade-in slide-in-from-bottom-1 grid animate-in grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 px-2 duration-150"
     >
+      <div className="row-span-2 pt-0.5">
+        <Avatar
+          size="sm"
+          className="border border-emerald-200/80 bg-emerald-50 text-emerald-900 shadow-sm after:hidden"
+        >
+          <AvatarFallback className="bg-transparent text-emerald-900">
+            <BotIcon className="size-3.5" />
+          </AvatarFallback>
+        </Avatar>
+      </div>
+
+      <div className="flex min-w-0 items-center">
+        <span className="text-sm font-medium text-foreground">
+          {ASSISTANT_NAME}
+        </span>
+      </div>
+
       <div
         data-slot="aui_assistant-message-content"
-        className="wrap-break-word px-2 text-foreground leading-relaxed"
+        className="wrap-break-word min-w-0 text-foreground leading-relaxed"
       >
         <MessagePrimitive.Parts
           components={{
@@ -201,7 +222,7 @@ const AssistantMessage: FC = () => {
 
       <div
         data-slot="aui_assistant-message-footer"
-        className={cn("ms-2 flex items-center", ACTION_BAR_HEIGHT)}
+        className={cn("col-start-2 flex items-center", ACTION_BAR_HEIGHT)}
       >
         <BranchPicker />
         <AssistantActionBar />
