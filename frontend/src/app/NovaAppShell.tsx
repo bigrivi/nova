@@ -11,7 +11,6 @@ import { startTransition, useEffect, useRef, useState } from "react";
 
 import { Thread } from "../components/assistant-ui/thread";
 import { ThreadList } from "../components/assistant-ui/thread-list";
-import { ThreadStickyComposer } from "../components/assistant-ui/thread-sticky-composer";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { toThreadMessages } from "../lib/history-messages";
@@ -611,40 +610,38 @@ export function NovaAppShell() {
               )}
             </Button>
 
-            <div className="flex min-h-0 flex-1 flex-col pt-2">
-              <Thread />
-            </div>
-
-            <ThreadStickyComposer
-              composer={{
-                ref: composerRef,
-                text: composerText,
-                isRunning,
-                onChange: setComposerText,
-                onSubmit: () => {
-                  void handleComposerSubmit();
-                },
-                onKeyDown: (event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
+            <div className="flex min-h-0 flex-1 flex-col">
+              <Thread
+                composer={{
+                  ref: composerRef,
+                  text: composerText,
+                  isRunning,
+                  onChange: setComposerText,
+                  onSubmit: () => {
                     void handleComposerSubmit();
-                  }
-                },
-              }}
-              status={{
-                text: statusText,
-                error: statusError,
-              }}
-              modelSelection={{
-                models,
-                providers,
-                selectedModelId,
-                onSelect: setSelectedModelId,
-                onModelsUpdated: handleConfigModelsUpdated,
-                onProvidersRefresh: refreshProviders,
-                onStatusChange: handleConfigStatus,
-              }}
-            />
+                  },
+                  onKeyDown: (event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void handleComposerSubmit();
+                    }
+                  },
+                }}
+                status={{
+                  text: statusText,
+                  error: statusError,
+                }}
+                modelSelection={{
+                  models,
+                  providers,
+                  selectedModelId,
+                  onSelect: setSelectedModelId,
+                  onModelsUpdated: handleConfigModelsUpdated,
+                  onProvidersRefresh: refreshProviders,
+                  onStatusChange: handleConfigStatus,
+                }}
+              />
+            </div>
           </main>
         </div>
       </TooltipProvider>

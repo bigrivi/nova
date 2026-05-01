@@ -1,5 +1,5 @@
 import { ArrowUpIcon, LoaderCircleIcon } from "lucide-react";
-import type { KeyboardEvent, RefObject } from "react";
+import { useEffect, useRef, type KeyboardEvent, type RefObject } from "react";
 
 import { ModelSelector } from "./model-selector";
 import { Button } from "../ui/button";
@@ -27,18 +27,45 @@ type ThreadStickyComposerProps = {
     onProvidersRefresh: () => Promise<void>;
     onStatusChange: (message: string | null) => void;
   };
+  onHeightChange?: (height: number) => void;
 };
 
 export function ThreadStickyComposer({
   composer,
   status,
   modelSelection,
+  onHeightChange,
 }: ThreadStickyComposerProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node || !onHeightChange) {
+      return;
+    }
+
+    const reportHeight = () => {
+      onHeightChange(node.offsetHeight);
+    };
+
+    reportHeight();
+
+    const observer = new ResizeObserver(() => {
+      reportHeight();
+    });
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+      onHeightChange(0);
+    };
+  }, [onHeightChange]);
+
   return (
-    <div className="sticky bottom-0 z-20 pb-3 pt-3">
+    <div ref={containerRef} className="pointer-events-none relative pb-3 pt-3">
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-10 bg-background/96 backdrop-blur" />
       <div className="relative z-10 mx-auto w-full max-w-(--thread-max-width) px-4">
-        <div className="rounded-[24px] border bg-background p-3 shadow-sm transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20">
+        <div className="pointer-events-auto rounded-[24px] border bg-background p-3 shadow-sm transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20">
           <textarea
             ref={composer.ref}
             value={composer.text}

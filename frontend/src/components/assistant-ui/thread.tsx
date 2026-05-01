@@ -3,11 +3,13 @@ import { UserMessageAttachments } from "@/components/assistant-ui/attachment";
 import { FileMutationTool } from "@/components/assistant-ui/file-mutation-tool";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { Reasoning, ReasoningGroup } from "@/components/assistant-ui/reasoning";
+import { ThreadStickyComposer } from "@/components/assistant-ui/thread-sticky-composer";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import type { NovaModelRecord, NovaProviderRecord } from "@/types/nova";
 import {
   ActionBarMorePrimitive,
   ActionBarPrimitive,
@@ -31,17 +33,76 @@ import {
   MoreHorizontalIcon,
   RefreshCwIcon,
 } from "lucide-react";
+import type { KeyboardEvent, RefObject } from "react";
 import { type FC, useEffect, useState } from "react";
 
 const ASSISTANT_NAME = "Nova";
 const SCROLL_TO_BOTTOM_THRESHOLD = 32;
 
-export const Thread: FC = () => {
+type ThreadProps = {
+  composer: {
+    ref: RefObject<HTMLTextAreaElement | null>;
+    text: string;
+    isRunning: boolean;
+    onChange: (value: string) => void;
+    onSubmit: () => void;
+    onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  };
+  status: {
+    text: string;
+    error: string | null;
+  };
+  modelSelection: {
+    models: NovaModelRecord[];
+    providers: NovaProviderRecord[];
+    selectedModelId: string | null;
+    onSelect: (modelId: string) => void;
+    onModelsUpdated: (models: NovaModelRecord[]) => void;
+    onProvidersRefresh: () => Promise<void>;
+    onStatusChange: (message: string | null) => void;
+  };
+};
+
+export const Thread: FC<ThreadProps> = ({
+  composer,
+  status,
+  modelSelection,
+}) => {
+  const [composerHeight, setComposerHeight] = useState(0);
+  const [viewportScrollbarWidth, setViewportScrollbarWidth] = useState(0);
+
+  useEffect(() => {
+    const viewport = document.querySelector<HTMLElement>(
+      '[data-slot="aui_thread-viewport"]',
+    );
+    if (!viewport) {
+      setViewportScrollbarWidth(0);
+      return;
+    }
+
+    const updateScrollbarWidth = () => {
+      setViewportScrollbarWidth(viewport.offsetWidth - viewport.clientWidth);
+    };
+
+    updateScrollbarWidth();
+
+    const observer = new ResizeObserver(() => {
+      updateScrollbarWidth();
+    });
+    observer.observe(viewport);
+    window.addEventListener("resize", updateScrollbarWidth);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateScrollbarWidth);
+    };
+  }, []);
+
   return (
     <>
       <CustomToolUIRegistry />
       <ThreadPrimitive.Root
-        className="aui-root aui-thread-root @container flex min-h-0 flex-1 flex-col overflow-hidden bg-background"
+        className="aui-root aui-thread-root @container relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background"
         style={{
           ["--thread-max-width" as string]: "44rem",
           ["--composer-radius" as string]: "24px",
@@ -66,9 +127,34 @@ export const Thread: FC = () => {
                 {() => <ThreadMessage />}
               </ThreadPrimitive.Messages>
             </div>
+
+            <div
+              aria-hidden="true"
+              className="shrink-0"
+              style={{
+                height: composerHeight ? `${composerHeight + 20}px` : "0px",
+              }}
+            />
+
             <ThreadScrollToBottom />
           </div>
         </ThreadPrimitive.Viewport>
+
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-20"
+          style={{
+            paddingRight: viewportScrollbarWidth
+              ? `${viewportScrollbarWidth}px`
+              : undefined,
+          }}
+        >
+          <ThreadStickyComposer
+            composer={composer}
+            status={status}
+            modelSelection={modelSelection}
+            onHeightChange={setComposerHeight}
+          />
+        </div>
       </ThreadPrimitive.Root>
     </>
   );
