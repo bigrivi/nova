@@ -69,34 +69,6 @@ export const Thread: FC<ThreadProps> = ({
   modelSelection,
 }) => {
   const [composerHeight, setComposerHeight] = useState(0);
-  const [viewportScrollbarWidth, setViewportScrollbarWidth] = useState(0);
-
-  useEffect(() => {
-    const viewport = document.querySelector<HTMLElement>(
-      '[data-slot="aui_thread-viewport"]',
-    );
-    if (!viewport) {
-      setViewportScrollbarWidth(0);
-      return;
-    }
-
-    const updateScrollbarWidth = () => {
-      setViewportScrollbarWidth(viewport.offsetWidth - viewport.clientWidth);
-    };
-
-    updateScrollbarWidth();
-
-    const observer = new ResizeObserver(() => {
-      updateScrollbarWidth();
-    });
-    observer.observe(viewport);
-    window.addEventListener("resize", updateScrollbarWidth);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", updateScrollbarWidth);
-    };
-  }, []);
 
   return (
     <>
@@ -113,6 +85,7 @@ export const Thread: FC<ThreadProps> = ({
           autoScroll
           data-slot="aui_thread-viewport"
           className="relative flex min-h-0 flex-1 flex-col overflow-y-auto scroll-smooth"
+          style={{ scrollbarGutter: "stable both-edges" }}
         >
           <div className="mx-auto flex min-h-full w-full max-w-(--thread-max-width) flex-col px-4 pt-4">
             <AuiIf condition={(s) => s.thread.isEmpty}>
@@ -140,14 +113,7 @@ export const Thread: FC<ThreadProps> = ({
           </div>
         </ThreadPrimitive.Viewport>
 
-        <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-20"
-          style={{
-            paddingRight: viewportScrollbarWidth
-              ? `${viewportScrollbarWidth}px`
-              : undefined,
-          }}
-        >
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
           <ThreadStickyComposer
             composer={composer}
             status={status}
