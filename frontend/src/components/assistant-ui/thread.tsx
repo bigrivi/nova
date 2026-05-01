@@ -1,10 +1,10 @@
-import { UserMessageAttachments } from "@/components/assistant-ui/attachment";
 import { AskUserTool } from "@/components/assistant-ui/ask-user-tool";
+import { UserMessageAttachments } from "@/components/assistant-ui/attachment";
 import { FileMutationTool } from "@/components/assistant-ui/file-mutation-tool";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
+import { Reasoning, ReasoningGroup } from "@/components/assistant-ui/reasoning";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
-import { Reasoning, ReasoningGroup } from "@/components/assistant-ui/reasoning";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -60,7 +60,7 @@ export const Thread: FC = () => {
 
             <div
               data-slot="aui_message-group"
-              className="mb-10 flex flex-col gap-y-8 empty:hidden"
+              className="mb-5 flex flex-col gap-y-2 empty:hidden"
             >
               <ThreadPrimitive.Messages>
                 {() => <ThreadMessage />}

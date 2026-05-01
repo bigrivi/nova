@@ -2,33 +2,38 @@ import {
   AssistantRuntimeProvider,
   type ThreadMessageLike,
   useExternalStoreRuntime,
-} from '@assistant-ui/react'
+} from "@assistant-ui/react";
 import {
   ArrowUpIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   LoaderCircleIcon,
-} from 'lucide-react'
-import { startTransition, useEffect, useRef, useState } from 'react'
+} from "lucide-react";
+import { startTransition, useEffect, useRef, useState } from "react";
 
-import { ModelSelector } from '../components/assistant-ui/model-selector'
-import { Thread } from '../components/assistant-ui/thread'
-import { ThreadList } from '../components/assistant-ui/thread-list'
-import { toThreadMessages } from '../lib/history-messages'
-import { Button } from '../components/ui/button'
-import { TooltipProvider } from '../components/ui/tooltip'
-import { listMessages, listModels, listSessions, streamChat } from '../lib/nova-api'
+import { ModelSelector } from "../components/assistant-ui/model-selector";
+import { Thread } from "../components/assistant-ui/thread";
+import { ThreadList } from "../components/assistant-ui/thread-list";
+import { Button } from "../components/ui/button";
+import { TooltipProvider } from "../components/ui/tooltip";
+import { toThreadMessages } from "../lib/history-messages";
+import {
+  listMessages,
+  listModels,
+  listSessions,
+  streamChat,
+} from "../lib/nova-api";
 import type {
   NovaJsonObject,
   NovaModelRecord,
   NovaSessionSummary,
   NovaThreadSummary,
-} from '../types/nova'
+} from "../types/nova";
 
-const DRAFT_THREAD_ID = '__draft__'
+const DRAFT_THREAD_ID = "__draft__";
 
 function createTextMessage(
-  role: 'user' | 'assistant',
+  role: "user" | "assistant",
   text: string,
   id?: string,
 ): ThreadMessageLike {
@@ -37,70 +42,70 @@ function createTextMessage(
     role,
     content: text,
     createdAt: new Date(),
-  }
+  };
 }
 
 function createAssistantMessage(id?: string): ThreadMessageLike {
   return {
     id: id ?? crypto.randomUUID(),
-    role: 'assistant',
+    role: "assistant",
     content: [],
     createdAt: new Date(),
-  }
+  };
 }
 
-type AssistantPart = Exclude<ThreadMessageLike['content'], string>[number]
+type AssistantPart = Exclude<ThreadMessageLike["content"], string>[number];
 
 function createWelcomeMessage(): ThreadMessageLike {
   return createTextMessage(
-    'assistant',
-    'Nova desktop preview is ready. Pick a model, start a new thread, or reopen a previous session from the left sidebar.',
-    'welcome',
-  )
+    "assistant",
+    "Nova desktop preview is ready. Pick a model, start a new thread, or reopen a previous session from the left sidebar.",
+    "welcome",
+  );
 }
 
 function createOptimisticSessionTitle(userMessage: string): string {
-  const title = userMessage.trim()
+  const title = userMessage.trim();
   if (!title) {
-    return 'New Session'
+    return "New Session";
   }
 
   if (title.length > 50) {
-    return `${title.slice(0, 47)}...`
+    return `${title.slice(0, 47)}...`;
   }
 
-  return title
+  return title;
 }
 
 function toThreadTitle(session: NovaSessionSummary) {
-  return (session.title || 'Untitled session').trim() || 'Untitled session'
+  return (session.title || "Untitled session").trim() || "Untitled session";
 }
 
 function toThreadSummary(session: NovaSessionSummary): NovaThreadSummary {
   return {
     id: session.id,
     title: toThreadTitle(session),
-    status: 'regular',
-  }
+    status: "regular",
+  };
 }
 
 function upsertThread(
   threads: NovaThreadSummary[],
   nextThread: NovaThreadSummary,
 ): NovaThreadSummary[] {
-  const filtered = threads.filter((thread) => thread.id !== nextThread.id)
-  return [nextThread, ...filtered]
+  const filtered = threads.filter((thread) => thread.id !== nextThread.id);
+  return [nextThread, ...filtered];
 }
 
 function buildDraftMessages(previous: ThreadMessageLike[]) {
   if (
     previous.length === 1 &&
-    previous[0]?.id === 'welcome' &&
-    previous[0]?.role === 'assistant'
+    previous[0]?.id === "welcome" &&
+    previous[0]?.role === "assistant"
   ) {
-    return []
+    return [];
   }
-  return previous
+  return previous;
 }
 
 function setAssistantText(
@@ -109,171 +114,178 @@ function setAssistantText(
   updater: (text: string) => string,
 ) {
   return messages.map((message) => {
-    if (message.id !== assistantMessageId || message.role !== 'assistant') {
-      return message
+    if (message.id !== assistantMessageId || message.role !== "assistant") {
+      return message;
     }
 
     const parts =
-      typeof message.content === 'string'
+      typeof message.content === "string"
         ? message.content
-          ? [{ type: 'text' as const, text: message.content }]
+          ? [{ type: "text" as const, text: message.content }]
           : []
-        : [...message.content]
-    const textPartIndex = parts.findLastIndex((part) => part.type === 'text')
+        : [...message.content];
+    const textPartIndex = parts.findLastIndex((part) => part.type === "text");
     const currentText =
-      textPartIndex >= 0 && parts[textPartIndex]?.type === 'text'
+      textPartIndex >= 0 && parts[textPartIndex]?.type === "text"
         ? parts[textPartIndex].text
-        : ''
-    const nextText = updater(currentText)
+        : "";
+    const nextText = updater(currentText);
 
     if (textPartIndex >= 0) {
-      parts[textPartIndex] = { type: 'text', text: nextText }
+      parts[textPartIndex] = { type: "text", text: nextText };
     } else if (nextText) {
-      parts.push({ type: 'text', text: nextText })
+      parts.push({ type: "text", text: nextText });
     }
 
     return {
       ...message,
       content: parts,
-    }
-  })
+    };
+  });
 }
 
 function upsertAssistantToolCall(
   messages: ThreadMessageLike[],
   assistantMessageId: string,
   payload: {
-    toolCallId: string
-    toolName?: string
-    input?: NovaJsonObject
-    output?: unknown
+    toolCallId: string;
+    toolName?: string;
+    input?: NovaJsonObject;
+    output?: unknown;
   },
 ) {
   return messages.map((message) => {
-    if (message.id !== assistantMessageId || message.role !== 'assistant') {
-      return message
+    if (message.id !== assistantMessageId || message.role !== "assistant") {
+      return message;
     }
 
     const parts =
-      typeof message.content === 'string'
+      typeof message.content === "string"
         ? message.content
-          ? [{ type: 'text' as const, text: message.content }]
+          ? [{ type: "text" as const, text: message.content }]
           : []
-        : [...message.content]
+        : [...message.content];
     const toolIndex = parts.findIndex(
-      (part) => part.type === 'tool-call' && part.toolCallId === payload.toolCallId,
-    )
+      (part) =>
+        part.type === "tool-call" && part.toolCallId === payload.toolCallId,
+    );
 
     const current =
-      toolIndex >= 0 && parts[toolIndex]?.type === 'tool-call'
+      toolIndex >= 0 && parts[toolIndex]?.type === "tool-call"
         ? parts[toolIndex]
-        : null
+        : null;
 
     const nextPart: AssistantPart = {
-      type: 'tool-call',
+      type: "tool-call",
       toolCallId: payload.toolCallId,
-      toolName: payload.toolName || current?.toolName || 'tool',
-      args:
-        payload.input ??
-        current?.args ??
-        {},
+      toolName: payload.toolName || current?.toolName || "tool",
+      args: payload.input ?? current?.args ?? {},
       argsText:
         payload.input !== undefined
           ? JSON.stringify(payload.input)
-          : current?.argsText ?? '',
-      ...(payload.output !== undefined ? { result: payload.output } : current?.result !== undefined ? { result: current.result } : {}),
+          : (current?.argsText ?? ""),
+      ...(payload.output !== undefined
+        ? { result: payload.output }
+        : current?.result !== undefined
+          ? { result: current.result }
+          : {}),
       ...(current?.isError !== undefined ? { isError: current.isError } : {}),
-    }
+    };
 
     if (toolIndex >= 0) {
-      parts[toolIndex] = nextPart
+      parts[toolIndex] = nextPart;
     } else {
-      parts.push(nextPart)
+      parts.push(nextPart);
     }
 
     return {
       ...message,
       content: parts,
-    }
-  })
+    };
+  });
 }
 
 export function NovaAppShell() {
-  const [threads, setThreads] = useState<NovaThreadSummary[]>([])
+  const [threads, setThreads] = useState<NovaThreadSummary[]>([]);
   const [messagesByThreadId, setMessagesByThreadId] = useState<
     Record<string, ThreadMessageLike[]>
   >({
     [DRAFT_THREAD_ID]: [createWelcomeMessage()],
-  })
-  const [currentThreadId, setCurrentThreadId] = useState(DRAFT_THREAD_ID)
-  const [models, setModels] = useState<NovaModelRecord[]>([])
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
-  const [isRunning, setIsRunning] = useState(false)
-  const [statusText, setStatusText] = useState('Ready')
-  const [statusError, setStatusError] = useState<string | null>(null)
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
-  const [composerText, setComposerText] = useState('')
-  const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  });
+  const [currentThreadId, setCurrentThreadId] = useState(DRAFT_THREAD_ID);
+  const [models, setModels] = useState<NovaModelRecord[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [statusText, setStatusText] = useState("Ready");
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [composerText, setComposerText] = useState("");
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const currentMessages = messagesByThreadId[currentThreadId] || []
-  const activeThreadListId = threads.some((thread) => thread.id === currentThreadId)
+  const currentMessages = messagesByThreadId[currentThreadId] || [];
+  const activeThreadListId = threads.some(
+    (thread) => thread.id === currentThreadId,
+  )
     ? currentThreadId
-    : undefined
+    : undefined;
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
 
     async function bootstrap() {
       try {
         const [availableModels, savedSessions] = await Promise.all([
           listModels(),
           listSessions(),
-        ])
+        ]);
 
         if (cancelled) {
-          return
+          return;
         }
 
         startTransition(() => {
-          setModels(availableModels)
-          setThreads(savedSessions.map(toThreadSummary))
+          setModels(availableModels);
+          setThreads(savedSessions.map(toThreadSummary));
           if (availableModels.length > 0) {
-            setSelectedModelId((current) => current || availableModels[0].id)
+            setSelectedModelId((current) => current || availableModels[0].id);
           }
-        })
+        });
       } catch (error) {
         if (!cancelled) {
-          setStatusError(error instanceof Error ? error.message : String(error))
+          setStatusError(
+            error instanceof Error ? error.message : String(error),
+          );
         }
       }
     }
 
-    void bootstrap()
+    void bootstrap();
 
     return () => {
-      cancelled = true
-    }
-  }, [])
+      cancelled = true;
+    };
+  }, []);
 
   async function loadThread(threadId: string) {
     try {
-      setStatusText('Loading session history...')
-      setStatusError(null)
+      setStatusText("Loading session history...");
+      setStatusError(null);
 
-      const messages = await listMessages(threadId)
+      const messages = await listMessages(threadId);
       startTransition(() => {
-        setCurrentThreadId(threadId)
+        setCurrentThreadId(threadId);
         setMessagesByThreadId((previous) => ({
           ...previous,
           [threadId]: toThreadMessages(messages),
-        }))
-      })
-      setStatusText('Ready')
+        }));
+      });
+      setStatusText("Ready");
     } catch (error) {
-      const messageText = error instanceof Error ? error.message : String(error)
-      setStatusError(messageText)
-      setStatusText('History failed')
-      throw error
+      const messageText =
+        error instanceof Error ? error.message : String(error);
+      setStatusError(messageText);
+      setStatusText("History failed");
+      throw error;
     }
   }
 
@@ -284,80 +296,83 @@ export function NovaAppShell() {
       | ((messages: ThreadMessageLike[]) => ThreadMessageLike[]),
   ) {
     setMessagesByThreadId((previous) => {
-      const current = previous[threadId] || []
+      const current = previous[threadId] || [];
       return {
         ...previous,
-        [threadId]: typeof updater === 'function' ? updater(current) : updater,
-      }
-    })
+        [threadId]: typeof updater === "function" ? updater(current) : updater,
+      };
+    });
   }
 
   function switchToDraftThread() {
     if (isRunning) {
-      return
+      return;
     }
 
     startTransition(() => {
-      setCurrentThreadId(DRAFT_THREAD_ID)
+      setCurrentThreadId(DRAFT_THREAD_ID);
       setMessagesByThreadId((previous) => ({
         ...previous,
-        [DRAFT_THREAD_ID]: previous[DRAFT_THREAD_ID] || [createWelcomeMessage()],
-      }))
-    })
-    setStatusText('Ready')
-    setStatusError(null)
-    setComposerText('')
+        [DRAFT_THREAD_ID]: previous[DRAFT_THREAD_ID] || [
+          createWelcomeMessage(),
+        ],
+      }));
+    });
+    setStatusText("Ready");
+    setStatusError(null);
+    setComposerText("");
   }
 
   useEffect(() => {
-    const textarea = composerRef.current
+    const textarea = composerRef.current;
     if (!textarea) {
-      return
+      return;
     }
 
-    textarea.style.height = '0px'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`
-  }, [composerText])
+    textarea.style.height = "0px";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+  }, [composerText]);
 
   useEffect(() => {
     if (isRunning) {
-      return
+      return;
     }
 
-    const textarea = composerRef.current
+    const textarea = composerRef.current;
     if (!textarea) {
-      return
+      return;
     }
 
-    textarea.focus({ preventScroll: true })
-    const caret = textarea.value.length
-    textarea.setSelectionRange(caret, caret)
-  }, [currentThreadId, isRunning])
+    textarea.focus({ preventScroll: true });
+    const caret = textarea.value.length;
+    textarea.setSelectionRange(caret, caret);
+  }, [currentThreadId, isRunning]);
 
   async function submitPrompt(prompt: string) {
     if (!prompt) {
-      return
+      return;
     }
 
-    const selectedModel = models.find((item) => item.id === selectedModelId) || null
-    const originThreadId = currentThreadId
-    const userMessageId = crypto.randomUUID()
-    const assistantMessageId = crypto.randomUUID()
-    const userMessage = createTextMessage('user', prompt, userMessageId)
-    const assistantMessage = createAssistantMessage(assistantMessageId)
-    let activeThreadId = originThreadId
-    let requiresInput = false
+    const selectedModel =
+      models.find((item) => item.id === selectedModelId) || null;
+    const originThreadId = currentThreadId;
+    const userMessageId = crypto.randomUUID();
+    const assistantMessageId = crypto.randomUUID();
+    const userMessage = createTextMessage("user", prompt, userMessageId);
+    const assistantMessage = createAssistantMessage(assistantMessageId);
+    let activeThreadId = originThreadId;
+    let requiresInput = false;
 
-    setIsRunning(true)
-    setStatusText('Streaming response...')
-    setStatusError(null)
-    setComposerText('')
+    setIsRunning(true);
+    setStatusText("Streaming response...");
+    setStatusError(null);
+    setComposerText("");
 
     setThreadMessages(originThreadId, (previous) => [
       ...buildDraftMessages(previous),
       userMessage,
       assistantMessage,
-    ])
+    ]);
 
     try {
       await streamChat({
@@ -366,16 +381,16 @@ export function NovaAppShell() {
         provider: selectedModel?.provider || null,
         model: selectedModel?.model || null,
         onEvent: (event) => {
-          if (event.type === 'data-nova-session') {
-            const sessionId = String(event.data?.sessionId || '')
+          if (event.type === "data-nova-session") {
+            const sessionId = String(event.data?.sessionId || "");
             if (!sessionId) {
-              return
+              return;
             }
 
-            activeThreadId = sessionId
+            activeThreadId = sessionId;
             startTransition(() => {
               setMessagesByThreadId((previous) => {
-                const sourceMessages = previous[originThreadId] || []
+                const sourceMessages = previous[originThreadId] || [];
                 return {
                   ...previous,
                   [sessionId]: sourceMessages,
@@ -383,51 +398,57 @@ export function NovaAppShell() {
                     originThreadId === DRAFT_THREAD_ID
                       ? [createWelcomeMessage()]
                       : previous[DRAFT_THREAD_ID] || [createWelcomeMessage()],
-                }
-              })
-              setCurrentThreadId(sessionId)
+                };
+              });
+              setCurrentThreadId(sessionId);
               setThreads((previous) => {
-                const existing = previous.find((thread) => thread.id === sessionId)
+                const existing = previous.find(
+                  (thread) => thread.id === sessionId,
+                );
                 return upsertThread(
                   previous,
                   existing ?? {
                     id: sessionId,
                     title: createOptimisticSessionTitle(prompt),
-                    status: 'regular',
+                    status: "regular",
                   },
-                )
-              })
-            })
-            return
+                );
+              });
+            });
+            return;
           }
 
-          if (event.type === 'text-delta') {
+          if (event.type === "text-delta") {
             setThreadMessages(activeThreadId, (previous) =>
-              setAssistantText(previous, assistantMessageId, (text) => text + (event.delta || '')),
-            )
-            return
+              setAssistantText(
+                previous,
+                assistantMessageId,
+                (text) => text + (event.delta || ""),
+              ),
+            );
+            return;
           }
 
-          if (event.type === 'tool-input-start') {
+          if (event.type === "tool-input-start") {
             if (!event.toolCallId) {
-              return
+              return;
             }
-            const toolCallId = event.toolCallId
+            const toolCallId = event.toolCallId;
 
             setThreadMessages(activeThreadId, (previous) =>
               upsertAssistantToolCall(previous, assistantMessageId, {
                 toolCallId,
                 toolName: event.toolName,
               }),
-            )
-            return
+            );
+            return;
           }
 
-          if (event.type === 'tool-input-available') {
+          if (event.type === "tool-input-available") {
             if (!event.toolCallId) {
-              return
+              return;
             }
-            const toolCallId = event.toolCallId
+            const toolCallId = event.toolCallId;
 
             setThreadMessages(activeThreadId, (previous) =>
               upsertAssistantToolCall(previous, assistantMessageId, {
@@ -435,61 +456,66 @@ export function NovaAppShell() {
                 toolName: event.toolName,
                 input: event.input,
               }),
-            )
-            return
+            );
+            return;
           }
 
-          if (event.type === 'tool-output-available') {
+          if (event.type === "tool-output-available") {
             if (!event.toolCallId) {
-              return
+              return;
             }
-            const toolCallId = event.toolCallId
+            const toolCallId = event.toolCallId;
 
             setThreadMessages(activeThreadId, (previous) =>
               upsertAssistantToolCall(previous, assistantMessageId, {
                 toolCallId,
                 output: event.output,
               }),
-            )
-            return
+            );
+            return;
           }
 
-          if (event.type === 'data-nova-input-required') {
-            requiresInput = true
-            setStatusText(String(event.data?.message || 'User input required'))
-            return
+          if (event.type === "data-nova-input-required") {
+            requiresInput = true;
+            setStatusText(String(event.data?.message || "User input required"));
+            return;
           }
 
-          if (event.type === 'error') {
-            throw new Error(event.errorText || 'Unknown error')
+          if (event.type === "error") {
+            throw new Error(event.errorText || "Unknown error");
           }
         },
-      })
+      });
 
       if (requiresInput) {
-        return
+        return;
       } else {
-        setStatusText('Ready')
+        setStatusText("Ready");
       }
     } catch (error) {
-      const messageText = error instanceof Error ? error.message : String(error)
-      setStatusError(messageText)
-      setStatusText('Request failed')
+      const messageText =
+        error instanceof Error ? error.message : String(error);
+      setStatusError(messageText);
+      setStatusText("Request failed");
       setThreadMessages(activeThreadId, (previous) =>
-        setAssistantText(previous, assistantMessageId, () => `[error] ${messageText}`),
-      )
+        setAssistantText(
+          previous,
+          assistantMessageId,
+          () => `[error] ${messageText}`,
+        ),
+      );
     } finally {
-      setIsRunning(false)
+      setIsRunning(false);
     }
   }
 
   async function handleComposerSubmit() {
-    const prompt = composerText.trim()
+    const prompt = composerText.trim();
     if (!prompt || isRunning) {
-      return
+      return;
     }
 
-    await submitPrompt(prompt)
+    await submitPrompt(prompt);
   }
 
   const runtime = useExternalStoreRuntime({
@@ -498,7 +524,7 @@ export function NovaAppShell() {
     onNew: async () => {},
     convertMessage: (message) => message,
     setMessages: (messages) => {
-      setThreadMessages(currentThreadId, [...messages])
+      setThreadMessages(currentThreadId, [...messages]);
     },
     adapters: {
       threadList: {
@@ -508,13 +534,13 @@ export function NovaAppShell() {
         onSwitchToNewThread: switchToDraftThread,
         onSwitchToThread: (threadId) => {
           if (isRunning || threadId === currentThreadId) {
-            return
+            return;
           }
-          void loadThread(threadId)
+          void loadThread(threadId);
         },
       },
     },
-  })
+  });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -522,7 +548,9 @@ export function NovaAppShell() {
         <div className="flex bg-muted/30 text-foreground">
           <aside
             className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden bg-sidebar/80 backdrop-blur transition-[width,opacity] duration-200 ease-out ${
-              isSidebarCollapsed ? 'w-0 opacity-0' : 'w-[280px] border-r opacity-100'
+              isSidebarCollapsed
+                ? "w-0 opacity-0"
+                : "w-[280px] border-r opacity-100"
             }`}
           >
             {!isSidebarCollapsed && (
@@ -534,17 +562,19 @@ export function NovaAppShell() {
 
           <main
             className="relative flex min-w-0 flex-1 flex-col bg-background"
-            style={{ ['--thread-max-width' as string]: '44rem' }}
+            style={{ ["--thread-max-width" as string]: "44rem" }}
           >
             <Button
               type="button"
               variant="outline"
               size="icon"
               className={`fixed top-4 z-30 rounded-full bg-background/90 shadow-sm backdrop-blur transition-[left] duration-200 ease-out ${
-                isSidebarCollapsed ? 'left-4' : 'left-[296px]'
+                isSidebarCollapsed ? "left-4" : "left-[296px]"
               }`}
               aria-label={
-                isSidebarCollapsed ? 'Expand thread list sidebar' : 'Collapse thread list sidebar'
+                isSidebarCollapsed
+                  ? "Expand thread list sidebar"
+                  : "Collapse thread list sidebar"
               }
               onClick={() => setIsSidebarCollapsed((value) => !value)}
             >
@@ -559,59 +589,64 @@ export function NovaAppShell() {
               <Thread />
             </div>
 
-            <div className="sticky bottom-0 z-20 pb-4 pt-3">
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-background/96 backdrop-blur" />
-              <div className="mx-auto w-full max-w-(--thread-max-width) px-4">
-                <div className="rounded-[24px] border bg-background p-3 shadow-sm transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20">
-                  <textarea
-                    ref={composerRef}
-                    value={composerText}
-                    rows={1}
-                    disabled={isRunning}
-                    placeholder="Send a message..."
-                    aria-label="Message input"
-                    className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1 py-1 text-sm outline-none placeholder:text-muted-foreground/80 disabled:cursor-not-allowed"
-                    onChange={(event) => setComposerText(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' && !event.shiftKey) {
-                        event.preventDefault()
-                        void handleComposerSubmit()
-                      }
-                    }}
-                  />
+            <div className="sticky bottom-0 z-20 pt-3">
+              <div className="pb-3 bg-background/96 backdrop-blur">
+                <div className="mx-auto w-full max-w-(--thread-max-width) px-4">
+                  <div className="rounded-[24px] border bg-background p-3 shadow-sm transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20">
+                    <textarea
+                      ref={composerRef}
+                      value={composerText}
+                      rows={1}
+                      disabled={isRunning}
+                      placeholder="Send a message..."
+                      aria-label="Message input"
+                      className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1 py-1 text-sm outline-none placeholder:text-muted-foreground/80 disabled:cursor-not-allowed"
+                      onChange={(event) => setComposerText(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          void handleComposerSubmit();
+                        }
+                      }}
+                    />
 
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <div
-                      className={`text-xs ${
-                        statusError ? 'text-destructive' : 'text-muted-foreground'
-                      }`}
-                    >
-                      {statusError || statusText}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <ModelSelector
-                        compact
-                        models={models}
-                        selectedModelId={selectedModelId}
-                        onSelect={setSelectedModelId}
-                      />
-
-                      <Button
-                        type="button"
-                        size="icon"
-                        className="rounded-full"
-                        disabled={isRunning || composerText.trim().length === 0}
-                        onClick={() => {
-                          void handleComposerSubmit()
-                        }}
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <div
+                        className={`text-xs ${
+                          statusError
+                            ? "text-destructive"
+                            : "text-muted-foreground"
+                        }`}
                       >
-                        {isRunning ? (
-                          <LoaderCircleIcon className="size-4 animate-spin" />
-                        ) : (
-                          <ArrowUpIcon className="size-4" />
-                        )}
-                      </Button>
+                        {statusError || statusText}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <ModelSelector
+                          compact
+                          models={models}
+                          selectedModelId={selectedModelId}
+                          onSelect={setSelectedModelId}
+                        />
+
+                        <Button
+                          type="button"
+                          size="icon"
+                          className="rounded-full"
+                          disabled={
+                            isRunning || composerText.trim().length === 0
+                          }
+                          onClick={() => {
+                            void handleComposerSubmit();
+                          }}
+                        >
+                          {isRunning ? (
+                            <LoaderCircleIcon className="size-4 animate-spin" />
+                          ) : (
+                            <ArrowUpIcon className="size-4" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -621,5 +656,5 @@ export function NovaAppShell() {
         </div>
       </TooltipProvider>
     </AssistantRuntimeProvider>
-  )
+  );
 }
