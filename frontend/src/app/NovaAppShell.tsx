@@ -59,6 +59,19 @@ function createWelcomeMessage(): ThreadMessageLike {
   )
 }
 
+function createOptimisticSessionTitle(userMessage: string): string {
+  const title = userMessage.trim()
+  if (!title) {
+    return 'New Session'
+  }
+
+  if (title.length > 50) {
+    return `${title.slice(0, 47)}...`
+  }
+
+  return title
+}
+
 function toThreadTitle(session: NovaSessionSummary) {
   return (session.title || 'Untitled session').trim() || 'Untitled session'
 }
@@ -242,13 +255,6 @@ export function NovaAppShell() {
     }
   }, [])
 
-  async function refreshSessions() {
-    const savedSessions = await listSessions()
-    startTransition(() => {
-      setThreads(savedSessions.map(toThreadSummary))
-    })
-  }
-
   async function loadThread(threadId: string) {
     try {
       setStatusText('Loading session history...')
@@ -380,13 +386,17 @@ export function NovaAppShell() {
                 }
               })
               setCurrentThreadId(sessionId)
-              setThreads((previous) =>
-                upsertThread(previous, {
-                  id: sessionId,
-                  title: prompt.slice(0, 64) || 'Untitled session',
-                  status: 'regular',
-                }),
-              )
+              setThreads((previous) => {
+                const existing = previous.find((thread) => thread.id === sessionId)
+                return upsertThread(
+                  previous,
+                  existing ?? {
+                    id: sessionId,
+                    title: createOptimisticSessionTitle(prompt),
+                    status: 'regular',
+                  },
+                )
+              })
             })
             return
           }
@@ -457,9 +467,7 @@ export function NovaAppShell() {
       })
 
       if (requiresInput) {
-        await refreshSessions()
-      } else if (activeThreadId !== DRAFT_THREAD_ID) {
-        await Promise.all([loadThread(activeThreadId), refreshSessions()])
+        return
       } else {
         setStatusText('Ready')
       }
