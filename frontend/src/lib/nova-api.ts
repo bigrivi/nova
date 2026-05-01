@@ -1,6 +1,9 @@
 import type {
   NovaMessageRecord,
+  NovaModelCreateRequest,
   NovaModelRecord,
+  NovaProviderCreateRequest,
+  NovaProviderRecord,
   NovaSessionSummary,
   NovaStreamEvent,
 } from '../types/nova'
@@ -23,10 +26,23 @@ function buildUrl(path: string) {
   return `${API_BASE}${path}`
 }
 
+async function parseErrorMessage(response: Response): Promise<string> {
+  const raw = await response.text()
+  if (!raw) {
+    return `Request failed with status ${response.status}`
+  }
+
+  try {
+    const payload = JSON.parse(raw) as { detail?: string; message?: string }
+    return payload.detail || payload.message || raw
+  } catch {
+    return raw
+  }
+}
+
 async function parseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const message = await response.text()
-    throw new Error(message || `Request failed with status ${response.status}`)
+    throw new Error(await parseErrorMessage(response))
   }
   return (await response.json()) as T
 }
@@ -36,6 +52,43 @@ export async function listModels(): Promise<NovaModelRecord[]> {
     await fetch(buildUrl('/api/models')),
   )
   return payload.items
+}
+
+export async function listProviders(): Promise<NovaProviderRecord[]> {
+  const payload = await parseJson<JsonResponse<NovaProviderRecord>>(
+    await fetch(buildUrl('/api/providers')),
+  )
+  return payload.items
+}
+
+export async function createProvider(
+  payload: NovaProviderCreateRequest,
+): Promise<NovaModelRecord[]> {
+  const response = await parseJson<JsonResponse<NovaModelRecord>>(
+    await fetch(buildUrl('/api/config/providers'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    }),
+  )
+  return response.items
+}
+
+export async function createModel(
+  payload: NovaModelCreateRequest,
+): Promise<NovaModelRecord[]> {
+  const response = await parseJson<JsonResponse<NovaModelRecord>>(
+    await fetch(buildUrl('/api/config/models'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    }),
+  )
+  return response.items
 }
 
 export async function listSessions(): Promise<NovaSessionSummary[]> {
@@ -81,8 +134,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
   })
 
   if (!response.ok) {
-    const message = await response.text()
-    throw new Error(message || `Stream request failed with status ${response.status}`)
+    throw new Error(await parseErrorMessage(response))
   }
 
   if (!response.body) {

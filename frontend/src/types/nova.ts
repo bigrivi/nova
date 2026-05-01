@@ -31,6 +31,27 @@ export type NovaModelRecord = {
   tools: boolean
 }
 
+export type NovaProviderRecord = {
+  key: string
+  name: string
+  type: string
+}
+
+export type NovaProviderCreateRequest = {
+  key: string
+  type: string
+  name: string
+  base_url: string
+  api_key: string
+}
+
+export type NovaModelCreateRequest = {
+  provider: string
+  model: string
+  label: string
+  tools: boolean
+}
+
 export type NovaThreadSummary = {
   id: string
   title: string

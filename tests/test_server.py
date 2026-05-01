@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 from starlette.types import ASGIApp
+import json
 
 from nova.db.database import DatabaseConfig, Session, close_db, init_db
 from nova.agent import AgentEvent
@@ -163,6 +164,208 @@ def test_models_endpoint_returns_configured_models(monkeypatch, tmp_path):
             "tools": True,
         },
     ]
+
+
+def test_add_provider_endpoint_updates_config_and_models(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-add-provider"
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.json").write_text(
+        """
+{
+  "model": "gemma4:26b",
+  "model_provider": "ollama",
+  "providers": {
+    "ollama": {
+      "type": "ollama",
+      "name": "Ollama (local)",
+      "options": {
+        "base_url": "http://localhost:11434"
+      },
+      "models": {
+        "gemma4:26b": {
+          "name": "gemma4:26b",
+          "tools": true
+        }
+      }
+    }
+  }
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/providers",
+        json={
+            "key": "openrouter",
+            "type": "openai-compatible",
+            "name": "OpenRouter",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "sk-test",
+        },
+    )
+
+    assert response.status_code == 200
+    providers_response = client.get("/api/providers")
+    assert providers_response.status_code == 200
+    provider_keys = {item["key"] for item in providers_response.json()["items"]}
+    assert "openrouter" in provider_keys
+
+    config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
+    assert config_payload["providers"]["openrouter"]["type"] == "openai-compatible"
+    assert config_payload["providers"]["openrouter"]["options"]["base_url"] == "https://openrouter.ai/api/v1"
+    assert app.state.settings.providers["openrouter"].name == "OpenRouter"
+
+
+def test_add_provider_endpoint_rejects_duplicate_key(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-add-provider-duplicate"
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.json").write_text(
+        """
+{
+  "model": "gemma4:26b",
+  "model_provider": "ollama",
+  "providers": {
+    "ollama": {
+      "type": "ollama",
+      "name": "Ollama (local)",
+      "options": {
+        "base_url": "http://localhost:11434"
+      },
+      "models": {
+        "gemma4:26b": {
+          "name": "gemma4:26b",
+          "tools": true
+        }
+      }
+    }
+  }
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/providers",
+        json={
+            "key": "ollama",
+            "type": "ollama",
+            "name": "Ollama Duplicate",
+            "base_url": "http://localhost:11434",
+            "api_key": "",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Provider 'ollama' already exists."
+
+
+def test_add_model_endpoint_updates_config_and_models(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-add-model"
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.json").write_text(
+        """
+{
+  "model": "gpt-5.4",
+  "model_provider": "openai",
+  "providers": {
+    "openai": {
+      "type": "openai-compatible",
+      "name": "OpenAI Compatible",
+      "options": {
+        "base_url": "https://api.openai.com/v1"
+      },
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4",
+          "tools": true
+        }
+      }
+    }
+  }
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/models",
+        json={
+            "provider": "openai",
+            "model": "gpt-5.4-mini",
+            "label": "gpt-5.4-mini",
+            "tools": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert any(
+        item["provider"] == "openai" and item["model"] == "gpt-5.4-mini"
+        for item in payload["items"]
+    )
+
+    config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
+    assert config_payload["providers"]["openai"]["models"]["gpt-5.4-mini"]["name"] == "gpt-5.4-mini"
+    assert app.state.settings.providers["openai"].models["gpt-5.4-mini"]["name"] == "gpt-5.4-mini"
+
+
+def test_add_model_endpoint_rejects_duplicate_name_within_provider(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-add-model-duplicate"
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.json").write_text(
+        """
+{
+  "model": "gpt-5.4",
+  "model_provider": "openai",
+  "providers": {
+    "openai": {
+      "type": "openai-compatible",
+      "name": "OpenAI Compatible",
+      "options": {
+        "base_url": "https://api.openai.com/v1"
+      },
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4",
+          "tools": true
+        }
+      }
+    }
+  }
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/models",
+        json={
+            "provider": "openai",
+            "model": "gpt-5.4",
+            "label": "gpt-5.4",
+            "tools": True,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Model 'gpt-5.4' already exists under provider 'openai'."
 
 
 @pytest.mark.asyncio

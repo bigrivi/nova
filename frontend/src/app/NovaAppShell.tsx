@@ -4,28 +4,28 @@ import {
   useExternalStoreRuntime,
 } from "@assistant-ui/react";
 import {
-  ArrowUpIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  LoaderCircleIcon,
 } from "lucide-react";
 import { startTransition, useEffect, useRef, useState } from "react";
 
-import { ModelSelector } from "../components/assistant-ui/model-selector";
 import { Thread } from "../components/assistant-ui/thread";
 import { ThreadList } from "../components/assistant-ui/thread-list";
+import { ThreadStickyComposer } from "../components/assistant-ui/thread-sticky-composer";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { toThreadMessages } from "../lib/history-messages";
 import {
   listMessages,
   listModels,
+  listProviders,
   listSessions,
   streamChat,
 } from "../lib/nova-api";
 import type {
   NovaJsonObject,
   NovaModelRecord,
+  NovaProviderRecord,
   NovaSessionSummary,
   NovaThreadSummary,
 } from "../types/nova";
@@ -214,6 +214,7 @@ export function NovaAppShell() {
   });
   const [currentThreadId, setCurrentThreadId] = useState(DRAFT_THREAD_ID);
   const [models, setModels] = useState<NovaModelRecord[]>([]);
+  const [providers, setProviders] = useState<NovaProviderRecord[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [statusText, setStatusText] = useState("Ready");
@@ -234,10 +235,8 @@ export function NovaAppShell() {
 
     async function bootstrap() {
       try {
-        const [availableModels, savedSessions] = await Promise.all([
-          listModels(),
-          listSessions(),
-        ]);
+        const [availableModels, availableProviders, savedSessions] =
+          await Promise.all([listModels(), listProviders(), listSessions()]);
 
         if (cancelled) {
           return;
@@ -245,6 +244,7 @@ export function NovaAppShell() {
 
         startTransition(() => {
           setModels(availableModels);
+          setProviders(availableProviders);
           setThreads(savedSessions.map(toThreadSummary));
           if (availableModels.length > 0) {
             setSelectedModelId((current) => current || availableModels[0].id);
@@ -518,6 +518,32 @@ export function NovaAppShell() {
     await submitPrompt(prompt);
   }
 
+  function handleConfigModelsUpdated(nextModels: NovaModelRecord[]) {
+    startTransition(() => {
+      setModels(nextModels);
+      setSelectedModelId((current) => {
+        if (current && nextModels.some((model) => model.id === current)) {
+          return current;
+        }
+        return nextModels[0]?.id ?? null;
+      });
+    });
+  }
+
+  async function refreshProviders() {
+    const nextProviders = await listProviders();
+    startTransition(() => {
+      setProviders(nextProviders);
+    });
+  }
+
+  function handleConfigStatus(message: string | null) {
+    setStatusError(message);
+    if (message === null) {
+      setStatusText("Ready");
+    }
+  }
+
   const runtime = useExternalStoreRuntime({
     messages: currentMessages,
     isRunning,
@@ -545,7 +571,7 @@ export function NovaAppShell() {
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <TooltipProvider>
-        <div className="flex bg-muted/30 text-foreground">
+        <div className="flex h-screen overflow-hidden bg-muted/30 text-foreground">
           <aside
             className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden bg-sidebar/80 backdrop-blur transition-[width,opacity] duration-200 ease-out ${
               isSidebarCollapsed
@@ -561,7 +587,7 @@ export function NovaAppShell() {
           </aside>
 
           <main
-            className="relative flex min-w-0 flex-1 flex-col bg-background"
+            className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background"
             style={{ ["--thread-max-width" as string]: "44rem" }}
           >
             <Button
@@ -585,73 +611,40 @@ export function NovaAppShell() {
               )}
             </Button>
 
-            <div className="flex-1 pt-2">
+            <div className="flex min-h-0 flex-1 flex-col pt-2">
               <Thread />
             </div>
 
-            <div className="sticky bottom-0 z-20 pt-3">
-              <div className="pb-3 bg-background/96 backdrop-blur">
-                <div className="mx-auto w-full max-w-(--thread-max-width) px-4">
-                  <div className="rounded-[24px] border bg-background p-3 shadow-sm transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20">
-                    <textarea
-                      ref={composerRef}
-                      value={composerText}
-                      rows={1}
-                      disabled={isRunning}
-                      placeholder="Send a message..."
-                      aria-label="Message input"
-                      className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1 py-1 text-sm outline-none placeholder:text-muted-foreground/80 disabled:cursor-not-allowed"
-                      onChange={(event) => setComposerText(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                          event.preventDefault();
-                          void handleComposerSubmit();
-                        }
-                      }}
-                    />
-
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      <div
-                        className={`text-xs ${
-                          statusError
-                            ? "text-destructive"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {statusError || statusText}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <ModelSelector
-                          compact
-                          models={models}
-                          selectedModelId={selectedModelId}
-                          onSelect={setSelectedModelId}
-                        />
-
-                        <Button
-                          type="button"
-                          size="icon"
-                          className="rounded-full"
-                          disabled={
-                            isRunning || composerText.trim().length === 0
-                          }
-                          onClick={() => {
-                            void handleComposerSubmit();
-                          }}
-                        >
-                          {isRunning ? (
-                            <LoaderCircleIcon className="size-4 animate-spin" />
-                          ) : (
-                            <ArrowUpIcon className="size-4" />
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <ThreadStickyComposer
+              composer={{
+                ref: composerRef,
+                text: composerText,
+                isRunning,
+                onChange: setComposerText,
+                onSubmit: () => {
+                  void handleComposerSubmit();
+                },
+                onKeyDown: (event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    void handleComposerSubmit();
+                  }
+                },
+              }}
+              status={{
+                text: statusText,
+                error: statusError,
+              }}
+              modelSelection={{
+                models,
+                providers,
+                selectedModelId,
+                onSelect: setSelectedModelId,
+                onModelsUpdated: handleConfigModelsUpdated,
+                onProvidersRefresh: refreshProviders,
+                onStatusChange: handleConfigStatus,
+              }}
+            />
           </main>
         </div>
       </TooltipProvider>

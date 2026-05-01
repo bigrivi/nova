@@ -387,6 +387,11 @@ def get_settings() -> Settings:
     return Settings.load_config()
 
 
+def reload_settings() -> Settings:
+    get_settings.cache_clear()
+    return get_settings()
+
+
 def configure_logging(settings: Settings) -> None:
     root = logging.getLogger()
     root.handlers.clear()

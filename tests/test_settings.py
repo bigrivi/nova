@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from nova.settings import Settings, configure_logging, get_settings
+from nova.settings import Settings, configure_logging, get_settings, reload_settings
 from nova.db import database as db_module
 from nova.db.database import Database
 from nova.llm.ollama import OllamaProvider
@@ -299,6 +299,65 @@ def test_providers_use_cached_app_settings_defaults(monkeypatch, tmp_path):
     assert openai.base_url == "http://openai.cached/v1"
     assert openai.api_key == "cached-key"
 
+    get_settings.cache_clear()
+
+
+def test_reload_settings_reloads_config_file(monkeypatch, tmp_path):
+    get_settings.cache_clear()
+    home = tmp_path / "nova-reload-home"
+    _write_config(
+        home,
+        {
+            "model": "gemma4:26b",
+            "model_provider": "ollama",
+            "providers": {
+                "ollama": {
+                    "type": "ollama",
+                    "name": "Ollama (local)",
+                    "options": {
+                        "base_url": "http://localhost:11434",
+                    },
+                    "models": {
+                        "gemma4:26b": {
+                            "name": "gemma4:26b",
+                            "tools": True,
+                        }
+                    },
+                }
+            },
+        },
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    first = get_settings()
+    _write_config(
+        home,
+        {
+            "model": "gpt-5.4",
+            "model_provider": "openai",
+            "providers": {
+                "openai": {
+                    "type": "openai-compatible",
+                    "name": "OpenAI Compatible",
+                    "options": {
+                        "base_url": "https://api.openai.com/v1",
+                    },
+                    "models": {
+                        "gpt-5.4": {
+                            "name": "gpt-5.4",
+                            "tools": True,
+                        }
+                    },
+                }
+            },
+        },
+    )
+
+    refreshed = reload_settings()
+
+    assert first.provider == "ollama"
+    assert refreshed.provider == "openai"
+    assert refreshed.model == "gpt-5.4"
     get_settings.cache_clear()
 
 

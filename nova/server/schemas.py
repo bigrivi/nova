@@ -59,6 +59,31 @@ class ModelListResponse(BaseModel):
     items: list[ModelRecord]
 
 
+class ProviderRecord(BaseModel):
+    key: str
+    name: str
+    type: str
+
+
+class ProviderListResponse(BaseModel):
+    items: list[ProviderRecord]
+
+
+class ProviderCreateRequest(BaseModel):
+    key: str
+    type: str
+    name: str = ""
+    base_url: str = ""
+    api_key: str = ""
+
+
+class ModelCreateRequest(BaseModel):
+    provider: str
+    model: str
+    label: str = ""
+    tools: bool = True
+
+
 class InterruptResponse(BaseModel):
     request_id: str
     interrupted: bool

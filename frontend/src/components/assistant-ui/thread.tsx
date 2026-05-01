@@ -41,7 +41,7 @@ export const Thread: FC = () => {
     <>
       <CustomToolUIRegistry />
       <ThreadPrimitive.Root
-        className="aui-root aui-thread-root @container flex flex-col bg-background"
+        className="aui-root aui-thread-root @container flex min-h-0 flex-1 flex-col overflow-hidden bg-background"
         style={{
           ["--thread-max-width" as string]: "44rem",
           ["--composer-radius" as string]: "24px",
@@ -51,9 +51,9 @@ export const Thread: FC = () => {
         <ThreadPrimitive.Viewport
           autoScroll
           data-slot="aui_thread-viewport"
-          className="relative flex flex-col overflow-visible scroll-smooth"
+          className="relative flex min-h-0 flex-1 flex-col overflow-y-auto scroll-smooth"
         >
-          <div className="mx-auto flex w-full max-w-(--thread-max-width) flex-col px-4 pt-4">
+          <div className="mx-auto flex min-h-full w-full max-w-(--thread-max-width) flex-col px-4 pt-4">
             <AuiIf condition={(s) => s.thread.isEmpty}>
               <ThreadWelcome />
             </AuiIf>
@@ -104,19 +104,26 @@ const ThreadScrollToBottom: FC = () => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
+    const viewport = document.querySelector<HTMLElement>(
+      '[data-slot="aui_thread-viewport"]',
+    );
+    if (!viewport) {
+      setIsVisible(false);
+      return;
+    }
+
     const updateVisibility = () => {
       const distanceToBottom =
-        document.documentElement.scrollHeight -
-        (window.scrollY + window.innerHeight);
+        viewport.scrollHeight - (viewport.scrollTop + viewport.clientHeight);
       setIsVisible(distanceToBottom > SCROLL_TO_BOTTOM_THRESHOLD);
     };
 
     updateVisibility();
-    window.addEventListener("scroll", updateVisibility, { passive: true });
+    viewport.addEventListener("scroll", updateVisibility, { passive: true });
     window.addEventListener("resize", updateVisibility);
 
     return () => {
-      window.removeEventListener("scroll", updateVisibility);
+      viewport.removeEventListener("scroll", updateVisibility);
       window.removeEventListener("resize", updateVisibility);
     };
   }, []);
@@ -132,8 +139,11 @@ const ThreadScrollToBottom: FC = () => {
         variant="outline"
         className="pointer-events-auto absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-background/95 p-3 shadow-sm backdrop-blur"
         onClick={() => {
-          window.scrollTo({
-            top: document.documentElement.scrollHeight,
+          const viewport = document.querySelector<HTMLElement>(
+            '[data-slot="aui_thread-viewport"]',
+          );
+          viewport?.scrollTo({
+            top: viewport.scrollHeight,
             behavior: "smooth",
           });
         }}
@@ -203,7 +213,7 @@ const AssistantMessage: FC = () => {
     <MessagePrimitive.Root
       data-slot="aui_assistant-message-root"
       data-role="assistant"
-      className="fade-in slide-in-from-bottom-1 flex animate-in flex-col gap-y-2 px-2 duration-150"
+      className="fade-in slide-in-from-bottom-1 flex animate-in flex-col gap-y-2 duration-150"
     >
       <div className="flex min-w-0 items-center gap-2 leading-none">
         <Avatar
@@ -297,7 +307,7 @@ const UserMessage: FC = () => {
   return (
     <MessagePrimitive.Root
       data-slot="aui_user-message-root"
-      className="fade-in slide-in-from-bottom-1 grid animate-in auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] content-start gap-y-2 px-2 duration-150 [&:where(>*)]:col-start-2"
+      className="fade-in slide-in-from-bottom-1 grid animate-in auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] content-start gap-y-2 duration-150 [&:where(>*)]:col-start-2"
       data-role="user"
     >
       <UserMessageAttachments />
