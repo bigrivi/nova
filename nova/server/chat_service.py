@@ -9,7 +9,7 @@ from typing import Any, AsyncGenerator, Callable
 
 from nova.agent import AgentEvent
 from nova.app import build_agent
-from nova.db.database import MessageFilter, ensure_db
+from nova.db.database import ensure_db
 from nova.server.ai_sdk_stream import AISDKStreamAdapter
 from nova.server.request_registry import RequestRegistry
 from nova.server.schemas import (
@@ -41,6 +41,7 @@ from nova.server.schemas import (
     ToolResultEventData,
     stream_event_data_to_dict,
 )
+from nova.session.history_projection import get_user_visible_history
 from nova.settings import Settings
 
 
@@ -64,14 +65,7 @@ class ChatService:
 
     async def list_messages(self, session_id: str) -> MessageListResponse:
         db = await ensure_db()
-        messages = await db.get_messages(
-            session_id,
-            MessageFilter(
-                include_compacted=True,
-                exclude_tool_role=True,
-                only_non_summary=True,
-            ),
-        )
+        messages = await get_user_visible_history(db, session_id)
         items = [
             MessageRecord(
                 id=message.id,

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from nova.db import database
-from nova.db.database import MessageFilter
+from nova.session.history_projection import get_user_visible_history
 
 
 class SessionManager:
@@ -69,17 +69,14 @@ class SessionManager:
             return
 
         db = await database.ensure_db()
-        history = await db.get_messages(
-            session_id,
-            MessageFilter(include_compacted=True),
-        )
+        visible_history = await get_user_visible_history(db, session_id)
         self.current_id = session_id
         title = sess.get("title") or "Untitled"
         self._display.info(f"Loaded session: {title}")
-        if not history:
+        if not visible_history:
             self._display.info("No messages found")
             return
-        self._display.print_history_transcript(history)
+        self._display.print_history_transcript(visible_history)
 
     def set_cached_sessions_for_tests(self, sessions: list[dict]) -> None:
         self._cached_sessions = sessions

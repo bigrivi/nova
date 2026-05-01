@@ -192,8 +192,29 @@ async def test_session_messages_endpoint_returns_history(monkeypatch, tmp_path):
     db = await init_db(DatabaseConfig(path=str(settings.database_path)))
     await db.save_session(Session(id="sess-2", title="History Test"))
     await db.add_message("sess-2", "user", "hello")
+    await db.add_message(
+        "sess-2",
+        "assistant",
+        "",
+        tool_calls=[
+            {"id": "call_bash", "name": "bash", "arguments": "{\"command\":\"pwd\"}"},
+            {"id": "call_edit", "name": "edit", "arguments": "{\"filePath\":\"foo.py\"}"},
+        ],
+    )
+    await db.add_message("sess-2", "tool", "hidden tool output", tool_call_id="call_bash")
+    await db.add_message(
+        "sess-2",
+        "tool",
+        "Changes applied to foo.py:\n\n--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new\n",
+        tool_call_id="call_edit",
+    )
     await db.add_message("sess-2", "assistant", "world")
-    await db.add_message("sess-2", "tool", "hidden tool output")
+    await db.add_message(
+        "sess-2",
+        "assistant",
+        "[Previous conversation summary]\nsummary text",
+        summary=True,
+    )
 
     app = create_app(settings=settings)
     client = TestClient(app)
@@ -202,8 +223,17 @@ async def test_session_messages_endpoint_returns_history(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     items = response.json()["items"]
-    assert [item["role"] for item in items] == ["user", "assistant"]
-    assert [item["content"] for item in items] == ["hello", "world"]
+    assert [item["role"] for item in items] == ["user", "assistant", "tool", "assistant"]
+    assert items[0]["content"] == "hello"
+    assert items[1]["tool_calls"] == [
+        {"id": "call_edit", "name": "edit", "arguments": "{\"filePath\":\"foo.py\"}"}
+    ]
+    assert items[2]["role"] == "tool"
+    assert items[2]["tool_call_id"] == "call_edit"
+    assert "Changes applied to foo.py" in items[2]["content"]
+    assert items[3]["content"] == "world"
+    assert not any(item["tool_call_id"] == "call_bash" for item in items)
+    assert not any("Previous conversation summary" in item["content"] for item in items)
     assert all(item["session_id"] == "sess-2" for item in items)
     assert all(isinstance(item["id"], str) for item in items)
     assert all(isinstance(item["time_created"], int) for item in items)

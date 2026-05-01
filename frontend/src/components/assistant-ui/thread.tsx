@@ -1,5 +1,6 @@
 import { UserMessageAttachments } from "@/components/assistant-ui/attachment";
 import { AskUserTool } from "@/components/assistant-ui/ask-user-tool";
+import { FileMutationTool } from "@/components/assistant-ui/file-mutation-tool";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
@@ -35,7 +36,7 @@ import { type FC } from "react";
 export const Thread: FC = () => {
   return (
     <>
-      <AskUserToolUIRegistry />
+      <CustomToolUIRegistry />
       <ThreadPrimitive.Root
         className="aui-root aui-thread-root @container flex h-full min-h-0 flex-col bg-background"
         style={{
@@ -74,10 +75,20 @@ export const Thread: FC = () => {
   );
 };
 
-const AskUserToolUIRegistry: FC = () => {
+const CustomToolUIRegistry: FC = () => {
   useAssistantToolUI({
     toolName: "ask_user",
     render: AskUserTool,
+  });
+
+  useAssistantToolUI({
+    toolName: "edit",
+    render: FileMutationTool,
+  });
+
+  useAssistantToolUI({
+    toolName: "write",
+    render: FileMutationTool,
   });
 
   return null;

@@ -1134,6 +1134,7 @@ async def test_install_skill_command_reports_usage_error(monkeypatch):
 @pytest.mark.asyncio
 async def test_load_session_by_id_reads_history_messages_from_db(monkeypatch):
     ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+
     class _FakeSessionManager:
         async def load_session(self, session_id):
             return {"id": session_id}
@@ -1141,9 +1142,48 @@ async def test_load_session_by_id_reads_history_messages_from_db(monkeypatch):
     class _FakeDb:
         async def get_messages(self, session_id, msg_filter=None):
             assert session_id == "sess-1"
+            assert msg_filter is not None
+            assert msg_filter.include_compacted is True
+            assert msg_filter.only_non_summary is True
+            assert msg_filter.exclude_tool_role is False
             return [
                 Message(id="m1", session_id=session_id, role="user", content="hello"),
+                Message(
+                    id="m-summary",
+                    session_id=session_id,
+                    role="assistant",
+                    content="[Previous conversation summary]\nsummary text",
+                    summary=1,
+                ),
+                Message(
+                    id="m-tool-call-hidden",
+                    session_id=session_id,
+                    role="assistant",
+                    content="",
+                    tool_calls=[{"id": "call_1", "name": "bash", "arguments": "{}"}],
+                ),
+                Message(
+                    id="m-tool-snipped",
+                    session_id=session_id,
+                    role="tool",
+                    tool_call_id="call_1",
+                    content="first half\n[... 123 chars snipped ...]\nlast quarter",
+                ),
                 Message(id="m2", session_id=session_id, role="assistant", content="hi"),
+                Message(
+                    id="m-tool-call-visible",
+                    session_id=session_id,
+                    role="assistant",
+                    content="",
+                    tool_calls=[{"id": "call_2", "name": "edit", "arguments": "{\"filePath\":\"foo.py\"}"}],
+                ),
+                Message(
+                    id="m-tool-visible",
+                    session_id=session_id,
+                    role="tool",
+                    tool_call_id="call_2",
+                    content="Changes applied to foo.py:\n\n--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new\n",
+                ),
             ]
 
     repl = NovaCLI.__new__(NovaCLI)
@@ -1170,7 +1210,7 @@ async def test_load_session_by_id_reads_history_messages_from_db(monkeypatch):
     assert captured == [
         "Loaded session: Greeting",
     ]
-    assert len(printed) == 5
+    assert len(printed) == 7
     assert printed[0] == ""
     block_lines = printed[1].splitlines()
     assert len(block_lines) == 3
@@ -1179,6 +1219,12 @@ async def test_load_session_by_id_reads_history_messages_from_db(monkeypatch):
     assert printed[2] == ""
     assert printed[3] == "• hi"
     assert printed[4] == ""
+    assert "[EDIT DIFF]" in ansi_re.sub("", printed[5])
+    assert printed[6] == ""
+    transcript = "\n".join(printed)
+    assert "Previous conversation summary" not in transcript
+    assert "chars snipped" not in transcript
+    assert "/tmp" not in transcript
 
 
 @pytest.mark.asyncio

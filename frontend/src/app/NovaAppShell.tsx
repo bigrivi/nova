@@ -14,13 +14,13 @@ import { startTransition, useEffect, useRef, useState } from 'react'
 import { ModelSelector } from '../components/assistant-ui/model-selector'
 import { Thread } from '../components/assistant-ui/thread'
 import { ThreadList } from '../components/assistant-ui/thread-list'
+import { toThreadMessages } from '../lib/history-messages'
 import { Button } from '../components/ui/button'
 import { TooltipProvider } from '../components/ui/tooltip'
 import { listMessages, listModels, listSessions, streamChat } from '../lib/nova-api'
 import type {
   NovaJsonObject,
   NovaModelRecord,
-  NovaMessageRecord,
   NovaSessionSummary,
   NovaThreadSummary,
 } from '../types/nova'
@@ -51,48 +51,6 @@ function createAssistantMessage(id?: string): ThreadMessageLike {
 
 type AssistantPart = Exclude<ThreadMessageLike['content'], string>[number]
 
-type ToolCallLike = {
-  id: string
-  name: string
-  arguments: string
-}
-
-function parseToolCallLike(value: unknown): ToolCallLike | null {
-  if (!value || typeof value !== 'object') {
-    return null
-  }
-
-  const raw = value as Record<string, unknown>
-  const id = String(raw.id ?? '').trim()
-  const name = String(raw.name ?? '').trim()
-  const argumentsText = String(raw.arguments ?? '').trim()
-  if (!name) {
-    return null
-  }
-
-  return {
-    id: id || crypto.randomUUID(),
-    name,
-    arguments: argumentsText,
-  }
-}
-
-function parseJsonObject(value: string): NovaJsonObject {
-  const text = value.trim()
-  if (!text) {
-    return {}
-  }
-
-  try {
-    const parsed = JSON.parse(text)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as NovaJsonObject)
-      : {}
-  } catch {
-    return {}
-  }
-}
-
 function createWelcomeMessage(): ThreadMessageLike {
   return createTextMessage(
     'assistant',
@@ -111,52 +69,6 @@ function toThreadSummary(session: NovaSessionSummary): NovaThreadSummary {
     title: toThreadTitle(session),
     status: 'regular',
   }
-}
-
-function toThreadMessages(
-  messages: NovaMessageRecord[],
-): ThreadMessageLike[] {
-  return messages.flatMap((message) => {
-    if (message.role === 'user') {
-      return [createTextMessage('user', message.content, message.id)]
-    }
-
-    if (message.role !== 'assistant') {
-      return []
-    }
-
-    const content: AssistantPart[] = []
-    if (message.content) {
-      content.push({ type: 'text', text: message.content })
-    }
-
-    for (const toolCall of message.tool_calls) {
-      const parsed = parseToolCallLike(toolCall)
-      if (!parsed) {
-        continue
-      }
-      content.push({
-        type: 'tool-call',
-        toolCallId: parsed.id,
-        toolName: parsed.name,
-        args: parseJsonObject(parsed.arguments),
-        argsText: parsed.arguments,
-      })
-    }
-
-    if (content.length === 0) {
-      return []
-    }
-
-    return [
-      {
-        id: message.id,
-        role: 'assistant',
-        content,
-        createdAt: new Date(message.time_created),
-      },
-    ]
-  })
 }
 
 function upsertThread(
