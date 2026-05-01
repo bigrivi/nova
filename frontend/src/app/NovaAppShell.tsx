@@ -519,9 +519,9 @@ export function NovaAppShell() {
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <TooltipProvider>
-        <div className="flex h-full min-h-0 bg-muted/30 text-foreground">
+        <div className="flex bg-muted/30 text-foreground">
           <aside
-            className={`flex h-full shrink-0 flex-col overflow-hidden bg-sidebar/80 backdrop-blur transition-[width,opacity] duration-200 ease-out ${
+            className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden bg-sidebar/80 backdrop-blur transition-[width,opacity] duration-200 ease-out ${
               isSidebarCollapsed ? 'w-0 opacity-0' : 'w-[280px] border-r opacity-100'
             }`}
           >
@@ -533,14 +533,16 @@ export function NovaAppShell() {
           </aside>
 
           <main
-            className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background"
+            className="relative flex min-w-0 flex-1 flex-col bg-background"
             style={{ ['--thread-max-width' as string]: '44rem' }}
           >
             <Button
               type="button"
               variant="outline"
               size="icon"
-              className="absolute left-4 top-4 z-20 rounded-full bg-background/90 shadow-sm backdrop-blur"
+              className={`fixed top-4 z-30 rounded-full bg-background/90 shadow-sm backdrop-blur transition-[left] duration-200 ease-out ${
+                isSidebarCollapsed ? 'left-4' : 'left-[296px]'
+              }`}
               aria-label={
                 isSidebarCollapsed ? 'Expand thread list sidebar' : 'Collapse thread list sidebar'
               }
@@ -553,11 +555,12 @@ export function NovaAppShell() {
               )}
             </Button>
 
-            <div className="min-h-0 flex-1 overflow-hidden pt-2">
+            <div className="flex-1 pt-2">
               <Thread />
             </div>
 
-            <div className="shrink-0 pb-4">
+            <div className="sticky bottom-0 z-20 pb-4 pt-3">
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-4 bg-background/96 backdrop-blur" />
               <div className="mx-auto w-full max-w-(--thread-max-width) px-4">
                 <div className="rounded-[24px] border bg-background p-3 shadow-sm transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20">
                   <textarea

@@ -13,7 +13,6 @@ import {
   ActionBarPrimitive,
   AuiIf,
   BranchPickerPrimitive,
-  ComposerPrimitive,
   ErrorPrimitive,
   MessagePrimitive,
   SuggestionPrimitive,
@@ -30,19 +29,19 @@ import {
   CopyIcon,
   DownloadIcon,
   MoreHorizontalIcon,
-  PencilIcon,
   RefreshCwIcon,
 } from "lucide-react";
-import { type FC } from "react";
+import { type FC, useEffect, useState } from "react";
 
 const ASSISTANT_NAME = "Nova";
+const SCROLL_TO_BOTTOM_THRESHOLD = 32;
 
 export const Thread: FC = () => {
   return (
     <>
       <CustomToolUIRegistry />
       <ThreadPrimitive.Root
-        className="aui-root aui-thread-root @container flex h-full min-h-0 flex-col bg-background"
+        className="aui-root aui-thread-root @container flex flex-col bg-background"
         style={{
           ["--thread-max-width" as string]: "44rem",
           ["--composer-radius" as string]: "24px",
@@ -50,12 +49,11 @@ export const Thread: FC = () => {
         }}
       >
         <ThreadPrimitive.Viewport
-          turnAnchor="top"
           autoScroll
           data-slot="aui_thread-viewport"
-          className="relative flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth"
+          className="relative flex flex-col overflow-visible scroll-smooth"
         >
-          <div className="mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-4">
+          <div className="mx-auto flex w-full max-w-(--thread-max-width) flex-col px-4 pt-4">
             <AuiIf condition={(s) => s.thread.isEmpty}>
               <ThreadWelcome />
             </AuiIf>
@@ -68,10 +66,7 @@ export const Thread: FC = () => {
                 {() => <ThreadMessage />}
               </ThreadPrimitive.Messages>
             </div>
-
-            <ThreadPrimitive.ViewportFooter className="pointer-events-none sticky bottom-0 z-10 mt-auto flex min-h-0 overflow-visible pb-4 md:pb-6">
-              <ThreadScrollToBottom />
-            </ThreadPrimitive.ViewportFooter>
+            <ThreadScrollToBottom />
           </div>
         </ThreadPrimitive.Viewport>
       </ThreadPrimitive.Root>
@@ -100,24 +95,52 @@ const CustomToolUIRegistry: FC = () => {
 
 const ThreadMessage: FC = () => {
   const role = useAuiState((s) => s.message.role);
-  const isEditing = useAuiState((s) => s.message.composer.isEditing);
 
-  if (isEditing) return <EditComposer />;
   if (role === "user") return <UserMessage />;
   return <AssistantMessage />;
 };
 
 const ThreadScrollToBottom: FC = () => {
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const updateVisibility = () => {
+      const distanceToBottom =
+        document.documentElement.scrollHeight -
+        (window.scrollY + window.innerHeight);
+      setIsVisible(distanceToBottom > SCROLL_TO_BOTTOM_THRESHOLD);
+    };
+
+    updateVisibility();
+    window.addEventListener("scroll", updateVisibility, { passive: true });
+    window.addEventListener("resize", updateVisibility);
+
+    return () => {
+      window.removeEventListener("scroll", updateVisibility);
+      window.removeEventListener("resize", updateVisibility);
+    };
+  }, []);
+
+  if (!isVisible) {
+    return null;
+  }
+
   return (
-    <ThreadPrimitive.ScrollToBottom asChild>
+    <div className="pointer-events-none sticky bottom-28 z-10 flex overflow-visible pb-4 md:bottom-32 md:pb-6">
       <TooltipIconButton
         tooltip="Scroll to bottom"
         variant="outline"
-        className="pointer-events-auto absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-background/95 p-3 shadow-sm backdrop-blur disabled:invisible"
+        className="pointer-events-auto absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-background/95 p-3 shadow-sm backdrop-blur"
+        onClick={() => {
+          window.scrollTo({
+            top: document.documentElement.scrollHeight,
+            behavior: "smooth",
+          });
+        }}
       >
         <ArrowDownIcon />
       </TooltipIconButton>
-    </ThreadPrimitive.ScrollToBottom>
+    </div>
   );
 };
 
@@ -176,31 +199,22 @@ const MessageError: FC = () => {
 };
 
 const AssistantMessage: FC = () => {
-  // reserves space for action bar and compensates with `-mb` for consistent msg spacing
-  // keeps hovered action bar from shifting layout (autohide doesn't support absolute positioning well)
-  // for pt-[n] use a matching negative margin to preserve compensation
-  const ACTION_BAR_PT = "pt-1.5";
-  const ACTION_BAR_HEIGHT = `-mb-7.5 ${ACTION_BAR_PT}`;
-
   return (
     <MessagePrimitive.Root
       data-slot="aui_assistant-message-root"
       data-role="assistant"
-      className="fade-in slide-in-from-bottom-1 grid animate-in grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 px-2 duration-150"
+      className="fade-in slide-in-from-bottom-1 flex animate-in flex-col gap-y-2 px-2 duration-150"
     >
-      <div className="row-span-2 pt-0.5">
+      <div className="flex min-w-0 items-center gap-2 leading-none">
         <Avatar
           size="sm"
-          className="border border-emerald-200/80 bg-emerald-50 text-emerald-900 shadow-sm after:hidden"
+          className="size-6 border border-emerald-200/80 bg-emerald-50 text-emerald-900 shadow-sm after:hidden"
         >
           <AvatarFallback className="bg-transparent text-emerald-900">
-            <BotIcon className="size-3.5" />
+            <BotIcon className="size-3" />
           </AvatarFallback>
         </Avatar>
-      </div>
-
-      <div className="flex min-w-0 items-center">
-        <span className="text-sm font-medium text-foreground">
+        <span className="text-[12px] font-medium tracking-[0.01em] text-muted-foreground">
           {ASSISTANT_NAME}
         </span>
       </div>
@@ -222,7 +236,7 @@ const AssistantMessage: FC = () => {
 
       <div
         data-slot="aui_assistant-message-footer"
-        className={cn("col-start-2 flex items-center", ACTION_BAR_HEIGHT)}
+        className="relative min-h-7 pt-1.5"
       >
         <BranchPicker />
         <AssistantActionBar />
@@ -236,7 +250,7 @@ const AssistantActionBar: FC = () => {
     <ActionBarPrimitive.Root
       hideWhenRunning
       autohide="not-last"
-      className="aui-assistant-action-bar-root col-start-3 row-start-2 -ms-1 flex gap-1 text-muted-foreground"
+      className="aui-assistant-action-bar-root absolute left-0 top-1.5 flex gap-1 text-muted-foreground"
     >
       <ActionBarPrimitive.Copy asChild>
         <TooltipIconButton tooltip="Copy">
@@ -289,60 +303,10 @@ const UserMessage: FC = () => {
       <UserMessageAttachments />
 
       <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
-        <div className="aui-user-message-content wrap-break-word peer rounded-2xl bg-muted px-4 py-2.5 text-foreground empty:hidden">
+        <div className="aui-user-message-content wrap-break-word rounded-2xl bg-muted px-4 py-2.5 text-foreground empty:hidden">
           <MessagePrimitive.Parts />
         </div>
-        <div className="aui-user-action-bar-wrapper absolute start-0 top-1/2 -translate-x-full -translate-y-1/2 pe-2 peer-empty:hidden rtl:translate-x-full">
-          <UserActionBar />
-        </div>
       </div>
-
-      <BranchPicker
-        data-slot="aui_user-branch-picker"
-        className="col-span-full col-start-1 row-start-3 -me-1 justify-end"
-      />
-    </MessagePrimitive.Root>
-  );
-};
-
-const UserActionBar: FC = () => {
-  return (
-    <ActionBarPrimitive.Root
-      hideWhenRunning
-      autohide="not-last"
-      className="aui-user-action-bar-root flex flex-col items-end"
-    >
-      <ActionBarPrimitive.Edit asChild>
-        <TooltipIconButton tooltip="Edit" className="aui-user-action-edit p-4">
-          <PencilIcon />
-        </TooltipIconButton>
-      </ActionBarPrimitive.Edit>
-    </ActionBarPrimitive.Root>
-  );
-};
-
-const EditComposer: FC = () => {
-  return (
-    <MessagePrimitive.Root
-      data-slot="aui_edit-composer-wrapper"
-      className="flex flex-col px-2"
-    >
-      <ComposerPrimitive.Root className="aui-edit-composer-root ms-auto flex w-full max-w-[85%] flex-col rounded-2xl bg-muted">
-        <ComposerPrimitive.Input
-          className="aui-edit-composer-input min-h-14 w-full resize-none bg-transparent p-4 text-foreground text-sm outline-none"
-          autoFocus
-        />
-        <div className="aui-edit-composer-footer mx-3 mb-3 flex items-center gap-2 self-end">
-          <ComposerPrimitive.Cancel asChild>
-            <Button variant="ghost" size="sm">
-              Cancel
-            </Button>
-          </ComposerPrimitive.Cancel>
-          <ComposerPrimitive.Send asChild>
-            <Button size="sm">Update</Button>
-          </ComposerPrimitive.Send>
-        </div>
-      </ComposerPrimitive.Root>
     </MessagePrimitive.Root>
   );
 };

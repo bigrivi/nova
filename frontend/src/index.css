@@ -130,7 +130,7 @@
   }
 
   body {
-    @apply min-h-screen overflow-hidden bg-background text-foreground;
+    @apply overflow-y-auto bg-background text-foreground;
   }
 
   html {
