@@ -38,19 +38,10 @@ def build_agent(settings: Settings | None = None) -> Agent:
     settings = settings or get_settings()
     llm_settings = settings.llm
     resolved_provider = llm_settings.provider.strip() or llm_settings.provider
-    resolved_model = settings.resolve_model_name(llm_settings.model, provider_name=resolved_provider)
-    provider_type = settings.get_provider_config(resolved_provider).type.strip() or llm_settings.provider_type
-    if provider_type == "ollama":
-        resolved_model = resolved_model or "gemma4:26b"
-    elif provider_type == "openai-compatible":
-        resolved_model = resolved_model or ""
-    else:
-        raise ValueError(f"Unsupported provider type: {provider_type}")
-
     llm = build_llm(settings=settings)
     initialize_skill_service(settings=settings)
     agent = Agent(
-        config=AgentConfig(model=resolved_model, provider=resolved_provider),
+        config=AgentConfig(model=settings.model, provider=resolved_provider),
         llm_provider=llm,
     )
     agent.register_all_tools()

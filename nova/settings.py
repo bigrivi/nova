@@ -366,20 +366,20 @@ class Settings:
 
         return merged
 
-    def get_model_config(self, model_name: str, provider_name: str | None = None) -> dict[str, Any]:
+    def get_model_config(self, model_key: str, provider_name: str | None = None) -> dict[str, Any]:
         resolved_provider = provider_name or self.provider
         provider_config = self.get_provider_config(resolved_provider)
-        model_entry = provider_config.models.get(model_name)
+        model_entry = provider_config.models.get(model_key)
         if isinstance(model_entry, dict):
             return model_entry
         return {}
 
-    def resolve_model_name(self, model_name: str, provider_name: str | None = None) -> str:
-        model_entry = self.get_model_config(model_name, provider_name=provider_name)
+    def resolve_model_name(self, model_key: str, provider_name: str | None = None) -> str:
+        model_entry = self.get_model_config(model_key, provider_name=provider_name)
         configured_name = str(model_entry.get("name", "")).strip()
         if configured_name:
             return configured_name
-        return model_name
+        return model_key
 
 
 @lru_cache(maxsize=1)
