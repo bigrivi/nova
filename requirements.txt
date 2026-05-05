@@ -5,3 +5,7 @@ httpx
 prompt_toolkit
 rich
 uvicorn
+
+# Optional: tiktoken for accurate OpenAI model token estimation
+# pip install tiktoken
+tiktoken
