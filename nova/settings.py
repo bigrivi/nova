@@ -213,7 +213,7 @@ class Settings:
 
     # LLM runtime defaults and provider credentials.
     provider: str
-    model: str
+    model: str  # Model key as defined in providers.<provider>.models.<key> (e.g., "my-gemma")
     ollama_base_url: str
     openai_base_url: str
     openai_api_key: str

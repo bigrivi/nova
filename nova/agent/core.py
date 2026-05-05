@@ -45,7 +45,7 @@ def _error_payload(reason: str, message: str) -> dict[str, Any]:
 
 @dataclass
 class AgentConfig:
-    model: str = "gpt-4o"
+    model: str = "gpt-4o"  # Model key as defined in config.json (e.g., "my-gemma")
     provider: str = "ollama"
     system_prompt: Optional[str] = None
     max_iterations: int = 100
