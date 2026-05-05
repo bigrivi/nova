@@ -4,6 +4,7 @@ Compaction Module Tests using pytest
 
 import pytest
 import asyncio
+from unittest.mock import patch, MagicMock
 
 from nova.agent.compaction import (
     estimate_tokens,
@@ -33,21 +34,24 @@ class TestEstimateTokens:
     def test_single_message(self):
         messages = [MockMessage("1", "user", "Hello")]
         tokens = estimate_tokens(messages)
-        assert tokens > 0
+        # "Hello" = 5 chars, 5/4=1, 1*1.2=1
+        assert tokens > 0  # 1 > 0
 
     def test_multiple_messages(self):
         messages = [
-            MockMessage("1", "user", "Hello, how are you?"),
-            MockMessage("2", "assistant", "I'm doing well!"),
-            MockMessage("3", "user", "Can you help me?"),
+            MockMessage("1", "user", "Hello, how are you?"),  # 18 chars
+            MockMessage("2", "assistant", "I'm doing well!"),  # 18 chars
+            MockMessage("3", "user", "Can you help me?"),  # 17 chars
         ]
         tokens = estimate_tokens(messages)
-        assert tokens > 30
+        # total=53 chars, 53/4=13, 13*1.2=15.6->15
+        assert tokens > 10  # Updated for new chars/4 * 1.2 formula
 
     def test_long_content(self):
         messages = [MockMessage("1", "user", "A" * 1000)]
         tokens = estimate_tokens(messages)
-        assert tokens > 300
+        # 1000 chars, 1000/4=250, 250*1.2=300
+        assert tokens >= 300  # Updated: use >= instead of >
 
 
 class TestSnipOldToolResults:
@@ -201,15 +205,76 @@ class TestShouldCompact:
         )
 
 
+class TestGetContextLimitWithMargin:
+    def test_with_provider_joint_lookup(self):
+        """Provider + model joint lookup returns correct limit."""
+        from nova.llm.tokenizer import get_context_limit_with_margin
+        
+        mock_settings = MagicMock()
+        mock_settings.providers = {
+            "ollama": MagicMock(models={"gemma4:26b": {"limit": {"context": 32000}}}),
+        }
+        
+        with patch("nova.settings.get_settings", return_value=mock_settings):
+            from nova.settings import get_settings
+            get_settings.cache_clear()
+            result = get_context_limit_with_margin("gemma4:26b", "ollama")
+            assert result == int(32000 / 1.2)
+
+    def test_with_provider_context_window_fallback(self):
+        """Falls back to context_window when limit.context missing."""
+        from nova.llm.tokenizer import get_context_limit_with_margin
+        
+        mock_settings = MagicMock()
+        mock_settings.providers = {
+            "anthropic": MagicMock(models={"claude-3-sonnet": {"context_window": 200000}}),
+        }
+        
+        with patch("nova.settings.get_settings", return_value=mock_settings):
+            from nova.settings import get_settings
+            get_settings.cache_clear()
+            result = get_context_limit_with_margin("claude-3-sonnet", "anthropic")
+            assert result == int(200000 / 1.2)
+
+    def test_unknown_provider_hardcoded_fallback(self):
+        """Falls back to hardcoded defaults for unknown provider."""
+        from nova.llm.tokenizer import get_context_limit_with_margin
+        
+        mock_settings = MagicMock()
+        mock_settings.providers = {}
+        
+        with patch("nova.settings.get_settings", return_value=mock_settings):
+            from nova.settings import get_settings
+            get_settings.cache_clear()
+            result = get_context_limit_with_margin("gpt-4o", "unknown")
+            assert result == 106666
+
+    def test_get_context_limit_passes_provider(self):
+        """get_context_limit passes provider to get_context_limit_with_margin."""
+        mock_settings = MagicMock()
+        mock_settings.providers = {
+            "openai": MagicMock(models={"gpt-4o": {"limit": {"context": 200000}}}),
+        }
+        
+        with patch("nova.settings.get_settings", return_value=mock_settings):
+            from nova.settings import get_settings
+            get_settings.cache_clear()
+            result = get_context_limit("gpt-4o", "openai")
+            assert result == int(200000 / 1.2)
+
+
 class TestGetContextLimit:
     def test_gpt4o(self):
-        assert get_context_limit("gpt-4o") == 128000
+        # 128000 / 1.2 = 106666
+        assert get_context_limit("gpt-4o", "openai") == 106666
 
     def test_gemma(self):
-        assert get_context_limit("gemma4:26b") == 32000
+        # 32000 / 1.2 = 26666
+        assert get_context_limit("gemma4:26b", "ollama") == 26666
 
     def test_unknown_model(self):
-        assert get_context_limit("unknown-model") == 128000
+        # 128000 / 1.2 = 106666
+        assert get_context_limit("unknown-model", "openai") == 106666
 
 
 class TestHelperFunctions:

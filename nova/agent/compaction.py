@@ -21,44 +21,25 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def estimate_tokens(messages: list) -> int:
-    """Estimate the token count for a list of messages.
+def estimate_tokens(messages: list, model: str = "unknown") -> int:
+    """Estimate tokens using type-aware character estimation with safety margin.
 
-    Uses chars/2.8 as a conservative approximation that works reasonably well for code-heavy content.
+    - Normal text: chars/4
+    - Tool results: chars/2 (more token-dense)
+    - Images: fixed 8000 char estimate
+    - Applies 1.2x safety margin for estimation inaccuracy
     """
-    total_chars = 0
-    msg_count = 0
-
-    for m in messages:
-        msg_count += 1
-        content = _get_content(m)
-        if isinstance(content, str):
-            total_chars += len(content)
-
-        tool_calls = _get_tool_calls(m)
-        for tc in tool_calls:
-            if isinstance(tc, dict):
-                for v in tc.values():
-                    if isinstance(v, str):
-                        total_chars += len(v)
-
-    content_tokens = int(total_chars / 2.8)
-    framing_tokens = msg_count * 4
-    return int((content_tokens + framing_tokens) * 1.1)
+    from nova.llm.tokenizer import estimate_messages_tokens
+    return estimate_messages_tokens(messages, model)
 
 
-def get_context_limit(model: str) -> int:
-    """Return the context limit for a model."""
-    limits = {
-        "gpt-4o": 128000,
-        "gpt-4o-mini": 128000,
-        "gpt-4-turbo": 128000,
-        "gpt-4": 8192,
-        "gpt-3.5-turbo": 16385,
-        "gemma4:26b": 32000,
-        "minimax-m2.7:cloud": 128000,
-    }
-    return limits.get(model, 128000)
+def get_context_limit(model: str, provider: str) -> int:
+    """Return the context limit for a model, with safety margin.
+
+    Reserves 20% of context window for safety margin.
+    """
+    from nova.llm.tokenizer import get_context_limit_with_margin
+    return get_context_limit_with_margin(model, provider)
 
 
 def snip_old_tool_results(
@@ -155,6 +136,7 @@ async def maybe_compact(
     db: "Database",
     llm: LLMProvider,
     model: str = "gpt-4o",
+    provider: str = "ollama",
 ) -> bool:
     """Check whether compaction is needed and run it when required.
 
@@ -162,7 +144,7 @@ async def maybe_compact(
     1. Layer 1: ``snip_old_tool_results`` trims old tool outputs.
     2. Layer 2: invoke the LLM to compact history when needed.
     """
-    model_max_tokens = get_context_limit(model)
+    model_max_tokens = get_context_limit(model, provider)
 
     if message_count == 0:
         return False
@@ -191,7 +173,7 @@ async def maybe_compact(
         last_compacted_at=last_compacted_at,
         model_max_tokens=model_max_tokens,
     ):
-        await compact(session_id, db, llm, model)
+        await compact(session_id, db, llm, model, provider)
         return True
 
     return False
@@ -214,6 +196,7 @@ async def compact(
     db: "Database",
     llm: LLMProvider,
     model: str = "gpt-4o",
+    provider: str = "ollama",
 ) -> None:
     """Run session compaction (Layer 2).
 

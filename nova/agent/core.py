@@ -10,7 +10,7 @@ from nova.llm import LLMProvider, Message as LLMMessage, ToolCall, ToolResult
 from nova.session import SessionManager, get_session_manager
 from nova.tools.registry import ToolRegistry
 from nova.prompt import PromptBuilder, PromptConfig, SessionContext, ContextStats, build_system_prompt
-from nova.agent.compaction import maybe_compact
+from nova.agent.compaction import maybe_compact, get_context_limit
 from nova.db.database import ensure_db
 
 log = logging.getLogger(__name__)
@@ -46,6 +46,7 @@ def _error_payload(reason: str, message: str) -> dict[str, Any]:
 @dataclass
 class AgentConfig:
     model: str = "gpt-4o"
+    provider: str = "ollama"
     system_prompt: Optional[str] = None
     max_iterations: int = 100
     max_tokens: int = 8192
@@ -139,7 +140,7 @@ class Agent:
             input_chars = sum(len(m.content) for m in db_messages)
             stats = ContextStats(
                 model=self.config.model,
-                max_tokens=self._get_max_tokens(),
+                max_tokens=get_context_limit(self.config.model, self.config.provider),
                 input_tokens=int(input_chars / 4),
                 output_tokens=0,
                 total_tokens=int(input_chars / 4),
@@ -153,16 +154,6 @@ class Agent:
             context_stats=stats,
             available_skills=available_skills,
         )
-
-    def _get_max_tokens(self) -> int:
-        limits = {
-            "gpt-4o": 128000,
-            "gpt-4o-mini": 128000,
-            "gpt-4-turbo": 128000,
-            "gpt-4": 8192,
-            "gpt-3.5-turbo": 16385,
-        }
-        return limits.get(self.config.model, 128000)
 
     async def _get_messages(self) -> list[LLMMessage]:
         session = self.session.get_current_session()
@@ -237,6 +228,7 @@ class Agent:
             db=await ensure_db(),
             llm=self.llm,
             model=self.config.model,
+            provider=self.config.provider,
         )
 
         turn_count = 0

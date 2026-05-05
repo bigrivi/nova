@@ -50,7 +50,7 @@ def build_agent(settings: Settings | None = None) -> Agent:
     llm = build_llm(settings=settings)
     initialize_skill_service(settings=settings)
     agent = Agent(
-        config=AgentConfig(model=resolved_model),
+        config=AgentConfig(model=resolved_model, provider=resolved_provider),
         llm_provider=llm,
     )
     agent.register_all_tools()
