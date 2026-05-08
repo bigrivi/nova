@@ -167,6 +167,8 @@ class Agent:
                 m.tool_calls = msg.tool_calls
             if msg.tool_call_id:
                 m.tool_call_id = msg.tool_call_id
+            if msg.images:
+                m.images = msg.images
             messages.append(m)
         return messages
 
@@ -328,10 +330,24 @@ class Agent:
                         yield AgentEvent.DONE, stop_payload
                         return
                     result = await self._execute_tool(tc)
+
+                    tool_name = tc.name if hasattr(tc, 'name') else str(tc)
+                    images = None
+                    content = result.content
+
+                    if tool_name == "read_image":
+                        try:
+                            data = json.loads(content)
+                            images = data.get("images", [])
+                            content = data.get("text", "")
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+
                     await self.session.add_message(
                         role="tool",
-                        content=result.content,
+                        content=content,
                         tool_call_id=tc.id if hasattr(tc, 'id') else str(tc),
+                        images=images,
                     )
                     tool_call_id = tc.id if hasattr(tc, 'id') else str(tc)
                     await self._emit(

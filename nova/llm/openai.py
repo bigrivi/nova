@@ -132,10 +132,20 @@ class OpenAIProvider(LLMProvider):
         for msg in messages:
             role = get_attr(msg, "role")
             content = get_attr(msg, "content")
+            images = get_attr(msg, "images")
             if role is None:
                 continue
 
-            m = {"role": role, "content": content}
+            if images:
+                content_list = [{"type": "text", "text": content or ""}]
+                for img in images:
+                    content_list.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{img}"}
+                    })
+                m = {"role": "user", "content": content_list}
+            else:
+                m = {"role": role, "content": content}
 
             name = get_attr(msg, "name")
             if name:

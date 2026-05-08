@@ -15,6 +15,7 @@ class Message:
     name: Optional[str] = None
     tool_calls: Optional[list] = None
     tool_call_id: Optional[str] = None
+    images: Optional[list[str]] = None
 
 
 @dataclass

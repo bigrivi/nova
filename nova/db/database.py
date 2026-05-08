@@ -38,6 +38,7 @@ class Message:
     tool_calls: Optional[list] = None
     tool_call_id: Optional[str] = None
     data: Optional[str] = None
+    images: Optional[list[str]] = None
 
 
 @dataclass
@@ -104,6 +105,7 @@ CREATE TABLE IF NOT EXISTS messages (
     data TEXT,
     tool_calls TEXT,
     tool_call_id TEXT,
+    images TEXT,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
@@ -180,6 +182,8 @@ class Database:
 
     @staticmethod
     def _row_to_message(row_dict: dict[str, Any]) -> Message:
+        images_data = row_dict.get("images")
+        images = json.loads(images_data) if images_data else None
         return Message(
             id=row_dict["id"],
             session_id=row_dict["session_id"],
@@ -190,6 +194,7 @@ class Database:
             time_created=row_dict["time_created"],
             summary=row_dict.get("summary", 0),
             compacted=row_dict.get("compacted", 0),
+            images=images,
         )
 
     @staticmethod
@@ -257,15 +262,18 @@ class Database:
         tool_calls: Optional[list] = None,
         tool_call_id: Optional[str] = None,
         summary: bool = False,
+        images: Optional[list[str]] = None,
     ) -> Message:
         await self._ensure_connected()
         msg_id = str(uuid.uuid4())
         now = int(time.time() * 1000)
 
+        images_json = json.dumps(images) if images else None
+
         await self._conn.execute(
             """INSERT INTO messages
-            (id, session_id, role, data, tool_calls, tool_call_id, time_created, summary)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, session_id, role, data, tool_calls, tool_call_id, time_created, summary, images)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 msg_id,
                 session_id,
@@ -275,6 +283,7 @@ class Database:
                 tool_call_id,
                 now,
                 1 if summary else 0,
+                images_json,
             ),
         )
         await self._conn.execute(
@@ -306,7 +315,8 @@ class Database:
         params: list[object] = [session_id]
 
         if not filter_value.include_compacted:
-            conditions.append("(summary = 1 OR (compacted = 0 AND summary = 0))")
+            conditions.append(
+                "(summary = 1 OR (compacted = 0 AND summary = 0))")
 
         if filter_value.exclude_tool_role:
             conditions.append("role != 'tool'")
@@ -426,7 +436,8 @@ async def ensure_db() -> Database:
     if _db is None:
         async with _init_lock:
             if _db is None:
-                _db = Database(DatabaseConfig(path=str(get_settings().database_path)))
+                _db = Database(DatabaseConfig(
+                    path=str(get_settings().database_path)))
                 await _db.connect()
     return _db
 

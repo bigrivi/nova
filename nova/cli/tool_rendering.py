@@ -42,6 +42,9 @@ def render_tool_result(tool_name: object, content: object) -> Optional[str]:
     if not stripped:
         return None
 
+    if normalized_name == "read_image":
+        return None
+
     if normalized_name in {"edit", "write"} and "\n--- " in content and "\n+++ " in content and "\n@@ " in content:
         headline, _, diff_body = stripped.partition("\n\n")
         rendered_diff = render_diff_block(diff_body or headline)

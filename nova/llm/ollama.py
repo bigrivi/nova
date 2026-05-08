@@ -33,7 +33,10 @@ class OllamaProvider(LLMProvider):
         result = []
         for msg in messages:
             if hasattr(msg, "role"):
-                m = {"role": msg.role, "content": msg.content}
+                m = {"role": msg.role, "content": msg.content or ""}
+                if hasattr(msg, "images") and msg.images:
+                    m["images"] = msg.images
+                    m["role"] = "user"
                 if hasattr(msg, "tool_call_id") and msg.tool_call_id:
                     m["tool_call_id"] = msg.tool_call_id
                 if hasattr(msg, "tool_calls") and msg.tool_calls:
@@ -109,7 +112,8 @@ class OllamaProvider(LLMProvider):
                         text = await resp.text()
                         error_message = self._build_http_error_message(
                             url=url, status=resp.status, text=text)
-                        log.error("Ollama provider request failed: %s", error_message)
+                        log.error(
+                            "Ollama provider request failed: %s", error_message)
                         return Done(content=f"Error: {error_message}", tool_calls=[])
 
                     data = await resp.json()
@@ -166,7 +170,8 @@ class OllamaProvider(LLMProvider):
                         text = await resp.text()
                         error_message = self._build_http_error_message(
                             url=url, status=resp.status, text=text)
-                        log.error("Ollama provider stream request failed: %s", error_message)
+                        log.error(
+                            "Ollama provider stream request failed: %s", error_message)
                         yield Done(content=f"Error: {error_message}", tool_calls=[])
                         return
 
@@ -219,7 +224,8 @@ class OllamaProvider(LLMProvider):
                                 yield TextDelta(content=delta)
 
                         except json.JSONDecodeError:
-                            log.debug("Ollama provider received non-JSON stream chunk", exc_info=True)
+                            log.debug(
+                                "Ollama provider received non-JSON stream chunk", exc_info=True)
                             continue
 
                     final_tool_calls = [
