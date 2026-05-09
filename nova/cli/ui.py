@@ -40,6 +40,7 @@ PROMPT_STYLE = Style.from_dict(
 
 INPUT_UI_REFRESH_INTERVAL = 0.2
 SESSION_SELECTOR_WINDOW_SIZE = 8
+MODEL_SELECTOR_WINDOW_SIZE = 8
 SESSION_SELECTOR_CREATED_WIDTH = 12
 SESSION_SELECTOR_UPDATED_WIDTH = 12
 SESSION_SELECTOR_CONVERSATION_MIN_WIDTH = 24
@@ -209,21 +210,30 @@ class PromptToolkitInputUI:
         completer: Completer | None = None,
         model_label: str = "",
         model_label_provider: Callable[[], str] | None = None,
+        model_provider_label: Callable[[], str] | None = None,
     ):
         self._completer = completer
         self._model_label = model_label.strip()
         self._model_label_provider = model_label_provider
+        self._model_provider_label = model_provider_label
 
     def _get_model_label(self) -> str:
         if self._model_label_provider is not None:
             return self._model_label_provider().strip()
         return self._model_label
 
+    def _get_model_provider_label(self) -> str:
+        if self._model_provider_label is not None:
+            return self._model_provider_label().strip()
+        return ""
+
     def _build_model_fragments(self) -> FormattedText:
         model_label = self._get_model_label()
+        provider_label = self._get_model_provider_label()
         return FormattedText(
             [
                 ("class:model-info", f"  {model_label}"),
+                ("class:selector-provider", f" ({provider_label})" if provider_label else ""),
             ]
         )
 
@@ -253,9 +263,19 @@ class PromptToolkitInputUI:
 
         def build_selection_fragments() -> FormattedText:
             selected_item = selectable_items[state["index"]]
+            total_items = len(selectable_items)
+            window_size = min(MODEL_SELECTOR_WINDOW_SIZE, total_items)
+            half_window = window_size // 2
+            start_index = max(0, state["index"] - half_window)
+            end_index = start_index + window_size
+            if end_index > total_items:
+                end_index = total_items
+                start_index = max(0, end_index - window_size)
+
             fragments: list[tuple[str, str]] = [
                 ("class:selector-title", "Select a model\n"),
             ]
+            current_item_index = 0
             for group_index, group in enumerate(groups):
                 provider_branch = "└─" if group_index == len(
                     groups) - 1 else "├─"
@@ -268,18 +288,26 @@ class PromptToolkitInputUI:
                         ("class:selector-current", f"{model_indent}No configured models\n"))
                     continue
                 for model_name in group.models:
-                    is_selected = (
-                        group.provider == selected_item.provider
-                        and model_name == selected_item.model
-                    )
-                    is_current = (
-                        group.provider == current_provider
-                        and model_name == current_model
-                    )
-                    marker = " (current)" if is_current else ""
-                    style = "class:selector-selected" if is_selected else "class:selector-item"
-                    fragments.append(
-                        (style, f"{model_indent}• {model_name}{marker}\n"))
+                    is_visible = start_index <= current_item_index < end_index
+                    if is_visible:
+                        is_selected = (
+                            group.provider == selected_item.provider
+                            and model_name == selected_item.model
+                        )
+                        is_current = (
+                            group.provider == current_provider
+                            and model_name == current_model
+                        )
+                        marker = " (current)" if is_current else ""
+                        style = "class:selector-selected" if is_selected else "class:selector-item"
+                        fragments.append(
+                            (style, f"{model_indent}• {model_name}{marker}\n"))
+                    current_item_index += 1
+            if start_index > 0:
+                fragments.insert(1, ("class:selector-current", f"  ↑ {start_index} earlier\n"))
+            if end_index < total_items:
+                fragments.append(
+                    ("class:selector-current", f"  ↓ {total_items - end_index} more\n"))
             if fragments and fragments[-1][1].endswith("\n"):
                 last_style, last_text = fragments[-1]
                 fragments[-1] = (last_style, last_text[:-1])

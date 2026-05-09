@@ -55,6 +55,7 @@ class NovaCLI(StreamControlProtocol):
         self._input_ui = PromptToolkitInputUI(
             completer=CommandCompleter(self._command_registry),
             model_label_provider=self._current_model_label,
+            model_provider_label=self._current_provider_label,
         )
         self._display = TerminalDisplay()
         self._running = False
@@ -88,6 +89,14 @@ class NovaCLI(StreamControlProtocol):
             provider_name=provider,
         ).strip()
         return model or "(server default)"
+
+    def _current_provider_label(self) -> str:
+        provider = self.settings.provider
+        if provider:
+            provider_config = self.settings.get_provider_config(provider)
+            if provider_config:
+                return provider_config.name
+        return ""
 
     def _model_groups(self) -> list[ModelGroup]:
         return [
