@@ -1,5 +1,5 @@
-import { PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "../ui/button";
 import {
@@ -10,12 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -64,16 +58,9 @@ type ModelFormState = {
   tools: boolean;
 };
 
-const PROVIDER_TYPE_OPTIONS = [
-  {
-    value: "ollama" as const,
-    label: "Ollama",
-  },
-  {
-    value: "openai-compatible" as const,
-    label: "OpenAI Compatible",
-  },
-];
+const ADD_PROVIDER_VALUE = "__add_provider__";
+const ADD_MODEL_VALUE = "__add_model__";
+const PROVIDER_TYPE_VALUES = ["ollama", "openai-compatible"] as const;
 
 function groupModels(models: NovaModelRecord[]): ModelGroup[] {
   const groups = new Map<string, ModelGroup>();
@@ -95,8 +82,12 @@ function groupModels(models: NovaModelRecord[]): ModelGroup[] {
   return [...groups.values()];
 }
 
-function renderGroupedItems(groups: ModelGroup[]) {
-  return groups.flatMap((group, index) => {
+function renderGroupedItems(
+  groups: ModelGroup[],
+  t: (key: string) => string,
+  hasProviders: boolean,
+) {
+  const items = groups.flatMap((group, index) => {
     const parts = [
       <SelectGroup key={group.provider}>
         <SelectLabel className="px-2.5 pb-1 pt-2 font-semibold text-[10px] uppercase tracking-[0.14em] text-foreground/65">
@@ -118,6 +109,27 @@ function renderGroupedItems(groups: ModelGroup[]) {
 
     return parts;
   });
+
+  items.push(
+    <SelectSeparator key="add-separator" className="my-1.5" />,
+  );
+  items.push(
+    <SelectItem key="add-provider" value={ADD_PROVIDER_VALUE} className="pl-5 text-muted-foreground">
+      <span className="inline-block pl-1">{t("modelSelector.addProvider")}</span>
+    </SelectItem>,
+  );
+  items.push(
+    <SelectItem
+      key="add-model"
+      value={ADD_MODEL_VALUE}
+      disabled={!hasProviders}
+      className="pl-5 text-muted-foreground"
+    >
+      <span className="inline-block pl-1">{t("modelSelector.addModel")}</span>
+    </SelectItem>,
+  );
+
+  return items;
 }
 
 function defaultProviderState(): ProviderFormState {
@@ -157,6 +169,7 @@ export function ModelSelector({
   onStatusChange,
   compact = false,
 }: ModelSelectorProps) {
+  const { t } = useTranslation();
   const [isProviderDialogOpen, setIsProviderDialogOpen] = useState(false);
   const [isModelDialogOpen, setIsModelDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -176,6 +189,16 @@ export function ModelSelector({
   const selectedModel =
     models.find((model) => model.id === selectedModelId) ?? models[0] ?? null;
   const selectedValue = selectedModel?.id;
+
+  function handleValueChange(value: string) {
+    if (value === ADD_PROVIDER_VALUE) {
+      openProviderDialog();
+    } else if (value === ADD_MODEL_VALUE) {
+      openModelDialog();
+    } else {
+      onSelect(value);
+    }
+  }
 
   function openProviderDialog() {
     setProviderError(null);
@@ -264,52 +287,23 @@ export function ModelSelector({
   }
 
   const selector = (
-    <Select value={selectedValue} onValueChange={onSelect} disabled={!hasModels}>
+    <Select value={selectedValue} onValueChange={handleValueChange} disabled={!hasModels}>
       <SelectTrigger
         id={selectId}
-        aria-label="Active model"
-        title={selectedModel?.label || "No models available"}
+        aria-label={t("modelSelector.activeModel")}
+        title={selectedModel?.label || t("modelSelector.noModelsAvailable")}
         className={
           compact
-            ? "h-8 w-32 rounded-full border-border/60 bg-background/85 px-2.5 py-0 text-[11px] font-medium text-muted-foreground shadow-none hover:bg-muted/35 focus:bg-background focus:text-foreground focus-visible:ring-ring/15 sm:w-36"
+            ? "flex items-center h-8 overflow-hidden rounded-full border-border/60 bg-background/85 px-2.5 text-[11px] font-medium leading-none text-muted-foreground shadow-none hover:bg-muted/35 focus:bg-background focus:text-foreground focus-visible:ring-ring/15"
             : "h-10 w-full rounded-xl"
         }
       >
-        <SelectValue placeholder="No models available" />
+        <SelectValue placeholder={t("modelSelector.noModelsAvailable")} />
       </SelectTrigger>
       <SelectContent align={compact ? "end" : "center"}>
-        {renderGroupedItems(groupedModels)}
+        {renderGroupedItems(groupedModels, t, hasProviders)}
       </SelectContent>
     </Select>
-  );
-
-  const actions = (
-    <div className={compact ? "flex items-center gap-1.5" : "flex items-center gap-2"}>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size={compact ? "icon-sm" : "sm"}
-            className={compact ? "rounded-full" : "rounded-xl"}
-          >
-            <PlusIcon className="size-3.5" />
-            {!compact ? "Configure" : null}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-44">
-          <DropdownMenuItem onSelect={openProviderDialog}>
-            Add provider
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={openModelDialog}
-            disabled={!hasProviders}
-          >
-            Add model
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
   );
 
   return (
@@ -317,25 +311,22 @@ export function ModelSelector({
       {compact ? (
         <div className="flex items-center gap-2">
           <label className="sr-only" htmlFor={selectId}>
-            Active model
+            {t("modelSelector.activeModel")}
           </label>
           {selector}
-          {actions}
         </div>
       ) : (
         <div className="space-y-3 rounded-2xl border bg-card p-4 shadow-sm">
           <div className="space-y-1">
             <label className="text-sm font-medium text-foreground" htmlFor={selectId}>
-              Active model
+              {t("modelSelector.activeModel")}
             </label>
             <p className="text-xs leading-5 text-muted-foreground">
-              The selected provider/model pair is sent as a per-request override to
-              Nova&apos;s backend.
+              {t("modelSelector.description")}
             </p>
           </div>
           <div className="flex flex-col gap-3">
             {selector}
-            {actions}
           </div>
         </div>
       )}
@@ -343,39 +334,39 @@ export function ModelSelector({
       <Dialog open={isProviderDialogOpen} onOpenChange={setIsProviderDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add provider</DialogTitle>
+            <DialogTitle>{t("modelSelector.addProviderDialogTitle")}</DialogTitle>
             <DialogDescription>
-              Save a new provider into Nova&apos;s config.json. Provider keys must be unique.
+              {t("modelSelector.addProviderDialogDescription")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
             <label className="block space-y-1">
-              <span className="text-xs font-medium text-foreground">Provider key</span>
+              <span className="text-xs font-medium text-foreground">{t("modelSelector.providerKey")}</span>
               <input
                 value={providerForm.key}
                 onChange={(event) =>
                   setProviderForm((current) => ({ ...current, key: event.target.value }))
                 }
                 className="h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-                placeholder="openrouter"
+                placeholder={t("modelSelector.providerKeyPlaceholder")}
               />
             </label>
 
             <label className="block space-y-1">
-              <span className="text-xs font-medium text-foreground">Display name</span>
+              <span className="text-xs font-medium text-foreground">{t("modelSelector.displayName")}</span>
               <input
                 value={providerForm.name}
                 onChange={(event) =>
                   setProviderForm((current) => ({ ...current, name: event.target.value }))
                 }
                 className="h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-                placeholder="OpenRouter"
+                placeholder={t("modelSelector.displayNamePlaceholder")}
               />
             </label>
 
             <div className="space-y-1">
-              <span className="text-xs font-medium text-foreground">Provider type</span>
+              <span className="text-xs font-medium text-foreground">{t("modelSelector.providerType")}</span>
               <Select
                 value={providerForm.type}
                 onValueChange={(value) =>
@@ -389,9 +380,9 @@ export function ModelSelector({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {PROVIDER_TYPE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
+                  {PROVIDER_TYPE_VALUES.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {value === "ollama" ? t("modelSelector.ollama") : t("modelSelector.openaiCompatible")}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -399,7 +390,7 @@ export function ModelSelector({
             </div>
 
             <label className="block space-y-1">
-              <span className="text-xs font-medium text-foreground">Base URL</span>
+              <span className="text-xs font-medium text-foreground">{t("modelSelector.baseUrl")}</span>
               <input
                 value={providerForm.baseUrl}
                 onChange={(event) =>
@@ -411,15 +402,15 @@ export function ModelSelector({
                 className="h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
                 placeholder={
                   providerForm.type === "ollama"
-                    ? "http://localhost:11434"
-                    : "https://api.example.com/v1"
+                    ? t("modelSelector.baseUrlPlaceholderOllama")
+                    : t("modelSelector.baseUrlPlaceholderOpenai")
                 }
               />
             </label>
 
             {providerForm.type === "openai-compatible" ? (
               <label className="block space-y-1">
-                <span className="text-xs font-medium text-foreground">API key</span>
+                <span className="text-xs font-medium text-foreground">{t("modelSelector.apiKey")}</span>
                 <input
                   type="password"
                   value={providerForm.apiKey}
@@ -430,7 +421,7 @@ export function ModelSelector({
                     }))
                   }
                   className="h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-                  placeholder="sk-..."
+                  placeholder={t("modelSelector.apiKeyPlaceholder")}
                 />
               </label>
             ) : null}
@@ -442,10 +433,10 @@ export function ModelSelector({
 
           <DialogActions>
             <Button type="button" variant="outline" onClick={resetProviderDialog}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button type="button" disabled={isSubmitting} onClick={() => void handleProviderSubmit()}>
-              Save provider
+              {t("modelSelector.saveProvider")}
             </Button>
           </DialogActions>
         </DialogContent>
@@ -454,15 +445,15 @@ export function ModelSelector({
       <Dialog open={isModelDialogOpen} onOpenChange={setIsModelDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add model</DialogTitle>
+            <DialogTitle>{t("modelSelector.addModelDialogTitle")}</DialogTitle>
             <DialogDescription>
-              Save a new model under an existing provider. Model names must be unique within that provider.
+              {t("modelSelector.addModelDialogDescription")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
             <div className="space-y-1">
-              <span className="text-xs font-medium text-foreground">Provider</span>
+              <span className="text-xs font-medium text-foreground">{t("modelSelector.provider")}</span>
               <Select
                 value={modelForm.provider}
                 onValueChange={(value) =>
@@ -470,7 +461,7 @@ export function ModelSelector({
                 }
               >
                 <SelectTrigger className="h-9 rounded-lg">
-                  <SelectValue placeholder="Select provider" />
+                  <SelectValue placeholder={t("modelSelector.selectProvider")} />
                 </SelectTrigger>
                 <SelectContent>
                   {providers.map((provider) => (
@@ -483,26 +474,26 @@ export function ModelSelector({
             </div>
 
             <label className="block space-y-1">
-              <span className="text-xs font-medium text-foreground">Model key</span>
+              <span className="text-xs font-medium text-foreground">{t("modelSelector.modelKey")}</span>
               <input
                 value={modelForm.model}
                 onChange={(event) =>
                   setModelForm((current) => ({ ...current, model: event.target.value }))
                 }
                 className="h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-                placeholder="gpt-5.4-mini"
+                placeholder={t("modelSelector.modelKeyPlaceholder")}
               />
             </label>
 
             <label className="block space-y-1">
-              <span className="text-xs font-medium text-foreground">Label</span>
+              <span className="text-xs font-medium text-foreground">{t("modelSelector.label")}</span>
               <input
                 value={modelForm.label}
                 onChange={(event) =>
                   setModelForm((current) => ({ ...current, label: event.target.value }))
                 }
                 className="h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-                placeholder="gpt-5.4-mini"
+                placeholder={t("modelSelector.labelPlaceholder")}
               />
             </label>
 
@@ -515,7 +506,7 @@ export function ModelSelector({
                 }
                 className="size-4 rounded border"
               />
-              <span className="text-sm text-foreground">Enable tools</span>
+              <span className="text-sm text-foreground">{t("modelSelector.enableTools")}</span>
             </label>
 
             {modelError ? (
@@ -525,14 +516,14 @@ export function ModelSelector({
 
           <DialogActions>
             <Button type="button" variant="outline" onClick={resetModelDialog}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               type="button"
               disabled={isSubmitting || !hasProviders}
               onClick={() => void handleModelSubmit()}
             >
-              Save model
+              {t("modelSelector.saveModel")}
             </Button>
           </DialogActions>
         </DialogContent>

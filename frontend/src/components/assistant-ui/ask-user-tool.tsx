@@ -1,6 +1,7 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
+import { useTranslation } from "react-i18next";
 import { LoaderIcon, MessageSquareQuoteIcon } from "lucide-react";
 
 type AskUserOption = {
@@ -72,6 +73,7 @@ export const AskUserTool: ToolCallMessagePartComponent = ({
   result,
   status,
 }) => {
+  const { t } = useTranslation();
   const question =
     normalizeAskUserQuestion(result) ??
     normalizeAskUserQuestion(args) ??
@@ -126,9 +128,9 @@ export const AskUserTool: ToolCallMessagePartComponent = ({
           <div className="text-xs leading-5 text-sky-800">
             {question.input_type === "select"
               ? question.multiple
-                ? "Please answer below with all selected options."
-                : "Please answer below with your selected option."
-              : "Please answer below in the composer to continue."}
+                ? t("tools.selectMultiple")
+                : t("tools.selectSingle")
+              : t("tools.textInput")}
           </div>
         </div>
       </div>

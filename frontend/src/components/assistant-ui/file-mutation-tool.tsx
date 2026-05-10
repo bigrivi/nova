@@ -2,6 +2,8 @@
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { memo, useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 
 import {
   ToolFallbackContent,
@@ -89,6 +91,7 @@ function extractDiff(text: string): { headline: string; diff: string | null } {
 }
 
 function buildViewModel(
+  t: TFunction,
   toolName: string,
   args: unknown,
   argsText: string | undefined,
@@ -105,7 +108,7 @@ function buildViewModel(
   const resultText = normalizeResultText(result);
   const diffPayload = resultText ? extractDiff(resultText) : { headline: "", diff: null };
 
-  const verb = normalizedName === "edit" ? "Edited" : "Wrote";
+  const verb = normalizedName === "edit" ? t("tools.edited") : t("tools.wrote");
   return {
     displayName: baseName ? `${verb} ${baseName}` : verb,
     headline: diffPayload.diff ? diffPayload.headline : "",
@@ -132,12 +135,13 @@ function getDiffLineClass(line: string): string {
 }
 
 const UnifiedDiffBlock = ({ diff }: { diff: string }) => {
+  const { t } = useTranslation();
   const lines = diff.split("\n");
 
   return (
     <div className="mx-4 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-inner">
       <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-        Unified Diff
+        {t("tools.unifiedDiff")}
       </div>
       <pre className="overflow-x-auto py-2 text-[12px] leading-6">
         {lines.map((line, index) => (
@@ -163,9 +167,10 @@ const FileMutationToolImpl: ToolCallMessagePartComponent = ({
   result,
   status,
 }) => {
+  const { t } = useTranslation();
   const model = useMemo(
-    () => buildViewModel(toolName, args, argsText, result),
-    [args, argsText, result, toolName],
+    () => buildViewModel(t, toolName, args, argsText, result),
+    [args, argsText, result, toolName, t],
   );
 
   if (!model) {

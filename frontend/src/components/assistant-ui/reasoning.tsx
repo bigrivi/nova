@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FC } from "react";
+import { useTranslation } from "react-i18next";
 import {
   MessagePartPrimitive,
   type ReasoningGroupProps,
@@ -28,6 +29,7 @@ export const ReasoningGroup: FC<ReasoningGroupProps> = ({
   startIndex,
   endIndex,
 }) => {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const itemCount = endIndex - startIndex + 1;
 
@@ -44,7 +46,7 @@ export const ReasoningGroup: FC<ReasoningGroupProps> = ({
         >
           <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <BrainIcon className="size-4" />
-            {itemCount > 1 ? `Reasoning · ${itemCount} steps` : "Reasoning"}
+            {itemCount > 1 ? t("reasoning.reasoningSteps", { count: itemCount }) : t("reasoning.reasoning")}
           </span>
           <ChevronDownIcon
             className={cn(
