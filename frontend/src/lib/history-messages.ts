@@ -85,9 +85,27 @@ export function toThreadMessages(messages: NovaMessageRecord[]): ThreadMessageLi
 
   for (const message of messages) {
     if (message.role === 'user') {
-      threadMessages.push(
-        createTextMessage('user', message.content, message.id, message.time_created),
-      )
+      const parts: AssistantPart[] = []
+      if (message.images && message.images.length > 0) {
+        for (const img of message.images) {
+          parts.push({ type: 'image' as const, image: `data:image/png;base64,${img}` })
+        }
+      }
+      if (message.content) {
+        parts.push({ type: 'text' as const, text: message.content })
+      }
+      if (parts.length === 1 && parts[0].type === 'text') {
+        threadMessages.push(
+          createTextMessage('user', parts[0].text, message.id, message.time_created),
+        )
+      } else {
+        threadMessages.push({
+          id: message.id,
+          role: 'user',
+          content: parts,
+          createdAt: new Date(message.time_created),
+        })
+      }
       continue
     }
 

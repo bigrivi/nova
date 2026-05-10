@@ -199,7 +199,12 @@ class Agent:
             log.error(f"Tool {tool_name} error: {e}")
             return ToolResult(success=False, content=f"Tool error: {e}")
 
-    async def chat_stream(self, user_input: str, session_id: str = None) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
+    async def chat_stream(
+        self,
+        user_input: str,
+        session_id: str | None = None,
+        attachments: list[dict] | None = None,
+    ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         self._abort_event.clear()
 
         if session_id:
@@ -218,7 +223,26 @@ class Agent:
         current_session = self.session.get_current_session()
         yield AgentEvent.SESSION, current_session.id if current_session else None
 
-        await self.session.add_message(role="user", content=user_input)
+        image_data: list[str] = []
+        message_text = user_input
+        if attachments:
+            for att in attachments:
+                if att.get("type") == "image":
+                    for part in att.get("content", []):
+                        if part.get("type") == "image":
+                            img_url = part.get("image", "")
+                            if img_url.startswith("data:"):
+                                _, base64_data = img_url.split(",", 1)
+                                image_data.append(base64_data)
+                elif att.get("type") == "document":
+                    for part in att.get("content", []):
+                        if part.get("type") == "text":
+                            message_text = part.get("text", "") + "\n\n" + message_text
+        await self.session.add_message(
+            role="user",
+            content=message_text,
+            images=image_data if image_data else None,
+        )
 
         tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else None
 

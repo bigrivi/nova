@@ -75,6 +75,7 @@ class ChatService:
                 tool_call_id=message.tool_call_id,
                 tool_calls=message.tool_calls or [],
                 time_created=message.time_created,
+                images=message.images,
             )
             for message in messages
         ]
@@ -187,9 +188,11 @@ class ChatService:
             )
         agent = build_agent(settings=runtime_settings)
         await self._request_registry.register(request_id, agent)
+        attachment_dicts = [att.model_dump() for att in request.attachments]
         async for event, data in agent.chat_stream(
             request.message,
             session_id=request.session_id,
+            attachments=attachment_dicts,
         ):
             yield event, data
 

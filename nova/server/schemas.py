@@ -7,12 +7,21 @@ from typing import Any, Literal, TypeAlias
 from pydantic import BaseModel, Field
 
 
+class AttachmentData(BaseModel):
+    id: str
+    type: str
+    name: str
+    content_type: str | None = None
+    content: list[dict[str, Any]]
+
+
 class ChatRequest(BaseModel):
     session_id: str | None = None
     message: str
     provider: str | None = None
     model: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    attachments: list[AttachmentData] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
@@ -40,6 +49,7 @@ class MessageRecord(BaseModel):
     tool_call_id: str | None = None
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     time_created: int
+    images: list[str] | None = None
 
 
 class MessageListResponse(BaseModel):

@@ -30,11 +30,13 @@ import {
   ChevronRightIcon,
   CopyIcon,
   DownloadIcon,
+  FileText,
   MoreHorizontalIcon,
   RefreshCwIcon,
 } from "lucide-react";
 import type { KeyboardEvent, RefObject } from "react";
 import { type FC, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const ASSISTANT_NAME = "Nova";
 const SCROLL_TO_BOTTOM_THRESHOLD = 32;
@@ -48,10 +50,6 @@ type ThreadProps = {
     onSubmit: () => void;
     onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   };
-  status: {
-    text: string;
-    error: string | null;
-  };
   modelSelection: {
     models: NovaModelRecord[];
     providers: NovaProviderRecord[];
@@ -63,11 +61,7 @@ type ThreadProps = {
   };
 };
 
-export const Thread: FC<ThreadProps> = ({
-  composer,
-  status,
-  modelSelection,
-}) => {
+export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
   const [composerHeight, setComposerHeight] = useState(0);
 
   return (
@@ -84,6 +78,7 @@ export const Thread: FC<ThreadProps> = ({
         <ThreadPrimitive.Viewport
           autoScroll
           data-slot="aui_thread-viewport"
+          turnAnchor="bottom"
           className="relative flex min-h-0 flex-1 flex-col overflow-y-auto scroll-smooth"
           style={{ scrollbarGutter: "stable both-edges" }}
         >
@@ -116,7 +111,6 @@ export const Thread: FC<ThreadProps> = ({
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
           <ThreadStickyComposer
             composer={composer}
-            status={status}
             modelSelection={modelSelection}
             onHeightChange={setComposerHeight}
           />
@@ -153,6 +147,7 @@ const ThreadMessage: FC = () => {
 };
 
 const ThreadScrollToBottom: FC = () => {
+  const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -187,7 +182,7 @@ const ThreadScrollToBottom: FC = () => {
   return (
     <div className="pointer-events-none sticky bottom-28 z-10 flex overflow-visible pb-4 md:bottom-32 md:pb-6">
       <TooltipIconButton
-        tooltip="Scroll to bottom"
+        tooltip={t("thread.scrollToBottom")}
         variant="outline"
         className="pointer-events-auto absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-background/95 p-3 shadow-sm backdrop-blur"
         onClick={() => {
@@ -207,15 +202,19 @@ const ThreadScrollToBottom: FC = () => {
 };
 
 const ThreadWelcome: FC = () => {
+  const { t } = useTranslation();
   return (
     <div className="aui-thread-welcome-root my-auto flex grow flex-col">
       <div className="aui-thread-welcome-center flex w-full grow flex-col items-center justify-center">
-        <div className="aui-thread-welcome-message flex size-full flex-col justify-center px-4">
+        <div className="aui-thread-welcome-message flex size-full flex-col items-center justify-center px-4">
+          <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-muted shadow-sm">
+            <BotIcon className="size-6 text-foreground" />
+          </div>
           <h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both font-semibold text-2xl duration-200">
-            Hello there!
+            {t("thread.helloThere")}
           </h1>
           <p className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-muted-foreground text-xl delay-75 duration-200">
-            How can I help you today?
+            {t("thread.howCanIHelp")}
           </p>
         </div>
       </div>
@@ -308,6 +307,7 @@ const AssistantMessage: FC = () => {
 };
 
 const AssistantActionBar: FC = () => {
+  const { t } = useTranslation();
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
@@ -315,7 +315,7 @@ const AssistantActionBar: FC = () => {
       className="aui-assistant-action-bar-root absolute left-0 top-1.5 flex gap-1 text-muted-foreground"
     >
       <ActionBarPrimitive.Copy asChild>
-        <TooltipIconButton tooltip="Copy">
+        <TooltipIconButton tooltip={t("common.copy")}>
           <AuiIf condition={(s) => s.message.isCopied}>
             <CheckIcon />
           </AuiIf>
@@ -325,14 +325,14 @@ const AssistantActionBar: FC = () => {
         </TooltipIconButton>
       </ActionBarPrimitive.Copy>
       <ActionBarPrimitive.Reload asChild>
-        <TooltipIconButton tooltip="Refresh">
+        <TooltipIconButton tooltip={t("common.refresh")}>
           <RefreshCwIcon />
         </TooltipIconButton>
       </ActionBarPrimitive.Reload>
       <ActionBarMorePrimitive.Root>
         <ActionBarMorePrimitive.Trigger asChild>
           <TooltipIconButton
-            tooltip="More"
+            tooltip={t("common.more")}
             className="data-[state=open]:bg-accent"
           >
             <MoreHorizontalIcon />
@@ -346,13 +346,43 @@ const AssistantActionBar: FC = () => {
           <ActionBarPrimitive.ExportMarkdown asChild>
             <ActionBarMorePrimitive.Item className="aui-action-bar-more-item flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground">
               <DownloadIcon className="size-4" />
-              Export as Markdown
+              {t("thread.exportAsMarkdown")}
             </ActionBarMorePrimitive.Item>
           </ActionBarPrimitive.ExportMarkdown>
         </ActionBarMorePrimitive.Content>
       </ActionBarMorePrimitive.Root>
     </ActionBarPrimitive.Root>
   );
+};
+
+const ATTACHMENT_RE = /^<attachment name=(.*?)>\n([\s\S]*?)\n<\/attachment>\n\n([\s\S]*)$/;
+
+function parseAttachment(text: string): { name: string; text: string } | null {
+  const match = text.match(ATTACHMENT_RE);
+  if (!match) return null;
+  return { name: match[1], text: match[3] };
+}
+
+const UserText: FC<{ text: string }> = ({ text }) => {
+  const parsed = parseAttachment(text);
+  if (parsed) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2 text-sm">
+          <FileText className="size-4 shrink-0 text-muted-foreground" />
+          <span className="truncate font-medium text-muted-foreground">
+            {parsed.name}
+          </span>
+        </div>
+        {parsed.text && (
+          <div className="wrap-break-word rounded-2xl bg-muted px-4 py-2.5 text-foreground">
+            {parsed.text}
+          </div>
+        )}
+      </div>
+    );
+  }
+  return <>{text}</>;
 };
 
 const UserMessage: FC = () => {
@@ -366,7 +396,11 @@ const UserMessage: FC = () => {
 
       <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
         <div className="aui-user-message-content wrap-break-word rounded-2xl bg-muted px-4 py-2.5 text-foreground empty:hidden">
-          <MessagePrimitive.Parts />
+          <MessagePrimitive.Parts
+            components={{
+              Text: UserText,
+            }}
+          />
         </div>
       </div>
     </MessagePrimitive.Root>
@@ -377,6 +411,7 @@ const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
   className,
   ...rest
 }) => {
+  const { t } = useTranslation();
   return (
     <BranchPickerPrimitive.Root
       hideWhenSingleBranch
@@ -387,7 +422,7 @@ const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
       {...rest}
     >
       <BranchPickerPrimitive.Previous asChild>
-        <TooltipIconButton tooltip="Previous">
+        <TooltipIconButton tooltip={t("common.previous")}>
           <ChevronLeftIcon />
         </TooltipIconButton>
       </BranchPickerPrimitive.Previous>
@@ -395,7 +430,7 @@ const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
         <BranchPickerPrimitive.Number /> / <BranchPickerPrimitive.Count />
       </span>
       <BranchPickerPrimitive.Next asChild>
-        <TooltipIconButton tooltip="Next">
+        <TooltipIconButton tooltip={t("common.next")}>
           <ChevronRightIcon />
         </TooltipIconButton>
       </BranchPickerPrimitive.Next>

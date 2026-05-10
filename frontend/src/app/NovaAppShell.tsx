@@ -1,13 +1,19 @@
 import {
   AssistantRuntimeProvider,
+  CompositeAttachmentAdapter,
+  SimpleImageAttachmentAdapter,
+  SimpleTextAttachmentAdapter,
   type ThreadMessageLike,
   useExternalStoreRuntime,
 } from "@assistant-ui/react";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
+  LanguagesIcon,
 } from "lucide-react";
 import { startTransition, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 
 import { Thread } from "../components/assistant-ui/thread";
 import { ThreadList } from "../components/assistant-ui/thread-list";
@@ -22,6 +28,7 @@ import {
   streamChat,
 } from "../lib/nova-api";
 import type {
+  NovaAttachmentData,
   NovaJsonObject,
   NovaModelRecord,
   NovaProviderRecord,
@@ -58,7 +65,7 @@ type AssistantPart = Exclude<ThreadMessageLike["content"], string>[number];
 function createWelcomeMessage(): ThreadMessageLike {
   return createTextMessage(
     "assistant",
-    "Nova desktop preview is ready. Pick a model, start a new thread, or reopen a previous session from the left sidebar.",
+    i18n.t("app.welcomeMessage"),
     "welcome",
   );
 }
@@ -66,7 +73,7 @@ function createWelcomeMessage(): ThreadMessageLike {
 function createOptimisticSessionTitle(userMessage: string): string {
   const title = userMessage.trim();
   if (!title) {
-    return "New Session";
+    return i18n.t("app.newSession");
   }
 
   if (title.length > 50) {
@@ -77,7 +84,8 @@ function createOptimisticSessionTitle(userMessage: string): string {
 }
 
 function toThreadTitle(session: NovaSessionSummary) {
-  return (session.title || "Untitled session").trim() || "Untitled session";
+  const untitled = i18n.t("app.untitledSession");
+  return (session.title || untitled).trim() || untitled;
 }
 
 function toThreadSummary(session: NovaSessionSummary): NovaThreadSummary {
@@ -205,6 +213,7 @@ function upsertAssistantToolCall(
 }
 
 export function NovaAppShell() {
+  const { t } = useTranslation();
   const [threads, setThreads] = useState<NovaThreadSummary[]>([]);
   const [messagesByThreadId, setMessagesByThreadId] = useState<
     Record<string, ThreadMessageLike[]>
@@ -214,12 +223,18 @@ export function NovaAppShell() {
   const [currentThreadId, setCurrentThreadId] = useState(DRAFT_THREAD_ID);
   const [models, setModels] = useState<NovaModelRecord[]>([]);
   const [providers, setProviders] = useState<NovaProviderRecord[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(
+    () => localStorage.getItem("nova-selected-model"),
+  );
   const [isRunning, setIsRunning] = useState(false);
-  const [statusText, setStatusText] = useState("Ready");
-  const [statusError, setStatusError] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [composerText, setComposerText] = useState("");
+
+  useEffect(() => {
+    if (selectedModelId) {
+      localStorage.setItem("nova-selected-model", selectedModelId);
+    }
+  }, [selectedModelId]);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   const currentMessages = messagesByThreadId[currentThreadId] || [];
@@ -251,9 +266,7 @@ export function NovaAppShell() {
         });
       } catch (error) {
         if (!cancelled) {
-          setStatusError(
-            error instanceof Error ? error.message : String(error),
-          );
+          console.error(error);
         }
       }
     }
@@ -265,11 +278,24 @@ export function NovaAppShell() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleLanguageChange = () => {
+      setMessagesByThreadId((prev) => {
+        const draft = prev[DRAFT_THREAD_ID];
+        if (draft?.length === 1 && draft[0]?.id === "welcome") {
+          return { ...prev, [DRAFT_THREAD_ID]: [createWelcomeMessage()] };
+        }
+        return prev;
+      });
+    };
+    i18n.on("languageChanged", handleLanguageChange);
+    return () => {
+      i18n.off("languageChanged", handleLanguageChange);
+    };
+  }, []);
+
   async function loadThread(threadId: string) {
     try {
-      setStatusText("Loading session history...");
-      setStatusError(null);
-
       const messages = await listMessages(threadId);
       startTransition(() => {
         setCurrentThreadId(threadId);
@@ -278,12 +304,7 @@ export function NovaAppShell() {
           [threadId]: toThreadMessages(messages),
         }));
       });
-      setStatusText("Ready");
     } catch (error) {
-      const messageText =
-        error instanceof Error ? error.message : String(error);
-      setStatusError(messageText);
-      setStatusText("History failed");
       throw error;
     }
   }
@@ -317,8 +338,6 @@ export function NovaAppShell() {
         ],
       }));
     });
-    setStatusText("Ready");
-    setStatusError(null);
     setComposerText("");
   }
 
@@ -347,7 +366,7 @@ export function NovaAppShell() {
     textarea.setSelectionRange(caret, caret);
   }, [currentThreadId, isRunning]);
 
-  async function submitPrompt(prompt: string) {
+  async function submitPrompt(prompt: string, attachments?: NovaAttachmentData[]) {
     if (!prompt) {
       return;
     }
@@ -363,8 +382,6 @@ export function NovaAppShell() {
     let requiresInput = false;
 
     setIsRunning(true);
-    setStatusText("Streaming response...");
-    setStatusError(null);
     setComposerText("");
 
     setThreadMessages(originThreadId, (previous) => [
@@ -379,6 +396,7 @@ export function NovaAppShell() {
         sessionId: originThreadId === DRAFT_THREAD_ID ? null : originThreadId,
         provider: selectedModel?.provider || null,
         model: selectedModel?.model || null,
+        attachments,
         onEvent: (event) => {
           if (event.type === "data-nova-session") {
             const sessionId = String(event.data?.sessionId || "");
@@ -476,7 +494,6 @@ export function NovaAppShell() {
 
           if (event.type === "data-nova-input-required") {
             requiresInput = true;
-            setStatusText(String(event.data?.message || "User input required"));
             return;
           }
 
@@ -488,14 +505,10 @@ export function NovaAppShell() {
 
       if (requiresInput) {
         return;
-      } else {
-        setStatusText("Ready");
       }
     } catch (error) {
       const messageText =
         error instanceof Error ? error.message : String(error);
-      setStatusError(messageText);
-      setStatusText("Request failed");
       setThreadMessages(activeThreadId, (previous) =>
         setAssistantText(
           previous,
@@ -514,7 +527,28 @@ export function NovaAppShell() {
       return;
     }
 
-    await submitPrompt(prompt);
+    const composerState = runtime.thread.composer.getState();
+    const pendingAttachments = composerState.attachments;
+
+    let processedAttachments: NovaAttachmentData[] | undefined;
+    if (pendingAttachments.length > 0) {
+      const adapter = new CompositeAttachmentAdapter([
+        new SimpleImageAttachmentAdapter(),
+        new SimpleTextAttachmentAdapter(),
+      ]);
+      processedAttachments = [];
+      for (const att of pendingAttachments) {
+        if (att.status.type === "complete" && att.content) {
+          processedAttachments.push(att as NovaAttachmentData);
+        } else if (att.status.type === "requires-action" && att.file) {
+          const result = await adapter.send(att);
+          processedAttachments.push(result as NovaAttachmentData);
+        }
+      }
+      runtime.thread.composer.clearAttachments();
+    }
+
+    await submitPrompt(prompt, processedAttachments);
   }
 
   function handleConfigModelsUpdated(nextModels: NovaModelRecord[]) {
@@ -537,10 +571,7 @@ export function NovaAppShell() {
   }
 
   function handleConfigStatus(message: string | null) {
-    setStatusError(message);
-    if (message === null) {
-      setStatusText("Ready");
-    }
+    console.debug(message);
   }
 
   const runtime = useExternalStoreRuntime({
@@ -552,6 +583,10 @@ export function NovaAppShell() {
       setThreadMessages(currentThreadId, [...messages]);
     },
     adapters: {
+      attachments: new CompositeAttachmentAdapter([
+        new SimpleImageAttachmentAdapter(),
+        new SimpleTextAttachmentAdapter(),
+      ]),
       threadList: {
         threadId: activeThreadListId,
         threads,
@@ -570,18 +605,42 @@ export function NovaAppShell() {
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <TooltipProvider>
-        <div className="flex h-screen overflow-hidden bg-muted/30 text-foreground">
+        <div className="flex h-screen overflow-hidden bg-background text-foreground">
           <aside
-            className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden bg-sidebar/80 backdrop-blur transition-[width,opacity] duration-200 ease-out ${
+            className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden bg-sidebar transition-[width,opacity] duration-200 ease-out ${
               isSidebarCollapsed
                 ? "w-0 opacity-0"
                 : "w-[280px] border-r opacity-100"
             }`}
           >
             {!isSidebarCollapsed && (
-              <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-                <ThreadList />
-              </div>
+              <>
+                <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+                  <ThreadList />
+                </div>
+                <div className="flex items-center justify-between border-t border-sidebar-border px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className="flex size-5 items-center justify-center rounded-md bg-sidebar-accent text-[10px] font-bold text-sidebar-accent-foreground">
+                      N
+                    </div>
+                    <span className="text-sm font-medium text-sidebar-foreground">
+                      Nova
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      i18n.changeLanguage(
+                        i18n.language === "zh-CN" ? "en" : "zh-CN",
+                      )
+                    }
+                    className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    aria-label="Switch language"
+                  >
+                    <LanguagesIcon className="size-4" />
+                  </button>
+                </div>
+              </>
             )}
           </aside>
 
@@ -598,8 +657,8 @@ export function NovaAppShell() {
               }`}
               aria-label={
                 isSidebarCollapsed
-                  ? "Expand thread list sidebar"
-                  : "Collapse thread list sidebar"
+                  ? t("app.expandSidebar")
+                  : t("app.collapseSidebar")
               }
               onClick={() => setIsSidebarCollapsed((value) => !value)}
             >
@@ -626,10 +685,6 @@ export function NovaAppShell() {
                       void handleComposerSubmit();
                     }
                   },
-                }}
-                status={{
-                  text: statusText,
-                  error: statusError,
                 }}
                 modelSelection={{
                   models,

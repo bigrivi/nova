@@ -29,6 +29,7 @@ import "prismjs/components/prism-tsx";
 import "prismjs/components/prism-yaml";
 import remarkGfm from "remark-gfm";
 import { type FC, memo, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
@@ -136,6 +137,7 @@ const MarkdownTextImpl = () => {
 export const MarkdownText = memo(MarkdownTextImpl);
 
 const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
+  const { t } = useTranslation();
   const { isCopied, copyToClipboard } = useCopyToClipboard();
   const onCopy = () => {
     if (!code || isCopied) return;
@@ -143,11 +145,13 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   };
 
   return (
-    <div className="aui-code-header-root mt-2.5 flex items-center justify-between rounded-t-lg border border-border/50 border-b-0 bg-muted/50 px-3 py-1.5 text-xs">
-      <span className="aui-code-header-language font-medium text-muted-foreground lowercase">
-        {language}
-      </span>
-      <TooltipIconButton tooltip="Copy" onClick={onCopy}>
+    <div className="aui-code-header-root mt-2.5 flex items-center rounded-t-lg border border-border/50 border-b-0 bg-muted/50 px-3 py-1.5 text-xs">
+      {language && language !== "unknown" && (
+        <span className="aui-code-header-language font-medium text-muted-foreground lowercase">
+          {language}
+        </span>
+      )}
+      <TooltipIconButton tooltip={t("common.copy")} onClick={onCopy} className="ml-auto">
         {!isCopied && <CopyIcon />}
         {isCopied && <CheckIcon />}
       </TooltipIconButton>

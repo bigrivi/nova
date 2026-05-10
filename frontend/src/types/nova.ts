@@ -20,6 +20,7 @@ export type NovaMessageRecord = {
   tool_call_id: string | null
   tool_calls: NovaJsonObject[]
   time_created: number
+  images?: string[] | null
 }
 
 export type NovaModelRecord = {
@@ -56,6 +57,19 @@ export type NovaThreadSummary = {
   id: string
   title: string
   status: 'regular'
+}
+
+export type NovaAttachmentContent = {
+  type: string
+  [key: string]: NovaJsonValue | undefined
+}
+
+export type NovaAttachmentData = {
+  id: string
+  type: string
+  name: string
+  contentType?: string
+  content: NovaAttachmentContent[]
 }
 
 export type NovaStreamEvent = {

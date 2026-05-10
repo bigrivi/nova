@@ -1,7 +1,9 @@
 import { ArrowUpIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useRef, type KeyboardEvent, type RefObject } from "react";
+import { useTranslation } from "react-i18next";
 
 import { ModelSelector } from "./model-selector";
+import { ComposerAddAttachment, ComposerAttachments } from "./attachment";
 import { Button } from "../ui/button";
 import type { NovaModelRecord, NovaProviderRecord } from "../../types/nova";
 
@@ -13,10 +15,6 @@ type ThreadStickyComposerProps = {
     onChange: (value: string) => void;
     onSubmit: () => void;
     onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  };
-  status: {
-    text: string;
-    error: string | null;
   };
   modelSelection: {
     models: NovaModelRecord[];
@@ -32,10 +30,10 @@ type ThreadStickyComposerProps = {
 
 export function ThreadStickyComposer({
   composer,
-  status,
   modelSelection,
   onHeightChange,
 }: ThreadStickyComposerProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -71,22 +69,17 @@ export function ThreadStickyComposer({
             value={composer.text}
             rows={1}
             disabled={composer.isRunning}
-            placeholder="Send a message..."
-            aria-label="Message input"
+            placeholder={t("composer.sendMessage")}
+            aria-label={t("composer.messageInput")}
             className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1 py-1 text-sm outline-none placeholder:text-muted-foreground/80 disabled:cursor-not-allowed"
             onChange={(event) => composer.onChange(event.target.value)}
             onKeyDown={composer.onKeyDown}
           />
 
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <div
-              className={`text-xs ${
-                status.error ? "text-destructive" : "text-muted-foreground"
-              }`}
-            >
-              {status.error || status.text}
-            </div>
+          <ComposerAttachments />
 
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <ComposerAddAttachment />
             <div className="flex items-center gap-2">
               <ModelSelector
                 compact

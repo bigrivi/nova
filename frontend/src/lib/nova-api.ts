@@ -1,4 +1,5 @@
 import type {
+  NovaAttachmentData,
   NovaMessageRecord,
   NovaModelCreateRequest,
   NovaModelRecord,
@@ -17,6 +18,7 @@ type StreamChatOptions = {
   sessionId?: string | null
   provider?: string | null
   model?: string | null
+  attachments?: NovaAttachmentData[]
   onEvent: (event: NovaStreamEvent) => void
 }
 
@@ -130,6 +132,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
       session_id: options.sessionId || undefined,
       provider: options.provider || undefined,
       model: options.model || undefined,
+      attachments: options.attachments || [],
     }),
   })
 
