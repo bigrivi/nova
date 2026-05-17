@@ -91,7 +91,7 @@ async def test_interrupt_during_text_stream_stops_without_rolling_back_history(d
         and _done_content(data) == "Stopped by user"
         for event, data in events
     )
-    assert events[-1] == (AgentEvent.LLM_END, None)
+    assert events[-1] == (AgentEvent.LLM_CALL_END, None)
 
     messages = await agent.session.get_messages(session_id=session_id)
     assert [(msg.role, msg.content) for msg in messages] == [

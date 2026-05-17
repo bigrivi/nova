@@ -56,6 +56,7 @@ def _env_int(name: str, default: int) -> int:
         return default
     return int(raw.strip())
 
+
 def _default_model_for_provider_type(provider_type: str) -> str:
     if provider_type == "ollama":
         return "gemma4:26b"
@@ -83,7 +84,8 @@ def _resolve_openai_api_key() -> str:
 
 def _resolve_ollama_base_url() -> str:
     return (
-        os.getenv("NOVA_OLLAMA_BASE_URL", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")).strip()
+        os.getenv("NOVA_OLLAMA_BASE_URL", os.getenv(
+            "OLLAMA_BASE_URL", "http://localhost:11434")).strip()
         or "http://localhost:11434"
     )
 
@@ -98,10 +100,13 @@ def _resolve_openai_base_url() -> str:
 
 def _build_default_config_payload() -> dict[str, Any]:
     env_provider = os.getenv("NOVA_PROVIDER", "ollama").strip() or "ollama"
-    openai_model = os.getenv("NOVA_MODEL", "").strip() if env_provider == "openai" else ""
-    ollama_model = os.getenv("NOVA_MODEL", "gemma4:26b").strip() if env_provider == "ollama" else "gemma4:26b"
+    openai_model = os.getenv("NOVA_MODEL", "").strip(
+    ) if env_provider == "openai" else ""
+    ollama_model = os.getenv("NOVA_MODEL", "gemma4:26b").strip(
+    ) if env_provider == "ollama" else "gemma4:26b"
     model_provider = "openai" if env_provider == "openai" else "ollama"
-    model = openai_model if model_provider == "openai" else (ollama_model or "gemma4:26b")
+    model = openai_model if model_provider == "openai" else (
+        ollama_model or "gemma4:26b")
     return {
         "model": model,
         "model_provider": model_provider,
@@ -139,7 +144,8 @@ def _build_default_config_payload() -> dict[str, Any]:
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(payload, indent=2,
+                    ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def _ensure_config_file(home: Path) -> Path:
@@ -153,9 +159,11 @@ def _load_config_payload(config_path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(config_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ValueError(f"Invalid Nova config JSON at {config_path}: {exc}") from exc
+        raise ValueError(
+            f"Invalid Nova config JSON at {config_path}: {exc}") from exc
     if not isinstance(payload, dict):
-        raise ValueError(f"Invalid Nova config at {config_path}: top-level JSON value must be an object")
+        raise ValueError(
+            f"Invalid Nova config at {config_path}: top-level JSON value must be an object")
     return payload
 
 
@@ -168,17 +176,21 @@ def _parse_provider_configs(raw_providers: Any) -> dict[str, ProviderConfig]:
     providers: dict[str, ProviderConfig] = {}
     for key, raw in raw_providers.items():
         if not isinstance(raw, dict):
-            raise ValueError(f"Invalid Nova config: provider '{key}' must be an object")
+            raise ValueError(
+                f"Invalid Nova config: provider '{key}' must be an object")
         provider_type = str(raw.get("type", "")).strip()
         if not provider_type:
-            raise ValueError(f"Invalid Nova config: provider '{key}' is missing 'type'")
+            raise ValueError(
+                f"Invalid Nova config: provider '{key}' is missing 'type'")
         name = str(raw.get("name", key)).strip() or key
         options = raw.get("options") or {}
         raw_models = raw.get("models") or {}
         if not isinstance(options, dict):
-            raise ValueError(f"Invalid Nova config: provider '{key}' options must be an object")
+            raise ValueError(
+                f"Invalid Nova config: provider '{key}' options must be an object")
         if not isinstance(raw_models, dict):
-            raise ValueError(f"Invalid Nova config: provider '{key}' models must be an object")
+            raise ValueError(
+                f"Invalid Nova config: provider '{key}' models must be an object")
         normalized_options = dict(options)
         normalized_models: dict[str, dict[str, Any]] = {}
         for model_key, model_value in raw_models.items():
@@ -213,7 +225,8 @@ class Settings:
 
     # LLM runtime defaults and provider credentials.
     provider: str
-    model: str  # Model key as defined in providers.<provider>.models.<key> (e.g., "my-gemma")
+    # Model key as defined in providers.<provider>.models.<key> (e.g., "my-gemma")
+    model: str
     ollama_base_url: str
     openai_base_url: str
     openai_api_key: str
@@ -233,30 +246,37 @@ class Settings:
         config_payload = _load_config_payload(config_path)
         providers = _parse_provider_configs(config_payload.get("providers"))
 
-        provider = str(config_payload.get("model_provider", "")).strip() or os.getenv("NOVA_PROVIDER", "ollama").strip() or "ollama"
+        provider = str(config_payload.get("model_provider", "")).strip(
+        ) or os.getenv("NOVA_PROVIDER", "ollama").strip() or "ollama"
         if provider not in providers:
-            raise ValueError(f"Invalid Nova config: model_provider '{provider}' is not defined in providers")
+            raise ValueError(
+                f"Invalid Nova config: model_provider '{provider}' is not defined in providers")
 
         provider_config = providers[provider]
         default_model = _default_model_for_provider_type(provider_config.type)
-        model = str(config_payload.get("model", "")).strip() or os.getenv("NOVA_MODEL", default_model)
+        model = str(config_payload.get("model", "")).strip(
+        ) or os.getenv("NOVA_MODEL", default_model)
 
         openai_provider = providers.get("openai")
         ollama_provider = providers.get("ollama")
         selected_openai_provider = provider_config if provider_config.type == "openai-compatible" else openai_provider
         selected_ollama_provider = provider_config if provider_config.type == "ollama" else ollama_provider
-        openai_base_url = str((selected_openai_provider.options.get("base_url") if selected_openai_provider else "") or _resolve_openai_base_url()).strip()
+        openai_base_url = str((selected_openai_provider.options.get(
+            "base_url") if selected_openai_provider else "") or _resolve_openai_base_url()).strip()
         selected_openai_api_key = ""
         if selected_openai_provider is not None:
-            selected_openai_api_key = str(selected_openai_provider.options.get("api_key", "")).strip()
+            selected_openai_api_key = str(
+                selected_openai_provider.options.get("api_key", "")).strip()
         openai_api_key = selected_openai_api_key or _resolve_openai_api_key()
-        ollama_base_url = str((selected_ollama_provider.options.get("base_url") if selected_ollama_provider else "") or _resolve_ollama_base_url()).strip()
+        ollama_base_url = str((selected_ollama_provider.options.get(
+            "base_url") if selected_ollama_provider else "") or _resolve_ollama_base_url()).strip()
         return cls(
             home=home,
             host=os.getenv("NOVA_HOST", "127.0.0.1").strip() or "127.0.0.1",
             backend_port=_env_int("NOVA_BACKEND_PORT", 8765),
             ui_port=_env_int("NOVA_UI_PORT", 8501),
-            log_level=(os.getenv("NOVA_LOG_LEVEL", "INFO").strip().upper() or "INFO"),
+            log_level=(os.getenv("NOVA_LOG_LEVEL",
+                       "INFO").strip().upper() or "INFO"),
             workspace_dir=home / "workspace",
             logs_dir=home / "logs",
             database_path=home / "nova.db",
@@ -335,7 +355,8 @@ class Settings:
         return provider_config.options.get(key, default)
 
     def get_provider_api_key(self, provider_name: str) -> str:
-        api_key = str(self.get_provider_option(provider_name, "api_key", "")).strip()
+        api_key = str(self.get_provider_option(
+            provider_name, "api_key", "")).strip()
         return api_key
 
     def get_request_options(self, model_name: str | None = None, provider_name: str | None = None) -> dict[str, Any]:
@@ -343,18 +364,21 @@ class Settings:
         provider_config = self.get_provider_config(resolved_provider)
         merged: dict[str, Any] = {}
 
-        provider_request_options = provider_config.options.get("request_options")
+        provider_request_options = provider_config.options.get(
+            "request_options")
         if isinstance(provider_request_options, dict):
             merged = _deep_merge_dicts(merged, provider_request_options)
 
         provider_extra_body = provider_config.options.get("extra_body")
         if isinstance(provider_extra_body, dict):
-            merged = _deep_merge_dicts(merged, {"extra_body": provider_extra_body})
+            merged = _deep_merge_dicts(
+                merged, {"extra_body": provider_extra_body})
 
         if model_name is None:
             return merged
 
-        model_entry = self.get_model_config(model_name, provider_name=resolved_provider)
+        model_entry = self.get_model_config(
+            model_name, provider_name=resolved_provider)
 
         model_request_options = model_entry.get("request_options")
         if isinstance(model_request_options, dict):
@@ -362,7 +386,8 @@ class Settings:
 
         model_extra_body = model_entry.get("extra_body")
         if isinstance(model_extra_body, dict):
-            merged = _deep_merge_dicts(merged, {"extra_body": model_extra_body})
+            merged = _deep_merge_dicts(
+                merged, {"extra_body": model_extra_body})
 
         return merged
 
@@ -375,7 +400,8 @@ class Settings:
         return {}
 
     def resolve_model_name(self, model_key: str, provider_name: str | None = None) -> str:
-        model_entry = self.get_model_config(model_key, provider_name=provider_name)
+        model_entry = self.get_model_config(
+            model_key, provider_name=provider_name)
         configured_name = str(model_entry.get("name", "")).strip()
         if configured_name:
             return configured_name
@@ -395,7 +421,7 @@ def reload_settings() -> Settings:
 def configure_logging(settings: Settings) -> None:
     root = logging.getLogger()
     root.handlers.clear()
-    root.setLevel(getattr(logging, settings.log_level, logging.INFO))
+    root.setLevel(getattr(logging, settings.log_level, logging.DEBUG))
 
     formatter = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(name)s - %(message)s"

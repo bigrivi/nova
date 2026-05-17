@@ -215,7 +215,7 @@ class ChatService:
 
         if agent_event == AgentEvent.SESSION:
             return await emit(SessionStartedEvent, SessionStartedEventData, session_id=data)
-        if agent_event == AgentEvent.LLM_START:
+        if agent_event == AgentEvent.LLM_CALL_START:
             return await emit(ResponseStartedEvent, ResponseStartedEventData)
         if agent_event == AgentEvent.TEXT_DELTA:
             return await emit(MessageDeltaEvent, MessageDeltaEventData, delta=data)

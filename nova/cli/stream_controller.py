@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from typing import Optional, Protocol, runtime_checkable
 
 from nova.agent import AgentEvent
-from nova.cli.spinner import SpinnerController
 from nova.cli.utils import (
     looks_like_error_message,
     parse_done_payload,
@@ -39,6 +38,9 @@ class StreamRenderProtocol(Protocol):
     def print_tool_result(self, tool_name: object, content: object) -> None: ...
     def show_info(self, text: str) -> None: ...
     def show_error(self, text: str) -> None: ...
+    def start_llm(self) -> None:...
+    def start_tool(self, tool_name: str) -> None:...
+    def stop_loading(self) -> None:...
 
 
 @runtime_checkable
@@ -56,18 +58,16 @@ class StreamController:
         self,
         *,
         agent: object,
-        spinner: SpinnerController,
         render: StreamRenderProtocol,
         control: StreamControlProtocol,
     ) -> None:
         self._agent = agent
-        self._spinner = spinner
         self._render = render
         self._control = control
         self._handlers = {
             AgentEvent.SESSION: self._on_session,
-            AgentEvent.LLM_START: self._on_llm_start,
-            AgentEvent.LLM_END: self._on_llm_end,
+            AgentEvent.LLM_CALL_START: self._on_llm_start,
+            AgentEvent.LLM_CALL_END: self._on_llm_end,
             AgentEvent.TEXT_DELTA: self._on_text_delta,
             AgentEvent.TOOL_CALL: self._on_tool_call,
             AgentEvent.TOOL_RESULT: self._on_tool_result,
@@ -111,34 +111,34 @@ class StreamController:
 
     async def _on_llm_start(self, data: object, state: StreamState) -> bool:
         log.info("LLM call started")
-        self._spinner.start_llm()
+        self._render.start_llm()
         return False
 
     async def _on_llm_end(self, data: object, state: StreamState) -> bool:
-        self._spinner.stop()
+        self._render.stop_loading()
         self._render.flush()
-        log.info("Event: %s", AgentEvent.LLM_END.value)
+        log.info("Event: %s", AgentEvent.LLM_CALL_END.value)
         return False
 
     async def _on_text_delta(self, data: object, state: StreamState) -> bool:
         if isinstance(data, str):
-            self._spinner.stop()
-            self._render.write_text_chunk(data, is_first=not state.text_output_seen)
+            self._render.stop_loading()
+            await self._render.write_text_chunk(data, is_first=not state.text_output_seen)
             state.text_output_seen = True
         return False
 
     async def _on_tool_call(self, data: object, state: StreamState) -> bool:
-        self._spinner.stop()
+        self._render.stop_loading()
         self._render.flush()
         state.record_tool_call(data)
         tool_name = data.name if hasattr(data, "name") else str(data)
         self._render.print_tool_call(data, tool_name)
         log.info("Tool call: %s", tool_name)
-        self._spinner.start_tool(tool_name)
+        self._render.start_tool(tool_name)
         return False
 
     async def _on_tool_result(self, data: object, state: StreamState) -> bool:
-        self._spinner.stop()
+        self._render.stop_loading()
         self._render.flush()
         if not isinstance(data, dict):
             return False
@@ -161,7 +161,7 @@ class StreamController:
         return False
 
     async def _on_done(self, data: object, state: StreamState) -> bool:
-        self._spinner.stop()
+        self._render.stop_loading()
         self._render.flush()
         reason, content = parse_done_payload(data)
         log.info("DONE: tool_calls=%s, reason=%s", len(state.tool_calls_seen), reason)
@@ -185,7 +185,7 @@ class StreamController:
         return True
 
     async def _on_error(self, data: object, state: StreamState) -> bool:
-        self._spinner.stop()
+        self._render.stop_loading()
         self._render.flush()
         reason, message = parse_error_payload(data)
         log.info("ERROR: reason=%s", reason)

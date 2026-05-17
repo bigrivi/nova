@@ -20,9 +20,9 @@ class AgentEvent(Enum):
     # Emitted once per run after the session is created or loaded.
     SESSION = "session"
     # Emitted right before one LLM streaming turn starts.
-    LLM_START = "llm_start"
+    LLM_CALL_START = "llm_call_start"
     # Emitted once after one LLM streaming turn finishes.
-    LLM_END = "llm_end"
+    LLM_CALL_END = "llm_call_end"
     # Emitted immediately before a tool starts executing.
     TOOL_CALL = "tool_call"
     # Emitted after a tool finishes executing and its result is available.
@@ -273,8 +273,8 @@ class Agent:
 
             log.info(
                 f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}")
-            await self._emit(AgentEvent.LLM_START)
-            yield AgentEvent.LLM_START, None
+            await self._emit(AgentEvent.LLM_CALL_START)
+            yield AgentEvent.LLM_CALL_START, None
             generator_closing = False
             try:
                 try:
@@ -312,9 +312,9 @@ class Agent:
                     generator_closing = True
                     raise
             finally:
-                await self._emit(AgentEvent.LLM_END)
+                await self._emit(AgentEvent.LLM_CALL_END)
                 if not generator_closing:
-                    yield AgentEvent.LLM_END, None
+                    yield AgentEvent.LLM_CALL_END, None
             stop_payload = await self._wait_if_aborted()
             if stop_payload:
                 yield AgentEvent.DONE, stop_payload

@@ -4,6 +4,7 @@ fastapi
 httpx
 prompt_toolkit
 rich
+textual
 uvicorn
 
 # Optional: tiktoken for accurate OpenAI model token estimation
