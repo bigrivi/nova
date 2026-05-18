@@ -548,7 +548,7 @@ async def test_chat_service_session_started_event_keeps_single_session_id(monkey
     fake_agent = FakeAgent(
         [
             (AgentEvent.SESSION, "sess-stream"),
-            (AgentEvent.LLM_CALL_START, None),
+            (AgentEvent.LLM_REQUEST_START, None),
             (AgentEvent.TEXT_DELTA, "hello"),
             (AgentEvent.DONE, "hello"),
         ]

@@ -103,7 +103,11 @@ class AISDKStreamAdapter:
                 )
             return chunks
 
-        if event == AgentEvent.LLM_CALL_START:
+        if event in (AgentEvent.START, AgentEvent.TURN_START, AgentEvent.TURN_END,
+                     AgentEvent.TEXT_DELTA_START, AgentEvent.TEXT_DELTA_COMPLETED):
+            return chunks
+
+        if event == AgentEvent.LLM_REQUEST_START:
             if not self._message_started:
                 chunks.append(
                     encode_ai_sdk_sse(
@@ -141,7 +145,7 @@ class AISDKStreamAdapter:
             self._text_emitted = True
             return chunks
 
-        if event == AgentEvent.LLM_CALL_END:
+        if event == AgentEvent.LLM_REQUEST_END:
             chunks.extend(self._close_open_parts())
             return chunks
 

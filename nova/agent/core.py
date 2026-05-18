@@ -20,9 +20,9 @@ class AgentEvent(Enum):
     # Emitted once per run after the session is created or loaded.
     SESSION = "session"
     # Emitted right before one LLM streaming turn starts.
-    LLM_CALL_START = "llm_call_start"
+    LLM_REQUEST_START = "llm_request_start"
     # Emitted once after one LLM streaming turn finishes.
-    LLM_CALL_END = "llm_call_end"
+    LLM_REQUEST_END = "llm_request_end"
     # Emitted immediately before a tool starts executing.
     TOOL_CALL = "tool_call"
     # Emitted after a tool finishes executing and its result is available.
@@ -33,6 +33,16 @@ class AgentEvent(Enum):
     ERROR = "error"
     # Emitted when the run finishes, with a structured {reason, content} payload.
     DONE = "done"
+    # Emitted once at the start of chat_stream, before any turn processing begins.
+    START = "start"
+    # Emitted at the start of each turn iteration, with {"turn": count}.
+    TURN_START = "turn_start"
+    # Emitted after each turn iteration completes, with {"turn": count}.
+    TURN_END = "turn_end"
+    # Emitted before the first text_delta in a turn, signalling text output is about to begin.
+    TEXT_DELTA_START = "text_delta_start"
+    # Emitted after the LLM call ends, with the full accumulated text content for the turn.
+    TEXT_DELTA_COMPLETED = "text_delta_completed"
 
 
 def _done_payload(reason: str, content: Optional[str] = None) -> dict[str, Any]:
@@ -45,7 +55,8 @@ def _error_payload(reason: str, message: str) -> dict[str, Any]:
 
 @dataclass
 class AgentConfig:
-    model: str = "gpt-4o"  # Model key as defined in config.json (e.g., "my-gemma")
+    # Model key as defined in config.json (e.g., "my-gemma")
+    model: str = "gpt-4o"
     provider: str = "ollama"
     system_prompt: Optional[str] = None
     max_iterations: int = 100
@@ -140,7 +151,8 @@ class Agent:
             input_chars = sum(len(m.content) for m in db_messages)
             stats = ContextStats(
                 model=self.config.model,
-                max_tokens=get_context_limit(self.config.model, self.config.provider),
+                max_tokens=get_context_limit(
+                    self.config.model, self.config.provider),
                 input_tokens=int(input_chars / 4),
                 output_tokens=0,
                 total_tokens=int(input_chars / 4),
@@ -199,6 +211,167 @@ class Agent:
             log.error(f"Tool {tool_name} error: {e}")
             return ToolResult(success=False, content=f"Tool error: {e}")
 
+    async def _run_turn(
+        self,
+        turn_count: int,
+        tool_schemas: Any,
+    ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
+        stop_payload = await self._wait_if_aborted()
+        if stop_payload:
+            yield AgentEvent.DONE, stop_payload
+            return
+
+        messages = await self._get_messages()
+
+        accumulated_content = ""
+        accumulated_tool_calls: dict[str, Any] = {}
+        final_done_content = ""
+        _text_started = False
+
+        log.info(
+            f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}")
+        await self._emit(AgentEvent.LLM_REQUEST_START)
+        yield AgentEvent.LLM_REQUEST_START, None
+        generator_closing = False
+        try:
+            async for chunk in self.llm.chat_stream(
+                messages=messages,
+                model=self.config.model,
+                tools=tool_schemas,
+            ):
+                stop_payload = await self._wait_if_aborted()
+                if stop_payload:
+                    yield AgentEvent.DONE, stop_payload
+                    return
+
+                if hasattr(chunk, 'type'):
+                    if chunk.type == "text_delta":
+                        if not _text_started:
+                            _text_started = True
+                            await self._emit(AgentEvent.TEXT_DELTA_START)
+                            yield AgentEvent.TEXT_DELTA_START, None
+                        accumulated_content += chunk.content
+                        yield AgentEvent.TEXT_DELTA, chunk.content
+                    elif chunk.type == "done":
+                        final_done_content = getattr(
+                            chunk, "content", "") or final_done_content
+                    elif chunk.type == "tool_call":
+                        chunk_id = getattr(chunk, "id", None) or getattr(
+                            chunk, "name", "")
+                        if chunk_id:
+                            accumulated_tool_calls[str(
+                                chunk_id)] = chunk
+
+                if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
+                    for tc in chunk.tool_calls:
+                        tc_id = getattr(tc, "id", None) or getattr(
+                            tc, "name", "")
+                        if tc_id:
+                            accumulated_tool_calls[str(tc_id)] = tc
+        except GeneratorExit:
+            generator_closing = True
+            raise
+        except Exception as e:
+            log.error(f"[Turn {turn_count}] LLM call failed: {e}")
+            yield AgentEvent.ERROR, _error_payload("llm_error", str(e))
+            yield AgentEvent.DONE, _done_payload("error", None)
+            return
+        finally:
+            await self._emit(AgentEvent.LLM_REQUEST_END)
+            if not generator_closing:
+                yield AgentEvent.LLM_REQUEST_END, None
+            if _text_started:
+                await self._emit(AgentEvent.TEXT_DELTA_COMPLETED, accumulated_content)
+                yield AgentEvent.TEXT_DELTA_COMPLETED, accumulated_content
+        stop_payload = await self._wait_if_aborted()
+        if stop_payload:
+            yield AgentEvent.DONE, stop_payload
+            return
+        log.info(
+            f"[Turn {turn_count}] After LLM loop: accumulated_content={len(accumulated_content)}, tool_calls={len(accumulated_tool_calls)}")
+
+        final_content = accumulated_content or final_done_content
+        final_tool_calls = [
+            tc for tc in accumulated_tool_calls.values()
+            if hasattr(tc, 'name') and tc.name
+        ]
+
+        if final_tool_calls:
+            for tc in final_tool_calls:
+                tc_name = tc.name if hasattr(tc, 'name') else str(tc)
+                tc_args = tc.arguments if hasattr(
+                    tc, 'arguments') else "{}"
+                log.info(
+                    f"[Turn {turn_count}] Calling tool: {tc_name}({tc_args})")
+
+            await self.session.add_message(
+                role="assistant",
+                content=final_content,
+                tool_calls=[tc.model_dump() if hasattr(
+                    tc, 'model_dump') else tc for tc in final_tool_calls],
+            )
+            for tc in final_tool_calls:
+                stop_payload = await self._wait_if_aborted()
+                if stop_payload:
+                    yield AgentEvent.DONE, stop_payload
+                    return
+                await self._emit(AgentEvent.TOOL_CALL, tc)
+                yield AgentEvent.TOOL_CALL, tc
+                stop_payload = await self._wait_if_aborted()
+                if stop_payload:
+                    yield AgentEvent.DONE, stop_payload
+                    return
+                result = await self._execute_tool(tc)
+
+                tool_name = tc.name if hasattr(tc, 'name') else str(tc)
+                images = None
+                content = result.content
+
+                if tool_name == "read_image":
+                    try:
+                        data = json.loads(content)
+                        images = data.get("images", [])
+                        content = data.get("text", "")
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                await self.session.add_message(
+                    role="tool",
+                    content=content,
+                    tool_call_id=tc.id if hasattr(tc, 'id') else str(tc),
+                    images=images,
+                )
+                tool_call_id = tc.id if hasattr(tc, 'id') else str(tc)
+                await self._emit(
+                    AgentEvent.TOOL_RESULT,
+                    {
+                        "tool": tc.name if hasattr(tc, 'name') else str(tc),
+                        "tool_call_id": tool_call_id,
+                        "result": result,
+                    },
+                )
+                yield AgentEvent.TOOL_RESULT, {
+                    "tool": tc.name if hasattr(tc, 'name') else str(tc),
+                    "tool_call_id": tool_call_id,
+                    "result": result,
+                }
+                if not result.success:
+                    tool_name = tc.name if hasattr(tc, 'name') else str(tc)
+                    log.info(
+                        f"[Turn {turn_count}] Tool failed and will be returned to model context: {tool_name}")
+                    continue
+                if result.requires_input:
+                    log.info(f"[Turn {turn_count}] Paused for user input")
+                    yield AgentEvent.DONE, _done_payload("requires_input", "User input required")
+                    return
+        else:
+            await self.session.add_message(role="assistant", content=final_content)
+            done_payload = _done_payload("completed", final_content)
+            await self._emit(AgentEvent.DONE, done_payload)
+            log.info(f"[Turn {turn_count}] Completed without tool calls")
+            yield AgentEvent.DONE, done_payload
+            return
+
     async def chat_stream(
         self,
         user_input: str,
@@ -222,6 +395,8 @@ class Agent:
 
         current_session = self.session.get_current_session()
         yield AgentEvent.SESSION, current_session.id if current_session else None
+        await self._emit(AgentEvent.START)
+        yield AgentEvent.START, None
 
         image_data: list[str] = []
         message_text = user_input
@@ -237,7 +412,8 @@ class Agent:
                 elif att.get("type") == "document":
                     for part in att.get("content", []):
                         if part.get("type") == "text":
-                            message_text = part.get("text", "") + "\n\n" + message_text
+                            message_text = part.get(
+                                "text", "") + "\n\n" + message_text
         await self.session.add_message(
             role="user",
             content=message_text,
@@ -260,151 +436,26 @@ class Agent:
         turn_count = 0
         for _ in range(self.config.max_iterations):
             turn_count += 1
-            stop_payload = await self._wait_if_aborted()
-            if stop_payload:
-                yield AgentEvent.DONE, stop_payload
-                return
+            await self._emit(AgentEvent.TURN_START, {"turn": turn_count})
+            yield AgentEvent.TURN_START, {"turn": turn_count}
 
-            messages = await self._get_messages()
+            done_payload = None
+            async for event, data in self._run_turn(turn_count, tool_schemas):
+                if event == AgentEvent.DONE:
+                    done_payload = data
+                else:
+                    yield event, data
 
-            accumulated_content = ""
-            accumulated_tool_calls: dict[str, Any] = {}
-            final_done_content = ""
+            await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
+            yield AgentEvent.TURN_END, {"turn": turn_count}
 
-            log.info(
-                f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}")
-            await self._emit(AgentEvent.LLM_CALL_START)
-            yield AgentEvent.LLM_CALL_START, None
-            generator_closing = False
-            try:
-                try:
-                    async for chunk in self.llm.chat_stream(
-                        messages=messages,
-                        model=self.config.model,
-                        tools=tool_schemas,
-                    ):
-                        stop_payload = await self._wait_if_aborted()
-                        if stop_payload:
-                            yield AgentEvent.DONE, stop_payload
-                            return
-
-                        if hasattr(chunk, 'type'):
-                            if chunk.type == "text_delta":
-                                accumulated_content += chunk.content
-                                yield AgentEvent.TEXT_DELTA, chunk.content
-                            elif chunk.type == "done":
-                                final_done_content = getattr(
-                                    chunk, "content", "") or final_done_content
-                            elif chunk.type == "tool_call":
-                                chunk_id = getattr(chunk, "id", None) or getattr(
-                                    chunk, "name", "")
-                                if chunk_id:
-                                    accumulated_tool_calls[str(
-                                        chunk_id)] = chunk
-
-                        if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
-                            for tc in chunk.tool_calls:
-                                tc_id = getattr(tc, "id", None) or getattr(
-                                    tc, "name", "")
-                                if tc_id:
-                                    accumulated_tool_calls[str(tc_id)] = tc
-                except GeneratorExit:
-                    generator_closing = True
-                    raise
-            finally:
-                await self._emit(AgentEvent.LLM_CALL_END)
-                if not generator_closing:
-                    yield AgentEvent.LLM_CALL_END, None
-            stop_payload = await self._wait_if_aborted()
-            if stop_payload:
-                yield AgentEvent.DONE, stop_payload
-                return
-            log.info(
-                f"[Turn {turn_count}] After LLM loop: accumulated_content={len(accumulated_content)}, tool_calls={len(accumulated_tool_calls)}")
-
-            final_content = accumulated_content or final_done_content
-            final_tool_calls = [
-                tc for tc in accumulated_tool_calls.values()
-                if hasattr(tc, 'name') and tc.name
-            ]
-
-            if final_tool_calls:
-                for tc in final_tool_calls:
-                    tc_name = tc.name if hasattr(tc, 'name') else str(tc)
-                    tc_args = tc.arguments if hasattr(
-                        tc, 'arguments') else "{}"
-                    log.info(
-                        f"[Turn {turn_count}] Calling tool: {tc_name}({tc_args})")
-
-                await self.session.add_message(
-                    role="assistant",
-                    content=final_content,
-                    tool_calls=[tc.model_dump() if hasattr(
-                        tc, 'model_dump') else tc for tc in final_tool_calls],
-                )
-                for tc in final_tool_calls:
-                    stop_payload = await self._wait_if_aborted()
-                    if stop_payload:
-                        yield AgentEvent.DONE, stop_payload
-                        return
-                    await self._emit(AgentEvent.TOOL_CALL, tc)
-                    yield AgentEvent.TOOL_CALL, tc
-                    stop_payload = await self._wait_if_aborted()
-                    if stop_payload:
-                        yield AgentEvent.DONE, stop_payload
-                        return
-                    result = await self._execute_tool(tc)
-
-                    tool_name = tc.name if hasattr(tc, 'name') else str(tc)
-                    images = None
-                    content = result.content
-
-                    if tool_name == "read_image":
-                        try:
-                            data = json.loads(content)
-                            images = data.get("images", [])
-                            content = data.get("text", "")
-                        except (json.JSONDecodeError, TypeError):
-                            pass
-
-                    await self.session.add_message(
-                        role="tool",
-                        content=content,
-                        tool_call_id=tc.id if hasattr(tc, 'id') else str(tc),
-                        images=images,
-                    )
-                    tool_call_id = tc.id if hasattr(tc, 'id') else str(tc)
-                    await self._emit(
-                        AgentEvent.TOOL_RESULT,
-                        {
-                            "tool": tc.name if hasattr(tc, 'name') else str(tc),
-                            "tool_call_id": tool_call_id,
-                            "result": result,
-                        },
-                    )
-                    yield AgentEvent.TOOL_RESULT, {
-                        "tool": tc.name if hasattr(tc, 'name') else str(tc),
-                        "tool_call_id": tool_call_id,
-                        "result": result,
-                    }
-                    if not result.success:
-                        tool_name = tc.name if hasattr(tc, 'name') else str(tc)
-                        log.info(
-                            f"[Turn {turn_count}] Tool failed and will be returned to model context: {tool_name}")
-                        continue
-                    if result.requires_input:
-                        log.info(f"[Turn {turn_count}] Paused for user input")
-                        yield AgentEvent.DONE, _done_payload("requires_input", "User input required")
-                        return
-            else:
-                await self.session.add_message(role="assistant", content=final_content)
-                done_payload = _done_payload("completed", final_content)
+            if done_payload is not None:
                 await self._emit(AgentEvent.DONE, done_payload)
-                log.info(f"[Turn {turn_count}] Completed without tool calls")
                 yield AgentEvent.DONE, done_payload
                 return
 
-        error_payload = _error_payload("max_iterations", "Maximum iterations reached")
+        error_payload = _error_payload(
+            "max_iterations", "Maximum iterations reached")
         await self._emit(AgentEvent.ERROR, error_payload)
         log.warning(f"[Turn {turn_count}] Maximum iterations reached")
         yield AgentEvent.ERROR, error_payload
