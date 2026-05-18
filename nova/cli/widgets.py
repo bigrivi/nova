@@ -177,7 +177,6 @@ class AssistantMessage(Static):
         self._scroll_pending = True
         self.call_after_refresh(self._do_scroll)
 
-
     def _do_scroll(self):
         self._scroll_pending = False
         if self.parent:
@@ -185,13 +184,12 @@ class AssistantMessage(Static):
                 animate=False
             )
 
-
     async def finalize(self) -> None:
         if self._buffer:
             await self._markdown.append(self._buffer)
             self._buffer = ""
         self.state = MessageState.FINAL
-        self.scroll_visible()
+        self._do_scroll()
 
     async def show_error(self, error: Exception | str) -> None:
         self.state = MessageState.ERROR
@@ -305,25 +303,34 @@ class StatusBar(Static):
         super().__init__()
         self._model_label = model_label
         self._provider_label = provider_label
+        self._status = "idle"
 
     def on_mount(self) -> None:
-        self._update_labels_display()
+        self.set_idle()
 
     def update_labels(self, model_label: str, provider_label: str) -> None:
         self._model_label = model_label
         self._provider_label = provider_label
-        self._update_labels_display()
+        self._update_display()
 
-    def _update_labels_display(self) -> None:
-        fragments: list = [("· ", "#444466")]
+    def set_generating(self) -> None:
+        self._status = "generating"
+        self._update_display()
+
+    def set_idle(self) -> None:
+        self._status = "idle"
+        self._update_display()
+
+    def _update_display(self) -> None:
+        dot_color = "bold #7aa2f7" if self._status == "generating" else "bold #9ece6a"
+        parts = [("● ", dot_color)]
         if self._model_label:
-            fragments.append((self._model_label, "#565f89"))
-            if self._provider_label:
-                fragments.append((" · ", "#444466"))
-                fragments.append((self._provider_label, "bold #e0af68"))
-        else:
-            fragments.append(("Nova", "#565f89"))
-        self.update(Text.assemble(*fragments))
+            parts.append((" · ", "#444466"))
+            parts.append((self._model_label, "#565f89"))
+        if self._provider_label:
+            parts.append((" · ", "#444466"))
+            parts.append((self._provider_label, "bold #e0af68"))
+        self.update(Text.assemble(*parts))
 
 
 # =========================================================

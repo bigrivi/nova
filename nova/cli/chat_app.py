@@ -6,7 +6,7 @@ from rich.panel import Panel
 from rich.text import Text as RichText
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, ScrollableContainer
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.widgets import TextArea
 
 from nova.cli.screens import ModelSelectScreen, SessionSelectScreen
@@ -73,13 +73,18 @@ class ChatApp(App):
     }
 
     #input-wrap {
-        dock: bottom;
         height: 3;
+        align: left middle;
+        padding: 1 2;
+        background: transparent;
+    }
+
+    #composer {
         background: #1a1b26;
         border-left: tall #4a9eff;
-        padding: 0 2;
-        offset-y: -1;
-        align: left middle;
+        dock: bottom;
+        height: auto;
+        padding: 0;
     }
 
     ChatTextArea {
@@ -133,9 +138,10 @@ class ChatApp(App):
     def compose(self) -> ComposeResult:
         yield ScrollableContainer(id="message-container")
         yield CommandSuggestions(id="suggestions")
-        with Horizontal(id="input-wrap"):
-            yield ChatTextArea()
-        yield StatusBar()
+        with Vertical(id="composer"):
+            with Horizontal(id="input-wrap"):
+                yield ChatTextArea()
+            yield StatusBar()
 
     def on_mount(self) -> None:
         self.query_one(ChatTextArea).focus()
@@ -254,7 +260,7 @@ class ChatApp(App):
 
     async def _run_stream(self, text: str) -> None:
         container = self.query_one("#message-container")
-        handler = StreamHandler(container, self._cli)
+        handler = StreamHandler(container, self._cli, status_bar=self.query_one(StatusBar))
         self._current_handler = handler
         self._streaming = True
 
@@ -290,7 +296,8 @@ class ChatApp(App):
 
         if not question:
             container.mount(BannerMessage(
-                RichText("Error: Invalid ask_user payload.", style="bold #f7768e")
+                RichText("Error: Invalid ask_user payload.",
+                         style="bold #f7768e")
             ))
             return
 
@@ -312,7 +319,8 @@ class ChatApp(App):
             from nova.cli.history_render import render_question_prompt
             prompt_text = render_question_prompt(question)
             container.mount(BannerMessage(RichText.from_ansi(prompt_text)))
-            container.mount(BannerMessage("Type your response and press Enter to submit."))
+            container.mount(BannerMessage(
+                "Type your response and press Enter to submit."))
 
     async def on_ask_user_widget_option_selected(
         self, event: AskUserWidget.OptionSelected
@@ -348,7 +356,8 @@ class ChatApp(App):
         self._current_handler = None
         if handler is not None:
             if handler.assistant is not None:
-                self.run_worker(handler.assistant.show_error("Current run cancelled."))
+                self.run_worker(handler.assistant.show_error(
+                    "Current run cancelled."))
             else:
                 self._show_error_plain("Current run cancelled.")
 

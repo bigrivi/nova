@@ -22,9 +22,10 @@ class StreamHandler:
     _SILENT_TOOLS = frozenset({"ask_user", "install_skill"})
     _DIFF_TOOLS = frozenset({"edit", "write"})
 
-    def __init__(self, container, cli) -> None:
+    def __init__(self, container, cli, status_bar=None) -> None:
         self._container = container
         self._cli = cli
+        self._status_bar = status_bar
         self._spinner: Spinner | None = None
         self.assistant: AssistantMessage | None = None
         self._text_output_seen = False
@@ -98,21 +99,45 @@ class StreamHandler:
         self._cli.set_session_id(data if isinstance(data, str) else None)
         return False
 
-    async def _on_llm_start(self, data) -> bool:
+    async def _on_llm_request_start(self, data) -> bool:
         (await self._ensure_spinner()).show_thinking()
         return False
 
-    async def _on_llm_end(self, data) -> bool:
+    async def _on_llm_request_end(self, data) -> bool:
+        return False
+
+    async def _on_start(self, data) -> bool:
+        self._text_output_seen = False
+        self._tool_calls_seen = []
+        if self._status_bar is not None:
+            self._status_bar.set_generating()
+        return False
+
+    async def _on_turn_start(self, data) -> bool:
+        log.debug("Turn start: %s", data)
+        return False
+
+    async def _on_turn_end(self, data) -> bool:
+        log.debug("Turn end: %s", data)
+        return False
+
+    async def _on_text_delta_start(self, data) -> bool:
+        await self._dismiss_spinner()
+        if self.assistant is None:
+            self.assistant = AssistantMessage()
+            await self._container.mount(self.assistant)
+        return False
+
+    async def _on_text_delta_completed(self, data) -> bool:
+        if self.assistant is not None:
+            await self.assistant.finalize()
+            self.assistant = None
         return False
 
     async def _on_text_delta(self, data) -> bool:
         log.info("Text delta: %s", data)
-        if not isinstance(data, str):
+        if not isinstance(data, str) or self.assistant is None:
             return False
-        if self.assistant is None:
-            await self._dismiss_spinner()
-            self.assistant = AssistantMessage()
-            await self._container.mount(self.assistant)
         await self.assistant.write_chunk(data)
         self._text_output_seen = True
         return False
@@ -175,6 +200,7 @@ class StreamHandler:
             self._mount_error(done_content)
         elif done_content and self._tool_calls_seen and not self._text_output_seen:
             self._mount_info(done_content)
+        self._set_idle()
         return True
 
     async def _on_error(self, data) -> bool:
@@ -182,7 +208,12 @@ class StreamHandler:
         _, msg = parse_error_payload(data)
         if msg:
             self._mount_error(msg)
+        self._set_idle()
         return True
+
+    def _set_idle(self) -> None:
+        if self._status_bar is not None:
+            self._status_bar.set_idle()
 
     _dispatch: dict = {}
 
@@ -190,14 +221,19 @@ class StreamHandler:
 def _build_dispatch() -> None:
     from nova.agent import AgentEvent
     StreamHandler._dispatch = {
-        AgentEvent.SESSION:      StreamHandler._on_session,
-        AgentEvent.LLM_CALL_START:   StreamHandler._on_llm_start,
-        AgentEvent.LLM_CALL_END:     StreamHandler._on_llm_end,
-        AgentEvent.TEXT_DELTA:  StreamHandler._on_text_delta,
-        AgentEvent.TOOL_CALL:   StreamHandler._on_tool_call,
-        AgentEvent.TOOL_RESULT: StreamHandler._on_tool_result,
-        AgentEvent.DONE:        StreamHandler._on_done,
-        AgentEvent.ERROR:       StreamHandler._on_error,
+        AgentEvent.SESSION:             StreamHandler._on_session,
+        AgentEvent.START:        StreamHandler._on_start,
+        AgentEvent.TURN_START:          StreamHandler._on_turn_start,
+        AgentEvent.TURN_END:            StreamHandler._on_turn_end,
+        AgentEvent.LLM_REQUEST_START:      StreamHandler._on_llm_request_start,
+        AgentEvent.LLM_REQUEST_END:        StreamHandler._on_llm_request_end,
+        AgentEvent.TEXT_DELTA_START:    StreamHandler._on_text_delta_start,
+        AgentEvent.TEXT_DELTA:          StreamHandler._on_text_delta,
+        AgentEvent.TEXT_DELTA_COMPLETED: StreamHandler._on_text_delta_completed,
+        AgentEvent.TOOL_CALL:           StreamHandler._on_tool_call,
+        AgentEvent.TOOL_RESULT:         StreamHandler._on_tool_result,
+        AgentEvent.DONE:                StreamHandler._on_done,
+        AgentEvent.ERROR:               StreamHandler._on_error,
     }
 
 
