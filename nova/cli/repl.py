@@ -7,7 +7,7 @@ from typing import Optional
 from nova.app import build_agent
 from nova.cli.commands import CommandDispatcher, CommandRegistry, ParsedCommand
 from nova.cli.session_manager import SessionManager
-from nova.cli.stream_controller import StreamController, StreamControlProtocol
+
 from nova.cli.ui import ModelGroup
 from nova.cli.utils import exit_process as _exit_process
 from nova.session import close_session_manager
@@ -18,7 +18,7 @@ from nova.skills.installer import SkillInstallError
 log = logging.getLogger(__name__)
 
 
-class NovaCLI(StreamControlProtocol):
+class NovaCLI:
     """Main CLI orchestrator and StreamControlProtocol implementation."""
     def __init__(self, settings: Optional[Settings] = None):
         self.settings = settings or get_settings()
@@ -112,21 +112,6 @@ class NovaCLI(StreamControlProtocol):
         self.agent = build_agent(settings=self.settings)
         if self._session_manager:
             self._session_manager.set_agent(self.agent)
-
-    async def run_stream(self, user_input: str, *, render, spinner=None) -> None:
-        log.debug("run_stream: input_len=%d, render=%s", len(user_input), type(render).__name__)
-        self._streaming = True
-        self._stop_requested = False
-        controller = StreamController(
-            agent=self.agent,
-            render=render,
-            control=self,
-        )
-        try:
-            await controller.run(user_input)
-        finally:
-            self._streaming = False
-            log.debug("run_stream finished")
 
     def _shutdown(self, *, message: Optional[str] = None) -> None:
         if self._streaming:
