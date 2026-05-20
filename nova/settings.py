@@ -99,41 +99,24 @@ def _resolve_openai_base_url() -> str:
 
 
 def _build_default_config_payload() -> dict[str, Any]:
-    env_provider = os.getenv("NOVA_PROVIDER", "ollama").strip() or "ollama"
-    openai_model = os.getenv("NOVA_MODEL", "").strip(
-    ) if env_provider == "openai" else ""
-    ollama_model = os.getenv("NOVA_MODEL", "gemma4:26b").strip(
-    ) if env_provider == "ollama" else "gemma4:26b"
-    model_provider = "openai" if env_provider == "openai" else "ollama"
-    model = openai_model if model_provider == "openai" else (
-        ollama_model or "gemma4:26b")
+    provider_key = "your-provider"
+    provider_name = "your provider name"
+    model_key = "your-model"
+    model_name = "your model"
     return {
-        "model": model,
-        "model_provider": model_provider,
+        "model": model_key,
+        "model_provider": provider_key,
         "providers": {
-            "ollama": {
-                "type": "ollama",
-                "name": "Ollama (local)",
-                "options": {
-                    "base_url": _resolve_ollama_base_url(),
-                },
-                "models": {
-                    (ollama_model or "gemma4:26b"): {
-                        "name": ollama_model or "gemma4:26b",
-                        "tools": True,
-                    }
-                },
-            },
-            "openai": {
+            provider_key: {
                 "type": "openai-compatible",
-                "name": "OpenAI Compatible",
+                "name": provider_name,
                 "options": {
-                    "base_url": _resolve_openai_base_url(),
-                    "api_key": _resolve_openai_api_key(),
+                    "api_key": "your api key",
+                    "base_url": "https://api.example.com/v1",
                 },
                 "models": {
-                    (openai_model or "gpt-5.4"): {
-                        "name": openai_model or "gpt-5.4",
+                    model_key: {
+                        "name": model_name,
                         "tools": True,
                     }
                 },
