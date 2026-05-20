@@ -10,3 +10,10 @@ uvicorn
 # Optional: tiktoken for accurate OpenAI model token estimation
 # pip install tiktoken
 tiktoken
+
+# Browser automation for the browser_use tool
+# Requires: playwright install chromium (or use system Chrome/Edge)
+playwright
+
+# For browser_use extract_content action: HTML to Markdown conversion
+markdownify
