@@ -43,6 +43,10 @@ class AgentEvent(Enum):
     TEXT_DELTA_START = "text_delta_start"
     # Emitted after the LLM call ends, with the full accumulated text content for the turn.
     TEXT_DELTA_COMPLETED = "text_delta_completed"
+    # Emitted for each streamed reasoning/thinking chunk from the model.
+    REASONING_DELTA = "reasoning_delta"
+    # Emitted right before TEXT_DELTA_START when reasoning content was streamed.
+    REASONING_END = "reasoning_end"
 
 
 def _done_payload(reason: str, content: Optional[str] = None) -> dict[str, Any]:
@@ -181,6 +185,8 @@ class Agent:
                 m.tool_call_id = msg.tool_call_id
             if msg.images:
                 m.images = msg.images
+            if msg.reasoning_content:
+                m.reasoning_content = msg.reasoning_content
             messages.append(m)
         return messages
 
@@ -224,6 +230,7 @@ class Agent:
         messages = await self._get_messages()
 
         accumulated_content = ""
+        accumulated_reasoning = ""
         accumulated_tool_calls: dict[str, Any] = {}
         final_done_content = ""
         _text_started = False
@@ -245,9 +252,15 @@ class Agent:
                     return
 
                 if hasattr(chunk, 'type'):
-                    if chunk.type == "text_delta":
+                    if chunk.type == "reasoning_delta":
+                        accumulated_reasoning += chunk.content
+                        yield AgentEvent.REASONING_DELTA, chunk.content
+                    elif chunk.type == "text_delta":
                         if not _text_started:
                             _text_started = True
+                            if accumulated_reasoning:
+                                await self._emit(AgentEvent.REASONING_END)
+                                yield AgentEvent.REASONING_END, None
                             await self._emit(AgentEvent.TEXT_DELTA_START)
                             yield AgentEvent.TEXT_DELTA_START, None
                         accumulated_content += chunk.content
@@ -277,6 +290,10 @@ class Agent:
             yield AgentEvent.DONE, _done_payload("error", None)
             return
         finally:
+            if accumulated_reasoning and not _text_started:
+                await self._emit(AgentEvent.REASONING_END)
+                if not generator_closing:
+                    yield AgentEvent.REASONING_END, None
             await self._emit(AgentEvent.LLM_REQUEST_END)
             if not generator_closing:
                 yield AgentEvent.LLM_REQUEST_END, None
@@ -309,6 +326,7 @@ class Agent:
                 content=final_content,
                 tool_calls=[tc.model_dump() if hasattr(
                     tc, 'model_dump') else tc for tc in final_tool_calls],
+                reasoning_content=accumulated_reasoning or None,
             )
             for tc in final_tool_calls:
                 stop_payload = await self._wait_if_aborted()
@@ -327,7 +345,7 @@ class Agent:
                 images = None
                 content = result.content
 
-                if tool_name == "read_image":
+                if tool_name in ("read_image", "browser_use"):
                     try:
                         data = json.loads(content)
                         images = data.get("images", [])
@@ -365,7 +383,11 @@ class Agent:
                     yield AgentEvent.DONE, _done_payload("requires_input", "User input required")
                     return
         else:
-            await self.session.add_message(role="assistant", content=final_content)
+            await self.session.add_message(
+                role="assistant",
+                content=final_content,
+                reasoning_content=accumulated_reasoning or None,
+            )
             done_payload = _done_payload("completed", final_content)
             await self._emit(AgentEvent.DONE, done_payload)
             log.info(f"[Turn {turn_count}] Completed without tool calls")
@@ -395,8 +417,8 @@ class Agent:
 
         current_session = self.session.get_current_session()
         yield AgentEvent.SESSION, current_session.id if current_session else None
-        await self._emit(AgentEvent.START)
-        yield AgentEvent.START, None
+        await self._emit(AgentEvent.START, user_input)
+        yield AgentEvent.START, user_input
 
         image_data: list[str] = []
         message_text = user_input

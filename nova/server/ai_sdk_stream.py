@@ -67,11 +67,22 @@ class AISDKStreamAdapter:
         self._message_started = False
         self._step_started = False
         self._active_text_id: str | None = None
+        self._active_reasoning_id: str | None = None
         self._message_id = f"msg_{uuid.uuid4().hex}"
         self._text_emitted = False
 
     def _close_open_parts(self) -> list[bytes]:
         chunks: list[bytes] = []
+        if self._active_reasoning_id is not None:
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "reasoning-end",
+                        "id": self._active_reasoning_id,
+                    }
+                )
+            )
+            self._active_reasoning_id = None
         if self._active_text_id is not None:
             chunks.append(
                 encode_ai_sdk_sse(
@@ -143,6 +154,41 @@ class AISDKStreamAdapter:
                 )
             )
             self._text_emitted = True
+            return chunks
+
+        if event == AgentEvent.REASONING_DELTA:
+            if self._active_reasoning_id is None:
+                self._active_reasoning_id = f"reasoning_{uuid.uuid4().hex}"
+                chunks.append(
+                    encode_ai_sdk_sse(
+                        {
+                            "type": "reasoning-start",
+                            "id": self._active_reasoning_id,
+                        }
+                    )
+                )
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "reasoning-delta",
+                        "id": self._active_reasoning_id,
+                        "delta": data if isinstance(data, str) else str(data),
+                    }
+                )
+            )
+            return chunks
+
+        if event == AgentEvent.REASONING_END:
+            if self._active_reasoning_id is not None:
+                chunks.append(
+                    encode_ai_sdk_sse(
+                        {
+                            "type": "reasoning-end",
+                            "id": self._active_reasoning_id,
+                        }
+                    )
+                )
+                self._active_reasoning_id = None
             return chunks
 
         if event == AgentEvent.LLM_REQUEST_END:

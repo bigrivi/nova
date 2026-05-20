@@ -78,8 +78,10 @@
   "tools.selectSingle": "请在下方选择你的选项后回答。",
   "tools.textInput": "请在下方输入框中继续回答。",
 
-  "reasoning.reasoning": "推理中",
-  "reasoning.reasoningSteps": "推理中 · {{count}} 步",
+  "reasoning.reasoning": "推理",
+  "reasoning.reasoningSteps": "推理 · {{count}} 步",
+  "reasoning.reasoningInProgress": "推理中",
+  "reasoning.reasoningStepsInProgress": "推理中 · {{count}} 步",
 
   "dialog.close": "关闭"
 }

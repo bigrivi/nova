@@ -50,6 +50,7 @@ class MessageRecord(BaseModel):
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     time_created: int
     images: list[str] | None = None
+    reasoning_content: str | None = None
 
 
 class MessageListResponse(BaseModel):

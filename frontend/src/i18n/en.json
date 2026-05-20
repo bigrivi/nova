@@ -80,6 +80,8 @@
 
   "reasoning.reasoning": "Reasoning",
   "reasoning.reasoningSteps": "Reasoning · {{count}} steps",
+  "reasoning.reasoningInProgress": "Reasoning…",
+  "reasoning.reasoningStepsInProgress": "Reasoning… · {{count}} steps",
 
   "dialog.close": "Close"
 }

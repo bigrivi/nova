@@ -27,6 +27,7 @@ import {
   listSessions,
   streamChat,
 } from "../lib/nova-api";
+import { useReasoningStore } from "../stores/reasoning-store";
 import type {
   NovaAttachmentData,
   NovaJsonObject,
@@ -142,6 +143,45 @@ function setAssistantText(
       parts[textPartIndex] = { type: "text", text: nextText };
     } else if (nextText) {
       parts.push({ type: "text", text: nextText });
+    }
+
+    return {
+      ...message,
+      content: parts,
+    };
+  });
+}
+
+function setAssistantReasoning(
+  messages: ThreadMessageLike[],
+  assistantMessageId: string,
+  updater: (text: string) => string,
+) {
+  return messages.map((message) => {
+    if (message.id !== assistantMessageId || message.role !== "assistant") {
+      return message;
+    }
+
+    const parts =
+      typeof message.content === "string"
+        ? message.content
+          ? [{ type: "text" as const, text: message.content }]
+          : []
+        : [...message.content];
+
+    const reasoningIndex = parts.findIndex(
+      (part) => part.type === "reasoning",
+    );
+    const currentText =
+      reasoningIndex >= 0 && parts[reasoningIndex]?.type === "reasoning"
+        ? parts[reasoningIndex].text
+        : "";
+    const nextText = updater(currentText);
+
+    if (reasoningIndex >= 0) {
+      parts[reasoningIndex] = { type: "reasoning", text: nextText };
+    } else if (nextText) {
+      parts.push({ type: "reasoning", text: nextText });
     }
 
     return {
@@ -446,6 +486,23 @@ export function NovaAppShell() {
             return;
           }
 
+          if (event.type === "reasoning-delta") {
+            useReasoningStore.getState().setActive(true);
+            setThreadMessages(activeThreadId, (previous) =>
+              setAssistantReasoning(
+                previous,
+                assistantMessageId,
+                (text) => text + (event.delta || ""),
+              ),
+            );
+            return;
+          }
+
+          if (event.type === "reasoning-end") {
+            useReasoningStore.getState().setActive(false);
+            return;
+          }
+
           if (event.type === "tool-input-start") {
             if (!event.toolCallId) {
               return;
@@ -517,6 +574,7 @@ export function NovaAppShell() {
         ),
       );
     } finally {
+      useReasoningStore.getState().setActive(false);
       setIsRunning(false);
     }
   }

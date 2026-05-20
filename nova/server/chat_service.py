@@ -76,6 +76,7 @@ class ChatService:
                 tool_calls=message.tool_calls or [],
                 time_created=message.time_created,
                 images=message.images,
+                reasoning_content=message.reasoning_content,
             )
             for message in messages
         ]
@@ -219,7 +220,7 @@ class ChatService:
             return None
         if agent_event == AgentEvent.LLM_REQUEST_START:
             return await emit(ResponseStartedEvent, ResponseStartedEventData)
-        if agent_event in (AgentEvent.TEXT_DELTA_START, AgentEvent.TEXT_DELTA_COMPLETED):
+        if agent_event in (AgentEvent.TEXT_DELTA_START, AgentEvent.TEXT_DELTA_COMPLETED, AgentEvent.REASONING_END):
             return None
         if agent_event == AgentEvent.TEXT_DELTA:
             return await emit(MessageDeltaEvent, MessageDeltaEventData, delta=data)

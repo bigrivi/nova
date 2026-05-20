@@ -14,6 +14,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { useReasoningStore } from "@/stores/reasoning-store";
 
 export const Reasoning: FC = () => {
   return (
@@ -31,13 +32,14 @@ export const ReasoningGroup: FC<ReasoningGroupProps> = ({
 }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const isActive = useReasoningStore((s) => s.isActive);
   const itemCount = endIndex - startIndex + 1;
 
   return (
     <Collapsible
       open={open}
       onOpenChange={setOpen}
-      className="rounded-2xl border bg-muted/40"
+      className="mb-2 rounded-2xl border bg-muted/40"
     >
       <CollapsibleTrigger asChild>
         <button
@@ -46,7 +48,18 @@ export const ReasoningGroup: FC<ReasoningGroupProps> = ({
         >
           <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <BrainIcon className="size-4" />
-            {itemCount > 1 ? t("reasoning.reasoningSteps", { count: itemCount }) : t("reasoning.reasoning")}
+            {itemCount > 1
+              ? t(
+                  isActive
+                    ? "reasoning.reasoningStepsInProgress"
+                    : "reasoning.reasoningSteps",
+                  { count: itemCount },
+                )
+              : t(
+                  isActive
+                    ? "reasoning.reasoningInProgress"
+                    : "reasoning.reasoning",
+                )}
           </span>
           <ChevronDownIcon
             className={cn(

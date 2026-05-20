@@ -21,6 +21,7 @@ export type NovaMessageRecord = {
   tool_calls: NovaJsonObject[]
   time_created: number
   images?: string[] | null
+  reasoning_content?: string | null
 }
 
 export type NovaModelRecord = {

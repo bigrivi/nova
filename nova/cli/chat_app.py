@@ -436,6 +436,7 @@ class ChatApp(App):
                 if role == "user":
                     container.mount(UserMessage(content_val))
                 elif role in ("assistant", "system"):
-                    container.mount(HistoryMessage(content_val))
+                    rc = getattr(msg, "reasoning_content", None) or ""
+                    container.mount(HistoryMessage(content_val, rc))
 
         self.run_worker(_render())

@@ -111,6 +111,9 @@ export function toThreadMessages(messages: NovaMessageRecord[]): ThreadMessageLi
 
     if (message.role === 'assistant') {
       const content: AssistantPart[] = []
+      if (message.reasoning_content) {
+        content.push({ type: 'reasoning', text: message.reasoning_content })
+      }
       if (message.content) {
         content.push({ type: 'text', text: message.content })
       }

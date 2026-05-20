@@ -16,6 +16,7 @@ class Message:
     tool_calls: Optional[list] = None
     tool_call_id: Optional[str] = None
     images: Optional[list[str]] = None
+    reasoning_content: Optional[str] = None
 
 
 @dataclass
@@ -66,6 +67,13 @@ class Done(ChatEvent):
     def __post_init__(self):
         if self.tool_calls is None:
             self.tool_calls = []
+
+
+@dataclass
+class ReasoningDelta(ChatEvent):
+    """Reasoning/thinking content chunk."""
+    type: str = "reasoning_delta"
+    content: str = ""
 
 
 @dataclass

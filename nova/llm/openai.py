@@ -9,7 +9,7 @@ from typing import AsyncGenerator, Optional
 import aiohttp
 
 from nova.settings import get_settings
-from nova.llm.provider import LLMProvider, ChatEvent, TextDelta, ToolCall, Done, Error, Message
+from nova.llm.provider import LLMProvider, ChatEvent, TextDelta, ReasoningDelta, ToolCall, Done, Error, Message
 
 log = logging.getLogger(__name__)
 
@@ -146,6 +146,12 @@ class OpenAIProvider(LLMProvider):
                 m = {"role": "user", "content": content_list}
             else:
                 m = {"role": role, "content": content}
+
+            if role == "assistant":
+                rc = getattr(msg, "reasoning_content", None) or get_attr(
+                    msg, "reasoning_content")
+                if rc:
+                    m["reasoning_content"] = rc
 
             name = get_attr(msg, "name")
             if name:
@@ -297,6 +303,11 @@ class OpenAIProvider(LLMProvider):
                                 continue
                             choice = choices[0]
                             delta = choice.get("delta", {})
+
+                            reasoning = delta.get("reasoning_content", "")
+                            if reasoning:
+                                yield ReasoningDelta(content=reasoning)
+
                             if "tool_calls" in delta:
                                 for tc in delta["tool_calls"]:
                                     index = tc.get("index", 0)
