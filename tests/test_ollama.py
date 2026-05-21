@@ -13,7 +13,6 @@ def agent(llm):
     return Agent(
         config=AgentConfig(
             model="gemma4:26b",
-            system_prompt="You are a helpful assistant. Keep responses concise.",
             max_iterations=3,
         ),
         llm_provider=llm,
@@ -36,7 +35,6 @@ async def test_basic_chat_without_tools(llm):
     agent = Agent(
         config=AgentConfig(
             model="gemma4:26b",
-            system_prompt="You are a helpful assistant. Keep responses concise.",
             max_iterations=3,
         ),
         llm_provider=llm,
@@ -53,7 +51,6 @@ async def test_chat_with_tools(llm):
     agent = Agent(
         config=AgentConfig(
             model="gemma4:26b",
-            system_prompt="You are a helpful coding assistant.",
             max_iterations=5,
         ),
         llm_provider=llm,

@@ -63,7 +63,7 @@ class AgentConfig:
     # Model key as defined in config.json (e.g., "my-gemma")
     model: str = "gpt-4o"
     provider: str = "ollama"
-    system_prompt: Optional[str] = None
+
     max_iterations: int = 100
     max_tokens: int = 8192
     temperature: float = 0.7
@@ -88,7 +88,7 @@ class Agent:
         soul_content = soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
         self._prompt_builder = PromptBuilder(
             PromptConfig(
-                persona=self.config.system_prompt or "You are Nova, a helpful AI assistant.",
+                persona="You are Nova, a helpful AI assistant.",
                 include_context_stats=self.config.show_context_stats,
                 include_session_context=True,
                 soul_content=soul_content,

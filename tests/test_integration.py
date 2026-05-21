@@ -29,7 +29,6 @@ def agent(llm):
     return Agent(
         config=AgentConfig(
             model="gemma4:26b",
-            system_prompt="You are a helpful assistant. Keep responses short.",
             max_iterations=3,
         ),
         llm_provider=llm,
