@@ -179,6 +179,7 @@ class OllamaProvider(LLMProvider):
 
                     async for line in resp.content:
                         line = line.decode("utf-8").strip()
+                        log.info("line: %s", line)
                         if not line:
                             continue
 
@@ -186,7 +187,7 @@ class OllamaProvider(LLMProvider):
                             data = json.loads(line)
                             message = data.get("message", {})
                             delta = message.get("content", "") or ""
-                            reasoning = message.get("reasoning_content", "") or ""
+                            reasoning = message.get("reasoning_content") or message.get("thinking") or ""
                             if reasoning:
                                 yield ReasoningDelta(content=reasoning)
                             tool_calls_delta = message.get("tool_calls")
