@@ -68,7 +68,7 @@ async def test_interrupt_during_text_stream_stops_without_rolling_back_history(d
         ]
     )
     agent = Agent(
-        config=AgentConfig(model="test-model", max_iterations=1, show_context_stats=False),
+        config=AgentConfig(model="test-model", max_iterations=1),
         llm_provider=provider,
     )
 
@@ -116,7 +116,7 @@ async def test_interrupt_after_tool_call_stops_before_tool_execution(db):
         ]
     )
     agent = Agent(
-        config=AgentConfig(model="test-model", max_iterations=1, show_context_stats=False),
+        config=AgentConfig(model="test-model", max_iterations=1),
         llm_provider=provider,
     )
 
@@ -155,7 +155,7 @@ async def test_interrupt_after_tool_result_stops_agent_loop_before_next_iteratio
         ]
     )
     agent = Agent(
-        config=AgentConfig(model="test-model", max_iterations=3, show_context_stats=False),
+        config=AgentConfig(model="test-model", max_iterations=3),
         llm_provider=provider,
     )
 
@@ -194,7 +194,7 @@ async def test_breaking_after_stopped_by_user_does_not_raise_generator_exit(db):
         ]
     )
     agent = Agent(
-        config=AgentConfig(model="test-model", max_iterations=1, show_context_stats=False),
+        config=AgentConfig(model="test-model", max_iterations=1),
         llm_provider=provider,
     )
 
@@ -219,7 +219,7 @@ async def test_tool_failure_returns_to_model_context_and_allows_next_iteration(d
         ]
     )
     agent = Agent(
-        config=AgentConfig(model="test-model", max_iterations=3, show_context_stats=False),
+        config=AgentConfig(model="test-model", max_iterations=3),
         llm_provider=provider,
     )
 
@@ -258,7 +258,7 @@ async def test_done_content_is_preserved_when_provider_returns_error_without_tex
         ]
     )
     agent = Agent(
-        config=AgentConfig(model="test-model", max_iterations=1, show_context_stats=False),
+        config=AgentConfig(model="test-model", max_iterations=1),
         llm_provider=provider,
     )
 

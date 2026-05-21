@@ -88,7 +88,7 @@ async def test_agent_skill_flow_uses_list_skills_then_load_skill(monkeypatch, tm
     _write_skill(home / "skills")
 
     agent = Agent(
-        config=AgentConfig(model="test-model", max_iterations=4, show_context_stats=False),
+        config=AgentConfig(model="test-model", max_iterations=4),
         llm_provider=SkillFlowProvider(),
     )
     agent.register_all_tools()

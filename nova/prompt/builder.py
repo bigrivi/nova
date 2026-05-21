@@ -9,39 +9,7 @@ from nova.settings import get_settings
 
 @dataclass
 class PromptConfig:
-    include_context_stats: bool = True
     soul_content: str = ""
-
-
-@dataclass
-class ContextStats:
-    model: str = "gpt-4o"
-    max_tokens: int = 128000
-    input_tokens: int = 0
-    output_tokens: int = 0
-    total_tokens: int = 0
-    usage_percent: float = 0.0
-    messages_count: int = 0
-
-    def render_progress_bar(self) -> str:
-        bar_length = 20
-        filled = int(bar_length * self.usage_percent / 100)
-        bar = "█" * filled + "░" * (bar_length - filled)
-        warning = " ⚠️" if self.usage_percent > 70 else ""
-        return f"[{bar}] {self.usage_percent:.1f}%{warning}"
-
-    def render_stats(self) -> str:
-        lines = [
-            "",
-            "## Context Status",
-            f"Model: {self.model}",
-            f"Progress: {self.render_progress_bar()}",
-            f"Tokens: {self.input_tokens:,} in / {self.output_tokens:,} out",
-            f"Messages: {self.messages_count}",
-        ]
-        if self.usage_percent > 70:
-            lines.append("⚠️ Context nearing limit")
-        return "\n".join(lines)
 
 
 class PromptBuilder:
@@ -100,7 +68,6 @@ When calling a tool, output JSON only:
     def build(
         self,
         tools_schemas: list[dict] = None,
-        context_stats: ContextStats = None,
         available_skills: list[Any] | None = None,
     ) -> str:
         parts = []
@@ -118,9 +85,6 @@ When calling a tool, output JSON only:
             workspace_dir=settings.workspace_dir,
             platform=self._get_platform(),
         ))
-
-        if context_stats and self.config.include_context_stats:
-            parts.append(context_stats.render_stats())
 
         if self.config.soul_content:
             parts.append(f"## Soul\n\n{self.config.soul_content}")
@@ -174,9 +138,8 @@ When calling a tool, output JSON only:
 
 def build_system_prompt(
     tools_schemas: list[dict] = None,
-    context_stats: ContextStats = None,
     config: PromptConfig = None,
     available_skills: list[Any] | None = None,
 ) -> str:
     builder = PromptBuilder(config)
-    return builder.build(tools_schemas, context_stats, available_skills)
+    return builder.build(tools_schemas, available_skills)

@@ -305,7 +305,7 @@ async def test_agent_can_complete_memory_tool_flow(db):
     )
 
     agent = Agent(
-        config=AgentConfig(model="test-model", max_iterations=3, show_context_stats=False),
+        config=AgentConfig(model="test-model", max_iterations=3),
         llm_provider=MemoryToolFlowProvider(),
     )
     agent.register_all_tools()

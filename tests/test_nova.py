@@ -30,7 +30,6 @@ def agent(llm):
         config=AgentConfig(
             model="gemma4:26b",
             max_iterations=3,
-            show_context_stats=False,
         ),
         llm_provider=llm,
     )

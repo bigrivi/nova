@@ -10,7 +10,7 @@ from typing import Any, AsyncGenerator, Callable, Optional
 from nova.llm import LLMProvider, Message as LLMMessage, ToolCall, ToolResult
 from nova.session import SessionManager, get_session_manager
 from nova.tools.registry import ToolRegistry
-from nova.prompt import PromptBuilder, PromptConfig, ContextStats
+from nova.prompt import PromptBuilder, PromptConfig
 from nova.agent.compaction import maybe_compact, get_context_limit
 from nova.db.database import ensure_db
 
@@ -68,7 +68,6 @@ class AgentConfig:
     temperature: float = 0.7
     tools: Optional[list] = None
     compress_threshold: int = 50
-    show_context_stats: bool = True
 
 
 class Agent:
@@ -86,10 +85,7 @@ class Agent:
         soul_path = Path.home() / ".nova" / "SOUL.md"
         soul_content = soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
         self._prompt_builder = PromptBuilder(
-            PromptConfig(
-                include_context_stats=self.config.show_context_stats,
-                soul_content=soul_content,
-            )
+            PromptConfig(soul_content=soul_content)
         )
         self._abort_event = asyncio.Event()
 
@@ -136,25 +132,8 @@ class Agent:
         from nova.skills.service import get_skill_service
 
         available_skills = get_skill_service().list_skills()
-
-        stats = None
-        if self.config.show_context_stats:
-            db_messages = []
-            input_chars = sum(len(m.content) for m in db_messages)
-            stats = ContextStats(
-                model=self.config.model,
-                max_tokens=get_context_limit(
-                    self.config.model, self.config.provider),
-                input_tokens=int(input_chars / 4),
-                output_tokens=0,
-                total_tokens=int(input_chars / 4),
-                usage_percent=0.0,
-                messages_count=len(db_messages),
-            )
-
         return self._prompt_builder.build(
             tools_schemas=tool_schemas,
-            context_stats=stats,
             available_skills=available_skills,
         )
 
