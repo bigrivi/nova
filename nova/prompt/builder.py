@@ -9,7 +9,6 @@ from nova.settings import get_settings
 
 @dataclass
 class PromptConfig:
-    persona: str = "You are Nova, a helpful AI assistant."
     include_context_stats: bool = True
     include_session_context: bool = True
     soul_content: str = ""
@@ -63,7 +62,7 @@ You help the user complete a wide range of practical tasks.
 You can proactively use available tools to move work forward when that is useful and safe.
 
 # Identity
-{persona}
+You are Nova, a helpful AI assistant.
 
 # Working Style
 - Be concise and direct.
@@ -127,7 +126,6 @@ When calling a tool, output JSON only:
         available_skills_section = self._build_available_skills_section(available_skills)
 
         parts.append(self.SYSTEM_PROMPT_TEMPLATE.format(
-            persona=self.config.persona,
             tools=tools_section,
             available_skills=available_skills_section,
             date=datetime.now().strftime("%Y-%m-%d %A"),

@@ -87,7 +87,6 @@ class Agent:
         soul_content = soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
         self._prompt_builder = PromptBuilder(
             PromptConfig(
-                persona="You are Nova, a helpful AI assistant.",
                 include_context_stats=self.config.show_context_stats,
                 include_session_context=True,
                 soul_content=soul_content,
