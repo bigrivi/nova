@@ -6,17 +6,23 @@ from typing import Any, Optional
 
 from nova.settings import get_settings
 
+DEFAULT_AGENT_IDENTITY = (
+    "You are Nova, a personal AI assistant and autonomous AI agent.\n"
+    "You help the user complete a wide range of practical tasks.\n"
+    "You can proactively use available tools to move work forward when that is useful and safe."
+)
+
 
 @dataclass
 class PromptConfig:
+    identity_content: str = ""
     soul_content: str = ""
+    user_content: str = ""
 
 
 class PromptBuilder:
     SYSTEM_PROMPT_TEMPLATE = """\
-You are Nova, a personal AI assistant and autonomous AI agent.
-You help the user complete a wide range of practical tasks.
-You can proactively use available tools to move work forward when that is useful and safe.
+{identity}
 
 # Working Style
 - Be concise and direct.
@@ -77,7 +83,9 @@ When calling a tool, output JSON only:
             tools_schemas) if tools_schemas else ""
         available_skills_section = self._build_available_skills_section(available_skills)
 
+        identity = self.config.identity_content or DEFAULT_AGENT_IDENTITY
         parts.append(self.SYSTEM_PROMPT_TEMPLATE.format(
+            identity=identity,
             tools=tools_section,
             available_skills=available_skills_section,
             date=datetime.now().strftime("%Y-%m-%d %A"),
@@ -88,6 +96,9 @@ When calling a tool, output JSON only:
 
         if self.config.soul_content:
             parts.append(f"## Soul\n\n{self.config.soul_content}")
+
+        if self.config.user_content:
+            parts.append(f"## User\n\n{self.config.user_content}")
 
         return "\n\n".join(parts)
 

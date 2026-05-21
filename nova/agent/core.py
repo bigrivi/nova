@@ -82,10 +82,16 @@ class Agent:
         self.session = session_manager or get_session_manager()
         self.tool_registry = ToolRegistry()
         self._event_handlers: dict[AgentEvent, list[Callable]] = {}
-        soul_path = Path.home() / ".nova" / "SOUL.md"
-        soul_content = soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
+        nova_dir = Path.home() / ".nova"
+        soul_content = (nova_dir / "SOUL.md").read_text(encoding="utf-8") if (nova_dir / "SOUL.md").exists() else ""
+        identity_content = (nova_dir / "IDENTITY.md").read_text(encoding="utf-8").strip() if (nova_dir / "IDENTITY.md").exists() else ""
+        user_content = (nova_dir / "USER.md").read_text(encoding="utf-8") if (nova_dir / "USER.md").exists() else ""
         self._prompt_builder = PromptBuilder(
-            PromptConfig(soul_content=soul_content)
+            PromptConfig(
+                identity_content=identity_content,
+                soul_content=soul_content,
+                user_content=user_content,
+            )
         )
         self._abort_event = asyncio.Event()
 
