@@ -12,6 +12,7 @@ class PromptConfig:
     persona: str = "You are Nova, a helpful AI assistant."
     include_context_stats: bool = True
     include_session_context: bool = True
+    soul_content: str = ""
 
 
 @dataclass
@@ -140,6 +141,9 @@ When calling a tool, output JSON only:
 
         if context_stats and self.config.include_context_stats:
             parts.append(context_stats.render_stats())
+
+        if self.config.soul_content:
+            parts.append(f"## Soul\n\n{self.config.soul_content}")
 
         return "\n\n".join(parts)
 

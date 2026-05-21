@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, Optional
 
 from nova.llm import LLMProvider, Message as LLMMessage, ToolCall, ToolResult
@@ -83,11 +84,14 @@ class Agent:
         self.session = session_manager or get_session_manager()
         self.tool_registry = ToolRegistry()
         self._event_handlers: dict[AgentEvent, list[Callable]] = {}
+        soul_path = Path.home() / ".nova" / "SOUL.md"
+        soul_content = soul_path.read_text(encoding="utf-8") if soul_path.exists() else ""
         self._prompt_builder = PromptBuilder(
             PromptConfig(
                 persona=self.config.system_prompt or "You are Nova, a helpful AI assistant.",
                 include_context_stats=self.config.show_context_stats,
                 include_session_context=True,
+                soul_content=soul_content,
             )
         )
         self._abort_event = asyncio.Event()
