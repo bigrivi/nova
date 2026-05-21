@@ -17,15 +17,16 @@ def build_llm(settings: Settings | None = None) -> LLMProvider:
     provider_config = settings.get_provider_config(resolved_provider)
     provider_type = provider_config.type.strip() or llm_settings.provider_type
 
+    request_options = settings.get_request_options(
+        model_name=llm_settings.model,
+        provider_name=resolved_provider,
+    )
+
     if provider_type == "ollama":
         base_url = str(provider_config.options.get("base_url", llm_settings.ollama_base_url)).strip()
-        return OllamaProvider(base_url=base_url)
+        return OllamaProvider(base_url=base_url, request_options=request_options)
     if provider_type == "openai-compatible":
         base_url = str(provider_config.options.get("base_url", llm_settings.openai_base_url)).strip()
-        request_options = settings.get_request_options(
-            model_name=llm_settings.model,
-            provider_name=resolved_provider,
-        )
         return OpenAIProvider(
             api_key=settings.get_provider_api_key(resolved_provider),
             base_url=base_url,

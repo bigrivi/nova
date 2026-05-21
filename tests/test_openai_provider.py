@@ -44,64 +44,43 @@ def test_openai_provider_includes_model_and_auth_when_provided():
     assert "tools" in body
 
 
-def test_openai_provider_flattens_extra_body_request_options():
+def test_openai_provider_request_options_passed_to_body():
     provider = OpenAIProvider(
         api_key="",
         base_url="http://localhost:8080",
         request_options={
             "temperature": 0.2,
-            "extra_body": {
-                "chat_template_kwargs": {
-                    "enable_thinking": False,
-                }
-            },
+            "chat_template_kwargs": {"enable_thinking": False},
         },
     )
 
     body = provider._build_body(
         messages=[{"role": "user", "content": "hi"}],
         model="Qwen/Qwen3.6-35B-A3B",
-        **provider._resolve_request_options({}),
     )
 
     assert body["temperature"] == 0.2
     assert body["chat_template_kwargs"] == {"enable_thinking": False}
-    assert "extra_body" not in body
 
 
-def test_openai_provider_merges_default_and_call_request_options():
+def test_openai_provider_tools_false_yields_empty_array():
     provider = OpenAIProvider(
         api_key="",
         base_url="http://localhost:8080",
         request_options={
-            "temperature": 0.2,
-            "extra_body": {
-                "chat_template_kwargs": {
-                    "enable_thinking": False,
-                    "reasoning_effort": "low",
-                }
-            },
-        },
-    )
-
-    request_options = provider._resolve_request_options(
-        {
             "temperature": 0.5,
-            "extra_body": {
-                "chat_template_kwargs": {
-                    "reasoning_effort": "minimal",
-                }
-            },
-        }
+            "tools": False,
+        },
     )
 
-    assert request_options == {
-        "temperature": 0.5,
-        "chat_template_kwargs": {
-            "enable_thinking": False,
-            "reasoning_effort": "minimal",
-        },
-    }
+    body = provider._build_body(
+        messages=[{"role": "user", "content": "hi"}],
+        model="gpt-4o",
+        tools=[{"type": "function", "function": {"name": "read"}}],
+    )
+
+    assert body["tools"] == []
+    assert body["temperature"] == 0.5
 
 
 def test_openai_provider_formats_stored_tool_calls_for_openai():

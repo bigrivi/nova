@@ -17,10 +17,12 @@ class OllamaProvider(LLMProvider):
     def __init__(
         self,
         base_url: Optional[str] = None,
+        request_options: Optional[dict] = None,
         timeout: int = 120,
     ):
         settings = get_settings()
         self.base_url = (base_url or settings.ollama_base_url).rstrip("/")
+        self.request_options = dict(request_options or {})
         self.timeout = timeout
         self._max_tokens = 4096
 
@@ -28,6 +30,19 @@ class OllamaProvider(LLMProvider):
     def _build_http_error_message(url: str, status: int, text: str) -> str:
         detail = (text or "").strip() or "<empty response>"
         return f"HTTP {status} from {url}: {detail}"
+
+    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] = None) -> dict:
+        body = {"model": model, "messages": messages, "stream": stream}
+        opts = dict(self.request_options)
+        config_tools = opts.pop("tools", True)
+        body.update(opts)
+
+        if config_tools:
+            if tools:
+                body["tools"] = tools
+        else:
+            body["tools"] = []
+        return body
 
     def _format_messages(self, messages: list) -> list[dict]:
         result = []
@@ -96,13 +111,8 @@ class OllamaProvider(LLMProvider):
         formatted_messages = self._format_messages(messages)
 
         url = f"{self.base_url}/api/chat"
-        body = {
-            "model": model,
-            "messages": formatted_messages,
-            "stream": False,
-        }
-        if tools:
-            body["tools"] = tools
+        body = self._build_body(
+            messages=formatted_messages, model=model, stream=False, tools=tools)
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -149,13 +159,8 @@ class OllamaProvider(LLMProvider):
         formatted_messages = self._format_messages(messages)
 
         url = f"{self.base_url}/api/chat"
-        body = {
-            "model": model,
-            "messages": formatted_messages,
-            "stream": True,
-        }
-        if tools:
-            body["tools"] = tools
+        body = self._build_body(
+            messages=formatted_messages, model=model, stream=True, tools=tools)
 
         accumulated_content = ""
         accumulated_tool_calls = {}
@@ -179,7 +184,6 @@ class OllamaProvider(LLMProvider):
 
                     async for line in resp.content:
                         line = line.decode("utf-8").strip()
-                        log.info("line: %s", line)
                         if not line:
                             continue
 
@@ -187,7 +191,8 @@ class OllamaProvider(LLMProvider):
                             data = json.loads(line)
                             message = data.get("message", {})
                             delta = message.get("content", "") or ""
-                            reasoning = message.get("reasoning_content") or message.get("thinking") or ""
+                            reasoning = message.get(
+                                "reasoning_content") or message.get("thinking") or ""
                             if reasoning:
                                 yield ReasoningDelta(content=reasoning)
                             tool_calls_delta = message.get("tool_calls")

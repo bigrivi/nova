@@ -199,7 +199,7 @@ def test_settings_preserve_model_entry_keys(monkeypatch, tmp_path):
     assert model_config["contextWindow"] == 200000
 
 
-def test_settings_merge_provider_and_model_request_options(monkeypatch, tmp_path):
+def test_settings_model_level_request_options(monkeypatch, tmp_path):
     home = tmp_path / "nova-request-options-home"
     _write_config(
         home,
@@ -212,24 +212,12 @@ def test_settings_merge_provider_and_model_request_options(monkeypatch, tmp_path
                     "name": "OpenAI Compatible",
                     "options": {
                         "base_url": "http://openai.local/v1",
-                        "request_options": {
-                            "temperature": 0.1,
-                            "extra_body": {
-                                "chat_template_kwargs": {
-                                    "reasoning_effort": "low",
-                                }
-                            },
-                        },
                     },
                     "models": {
                         "qwen": {
                             "name": "Qwen/Qwen3.6-35B-A3B",
-                            "request_options": {
-                                "extra_body": {
-                                    "chat_template_kwargs": {
-                                        "enable_thinking": False,
-                                    }
-                                }
+                            "chat_template_kwargs": {
+                                "enable_thinking": False,
                             },
                         }
                     },
@@ -242,13 +230,41 @@ def test_settings_merge_provider_and_model_request_options(monkeypatch, tmp_path
     settings = Settings.load_config()
 
     assert settings.get_request_options("qwen", provider_name="openai") == {
-        "temperature": 0.1,
-        "extra_body": {
-            "chat_template_kwargs": {
-                "reasoning_effort": "low",
-                "enable_thinking": False,
-            }
+        "chat_template_kwargs": {
+            "enable_thinking": False,
         },
+    }
+
+
+def test_settings_tools_passes_as_raw_bool(monkeypatch, tmp_path):
+    home = tmp_path / "nova-tools-home"
+    _write_config(
+        home,
+        {
+            "model": "m",
+            "model_provider": "ollama",
+            "providers": {
+                "ollama": {
+                    "type": "ollama",
+                    "name": "Ollama",
+                    "options": {"base_url": "http://localhost:11434"},
+                    "models": {
+                        "m": {
+                            "name": "Model",
+                            "tools": False,
+                            "seed": 42,
+                        },
+                    },
+                },
+            },
+        },
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    settings = Settings.load_config()
+
+    assert settings.get_request_options("m") == {
+        "seed": 42,
+        "tools": False,
     }
 
 

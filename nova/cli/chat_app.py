@@ -121,6 +121,7 @@ class ChatApp(App):
     """
 
     BINDINGS = [
+        Binding("ctrl+c", "quit", show=False),
         Binding("escape", "cancel_stream", show=False, priority=True),
     ]
 
@@ -130,6 +131,9 @@ class ChatApp(App):
         self._streaming = False
         self._asking = False
         self._current_handler: StreamHandler | None = None
+
+    def action_quit(self) -> None:
+        self.exit()
 
     # =====================================================
     # Compose / Mount
@@ -260,7 +264,8 @@ class ChatApp(App):
 
     async def _run_stream(self, text: str) -> None:
         container = self.query_one("#message-container")
-        handler = StreamHandler(container, self._cli, status_bar=self.query_one(StatusBar))
+        handler = StreamHandler(container, self._cli,
+                                status_bar=self.query_one(StatusBar))
         self._current_handler = handler
         self._streaming = True
 

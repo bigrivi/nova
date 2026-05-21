@@ -9,7 +9,7 @@ from typing import AsyncGenerator, Optional
 import aiohttp
 
 from nova.settings import get_settings
-from nova.llm.provider import LLMProvider, ChatEvent, TextDelta, ReasoningDelta, ToolCall, Done, Error, Message
+from nova.llm.provider import LLMProvider, TextDelta, ReasoningDelta, ToolCall, Done
 
 log = logging.getLogger(__name__)
 
@@ -49,51 +49,23 @@ class OpenAIProvider(LLMProvider):
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
-    @staticmethod
-    def _build_body(
-        messages: list[dict],
-        model: Optional[str],
-        stream: bool = False,
-        tools: Optional[list[dict]] = None,
-        **kwargs,
-    ) -> dict:
-        body = {
-            "messages": messages,
-            **kwargs,
-        }
+    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] = None) -> dict:
+        body = {"messages": messages}
         if model:
             body["model"] = model
         if stream:
             body["stream"] = True
-        if tools:
-            body["tools"] = tools
+
+        opts = dict(self.request_options)
+        config_tools = opts.pop("tools", True)
+        body.update(opts)
+
+        if config_tools:
+            if tools:
+                body["tools"] = tools
+        else:
+            body["tools"] = []
         return body
-
-    @staticmethod
-    def _deep_merge_dicts(base: dict, override: dict) -> dict:
-        merged = dict(base)
-        for key, value in override.items():
-            existing = merged.get(key)
-            if isinstance(existing, dict) and isinstance(value, dict):
-                merged[key] = OpenAIProvider._deep_merge_dicts(existing, value)
-            else:
-                merged[key] = value
-        return merged
-
-    @classmethod
-    def _normalize_request_options(cls, request_options: Optional[dict]) -> dict:
-        if not isinstance(request_options, dict):
-            return {}
-        normalized = dict(request_options)
-        extra_body = normalized.pop("extra_body", None)
-        if isinstance(extra_body, dict):
-            normalized = cls._deep_merge_dicts(normalized, extra_body)
-        return normalized
-
-    def _resolve_request_options(self, request_options: Optional[dict]) -> dict:
-        defaults = self._normalize_request_options(self.request_options)
-        overrides = self._normalize_request_options(request_options)
-        return self._deep_merge_dicts(defaults, overrides)
 
     @staticmethod
     def _normalize_tool_call(tool_call: dict) -> dict:
@@ -189,10 +161,8 @@ class OpenAIProvider(LLMProvider):
         model: str,
         stream: bool = False,
         tools: list[dict] = None,
-        **kwargs
     ) -> Done:
         formatted_messages = self._format_messages(messages)
-        request_options = self._resolve_request_options(kwargs)
 
         headers = self._build_headers()
         body = self._build_body(
@@ -200,7 +170,6 @@ class OpenAIProvider(LLMProvider):
             model=model,
             stream=stream,
             tools=tools,
-            **request_options,
         )
 
         url = f"{self.base_url}/chat/completions"
@@ -253,17 +222,14 @@ class OpenAIProvider(LLMProvider):
         messages: list,
         model: str,
         tools: list[dict] = None,
-        **kwargs
     ) -> AsyncGenerator[Done, None]:
         formatted_messages = self._format_messages(messages)
-        request_options = self._resolve_request_options(kwargs)
         headers = self._build_headers()
         body = self._build_body(
             messages=formatted_messages,
             model=model,
             stream=True,
             tools=tools,
-            **request_options,
         )
 
         url = f"{self.base_url}/chat/completions"
