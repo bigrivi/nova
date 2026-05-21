@@ -10,7 +10,6 @@ from nova.settings import get_settings
 @dataclass
 class PromptConfig:
     include_context_stats: bool = True
-    include_session_context: bool = True
     soul_content: str = ""
 
 
@@ -131,7 +130,7 @@ When calling a tool, output JSON only:
             platform=self._get_platform(),
         ))
 
-        if session_context and self.config.include_session_context:
+        if session_context:
             parts.append(self._build_session_context(session_context))
 
         if context_stats and self.config.include_context_stats:

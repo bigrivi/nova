@@ -88,7 +88,6 @@ class Agent:
         self._prompt_builder = PromptBuilder(
             PromptConfig(
                 include_context_stats=self.config.show_context_stats,
-                include_session_context=True,
                 soul_content=soul_content,
             )
         )
