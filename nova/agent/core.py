@@ -10,7 +10,7 @@ from typing import Any, AsyncGenerator, Callable, Optional
 from nova.llm import LLMProvider, Message as LLMMessage, ToolCall, ToolResult
 from nova.session import SessionManager, get_session_manager
 from nova.tools.registry import ToolRegistry
-from nova.prompt import PromptBuilder, PromptConfig, SessionContext, ContextStats, build_system_prompt
+from nova.prompt import PromptBuilder, PromptConfig, ContextStats
 from nova.agent.compaction import maybe_compact, get_context_limit
 from nova.db.database import ensure_db
 
@@ -137,19 +137,6 @@ class Agent:
 
         available_skills = get_skill_service().list_skills()
 
-        ctx = None
-        if session_ctx:
-            ctx = SessionContext(
-                session_id=session_ctx.id if hasattr(
-                    session_ctx, 'id') else "",
-                title=getattr(session_ctx, 'title', "") or "",
-                goal=getattr(session_ctx, 'summary_goal', "") or "",
-                accomplished=getattr(
-                    session_ctx, 'summary_accomplished', "") or "",
-                remaining=getattr(session_ctx, 'summary_remaining', "") or "",
-                turn_count=getattr(session_ctx, 'turn_count', 0) or 0,
-            )
-
         stats = None
         if self.config.show_context_stats:
             db_messages = []
@@ -167,7 +154,6 @@ class Agent:
 
         return self._prompt_builder.build(
             tools_schemas=tool_schemas,
-            session_context=ctx,
             context_stats=stats,
             available_skills=available_skills,
         )

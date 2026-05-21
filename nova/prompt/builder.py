@@ -14,16 +14,6 @@ class PromptConfig:
 
 
 @dataclass
-class SessionContext:
-    session_id: str = ""
-    title: str = ""
-    goal: str = ""
-    accomplished: str = ""
-    remaining: str = ""
-    turn_count: int = 0
-
-
-@dataclass
 class ContextStats:
     model: str = "gpt-4o"
     max_tokens: int = 128000
@@ -110,7 +100,6 @@ When calling a tool, output JSON only:
     def build(
         self,
         tools_schemas: list[dict] = None,
-        session_context: SessionContext = None,
         context_stats: ContextStats = None,
         available_skills: list[Any] | None = None,
     ) -> str:
@@ -129,9 +118,6 @@ When calling a tool, output JSON only:
             workspace_dir=settings.workspace_dir,
             platform=self._get_platform(),
         ))
-
-        if session_context:
-            parts.append(self._build_session_context(session_context))
 
         if context_stats and self.config.include_context_stats:
             parts.append(context_stats.render_stats())
@@ -186,33 +172,11 @@ When calling a tool, output JSON only:
         lines.append("- If one of these matches the task, call `load_skill` with the exact skill name before using it.")
         return "\n".join(lines)
 
-    def _build_session_context(self, ctx: SessionContext) -> str:
-        lines = ["## Current Session\n"]
-
-        if ctx.title:
-            lines.append(f"**Title:** {ctx.title}\n")
-
-        if ctx.goal:
-            lines.append(f"**Goal:** {ctx.goal}\n")
-
-        if ctx.accomplished:
-            lines.append(f"**Accomplished:** {ctx.accomplished}\n")
-
-        if ctx.remaining:
-            lines.append(f"**Remaining:** {ctx.remaining}\n")
-
-        if ctx.turn_count > 0:
-            lines.append(f"**Turns:** {ctx.turn_count}\n")
-
-        return "\n".join(lines)
-
-
 def build_system_prompt(
     tools_schemas: list[dict] = None,
-    session_context: SessionContext = None,
     context_stats: ContextStats = None,
     config: PromptConfig = None,
     available_skills: list[Any] | None = None,
 ) -> str:
     builder = PromptBuilder(config)
-    return builder.build(tools_schemas, session_context, context_stats, available_skills)
+    return builder.build(tools_schemas, context_stats, available_skills)

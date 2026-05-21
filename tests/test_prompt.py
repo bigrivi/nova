@@ -4,7 +4,7 @@ Test PromptBuilder
 
 import pytest
 
-from nova.prompt import PromptBuilder, SessionContext, ContextStats, build_system_prompt
+from nova.prompt import PromptBuilder, ContextStats, build_system_prompt
 from nova.settings import Settings
 from nova.skills.models import SkillSummary
 
@@ -112,21 +112,6 @@ class TestPromptBuilder:
 
         assert "- No skills currently installed in the runtime catalog." in prompt
 
-    def test_with_session_context(self):
-        ctx = SessionContext(
-            session_id="test-123",
-            title="Test Session",
-            goal="Complete the task",
-            accomplished="Step 1 done",
-            remaining="Step 2",
-            turn_count=5,
-        )
-        builder = PromptBuilder()
-        prompt = builder.build(session_context=ctx)
-        assert "Test Session" in prompt
-        assert "Complete the task" in prompt
-        assert "5" in prompt
-
     def test_with_context_stats(self):
         stats = ContextStats(
             model="gpt-4o",
@@ -157,11 +142,6 @@ class TestPromptBuilder:
                 }
             }
         ]
-        ctx = SessionContext(
-            title="Development Task",
-            goal="Build a feature",
-            turn_count=3,
-        )
         stats = ContextStats(
             model="gemma4:26b",
             usage_percent=15.5,
@@ -170,14 +150,12 @@ class TestPromptBuilder:
         
         prompt = build_system_prompt(
             tools_schemas=tools,
-            session_context=ctx,
             context_stats=stats,
         )
         
         assert "Nova" in prompt
         assert "# Available Tools" in prompt
         assert "bash" in prompt
-        assert "Development Task" in prompt
         assert "Context Status" in prompt
 
     def test_prompt_uses_settings_runtime_paths(self, _stub_settings):
