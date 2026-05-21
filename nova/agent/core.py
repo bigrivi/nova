@@ -63,7 +63,6 @@ class AgentConfig:
     # Model key as defined in config.json (e.g., "my-gemma")
     model: str = "gpt-4o"
     provider: str = "ollama"
-
     max_iterations: int = 100
     max_tokens: int = 8192
     temperature: float = 0.7
