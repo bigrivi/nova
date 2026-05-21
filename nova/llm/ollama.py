@@ -8,7 +8,7 @@ import logging
 from typing import AsyncGenerator, Optional
 
 from nova.settings import get_settings
-from nova.llm import LLMProvider, Done, ToolCall, TextDelta
+from nova.llm import LLMProvider, Done, ReasoningDelta, ToolCall, TextDelta
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +34,10 @@ class OllamaProvider(LLMProvider):
         for msg in messages:
             if hasattr(msg, "role"):
                 m = {"role": msg.role, "content": msg.content or ""}
+                if msg.role == "assistant":
+                    rc = getattr(msg, "reasoning_content", None) or ""
+                    if rc:
+                        m["reasoning_content"] = rc
                 if hasattr(msg, "images") and msg.images:
                     m["images"] = msg.images
                     m["role"] = "user"
@@ -96,7 +100,6 @@ class OllamaProvider(LLMProvider):
             "model": model,
             "messages": formatted_messages,
             "stream": False,
-            "think": False,
         }
         if tools:
             body["tools"] = tools
@@ -150,7 +153,6 @@ class OllamaProvider(LLMProvider):
             "model": model,
             "messages": formatted_messages,
             "stream": True,
-            "think": False,
         }
         if tools:
             body["tools"] = tools
@@ -184,6 +186,9 @@ class OllamaProvider(LLMProvider):
                             data = json.loads(line)
                             message = data.get("message", {})
                             delta = message.get("content", "") or ""
+                            reasoning = message.get("reasoning_content", "") or ""
+                            if reasoning:
+                                yield ReasoningDelta(content=reasoning)
                             tool_calls_delta = message.get("tool_calls")
                             if tool_calls_delta:
                                 for tc in tool_calls_delta:
