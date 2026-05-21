@@ -354,15 +354,11 @@ async def browser_use(
                 _extraction_llm = build_llm(get_settings())
 
             content_trunc = raw_content[:8000]
-            prompt = (
-                "You are a web content extractor. Extract the information "
-                f"relevant to the following goal from the page content below.\n\n"
-                f"Goal: {goal}\n\n"
-                f"Page content:\n{content_trunc}\n\n"
-                "Return only the extracted information, no extra commentary."
-            )
             response = await _extraction_llm.chat(
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": "You are a web content extractor. Extract the information relevant to the given goal from the page content. Return only the extracted information, no extra commentary."},
+                    {"role": "user", "content": f"Goal: {goal}\n\nPage content:\n{content_trunc}"},
+                ],
             )
             return ToolResult(content=json.dumps({
                 "text": response.content,
