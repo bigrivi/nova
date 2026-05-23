@@ -478,6 +478,20 @@ export function NovaAppShell() {
             return;
           }
 
+          if (event.type === "text-start") {
+            setThreadMessages(activeThreadId, (previous) =>
+              previous.map((msg) => {
+                if (msg.id !== assistantMessageId || msg.role !== "assistant") return msg;
+                const parts = typeof msg.content === "string"
+                  ? (msg.content ? [{ type: "text" as const, text: msg.content }] : [])
+                  : [...msg.content];
+                parts.push({ type: "text" as const, text: "" });
+                return { ...msg, content: parts };
+              }),
+            );
+            return;
+          }
+
           if (event.type === "text-delta") {
             setThreadMessages(activeThreadId, (previous) =>
               setAssistantText(
