@@ -29,14 +29,12 @@ class AssistantMessage(Static):
         self.state = MessageState.STREAMING
         self.full_text = ""
         self._markdown: Markdown | None = None
-        self._stream: Markdown.MarkdownStream | None = None
         self._buffer = ""
         self._scroll_pending = False
 
     def on_mount(self) -> None:
         self._markdown = Markdown()
         self.mount(self._markdown)
-        self._stream = Markdown.get_stream(self._markdown)
 
     async def write_chunk(self, chunk: str) -> None:
         self._buffer += chunk
@@ -44,7 +42,7 @@ class AssistantMessage(Static):
         if (
             len(self._buffer) >= self.BATCH_SIZE
             or "\n" in self._buffer
-        ):
+        ) and self._markdown is not None:
             await self._markdown.append(self._buffer)
             self._buffer = ""
 
@@ -64,7 +62,7 @@ class AssistantMessage(Static):
             )
 
     async def finalize(self) -> None:
-        if self._buffer:
+        if self._buffer and self._markdown is not None:
             await self._markdown.append(self._buffer)
             self._buffer = ""
         self.state = MessageState.FINAL
@@ -72,12 +70,6 @@ class AssistantMessage(Static):
 
     async def show_error(self, error: Exception | str) -> None:
         self.state = MessageState.ERROR
-        if self._stream is not None:
-            try:
-                await self._stream.stop()
-            except Exception:
-                pass
-            self._stream = None
         if self._markdown is not None:
             self._markdown.remove()
             self._markdown = None

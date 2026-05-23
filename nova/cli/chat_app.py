@@ -9,6 +9,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.widgets import TextArea
 
+from nova.cli.repl import NovaCLI
 from nova.cli.screens import ModelSelectScreen, SessionSelectScreen
 from nova.cli.stream_handler import StreamHandler
 from nova.cli.ui import ModelGroup, ModelSelection, SessionSelection
@@ -125,9 +126,9 @@ class ChatApp(App):
         Binding("escape", "cancel_stream", show=False, priority=True),
     ]
 
-    def __init__(self, nova_cli) -> None:
+    def __init__(self, nova_cli: NovaCLI) -> None:
         super().__init__()
-        self._cli = nova_cli
+        self._cli: NovaCLI = nova_cli
         self._streaming = False
         self._asking = False
         self._current_handler: StreamHandler | None = None
@@ -161,8 +162,8 @@ class ChatApp(App):
 
     def _update_status_bar(self) -> None:
         try:
-            model = self._cli._current_model_label()
-            provider = self._cli._current_provider_label()
+            model = self._cli.current_model_label
+            provider = self._cli.current_provider_label
         except Exception:
             model = provider = ""
         self.query_one(StatusBar).update_labels(model, provider)
@@ -173,9 +174,9 @@ class ChatApp(App):
 
     def _print_banner(self) -> None:
         try:
-            model = self._cli._current_model_label()
-            provider = self._cli._current_provider_label()
-            banner_text = self._cli._command_registry.banner_text()
+            model = self._cli.current_model_label
+            provider = self._cli.current_provider_label
+            banner_text = self._cli.command_registry.banner_text()
         except Exception:
             model = provider = ""
             banner_text = ""
@@ -219,7 +220,7 @@ class ChatApp(App):
         suggestions = self.query_one("#suggestions", CommandSuggestions)
         if text.startswith("/"):
             try:
-                specs = self._cli._command_registry.specs
+                specs = self._cli.command_registry.specs
             except Exception:
                 suggestions.visible = False
                 return
@@ -243,7 +244,7 @@ class ChatApp(App):
             await self._handle_message(text)
 
     async def _dispatch_command(self, text: str) -> None:
-        handled = await self._cli._command_dispatcher.dispatch(text)
+        handled = await self._cli.command_dispatcher.dispatch(text)
         if not handled:
             self._show_error_plain(f"Unknown command: {text}")
 
@@ -267,6 +268,7 @@ class ChatApp(App):
         handler = StreamHandler(container, self._cli,
                                 status_bar=self.query_one(StatusBar))
         self._current_handler = handler
+        self._cli.reset_stop_requested()
         self._streaming = True
 
         try:
@@ -274,7 +276,7 @@ class ChatApp(App):
         finally:
             await handler.finalize()
 
-            if self._cli._pending_input:
+            if self._cli.pending_input:
                 await self._handle_pending_ask_user()
 
             self._streaming = False
@@ -285,8 +287,8 @@ class ChatApp(App):
     # =====================================================
 
     async def _handle_pending_ask_user(self) -> None:
-        content = self._cli._pending_input.get("content", "")
-        self._cli._pending_input = None
+        content = self._cli.pending_input.get("content", "")
+        self._cli.reset_pending_input()
         if not content:
             return
 
@@ -357,14 +359,7 @@ class ChatApp(App):
             return
         self._streaming = False
         self._cli.request_stop()
-        handler = self._current_handler
         self._current_handler = None
-        if handler is not None:
-            if handler.assistant is not None:
-                self.run_worker(handler.assistant.show_error(
-                    "Current run cancelled."))
-            else:
-                self._show_error_plain("Current run cancelled.")
 
     # =====================================================
     # UI Adapter interface (called by NovaCLI)

@@ -4,7 +4,6 @@ Chat service that maps internal agent events to stable backend events.
 
 from __future__ import annotations
 
-import uuid
 from typing import Any, AsyncGenerator, Callable
 
 from nova.agent import AgentEvent
@@ -82,8 +81,8 @@ class ChatService:
         ]
         return MessageListResponse(items=items)
 
-    async def interrupt(self, request_id: str) -> bool:
-        return await self._request_registry.interrupt(request_id)
+    async def interrupt(self, session_id: str) -> bool:
+        return await self._request_registry.interrupt(session_id)
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
         response: ChatResponse | None = None
@@ -91,28 +90,24 @@ class ChatService:
             payload = stream_event_data_to_dict(event.data)
             if event.type == "response.completed":
                 response = ChatResponse(
-                    request_id=payload["request_id"],
                     session_id=payload.get("session_id"),
                     status="completed",
                     message=payload.get("content", ""),
                 )
             elif event.type == "response.cancelled":
                 response = ChatResponse(
-                    request_id=payload["request_id"],
                     session_id=payload.get("session_id"),
                     status="cancelled",
                     message=payload.get("message", ""),
                 )
             elif event.type == "input.required":
                 response = ChatResponse(
-                    request_id=payload["request_id"],
                     session_id=payload.get("session_id"),
                     status="input_required",
                     message=payload.get("message", ""),
                 )
             elif event.type == "response.error":
                 response = ChatResponse(
-                    request_id=payload["request_id"],
                     session_id=payload.get("session_id"),
                     status="error",
                     message=payload.get("message", ""),
@@ -122,7 +117,6 @@ class ChatService:
         return response
 
     async def chat_stream(self, request: ChatRequest) -> AsyncGenerator[ServerStreamEvent, None]:
-        request_id = f"req_{uuid.uuid4().hex}"
         session_id = request.session_id
         sequence = 0
 
@@ -138,7 +132,6 @@ class ChatService:
                 session_id = event_session_id
             data_payload = {
                 **payload,
-                "request_id": request_id,
                 "session_id": session_id,
                 "sequence": sequence,
             }
@@ -149,7 +142,7 @@ class ChatService:
             )
 
         try:
-            async for event, data in self._agent_event_stream(request_id, request):
+            async for event, data in self._agent_event_stream(request):
                 mapped = await self._map_agent_event(
                     agent_event=event,
                     data=data,
@@ -160,22 +153,15 @@ class ChatService:
                 yield mapped
         except Exception as exc:
             yield await emit(ResponseErrorEvent, ResponseErrorEventData, message=str(exc))
-        finally:
-            await self._request_registry.unregister(request_id)
 
     async def chat_stream_ai_sdk(self, request: ChatRequest) -> AsyncGenerator[bytes, None]:
-        request_id = f"req_{uuid.uuid4().hex}"
         adapter = AISDKStreamAdapter()
-        try:
-            async for event, data in self._agent_event_stream(request_id, request):
-                for chunk in adapter.feed(event, data):
-                    yield chunk
-        finally:
-            await self._request_registry.unregister(request_id)
+        async for event, data in self._agent_event_stream(request):
+            for chunk in adapter.feed(event, data):
+                yield chunk
 
     async def _agent_event_stream(
         self,
-        request_id: str,
         request: ChatRequest,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         runtime_settings = self._settings
@@ -188,14 +174,23 @@ class ChatService:
                 model=self._settings.model if request.model is None else request.model,
             )
         agent = build_agent(settings=runtime_settings)
-        await self._request_registry.register(request_id, agent)
+        register_key = request.session_id
+        if register_key:
+            await self._request_registry.register(register_key, agent)
         attachment_dicts = [att.model_dump() for att in request.attachments]
-        async for event, data in agent.chat_stream(
-            request.message,
-            session_id=request.session_id,
-            attachments=attachment_dicts,
-        ):
-            yield event, data
+        try:
+            async for event, data in agent.chat_stream(
+                request.message,
+                session_id=request.session_id,
+                attachments=attachment_dicts,
+            ):
+                if event == AgentEvent.SESSION and data and not register_key:
+                    register_key = data
+                    await self._request_registry.register(register_key, agent)
+                yield event, data
+        finally:
+            if register_key:
+                await self._request_registry.unregister(register_key)
 
     async def _map_agent_event(
         self,

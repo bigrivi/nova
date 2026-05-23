@@ -25,7 +25,6 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    request_id: str
     session_id: str | None = None
     status: Literal["completed", "cancelled", "input_required", "error"]
     message: str = ""
@@ -95,13 +94,16 @@ class ModelCreateRequest(BaseModel):
     tools: bool = True
 
 
+class InterruptRequest(BaseModel):
+    session_id: str
+
+
 class InterruptResponse(BaseModel):
-    request_id: str
+    session_id: str
     interrupted: bool
 
 
 class BaseStreamEventData(BaseModel):
-    request_id: str
     session_id: str | None = None
     sequence: int
 

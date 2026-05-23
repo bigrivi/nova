@@ -2,6 +2,7 @@
 LLM provider interface definitions.
 """
 
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import AsyncGenerator, Optional, Any, Union
@@ -59,11 +60,11 @@ class ToolCall(ChatEvent):
 
 @dataclass
 class Done(ChatEvent):
-    """Completion event."""
     type: str = "done"
     content: str = ""
     tool_calls: list = None
-    
+    aborted: bool = False
+
     def __post_init__(self):
         if self.tool_calls is None:
             self.tool_calls = []
@@ -104,9 +105,9 @@ class LLMProvider(ABC):
         messages: list,
         model: str = "gpt-4o",
         tools: list[dict] = None,
+        abort_event: Optional[asyncio.Event] = None,
         **kwargs
     ) -> AsyncGenerator[Any, None]:
-        """Run a streaming chat request and yield chunks incrementally."""
         pass
 
     @abstractmethod

@@ -83,9 +83,12 @@ class Agent:
         self.tool_registry = ToolRegistry()
         self._event_handlers: dict[AgentEvent, list[Callable]] = {}
         nova_dir = Path.home() / ".nova"
-        soul_content = (nova_dir / "SOUL.md").read_text(encoding="utf-8") if (nova_dir / "SOUL.md").exists() else ""
-        identity_content = (nova_dir / "IDENTITY.md").read_text(encoding="utf-8").strip() if (nova_dir / "IDENTITY.md").exists() else ""
-        user_content = (nova_dir / "USER.md").read_text(encoding="utf-8") if (nova_dir / "USER.md").exists() else ""
+        soul_content = (nova_dir / "SOUL.md").read_text(
+            encoding="utf-8") if (nova_dir / "SOUL.md").exists() else ""
+        identity_content = (nova_dir / "IDENTITY.md").read_text(
+            encoding="utf-8").strip() if (nova_dir / "IDENTITY.md").exists() else ""
+        user_content = (nova_dir / "USER.md").read_text(
+            encoding="utf-8") if (nova_dir / "USER.md").exists() else ""
         self._prompt_builder = PromptBuilder(
             PromptConfig(
                 identity_content=identity_content,
@@ -189,6 +192,37 @@ class Agent:
             log.error(f"Tool {tool_name} error: {e}")
             return ToolResult(success=False, content=f"Tool error: {e}")
 
+    async def _execute_tool_with_abort(self, tc) -> Optional[ToolResult]:
+        tool_task = asyncio.create_task(
+            self._execute_tool(tc),
+            name=f"tool_{tc.name}",
+        )
+        abort_task = asyncio.create_task(
+            self._abort_event.wait(),
+            name="abort_watcher",
+        )
+
+        done, pending = await asyncio.wait(
+            [tool_task, abort_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        for t in pending:
+            t.cancel()
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        if abort_task in done:
+            log.info("Tool %s aborted", tc.name if hasattr(tc, "name") else tc)
+            return None
+
+        try:
+            return tool_task.result()
+        except Exception as e:
+            return ToolResult(success=False, content=f"Tool error: {e}")
+
     async def _run_turn(
         self,
         turn_count: int,
@@ -217,6 +251,7 @@ class Agent:
                 messages=messages,
                 model=self.config.model,
                 tools=tool_schemas,
+                abort_event=self._abort_event,
             ):
                 stop_payload = await self._wait_if_aborted()
                 if stop_payload:
@@ -238,6 +273,9 @@ class Agent:
                         accumulated_content += chunk.content
                         yield AgentEvent.TEXT_DELTA, chunk.content
                     elif chunk.type == "done":
+                        if getattr(chunk, "aborted", False):
+                            yield AgentEvent.DONE, _done_payload("stopped", accumulated_content)
+                            return
                         final_done_content = getattr(
                             chunk, "content", "") or final_done_content
                     elif chunk.type == "tool_call":
@@ -311,7 +349,10 @@ class Agent:
                 if stop_payload:
                     yield AgentEvent.DONE, stop_payload
                     return
-                result = await self._execute_tool(tc)
+                result = await self._execute_tool_with_abort(tc)
+                if result is None:
+                    yield AgentEvent.DONE, _done_payload("stopped", "Stopped by user")
+                    return
 
                 tool_name = tc.name if hasattr(tc, 'name') else str(tc)
                 images = None

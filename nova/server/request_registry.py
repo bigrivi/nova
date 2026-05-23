@@ -1,7 +1,3 @@
-"""
-Track active chat requests so they can be interrupted externally.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -14,17 +10,17 @@ class RequestRegistry:
         self._lock = asyncio.Lock()
         self._active_agents: dict[str, Agent] = {}
 
-    async def register(self, request_id: str, agent: Agent) -> None:
+    async def register(self, session_id: str, agent: Agent) -> None:
         async with self._lock:
-            self._active_agents[request_id] = agent
+            self._active_agents[session_id] = agent
 
-    async def unregister(self, request_id: str) -> None:
+    async def unregister(self, session_id: str) -> None:
         async with self._lock:
-            self._active_agents.pop(request_id, None)
+            self._active_agents.pop(session_id, None)
 
-    async def interrupt(self, request_id: str) -> bool:
+    async def interrupt(self, session_id: str) -> bool:
         async with self._lock:
-            agent = self._active_agents.get(request_id)
+            agent = self._active_agents.get(session_id)
         if agent is None:
             return False
         agent.interrupt()

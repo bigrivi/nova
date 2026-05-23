@@ -216,7 +216,10 @@ class StreamHandler:
         log.info("DONE: reason=%s tool_calls=%d",
                  reason, len(self._tool_calls_seen))
         if reason == "stopped" or done_content == "Stopped by user":
-            self._mount_error("Current run cancelled.")
+            if self.assistant is not None:
+                await self.assistant.finalize()
+                self.assistant = None
+            self._mount_info("User Cancelled.")
         elif reason == "tool_failed":
             if done_content:
                 self._mount_error(done_content)

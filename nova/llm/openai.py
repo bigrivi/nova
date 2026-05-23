@@ -2,6 +2,7 @@
 OpenAI LLM Provider
 """
 
+import asyncio
 import json
 import logging
 from typing import AsyncGenerator, Optional
@@ -12,6 +13,11 @@ from nova.settings import get_settings
 from nova.llm.provider import LLMProvider, TextDelta, ReasoningDelta, ToolCall, Done
 
 log = logging.getLogger(__name__)
+
+_RETRY_STATUS_CODES = {502, 503, 529}
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 1.0
+_MAX_TOOL_CALLS = 64
 
 
 class OpenAIProvider(LLMProvider):
@@ -35,6 +41,13 @@ class OpenAIProvider(LLMProvider):
             "gpt-4": 8192,
             "gpt-3.5-turbo": 16385,
         }
+
+    def _make_connector(self) -> aiohttp.TCPConnector:
+        return aiohttp.TCPConnector(
+            limit=10,
+            limit_per_host=5,
+            ttl_dns_cache=300,
+        )
 
     @staticmethod
     def _build_http_error_message(url: str, status: int, text: str) -> str:
@@ -155,12 +168,86 @@ class OpenAIProvider(LLMProvider):
             result.append(m)
         return result
 
+    async def _post_with_retry(
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        headers: dict,
+        body: dict,
+        abort_event: Optional[asyncio.Event],
+    ) -> Optional[aiohttp.ClientResponse]:
+        delay = _RETRY_BASE_DELAY
+
+        for attempt in range(_MAX_RETRIES):
+            post_task = asyncio.create_task(
+                session.post(
+                    url,
+                    headers=headers,
+                    json=body,
+                    timeout=aiohttp.ClientTimeout(total=self.timeout),
+                ),
+                name=f"openai_post_attempt_{attempt}",
+            )
+            abort_task = (
+                asyncio.create_task(abort_event.wait(), name="abort_watcher")
+                if abort_event else None
+            )
+
+            wait_targets = [post_task] + ([abort_task] if abort_task else [])
+            done, _ = await asyncio.wait(
+                wait_targets,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            if abort_task and abort_task in done:
+                post_task.cancel()
+                try:
+                    await post_task
+                except Exception:
+                    pass
+                return None
+
+            if abort_task:
+                abort_task.cancel()
+                try:
+                    await abort_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+            try:
+                resp = post_task.result()
+            except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as e:
+                if attempt < _MAX_RETRIES - 1:
+                    log.warning("Connection error (attempt %d/%d): %s, retrying in %.1fs",
+                                attempt + 1, _MAX_RETRIES, e, delay)
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                    continue
+                log.error("Connection error after %d attempts: %s", _MAX_RETRIES, e)
+                raise
+            except Exception as e:
+                log.error("Unexpected error in post_task: %s", e)
+                raise
+
+            if resp.status in _RETRY_STATUS_CODES and attempt < _MAX_RETRIES - 1:
+                await resp.release()
+                log.warning("Got %d (attempt %d/%d), retrying in %.1fs",
+                            resp.status, attempt + 1, _MAX_RETRIES, delay)
+                await asyncio.sleep(delay)
+                delay *= 2
+                continue
+
+            return resp
+
+        raise RuntimeError(f"Failed after {_MAX_RETRIES} attempts")
+
     async def chat(
         self,
         messages: list,
         model: str,
         stream: bool = False,
         tools: list[dict] = None,
+        abort_event: Optional[asyncio.Event] = None,
     ) -> Done:
         formatted_messages = self._format_messages(messages)
 
@@ -174,54 +261,67 @@ class OpenAIProvider(LLMProvider):
 
         url = f"{self.base_url}/chat/completions"
 
+        connector = self._make_connector()
+        session = aiohttp.ClientSession(connector=connector)
+
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url,
-                    headers=headers,
-                    json=body,
-                    timeout=aiohttp.ClientTimeout(total=self.timeout)
-                ) as resp:
-                    if resp.status != 200:
-                        text = await resp.text()
-                        error_message = self._build_http_error_message(
-                            url=url, status=resp.status, text=text)
-                        log.error(
-                            "OpenAI provider request failed: %s", error_message)
-                        return Done(content=f"Error: {error_message}", tool_calls=[])
+            resp = await self._post_with_retry(
+                session=session,
+                url=url,
+                headers=headers,
+                body=body,
+                abort_event=abort_event,
+            )
 
-                    data = await resp.json()
-                    choices = data.get("choices")
-                    if not isinstance(choices, list) or not choices:
-                        log.debug(
-                            "OpenAI provider response omitted choices: %s", data)
-                        return Done(content="", tool_calls=[])
-                    choice = choices[0]
-                    msg = choice.get("message", {})
+            if resp is None:
+                return Done(content="", tool_calls=[], aborted=True)
 
-                    tool_calls = []
-                    if "tool_calls" in msg:
-                        for tc in msg["tool_calls"]:
-                            tool_calls.append(ToolCall(
-                                id=tc.get("id", ""),
-                                name=tc.get("function", {}).get("name", ""),
-                                arguments=tc.get("function", {}).get(
-                                    "arguments", "")
-                            ))
+            async with resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    error_message = self._build_http_error_message(
+                        url=url, status=resp.status, text=text)
+                    log.error(
+                        "OpenAI provider request failed: %s", error_message)
+                    return Done(content=f"Error: {error_message}", tool_calls=[])
 
-                    return Done(
-                        content=msg.get("content", ""),
-                        tool_calls=tool_calls
-                    )
+                data = await resp.json()
+                choices = data.get("choices")
+                if not isinstance(choices, list) or not choices:
+                    log.debug(
+                        "OpenAI provider response omitted choices: %s", data)
+                    return Done(content="", tool_calls=[])
+                choice = choices[0]
+                msg = choice.get("message", {})
+
+                tool_calls = []
+                if "tool_calls" in msg:
+                    for tc in msg["tool_calls"]:
+                        tool_calls.append(ToolCall(
+                            id=tc.get("id", ""),
+                            name=tc.get("function", {}).get("name", ""),
+                            arguments=tc.get("function", {}).get(
+                                "arguments", "")
+                        ))
+
+                return Done(
+                    content=msg.get("content", ""),
+                    tool_calls=tool_calls
+                )
         except Exception as e:
             log.exception("OpenAI provider chat request raised an exception")
             return Done(content=f"Error: {e}", tool_calls=[])
+        finally:
+            await session.close()
+            if not connector.closed:
+                await connector.close()
 
     async def chat_stream(
         self,
         messages: list,
         model: str,
         tools: list[dict] = None,
+        abort_event: Optional[asyncio.Event] = None,
     ) -> AsyncGenerator[Done, None]:
         formatted_messages = self._format_messages(messages)
         headers = self._build_headers()
@@ -233,122 +333,148 @@ class OpenAIProvider(LLMProvider):
         )
 
         url = f"{self.base_url}/chat/completions"
-        accumulated_content = ""
-        accumulated_tool_calls: dict[int, dict[str, str | bool]] = {}
+
+        connector = self._make_connector()
+        session = aiohttp.ClientSession(connector=connector)
+
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url,
-                    headers=headers,
-                    json=body,
-                    timeout=aiohttp.ClientTimeout(total=self.timeout)
-                ) as resp:
-                    if resp.status != 200:
-                        text = await resp.text()
-                        error_message = self._build_http_error_message(
-                            url=url, status=resp.status, text=text)
-                        log.error(
-                            "OpenAI provider stream request failed: %s", error_message)
-                        yield Done(content=f"Error: {error_message}", tool_calls=[])
+            resp = await self._post_with_retry(
+                session=session,
+                url=url,
+                headers=headers,
+                body=body,
+                abort_event=abort_event,
+            )
+
+            if resp is None:
+                yield Done(content="", tool_calls=[], aborted=True)
+                return
+
+            async with resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    error_message = self._build_http_error_message(
+                        url=url, status=resp.status, text=text)
+                    log.error(
+                        "OpenAI provider stream request failed: %s", error_message)
+                    yield Done(content=f"Error: {error_message}", tool_calls=[])
+                    return
+
+                accumulated_content = ""
+                accumulated_tool_calls: dict[int, dict[str, str | bool]] = {}
+
+                async for line in resp.content:
+                    if abort_event and abort_event.is_set():
+                        resp.close()
+                        yield Done(content=accumulated_content, tool_calls=[], aborted=True)
                         return
-                    async for line in resp.content:
-                        line = line.decode("utf-8").strip()
-                        if not line or line == "data: [DONE]":
-                            continue
-                        log.debug("OpenAI provider stream chunk: %s", line)
 
-                        if line.startswith("data: "):
-                            line = line[6:]
+                    line = line.decode("utf-8").strip()
+                    if not line or line == "data: [DONE]":
+                        continue
+                    log.debug("OpenAI provider stream chunk: %s", line)
 
-                        try:
-                            data = json.loads(line)
-                            choices = data.get("choices")
-                            if not isinstance(choices, list) or not choices:
-                                log.debug(
-                                    "OpenAI provider stream chunk omitted choices: %s", data)
-                                continue
-                            choice = choices[0]
-                            delta = choice.get("delta", {})
+                    if line.startswith("data: "):
+                        line = line[6:]
 
-                            reasoning = delta.get("reasoning_content", "")
-                            if reasoning:
-                                yield ReasoningDelta(content=reasoning)
-
-                            if "tool_calls" in delta:
-                                for tc in delta["tool_calls"]:
-                                    index = tc.get("index", 0)
-                                    if index not in accumulated_tool_calls:
-                                        accumulated_tool_calls[index] = {
-                                            "id": tc.get("id", f"call_{index}"),
-                                            "name": "",
-                                            "arguments": "",
-                                            "yielded": False,
-                                        }
-
-                                    if tc.get("id"):
-                                        accumulated_tool_calls[index]["id"] = tc["id"]
-
-                                    func = tc.get("function", {})
-                                    if func.get("name"):
-                                        accumulated_tool_calls[index]["name"] = func["name"]
-                                    if func.get("arguments"):
-                                        accumulated_tool_calls[index]["arguments"] += func["arguments"]
-
-                                    arguments = str(
-                                        accumulated_tool_calls[index]["arguments"] or "")
-                                    if accumulated_tool_calls[index]["name"] and arguments:
-                                        try:
-                                            json.loads(arguments)
-                                        except json.JSONDecodeError:
-                                            pass
-                                        else:
-                                            accumulated_tool_calls[index]["yielded"] = True
-                                            yield ToolCall(
-                                                id=str(
-                                                    accumulated_tool_calls[index]["id"]),
-                                                name=str(
-                                                    accumulated_tool_calls[index]["name"]),
-                                                arguments=arguments,
-                                            )
-
-                            content = delta.get("content", "")
-                            if content:
-                                accumulated_content += content
-                                yield TextDelta(content=content)
-
-                            if choice.get("finish_reason") == "tool_calls":
-                                tool_calls = [
-                                    ToolCall(
-                                        id=str(tool_state["id"]),
-                                        name=str(tool_state["name"]),
-                                        arguments=str(
-                                            tool_state["arguments"] or "{}"),
-                                    )
-                                    for _, tool_state in sorted(accumulated_tool_calls.items())
-                                    if tool_state["name"]
-                                ]
-                                yield Done(content=accumulated_content, tool_calls=tool_calls)
-                                return
-
-                        except json.JSONDecodeError:
+                    try:
+                        data = json.loads(line)
+                        choices = data.get("choices")
+                        if not isinstance(choices, list) or not choices:
                             log.debug(
-                                "OpenAI provider received non-JSON stream chunk", exc_info=True)
+                                "OpenAI provider stream chunk omitted choices: %s", data)
                             continue
+                        choice = choices[0]
+                        delta = choice.get("delta", {})
 
-                    final_tool_calls = [
-                        ToolCall(
-                            id=str(tool_state["id"]),
-                            name=str(tool_state["name"]),
-                            arguments=str(tool_state["arguments"] or "{}"),
-                        )
-                        for _, tool_state in sorted(accumulated_tool_calls.items())
-                        if tool_state["name"]
-                    ]
-                    yield Done(content=accumulated_content, tool_calls=final_tool_calls)
+                        reasoning = delta.get("reasoning_content", "")
+                        if reasoning:
+                            yield ReasoningDelta(content=reasoning)
 
+                        if "tool_calls" in delta:
+                            for tc in delta["tool_calls"]:
+                                index = tc.get("index", 0)
+                                if index not in accumulated_tool_calls:
+                                    if len(accumulated_tool_calls) >= _MAX_TOOL_CALLS:
+                                        continue
+                                    accumulated_tool_calls[index] = {
+                                        "id": tc.get("id", f"call_{index}"),
+                                        "name": "",
+                                        "arguments": "",
+                                        "yielded": False,
+                                    }
+
+                                if tc.get("id"):
+                                    accumulated_tool_calls[index]["id"] = tc["id"]
+
+                                func = tc.get("function", {})
+                                if func.get("name"):
+                                    accumulated_tool_calls[index]["name"] = func["name"]
+                                if func.get("arguments"):
+                                    accumulated_tool_calls[index]["arguments"] += func["arguments"]
+
+                                arguments = str(
+                                    accumulated_tool_calls[index]["arguments"] or "")
+                                if accumulated_tool_calls[index]["name"] and arguments:
+                                    try:
+                                        json.loads(arguments)
+                                    except json.JSONDecodeError:
+                                        pass
+                                    else:
+                                        accumulated_tool_calls[index]["yielded"] = True
+                                        yield ToolCall(
+                                            id=str(
+                                                accumulated_tool_calls[index]["id"]),
+                                            name=str(
+                                                accumulated_tool_calls[index]["name"]),
+                                            arguments=arguments,
+                                        )
+
+                        content = delta.get("content", "")
+                        if content:
+                            accumulated_content += content
+                            yield TextDelta(content=content)
+
+                        if choice.get("finish_reason") == "tool_calls":
+                            tool_calls = [
+                                ToolCall(
+                                    id=str(tool_state["id"]),
+                                    name=str(tool_state["name"]),
+                                    arguments=str(
+                                        tool_state["arguments"] or "{}"),
+                                )
+                                for _, tool_state in sorted(accumulated_tool_calls.items())
+                                if tool_state["name"]
+                            ]
+                            yield Done(content=accumulated_content, tool_calls=tool_calls)
+                            return
+
+                    except json.JSONDecodeError:
+                        log.debug(
+                            "OpenAI provider received non-JSON stream chunk", exc_info=True)
+                        continue
+
+                final_tool_calls = [
+                    ToolCall(
+                        id=str(tool_state["id"]),
+                        name=str(tool_state["name"]),
+                        arguments=str(tool_state["arguments"] or "{}"),
+                    )
+                    for _, tool_state in sorted(accumulated_tool_calls.items())
+                    if tool_state["name"]
+                ]
+                yield Done(content=accumulated_content, tool_calls=final_tool_calls)
+
+        except asyncio.CancelledError:
+            yield Done(content="", tool_calls=[], aborted=True)
+            return
         except Exception as e:
             log.exception("OpenAI provider chat_stream raised an exception")
             yield Done(content=f"Error: {e}", tool_calls=[])
+        finally:
+            await session.close()
+            if not connector.closed:
+                await connector.close()
 
     async def count_tokens(self, text: str, model: str = None) -> int:
         chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')

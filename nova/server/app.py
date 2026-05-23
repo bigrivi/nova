@@ -21,6 +21,7 @@ from nova.server.chat_service import ChatService
 from nova.server.schemas import (
     ChatRequest,
     ChatResponse,
+    InterruptRequest,
     InterruptResponse,
     ModelCreateRequest,
     ModelListResponse,
@@ -182,11 +183,11 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             },
         )
 
-    @app.post("/api/chat/{request_id}/interrupt", response_model=InterruptResponse)
-    async def interrupt(request_id: str) -> InterruptResponse:
-        interrupted = await app.state.chat_service.interrupt(request_id)
+    @app.post("/api/chat/interrupt", response_model=InterruptResponse)
+    async def interrupt(request: InterruptRequest) -> InterruptResponse:
+        interrupted = await app.state.chat_service.interrupt(request.session_id)
         return InterruptResponse(
-            request_id=request_id,
+            session_id=request.session_id,
             interrupted=interrupted,
         )
 

@@ -68,6 +68,32 @@ class NovaCLI:
         from nova.cli.ui import EscapeKeyMonitor
         return EscapeKeyMonitor(on_escape)
 
+    @property
+    def current_model_label(self) -> str:
+        return self._current_model_label()
+
+    @property
+    def current_provider_label(self) -> str:
+        return self._current_provider_label()
+
+    @property
+    def command_registry(self) -> CommandRegistry:
+        return self._command_registry
+
+    @property
+    def command_dispatcher(self) -> CommandDispatcher:
+        return self._command_dispatcher
+
+    @property
+    def pending_input(self) -> Optional[dict]:
+        return self._pending_input
+
+    def reset_pending_input(self) -> None:
+        self._pending_input = None
+
+    def reset_stop_requested(self) -> None:
+        self._stop_requested = False
+
     def _current_model_label(self) -> str:
         provider = self.settings.provider
         model = self.settings.resolve_model_name(
