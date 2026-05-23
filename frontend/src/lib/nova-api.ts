@@ -100,6 +100,18 @@ export async function listSessions(): Promise<NovaSessionSummary[]> {
   return payload.items
 }
 
+export async function interruptChat(sessionId: string): Promise<void> {
+  try {
+    await fetch(buildUrl('/api/chat/interrupt'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId }),
+    })
+  } catch {
+    // ignore errors (e.g., stream already ended)
+  }
+}
+
 export async function listMessages(sessionId: string): Promise<NovaMessageRecord[]> {
   const payload = await parseJson<JsonResponse<NovaMessageRecord>>(
     await fetch(buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/messages`)),

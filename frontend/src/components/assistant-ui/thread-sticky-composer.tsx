@@ -1,4 +1,4 @@
-import { ArrowUpIcon, LoaderCircleIcon } from "lucide-react";
+import { ArrowUpIcon, Square } from "lucide-react";
 import { useEffect, useRef, type KeyboardEvent, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -14,6 +14,7 @@ type ThreadStickyComposerProps = {
     isRunning: boolean;
     onChange: (value: string) => void;
     onSubmit: () => void;
+    onCancel: () => void;
     onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   };
   modelSelection: {
@@ -92,19 +93,26 @@ export function ThreadStickyComposer({
                 onStatusChange={modelSelection.onStatusChange}
               />
 
-              <Button
-                type="button"
-                size="icon"
-                className="rounded-full"
-                disabled={composer.isRunning || composer.text.trim().length === 0}
-                onClick={composer.onSubmit}
-              >
-                {composer.isRunning ? (
-                  <LoaderCircleIcon className="size-4 animate-spin" />
-                ) : (
+              {composer.isRunning ? (
+                <Button
+                  type="button"
+                  size="icon"
+                  className="rounded-full"
+                  onClick={composer.onCancel}
+                >
+                  <Square className="size-4 fill-current" />
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="icon"
+                  className="rounded-full"
+                  disabled={composer.text.trim().length === 0}
+                  onClick={composer.onSubmit}
+                >
                   <ArrowUpIcon className="size-4" />
-                )}
-              </Button>
+                </Button>
+              )}
             </div>
           </div>
         </div>

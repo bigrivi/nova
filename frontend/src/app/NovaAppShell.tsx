@@ -21,6 +21,7 @@ import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { toThreadMessages } from "../lib/history-messages";
 import {
+  interruptChat,
   listMessages,
   listModels,
   listProviders,
@@ -276,6 +277,7 @@ export function NovaAppShell() {
     }
   }, [selectedModelId]);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
   const currentMessages = messagesByThreadId[currentThreadId] || [];
   const activeThreadListId = threads.some(
@@ -444,6 +446,7 @@ export function NovaAppShell() {
               return;
             }
 
+            sessionIdRef.current = sessionId;
             activeThreadId = sessionId;
             startTransition(() => {
               setMessagesByThreadId((previous) => {
@@ -632,10 +635,18 @@ export function NovaAppShell() {
     console.debug(message);
   }
 
+  const handleCancel = async () => {
+    const sid = sessionIdRef.current;
+    if (sid) {
+      await interruptChat(sid);
+    }
+  };
+
   const runtime = useExternalStoreRuntime({
     messages: currentMessages,
     isRunning,
     onNew: async () => {},
+    onCancel: handleCancel,
     convertMessage: (message) => message,
     setMessages: (messages) => {
       setThreadMessages(currentThreadId, [...messages]);
@@ -729,21 +740,22 @@ export function NovaAppShell() {
 
             <div className="flex min-h-0 flex-1 flex-col">
               <Thread
-                composer={{
-                  ref: composerRef,
-                  text: composerText,
-                  isRunning,
-                  onChange: setComposerText,
-                  onSubmit: () => {
-                    void handleComposerSubmit();
-                  },
-                  onKeyDown: (event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
+                  composer={{
+                    ref: composerRef,
+                    text: composerText,
+                    isRunning,
+                    onChange: setComposerText,
+                    onSubmit: () => {
                       void handleComposerSubmit();
-                    }
-                  },
-                }}
+                    },
+                    onCancel: handleCancel,
+                    onKeyDown: (event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void handleComposerSubmit();
+                      }
+                    },
+                  }}
                 modelSelection={{
                   models,
                   providers,
