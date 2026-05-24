@@ -116,6 +116,7 @@ class SessionManager:
         tool_call_id: Optional[str] = None,
         images: Optional[list[str]] = None,
         reasoning_content: Optional[str] = None,
+        group_id: Optional[str] = None,
     ) -> Message:
         session = self.get_current_session()
         if not session:
@@ -131,6 +132,7 @@ class SessionManager:
                 tool_call_id=tool_call_id,
                 images=images,
                 reasoning_content=reasoning_content,
+                group_id=group_id,
             )
             session.updated_at = int(time.time() * 1000)
             session.turn_count += 1

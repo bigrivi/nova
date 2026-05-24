@@ -170,7 +170,7 @@ function setAssistantReasoning(
           : []
         : [...message.content];
 
-    const reasoningIndex = parts.findIndex(
+    const reasoningIndex = parts.findLastIndex(
       (part) => part.type === "reasoning",
     );
     const currentText =
@@ -499,6 +499,20 @@ export function NovaAppShell() {
                 assistantMessageId,
                 (text) => text + (event.delta || ""),
               ),
+            );
+            return;
+          }
+
+          if (event.type === "reasoning-start") {
+            setThreadMessages(activeThreadId, (previous) =>
+              previous.map((msg) => {
+                if (msg.id !== assistantMessageId || msg.role !== "assistant") return msg;
+                const parts = typeof msg.content === "string"
+                  ? (msg.content ? [{ type: "text" as const, text: msg.content }] : [])
+                  : [...msg.content];
+                parts.push({ type: "reasoning" as const, text: "" });
+                return { ...msg, content: parts };
+              }),
             );
             return;
           }

@@ -40,6 +40,7 @@ class Message:
     data: Optional[str] = None
     images: Optional[list[str]] = None
     reasoning_content: Optional[str] = None
+    group_id: Optional[str] = None
 
 
 @dataclass
@@ -108,6 +109,7 @@ CREATE TABLE IF NOT EXISTS messages (
     tool_call_id TEXT,
     images TEXT,
     reasoning_content TEXT,
+    group_id TEXT,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
@@ -198,6 +200,7 @@ class Database:
             compacted=row_dict.get("compacted", 0),
             images=images,
             reasoning_content=row_dict.get("reasoning_content"),
+            group_id=row_dict.get("group_id"),
         )
 
     @staticmethod
@@ -267,6 +270,7 @@ class Database:
         summary: bool = False,
         images: Optional[list[str]] = None,
         reasoning_content: Optional[str] = None,
+        group_id: Optional[str] = None,
     ) -> Message:
         await self._ensure_connected()
         msg_id = str(uuid.uuid4())
@@ -276,8 +280,8 @@ class Database:
 
         await self._conn.execute(
             """INSERT INTO messages
-            (id, session_id, role, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, session_id, role, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 msg_id,
                 session_id,
@@ -289,6 +293,7 @@ class Database:
                 1 if summary else 0,
                 images_json,
                 reasoning_content,
+                group_id,
             ),
         )
         await self._conn.execute(
@@ -307,6 +312,7 @@ class Database:
             time_created=now,
             summary=1 if summary else 0,
             reasoning_content=reasoning_content,
+            group_id=group_id,
         )
 
     async def get_messages(

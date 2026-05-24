@@ -27,6 +27,7 @@ class PromptBuilder:
 # Working Style
 - Be concise and direct.
 - Prefer doing the work with tools instead of only describing it.
+- Before calling a tool, briefly explain why the call is needed.
 - If information is missing and the task cannot proceed safely, ask for clarification.
 - If clarification is needed during execution, use `ask_user`.
 - If a tool call fails, use the error to adjust the next step. Do not blindly retry the same failing call.
@@ -44,7 +45,6 @@ When calling a tool, output JSON only:
   }}
 }}
 - MUST use key "name", NOT "tool"
-- Do NOT output anything else with the tool call
 
 # Tool Usage
 - Prefer tool usage when the required runtime fact is not already present in the prompt.

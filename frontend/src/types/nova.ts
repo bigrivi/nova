@@ -22,6 +22,7 @@ export type NovaMessageRecord = {
   time_created: number
   images?: string[] | null
   reasoning_content?: string | null
+  group_id?: string | null
 }
 
 export type NovaModelRecord = {

@@ -282,7 +282,7 @@ const AssistantMessage: FC = () => {
 
       <div
         data-slot="aui_assistant-message-content"
-        className="wrap-break-word min-w-0 text-foreground leading-relaxed"
+        className="wrap-break-word min-w-0 text-foreground leading-relaxed flex flex-col gap-2"
       >
         <MessagePrimitive.Parts
           components={{

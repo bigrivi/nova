@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -227,6 +228,7 @@ class Agent:
         self,
         turn_count: int,
         tool_schemas: Any,
+        group_id: Optional[str] = None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         stop_payload = await self._wait_if_aborted()
         if stop_payload:
@@ -337,6 +339,7 @@ class Agent:
                 tool_calls=[tc.model_dump() if hasattr(
                     tc, 'model_dump') else tc for tc in final_tool_calls],
                 reasoning_content=accumulated_reasoning or None,
+                group_id=group_id,
             )
             for tc in final_tool_calls:
                 stop_payload = await self._wait_if_aborted()
@@ -371,6 +374,7 @@ class Agent:
                     content=content,
                     tool_call_id=tc.id if hasattr(tc, 'id') else str(tc),
                     images=images,
+                    group_id=group_id,
                 )
                 tool_call_id = tc.id if hasattr(tc, 'id') else str(tc)
                 await self._emit(
@@ -400,6 +404,7 @@ class Agent:
                 role="assistant",
                 content=final_content,
                 reasoning_content=accumulated_reasoning or None,
+                group_id=group_id,
             )
             done_payload = _done_payload("completed", final_content)
             await self._emit(AgentEvent.DONE, done_payload)
@@ -468,6 +473,7 @@ class Agent:
             provider=self.config.provider,
         )
 
+        run_group_id = uuid.uuid4().hex
         turn_count = 0
         for _ in range(self.config.max_iterations):
             turn_count += 1
@@ -475,7 +481,7 @@ class Agent:
             yield AgentEvent.TURN_START, {"turn": turn_count}
 
             done_payload = None
-            async for event, data in self._run_turn(turn_count, tool_schemas):
+            async for event, data in self._run_turn(turn_count, tool_schemas, group_id=run_group_id):
                 if event == AgentEvent.DONE:
                     done_payload = data
                 else:

@@ -50,6 +50,7 @@ class MessageRecord(BaseModel):
     time_created: int
     images: list[str] | None = None
     reasoning_content: str | None = None
+    group_id: str | None = None
 
 
 class MessageListResponse(BaseModel):

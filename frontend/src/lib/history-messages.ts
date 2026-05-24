@@ -10,20 +10,6 @@ type ToolCallLike = {
   arguments: string
 }
 
-function createTextMessage(
-  role: 'user' | 'assistant',
-  text: string,
-  id: string,
-  createdAt: number,
-): ThreadMessageLike {
-  return {
-    id,
-    role,
-    content: text,
-    createdAt: new Date(createdAt),
-  }
-}
-
 function parseToolCallLike(value: unknown): ToolCallLike | null {
   if (!value || typeof value !== 'object') {
     return null
@@ -83,6 +69,8 @@ export function toThreadMessages(messages: NovaMessageRecord[]): ThreadMessageLi
     }
   >()
 
+  const mergedGroupIndices = new Map<string, number>()
+
   for (const message of messages) {
     if (message.role === 'user') {
       const parts: AssistantPart[] = []
@@ -95,9 +83,12 @@ export function toThreadMessages(messages: NovaMessageRecord[]): ThreadMessageLi
         parts.push({ type: 'text' as const, text: message.content })
       }
       if (parts.length === 1 && parts[0].type === 'text') {
-        threadMessages.push(
-          createTextMessage('user', parts[0].text, message.id, message.time_created),
-        )
+        threadMessages.push({
+          id: message.id,
+          role: 'user',
+          content: parts[0].text,
+          createdAt: new Date(message.time_created),
+        })
       } else {
         threadMessages.push({
           id: message.id,
@@ -110,6 +101,46 @@ export function toThreadMessages(messages: NovaMessageRecord[]): ThreadMessageLi
     }
 
     if (message.role === 'assistant') {
+      if (
+        message.group_id &&
+        mergedGroupIndices.has(message.group_id)
+      ) {
+        const targetIdx = mergedGroupIndices.get(message.group_id)!
+        const target = threadMessages[targetIdx]
+        if (target && target.role === 'assistant' && typeof target.content !== 'string') {
+          const nextContent = [...target.content]
+          if (message.reasoning_content) {
+            nextContent.push({ type: 'reasoning', text: message.reasoning_content })
+          }
+          if (message.content) {
+            nextContent.push({ type: 'text', text: message.content })
+          }
+          for (const toolCall of message.tool_calls) {
+            const parsed = parseToolCallLike(toolCall)
+            if (!parsed) {
+              continue
+            }
+            const partIndex = nextContent.length
+            nextContent.push({
+              type: 'tool-call',
+              toolCallId: parsed.id,
+              toolName: parsed.name,
+              args: parseJsonObject(parsed.arguments),
+              argsText: parsed.arguments,
+            })
+            toolPartIndexByCallId.set(parsed.id, {
+              messageIndex: targetIdx,
+              partIndex,
+            })
+          }
+          threadMessages[targetIdx] = {
+            ...target,
+            content: nextContent,
+          }
+        }
+        continue
+      }
+
       const content: AssistantPart[] = []
       if (message.reasoning_content) {
         content.push({ type: 'reasoning', text: message.reasoning_content })
@@ -145,6 +176,10 @@ export function toThreadMessages(messages: NovaMessageRecord[]): ThreadMessageLi
         createdAt: new Date(message.time_created),
       }
       threadMessages.push(assistantMessage)
+
+      if (message.group_id) {
+        mergedGroupIndices.set(message.group_id, messageIndex)
+      }
 
       content.forEach((part, partIndex) => {
         if (part.type !== 'tool-call' || !part.toolCallId) {
