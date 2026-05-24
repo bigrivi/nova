@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional
 
+from nova.tools.shell_utils import get_shell_label
 from nova.settings import get_settings
 
 DEFAULT_AGENT_IDENTITY = (
@@ -66,6 +67,7 @@ When calling a tool, output JSON only:
 - Nova home: {home}
 - Nova workspace: {workspace_dir}
 - Platform: {platform}
+- Shell: {shell}
 """
 
     def __init__(self, config: Optional[PromptConfig] = None):
@@ -92,6 +94,7 @@ When calling a tool, output JSON only:
             home=settings.home,
             workspace_dir=settings.workspace_dir,
             platform=self._get_platform(),
+            shell=get_shell_label(),
         ))
 
         if self.config.soul_content:

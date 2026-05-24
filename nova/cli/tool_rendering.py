@@ -63,7 +63,7 @@ def render_tool_action(name: object, arguments: object) -> str:
     args = parse_tool_arguments(arguments)
     normalized_name = name.strip().lower()
 
-    if normalized_name == "bash":
+    if normalized_name == "shell":
         command = args.get("command")
         if isinstance(command, str) and command.strip():
             return f"Ran {truncate_preview(command.strip(), limit=80)}"
@@ -151,7 +151,7 @@ def build_tool_preview_lines(tool_name: str, content: str) -> Optional[list[str]
     if not lines:
         return [content]
 
-    if tool_name == "bash":
+    if tool_name == "shell":
         return preview_bash_result(lines)
     if tool_name == "glob":
         return preview_counted_list(lines, fallback_title="Matched files", item_limit=3)

@@ -3,12 +3,17 @@ Bash tool - run shell commands.
 """
 
 import os
-import signal
 import subprocess
-from typing import Optional
+import sys
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
+from nova.tools.shell_utils import (
+    build_shell_args,
+    detect_shell,
+    kill_process_tree,
+    normalize_path,
+)
 
 DANGEROUS_PATTERNS = (
     "rm -rf /", "rm -rf *", "rm -rf .",
@@ -30,22 +35,8 @@ def is_dangerous(command: str) -> bool:
     return False
 
 
-def _kill_proc_tree(pid: int):
-    import sys as _sys
-    if _sys.platform == "win32":
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
-    else:
-        try:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
-
-
 @tool(
-    name="bash",
+    name="shell",
     description="Run a shell command.",
     parameters={
         "type": "object",
@@ -63,41 +54,44 @@ def _kill_proc_tree(pid: int):
         "required": ["command"],
     },
 )
-async def bash(command: str, timeout: int = 30) -> ToolResult:
-    import sys as _sys
-    
+async def shell(command: str, timeout: int = 30) -> ToolResult:
     if is_dangerous(command):
         return ToolResult(success=False, content=f"Dangerous command rejected: {command}")
-    
-    kwargs = {
-        "shell": True,
+
+    shell_path, _ = detect_shell()
+    args = [shell_path] + build_shell_args(shell_path, command)
+    cwd = normalize_path(os.getcwd())
+
+    kwargs: dict = {
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
         "text": True,
-        "cwd": os.getcwd(),
+        "cwd": cwd,
     }
-    
-    if _sys.platform != "win32":
+    if sys.platform != "win32":
         kwargs["start_new_session"] = True
-    
+
     try:
-        proc = subprocess.Popen(command, **kwargs)
-        
+        proc = subprocess.Popen(args, **kwargs)
+
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            _kill_proc_tree(proc.pid)
+            kill_process_tree(proc.pid)
             proc.wait()
-            return ToolResult(success=False, content=f"Timed out after {timeout}s (process killed)")
-        
+            return ToolResult(
+                success=False,
+                content=f"Timed out after {timeout}s (process killed)",
+            )
+
         out = stdout
         if stderr:
             out += ("\n" if out else "") + "[stderr]\n" + stderr
-        
+
         return ToolResult(success=True, content=out.strip() or "(no output)")
-    
+
     except Exception as e:
         return ToolResult(success=False, content=f"Error: {e}")
 
 
-TOOL = bash
+TOOL = shell
