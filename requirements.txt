@@ -17,3 +17,6 @@ playwright
 
 # For browser_use extract_content action: HTML to Markdown conversion
 markdownify
+
+# Desktop GUI shell (pywebview)
+pywebview>=5,<7

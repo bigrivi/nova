@@ -208,6 +208,9 @@ class Settings:
     config_path: Path | None = None
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
 
+    # Frontend static files directory (for desktop mode / self-contained build).
+    frontend_dist_path: Path | None = None
+
     def __post_init__(self) -> None:
         self.ensure_directories()
 
@@ -242,6 +245,8 @@ class Settings:
         openai_api_key = selected_openai_api_key or _resolve_openai_api_key()
         ollama_base_url = str((selected_ollama_provider.options.get(
             "base_url") if selected_ollama_provider else "") or _resolve_ollama_base_url()).strip()
+        raw_frontend_dist = os.getenv("NOVA_FRONTEND_DIST", "").strip()
+        frontend_dist_path = Path(raw_frontend_dist) if raw_frontend_dist else None
         return cls(
             home=home,
             host=os.getenv("NOVA_HOST", "127.0.0.1").strip() or "127.0.0.1",
@@ -253,6 +258,7 @@ class Settings:
             logs_dir=home / "logs",
             database_path=home / "nova.db",
             config_path=config_path,
+            frontend_dist_path=frontend_dist_path,
             providers=providers,
             provider=provider,
             model=model,

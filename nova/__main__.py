@@ -9,6 +9,7 @@ import argparse
 from dataclasses import replace
 
 from nova.cli.main import run_cli
+from nova.desktop.main import run_desktop
 from nova.server import run_server
 from nova.settings import Settings, configure_logging, get_settings
 
@@ -29,12 +30,14 @@ def main():
     parser = argparse.ArgumentParser(description="Nova CLI/Desktop agent runtime")
     settings = get_settings()
     provider_names = settings.provider_names or [settings.provider]
-    parser.add_argument("mode", nargs="?", choices=["cli", "serve"], default="cli",
-                        help="Run mode. 'serve' is reserved for future backend service mode.")
+    parser.add_argument("mode", nargs="?", choices=["cli", "serve", "desktop"], default="cli",
+                        help="Run mode: cli (terminal TUI), serve (HTTP backend), desktop (GUI window)")
     parser.add_argument("--provider", "-p", choices=provider_names, default=settings.provider,
                         help="LLM provider alias from ~/.nova/config.json")
     parser.add_argument("--model", "-m", default=None,
                         help="Model name. Optional for OpenAI-compatible services that already fix the model server-side.")
+    parser.add_argument("--dev", action="store_true",
+                        help="[desktop] Load frontend from Vite dev server (http://localhost:5173) instead of built-in server")
     args = parser.parse_args()
     effective_settings = _build_effective_settings(
         settings=settings,
@@ -45,6 +48,10 @@ def main():
     configure_logging(effective_settings)
     if args.mode == "serve":
         asyncio.run(run_server(settings=effective_settings))
+        return
+
+    if args.mode == "desktop":
+        run_desktop(settings=effective_settings, dev=args.dev)
         return
 
     asyncio.run(run_cli(settings=effective_settings))

@@ -9,6 +9,8 @@ htmlcov/
 .venv/
 venv/
 env/
+dist/
+build/
 
 .env
 .env.*

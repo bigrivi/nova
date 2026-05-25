@@ -4,12 +4,14 @@ FastAPI server app for frontend and desktop integration.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from nova.config.service import (
     ConfigService,
@@ -191,12 +193,16 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             interrupted=interrupted,
         )
 
-    @app.get("/")
-    async def root() -> dict[str, str]:
-        return {
-            "service": "nova",
-            "mode": "server",
-        }
+    static_dir = settings.frontend_dist_path
+    if static_dir and static_dir.exists() and static_dir.is_dir():
+        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="frontend")
+    else:
+        @app.get("/")
+        async def root() -> dict[str, str]:
+            return {
+                "service": "nova",
+                "mode": "server",
+            }
 
     return app
 
