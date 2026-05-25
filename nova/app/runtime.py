@@ -8,6 +8,7 @@ from nova.agent import Agent, AgentConfig
 from nova.llm import LLMProvider, OllamaProvider, OpenAIProvider
 from nova.settings import Settings, get_settings
 from nova.skills import initialize_skill_service
+from nova.tools.dependency_manager import init_site_packages
 
 
 def build_llm(settings: Settings | None = None) -> LLMProvider:
@@ -37,6 +38,7 @@ def build_llm(settings: Settings | None = None) -> LLMProvider:
 
 def build_agent(settings: Settings | None = None) -> Agent:
     settings = settings or get_settings()
+    init_site_packages()
     llm_settings = settings.llm
     resolved_provider = llm_settings.provider.strip() or llm_settings.provider
     llm = build_llm(settings=settings)

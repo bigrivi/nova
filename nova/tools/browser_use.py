@@ -69,14 +69,14 @@ def _detect_system_browser() -> str | None:
 
 def _detect_system_profile() -> str:
     if sys.platform == "darwin":
-        return os.path.expanduser("~/Library/Application Support/Google/Chrome")
+        return str(Path.home() / "Library" / "Application Support" / "Google" / "Chrome")
     if sys.platform == "win32":
-        return os.path.expanduser("~/AppData/Local/Google/Chrome/User Data")
-    return os.path.expanduser("~/.config/google-chrome")
+        return str(Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data")
+    return str(Path.home() / ".config" / "google-chrome")
 
 
 def _seed_profile(target: str):
-    src_default = os.path.join(_detect_system_profile(), "Default")
+    src_default = str(Path(_detect_system_profile()) / "Default")
     if not os.path.isdir(src_default):
         return
     dst_default = os.path.join(target, "Default")
@@ -98,13 +98,15 @@ async def _ensure_browser():
     if _browser is not None:
         return _page
 
+    from nova.tools.dependency_manager import ensure_deps
+    ensure_deps(["playwright"])
     from playwright.async_api import async_playwright
 
     _playwright = await async_playwright().start()
 
     browser_path = _detect_system_browser()
 
-    user_data_dir = os.path.expanduser("~/.nova/chrome-profile")
+    user_data_dir = str(Path.home() / ".nova" / "chrome-profile")
     if not os.path.isdir(os.path.join(user_data_dir, "Default")):
         _seed_profile(user_data_dir)
 

@@ -11,9 +11,14 @@ from nova.tools.web_fetch import TOOL as web_fetch
 from nova.tools.todo_write import TOOL as todo_write
 from nova.tools.ask_user import TOOL as ask_user
 from nova.tools.image import read_image
-from nova.tools.browser_use import TOOL as browser_use
+try:
+    import playwright
+    from nova.tools.browser_use import TOOL as browser_use
+except ImportError:
+    browser_use = None
 from nova.memory.tools import save_memory, search_memory, delete_memory, list_memories
 from nova.skills.tools import list_skills, load_skill, install_skill
+from nova.tools.dependency_manager import install_python_package
 
 __all__ = [
     "ToolRegistry",
@@ -34,6 +39,7 @@ __all__ = [
     "list_skills",
     "load_skill",
     "install_skill",
+    "install_python_package",
     "save_memory",
     "search_memory",
     "delete_memory",
