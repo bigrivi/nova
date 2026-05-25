@@ -48,6 +48,7 @@ type ThreadProps = {
     isRunning: boolean;
     onChange: (value: string) => void;
     onSubmit: () => void;
+    onCancel: () => void;
     onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   };
   modelSelection: {
@@ -355,7 +356,8 @@ const AssistantActionBar: FC = () => {
   );
 };
 
-const ATTACHMENT_RE = /^<attachment name=(.*?)>\n([\s\S]*?)\n<\/attachment>\n\n([\s\S]*)$/;
+const ATTACHMENT_RE =
+  /^<attachment name=(.*?)>\n([\s\S]*?)\n<\/attachment>\n\n([\s\S]*)$/;
 
 function parseAttachment(text: string): { name: string; text: string } | null {
   const match = text.match(ATTACHMENT_RE);

@@ -347,7 +347,7 @@ export function NovaAppShell() {
         }));
       });
     } catch (error) {
-      throw error;
+      console.error("Failed to load thread:", threadId, error);
     }
   }
 
@@ -630,7 +630,7 @@ export function NovaAppShell() {
         if (att.status.type === "complete" && att.content) {
           processedAttachments.push(att as NovaAttachmentData);
         } else if (att.status.type === "requires-action" && att.file) {
-          const result = await adapter.send(att);
+          const result = await adapter.send(att as any);
           processedAttachments.push(result as NovaAttachmentData);
         }
       }
@@ -693,6 +693,7 @@ export function NovaAppShell() {
           if (isRunning || threadId === currentThreadId) {
             return;
           }
+          setCurrentThreadId(threadId);
           void loadThread(threadId);
         },
       },
