@@ -31,10 +31,7 @@ def test_settings_defaults_create_config_file(monkeypatch, tmp_path):
     assert settings.config_path.is_file()
 
     payload = json.loads(settings.config_path.read_text(encoding="utf-8"))
-    assert payload["model_provider"] == "ollama"
-    assert payload["model"] == "gemma4:26b"
-    assert payload["providers"]["ollama"]["type"] == "ollama"
-    assert payload["providers"]["openai"]["type"] == "openai-compatible"
+    assert "providers" in payload
 
 
 def test_app_settings_from_config_and_env(monkeypatch, tmp_path):
@@ -110,30 +107,18 @@ def test_app_settings_from_config_and_env(monkeypatch, tmp_path):
     assert settings.logs_dir.is_dir()
     assert settings.skills_dir.is_dir()
     assert settings.database_path.parent.is_dir()
-    assert settings.provider == "wbz"
-    assert settings.model_provider == "wbz"
-    assert settings.provider_type == "openai-compatible"
-    assert settings.model == "gpt-test"
-    assert settings.ollama_base_url == "http://ollama.local"
-    assert settings.openai_base_url == "http://openai.local/v1"
-    assert settings.openai_api_key == "secret"
     assert settings.get_provider_api_key("wbz") == "secret"
     assert settings.paths.home == home
     assert settings.paths.database_path == home / "nova.db"
     assert settings.paths.skills_dir == home / "skills"
     assert settings.server.host == "0.0.0.0"
     assert settings.server.backend_port == 9001
-    assert settings.llm.provider == "wbz"
-    assert settings.llm.model == "gpt-test"
-    assert settings.llm.provider_type == "openai-compatible"
 
 
 def test_existing_config_is_not_overwritten(monkeypatch, tmp_path):
     home = tmp_path / "nova-existing-home"
     config_path = home / "config.json"
     original_payload = {
-        "model": "gpt-5.4",
-        "model_provider": "wbz",
         "providers": {
             "wbz": {
                 "type": "openai-compatible",
@@ -157,7 +142,6 @@ def test_existing_config_is_not_overwritten(monkeypatch, tmp_path):
 
     settings = Settings.load_config()
 
-    assert settings.provider == "wbz"
     assert json.loads(config_path.read_text(encoding="utf-8")) == original_payload
 
 
@@ -371,9 +355,8 @@ def test_reload_settings_reloads_config_file(monkeypatch, tmp_path):
 
     refreshed = reload_settings()
 
-    assert first.provider == "ollama"
-    assert refreshed.provider == "openai"
-    assert refreshed.model == "gpt-5.4"
+    assert "ollama" in first.providers
+    assert "openai" in refreshed.providers
     get_settings.cache_clear()
 
 

@@ -11,7 +11,6 @@ import pytest
 
 from nova.skills.service import SkillService
 from nova.skills.installer import SkillInstallError, install_skill_from_clawhub
-from nova.skills.tools import install_skill
 
 
 def _build_skill_archive(*, root_dir: str = "review-skill", body: str = "Focus on correctness.\n") -> bytes:
