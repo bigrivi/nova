@@ -1,62 +1,241 @@
 # Nova
 
-Nova is an async-first agent runtime aimed at two product surfaces:
+Nova is a local personal AI agent assistant for CLI and desktop workflows.
 
-- CLI
-- Desktop
-
-The shared runtime is being shaped so both surfaces can reuse the same core. Today, the implemented and usable surface is the CLI. Desktop is the next target, and the repository is being organized for that direction.
+It combines streamed LLM chat, tool calling, persistent sessions, runtime
+skills, long-term memory, and local model/provider configuration into one
+assistant runtime. The CLI is the most complete surface today. The desktop
+surface is built around a React frontend, a FastAPI backend, and a PyWebView
+host that reuse the same agent core.
 
 ## Current Status
 
 Todo list:
 
-- [x] interactive CLI mode
-- [x] shared runtime assembly
-- [x] async agent loop with tool calling
-- [x] SQLite-backed local persistence
-- [x] file-based rotating logs
-- [x] provider support for Ollama and OpenAI-compatible APIs
-- [x] runtime skill catalog with on-demand loading and ClawHub install flow
-- [ ] desktop application shell
-- [ ] packaged release metadata such as `pyproject.toml`
+- [x] Textual CLI chat app
+- [x] shared async agent runtime
+- [x] streamed tool-calling loop
+- [x] SQLite-backed sessions, messages, agents, and memories
+- [x] user/project/session memory tools
+- [x] runtime skill catalog with `list_skills`, `load_skill`, and `install_skill`
+- [x] Ollama and OpenAI-compatible provider support
+- [x] FastAPI backend for frontend and desktop integration
+- [x] AI SDK UI compatible SSE stream for `assistant-ui`
+- [x] React + Vite desktop-facing frontend
+- [x] PyWebView desktop launcher
+- [x] PyInstaller build scripts and platform specs
+- [ ] packaged Python release metadata such as `pyproject.toml`
+- [ ] hardened desktop distribution workflow
 
-## Project Direction
+## Product Shape
 
-Roadmap:
+Nova should be read as a personal agent assistant tool, not just a chat demo.
 
-- Now: CLI is the only implemented product surface.
-- Next: add a desktop shell on top of the same runtime.
-- Shared core: `nova/app/runtime.py`, `nova/agent/`, `nova/tools/`, `nova/session/`, and `nova/db/` are being kept reusable so new surfaces do not fork the core logic.
+Core capabilities:
 
-## Current Project Layout
+- Chat with a local or OpenAI-compatible model through CLI, server, or desktop.
+- Let the model use tools for files, shell commands, code execution, search,
+  browser automation, image reading, todo tracking, follow-up questions, and
+  dependency installation.
+- Load and install reusable runtime skills from local skill folders or ClawHub.
+- Save, search, list, and delete structured memories across user, project, and
+  session scopes.
+- Persist local sessions and replay user-visible conversation history.
+- Run multiple configured model providers from `~/.nova/config.json`.
+- Use the same runtime from CLI, HTTP backend, and desktop shell.
+
+The server exists mainly to support the frontend and desktop app. It can also
+be run directly for development and integration tests, but it is not the main
+product surface.
+
+## Project Layout
 
 ```text
-frontend/      React + Vite desktop-facing UI shell
+frontend/      React + Vite UI built on assistant-ui
 nova/
   app/        shared runtime assembly
-  agent/      core agent loop and compaction
-  cli/        command-line interaction and terminal UI
-  db/         async SQLite storage
-  llm/        provider abstraction and implementations
+  agent/      agent loop, events, tool execution, and compaction
+  cli/        Textual CLI app, commands, screens, widgets, and stream handling
+  config/     config and agent CRUD services
+  db/         async SQLite persistence
+  desktop/    PyWebView host and backend server thread
+  llm/        provider abstraction plus Ollama and OpenAI-compatible providers
+  memory/     structured memory models, repository, service, and tools
   prompt/     system prompt builder
-  session/    session lifecycle management
-  skills/     skill runtime, catalog, and loading logic
-  settings.py runtime settings and logging
-  tools/      built-in tools and registry
+  server/     FastAPI app, chat service, schemas, and SSE adapters
+  session/    session lifecycle and user-visible history projection
+  skills/     runtime skill scanning, loading, installing, and catalog logic
+  tools/      built-in tool implementations and registry
+build.py       cross-platform desktop build script
+nova.py        thin local launcher for `nova.__main__`
+requirements.txt
 ```
 
-Notes:
+## Installation
 
-- `cli/` is the only real user-facing mode right now.
-- `frontend/` now hosts the browser/desktop-facing React UI, while `nova/` remains the Python runtime and backend.
-- there is still no `desktop/` Python shell directory yet; the runtime is being shaped so that a future `pywebview` host can consume `frontend/dist` cleanly.
+Install Python dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Current runtime dependencies include:
+
+- `aiohttp`
+- `aiosqlite`
+- `fastapi`
+- `httpx`
+- `prompt_toolkit`
+- `rich`
+- `textual`
+- `uvicorn`
+- `tiktoken`
+- `playwright`
+- `markdownify`
+- `pywebview`
+
+Browser automation tools require Playwright browser assets:
+
+```bash
+playwright install chromium
+```
+
+Desktop packaging uses PyInstaller. Install it in the build environment before
+running `build.py`.
+
+## Run the CLI
+
+The default mode is CLI:
+
+```bash
+python -m nova
+python -m nova cli
+```
+
+With a configured provider alias and model:
+
+```bash
+python -m nova cli --provider ollama --model gemma4:26b
+python -m nova cli --provider openai --model gpt-5.4
+```
+
+Run with a DB-backed agent key:
+
+```bash
+python -m nova cli --agent main
+```
+
+CLI behavior highlights:
+
+- Textual chat interface with a persistent message viewport and bottom composer.
+- Streamed assistant output, reasoning blocks, tool calls, and tool results.
+- Escape can interrupt an in-flight run.
+- Successful `edit` and `write` tool results show file mutation diffs.
+- `/models` switches between configured models.
+- `/sessions` browses and loads persisted sessions.
+- `ask_user` can render inline text or option prompts.
+- Runtime skills are summarized in the system prompt so the model can decide
+  when to call `list_skills` or `load_skill`.
+
+### CLI Commands
+
+Inside CLI mode:
+
+- type normal text to chat with Nova
+- `/new` starts a new session
+- `/sessions` browses and loads sessions
+- `/clear` clears the screen
+- `/models` opens model selection
+- `/install-skill <slug-or-url> [--force]` installs one runtime skill
+- `/quit`, `/q`, `exit`, or `quit` exits the app
+
+## Run the Server
+
+Server mode starts the FastAPI backend used by the frontend and desktop shell:
+
+```bash
+python -m nova serve
+```
+
+With explicit runtime overrides:
+
+```bash
+python -m nova serve --provider ollama --model gemma4:26b
+python -m nova serve --provider openai --model gpt-5.4
+```
+
+Default bind address:
+
+```text
+http://127.0.0.1:8765
+```
+
+## Run the Frontend
+
+Start the backend first:
+
+```bash
+python -m nova serve
+```
+
+Then run the Vite frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Dev-time API behavior:
+
+- Vite proxies `/api/*` and `/health` to `http://127.0.0.1:8765` by default.
+- Override the proxy target with `NOVA_FRONTEND_PROXY_TARGET`.
+- Override the browser API base URL with `VITE_NOVA_API_BASE_URL`.
+
+Build static frontend assets:
+
+```bash
+cd frontend
+npm run build
+```
+
+## Run the Desktop App
+
+Desktop mode starts the FastAPI backend in a background thread and opens a
+PyWebView window.
+
+During frontend development:
+
+```bash
+python -m nova desktop --dev
+```
+
+This loads the Vite dev server at `http://localhost:5173` while the backend
+runs on the configured Nova backend port.
+
+To run against a built frontend from the source tree:
+
+```bash
+cd frontend
+npm run build
+cd ..
+NOVA_FRONTEND_DIST=frontend/dist python -m nova desktop
+```
+
+To package the desktop app:
+
+```bash
+python build.py --clean
+```
+
+On this repo, `build.py` builds `frontend/dist` first, then invokes PyInstaller
+with the platform-specific spec file.
 
 ## Skills
 
-Nova keeps framework-side skill logic in `nova/skills/`.
+Nova keeps framework-side skill code in `nova/skills/`.
 
-Runtime skill content is loaded from `NOVA_HOME/skills`:
+Runtime skill content is loaded from the local Nova home:
 
 ```text
 ~/.nova/skills/
@@ -69,150 +248,209 @@ Runtime skill content is loaded from `NOVA_HOME/skills`:
 
 Current runtime skill behavior:
 
-- Nova keeps an in-memory skill catalog built from the filesystem; there are no dedicated skill database tables
-- the runtime scans `NOVA_HOME/skills` during initialization and scans again immediately after a successful skill install
-- ad-hoc edits under `NOVA_HOME/skills` are not auto-rescanned by `write` or `edit`; they show up on the next initialization
-- the system prompt includes the current available skill summaries from the in-memory catalog
-- the runtime exposes three skill-facing tools: `list_skills`, `load_skill`, and `install_skill`
-- `list_skills` returns the current in-memory catalog without rescanning on every call
-- `load_skill` returns the full `SKILL.md` for a known skill name to the model, while the CLI preview hides the large body in terminal output
-- `SKILL.md` frontmatter is parsed with a constrained regex-based parser instead of a YAML dependency
+- Skill folders are scanned into an in-memory catalog during runtime setup.
+- `SKILL.md` frontmatter is parsed without adding a YAML dependency.
+- The prompt includes summaries of the currently available skills.
+- The model can call `list_skills` to inspect the runtime catalog.
+- The model can call `load_skill` to load the full `SKILL.md` for a known skill.
+- The model can call `install_skill` only when the user explicitly asks to
+  install a ClawHub skill.
+- The CLI exposes `/install-skill <slug-or-url> [--force]`.
+- A successful skill install refreshes the catalog immediately.
 
-Install a skill from ClawHub with the CLI:
+## Memory
+
+Nova has structured memory support under `nova/memory/`.
+
+Memory records are stored in SQLite and include:
+
+- `key`
+- `scope`: `user`, `project`, or `session`
+- `memory_type`: `fact`, `preference`, `decision`, or `context`
+- `content`
+- `summary`
+- optional tags
+- optional `session_id` for session-scoped memory
+
+Memory tools exposed to the agent:
+
+- `save_memory`
+- `search_memory`
+- `list_memories`
+- `delete_memory`
+
+The memory system is tool-driven: the agent decides when to search or update
+memory based on the task and the prompt. Nova does not do a separate agent-side
+keyword prefetch before every turn.
+
+Agent workspace files can also contribute prompt context when present:
 
 ```text
-/install-skill <slug-or-url>
-/install-skill <slug-or-url> --force
+~/.nova/agents/<agent-key>/
+  IDENTITY.md
+  SOUL.md
+  USER.md
+  MEMORY.md
 ```
 
-Current installation behavior:
+## Tooling Surface
 
-- downloads the latest ClawHub skill package by slug
-- uses `https://wry-manatee-359.convex.site/api/v1/download` as the default download endpoint
-- installs into `NOVA_HOME/skills/<slug>`
-- refreshes the in-memory skill catalog immediately after install
-- refuses to overwrite an existing skill directory unless `--force` is provided
-- the agent can also use `install_skill` when the user explicitly asks to install a skill
-- `install_skill` returns installation metadata only and does not include the full `SKILL.md` content
+Nova currently ships with these built-in tools:
 
-## Installation
+- `read`
+- `write`
+- `edit`
+- `shell`
+- `code_run`
+- `glob`
+- `grep`
+- `web_search`
+- `web_fetch`
+- `browser_use`
+- `read_image`
+- `ask_user`
+- `todo_write`
+- `install_python_package`
+- `save_memory`
+- `search_memory`
+- `list_memories`
+- `delete_memory`
+- `list_skills`
+- `load_skill`
+- `install_skill`
 
-Install runtime dependencies from the checked-in requirements file:
+### `ask_user` Protocol
+
+`ask_user` uses a single-question JSON payload.
+
+Normalized payload shape:
+
+```json
+{
+  "question": {
+    "header": "Current City",
+    "question": "Please tell me which city you want the weather for.",
+    "input_type": "text",
+    "options": []
+  }
+}
+```
+
+Rules:
+
+- `input_type="text"` means free-form input.
+- `input_type="select"` means choose from `options`.
+- `options` must be empty for text input.
+- The CLI expects this JSON protocol.
+
+## Settings and Runtime Paths
+
+Nova loads settings through `nova/settings.py`.
+
+Default runtime home:
+
+```text
+~/.nova/
+```
+
+Derived paths:
+
+- config: `~/.nova/config.json`
+- database: `~/.nova/nova.db`
+- logs: `~/.nova/logs/nova.log`
+- skills: `~/.nova/skills/`
+- workspace: `~/.nova/workspace/`
+- agents: `~/.nova/agents/`
+
+Override the home directory:
 
 ```bash
-pip install -r requirements.txt
+export NOVA_HOME=/path/to/custom/home
 ```
 
-Current runtime dependencies:
+Primary config shape:
 
-- `aiohttp`
-- `aiosqlite`
-- `fastapi`
-- `httpx`
-- `prompt_toolkit`
-- `rich`
-- `uvicorn`
-
-## Run the CLI
-
-The default mode is CLI, so these are equivalent:
-
-```bash
-python -m nova
-python -m nova cli
+```json
+{
+  "model": "gpt-5.4",
+  "model_provider": "openai",
+  "providers": {
+    "openai": {
+      "type": "openai-compatible",
+      "name": "OpenAI Compatible",
+      "options": {
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "sk-example"
+      },
+      "models": {
+        "gpt-5.4": {
+          "name": "gpt-5.4",
+          "tools": true
+        }
+      }
+    },
+    "ollama": {
+      "type": "ollama",
+      "name": "Ollama (local)",
+      "options": {
+        "base_url": "http://localhost:11434"
+      },
+      "models": {
+        "gemma4:26b": {
+          "name": "gemma4:26b",
+          "tools": true
+        }
+      }
+    }
+  }
+}
 ```
 
-Current CLI behavior highlights:
+Config rules:
 
-- streamed assistant text is printed directly to terminal scrollback
-- each tool call is shown as it starts
-- successful `edit` and `write` calls print a unified diff so file changes are visible immediately in the terminal
-- long diffs are truncated in the terminal view to keep scrollback readable
-- current available runtime skills are summarized in the system prompt so the model can decide when to call `list_skills` or `load_skill`
+- `model_provider` is the selected provider alias.
+- `providers.<alias>.type` controls runtime dispatch.
+- Supported provider types are `ollama` and `openai-compatible`.
+- `providers.<alias>.models.<model-key>.name` is used as the configured model
+  label in model selection surfaces.
+- `providers.<alias>.options.api_key` stores the provider secret in the local
+  user config file.
+- `--provider` and `--model` override the config defaults for the current
+  process only.
 
-With Ollama:
+Relevant environment variables:
 
-```bash
-python -m nova cli --provider ollama --model gemma4:26b
-```
+- `NOVA_HOME`
+- `NOVA_HOST`
+- `NOVA_BACKEND_PORT`
+- `NOVA_UI_PORT`
+- `NOVA_LOG_LEVEL`
+- `NOVA_FRONTEND_DIST`
+- `NOVA_OLLAMA_BASE_URL`
+- `NOVA_OPENAI_BASE_URL`
+- `NOVA_OPENAI_API_KEY`
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
+- `OLLAMA_BASE_URL`
 
-With a configured OpenAI-compatible provider alias:
+## Server API
 
-```bash
-python -m nova cli --provider openai --model gpt-5.4
-```
-
-Runtime argument resolution:
-
-- `~/.nova/config.json` defines the default `model`, `model_provider`, and provider registry.
-- If `~/.nova/config.json` does not exist, Nova creates it automatically on first startup.
-- `--provider` and `--model` override the config defaults for the current process only.
-- Environment variables are still supported as fallbacks for legacy setups and operational settings.
-- Nova resolves those values into one in-memory runtime settings object before it starts CLI or server mode.
-- The resolved settings are then passed through `__main__ -> run_cli/run_server -> build_agent`.
-
-That means command-line overrides do not persist anywhere; they only affect the current run.
-
-## Run the Server
-
-Server mode uses the same resolved runtime settings object as CLI mode:
-
-```bash
-python -m nova serve
-```
-
-With explicit Ollama settings:
-
-```bash
-python -m nova serve --provider ollama --model gemma4:26b
-```
-
-With an explicit configured OpenAI-compatible provider alias:
-
-```bash
-python -m nova serve --provider openai --model gpt-5.4
-```
-
-## Run the Frontend
-
-The desktop-facing frontend lives in [`frontend/`](/Users/andy/Workspace/codes/ai/nova/frontend).
-
-Install dependencies:
-
-```bash
-cd frontend
-npm install
-```
-
-Run the Vite dev server:
-
-```bash
-npm run dev
-```
-
-Dev-time API behavior:
-
-- Vite proxies `/api/*` and `/health` to `http://127.0.0.1:8765` by default
-- override the proxy target with `NOVA_FRONTEND_PROXY_TARGET`
-- override the request base URL in the browser bundle with `VITE_NOVA_API_BASE_URL`
-
-Build static assets for a future desktop shell or backend embedding flow:
-
-```bash
-npm run build
-```
-
-Server endpoints:
+Implemented endpoints:
 
 - `GET /health`
 - `GET /api/models`
+- `GET /api/providers`
+- `POST /api/config/providers`
+- `POST /api/config/models`
 - `GET /api/sessions`
 - `GET /api/sessions/{session_id}/messages`
 - `POST /api/chat`
 - `POST /api/chat/stream`
-- `POST /api/chat/{request_id}/interrupt`
-
-## Server API
+- `POST /api/chat/interrupt`
+- `GET /api/agents`
+- `GET /api/agents/{key}`
+- `POST /api/agents`
+- `DELETE /api/agents/{key}`
 
 ### `POST /api/chat`
 
@@ -220,26 +458,29 @@ Request body:
 
 ```json
 {
-  "session_id": "sess_existing_optional",
+  "session_id": "existing-session-id",
   "message": "Hello",
   "provider": "ollama",
   "model": "gemma4:26b",
-  "metadata": {}
+  "agent_key": "main",
+  "metadata": {},
+  "attachments": []
 }
 ```
 
-Request rules:
+Rules:
 
-- `message` is required
-- `session_id` is optional; omit it to start a new session
-- `provider` and `model` are optional per-request overrides for the current call
-- `metadata` is accepted but is not yet interpreted by the server
+- `message` is required.
+- `session_id` is optional; omit it to create a new session.
+- `provider` and `model` are optional per-request overrides.
+- `agent_key` defaults to `main`.
+- `metadata` is accepted by the schema but is not currently interpreted.
+- `attachments` can carry image and document data for the agent stream.
 
-Terminal JSON response:
+Response shape:
 
 ```json
 {
-  "request_id": "req_xxx",
   "session_id": "sess_xxx",
   "status": "completed",
   "message": "Hello from Nova"
@@ -261,7 +502,51 @@ Response:
 
 - HTTP 200
 - `Content-Type: text/event-stream`
-- body is an AI SDK UI compatible SSE stream
+- `x-vercel-ai-ui-message-stream: v1`
+- AI SDK UI compatible message parts generated by `nova/server/ai_sdk_stream.py`
+
+Example:
+
+```text
+data: {"type":"data-nova-session","data":{"sessionId":"sess_xxx"}}
+
+data: {"type":"start","messageId":"msg_xxx"}
+
+data: {"type":"start-step"}
+
+data: {"type":"text-start","id":"text_xxx"}
+
+data: {"type":"text-delta","id":"text_xxx","delta":"hello"}
+
+data: {"type":"text-end","id":"text_xxx"}
+
+data: {"type":"finish-step"}
+
+data: {"type":"finish"}
+
+data: [DONE]
+```
+
+Current stream part types include:
+
+- `data-nova-session`
+- `start`
+- `start-step`
+- `text-start`
+- `text-delta`
+- `text-end`
+- `reasoning-start`
+- `reasoning-delta`
+- `reasoning-end`
+- `tool-input-start`
+- `tool-input-available`
+- `tool-output-available`
+- `data-nova-tool-error`
+- `data-nova-input-required`
+- `finish-step`
+- `abort`
+- `finish`
+- `error`
 
 ### `GET /api/models`
 
@@ -282,7 +567,27 @@ Response shape:
 }
 ```
 
+### `GET /api/providers`
+
+Response shape:
+
+```json
+{
+  "items": [
+    {
+      "key": "openai",
+      "name": "OpenAI Compatible",
+      "type": "openai-compatible"
+    }
+  ]
+}
+```
+
 ### `GET /api/sessions`
+
+Optional query parameter:
+
+- `agent_key`
 
 Response shape:
 
@@ -292,8 +597,8 @@ Response shape:
     {
       "id": "sess_xxx",
       "title": "Optional title",
-      "status": "active",
-      "updated_at": 1713510000
+      "updated_at": 1713510000000,
+      "agent_key": "main"
     }
   ]
 }
@@ -313,233 +618,36 @@ Response shape:
       "content": "Hello",
       "tool_call_id": null,
       "tool_calls": [],
-      "time_created": 1713510000
+      "time_created": 1713510000000,
+      "images": null,
+      "reasoning_content": null,
+      "group_id": null
     }
   ]
 }
 ```
 
-Notes:
+The history endpoint returns user-visible history. Tool artifacts are projected
+so only selected tool calls and results are shown to frontend consumers.
 
-- current server output only returns persisted `user` and `assistant` messages here
-- tool execution artifacts are still stored internally, but the session history endpoint currently hides `tool` role rows
+### `POST /api/chat/interrupt`
 
-### `POST /api/chat/{request_id}/interrupt`
+Request body:
+
+```json
+{
+  "session_id": "sess_xxx"
+}
+```
 
 Response shape:
 
 ```json
 {
-  "request_id": "req_xxx",
+  "session_id": "sess_xxx",
   "interrupted": true
 }
 ```
-
-## Error Responses
-
-Current server-side error behavior:
-
-- `422 Unprocessable Entity`
-  returned when the request body is not valid JSON, the top-level JSON value is not an object, or required request fields do not satisfy the `ChatRequest` schema
-- `200 OK` with `response.error` event in SSE
-  returned when the streaming request is accepted but the backend fails during generation
-
-Examples:
-
-```json
-{
-  "detail": [
-    {
-      "type": "missing",
-      "loc": ["message"],
-      "msg": "Field required"
-    }
-  ]
-}
-```
-
-## Stream Protocol
-
-`POST /api/chat/stream` uses standard Server-Sent Events:
-
-- response header: `Content-Type: text/event-stream`
-- response header also includes `x-vercel-ai-ui-message-stream: v1`
-- each chunk follows the SSE frame format: `data: ...`, blank line
-- the payloads are AI SDK UI compatible message parts generated by `nova/server/ai_sdk_stream.py`
-
-Example:
-
-```text
-data: {"type":"data-nova-session","data":{"sessionId":"sess_xxx"}}
-
-data: {"type":"start","messageId":"msg_xxx"}
-
-data: {"type":"text-delta","id":"text_xxx","delta":"hello"}
-
-data: {"type":"finish"}
-
-data: [DONE]
-```
-
-Current part types emitted by Nova include:
-
-- `data-nova-session`
-- `start`
-- `start-step`
-- `text-start`
-- `text-delta`
-- `text-end`
-- `tool-input-start`
-- `tool-input-available`
-- `tool-output-available`
-- `data-nova-tool-error`
-- `data-nova-input-required`
-- `finish`
-- `error`
-
-Notes:
-
-- `data-nova-session` is the Nova-specific session bridge for exposing the created `sessionId` to the frontend.
-- the response is intended for `assistant-ui` / AI SDK UI style consumers, not the older Nova named-event SSE contract.
-- `[DONE]` is emitted as the terminal sentinel.
-
-## CLI Commands
-
-Inside CLI mode:
-
-- type normal text to chat with Nova
-- use `/new` to start a new session
-- use `/models` to switch between configured models
-- use `/install-skill <slug-or-url> [--force]` to install one skill into the local runtime
-- use `/sessions` to list known sessions
-- use `/load <n>` to switch to a listed session
-- use `/clear` to clear the screen
-- use `exit`, `quit`, or `/quit` to leave
-
-## Settings and Runtime Paths
-
-Nova uses a centralized settings module:
-
-- [`nova/settings.py`](/Users/andy/Workspace/codes/ai/nova/nova/settings.py)
-
-Default runtime home:
-
-```text
-~/.nova/
-```
-
-Derived paths:
-
-- database: `~/.nova/nova.db`
-- logs: `~/.nova/logs/nova.log`
-- skills: `~/.nova/skills/`
-- workspace: `~/.nova/workspace/`
-
-Override the home directory with:
-
-```bash
-export NOVA_HOME=/path/to/custom/home
-```
-
-Primary runtime config file:
-
-```json
-{
-  "model": "gpt-5.4",
-  "model_provider": "openai",
-  "providers": {
-    "openai": {
-      "type": "openai-compatible",
-      "name": "OpenAI",
-      "options": {
-        "base_url": "https://api.openai.com/v1",
-        "api_key": "sk-example"
-      },
-      "models": {
-        "gpt-5.4": {
-          "name": "gpt-5.4",
-          "tools": true,
-          "maxTokens": 128000,
-          "toolCalling": true
-        }
-      }
-    },
-    "ollama": {
-      "type": "ollama",
-      "name": "Ollama (local)",
-      "options": {
-        "base_url": "http://localhost:11434"
-      },
-      "models": {
-        "gemma4:26b": {
-          "name": "gemma4:26b",
-          "tools": true
-        }
-      }
-    }
-  }
-}
-```
-
-Config notes:
-
-- `model_provider` is the selected provider alias, not the protocol type.
-- `providers.<name>.type` controls runtime dispatch. Current supported values are `ollama` and `openai-compatible`.
-- `providers.<name>.models.<key>.name` can map a user-facing model key to the actual upstream model name sent to the provider.
-- `providers.<name>.options.request_options` sets default request-body extras for every model under that provider.
-- `providers.<name>.models.<key>.request_options` overrides or extends request-body extras for one model.
-- `providers.<name>.models.<key>` keeps whatever extra keys you write in the file; Nova does not rename them.
-- `providers.<name>.options.api_key` stores the provider secret directly in the user-local config file.
-
-Disable reasoning / thinking for a specific OpenAI-compatible model:
-
-```json
-{
-  "model": "qwen35",
-  "model_provider": "openai",
-  "providers": {
-    "openai": {
-      "type": "openai-compatible",
-      "name": "OpenAI Compatible",
-      "options": {
-        "base_url": "http://127.0.0.1:8000/v1"
-      },
-      "models": {
-        "qwen35": {
-          "name": "Qwen/Qwen3.6-35B-A3B",
-          "tools": true,
-          "request_options": {
-            "extra_body": {
-              "chat_template_kwargs": {
-                "enable_thinking": false
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-Notes:
-
-- Nova merges `request_options` from provider level and model level, then flattens `extra_body` into the actual JSON request body sent upstream.
-- The exact key is backend-specific. The example above matches Qwen models served through a vLLM-compatible OpenAI endpoint.
-
-Relevant environment variables that remain as fallbacks or runtime-only settings:
-
-- `NOVA_HOME`
-- `NOVA_HOST`
-- `NOVA_BACKEND_PORT`
-- `NOVA_UI_PORT`
-- `NOVA_LOG_LEVEL`
-- `NOVA_OLLAMA_BASE_URL`
-- `NOVA_OPENAI_BASE_URL`
-- `NOVA_OPENAI_API_KEY`
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL`
-- `OLLAMA_BASE_URL`
 
 ## Logging
 
@@ -556,48 +664,9 @@ Rotation policy:
 - daily rotation at midnight
 - 30-day retention
 
-## Tooling Surface
-
-Nova currently ships with tools for:
-
-- reading files
-- writing files
-- editing files
-- running shell commands
-- running inline Python snippets
-- globbing and regex search
-- web search and web fetch
-- asking the user follow-up questions
-- listing, loading, and installing runtime skills
-- writing structured todo lists
-
-### `ask_user` Protocol
-
-`ask_user` uses a single-question JSON payload.
-
-Normalized payload shape:
-
-```json
-{
-  "question": {
-    "header": "Current City",
-    "question": "Please tell me which city you want the weather for.",
-    "input_type": "text",
-    "options": []
-  }
-}
-```
-
-Rules:
-
-- `input_type="text"` means free-form input
-- `input_type="select"` means choose from `options`
-- `options` must be empty for text input
-- the CLI only accepts this JSON protocol now
-
 ## Development and Testing
 
-Run tests with:
+Run tests from the repository root:
 
 ```bash
 PYTHONPATH=. pytest
@@ -608,15 +677,26 @@ Useful subsets:
 ```bash
 PYTHONPATH=. pytest tests/test_cli.py -q
 PYTHONPATH=. pytest tests/test_runtime.py -q
-PYTHONPATH=. pytest tests/test_ask_user.py -q
+PYTHONPATH=. pytest tests/test_memory.py -q
+PYTHONPATH=. pytest tests/test_server.py -q
+```
+
+Live server + Ollama e2e tests are opt-in:
+
+```bash
+RUN_LIVE_OLLAMA_SERVER_E2E=1 \
+NOVA_SERVER_BASE_URL=http://127.0.0.1:8765 \
+NOVA_OLLAMA_BASE_URL=http://127.0.0.1:11434 \
+NOVA_OLLAMA_E2E_MODEL=gemma4:26b \
+PYTHONPATH=. pytest tests/e2e/test_server_ollama_live_e2e.py -q
 ```
 
 ## What the Repository Means Today
 
-If you read this repository today, the correct interpretation is:
+Nova is a working personal agent assistant with a complete CLI surface, a
+desktop-oriented frontend and PyWebView shell, and a shared runtime designed to
+keep agent behavior consistent across surfaces.
 
-- Nova is already a working CLI agent
-- Nova is being prepared to grow into a desktop product
-- shared runtime boundaries are more important than adding more CLI-specific behavior
-
-So the current codebase should be read as “CLI implemented, desktop-oriented architecture in progress”.
+When changing this repository, preserve the shared core boundary: agent logic,
+tools, memory, sessions, skills, and provider handling should stay reusable by
+CLI, server, and desktop instead of being forked into one UI surface.
