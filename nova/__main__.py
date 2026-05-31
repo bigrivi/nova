@@ -6,55 +6,42 @@ Launch command: python -m nova
 
 import asyncio
 import argparse
-from dataclasses import replace
 
 from nova.cli.main import run_cli
 from nova.desktop.main import run_desktop
 from nova.server import run_server
-from nova.settings import Settings, configure_logging, get_settings
-
-
-def _build_effective_settings(
-    settings: Settings,
-    provider: str,
-    model: str | None,
-) -> Settings:
-    return replace(
-        settings,
-        provider=provider,
-        model=settings.model if model is None else model,
-    )
+from nova.settings import configure_logging, get_settings
+from nova.tools.dependency_manager import init_site_packages
 
 
 def main():
     parser = argparse.ArgumentParser(description="Nova CLI/Desktop agent runtime")
     settings = get_settings()
-    provider_names = settings.provider_names or [settings.provider]
+    provider_names = settings.provider_names or []
     parser.add_argument("mode", nargs="?", choices=["cli", "serve", "desktop"], default="cli",
                         help="Run mode: cli (terminal TUI), serve (HTTP backend), desktop (GUI window)")
-    parser.add_argument("--provider", "-p", choices=provider_names, default=settings.provider,
-                        help="LLM provider alias from ~/.nova/config.json")
+    provider_default = provider_names[0] if provider_names else None
+    parser.add_argument("--provider", "-p", choices=provider_names, default=provider_default,
+                        help="LLM provider alias (default: first configured provider)")
     parser.add_argument("--model", "-m", default=None,
-                        help="Model name. Optional for OpenAI-compatible services that already fix the model server-side.")
+                        help="Model name (default: per-agent DB config)")
+    from nova.constants import DEFAULT_AGENT_KEY
+    parser.add_argument("--agent", default=DEFAULT_AGENT_KEY,
+                        help=f"Agent key (default: {DEFAULT_AGENT_KEY})")
     parser.add_argument("--dev", action="store_true",
                         help="[desktop] Load frontend from Vite dev server (http://localhost:5173) instead of built-in server")
     args = parser.parse_args()
-    effective_settings = _build_effective_settings(
-        settings=settings,
-        provider=args.provider,
-        model=args.model,
-    )
-
-    configure_logging(effective_settings)
+    init_site_packages()
+    configure_logging(settings)
     if args.mode == "serve":
-        asyncio.run(run_server(settings=effective_settings))
+        asyncio.run(run_server(settings=settings))
         return
 
     if args.mode == "desktop":
-        run_desktop(settings=effective_settings, dev=args.dev)
+        run_desktop(settings=settings, dev=args.dev)
         return
 
-    asyncio.run(run_cli(settings=effective_settings))
+    asyncio.run(run_cli(agent_key=args.agent))
 
 
 if __name__ == "__main__":
