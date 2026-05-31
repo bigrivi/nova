@@ -352,8 +352,7 @@ async def browser_use(
             global _extraction_llm
             if _extraction_llm is None:
                 from nova.app.runtime import build_llm
-                from nova.settings import get_settings
-                _extraction_llm = build_llm(get_settings())
+                _extraction_llm = build_llm()
 
             content_trunc = raw_content[:8000]
             response = await _extraction_llm.chat(

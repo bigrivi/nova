@@ -76,6 +76,20 @@ def _install(packages: list[str]) -> None:
                 "is not currently available (e.g. pandas, matplotlib, playwright, "
                 "numpy, Pillow) to complete the current task. Already installed "
                 "packages are skipped automatically.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "package": {
+                "type": "string",
+                "description": "Python package name to install (e.g. pandas, matplotlib, playwright)",
+            },
+            "version": {
+                "type": "string",
+                "description": "Optional version specifier (e.g. 2.1.0)",
+            },
+        },
+        "required": ["package"],
+    },
 )
 async def install_python_package(package: str, version: str = "") -> dict:
     pkg_spec = f"{package}=={version}" if version else package
