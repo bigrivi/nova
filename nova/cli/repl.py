@@ -1,18 +1,19 @@
 import asyncio
 import shlex
 import logging
-from dataclasses import replace
 from typing import Optional
 
 from nova.app import build_agent
 from nova.cli.commands import CommandDispatcher, CommandRegistry, ParsedCommand
-from nova.cli.session_manager import SessionManager
 
 from nova.cli.ui import ModelGroup
 from nova.cli.utils import exit_process as _exit_process
-from nova.session import close_session_manager
-from nova.settings import Settings, get_settings
-from nova.skills import initialize_skill_service
+from nova.db.database import ensure_db
+from nova.session import close_session_manager, get_session_manager
+from nova.session.history_projection import get_user_visible_history
+from nova.settings import get_settings, resolve_model_name, get_provider_name
+from nova.constants import DEFAULT_AGENT_KEY
+from nova.skills.service import SkillService
 from nova.skills.installer import SkillInstallError
 
 log = logging.getLogger(__name__)
@@ -20,11 +21,13 @@ log = logging.getLogger(__name__)
 
 class NovaCLI:
     """Main CLI orchestrator and StreamControlProtocol implementation."""
-    def __init__(self, settings: Optional[Settings] = None):
-        self.settings = settings or get_settings()
+
+    def __init__(self, agent_key: str = DEFAULT_AGENT_KEY):
+        self.settings = get_settings()
+        self._agent_key = agent_key
         log.info(
-            f"Initializing NovaCLI with provider={self.settings.provider}, model={self.settings.model}")
-        self.agent = build_agent(settings=self.settings)
+            f"Initializing NovaCLI for agent '{agent_key}'")
+        self.agent = None
         self._command_registry = CommandRegistry()
         self._command_dispatcher = CommandDispatcher(
             registry=self._command_registry,
@@ -34,11 +37,16 @@ class NovaCLI:
                 "clear": self._handle_clear_command,
                 "models": self._handle_models_command,
                 "install-skill": self._handle_install_skill_command,
+                "install-global-skill": self._handle_install_global_skill_command,
+                "list-agents": self._handle_list_agents_command,
+                "create-agent": self._handle_create_agent_command,
+                "delete-agent": self._handle_delete_agent_command,
                 "sessions": self._handle_sessions_command,
             },
         )
 
-        self._session_manager: Optional[SessionManager] = None
+        self._cached_sessions: list[dict] = []
+        self.current_id: Optional[str] = None
         self._ui_adapter: Optional[object] = None
         self._running = False
         self._pending_input: Optional[dict] = None
@@ -47,14 +55,10 @@ class NovaCLI:
         self._exit_code: Optional[int] = None
 
     def get_session_id(self) -> Optional[str]:
-        if self._session_manager is None:
-            return None
-        return self._session_manager.current_id
+        return self.current_id
 
     def set_session_id(self, session_id: Optional[str]) -> None:
-        if self._session_manager is None:
-            return
-        self._session_manager.current_id = session_id
+        self.current_id = session_id
 
     def set_pending_input(self, payload: dict) -> None:
         self._pending_input = payload
@@ -95,24 +99,25 @@ class NovaCLI:
         self._stop_requested = False
 
     def _current_model_label(self) -> str:
-        provider = self.settings.provider
-        model = self.settings.resolve_model_name(
-            self.settings.model,
+        if self.agent is None:
+            return ""
+        provider = self.agent.config.provider
+        model = resolve_model_name(
+            self.agent.config.model,
+            self.settings.providers,
             provider_name=provider,
         ).strip()
         return model or "(server default)"
 
     def _current_provider_label(self) -> str:
-        provider = self.settings.provider
-        if provider:
-            provider_config = self.settings.get_provider_config(provider)
-            if provider_config:
-                return provider_config.name
-        return ""
+        if self.agent is None:
+            return ""
+        return get_provider_name(self.settings.providers, self.agent.config.provider)
 
     def _model_groups(self) -> list[ModelGroup]:
         return [
-            ModelGroup(provider=provider_name, models=list(provider_config.models.keys()))
+            ModelGroup(provider=provider_name, models=list(
+                provider_config.models.keys()))
             for provider_name, provider_config in self.settings.providers.items()
         ]
 
@@ -123,21 +128,31 @@ class NovaCLI:
         self.agent.interrupt()
         log.info("Escape pressed - stop requested for current run")
 
-    def _rebuild_runtime(
+    async def _switch_model(
         self,
         *,
         provider: str | None = None,
         model: str | None = None,
     ) -> None:
-        updated_settings = replace(
-            self.settings,
-            provider=self.settings.provider if provider is None else provider,
-            model=self.settings.model if model is None else model,
-        )
-        self.settings = updated_settings
-        self.agent = build_agent(settings=self.settings)
-        if self._session_manager:
-            self._session_manager.set_agent(self.agent)
+        import time
+        db = await ensure_db()
+        record = await db.get_agent(self._agent_key)
+        if record:
+            now = int(time.time() * 1000)
+            await db.save_agent({
+                "key": self._agent_key,
+                "name": record["name"],
+                "description": record.get("description", ""),
+                "provider": provider or record["provider"],
+                "model": model or record["model"],
+                "tools": record.get("tools"),
+                "workspace_dir": record.get("workspace_dir"),
+                "created_at": record["created_at"],
+                "updated_at": now,
+            })
+
+        self.agent = await build_agent(agent_key=self._agent_key,
+                                       provider=provider, model=model)
 
     def _shutdown(self, *, message: Optional[str] = None) -> None:
         if self._streaming:
@@ -162,8 +177,7 @@ class NovaCLI:
             log.exception("Failed to close session manager")
 
     async def _handle_new_command(self, command: ParsedCommand) -> bool:
-        if self._session_manager:
-            self._session_manager.reset()
+        self.current_id = None
         return True
 
     async def _handle_clear_command(self, command: ParsedCommand) -> bool:
@@ -177,25 +191,38 @@ class NovaCLI:
             if self._ui_adapter:
                 self._ui_adapter.show_info("Configured models:")
                 for group_index, group in enumerate(groups):
-                    provider_branch = "└─" if group_index == len(groups) - 1 else "├─"
-                    model_indent = "   " if group_index == len(groups) - 1 else "│  "
-                    self._ui_adapter.show_info(f"{provider_branch} {group.provider}")
-                    self._ui_adapter.show_info(f"{model_indent}No configured models")
+                    provider_branch = "└─" if group_index == len(
+                        groups) - 1 else "├─"
+                    model_indent = "   " if group_index == len(
+                        groups) - 1 else "│  "
+                    self._ui_adapter.show_info(
+                        f"{provider_branch} {group.provider}")
+                    self._ui_adapter.show_info(
+                        f"{model_indent}No configured models")
             return True
 
         if self._ui_adapter is None:
             return True
 
+        if self.agent:
+            current_provider = self.agent.config.provider
+            current_model = self.agent.config.model
+        else:
+            providers = self.settings.providers
+            current_provider = list(providers.keys())[0] if providers else ""
+            current_model = list(providers[current_provider].models.keys())[
+                0] if providers and providers[current_provider].models else ""
         selection = await self._ui_adapter.prompt_model_selection(
             groups,
-            current_provider=self.settings.provider,
-            current_model=self.settings.model,
+            current_provider=current_provider,
+            current_model=current_model,
         )
         if selection is None:
             return True
-        self._rebuild_runtime(provider=selection.provider, model=selection.model)
+        await self._switch_model(provider=selection.provider, model=selection.model)
         if self._ui_adapter:
-            self._ui_adapter.show_info(f"Model switched to: {self._current_model_label()}")
+            self._ui_adapter.show_info(
+                f"Model switched to: {self._current_model_label()}")
             self._ui_adapter.update_status_bar()
         return True
 
@@ -204,7 +231,8 @@ class NovaCLI:
         try:
             tokens = shlex.split(raw_args)
         except ValueError as exc:
-            raise SkillInstallError(f"Invalid install arguments: {exc}") from exc
+            raise SkillInstallError(
+                f"Invalid install arguments: {exc}") from exc
 
         skill_ref = ""
         force = False
@@ -215,17 +243,24 @@ class NovaCLI:
             if token.startswith("-"):
                 raise SkillInstallError(f"Unsupported option: {token}")
             if skill_ref:
-                raise SkillInstallError("Usage: /install-skill <slug-or-url> [--force]")
+                raise SkillInstallError(
+                    "Usage: /install-skill <slug-or-url> [--force]")
             skill_ref = token
 
         if not skill_ref:
-            raise SkillInstallError("Usage: /install-skill <slug-or-url> [--force]")
+            raise SkillInstallError(
+                "Usage: /install-skill <slug-or-url> [--force]")
         return skill_ref, force
 
     async def _handle_install_skill_command(self, command: ParsedCommand) -> bool:
         try:
             skill_ref, force = self._parse_install_skill_args(command.args)
-            service = initialize_skill_service(settings=self.settings)
+            agent_key = self._agent_key
+            if agent_key == DEFAULT_AGENT_KEY:
+                skills_dir = self.settings.home / "skills"
+            else:
+                skills_dir = self.settings.home / "agents" / agent_key / "skills"
+            service = SkillService(skills_dir=skills_dir)
             result = await service.install_from_clawhub(skill_ref, force=force)
         except SkillInstallError as exc:
             if self._ui_adapter:
@@ -239,11 +274,122 @@ class NovaCLI:
             )
         return True
 
-    async def _handle_sessions_command(self, command: ParsedCommand) -> bool:
-        if self._session_manager is None:
+    @staticmethod
+    def _parse_install_global_skill_args(raw_args: str) -> tuple[str, bool]:
+        try:
+            tokens = shlex.split(raw_args)
+        except ValueError as exc:
+            raise SkillInstallError(
+                f"Invalid install arguments: {exc}") from exc
+
+        skill_ref = ""
+        force = False
+        for token in tokens:
+            if token == "--force":
+                force = True
+                continue
+            if token.startswith("-"):
+                raise SkillInstallError(f"Unsupported option: {token}")
+            if skill_ref:
+                raise SkillInstallError(
+                    "Usage: /install-global-skill <slug-or-url> [--force]")
+            skill_ref = token
+
+        if not skill_ref:
+            raise SkillInstallError(
+                "Usage: /install-global-skill <slug-or-url> [--force]")
+        return skill_ref, force
+
+    async def _handle_install_global_skill_command(self, command: ParsedCommand) -> bool:
+        try:
+            skill_ref, force = self._parse_install_global_skill_args(
+                command.args)
+            skills_dir = self.settings.home / "skills"
+            service = SkillService(skills_dir=skills_dir)
+            result = await service.install_global(skill_ref, force=force)
+        except SkillInstallError as exc:
+            if self._ui_adapter:
+                self._ui_adapter.show_error(str(exc))
             return True
-        sessions = await self._session_manager.list_sessions()
-        if not sessions:
+
+        action = "Updated" if result.replaced else "Installed"
+        if self._ui_adapter:
+            self._ui_adapter.show_info(
+                f"{action} global skill '{result.skill_name}' at {result.installed_path}"
+            )
+        return True
+
+    async def _handle_list_agents_command(self, command: ParsedCommand) -> bool:
+        from nova.db.database import ensure_db
+        db = await ensure_db()
+        agents = await db.list_agents()
+        if self._ui_adapter:
+            await self._ui_adapter.prompt_agent_list(agents)
+        return True
+
+    async def _handle_create_agent_command(self, command: ParsedCommand) -> bool:
+        if not self._ui_adapter:
+            return True
+        result = await self._ui_adapter.prompt_create_agent()
+        if result is None:
+            return True
+        from nova.db.database import ensure_db
+        db = await ensure_db()
+        existing = await db.get_agent(result.key)
+        if existing:
+            self._ui_adapter.show_error(f"Agent '{result.key}' already exists")
+            return True
+        import time
+        now = int(time.time() * 1000)
+        await db.save_agent({
+            "key": result.key,
+            "name": result.name,
+            "model": result.model,
+            "provider": result.provider,
+            "description": result.description,
+            "tools": None,
+            "workspace_dir": result.workspace_dir,
+            "created_at": now,
+            "updated_at": now,
+        })
+        agent_dir = self.settings.home / "agents" / result.key
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        self._ui_adapter.show_info(f"Agent '{result.key}' created")
+        return True
+
+    async def _handle_delete_agent_command(self, command: ParsedCommand) -> bool:
+        if not self._ui_adapter:
+            return True
+        from nova.constants import DEFAULT_AGENT_KEY
+        from nova.db.database import ensure_db
+        import shutil
+        db = await ensure_db()
+        all_agents = await db.list_agents()
+        deletable = [a for a in all_agents if a.get(
+            "key") != DEFAULT_AGENT_KEY]
+        if not deletable:
+            self._ui_adapter.show_info("No agents to delete")
+            return True
+        key = await self._ui_adapter.prompt_delete_agent(deletable)
+        if key is None:
+            return True
+        sessions = await db.get_all_sessions(agent_key=key, limit=99999)
+        session_count = len(sessions)
+        confirmed = await self._ui_adapter.prompt_delete_confirm(key, session_count)
+        if not confirmed:
+            return True
+        await db.delete_agent(key)
+        agent_dir = self.settings.home / "agents" / key
+        if agent_dir.exists():
+            shutil.rmtree(agent_dir)
+        self._ui_adapter.show_info(f"Agent '{key}' and all its data deleted")
+        return True
+
+    async def _handle_sessions_command(self, command: ParsedCommand) -> bool:
+        db = await ensure_db()
+        sessions = await db.get_all_sessions()
+        self._cached_sessions = [s for s in sessions if isinstance(s, dict)]
+        if not self._cached_sessions:
             if self._ui_adapter:
                 self._ui_adapter.show_info("No sessions found")
             return True
@@ -251,13 +397,45 @@ class NovaCLI:
             return True
 
         selection = await self._ui_adapter.prompt_session_selection(
-            sessions,
-            current_session_id=self._session_manager.current_id,
+            self._cached_sessions,
+            current_session_id=self.current_id,
         )
         if selection is None:
             return True
-        await self._session_manager.load_session_by_id(selection.session_id)
+        await self._load_session_by_id(selection.session_id)
         return True
+
+    async def _load_session_by_id(self, session_id: str) -> None:
+        if not self._cached_sessions:
+            db = await ensure_db()
+            sessions = await db.get_all_sessions()
+            self._cached_sessions = [
+                s for s in sessions if isinstance(s, dict)]
+        sess = next(
+            (s for s in self._cached_sessions if s.get("id") == session_id),
+            None,
+        )
+        if sess is None:
+            if self._ui_adapter:
+                self._ui_adapter.error("Session not found")
+            return
+
+        loaded = await get_session_manager().load_session(session_id)
+        if loaded is None:
+            if self._ui_adapter:
+                self._ui_adapter.error("Failed to load session")
+            return
+
+        db = await ensure_db()
+        visible_history = await get_user_visible_history(db, session_id)
+        self.current_id = session_id
+        title = sess.get("title") or "Untitled"
+        if self._ui_adapter:
+            self._ui_adapter.info(f"Loaded session: {title}")
+            if not visible_history:
+                self._ui_adapter.info("No messages found")
+            else:
+                self._ui_adapter.print_history_transcript(visible_history)
 
     async def run(self) -> None:
         from nova.cli.chat_app import ChatApp
@@ -265,10 +443,8 @@ class NovaCLI:
         app = ChatApp(nova_cli=self)
         self._ui_adapter = app
 
-        self._session_manager = SessionManager(
-            agent=self.agent,
-            display=app,
-        )
+        self.agent = await build_agent(agent_key=self._agent_key)
+        self._cached_sessions = []
 
         log.info("Textual chat app starting...")
         self._running = True
@@ -290,8 +466,7 @@ class NovaCLI:
 async def main():
     from nova.cli.main import run_cli
 
-    settings = get_settings()
-    await run_cli(settings=settings)
+    await run_cli()
 
 
 if __name__ == "__main__":

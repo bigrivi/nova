@@ -5,10 +5,9 @@ CLI entry helpers.
 from __future__ import annotations
 
 from nova.cli import NovaCLI
-from nova.settings import Settings, get_settings
+from nova.constants import DEFAULT_AGENT_KEY
 
 
-async def run_cli(settings: Settings | None = None) -> None:
-    settings = settings or get_settings()
-    cli = NovaCLI(settings=settings)
+async def run_cli(agent_key: str = DEFAULT_AGENT_KEY) -> None:
+    cli = NovaCLI(agent_key=agent_key)
     await cli.run()

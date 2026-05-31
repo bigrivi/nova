@@ -64,6 +64,30 @@ DEFAULT_COMMAND_SPECS: tuple[CommandSpec, ...] = (
         aliases=("q", "exit"),
         usage="/quit",
     ),
+    CommandSpec(
+        id="list-agents",
+        label="List Agents",
+        description="List all available agents",
+        usage="/list-agents",
+    ),
+    CommandSpec(
+        id="create-agent",
+        label="Create Agent",
+        description="Create a new agent",
+        usage="/create-agent",
+    ),
+    CommandSpec(
+        id="delete-agent",
+        label="Delete Agent",
+        description="Delete an agent",
+        usage="/delete-agent",
+    ),
+    CommandSpec(
+        id="install-global-skill",
+        label="Install Global Skill",
+        description="Install a skill globally (available to all agents)",
+        usage="/install-global-skill",
+    ),
 )
 
 
