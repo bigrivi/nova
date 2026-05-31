@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 import aiosqlite
 
+from nova.constants import DEFAULT_AGENT_KEY
 from nova.settings import get_settings
 
 
@@ -23,7 +24,6 @@ class Message:
     session_id: str
     role: str
     content: str
-    agent: Optional[str] = None
     model: Optional[str] = None
     format: Optional[str] = None
     variant: Optional[str] = None
@@ -46,6 +46,7 @@ class Message:
 @dataclass
 class Session:
     id: str
+    agent_key: str = DEFAULT_AGENT_KEY
     title: Optional[str] = None
     parent_id: Optional[str] = None
     summary_goal: Optional[str] = None
@@ -73,8 +74,24 @@ class MessageFilter:
 
 
 _DDL = """
+CREATE TABLE IF NOT EXISTS agents (
+    key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    model TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    tools TEXT,
+    workspace_dir TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+INSERT OR IGNORE INTO agents (key, name, model, provider, created_at, updated_at)
+VALUES ('main', 'Main', 'gpt-4o', 'openai', CAST(strftime('%s','now') AS INTEGER) * 1000, CAST(strftime('%s','now') AS INTEGER) * 1000);
+
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
+    agent_key TEXT NOT NULL DEFAULT 'main',
     title TEXT,
     parent_id TEXT,
     summary_goal TEXT,
@@ -85,14 +102,15 @@ CREATE TABLE IF NOT EXISTS sessions (
     compacted_at INTEGER,
     message_count INTEGER DEFAULT 0,
     turn_count INTEGER DEFAULT 0,
-    metadata TEXT
+    metadata TEXT,
+    FOREIGN KEY (agent_key) REFERENCES agents(key)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
     role TEXT NOT NULL,
-    agent TEXT,
+    content TEXT NOT NULL DEFAULT '',
     model TEXT,
     format TEXT,
     variant TEXT,
@@ -192,7 +210,7 @@ class Database:
             id=row_dict["id"],
             session_id=row_dict["session_id"],
             role=row_dict["role"],
-            content=row_dict["data"],
+            content=row_dict.get("content") or row_dict.get("data", ""),
             tool_calls=Database._parse_tool_calls(row_dict.get("tool_calls")),
             tool_call_id=row_dict.get("tool_call_id"),
             time_created=row_dict["time_created"],
@@ -220,13 +238,15 @@ class Database:
 
     async def save_session(self, session: Any) -> None:
         await self._ensure_connected()
+        agent_key = getattr(session, "agent_key", DEFAULT_AGENT_KEY)
         await self._conn.execute(
             """INSERT OR REPLACE INTO sessions
-            (id, title, parent_id, summary_goal, summary_accomplished, summary_remaining,
+            (id, agent_key, title, parent_id, summary_goal, summary_accomplished, summary_remaining,
             created_at, updated_at, compacted_at, message_count, turn_count, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.id,
+                agent_key,
                 session.title,
                 session.parent_id,
                 session.summary_goal,
@@ -251,12 +271,18 @@ class Database:
         row = await cursor.fetchone()
         return self._row_to_session(row) if row else None
 
-    async def get_all_sessions(self, limit: int = 50) -> list[dict]:
+    async def get_all_sessions(self, limit: int = 50, agent_key: str | None = None) -> list[dict]:
         await self._ensure_connected()
-        cursor = await self._conn.execute(
-            "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?",
-            (limit,),
-        )
+        if agent_key:
+            cursor = await self._conn.execute(
+                "SELECT * FROM sessions WHERE agent_key = ? ORDER BY updated_at DESC LIMIT ?",
+                (agent_key, limit),
+            )
+        else:
+            cursor = await self._conn.execute(
+                "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            )
         rows = await cursor.fetchall()
         return [self._row_to_session(row) for row in rows]
 
@@ -280,13 +306,14 @@ class Database:
 
         await self._conn.execute(
             """INSERT INTO messages
-            (id, session_id, role, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 msg_id,
                 session_id,
                 role,
                 content,
+                None,
                 self._serialize_tool_calls(tool_calls),
                 tool_call_id,
                 now,
@@ -437,6 +464,55 @@ class Database:
         )
         await self._conn.commit()
         return deleted_count
+
+
+    # ── Agent CRUD ──────────────────────────────────────────────────
+
+    async def list_agents(self) -> list[dict]:
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "SELECT * FROM agents ORDER BY name ASC",
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def get_agent(self, key: str) -> dict | None:
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "SELECT * FROM agents WHERE key = ?", (key,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def save_agent(self, agent: dict) -> None:
+        await self._ensure_connected()
+        await self._conn.execute(
+            """INSERT OR REPLACE INTO agents
+            (key, name, description, model, provider, tools, workspace_dir, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                agent["key"],
+                agent["name"],
+                agent.get("description", ""),
+                agent["model"],
+                agent["provider"],
+                agent.get("tools"),
+                agent.get("workspace_dir"),
+                agent.get("created_at", int(time.time() * 1000)),
+                agent.get("updated_at", int(time.time() * 1000)),
+            ),
+        )
+        await self._conn.commit()
+
+    async def delete_agent(self, key: str) -> bool:
+        await self._ensure_connected()
+        await self._conn.execute(
+            "DELETE FROM messages WHERE session_id IN (SELECT id FROM sessions WHERE agent_key = ?)",
+            (key,),
+        )
+        await self._conn.execute("DELETE FROM sessions WHERE agent_key = ?", (key,))
+        cursor = await self._conn.execute("DELETE FROM agents WHERE key = ?", (key,))
+        await self._conn.commit()
+        return cursor.rowcount > 0
 
 
 _db: Optional[Database] = None
