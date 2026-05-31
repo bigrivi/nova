@@ -10,10 +10,12 @@ from typing import Any, AsyncGenerator, Callable, Optional
 
 from nova.llm import LLMProvider, Message as LLMMessage, ToolCall, ToolResult
 from nova.session import SessionManager, get_session_manager
-from nova.tools.registry import ToolRegistry
+from nova.tools.registry import ToolRegistry, tool
 from nova.prompt import PromptBuilder, PromptConfig
 from nova.agent.compaction import maybe_compact, get_context_limit
 from nova.db.database import ensure_db
+from nova.skills.service import SkillService
+from nova.constants import DEFAULT_AGENT_KEY
 
 log = logging.getLogger(__name__)
 
@@ -77,24 +79,41 @@ class Agent:
         config: Optional[AgentConfig] = None,
         llm_provider: Optional[LLMProvider] = None,
         session_manager: Optional[SessionManager] = None,
+        agent_key: str = DEFAULT_AGENT_KEY,
+        agent_dir: Optional[Path] = None,
     ):
         self.config = config or AgentConfig()
+        self.agent_key = agent_key
         self.llm = llm_provider
         self.session = session_manager or get_session_manager()
         self.tool_registry = ToolRegistry()
         self._event_handlers: dict[AgentEvent, list[Callable]] = {}
-        nova_dir = Path.home() / ".nova"
-        soul_content = (nova_dir / "SOUL.md").read_text(
-            encoding="utf-8") if (nova_dir / "SOUL.md").exists() else ""
-        identity_content = (nova_dir / "IDENTITY.md").read_text(
-            encoding="utf-8").strip() if (nova_dir / "IDENTITY.md").exists() else ""
-        user_content = (nova_dir / "USER.md").read_text(
-            encoding="utf-8") if (nova_dir / "USER.md").exists() else ""
+        if agent_dir is None:
+            agent_dir = Path.home() / ".nova" / "agents" / agent_key
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        if agent_key == DEFAULT_AGENT_KEY:
+            skills_dir = agent_dir.parent.parent / "skills"
+            self._skill_service = SkillService(skills_dir=skills_dir)
+        else:
+            skills_dir = agent_dir / "skills"
+            global_skills = Path.home() / ".nova" / "skills"
+            self._skill_service = SkillService(skills_dir=skills_dir, fallback_dir=global_skills)
+        self._skill_service.scan_skills()
+        soul_content = (agent_dir / "SOUL.md").read_text(
+            encoding="utf-8") if (agent_dir / "SOUL.md").exists() else ""
+        identity_content = (agent_dir / "IDENTITY.md").read_text(
+            encoding="utf-8").strip() if (agent_dir / "IDENTITY.md").exists() else ""
+        user_content = (agent_dir / "USER.md").read_text(
+            encoding="utf-8") if (agent_dir / "USER.md").exists() else ""
+        memory_content = (agent_dir / "MEMORY.md").read_text(
+            encoding="utf-8") if (agent_dir / "MEMORY.md").exists() else ""
         self._prompt_builder = PromptBuilder(
             PromptConfig(
                 identity_content=identity_content,
                 soul_content=soul_content,
                 user_content=user_content,
+                memory_content=memory_content,
+                workspace_dir=str(agent_dir),
             )
         )
         self._abort_event = asyncio.Event()
@@ -139,9 +158,7 @@ class Agent:
     def _build_system_prompt(self, session_ctx: Any = None) -> str:
         """Build the dynamic system prompt."""
         tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else []
-        from nova.skills.service import get_skill_service
-
-        available_skills = get_skill_service().list_skills()
+        available_skills = self._skill_service.list_skills()
         return self._prompt_builder.build(
             tools_schemas=tool_schemas,
             available_skills=available_skills,
@@ -501,6 +518,151 @@ class Agent:
         log.warning(f"[Turn {turn_count}] Maximum iterations reached")
         yield AgentEvent.ERROR, error_payload
 
+    @tool(
+        name="list_skills",
+        description=(
+            "List the skills currently available in Nova's in-memory skill catalog. "
+            "Start here when the user asks to use a skill, asks what skills are available, mentions a likely skill name, "
+            "or the task may match a reusable workflow. "
+            "Use this before deciding whether to load or install a skill."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    )
+    async def _tool_list_skills(self) -> ToolResult:
+        skills = self._skill_service.list_skills()
+        if not skills:
+            return ToolResult(success=True, content="No skills available.")
+
+        lines = [f"Available skills ({len(skills)}):"]
+        for skill in skills:
+            lines.append(f"- name: {skill.name}")
+            lines.append(f"  description: {skill.description or '(empty)'}")
+            lines.append(f"  path: {skill.path}")
+            if skill.compatibility:
+                lines.append(f"  compatibility: {skill.compatibility}")
+            allowed = ", ".join(skill.allowed_tools) if skill.allowed_tools else "(not specified)"
+            lines.append(f"  allowed_tools: {allowed}")
+        return ToolResult(success=True, content="\n".join(lines))
+
+    @tool(
+        name="load_skill",
+        description=(
+            "Load the full SKILL.md content for one skill from Nova's current in-memory skill catalog. "
+            "Use this after you know the skill name and need the full instructions or examples. "
+            "Prefer calling list_skills first if you have not confirmed the skill is available."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "skill_name": {
+                    "type": "string",
+                    "description": "Exact skill name to load. Prefer calling list_skills first if you are unsure.",
+                }
+            },
+            "required": ["skill_name"],
+        },
+    )
+    async def _tool_load_skill(self, skill_name: str) -> ToolResult:
+        try:
+            skill = self._skill_service.load_skill(skill_name)
+        except KeyError:
+            available_names = [
+                item.name for item in self._skill_service.list_skills()]
+            suggestion = ", ".join(
+                available_names) if available_names else "(none)"
+            return ToolResult(
+                success=False,
+                content=f"Skill not found: {skill_name}. Available skills: {suggestion}",
+            )
+
+        lines = [
+            f"Skill loaded: {skill.name}",
+            f"Path: {skill.path}",
+            f"SKILL.md: {skill.skill_md_path}",
+            f"Description: {skill.description or '(empty)'}",
+        ]
+        if skill.compatibility:
+            lines.append(f"Compatibility: {skill.compatibility}")
+        allowed = ", ".join(skill.allowed_tools) if skill.allowed_tools else "(not specified)"
+        lines.append(f"Allowed tools: {allowed}")
+        lines.append("")
+        lines.append("Full SKILL.md:")
+        lines.append(skill.raw_content)
+        return ToolResult(success=True, content="\n".join(lines))
+
+    @tool(
+        name="install_skill",
+        description=(
+            "Install or update one skill from ClawHub into Nova's local runtime skills directory. "
+            "Use this only when the user explicitly asks to install a skill. "
+            "If you are unsure whether the skill is already installed locally, call `list_skills` first. "
+            "If the skill already exists locally and the user did not ask to update or replace it, prefer `load_skill` instead of reinstalling. "
+            "Returns install metadata only and does not include the full SKILL.md content. "
+            "Accept either a ClawHub skill slug or a ClawHub skill page URL. "
+            "Set force=true only when the user explicitly wants to replace or update an existing local skill directory."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "skill_ref": {
+                    "type": "string",
+                    "description": (
+                        "ClawHub skill slug or full ClawHub skill page URL to install, "
+                        "for example `review-skill` or `https://clawhub.ai/skills/team/review-skill`."
+                    ),
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "Whether to replace an existing local skill directory with the same slug.",
+                },
+            },
+            "required": ["skill_ref"],
+        },
+    )
+    async def _tool_install_skill(self, skill_ref: str, force: bool = False) -> ToolResult:
+        from nova.skills.installer import SkillInstallError
+        try:
+            result = await self._skill_service.install_from_clawhub(skill_ref, force=force)
+        except SkillInstallError as exc:
+            payload = {
+                "status": "error",
+                "error_code": exc.code,
+                "message": str(exc),
+                "skill_ref": skill_ref,
+                "force": force,
+                "skill_md_content_included": False,
+            }
+            if exc.next_action:
+                payload["next_action"] = exc.next_action
+            if exc.retry_after_seconds is not None:
+                payload["retry_after_seconds"] = exc.retry_after_seconds
+            return ToolResult(
+                success=False,
+                content=json.dumps(payload, ensure_ascii=False, indent=2),
+                error=str(exc),
+            )
+
+        payload = {
+            "status": "ok",
+            "action": "updated" if result.replaced else "installed",
+            "slug": result.slug,
+            "skill_name": result.skill_name,
+            "installed_path": result.installed_path,
+            "skill_md_path": result.skill_md_path,
+            "source_url": result.source_url,
+            "catalog_refreshed": True,
+            "skill_md_content_included": False,
+            "next_action": "list_skills_or_load_skill",
+        }
+        return ToolResult(
+            success=True,
+            content=json.dumps(payload, ensure_ascii=False, indent=2),
+        )
+
     def register_tool(self, func: Callable, name: str = None) -> None:
         self.tool_registry.register(func, name)
 
@@ -510,3 +672,6 @@ class Agent:
             if name.startswith("_"):
                 continue
             self.tool_registry.register_by_metadata(name)
+        self.tool_registry.register(self._tool_list_skills, name="list_skills")
+        self.tool_registry.register(self._tool_load_skill, name="load_skill")
+        self.tool_registry.register(self._tool_install_skill, name="install_skill")

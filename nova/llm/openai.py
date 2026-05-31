@@ -9,7 +9,6 @@ from typing import AsyncGenerator, Optional
 
 import aiohttp
 
-from nova.settings import get_settings
 from nova.llm.provider import LLMProvider, TextDelta, ReasoningDelta, ToolCall, Done
 
 log = logging.getLogger(__name__)
@@ -28,10 +27,8 @@ class OpenAIProvider(LLMProvider):
         request_options: Optional[dict] = None,
         timeout: int = 120,
     ):
-        settings = get_settings()
-        self.api_key = api_key if api_key is not None else settings.openai_api_key
-        resolved_base_url = base_url or settings.openai_base_url
-        self.base_url = resolved_base_url.rstrip("/")
+        self.api_key = api_key or ""
+        self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
         self.timeout = timeout
         self._max_tokens = {
@@ -223,7 +220,8 @@ class OpenAIProvider(LLMProvider):
                     await asyncio.sleep(delay)
                     delay *= 2
                     continue
-                log.error("Connection error after %d attempts: %s", _MAX_RETRIES, e)
+                log.error("Connection error after %d attempts: %s",
+                          _MAX_RETRIES, e)
                 raise
             except Exception as e:
                 log.error("Unexpected error in post_task: %s", e)
@@ -285,7 +283,15 @@ class OpenAIProvider(LLMProvider):
                         "OpenAI provider request failed: %s", error_message)
                     return Done(content=f"Error: {error_message}", tool_calls=[])
 
-                data = await resp.json()
+                try:
+                    data = await resp.json()
+                except Exception:
+                    text = await resp.text()
+                    log.error(
+                        "OpenAI provider response was not valid JSON (content-type=%s): %.200s",
+                        resp.content_type, text)
+                    return Done(content=f"Error: unexpected response from API", tool_calls=[])
+
                 choices = data.get("choices")
                 if not isinstance(choices, list) or not choices:
                     log.debug(
@@ -370,6 +376,7 @@ class OpenAIProvider(LLMProvider):
                         return
 
                     line = line.decode("utf-8").strip()
+                    log.info(f"line={line}")
                     if not line or line == "data: [DONE]":
                         continue
                     log.debug("OpenAI provider stream chunk: %s", line)

@@ -8,7 +8,6 @@ import json
 import logging
 from typing import AsyncGenerator, Optional
 
-from nova.settings import get_settings
 from nova.llm import LLMProvider, Done, ReasoningDelta, ToolCall, TextDelta
 
 log = logging.getLogger(__name__)
@@ -21,8 +20,7 @@ class OllamaProvider(LLMProvider):
         request_options: Optional[dict] = None,
         timeout: int = 120,
     ):
-        settings = get_settings()
-        self.base_url = (base_url or settings.ollama_base_url).rstrip("/")
+        self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
         self.timeout = timeout
         self._max_tokens = 4096

@@ -19,6 +19,8 @@ class PromptConfig:
     identity_content: str = ""
     soul_content: str = ""
     user_content: str = ""
+    memory_content: str = ""
+    workspace_dir: str = ""
 
 
 class PromptBuilder:
@@ -52,6 +54,7 @@ When calling a tool, output JSON only:
 - To install a Python package, use the `install_python_package` tool instead of `pip install` via shell.
 - Runtime path context is already provided below. Do not call bash `pwd` just to learn Nova's home or workspace.
 - Only use bash `pwd` when the user explicitly asks for the shell process working directory.
+- `{home}/MEMORY.md` is your long-term memory, auto-injected every session as `## Long-Term Memory`. Use `write` with that path to update facts, preferences, or decisions when they change. Keep it concise.
 - Skills are dynamic. Call `list_skills` when you need the current available skills from the runtime catalog.
 - If the user asks to use a skill, asks what skills are available, mentions a likely skill name, or the task sounds like a reusable workflow, call `list_skills` early.
 - Call `load_skill` only after you know the exact skill name and need the full `SKILL.md`.
@@ -65,8 +68,8 @@ When calling a tool, output JSON only:
 
 # Environment
 - Current date: {date}
-- Nova home: {home}
-- Nova workspace: {workspace_dir}
+- Home: {home}
+- Workspace: {workspace_dir}
 - Platform: {platform}
 - Shell: {shell}
 """
@@ -93,7 +96,7 @@ When calling a tool, output JSON only:
             available_skills=available_skills_section,
             date=datetime.now().strftime("%Y-%m-%d %A"),
             home=settings.home,
-            workspace_dir=settings.workspace_dir,
+            workspace_dir=self.config.workspace_dir or str(settings.workspace_dir),
             platform=self._get_platform(),
             shell=get_shell_label(),
         ))
@@ -103,6 +106,9 @@ When calling a tool, output JSON only:
 
         if self.config.user_content:
             parts.append(f"## User\n\n{self.config.user_content}")
+
+        if self.config.memory_content:
+            parts.append(f"## Long-Term Memory\n\n{self.config.memory_content}")
 
         return "\n\n".join(parts)
 
