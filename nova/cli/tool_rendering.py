@@ -67,10 +67,10 @@ def render_tool_action(name: object, arguments: object) -> str:
         command = args.get("command")
         if isinstance(command, str) and command.strip():
             return f"Ran {truncate_preview(command.strip(), limit=80)}"
-    if normalized_name == "read":
+    if normalized_name in ("read", "edit", "write"):
         file_path = args.get("filePath")
         if isinstance(file_path, str) and file_path.strip():
-            return f"Read {file_path.strip()}"
+            return file_path.strip()
     if normalized_name == "glob":
         pattern = args.get("pattern")
         if isinstance(pattern, str) and pattern.strip():
@@ -86,24 +86,28 @@ def render_tool_action(name: object, arguments: object) -> str:
     if normalized_name == "web_fetch":
         url = args.get("url")
         if isinstance(url, str) and url.strip():
-            return f"Fetched {url.strip()}"
+            return url.strip()
     if normalized_name == "search_memory":
         query = args.get("query")
         if isinstance(query, str) and query.strip():
             return f'Searched memory for "{truncate_preview(query.strip(), limit=60)}"'
+    if normalized_name == "write_files":
+        files = args.get("files", [])
+        if isinstance(files, list) and files:
+            return f"{len(files)} files"
     if normalized_name == "save_memory":
         key = args.get("key")
         if isinstance(key, str) and key.strip():
-            return f"Saved memory {truncate_preview(key.strip(), limit=60)}"
+            return truncate_preview(key.strip(), limit=60)
     if normalized_name == "delete_memory":
         memory_id = args.get("id")
         key = args.get("key")
         if isinstance(memory_id, str) and memory_id.strip():
-            return f"Deleted memory {memory_id.strip()}"
+            return memory_id.strip()
         if isinstance(key, str) and key.strip():
-            return f"Deleted memory {truncate_preview(key.strip(), limit=60)}"
+            return truncate_preview(key.strip(), limit=60)
     if normalized_name == "list_memories":
-        return "Listed memories"
+        return ""
 
     return name
 
@@ -142,8 +146,8 @@ def render_tool_result_preview(tool_name: str, content: str) -> str:
 
 
 def style_tool_preview_line(line: str, is_first: bool) -> str:
-    prefix = "└" if is_first else "│"
-    return f"  \033[2;37m{prefix} {line}\033[0m"
+    prefix = "│"
+    return f"\033[2;37m{prefix} {line}\033[0m"
 
 
 def build_tool_preview_lines(tool_name: str, content: str) -> Optional[list[str]]:
@@ -395,3 +399,171 @@ def extract_first_prefixed_value(lines: list[str], prefix: str) -> Optional[str]
         if line.startswith(prefix):
             return line.split(":", 1)[1].strip()
     return None
+
+
+# ═══════════════════════════════════════════════
+# ToolBlock rendering helpers
+# ═══════════════════════════════════════════════
+
+def _fgr(r: int, g: int, b: int) -> str:
+    return f"\033[38;2;{r};{g};{b}m"
+
+
+def _bgr(r: int, g: int, b: int) -> str:
+    return f"\033[48;2;{r};{g};{b}m"
+
+
+_RS = "\033[0m"
+_BO = "\033[1m"
+_DI = "\033[2m"
+
+_C_TOOL = _fgr(77, 157, 224)    # blue
+_C_TXT = _fgr(205, 214, 224)   # white
+_C_TXT2 = _fgr(122, 138, 152)   # dim gray
+_C_TXT3 = _fgr(70, 83, 94)      # very dim
+_C_AMBER = _fgr(212, 168, 67)    # amber
+_C_GREEN = _fgr(61, 170, 106)    # green
+_C_RED = _fgr(204, 79, 79)     # red
+_C_CYAN = _fgr(61, 168, 184)    # cyan
+_C_PURPLE = _fgr(138, 112, 214)  # purple
+_C_STR = _fgr(126, 200, 227)   # string/light blue
+
+_BG_WAIT = _bgr(26, 32, 48)
+_BG_RUN = _bgr(30, 22, 8)
+_BG_OK = _bgr(9, 26, 16)
+_BG_ERR = _bgr(26, 12, 12)
+
+_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+_SEP_LINE = f"{_C_TXT3}{'─' * 48}{_RS}"
+
+
+def render_tool_block_header(
+    state: str,
+    tool_name: str,
+    description: str,
+    elapsed_ms: int | None,
+    spinner_frame: int = 0,
+) -> tuple[str, str]:
+    left_parts: list[str] = []
+    right_parts: list[str] = []
+
+    if state == "pending":
+        left_parts.append(f"{_C_TXT3}○{_RS}")
+    elif state == "running":
+        sp = _SPINNER_FRAMES[spinner_frame % len(_SPINNER_FRAMES)]
+        left_parts.append(f"{_C_AMBER}{sp}{_RS}")
+    elif state == "done":
+        left_parts.append(f"{_C_GREEN}●{_RS}")
+    elif state == "error":
+        left_parts.append(f"{_C_RED}●{_RS}")
+
+    left_parts.append(f"  {_C_TOOL}{_BO}{tool_name}{_RS}")
+
+    if description:
+        left_parts.append(f"  {_C_TXT2}{description}{_RS}")
+
+    if state == "pending":
+        right_parts.append(f"{_BG_WAIT}{_C_TXT3} PENDING {_RS}")
+    elif state == "running":
+        right_parts.append(f"{_BG_RUN}{_C_AMBER} RUNNING {_RS}")
+    elif state == "done":
+        right_parts.append(f"{_BG_OK}{_C_GREEN} DONE {_RS}")
+    elif state == "error":
+        right_parts.append(f"{_BG_ERR}{_C_RED} ERROR {_RS}")
+
+    if elapsed_ms is not None:
+        if elapsed_ms < 1000:
+            right_parts.append(f"  {_C_TXT3}{elapsed_ms}ms{_RS}")
+        else:
+            right_parts.append(f"  {_C_TXT3}{elapsed_ms / 1000:.1f}s{_RS}")
+
+    return "".join(left_parts), "".join(right_parts)
+
+
+def render_bash_command(command: str) -> str:
+    if not command:
+        return ""
+    tokens = command.split()
+    result: list[str] = []
+    for i, tok in enumerate(tokens):
+        if i == 0:
+            result.append(f"{_C_CYAN}{tok}{_RS}")
+        elif tok.startswith(("--", "-")) and len(tok) > 1:
+            result.append(f"{_C_AMBER}{tok}{_RS}")
+        elif tok.startswith(("~", "/", "./", "../")):
+            result.append(f"{_C_PURPLE}{tok}{_RS}")
+        elif tok.startswith(("'", '"')):
+            result.append(f"{_C_STR}{tok}{_RS}")
+        else:
+            result.append(f"{_C_TXT}{tok}{_RS}")
+    return " ".join(result)
+
+
+def format_tool_params(tool_name: str, arguments: dict) -> list[tuple[str, str]]:
+    name = tool_name.strip().lower()
+    params: list[tuple[str, str]] = []
+
+    if name == "shell":
+        pass
+    elif name == "read":
+        fp = arguments.get("filePath", "")
+        if fp:
+            params.append(("filePath", fp))
+    elif name == "write":
+        fp = arguments.get("filePath", "")
+        if fp:
+            params.append(("filePath", fp))
+    elif name == "edit":
+        fp = arguments.get("filePath", "")
+        if fp:
+            params.append(("filePath", fp))
+    elif name == "glob":
+        p = arguments.get("pattern", "")
+        if p:
+            params.append(("pattern", p))
+    elif name == "grep":
+        p = arguments.get("pattern", "")
+        if p:
+            params.append(("pattern", p))
+        inc = arguments.get("include", "")
+        if inc:
+            params.append(("include", inc))
+    elif name == "web_search":
+        q = arguments.get("query", "")
+        if q:
+            params.append(("query", q))
+        mr = arguments.get("maxResults")
+        if mr is not None:
+            params.append(("maxResults", str(mr)))
+    elif name == "web_fetch":
+        u = arguments.get("url", "")
+        if u:
+            params.append(("url", u))
+    elif name == "read_image":
+        fp = arguments.get("filePath", "")
+        if fp:
+            params.append(("filePath", fp))
+    elif name in ("save_memory",):
+        k = arguments.get("key", "")
+        if k:
+            params.append(("key", k))
+    elif name in ("search_memory",):
+        q = arguments.get("query", "")
+        if q:
+            params.append(("query", q))
+    elif name in ("delete_memory",):
+        mid = arguments.get("id", "") or arguments.get("key", "")
+        if mid:
+            params.append(("id", mid))
+
+    return params
+
+
+def get_tool_description(name: str, arguments: object) -> str:
+    if isinstance(name, str) and name.strip().lower() == "shell":
+        if isinstance(arguments, dict):
+            cmd = arguments.get("command", "")
+            if cmd:
+                return f"{_C_TXT3}${_RS} {render_bash_command(cmd)}"
+    return render_tool_action(name, arguments)

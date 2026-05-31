@@ -10,9 +10,8 @@ from nova.cli.widgets import (
     MessageState,
     ReasoningMessage,
     Spinner,
+    ToolBlock,
     ToolCallMessage,
-    ToolDiffMessage,
-    ToolResultMessage,
 )
 
 log = logging.getLogger(__name__)
@@ -32,6 +31,7 @@ class StreamHandler:
         self._reasoning_msg: ReasoningMessage | None = None
         self._text_output_seen = False
         self._tool_calls_seen: list = []
+        self._tool_blocks: dict[str, ToolBlock] = {}
 
     # ----------------------------------------------------------
     # Entry
@@ -161,53 +161,68 @@ class StreamHandler:
         return False
 
     async def _on_tool_call(self, data) -> bool:
-        from nova.cli.tool_rendering import render_tool_call
+        from nova.cli.tool_rendering import (
+            format_tool_params,
+            get_tool_description,
+            parse_tool_arguments,
+        )
         self._tool_calls_seen.append(data)
         tool_name = data.name if hasattr(data, "name") else str(data)
         name = tool_name.strip().lower()
+        call_id = data.id if hasattr(data, "id") else str(len(self._tool_calls_seen))
         if self.assistant is not None:
             await self.assistant.finalize()
             self.assistant = None
-        if name == "ask_user":
-            self._container.mount(ToolCallMessage(
-                "• Asking for user input..."))
-        else:
-            self._container.mount(ToolCallMessage(
-                RichText.from_ansi(render_tool_call(data))))
-        (await self._ensure_spinner()).show_tool(tool_name)
-        log.info("Tool call: %s", data)
+        if name in self._SILENT_TOOLS:
+            if name == "ask_user":
+                self._container.mount(ToolCallMessage(
+                    "• Asking for user input..."))
+            return False
+
+        raw_args = data.arguments if hasattr(data, "arguments") else ""
+        arguments = parse_tool_arguments(raw_args)
+        description = get_tool_description(name, arguments)
+        params = format_tool_params(name, arguments)
+
+        block = ToolBlock(name, description, params)
+        await self._container.mount(block)
+        block.set_running()
+        self._tool_blocks[call_id] = block
+        log.info("Tool call: %s (%s)", call_id, name)
         return False
 
     async def _on_tool_result(self, data) -> bool:
-        await self._dismiss_spinner()
         log.info("Tool result: %s", data)
         from nova.cli.tool_rendering import render_tool_result
         if not isinstance(data, dict):
             return False
         tool_name = data.get("tool", "")
         result = data["result"]
+        call_id = data.get("tool_call_id", "")
         content_str = result.content
         if result.requires_input:
             self._cli.set_pending_input({"content": content_str})
+
+        block = self._tool_blocks.pop(call_id, None)
+
         if not result.success and content_str:
-            self._mount_error(content_str)
+            if block:
+                block.set_error(content_str)
+            else:
+                self._mount_error(content_str)
             return False
         if not tool_name or tool_name.lower() in self._SILENT_TOOLS:
             return False
+
         rendered = render_tool_result(
             tool_name,
             content_str if isinstance(content_str, str) else "",
         )
-        if not rendered:
-            return False
-        if (tool_name.lower() in self._DIFF_TOOLS
-                and isinstance(content_str, str)
-                and self._is_diff(content_str)):
-            self._container.mount(ToolDiffMessage(
-                RichText.from_ansi(rendered)))
-        else:
-            self._container.mount(ToolResultMessage(
-                RichText.from_ansi(rendered)))
+        if block:
+            if tool_name and tool_name.lower() in ("edit", "write", "write_files"):
+                block.set_done(rendered or content_str)
+            else:
+                block.set_done()
         return False
 
     async def _on_done(self, data) -> bool:

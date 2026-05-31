@@ -10,7 +10,15 @@ from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.widgets import TextArea
 
 from nova.cli.repl import NovaCLI
-from nova.cli.screens import ModelSelectScreen, SessionSelectScreen
+from nova.cli.screens import (
+    AgentCreateResult,
+    AgentListScreen,
+    CreateAgentScreen,
+    DeleteAgentScreen,
+    DeleteConfirmScreen,
+    ModelSelectScreen,
+    SessionSelectScreen,
+)
 from nova.cli.stream_handler import StreamHandler
 from nova.cli.ui import ModelGroup, ModelSelection, SessionSelection
 from nova.cli.widgets import (
@@ -22,6 +30,7 @@ from nova.cli.widgets import (
     HistoryMessage,
     MessageState,
     StatusBar,
+    ToolBlock,
     UserMessage,
 )
 
@@ -123,7 +132,6 @@ class ChatApp(App):
 
     BINDINGS = [
         Binding("ctrl+c", "quit", show=False),
-        Binding("escape", "cancel_stream", show=False, priority=True),
     ]
 
     def __init__(self, nova_cli: NovaCLI) -> None:
@@ -135,6 +143,15 @@ class ChatApp(App):
 
     def action_quit(self) -> None:
         self.exit()
+
+    def key_escape(self) -> None:
+        """Stop streaming when Escape is pressed, but only if no modal is active."""
+        if self._asking:
+            return
+        if self._streaming:
+            self._streaming = False
+            self._cli.request_stop()
+            self._current_handler = None
 
     # =====================================================
     # Compose / Mount
@@ -292,7 +309,7 @@ class ChatApp(App):
         if not content:
             return
 
-        from nova.cli.history_render import (
+        from nova.cli.ask_user import (
             parse_ask_user_question,
             parse_options,
             render_question_prompt,
@@ -323,7 +340,7 @@ class ChatApp(App):
             log.debug("AskUserWidget mounted with %d options", len(opts))
         else:
             # Plain text input: prompt user to type in the input area
-            from nova.cli.history_render import render_question_prompt
+            from nova.cli.ask_user import render_question_prompt
             prompt_text = render_question_prompt(question)
             container.mount(BannerMessage(RichText.from_ansi(prompt_text)))
             container.mount(BannerMessage(
@@ -351,15 +368,6 @@ class ChatApp(App):
     # =====================================================
     # Cancel Stream (ESC)
     # =====================================================
-
-    def action_cancel_stream(self) -> None:
-        if self._asking:
-            return
-        if not self._streaming:
-            return
-        self._streaming = False
-        self._cli.request_stop()
-        self._current_handler = None
 
     # =====================================================
     # UI Adapter interface (called by NovaCLI)
@@ -392,6 +400,18 @@ class ChatApp(App):
                 current_session_id=current_session_id,
             )
         )
+
+    async def prompt_agent_list(self, agents: list[dict]) -> None:
+        await self.push_screen_wait(AgentListScreen(agents=agents))
+
+    async def prompt_create_agent(self) -> AgentCreateResult | None:
+        return await self.push_screen_wait(CreateAgentScreen())
+
+    async def prompt_delete_agent(self, agents: list[dict]) -> str | None:
+        return await self.push_screen_wait(DeleteAgentScreen(agents=agents))
+
+    async def prompt_delete_confirm(self, agent_key: str, session_count: int) -> bool:
+        return await self.push_screen_wait(DeleteConfirmScreen(agent_key=agent_key, session_count=session_count))
 
     def info(self, text: str) -> None:
         self.show_info(text)
@@ -428,15 +448,70 @@ class ChatApp(App):
         self._print_banner()
 
         async def _render() -> None:
+            from nova.cli.tool_rendering import (
+                format_tool_params,
+                get_tool_description,
+                parse_tool_arguments,
+                render_tool_result,
+            )
+
+            pending_blocks: dict[str, tuple[str, ToolBlock]] = {}
+
             for msg in history:
                 role = getattr(msg, "role", None)
-                content_val = getattr(msg, "content", None)
-                if not isinstance(content_val, str) or not content_val.strip():
-                    continue
+                content_val = getattr(msg, "content", None) or ""
+
                 if role == "user":
-                    container.mount(UserMessage(content_val))
-                elif role in ("assistant", "system"):
+                    if content_val.strip():
+                        container.mount(UserMessage(content_val))
+                    continue
+
+                if role == "assistant":
                     rc = getattr(msg, "reasoning_content", None) or ""
-                    container.mount(HistoryMessage(content_val, rc))
+                    tool_calls = getattr(msg, "tool_calls", None) or []
+
+                    if content_val.strip():
+                        container.mount(HistoryMessage(content_val, rc))
+
+                    for tc in tool_calls:
+                        if isinstance(tc, dict):
+                            tc_name = tc.get("name", tc.get(
+                                "function", {}).get("name", "tool"))
+                            tc_id = tc.get("id", "")
+                            tc_args = tc.get("arguments", tc.get(
+                                "function", {}).get("arguments", "{}"))
+                        else:
+                            tc_name = getattr(tc, "name", "tool")
+                            tc_id = getattr(tc, "id", "")
+                            tc_args = getattr(tc, "arguments", "{}")
+
+                        arguments = parse_tool_arguments(tc_args)
+                        description = get_tool_description(tc_name, arguments)
+                        params = format_tool_params(tc_name, arguments)
+
+                        block = ToolBlock(tc_name, description, params)
+                        block.set_done()
+                        container.mount(block)
+
+                        if tc_id:
+                            pending_blocks[tc_id] = (tc_name, block)
+
+                    continue
+
+                if role == "tool":
+                    tool_call_id = getattr(msg, "tool_call_id", None) or ""
+                    if content_val.strip() and tool_call_id in pending_blocks:
+                        tc_name, block = pending_blocks.pop(tool_call_id)
+                        rendered = render_tool_result(tc_name, content_val)
+                        if tc_name and tc_name.lower() in ("edit", "write", "write_files"):
+                            block.set_done(rendered or content_val)
+                        else:
+                            block.set_done()
+                    continue
+
+                if role == "system" and content_val.strip():
+                    container.mount(HistoryMessage(content_val, ""))
+
+            container.scroll_end(animate=False)
 
         self.run_worker(_render())
