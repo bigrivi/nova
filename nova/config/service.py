@@ -1,14 +1,28 @@
 from __future__ import annotations
 
+import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from nova.db.database import ensure_db
 from nova.settings import Settings, _load_config_payload, _write_json
 
 
 class ConfigValidationError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class AgentCreateRequest:
+    key: str
+    name: str
+    description: str = ""
+    model: str = ""
+    provider: str = ""
+    tools: list[str] | None = None
+    workspace_dir: str | None = None
 
 
 @dataclass(frozen=True)
@@ -34,6 +48,37 @@ class ConfigService:
             raise ConfigValidationError("Nova config path is not available.")
         self._settings = settings
         self._config_path = settings.config_path
+
+    # ── Agent CRUD (DB-backed) ──────────────────────────────────────
+
+    async def list_agents(self) -> list[dict]:
+        db = await ensure_db()
+        return await db.list_agents()
+
+    async def get_agent(self, key: str) -> dict | None:
+        db = await ensure_db()
+        return await db.get_agent(key)
+
+    async def save_agent(self, request: AgentCreateRequest) -> dict:
+        db = await ensure_db()
+        now = int(time.time() * 1000)
+        agent = {
+            "key": request.key,
+            "name": request.name,
+            "description": request.description,
+            "model": request.model,
+            "provider": request.provider,
+            "tools": json.dumps(request.tools) if request.tools else None,
+            "workspace_dir": request.workspace_dir,
+            "created_at": now,
+            "updated_at": now,
+        }
+        await db.save_agent(agent)
+        return agent
+
+    async def delete_agent(self, key: str) -> bool:
+        db = await ensure_db()
+        return await db.delete_agent(key)
 
     @property
     def config_path(self) -> Path:

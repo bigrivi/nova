@@ -20,11 +20,10 @@ async def get_user_visible_history(
     db: Database,
     session_id: str,
 ) -> list[Message]:
-    messages = await db.get_messages(
+    return await db.get_messages(
         session_id,
         build_user_visible_history_filter(),
     )
-    return project_user_visible_history(messages)
 
 
 def project_user_visible_history(messages: list[Message]) -> list[Message]:

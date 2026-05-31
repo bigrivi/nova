@@ -93,8 +93,6 @@ def _build_default_config_payload() -> dict[str, Any]:
     model_key = "your-model"
     model_name = "your model"
     return {
-        "model": model_key,
-        "model_provider": provider_key,
         "providers": {
             provider_key: {
                 "type": "openai-compatible",
@@ -195,18 +193,11 @@ class Settings:
     # Process-level operational defaults.
     log_level: str
 
-    # LLM runtime defaults and provider credentials.
-    provider: str
-    # Model key as defined in providers.<provider>.models.<key> (e.g., "my-gemma")
-    model: str
-    ollama_base_url: str
-    openai_base_url: str
-    openai_api_key: str
-    provider_type: str = "ollama"
-
-    # Runtime config file path and provider registry.
-    config_path: Path | None = None
+    # LLM provider registry.
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
+
+    # Runtime config file path.
+    config_path: Path | None = None
 
     # Frontend static files directory (for desktop mode / self-contained build).
     frontend_dist_path: Path | None = None
@@ -220,31 +211,6 @@ class Settings:
         config_path = _ensure_config_file(home)
         config_payload = _load_config_payload(config_path)
         providers = _parse_provider_configs(config_payload.get("providers"))
-
-        provider = str(config_payload.get("model_provider", "")).strip(
-        ) or os.getenv("NOVA_PROVIDER", "ollama").strip() or "ollama"
-        if provider not in providers:
-            raise ValueError(
-                f"Invalid Nova config: model_provider '{provider}' is not defined in providers")
-
-        provider_config = providers[provider]
-        default_model = _default_model_for_provider_type(provider_config.type)
-        model = str(config_payload.get("model", "")).strip(
-        ) or os.getenv("NOVA_MODEL", default_model)
-
-        openai_provider = providers.get("openai")
-        ollama_provider = providers.get("ollama")
-        selected_openai_provider = provider_config if provider_config.type == "openai-compatible" else openai_provider
-        selected_ollama_provider = provider_config if provider_config.type == "ollama" else ollama_provider
-        openai_base_url = str((selected_openai_provider.options.get(
-            "base_url") if selected_openai_provider else "") or _resolve_openai_base_url()).strip()
-        selected_openai_api_key = ""
-        if selected_openai_provider is not None:
-            selected_openai_api_key = str(
-                selected_openai_provider.options.get("api_key", "")).strip()
-        openai_api_key = selected_openai_api_key or _resolve_openai_api_key()
-        ollama_base_url = str((selected_ollama_provider.options.get(
-            "base_url") if selected_ollama_provider else "") or _resolve_ollama_base_url()).strip()
         raw_frontend_dist = os.getenv("NOVA_FRONTEND_DIST", "").strip()
         frontend_dist_path = Path(raw_frontend_dist) if raw_frontend_dist else None
         return cls(
@@ -260,12 +226,6 @@ class Settings:
             config_path=config_path,
             frontend_dist_path=frontend_dist_path,
             providers=providers,
-            provider=provider,
-            model=model,
-            provider_type=provider_config.type,
-            ollama_base_url=ollama_base_url,
-            openai_base_url=openai_base_url,
-            openai_api_key=openai_api_key,
         )
 
     def ensure_directories(self) -> None:
@@ -300,26 +260,16 @@ class Settings:
         )
 
     @property
-    def llm(self) -> LLMSettings:
-        provider_config = self.get_provider_config(self.provider)
-        return LLMSettings(
-            provider=self.provider,
-            model=self.model,
-            provider_type=provider_config.type,
-            provider_name=provider_config.name,
-            provider_options=provider_config.options,
-            ollama_base_url=self.ollama_base_url,
-            openai_base_url=self.openai_base_url,
-            openai_api_key=self.openai_api_key,
-        )
-
-    @property
-    def model_provider(self) -> str:
-        return self.provider
-
-    @property
     def provider_names(self) -> list[str]:
         return list(self.providers.keys())
+
+    def get_agent_workspace(self, agent_key: str) -> Path:
+        """Return the default workspace directory for a given agent key.
+
+        If the agent has a custom workspace_dir it is used; otherwise
+        defaults to ~/.nova/agents/<agent_key>/.
+        """
+        return self.home / "agents" / agent_key
 
     def get_provider_config(self, provider_name: str) -> ProviderConfig:
         providers = self.providers or {}
@@ -337,26 +287,41 @@ class Settings:
             provider_name, "api_key", "")).strip()
         return api_key
 
-    def get_request_options(self, model_name: str, provider_name: str | None = None) -> dict[str, Any]:
+    def get_request_options(self, model_name: str, provider_name: str) -> dict[str, Any]:
         model_entry = self.get_model_config(
             model_name, provider_name=provider_name)
         return {k: v for k, v in model_entry.items() if k != "name"}
 
-    def get_model_config(self, model_key: str, provider_name: str | None = None) -> dict[str, Any]:
-        resolved_provider = provider_name or self.provider
-        provider_config = self.get_provider_config(resolved_provider)
+    def get_model_config(self, model_key: str, provider_name: str) -> dict[str, Any]:
+        provider_config = self.get_provider_config(provider_name)
         model_entry = provider_config.models.get(model_key)
         if isinstance(model_entry, dict):
             return model_entry
         return {}
 
     def resolve_model_name(self, model_key: str, provider_name: str | None = None) -> str:
-        model_entry = self.get_model_config(
-            model_key, provider_name=provider_name)
-        configured_name = str(model_entry.get("name", "")).strip()
+        return resolve_model_name(model_key, self.providers, provider_name)
+
+
+def resolve_model_name(model_key: str, providers: dict, provider_name: str | None = None) -> str:
+    resolved_provider = provider_name or (next(iter(providers)) if providers else "")
+    provider_config = providers.get(resolved_provider)
+    if provider_config:
+        model_entry = provider_config.models.get(model_key)
+        if isinstance(model_entry, dict):
+            configured_name = (model_entry.get("name") or "").strip()
+        else:
+            configured_name = str(getattr(model_entry, "name", "") or "").strip()
         if configured_name:
             return configured_name
-        return model_key
+    return model_key
+
+
+def get_provider_name(providers: dict, provider_key: str) -> str:
+    provider_config = providers.get(provider_key)
+    if provider_config:
+        return getattr(provider_config, "name", "") or ""
+    return ""
 
 
 @lru_cache(maxsize=1)

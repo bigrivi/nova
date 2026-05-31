@@ -8,12 +8,14 @@ import uuid
 
 from nova.db.database import Message, MessageFilter, ensure_db
 from nova.llm import Message as LLMMessage
+from nova.constants import DEFAULT_AGENT_KEY
 
 @dataclass
 class SessionContext:
     id: str
-    created_at: int
-    updated_at: int
+    agent_key: str = DEFAULT_AGENT_KEY
+    created_at: int = 0
+    updated_at: int = 0
     metadata: dict = field(default_factory=dict)
     title: Optional[str] = None
     parent_id: Optional[str] = None
@@ -25,10 +27,11 @@ class SessionContext:
     turn_count: int = 0
 
     @classmethod
-    def create(cls) -> "SessionContext":
+    def create(cls, agent_key: str = DEFAULT_AGENT_KEY) -> "SessionContext":
         now = int(time.time() * 1000)
         return cls(
             id=str(uuid.uuid4()),
+            agent_key=agent_key,
             created_at=now,
             updated_at=now,
         )
@@ -53,8 +56,9 @@ class SessionManager:
         metadata: Optional[dict] = None,
         persist: bool = True,
         first_message: str = None,
+        agent_key: str = DEFAULT_AGENT_KEY,
     ) -> SessionContext:
-        session = SessionContext.create()
+        session = SessionContext.create(agent_key=agent_key)
         session.metadata = metadata or {}
         session.title = self._generate_title(first_message)
         self.set_current_session(session)
@@ -90,6 +94,7 @@ class SessionManager:
             if session_data:
                 ctx = SessionContext(
                     id=session_data["id"],
+                    agent_key=session_data.get("agent_key", DEFAULT_AGENT_KEY),
                     title=session_data.get("title"),
                     created_at=session_data["created_at"],
                     updated_at=session_data["updated_at"],
