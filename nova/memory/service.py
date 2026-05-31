@@ -250,10 +250,9 @@ class MemoryService:
     ) -> list[MemoryRecord]:
         from nova.app.runtime import build_llm
 
-        settings = get_settings()
-        llm = build_llm(settings=settings)
-        provider_name = settings.llm.provider.strip() or settings.provider
-        model = settings.resolve_model_name(settings.model, provider_name=provider_name) or settings.model
+        llm = build_llm()
+        provider_name = list(get_settings().providers.keys())[0]
+        model = list(get_settings().providers[provider_name].models.keys())[0]
 
         messages = self._build_ai_selection_messages(query, candidates, limit)
         if not messages:

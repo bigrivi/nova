@@ -20,6 +20,7 @@ class ChatRequest(BaseModel):
     message: str
     provider: str | None = None
     model: str | None = None
+    agent_key: str = Field(default="main")
     metadata: dict[str, Any] = Field(default_factory=dict)
     attachments: list[AttachmentData] = Field(default_factory=list)
 
@@ -34,6 +35,7 @@ class SessionSummary(BaseModel):
     id: str
     title: str | None = None
     updated_at: int
+    agent_key: str = Field(default="main")
 
 
 class SessionListResponse(BaseModel):

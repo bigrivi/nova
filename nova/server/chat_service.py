@@ -8,6 +8,7 @@ from typing import Any, AsyncGenerator, Callable
 
 from nova.agent import AgentEvent
 from nova.app import build_agent
+from nova.constants import DEFAULT_AGENT_KEY
 from nova.db.database import ensure_db
 from nova.server.ai_sdk_stream import AISDKStreamAdapter
 from nova.server.request_registry import RequestRegistry
@@ -49,14 +50,15 @@ class ChatService:
         self._settings = settings
         self._request_registry = RequestRegistry()
 
-    async def list_sessions(self) -> SessionListResponse:
+    async def list_sessions(self, agent_key: str | None = None) -> SessionListResponse:
         db = await ensure_db()
-        sessions = await db.get_all_sessions()
+        sessions = await db.get_all_sessions(agent_key=agent_key)
         items = [
             SessionSummary(
                 id=session["id"],
                 title=session.get("title"),
                 updated_at=session.get("updated_at", 0),
+                agent_key=session.get("agent_key", DEFAULT_AGENT_KEY),
             )
             for session in sessions
         ]
@@ -165,16 +167,11 @@ class ChatService:
         self,
         request: ChatRequest,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
-        runtime_settings = self._settings
-        if request.provider is not None or request.model is not None:
-            from dataclasses import replace
-
-            runtime_settings = replace(
-                self._settings,
-                provider=self._settings.provider if request.provider is None else request.provider,
-                model=self._settings.model if request.model is None else request.model,
-            )
-        agent = build_agent(settings=runtime_settings)
+        agent = await build_agent(
+            agent_key=request.agent_key,
+            provider=request.provider,
+            model=request.model,
+        )
         register_key = request.session_id
         if register_key:
             await self._request_registry.register(register_key, agent)

@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from nova.config.service import (
+    AgentCreateRequest,
     ConfigService,
     ConfigValidationError,
     ModelCreateRequest as ConfigModelCreateRequest,
@@ -98,8 +99,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         }
 
     @app.get("/api/sessions", response_model=SessionListResponse)
-    async def sessions() -> SessionListResponse:
-        response = await app.state.chat_service.list_sessions()
+    async def sessions(agent_key: str | None = None) -> SessionListResponse:
+        response = await app.state.chat_service.list_sessions(agent_key=agent_key)
         return response
 
     @app.get("/api/sessions/{session_id}/messages", response_model=MessageListResponse)
@@ -192,6 +193,47 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             session_id=request.session_id,
             interrupted=interrupted,
         )
+
+    # ── Agent API ───────────────────────────────────────────────────
+
+    @app.get("/api/agents")
+    async def list_agents():
+        service = ConfigService(app.state.settings)
+        agents = await service.list_agents()
+        return {"items": agents}
+
+    @app.get("/api/agents/{key}")
+    async def get_agent(key: str):
+        service = ConfigService(app.state.settings)
+        agent = await service.get_agent(key)
+        if agent is None:
+            raise HTTPException(status_code=404, detail=f"Agent '{key}' not found")
+        return agent
+
+    @app.post("/api/agents")
+    async def create_agent(request: AgentCreateRequest):
+        import re
+        if not re.match(r'^[a-z0-9-]{3,32}$', request.key):
+            raise HTTPException(status_code=400, detail="Agent key must be 3-32 chars: [a-z0-9-]")
+        service = ConfigService(app.state.settings)
+        existing = await service.get_agent(request.key)
+        if existing:
+            raise HTTPException(status_code=409, detail=f"Agent '{request.key}' already exists")
+        agent_dir = app.state.settings.home / "agents" / request.key
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        agent = await service.save_agent(request)
+        return agent
+
+    @app.delete("/api/agents/{key}")
+    async def delete_agent(key: str):
+        from nova.constants import DEFAULT_AGENT_KEY
+        if key == DEFAULT_AGENT_KEY:
+            raise HTTPException(status_code=400, detail=f"Cannot delete '{DEFAULT_AGENT_KEY}' agent")
+        service = ConfigService(app.state.settings)
+        deleted = await service.delete_agent(key)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Agent '{key}' not found")
+        return {"status": "deleted", "key": key}
 
     static_dir = settings.frontend_dist_path
     if static_dir and static_dir.exists() and static_dir.is_dir():
