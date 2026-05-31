@@ -10,6 +10,7 @@ export type NovaSessionSummary = {
   id: string
   title: string | null
   updated_at: number
+  agent_key: string
 }
 
 export type NovaMessageRecord = {
