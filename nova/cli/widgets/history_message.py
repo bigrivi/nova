@@ -9,16 +9,19 @@ class HistoryMessage(Static):
     DEFAULT_CSS = """
     HistoryMessage {
         padding: 0;
-        margin: 0 0 1 0;
-        background: ansi_default;
+        margin: 0 0 0 0;
         height: auto;
     }
 
     HistoryMessage Markdown {
-        background: ansi_default;
         color: #c0caf5;
         padding: 0 2;
         margin: 0;
+        height: auto;
+        background: #ff0000;
+    }
+    HistoryMessage Markdown > *:last-child {
+        margin-bottom: 0;
     }
     """
 

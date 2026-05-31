@@ -23,6 +23,7 @@ class AssistantMessage(Static):
     }
     """
     BATCH_SIZE = 32
+    FIRST_BATCH_SIZE = 5
 
     def __init__(self) -> None:
         super().__init__()
@@ -31,6 +32,7 @@ class AssistantMessage(Static):
         self._markdown: Markdown | None = None
         self._buffer = ""
         self._scroll_pending = False
+        self._has_rendered = False
 
     def on_mount(self) -> None:
         self._markdown = Markdown()
@@ -38,14 +40,11 @@ class AssistantMessage(Static):
 
     async def write_chunk(self, chunk: str) -> None:
         self._buffer += chunk
-
-        if (
-            len(self._buffer) >= self.BATCH_SIZE
-            or "\n" in self._buffer
-        ) and self._markdown is not None:
+        threshold = self.FIRST_BATCH_SIZE if not self._has_rendered else self.BATCH_SIZE
+        if (len(self._buffer) >= threshold or "\n" in self._buffer) and self._markdown is not None:
             await self._markdown.append(self._buffer)
             self._buffer = ""
-
+            self._has_rendered = True
             self.request_scroll()
 
     def request_scroll(self):

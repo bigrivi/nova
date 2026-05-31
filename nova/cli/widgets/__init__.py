@@ -4,6 +4,7 @@ from nova.cli.widgets.user_message import UserMessage
 from nova.cli.widgets.spinner import Spinner
 from nova.cli.widgets.assistant_message import AssistantMessage
 from nova.cli.widgets.history_message import HistoryMessage
+from nova.cli.widgets.tool_block import ToolBlock
 from nova.cli.widgets.tool_call_message import ToolCallMessage
 from nova.cli.widgets.tool_result_message import ToolResultMessage
 from nova.cli.widgets.tool_diff_message import ToolDiffMessage
@@ -20,6 +21,7 @@ __all__ = [
     "Spinner",
     "AssistantMessage",
     "HistoryMessage",
+    "ToolBlock",
     "ToolCallMessage",
     "ToolResultMessage",
     "ToolDiffMessage",

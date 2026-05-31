@@ -55,10 +55,6 @@ class Spinner(Static):
         self._message = "Thinking..."
         self._reset_timer()
 
-    def show_tool(self, tool_name: str) -> None:
-        self._message = f"Running {tool_name}..."
-        self._reset_timer()
-
     def stop(self) -> None:
         if self._timer is not None:
             self._timer.stop()
