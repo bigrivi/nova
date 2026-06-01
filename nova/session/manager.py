@@ -9,6 +9,7 @@ import uuid
 from nova.db.database import Message, MessageFilter, ensure_db
 from nova.llm import Message as LLMMessage
 from nova.constants import DEFAULT_AGENT_KEY
+from nova.session.protocol import SessionProtocol
 
 @dataclass
 class SessionContext:
@@ -41,7 +42,7 @@ _current_session: ContextVar[Optional[SessionContext]] = ContextVar(
     "current_session", default=None)
 
 
-class SessionManager:
+class SessionManager(SessionProtocol):
     def __init__(self):
         self._lock = asyncio.Lock()
 
