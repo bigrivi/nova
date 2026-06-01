@@ -51,7 +51,7 @@ class ChatTextArea(TextArea):
 
     def _matching_commands(self, partial: str) -> list[str]:
         try:
-            specs = self.app._cli._command_registry.specs
+            specs = self.app.command_specs
         except Exception:
             return []
 

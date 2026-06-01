@@ -63,11 +63,13 @@ class ToolBlock(Widget):
         tool_name: str,
         description: str = "",
         params: list[tuple[str, str]] | None = None,
+        show_right: bool = True,
     ) -> None:
         super().__init__()
         self._tool_name = tool_name
         self._description = description
         self._params = params or []
+        self._show_right = show_right
         self._state = "pending"
         self._expanded = False
         self._started_at: float | None = None
@@ -156,7 +158,11 @@ class ToolBlock(Widget):
             self._spinner_frame,
         )
         self._left_ref.update(RichText.from_ansi(left))
-        self._right_ref.update(RichText.from_ansi(right))
+        if self._show_right:
+            self._right_ref.update(RichText.from_ansi(right))
+            self._right_ref.display = True
+        else:
+            self._right_ref.display = False
 
         if self._expanded:
             body = self._build_body()

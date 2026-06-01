@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from rich.panel import Panel
 from rich.text import Text as RichText
@@ -9,7 +10,6 @@ from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.widgets import TextArea
 
-from nova.cli.repl import NovaCLI
 from nova.cli.screens import (
     AgentCreateResult,
     AgentListScreen,
@@ -22,7 +22,7 @@ from nova.cli.screens import (
 from nova.cli.stream_handler import StreamHandler
 from nova.cli.ui import ModelGroup, ModelSelection, SessionSelection
 from nova.cli.widgets import (
-    AskUserWidget,
+    AskUserWizard,
     AssistantMessage,
     BannerMessage,
     ChatTextArea,
@@ -35,6 +35,9 @@ from nova.cli.widgets import (
 )
 
 log = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from nova.cli.protocols import ChatControllerProtocol
 
 
 class ChatApp(App):
@@ -134,9 +137,9 @@ class ChatApp(App):
         Binding("ctrl+c", "quit", show=False),
     ]
 
-    def __init__(self, nova_cli: NovaCLI) -> None:
+    def __init__(self, controller: ChatControllerProtocol) -> None:
         super().__init__()
-        self._cli: NovaCLI = nova_cli
+        self._controller: ChatControllerProtocol = controller
         self._streaming = False
         self._asking = False
         self._current_handler: StreamHandler | None = None
@@ -150,7 +153,7 @@ class ChatApp(App):
             return
         if self._streaming:
             self._streaming = False
-            self._cli.request_stop()
+            self._controller.request_stop()
             self._current_handler = None
 
     # =====================================================
@@ -170,6 +173,10 @@ class ChatApp(App):
         self._print_banner()
         self._update_status_bar()
 
+    @property
+    def command_specs(self):
+        return self._controller.command_registry.specs
+
     # =====================================================
     # Status Bar
     # =====================================================
@@ -179,8 +186,9 @@ class ChatApp(App):
 
     def _update_status_bar(self) -> None:
         try:
-            model = self._cli.current_model_label
-            provider = self._cli.current_provider_label
+            status = self._controller.get_status()
+            model = status.model_label
+            provider = status.provider_label
         except Exception:
             model = provider = ""
         self.query_one(StatusBar).update_labels(model, provider)
@@ -191,9 +199,10 @@ class ChatApp(App):
 
     def _print_banner(self) -> None:
         try:
-            model = self._cli.current_model_label
-            provider = self._cli.current_provider_label
-            banner_text = self._cli.command_registry.banner_text()
+            status = self._controller.get_status()
+            model = status.model_label
+            provider = status.provider_label
+            banner_text = self._controller.command_registry.banner_text()
         except Exception:
             model = provider = ""
             banner_text = ""
@@ -216,12 +225,12 @@ class ChatApp(App):
     # =====================================================
 
     def on_click(self, event) -> None:
-        # Don't steal focus from AskUserWidget on click
+        # Don't steal focus from AskUserWizard on click
         if not self._asking:
             self.query_one(ChatTextArea).focus()
 
     def on_focus(self, event) -> None:
-        # Don't force focus back to ChatTextArea while AskUserWidget is active
+        # Don't force focus back to ChatTextArea while AskUserWizard is active
         if not self._asking and not isinstance(event.widget, ChatTextArea):
             self.query_one(ChatTextArea).focus()
 
@@ -237,7 +246,7 @@ class ChatApp(App):
         suggestions = self.query_one("#suggestions", CommandSuggestions)
         if text.startswith("/"):
             try:
-                specs = self._cli.command_registry.specs
+                specs = self._controller.command_registry.specs
             except Exception:
                 suggestions.visible = False
                 return
@@ -261,7 +270,7 @@ class ChatApp(App):
             await self._handle_message(text)
 
     async def _dispatch_command(self, text: str) -> None:
-        handled = await self._cli.command_dispatcher.dispatch(text)
+        handled = await self._controller.command_dispatcher.dispatch(text)
         if not handled:
             self._show_error_plain(f"Unknown command: {text}")
 
@@ -282,10 +291,9 @@ class ChatApp(App):
 
     async def _run_stream(self, text: str) -> None:
         container = self.query_one("#message-container")
-        handler = StreamHandler(container, self._cli,
+        handler = StreamHandler(container, self._controller,
                                 status_bar=self.query_one(StatusBar))
         self._current_handler = handler
-        self._cli.reset_stop_requested()
         self._streaming = True
 
         try:
@@ -293,7 +301,7 @@ class ChatApp(App):
         finally:
             await handler.finalize()
 
-            if self._cli.pending_input:
+            if self._controller.pending_input:
                 await self._handle_pending_ask_user()
 
             self._streaming = False
@@ -304,66 +312,56 @@ class ChatApp(App):
     # =====================================================
 
     async def _handle_pending_ask_user(self) -> None:
-        content = self._cli.pending_input.get("content", "")
-        self._cli.reset_pending_input()
+        content = self._controller.pending_input.get("content", "")
+        self._controller.reset_pending_input()
         if not content:
             return
 
-        from nova.cli.ask_user import (
-            parse_ask_user_question,
-            parse_options,
-            render_question_prompt,
-        )
+        from nova.cli.ask_user import parse_ask_user_payload
 
-        question = parse_ask_user_question(content)
+        questions = parse_ask_user_payload(content)
         container = self.query_one("#message-container")
 
-        if not question:
+        if not questions:
             container.mount(BannerMessage(
                 RichText("Error: Invalid ask_user payload.",
                          style="bold #f7768e")
             ))
             return
 
-        options = parse_options(content)
+        widget = AskUserWizard(questions)
+        self._asking = True
+        await container.mount(widget)
+        widget.scroll_visible()
+        log.debug("AskUserWizard mounted with %d questions", len(questions))
 
-        if options:
-            opts = [(o.label, o.description) for o in options]
-            widget = AskUserWidget(
-                header=question.get("header", ""),
-                question=question.get("question", ""),
-                options=opts,
-            )
-            self._asking = True
-            await container.mount(widget)
-            widget.scroll_visible()
-            log.debug("AskUserWidget mounted with %d options", len(opts))
-        else:
-            # Plain text input: prompt user to type in the input area
-            from nova.cli.ask_user import render_question_prompt
-            prompt_text = render_question_prompt(question)
-            container.mount(BannerMessage(RichText.from_ansi(prompt_text)))
-            container.mount(BannerMessage(
-                "Type your response and press Enter to submit."))
-
-    async def on_ask_user_widget_option_selected(
-        self, event: AskUserWidget.OptionSelected
+    async def on_ask_user_wizard_submitted(
+        self, event: AskUserWizard.Submitted
     ) -> None:
-        """Fired when user selects an option in AskUserWidget."""
-        answer = event.answer
-        log.debug("AskUserWidget selection: %s", answer)
+        """Fired when user submits answers in AskUserWizard."""
+        answers = event.answers
+        log.debug("AskUserWizard answers: %s", answers)
 
-        # Remove widget and restore state
-        await self.query_one(AskUserWidget).remove()
+        await self.query_one(AskUserWizard).remove()
         self._asking = False
         self.query_one(ChatTextArea).focus()
 
-        # Render user choice and continue streaming
+        from nova.cli.ask_user import format_answers_for_llm
+        answer_text = format_answers_for_llm(answers, event.questions)
+
         container = self.query_one("#message-container")
-        user_msg = UserMessage(answer)
+        user_msg = UserMessage(answer_text)
         container.mount(user_msg)
         user_msg.scroll_visible()
-        await self._run_stream(answer)
+        await self._run_stream(answer_text)
+
+    async def on_ask_user_wizard_dismissed(
+        self, event: AskUserWizard.Dismissed
+    ) -> None:
+        if self.query_one_or_none(AskUserWizard):
+            await self.query_one(AskUserWizard).remove()
+        self._asking = False
+        self.query_one(ChatTextArea).focus()
 
     # =====================================================
     # Cancel Stream (ESC)
@@ -489,7 +487,7 @@ class ChatApp(App):
                         description = get_tool_description(tc_name, arguments)
                         params = format_tool_params(tc_name, arguments)
 
-                        block = ToolBlock(tc_name, description, params)
+                        block = ToolBlock(tc_name, description, params, show_right=False)
                         block.set_done()
                         container.mount(block)
 

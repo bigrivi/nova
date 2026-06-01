@@ -5,6 +5,7 @@ from typing import Optional
 
 from nova.app import build_agent
 from nova.cli.commands import CommandDispatcher, CommandRegistry, ParsedCommand
+from nova.cli.protocols import ChatStatus, UIAdapterProtocol
 
 from nova.cli.ui import ModelGroup
 from nova.cli.utils import exit_process as _exit_process
@@ -47,7 +48,7 @@ class NovaCLI:
 
         self._cached_sessions: list[dict] = []
         self.current_id: Optional[str] = None
-        self._ui_adapter: Optional[object] = None
+        self._ui_adapter: Optional[UIAdapterProtocol] = None
         self._running = False
         self._pending_input: Optional[dict] = None
         self._streaming = False
@@ -80,6 +81,12 @@ class NovaCLI:
     def current_provider_label(self) -> str:
         return self._current_provider_label()
 
+    def get_status(self) -> ChatStatus:
+        return ChatStatus(
+            model_label=self._current_model_label(),
+            provider_label=self._current_provider_label(),
+        )
+
     @property
     def command_registry(self) -> CommandRegistry:
         return self._command_registry
@@ -97,6 +104,18 @@ class NovaCLI:
 
     def reset_stop_requested(self) -> None:
         self._stop_requested = False
+
+    async def stream_chat_events(self, user_input: str):
+        from nova.agent import AgentEvent
+
+        self.reset_stop_requested()
+        async for event, data in self.agent.chat_stream(
+            user_input,
+            session_id=self.current_id,
+        ):
+            if event == AgentEvent.SESSION:
+                self.set_session_id(data if isinstance(data, str) else None)
+            yield event, data
 
     def _current_model_label(self) -> str:
         if self.agent is None:
@@ -440,7 +459,7 @@ class NovaCLI:
     async def run(self) -> None:
         from nova.cli.chat_app import ChatApp
 
-        app = ChatApp(nova_cli=self)
+        app = ChatApp(controller=self)
         self._ui_adapter = app
 
         self.agent = await build_agent(agent_key=self._agent_key)
