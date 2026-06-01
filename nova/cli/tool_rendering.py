@@ -108,6 +108,11 @@ def render_tool_action(name: object, arguments: object) -> str:
             return truncate_preview(key.strip(), limit=60)
     if normalized_name == "list_memories":
         return ""
+    if normalized_name == "ask_user":
+        qs = args.get("questions", [])
+        if isinstance(qs, list):
+            return f"{len(qs)} question{'s' if len(qs) != 1 else ''}"
+        return "Ask user"
 
     return name
 
@@ -556,6 +561,14 @@ def format_tool_params(tool_name: str, arguments: dict) -> list[tuple[str, str]]
         mid = arguments.get("id", "") or arguments.get("key", "")
         if mid:
             params.append(("id", mid))
+    elif name == "ask_user":
+        qs = arguments.get("questions", [])
+        if isinstance(qs, list):
+            for q in qs:
+                if isinstance(q, dict):
+                    h = str(q.get("header", "")).strip() or str(q.get("question", "")).strip()[:40]
+                    if h:
+                        params.append((str(q.get("id", "")), h))
 
     return params
 

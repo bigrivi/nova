@@ -1,61 +1,67 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
-@dataclass(frozen=True)
-class PromptOption:
-    label: str
-    description: str
+@dataclass
+class QuestionData:
+    id: str = ""
+    header: str = ""
+    question: str = ""
+    input_type: str = "text"
+    options: list[dict] = field(default_factory=list)
+    multiple: bool = False
+    required: bool = True
 
 
-def parse_ask_user_question(content: str) -> dict:
+def parse_ask_user_payload(content: str) -> list[QuestionData]:
     try:
         payload = json.loads(content)
     except (TypeError, ValueError):
-        return {}
+        return []
     if not isinstance(payload, dict):
-        return {}
-    question = payload.get("question")
-    return question if isinstance(question, dict) else {}
-
-
-def render_question_prompt(question: dict) -> str:
-    header = str(question.get("header", "")).strip()
-    body = str(question.get("question", "")).strip()
-    prompt_marker = "\033[1;36m? \033[0m"
-
-    def _format_header(value: str) -> str:
-        return f"  {prompt_marker}\033[1m{value}\033[0m"
-
-    def _format_body(value: str) -> str:
-        indented = value.replace("\n", "\n  ")
-        return f"  {indented}"
-
-    if header and body:
-        return f"{_format_header(header)}\n{_format_body(body)}"
-    if header:
-        return _format_header(header)
-    if body:
-        return _format_body(body)
-    return ""
-
-
-def parse_options(content: str) -> list[PromptOption]:
-    question = parse_ask_user_question(content)
-    if not question:
         return []
-    if str(question.get("input_type", "")).strip().lower() != "select":
+    raw_questions = payload.get("questions")
+    if not isinstance(raw_questions, list):
         return []
-    options = question.get("options")
-    if not isinstance(options, list):
-        return []
-    return [
-        PromptOption(
-            label=str(option.get("label", "")).strip(),
-            description=str(option.get("description", "")).strip(),
-        )
-        for option in options
-        if isinstance(option, dict) and str(option.get("label", "")).strip()
-    ]
+    result: list[QuestionData] = []
+    for i, q in enumerate(raw_questions):
+        if not isinstance(q, dict):
+            continue
+        qid = str(q.get("id", "")).strip() or f"q{i}"
+        header = str(q.get("header", "")).strip()
+        question = str(q.get("question", "")).strip()
+        input_type = str(q.get("input_type", "")).strip().lower()
+        if input_type not in {"text", "select", "confirm"}:
+            input_type = "text"
+        raw_opts = q.get("options")
+        options = []
+        if isinstance(raw_opts, list) and input_type == "select":
+            for opt in raw_opts:
+                if isinstance(opt, dict) and str(opt.get("label", "")).strip():
+                    options.append(opt)
+        result.append(QuestionData(
+            id=qid,
+            header=header,
+            question=question,
+            input_type=input_type,
+            options=options,
+            multiple=bool(q.get("multiple", False)),
+            required=bool(q.get("required", True)),
+        ))
+    return result
+
+
+def format_answers_for_llm(
+    answers: list[tuple[str, str]],
+    questions: list[QuestionData],
+) -> str:
+    qmap = {q.id: q.question for q in questions}
+    lines: list[str] = []
+    for qid, answer in answers:
+        qtext = qmap.get(qid, qid)
+        lines.append(f"Q ({qid}): {qtext}")
+        lines.append(f"A: {answer}")
+        lines.append("")
+    return "\n".join(lines).strip()

@@ -1,11 +1,10 @@
 import pytest
 from prompt_toolkit.document import Document
-import re
 
 from nova.agent.core import AgentEvent
 from nova.cli.commands import CommandDispatcher, CommandRegistry
 from nova.cli.completion import CommandCompleter
-from nova.cli.ask_user import render_question_prompt, parse_options
+from nova.cli.ask_user import parse_ask_user_payload, format_answers_for_llm
 from nova.cli.repl import NovaCLI
 from nova.cli.ui import (
     ModelGroup,
@@ -390,34 +389,43 @@ def test_render_tool_result_truncates_long_diff():
     assert "... (23 more diff lines not shown)" in rendered
 
 
-def test_parse_options_requires_json_payload():
-    content = """## Questions
-
-**1. Current City**
-Please enter your city
-
-Please enter the city name directly, for example:
-
-- Beijing
-- Shanghai
-- Shenzhen
-"""
-
-    assert parse_options(content) == []
+def test_parse_ask_user_payload_returns_empty_for_invalid_json():
+    content = "not json"
+    assert parse_ask_user_payload(content) == []
 
 
-def test_render_question_prompt_omits_header_line_when_header_missing():
-    rendered = render_question_prompt(
-        {
-            "header": "",
-            "question": "Please tell me which city you want the weather for.",
-            "input_type": "text",
-            "options": [],
-        }
-    )
+def test_parse_ask_user_payload_single_question():
+    content = """{"questions":[{"id":"q1","header":"Name","question":"Your name?","input_type":"text","options":[],"multiple":false,"required":true}]}"""
+    questions = parse_ask_user_payload(content)
+    assert len(questions) == 1
+    assert questions[0].id == "q1"
+    assert questions[0].question == "Your name?"
+    assert questions[0].input_type == "text"
 
-    clean_rendered = re.sub(r"\x1b\[[0-9;]*m", "", rendered)
-    assert clean_rendered == "  Please tell me which city you want the weather for."
+
+def test_parse_ask_user_payload_multiple_questions():
+    content = """{"questions":[{"id":"q1","question":"Q1?","input_type":"text","options":[]},{"id":"q2","question":"Q2?","input_type":"confirm","options":[]}]}"""
+    questions = parse_ask_user_payload(content)
+    assert len(questions) == 2
+    assert questions[1].input_type == "confirm"
+
+
+def test_parse_ask_user_payload_bad_input_type_falls_back_to_text():
+    content = """{"questions":[{"id":"q1","question":"Test?","input_type":"bad","options":[]}]}"""
+    questions = parse_ask_user_payload(content)
+    assert questions[0].input_type == "text"
+
+
+def test_format_answers_for_llm():
+    from nova.cli.ask_user import QuestionData
+    qs = [QuestionData(id="q1", question="What is your name?"),
+          QuestionData(id="q2", question="Preferred color?")]
+    answers = [("q1", "Alice"), ("q2", "Blue")]
+    result = format_answers_for_llm(answers, qs)
+    assert "What is your name?" in result
+    assert "Alice" in result
+    assert "Preferred color?" in result
+    assert "Blue" in result
 
 
 def test_command_registry_parses_slash_and_bare_commands():
@@ -590,23 +598,15 @@ async def test_load_session_by_id_reports_missing_history(monkeypatch):
     ]
 
 
-def test_parse_options_parses_explicit_options_block():
-    content = """{"question":{"header":"Current City","question":"Please choose a city","input_type":"select","options":[{"label":"Beijing","description":"Capital"},{"label":"Shanghai","description":"Municipality"}]}}"""
-
-    options = parse_options(content)
-
-    assert len(options) == 2
-    assert options[0].label == "Beijing"
-    assert options[0].description == "Capital"
+def test_parse_ask_user_payload_select_options():
+    content = """{"questions":[{"id":"q1","header":"Framework","question":"Choose","input_type":"select","options":[{"label":"A","description":"Opt A"},{"label":"B","description":"Opt B"}]}]}"""
+    questions = parse_ask_user_payload(content)
+    assert len(questions) == 1
+    assert len(questions[0].options) == 2
+    assert questions[0].options[0]["label"] == "A"
 
 
-def test_parse_options_requires_explicit_select_input_type():
-    content = """{"question":{"header":"Current City","question":"Please tell me which city you want the weather for, such as Beijing or Shanghai.","input_type":"text","options":[{"label":"Enter city","description":"Tell me the city you are currently in"}]}}"""
-
-    assert parse_options(content) == []
-
-
-def test_parse_options_respects_input_type_text():
-    content = """{"question":{"header":"Current City","question":"Please tell me which city you want the weather for, such as Beijing or Shanghai.","input_type":"text","options":[{"label":"Beijing","description":"Capital"},{"label":"Shanghai","description":"Municipality"}]}}"""
-
-    assert parse_options(content) == []
+def test_parse_ask_user_payload_text_has_no_options():
+    content = """{"questions":[{"id":"q1","question":"Name?","input_type":"text","options":[]}]}"""
+    questions = parse_ask_user_payload(content)
+    assert questions[0].options == []

@@ -6,88 +6,157 @@ from nova.tools.registry import ToolRegistry
 
 
 @pytest.mark.asyncio
-async def test_ask_user_renders_input_type():
-    result = await ask_user(
-        header="Current City",
-        question="Please tell me which city you want the weather for, such as Beijing or Shanghai.",
-        input_type="text",
-        options=[
-            {
-                "label": "Enter city",
-                "description": "Tell me the city you are currently in",
-            }
-        ],
-    )
+async def test_ask_user_single_question():
+    result = await ask_user(questions=[
+        {
+            "id": "q1",
+            "header": "Current City",
+            "question": "Please tell me which city you want the weather for.",
+            "input_type": "text",
+            "options": [],
+        }
+    ])
 
     assert result.requires_input is True
     payload = json.loads(result.content)
-    assert payload["question"]["input_type"] == "text"
-    assert payload["question"]["options"] == []
+    assert payload == {
+        "questions": [{
+            "id": "q1",
+            "header": "Current City",
+            "question": "Please tell me which city you want the weather for.",
+            "input_type": "text",
+            "options": [],
+            "multiple": False,
+            "required": True,
+        }]
+    }
 
 
 @pytest.mark.asyncio
-async def test_ask_user_normalizes_select_question_payload():
-    result = await ask_user(
-        header="Current City",
-        question="Please choose a city",
-        input_type="select",
-        options=[
-            {"label": "Beijing", "description": "Capital", "extra": "ignored"},
-            {"label": "Shanghai", "description": "Municipality"},
-        ],
-        multiple=True,
-    )
-
-    payload = json.loads(result.content)
-
-    assert payload == {
-        "question": {
-            "header": "Current City",
-            "question": "Please choose a city",
+async def test_ask_user_select_question():
+    result = await ask_user(questions=[
+        {
+            "id": "q1",
+            "header": "Framework",
+            "question": "Choose a framework",
             "input_type": "select",
             "options": [
-                {"label": "Beijing", "description": "Capital"},
-                {"label": "Shanghai", "description": "Municipality"},
+                {"label": "Textual", "description": "Build TUI apps"},
+                {"label": "React", "description": "Build web apps"},
             ],
             "multiple": True,
         }
-    }
+    ])
+
+    payload = json.loads(result.content)
+    q = payload["questions"][0]
+    assert q["input_type"] == "select"
+    assert q["options"] == [
+        {"label": "Textual", "description": "Build TUI apps"},
+        {"label": "React", "description": "Build web apps"},
+    ]
+    assert q["multiple"] is True
+    assert q["required"] is True
 
 
 @pytest.mark.asyncio
-async def test_ask_user_allows_missing_header():
-    result = await ask_user(
-        question="Please choose a city",
-        input_type="select",
-        options=[
-            {"label": "Beijing", "description": "Capital"},
-        ],
-    )
+async def test_ask_user_confirm_question():
+    result = await ask_user(questions=[
+        {
+            "id": "q1",
+            "question": "Deploy now?",
+            "input_type": "confirm",
+            "options": [],
+        }
+    ])
 
     payload = json.loads(result.content)
+    assert payload["questions"][0]["input_type"] == "confirm"
 
-    assert payload == {
-        "question": {
-            "header": "",
-            "question": "Please choose a city",
+
+@pytest.mark.asyncio
+async def test_ask_user_multiple_questions():
+    result = await ask_user(questions=[
+        {
+            "id": "q1",
+            "header": "Name",
+            "question": "What is your name?",
+            "input_type": "text",
+            "options": [],
+        },
+        {
+            "id": "q2",
+            "question": "Framework?",
             "input_type": "select",
-            "options": [
-                {"label": "Beijing", "description": "Capital"},
-            ],
-            "multiple": False,
-        }
-    }
+            "options": [{"label": "A", "description": "Opt A"}, {"label": "B", "description": "Opt B"}],
+        },
+    ])
 
-def test_ask_user_schema_describes_input_type_contract():
+    payload = json.loads(result.content)
+    assert len(payload["questions"]) == 2
+    assert payload["questions"][0]["id"] == "q1"
+    assert payload["questions"][1]["id"] == "q2"
+
+
+@pytest.mark.asyncio
+async def test_ask_user_sanitizes_bad_input_type():
+    result = await ask_user(questions=[
+        {
+            "id": "q1",
+            "question": "Test?",
+            "input_type": "invalid",
+            "options": [],
+        }
+    ])
+
+    payload = json.loads(result.content)
+    assert payload["questions"][0]["input_type"] == "text"
+
+
+@pytest.mark.asyncio
+async def test_ask_user_auto_id_when_missing():
+    result = await ask_user(questions=[
+        {
+            "question": "Q1?",
+            "input_type": "text",
+            "options": [],
+        },
+        {
+            "question": "Q2?",
+            "input_type": "text",
+            "options": [],
+        },
+    ])
+
+    payload = json.loads(result.content)
+    assert payload["questions"][0]["id"] == "q0"
+    assert payload["questions"][1]["id"] == "q1"
+
+
+def test_ask_user_schema_describes_questions():
     registry = ToolRegistry()
     registry.register_by_metadata("ask_user")
 
     schema = registry.get_schema()[0]["function"]
     properties = schema["parameters"]["properties"]
-    input_type = properties["input_type"]
-    options = properties["options"]
+    assert "questions" in properties
+    assert schema["parameters"]["required"] == ["questions"]
 
-    assert "must set input_type explicitly" in schema["description"]
-    assert "Use 'text' for free-form typed input" in input_type["description"]
-    assert "For input_type='text'" in options["description"]
-    assert schema["parameters"]["required"] == ["question", "input_type", "options"]
+
+@pytest.mark.asyncio
+async def test_ask_user_strips_blank_options():
+    result = await ask_user(questions=[
+        {
+            "id": "q1",
+            "question": "Pick one",
+            "input_type": "select",
+            "options": [
+                {"label": "", "description": "empty"},
+                {"label": "Valid", "description": "good"},
+            ],
+        }
+    ])
+
+    payload = json.loads(result.content)
+    assert len(payload["questions"][0]["options"]) == 1
+    assert payload["questions"][0]["options"][0]["label"] == "Valid"
