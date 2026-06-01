@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, Optional
 
 from nova.llm import LLMProvider, Message as LLMMessage, ToolCall, ToolResult
-from nova.session import SessionManager, get_session_manager
+from nova.session import get_session_manager
+from nova.session.protocol import SessionProtocol
 from nova.tools.registry import ToolRegistry, tool
 from nova.prompt import PromptBuilder, PromptConfig
 from nova.agent.compaction import maybe_compact, get_context_limit
@@ -21,36 +22,29 @@ log = logging.getLogger(__name__)
 
 
 class AgentEvent(Enum):
-    # Emitted once per run after the session is created or loaded.
+    # Session lifecycle
     SESSION = "session"
-    # Emitted right before one LLM streaming turn starts.
-    LLM_REQUEST_START = "llm_request_start"
-    # Emitted once after one LLM streaming turn finishes.
-    LLM_REQUEST_END = "llm_request_end"
-    # Emitted immediately before a tool starts executing.
-    TOOL_CALL = "tool_call"
-    # Emitted after a tool finishes executing and its result is available.
-    TOOL_RESULT = "tool_result"
-    # Emitted for each streamed text chunk from the model.
-    TEXT_DELTA = "text_delta"
-    # Emitted when the run ends in an error, with a structured {reason, message} payload.
-    ERROR = "error"
-    # Emitted when the run finishes, with a structured {reason, content} payload.
-    DONE = "done"
-    # Emitted once at the start of chat_stream, before any turn processing begins.
     START = "start"
-    # Emitted at the start of each turn iteration, with {"turn": count}.
+    DONE = "done"
+    ERROR = "error"
+
+    # Turn lifecycle
     TURN_START = "turn_start"
-    # Emitted after each turn iteration completes, with {"turn": count}.
     TURN_END = "turn_end"
-    # Emitted before the first text_delta in a turn, signalling text output is about to begin.
-    TEXT_DELTA_START = "text_delta_start"
-    # Emitted after the LLM call ends, with the full accumulated text content for the turn.
-    TEXT_DELTA_COMPLETED = "text_delta_completed"
-    # Emitted for each streamed reasoning/thinking chunk from the model.
+
+    # Reasoning stream
+    REASONING_START = "reasoning_start"
     REASONING_DELTA = "reasoning_delta"
-    # Emitted right before TEXT_DELTA_START when reasoning content was streamed.
     REASONING_END = "reasoning_end"
+
+    # Text stream
+    TEXT_START = "text_start"
+    TEXT_DELTA = "text_delta"
+    TEXT_END = "text_end"
+
+    # Tool execution
+    TOOL_CALL = "tool_call"
+    TOOL_RESULT = "tool_result"
 
 
 def _done_payload(reason: str, content: Optional[str] = None) -> dict[str, Any]:
@@ -78,7 +72,7 @@ class Agent:
         self,
         config: Optional[AgentConfig] = None,
         llm_provider: Optional[LLMProvider] = None,
-        session_manager: Optional[SessionManager] = None,
+        session_manager: Optional[SessionProtocol] = None,
         agent_key: str = DEFAULT_AGENT_KEY,
         agent_dir: Optional[Path] = None,
     ):
@@ -259,11 +253,10 @@ class Agent:
         accumulated_tool_calls: dict[str, Any] = {}
         final_done_content = ""
         _text_started = False
+        _reasoning_started = False
 
         log.info(
             f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}")
-        await self._emit(AgentEvent.LLM_REQUEST_START)
-        yield AgentEvent.LLM_REQUEST_START, None
         generator_closing = False
         try:
             async for chunk in self.llm.chat_stream(
@@ -279,6 +272,10 @@ class Agent:
 
                 if hasattr(chunk, 'type'):
                     if chunk.type == "reasoning_delta":
+                        if not _reasoning_started:
+                            _reasoning_started = True
+                            await self._emit(AgentEvent.REASONING_START)
+                            yield AgentEvent.REASONING_START, None
                         accumulated_reasoning += chunk.content
                         yield AgentEvent.REASONING_DELTA, chunk.content
                     elif chunk.type == "text_delta":
@@ -287,8 +284,8 @@ class Agent:
                             if accumulated_reasoning:
                                 await self._emit(AgentEvent.REASONING_END)
                                 yield AgentEvent.REASONING_END, None
-                            await self._emit(AgentEvent.TEXT_DELTA_START)
-                            yield AgentEvent.TEXT_DELTA_START, None
+                            await self._emit(AgentEvent.TEXT_START)
+                            yield AgentEvent.TEXT_START, None
                         accumulated_content += chunk.content
                         yield AgentEvent.TEXT_DELTA, chunk.content
                     elif chunk.type == "done":
@@ -316,19 +313,16 @@ class Agent:
         except Exception as e:
             log.error(f"[Turn {turn_count}] LLM call failed: {e}")
             yield AgentEvent.ERROR, _error_payload("llm_error", str(e))
-            yield AgentEvent.DONE, _done_payload("error", None)
             return
         finally:
             if accumulated_reasoning and not _text_started:
                 await self._emit(AgentEvent.REASONING_END)
                 if not generator_closing:
                     yield AgentEvent.REASONING_END, None
-            await self._emit(AgentEvent.LLM_REQUEST_END)
-            if not generator_closing:
-                yield AgentEvent.LLM_REQUEST_END, None
             if _text_started:
-                await self._emit(AgentEvent.TEXT_DELTA_COMPLETED, accumulated_content)
-                yield AgentEvent.TEXT_DELTA_COMPLETED, accumulated_content
+                await self._emit(AgentEvent.TEXT_END, accumulated_content)
+                if not generator_closing:
+                    yield AgentEvent.TEXT_END, accumulated_content
         stop_payload = await self._wait_if_aborted()
         if stop_payload:
             yield AgentEvent.DONE, stop_payload
@@ -518,151 +512,6 @@ class Agent:
         log.warning(f"[Turn {turn_count}] Maximum iterations reached")
         yield AgentEvent.ERROR, error_payload
 
-    @tool(
-        name="list_skills",
-        description=(
-            "List the skills currently available in Nova's in-memory skill catalog. "
-            "Start here when the user asks to use a skill, asks what skills are available, mentions a likely skill name, "
-            "or the task may match a reusable workflow. "
-            "Use this before deciding whether to load or install a skill."
-        ),
-        parameters={
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
-    )
-    async def _tool_list_skills(self) -> ToolResult:
-        skills = self._skill_service.list_skills()
-        if not skills:
-            return ToolResult(success=True, content="No skills available.")
-
-        lines = [f"Available skills ({len(skills)}):"]
-        for skill in skills:
-            lines.append(f"- name: {skill.name}")
-            lines.append(f"  description: {skill.description or '(empty)'}")
-            lines.append(f"  path: {skill.path}")
-            if skill.compatibility:
-                lines.append(f"  compatibility: {skill.compatibility}")
-            allowed = ", ".join(skill.allowed_tools) if skill.allowed_tools else "(not specified)"
-            lines.append(f"  allowed_tools: {allowed}")
-        return ToolResult(success=True, content="\n".join(lines))
-
-    @tool(
-        name="load_skill",
-        description=(
-            "Load the full SKILL.md content for one skill from Nova's current in-memory skill catalog. "
-            "Use this after you know the skill name and need the full instructions or examples. "
-            "Prefer calling list_skills first if you have not confirmed the skill is available."
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "skill_name": {
-                    "type": "string",
-                    "description": "Exact skill name to load. Prefer calling list_skills first if you are unsure.",
-                }
-            },
-            "required": ["skill_name"],
-        },
-    )
-    async def _tool_load_skill(self, skill_name: str) -> ToolResult:
-        try:
-            skill = self._skill_service.load_skill(skill_name)
-        except KeyError:
-            available_names = [
-                item.name for item in self._skill_service.list_skills()]
-            suggestion = ", ".join(
-                available_names) if available_names else "(none)"
-            return ToolResult(
-                success=False,
-                content=f"Skill not found: {skill_name}. Available skills: {suggestion}",
-            )
-
-        lines = [
-            f"Skill loaded: {skill.name}",
-            f"Path: {skill.path}",
-            f"SKILL.md: {skill.skill_md_path}",
-            f"Description: {skill.description or '(empty)'}",
-        ]
-        if skill.compatibility:
-            lines.append(f"Compatibility: {skill.compatibility}")
-        allowed = ", ".join(skill.allowed_tools) if skill.allowed_tools else "(not specified)"
-        lines.append(f"Allowed tools: {allowed}")
-        lines.append("")
-        lines.append("Full SKILL.md:")
-        lines.append(skill.raw_content)
-        return ToolResult(success=True, content="\n".join(lines))
-
-    @tool(
-        name="install_skill",
-        description=(
-            "Install or update one skill from ClawHub into Nova's local runtime skills directory. "
-            "Use this only when the user explicitly asks to install a skill. "
-            "If you are unsure whether the skill is already installed locally, call `list_skills` first. "
-            "If the skill already exists locally and the user did not ask to update or replace it, prefer `load_skill` instead of reinstalling. "
-            "Returns install metadata only and does not include the full SKILL.md content. "
-            "Accept either a ClawHub skill slug or a ClawHub skill page URL. "
-            "Set force=true only when the user explicitly wants to replace or update an existing local skill directory."
-        ),
-        parameters={
-            "type": "object",
-            "properties": {
-                "skill_ref": {
-                    "type": "string",
-                    "description": (
-                        "ClawHub skill slug or full ClawHub skill page URL to install, "
-                        "for example `review-skill` or `https://clawhub.ai/skills/team/review-skill`."
-                    ),
-                },
-                "force": {
-                    "type": "boolean",
-                    "description": "Whether to replace an existing local skill directory with the same slug.",
-                },
-            },
-            "required": ["skill_ref"],
-        },
-    )
-    async def _tool_install_skill(self, skill_ref: str, force: bool = False) -> ToolResult:
-        from nova.skills.installer import SkillInstallError
-        try:
-            result = await self._skill_service.install_from_clawhub(skill_ref, force=force)
-        except SkillInstallError as exc:
-            payload = {
-                "status": "error",
-                "error_code": exc.code,
-                "message": str(exc),
-                "skill_ref": skill_ref,
-                "force": force,
-                "skill_md_content_included": False,
-            }
-            if exc.next_action:
-                payload["next_action"] = exc.next_action
-            if exc.retry_after_seconds is not None:
-                payload["retry_after_seconds"] = exc.retry_after_seconds
-            return ToolResult(
-                success=False,
-                content=json.dumps(payload, ensure_ascii=False, indent=2),
-                error=str(exc),
-            )
-
-        payload = {
-            "status": "ok",
-            "action": "updated" if result.replaced else "installed",
-            "slug": result.slug,
-            "skill_name": result.skill_name,
-            "installed_path": result.installed_path,
-            "skill_md_path": result.skill_md_path,
-            "source_url": result.source_url,
-            "catalog_refreshed": True,
-            "skill_md_content_included": False,
-            "next_action": "list_skills_or_load_skill",
-        }
-        return ToolResult(
-            success=True,
-            content=json.dumps(payload, ensure_ascii=False, indent=2),
-        )
-
     def register_tool(self, func: Callable, name: str = None) -> None:
         self.tool_registry.register(func, name)
 
@@ -672,6 +521,8 @@ class Agent:
             if name.startswith("_"):
                 continue
             self.tool_registry.register_by_metadata(name)
-        self.tool_registry.register(self._tool_list_skills, name="list_skills")
-        self.tool_registry.register(self._tool_load_skill, name="load_skill")
-        self.tool_registry.register(self._tool_install_skill, name="install_skill")
+        from nova.skills.tools import SkillTools
+        self._skill_tools = SkillTools(self._skill_service)
+        self.tool_registry.register(self._skill_tools.list_skills, name="list_skills")
+        self.tool_registry.register(self._skill_tools.load_skill, name="load_skill")
+        self.tool_registry.register(self._skill_tools.install_skill, name="install_skill")

@@ -94,35 +94,10 @@ class AISDKStreamAdapter:
                 )
             return chunks
 
-        if event in (AgentEvent.START, AgentEvent.TURN_START, AgentEvent.TURN_END):
+        if event == AgentEvent.START:
             return chunks
 
-        if event == AgentEvent.TEXT_DELTA_START:
-            self._active_text_id = f"text_{uuid.uuid4().hex}"
-            chunks.append(
-                encode_ai_sdk_sse(
-                    {
-                        "type": "text-start",
-                        "id": self._active_text_id,
-                    }
-                )
-            )
-            return chunks
-
-        if event == AgentEvent.TEXT_DELTA_COMPLETED:
-            if self._active_text_id is not None:
-                chunks.append(
-                    encode_ai_sdk_sse(
-                        {
-                            "type": "text-end",
-                            "id": self._active_text_id,
-                        }
-                    )
-                )
-                self._active_text_id = None
-            return chunks
-
-        if event == AgentEvent.LLM_REQUEST_START:
+        if event == AgentEvent.TURN_START:
             if not self._message_started:
                 chunks.append(
                     encode_ai_sdk_sse(
@@ -135,6 +110,35 @@ class AISDKStreamAdapter:
                 self._message_started = True
             chunks.append(encode_ai_sdk_sse({"type": "start-step"}))
             self._step_started = True
+            return chunks
+
+        if event == AgentEvent.TURN_END:
+            chunks.extend(self._close_open_parts())
+            return chunks
+
+        if event == AgentEvent.TEXT_START:
+            self._active_text_id = f"text_{uuid.uuid4().hex}"
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "text-start",
+                        "id": self._active_text_id,
+                    }
+                )
+            )
+            return chunks
+
+        if event == AgentEvent.TEXT_END:
+            if self._active_text_id is not None:
+                chunks.append(
+                    encode_ai_sdk_sse(
+                        {
+                            "type": "text-end",
+                            "id": self._active_text_id,
+                        }
+                    )
+                )
+                self._active_text_id = None
             return chunks
 
         if event == AgentEvent.TEXT_DELTA:
@@ -150,26 +154,29 @@ class AISDKStreamAdapter:
             self._text_emitted = True
             return chunks
 
-        if event == AgentEvent.REASONING_DELTA:
-            if self._active_reasoning_id is None:
-                self._active_reasoning_id = f"reasoning_{uuid.uuid4().hex}"
-                chunks.append(
-                    encode_ai_sdk_sse(
-                        {
-                            "type": "reasoning-start",
-                            "id": self._active_reasoning_id,
-                        }
-                    )
-                )
+        if event == AgentEvent.REASONING_START:
+            self._active_reasoning_id = f"reasoning_{uuid.uuid4().hex}"
             chunks.append(
                 encode_ai_sdk_sse(
                     {
-                        "type": "reasoning-delta",
+                        "type": "reasoning-start",
                         "id": self._active_reasoning_id,
-                        "delta": data if isinstance(data, str) else str(data),
                     }
                 )
             )
+            return chunks
+
+        if event == AgentEvent.REASONING_DELTA:
+            if self._active_reasoning_id is not None:
+                chunks.append(
+                    encode_ai_sdk_sse(
+                        {
+                            "type": "reasoning-delta",
+                            "id": self._active_reasoning_id,
+                            "delta": data if isinstance(data, str) else str(data),
+                        }
+                    )
+                )
             return chunks
 
         if event == AgentEvent.REASONING_END:
@@ -183,10 +190,6 @@ class AISDKStreamAdapter:
                     )
                 )
                 self._active_reasoning_id = None
-            return chunks
-
-        if event == AgentEvent.LLM_REQUEST_END:
-            chunks.extend(self._close_open_parts())
             return chunks
 
         if event == AgentEvent.TOOL_CALL:

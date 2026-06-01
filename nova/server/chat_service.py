@@ -209,11 +209,11 @@ class ChatService:
 
         if agent_event == AgentEvent.SESSION:
             return await emit(SessionStartedEvent, SessionStartedEventData, session_id=data)
-        if agent_event in (AgentEvent.START, AgentEvent.TURN_START, AgentEvent.TURN_END):
+        if agent_event in (AgentEvent.START, AgentEvent.TURN_END):
             return None
-        if agent_event == AgentEvent.LLM_REQUEST_START:
+        if agent_event == AgentEvent.TURN_START:
             return await emit(ResponseStartedEvent, ResponseStartedEventData)
-        if agent_event in (AgentEvent.TEXT_DELTA_START, AgentEvent.TEXT_DELTA_COMPLETED, AgentEvent.REASONING_END):
+        if agent_event in (AgentEvent.TEXT_START, AgentEvent.TEXT_END, AgentEvent.REASONING_START, AgentEvent.REASONING_END):
             return None
         if agent_event == AgentEvent.TEXT_DELTA:
             return await emit(MessageDeltaEvent, MessageDeltaEventData, delta=data)
