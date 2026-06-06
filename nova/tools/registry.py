@@ -85,9 +85,9 @@ class ToolRegistry:
         schemas = []
         for tool in self.tools.values():
             schemas.append({
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": self._convert_schema(tool.params_schema),
+                # "name": tool.name,
+                # "description": tool.description,
+                # "parameters": self._convert_schema(tool.params_schema),
                 "type": "function",
                 "function": {
                     "name": tool.name,

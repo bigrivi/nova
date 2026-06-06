@@ -90,6 +90,17 @@ class ProviderCreateRequest(BaseModel):
     api_key: str = ""
 
 
+class AgentCreateRequest(BaseModel):
+    key: str
+    name: str
+    description: str = ""
+    model: str
+    provider: str
+    tools: list[str] | None = None
+    workspace_dir: str | None = None
+    parent_ids: list[str] | None = None
+
+
 class ModelCreateRequest(BaseModel):
     provider: str
     model: str

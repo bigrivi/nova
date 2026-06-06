@@ -75,6 +75,8 @@ class Agent:
         session_manager: Optional[SessionProtocol] = None,
         agent_key: str = DEFAULT_AGENT_KEY,
         agent_dir: Optional[Path] = None,
+        parent_agent: Optional["Agent"] = None,
+        is_sub_agent: bool = False,
     ):
         self.config = config or AgentConfig()
         self.agent_key = agent_key
@@ -82,6 +84,10 @@ class Agent:
         self.session = session_manager or get_session_manager()
         self.tool_registry = ToolRegistry()
         self._event_handlers: dict[AgentEvent, list[Callable]] = {}
+        self.parent_agent = parent_agent
+        self.is_sub_agent = is_sub_agent
+        self._sub_agents: list["Agent"] = []
+        
         if agent_dir is None:
             agent_dir = Path.home() / ".nova" / "agents" / agent_key
         agent_dir.mkdir(parents=True, exist_ok=True)
@@ -526,3 +532,55 @@ class Agent:
         self.tool_registry.register(self._skill_tools.list_skills, name="list_skills")
         self.tool_registry.register(self._skill_tools.load_skill, name="load_skill")
         self.tool_registry.register(self._skill_tools.install_skill, name="install_skill")
+        
+        # Register delegate_to_agent tool if this is not a sub-agent
+        if not self.is_sub_agent:
+            from nova.tools.delegate import delegate_to_agent
+            self.tool_registry.register(delegate_to_agent, name="delegate_to_agent")
+
+    def add_sub_agent(self, sub_agent: "Agent") -> None:
+        """Add a sub-agent to this agent's list of sub-agents."""
+        sub_agent.parent_agent = self
+        sub_agent.is_sub_agent = True
+        self._sub_agents.append(sub_agent)
+
+    def get_sub_agents(self) -> list["Agent"]:
+        """Get all sub-agents of this agent."""
+        return self._sub_agents.copy()
+
+    def get_parent_agent(self) -> Optional["Agent"]:
+        """Get the parent agent (if this is a sub-agent)."""
+        return self.parent_agent
+
+    async def get_child_agents(self) -> list[dict]:
+        """Get all child agents of this agent from database."""
+        from nova.db.database import ensure_db
+        db = await ensure_db()
+        child_keys = await db.get_agent_children(self.agent_key)
+        children = []
+        for key in child_keys:
+            agent = await db.get_agent(key)
+            if agent:
+                children.append(agent)
+        return children
+
+    async def get_parent_agents(self) -> list[dict]:
+        """Get all parent agents of this agent from database."""
+        from nova.db.database import ensure_db
+        db = await ensure_db()
+        parent_keys = await db.get_agent_parents(self.agent_key)
+        parents = []
+        for key in parent_keys:
+            agent = await db.get_agent(key)
+            if agent:
+                parents.append(agent)
+        return parents
+
+    async def get_parent_agent_config(self) -> Optional[dict]:
+        """Get the first parent agent configuration from database."""
+        from nova.db.database import ensure_db
+        db = await ensure_db()
+        parent_keys = await db.get_agent_parents(self.agent_key)
+        if parent_keys:
+            return await db.get_agent(parent_keys[0])
+        return None

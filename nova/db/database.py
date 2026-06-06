@@ -82,12 +82,22 @@ CREATE TABLE IF NOT EXISTS agents (
     provider TEXT NOT NULL,
     tools TEXT,
     workspace_dir TEXT,
+    parent_id TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
 
 INSERT OR IGNORE INTO agents (key, name, model, provider, created_at, updated_at)
 VALUES ('main', 'Main', 'gpt-4o', 'openai', CAST(strftime('%s','now') AS INTEGER) * 1000, CAST(strftime('%s','now') AS INTEGER) * 1000);
+
+CREATE TABLE IF NOT EXISTS agent_parents (
+    child_key TEXT NOT NULL,
+    parent_key TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (child_key, parent_key),
+    FOREIGN KEY (child_key) REFERENCES agents(key) ON DELETE CASCADE,
+    FOREIGN KEY (parent_key) REFERENCES agents(key) ON DELETE CASCADE
+);
 
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -283,6 +293,16 @@ class Database:
                 "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?",
                 (limit,),
             )
+        rows = await cursor.fetchall()
+        return [self._row_to_session(row) for row in rows]
+
+    async def get_sessions_by_parent_id(self, parent_id: str, limit: int = 50) -> list[dict]:
+        """Get all child sessions of a parent session."""
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "SELECT * FROM sessions WHERE parent_id = ? ORDER BY created_at DESC LIMIT ?",
+            (parent_id, limit),
+        )
         rows = await cursor.fetchall()
         return [self._row_to_session(row) for row in rows]
 
@@ -487,8 +507,8 @@ class Database:
         await self._ensure_connected()
         await self._conn.execute(
             """INSERT OR REPLACE INTO agents
-            (key, name, description, model, provider, tools, workspace_dir, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (key, name, description, model, provider, tools, workspace_dir, parent_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 agent["key"],
                 agent["name"],
@@ -497,14 +517,83 @@ class Database:
                 agent["provider"],
                 agent.get("tools"),
                 agent.get("workspace_dir"),
+                agent.get("parent_id"),
                 agent.get("created_at", int(time.time() * 1000)),
                 agent.get("updated_at", int(time.time() * 1000)),
             ),
         )
         await self._conn.commit()
 
+    async def get_child_agents(self, parent_key: str) -> list[dict]:
+        """Get all child agents of a parent agent."""
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "SELECT * FROM agents WHERE parent_id = ? ORDER BY name ASC",
+            (parent_key,),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    # ── Agent Parents (many-to-many) ─────────────────────────────────
+
+    async def add_agent_parent(self, child_key: str, parent_key: str) -> None:
+        """Add a parent-child relationship between two agents."""
+        await self._ensure_connected()
+        now = int(time.time() * 1000)
+        await self._conn.execute(
+            """INSERT OR IGNORE INTO agent_parents (child_key, parent_key, created_at)
+            VALUES (?, ?, ?)""",
+            (child_key, parent_key, now),
+        )
+        await self._conn.commit()
+
+    async def remove_agent_parent(self, child_key: str, parent_key: str) -> None:
+        """Remove a parent-child relationship."""
+        await self._ensure_connected()
+        await self._conn.execute(
+            "DELETE FROM agent_parents WHERE child_key = ? AND parent_key = ?",
+            (child_key, parent_key),
+        )
+        await self._conn.commit()
+
+    async def get_agent_parents(self, child_key: str) -> list[str]:
+        """Get all parent keys of an agent."""
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "SELECT parent_key FROM agent_parents WHERE child_key = ?",
+            (child_key,),
+        )
+        return [row[0] for row in await cursor.fetchall()]
+
+    async def get_agent_children(self, parent_key: str) -> list[str]:
+        """Get all child keys of an agent."""
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "SELECT child_key FROM agent_parents WHERE parent_key = ?",
+            (parent_key,),
+        )
+        return [row[0] for row in await cursor.fetchall()]
+
+    async def set_agent_parents(self, child_key: str, parent_keys: list[str]) -> None:
+        """Set all parents of an agent (replace existing)."""
+        await self._ensure_connected()
+        await self._conn.execute(
+            "DELETE FROM agent_parents WHERE child_key = ?",
+            (child_key,),
+        )
+        now = int(time.time() * 1000)
+        for parent_key in parent_keys:
+            await self._conn.execute(
+                "INSERT INTO agent_parents (child_key, parent_key, created_at) VALUES (?, ?, ?)",
+                (child_key, parent_key, now),
+            )
+        await self._conn.commit()
+
     async def delete_agent(self, key: str) -> bool:
         await self._ensure_connected()
+        await self._conn.execute(
+            "DELETE FROM agent_parents WHERE child_key = ? OR parent_key = ?",
+            (key, key),
+        )
         await self._conn.execute(
             "DELETE FROM messages WHERE session_id IN (SELECT id FROM sessions WHERE agent_key = ?)",
             (key,),

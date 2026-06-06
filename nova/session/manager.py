@@ -58,14 +58,32 @@ class SessionManager(SessionProtocol):
         persist: bool = True,
         first_message: str = None,
         agent_key: str = DEFAULT_AGENT_KEY,
+        parent_id: Optional[str] = None,
     ) -> SessionContext:
         session = SessionContext.create(agent_key=agent_key)
         session.metadata = metadata or {}
         session.title = self._generate_title(first_message)
+        session.parent_id = parent_id
         self.set_current_session(session)
         if persist:
             await self.save_session(session)
         return session
+
+    async def create_child_session(
+        self,
+        parent_session_id: str,
+        agent_key: str = DEFAULT_AGENT_KEY,
+        metadata: Optional[dict] = None,
+        first_message: str = None,
+    ) -> SessionContext:
+        """Create a child session linked to a parent session."""
+        return await self.create_session(
+            metadata=metadata,
+            persist=True,
+            first_message=first_message,
+            agent_key=agent_key,
+            parent_id=parent_session_id,
+        )
 
     def _generate_title(self, user_message: str = None) -> str:
         """Generate a session title from the user's message."""
@@ -175,6 +193,34 @@ class SessionManager(SessionProtocol):
         async with self._lock:
             db = await ensure_db()
             return await db.get_messages(sid, MessageFilter(limit=limit))
+
+    async def get_child_sessions(
+        self,
+        parent_session_id: str,
+    ) -> list[SessionContext]:
+        """Get all child sessions of a parent session."""
+        async with self._lock:
+            db = await ensure_db()
+            sessions = await db.get_sessions_by_parent_id(parent_session_id)
+            child_sessions = []
+            for session_data in sessions:
+                ctx = SessionContext(
+                    id=session_data["id"],
+                    agent_key=session_data.get("agent_key", DEFAULT_AGENT_KEY),
+                    title=session_data.get("title"),
+                    created_at=session_data["created_at"],
+                    updated_at=session_data["updated_at"],
+                    metadata=json.loads(session_data["metadata"]) if session_data.get("metadata") else {},
+                    parent_id=session_data.get("parent_id"),
+                    summary_goal=session_data.get("summary_goal"),
+                    summary_accomplished=session_data.get("summary_accomplished"),
+                    summary_remaining=session_data.get("summary_remaining"),
+                    compacted_at=session_data.get("compacted_at"),
+                    message_count=session_data.get("message_count", 0),
+                    turn_count=session_data.get("turn_count", 0),
+                )
+                child_sessions.append(ctx)
+            return child_sessions
 
     async def compress_history(self, target_count: int = 50) -> None:
         session = self.get_current_session()

@@ -23,6 +23,7 @@ class AgentCreateRequest:
     provider: str = ""
     tools: list[str] | None = None
     workspace_dir: str | None = None
+    parent_ids: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -74,7 +75,26 @@ class ConfigService:
             "updated_at": now,
         }
         await db.save_agent(agent)
+
+        if request.parent_ids:
+            await db.set_agent_parents(request.key, request.parent_ids)
+
         return agent
+
+    async def get_agent_parents(self, child_key: str) -> list[str]:
+        """Get all parent keys of an agent."""
+        db = await ensure_db()
+        return await db.get_agent_parents(child_key)
+
+    async def get_agent_children(self, parent_key: str) -> list[str]:
+        """Get all child keys of an agent."""
+        db = await ensure_db()
+        return await db.get_agent_children(parent_key)
+
+    async def get_child_agents(self, parent_key: str) -> list[dict]:
+        """Get all child agents of a parent agent (legacy, uses parent_id column)."""
+        db = await ensure_db()
+        return await db.get_child_agents(parent_key)
 
     async def delete_agent(self, key: str) -> bool:
         db = await ensure_db()
