@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -579,6 +580,8 @@ class ChatApp(App):
         container = self.query_one("#message-container")
         container.remove_children()
         self._print_banner()
+        loading = BannerMessage("Loading history...")
+        container.mount(loading)
 
         async def _render() -> None:
             from nova.cli.tool_rendering import (
@@ -593,61 +596,73 @@ class ChatApp(App):
             tool_palette = tool_palette_from_theme(get_theme_colors(self))
 
             pending_blocks: dict[str, tuple[str, ToolBlock]] = {}
+            batch_size = 20
+            mounted_count = 0
 
-            for msg in history:
-                role = getattr(msg, "role", None)
-                content_val = getattr(msg, "content", None) or ""
+            async def mount_history_widget(widget) -> None:
+                nonlocal mounted_count
+                await container.mount(widget)
+                mounted_count += 1
+                if mounted_count % batch_size == 0:
+                    await asyncio.sleep(0)
 
-                if role == "user":
-                    if content_val.strip():
-                        container.mount(UserMessage(content_val))
-                    continue
+            try:
+                for msg in history:
+                    role = getattr(msg, "role", None)
+                    content_val = getattr(msg, "content", None) or ""
 
-                if role == "assistant":
-                    rc = getattr(msg, "reasoning_content", None) or ""
-                    tool_calls = getattr(msg, "tool_calls", None) or []
+                    if role == "user":
+                        if content_val.strip():
+                            await mount_history_widget(UserMessage(content_val))
+                        continue
 
-                    if content_val.strip():
-                        container.mount(HistoryMessage(content_val, rc))
+                    if role == "assistant":
+                        rc = getattr(msg, "reasoning_content", None) or ""
+                        tool_calls = getattr(msg, "tool_calls", None) or []
 
-                    for tc in tool_calls:
-                        if isinstance(tc, dict):
-                            tc_name = tc.get("name", tc.get(
-                                "function", {}).get("name", "tool"))
-                            tc_id = tc.get("id", "")
-                            tc_args = tc.get("arguments", tc.get(
-                                "function", {}).get("arguments", "{}"))
-                        else:
-                            tc_name = getattr(tc, "name", "tool")
-                            tc_id = getattr(tc, "id", "")
-                            tc_args = getattr(tc, "arguments", "{}")
+                        if content_val.strip():
+                            await mount_history_widget(HistoryMessage(content_val, rc))
 
-                        arguments = parse_tool_arguments(tc_args)
-                        description = get_tool_description(tc_name, arguments, palette=tool_palette)
-                        params = format_tool_params(tc_name, arguments)
+                        for tc in tool_calls:
+                            if isinstance(tc, dict):
+                                tc_name = tc.get("name", tc.get(
+                                    "function", {}).get("name", "tool"))
+                                tc_id = tc.get("id", "")
+                                tc_args = tc.get("arguments", tc.get(
+                                    "function", {}).get("arguments", "{}"))
+                            else:
+                                tc_name = getattr(tc, "name", "tool")
+                                tc_id = getattr(tc, "id", "")
+                                tc_args = getattr(tc, "arguments", "{}")
 
-                        block = ToolBlock(tc_name, description, params, show_right=False)
-                        block.set_done()
-                        container.mount(block)
+                            arguments = parse_tool_arguments(tc_args)
+                            description = get_tool_description(tc_name, arguments, palette=tool_palette)
+                            params = format_tool_params(tc_name, arguments)
 
-                        if tc_id:
-                            pending_blocks[tc_id] = (tc_name, block)
-
-                    continue
-
-                if role == "tool":
-                    tool_call_id = getattr(msg, "tool_call_id", None) or ""
-                    if content_val.strip() and tool_call_id in pending_blocks:
-                        tc_name, block = pending_blocks.pop(tool_call_id)
-                        rendered = render_tool_result(tc_name, content_val, palette=tool_palette)
-                        if tc_name and tc_name.lower() in ("edit", "write", "write_files"):
-                            block.set_done(rendered or content_val)
-                        else:
+                            block = ToolBlock(tc_name, description, params, show_right=False)
                             block.set_done()
-                    continue
+                            await mount_history_widget(block)
 
-                if role == "system" and content_val.strip():
-                    container.mount(HistoryMessage(content_val, ""))
+                            if tc_id:
+                                pending_blocks[tc_id] = (tc_name, block)
+
+                        continue
+
+                    if role == "tool":
+                        tool_call_id = getattr(msg, "tool_call_id", None) or ""
+                        if content_val.strip() and tool_call_id in pending_blocks:
+                            tc_name, block = pending_blocks.pop(tool_call_id)
+                            rendered = render_tool_result(tc_name, content_val, palette=tool_palette)
+                            if tc_name and tc_name.lower() in ("edit", "write", "write_files"):
+                                block.set_done(rendered or content_val)
+                            else:
+                                block.set_done()
+                        continue
+
+                    if role == "system" and content_val.strip():
+                        await mount_history_widget(HistoryMessage(content_val, ""))
+            finally:
+                await loading.remove()
 
             container.scroll_end(animate=False)
 

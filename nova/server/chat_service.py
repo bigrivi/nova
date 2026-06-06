@@ -213,7 +213,14 @@ class ChatService:
             return None
         if agent_event == AgentEvent.TURN_START:
             return await emit(ResponseStartedEvent, ResponseStartedEventData)
-        if agent_event in (AgentEvent.TEXT_START, AgentEvent.TEXT_END, AgentEvent.REASONING_START, AgentEvent.REASONING_END):
+        if agent_event in (
+            AgentEvent.TEXT_START,
+            AgentEvent.TEXT_END,
+            AgentEvent.REASONING_START,
+            AgentEvent.REASONING_END,
+            AgentEvent.COMPACTION_START,
+            AgentEvent.COMPACTION_END,
+        ):
             return None
         if agent_event == AgentEvent.TEXT_DELTA:
             return await emit(MessageDeltaEvent, MessageDeltaEventData, delta=data)

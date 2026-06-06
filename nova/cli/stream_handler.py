@@ -13,10 +13,12 @@ from nova.cli.stream_commands import (
     FailToolCall,
     FinalizeAssistant,
     FinishToolCall,
+    HideCompactionSpinner,
     RenderCommand,
     SetGenerating,
     SetIdle,
     SetPendingInput,
+    ShowCompactionSpinner,
     ShowThinkingSpinner,
     ShowError,
     ShowInfo,
@@ -129,6 +131,12 @@ class StreamHandler:
         log.debug("Turn end: %s", data)
         return await self._apply_processed_event(self._processor.handle_noop(data))
 
+    async def _on_compaction_start(self, data) -> bool:
+        return await self._apply_processed_event(self._processor.handle_compaction_start(data))
+
+    async def _on_compaction_end(self, data) -> bool:
+        return await self._apply_processed_event(self._processor.handle_compaction_end(data))
+
     async def _on_reasoning_start(self, data) -> bool:
         return await self._apply_processed_event(self._processor.handle_reasoning_start(data))
 
@@ -212,6 +220,10 @@ class StreamHandler:
                     self._status_bar.set_generating()
             case ShowThinkingSpinner():
                 (await self._ensure_spinner()).show_thinking()
+            case ShowCompactionSpinner():
+                (await self._ensure_spinner()).show_compacting()
+            case HideCompactionSpinner():
+                await self._dismiss_spinner()
             case SetPendingInput(content=content):
                 self._controller.set_pending_input({"content": content})
             case ShowToolCall(call_id=call_id, tool_name=tool_name, description=description, params=params):
@@ -246,6 +258,8 @@ def _build_dispatch() -> None:
     StreamHandler._dispatch = {
         AgentEvent.SESSION:         StreamHandler._on_session,
         AgentEvent.START:           StreamHandler._on_start,
+        AgentEvent.COMPACTION_START: StreamHandler._on_compaction_start,
+        AgentEvent.COMPACTION_END:   StreamHandler._on_compaction_end,
         AgentEvent.TURN_START:      StreamHandler._on_turn_start,
         AgentEvent.TURN_END:        StreamHandler._on_turn_end,
         AgentEvent.TEXT_START:      StreamHandler._on_text_start,

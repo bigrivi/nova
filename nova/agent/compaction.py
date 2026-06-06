@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 from nova.llm import LLMProvider
@@ -19,6 +20,15 @@ if TYPE_CHECKING:
     from nova.db.database import Database
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class CompactionPlan:
+    session_id: str
+    messages: list
+    model_max_tokens: int
+    token_count: int
+    needs_compaction: bool
 
 
 def estimate_tokens(messages: list, model: str = "unknown") -> int:
@@ -144,39 +154,75 @@ async def maybe_compact(
     1. Layer 1: ``snip_old_tool_results`` trims old tool outputs.
     2. Layer 2: invoke the LLM to compact history when needed.
     """
+    plan = await prepare_compaction(
+        session_id=session_id,
+        message_count=message_count,
+        turn_count=turn_count,
+        last_compacted_at=last_compacted_at,
+        db=db,
+        model=model,
+        provider=provider,
+    )
+    if not plan.needs_compaction:
+        return False
+
+    await run_compaction_plan(plan, db, llm, model, provider)
+    return True
+
+
+async def prepare_compaction(
+    session_id: str,
+    message_count: int,
+    turn_count: int,
+    last_compacted_at: Optional[int],
+    db: "Database",
+    model: str = "gpt-4o",
+    provider: str = "ollama",
+) -> CompactionPlan:
+    """Load messages and decide whether Layer 2 compaction should run."""
     model_max_tokens = get_context_limit(model, provider)
 
     if message_count == 0:
-        return False
+        return CompactionPlan(session_id, [], model_max_tokens, 0, False)
 
     messages = await db.get_messages(session_id)
     if not messages:
-        return False
-
-    if not should_compact(
-        message_count=message_count,
-        token_count=estimate_tokens(messages),
-        turn_count=turn_count,
-        last_compacted_at=last_compacted_at,
-        model_max_tokens=model_max_tokens,
-    ):
-        return False
-
-    await snip_tool_results_in_db(db, session_id, messages)
+        return CompactionPlan(session_id, [], model_max_tokens, 0, False)
 
     token_count = estimate_tokens(messages)
-
-    if should_compact(
+    if not should_compact(
         message_count=message_count,
         token_count=token_count,
         turn_count=turn_count,
         last_compacted_at=last_compacted_at,
         model_max_tokens=model_max_tokens,
     ):
-        await compact(session_id, db, llm, model, provider)
-        return True
+        return CompactionPlan(session_id, messages, model_max_tokens, token_count, False)
 
-    return False
+    await snip_tool_results_in_db(db, session_id, messages)
+
+    token_count = estimate_tokens(messages)
+    needs_compaction = should_compact(
+        message_count=message_count,
+        token_count=token_count,
+        turn_count=turn_count,
+        last_compacted_at=last_compacted_at,
+        model_max_tokens=model_max_tokens,
+    )
+    return CompactionPlan(session_id, messages, model_max_tokens, token_count, needs_compaction)
+
+
+async def run_compaction_plan(
+    plan: CompactionPlan,
+    db: "Database",
+    llm: LLMProvider,
+    model: str = "gpt-4o",
+    provider: str = "ollama",
+) -> None:
+    """Execute a prepared compaction plan."""
+    if not plan.needs_compaction:
+        return
+    await compact(plan.session_id, db, llm, model, provider, messages=plan.messages)
 
 
 async def snip_tool_results_in_db(db: "Database", session_id: str, messages: list) -> None:
@@ -197,6 +243,7 @@ async def compact(
     llm: LLMProvider,
     model: str = "gpt-4o",
     provider: str = "ollama",
+    messages: Optional[list] = None,
 ) -> None:
     """Run session compaction (Layer 2).
 
@@ -207,7 +254,7 @@ async def compact(
     5. Mark the old messages as compacted.
     6. Update the session compaction timestamp.
     """
-    messages = await db.get_messages(session_id)
+    messages = messages if messages is not None else await db.get_messages(session_id)
 
     if not messages:
         return

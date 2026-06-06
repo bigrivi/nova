@@ -6,9 +6,11 @@ from nova.cli.stream_commands import (
     FailToolCall,
     FinalizeAssistant,
     FinishToolCall,
+    HideCompactionSpinner,
     SetGenerating,
     SetIdle,
     SetPendingInput,
+    ShowCompactionSpinner,
     ShowError,
     ShowInfo,
     ShowThinkingSpinner,
@@ -50,6 +52,22 @@ def test_turn_start_returns_thinking_spinner_command():
     processed = processor.handle_turn_start()
 
     assert processed.commands == (ShowThinkingSpinner(),)
+
+
+def test_compaction_start_returns_compaction_spinner_command():
+    processor = StreamEventProcessor()
+
+    processed = processor.handle_compaction_start()
+
+    assert processed.commands == (ShowCompactionSpinner(),)
+
+
+def test_compaction_end_returns_hide_spinner_command():
+    processor = StreamEventProcessor()
+
+    processed = processor.handle_compaction_end()
+
+    assert processed.commands == (HideCompactionSpinner(),)
 
 
 def test_noop_returns_no_commands():

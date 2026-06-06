@@ -57,6 +57,10 @@ class Spinner(Static):
         self._message = "Thinking..."
         self._reset_timer()
 
+    def show_compacting(self) -> None:
+        self._message = "Compacting conversation..."
+        self._reset_timer()
+
     def stop(self) -> None:
         if self._timer is not None:
             self._timer.stop()

@@ -13,7 +13,7 @@ from nova.session import get_session_manager
 from nova.session.protocol import SessionProtocol
 from nova.tools.registry import ToolRegistry, tool
 from nova.prompt import PromptBuilder, PromptConfig
-from nova.agent.compaction import maybe_compact, get_context_limit
+from nova.agent.compaction import prepare_compaction, run_compaction_plan, get_context_limit
 from nova.db.database import ensure_db
 from nova.skills.service import SkillService
 from nova.constants import DEFAULT_AGENT_KEY
@@ -45,6 +45,10 @@ class AgentEvent(Enum):
     # Tool execution
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
+
+    # Context compaction
+    COMPACTION_START = "compaction_start"
+    COMPACTION_END = "compaction_end"
 
 
 def _done_payload(reason: str, content: Optional[str] = None) -> dict[str, Any]:
@@ -479,16 +483,33 @@ class Agent:
 
         tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else None
 
-        await maybe_compact(
+        db = await ensure_db()
+        compaction_plan = await prepare_compaction(
             session_id=current_session.id if current_session else None,
             message_count=len(await self.session.get_messages()),
             turn_count=current_session.turn_count if current_session else 0,
             last_compacted_at=current_session.compacted_at if current_session else None,
-            db=await ensure_db(),
-            llm=self.llm,
+            db=db,
             model=self.config.model,
             provider=self.config.provider,
         )
+        if compaction_plan.needs_compaction:
+            compaction_payload = {
+                "message_count": len(compaction_plan.messages),
+                "token_count": compaction_plan.token_count,
+            }
+            await self._emit(AgentEvent.COMPACTION_START, compaction_payload)
+            yield AgentEvent.COMPACTION_START, compaction_payload
+            await run_compaction_plan(
+                compaction_plan,
+                db=db,
+                llm=self.llm,
+                model=self.config.model,
+                provider=self.config.provider,
+            )
+            current_session.compacted_at = int(datetime.now().timestamp() * 1000)
+            await self._emit(AgentEvent.COMPACTION_END, compaction_payload)
+            yield AgentEvent.COMPACTION_END, compaction_payload
 
         run_group_id = uuid.uuid4().hex
         turn_count = 0

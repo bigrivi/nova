@@ -30,6 +30,16 @@ class ShowThinkingSpinner:
 
 
 @dataclass(frozen=True)
+class ShowCompactionSpinner:
+    pass
+
+
+@dataclass(frozen=True)
+class HideCompactionSpinner:
+    pass
+
+
+@dataclass(frozen=True)
 class FinalizeAssistant:
     pass
 
@@ -97,6 +107,8 @@ RenderCommand: TypeAlias = (
     | SetIdle
     | SetGenerating
     | ShowThinkingSpinner
+    | ShowCompactionSpinner
+    | HideCompactionSpinner
     | FinalizeAssistant
     | StartText
     | AppendText

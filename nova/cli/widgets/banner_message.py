@@ -9,8 +9,9 @@ class BannerMessage(Static):
     BannerMessage {
         width: 100%;
         height: auto;
+        background: ansi_default;
         color: $text-muted;
-        padding: 0;
-        margin: 0;
+        padding: 0 2;
+        margin: 0 0 1 0;
     }
     """

@@ -10,10 +10,12 @@ from nova.cli.stream_commands import (
     FailToolCall,
     FinalizeAssistant,
     FinishToolCall,
+    HideCompactionSpinner,
     RenderCommand,
     SetGenerating,
     SetIdle,
     SetPendingInput,
+    ShowCompactionSpinner,
     ShowError,
     ShowInfo,
     ShowThinkingSpinner,
@@ -61,6 +63,12 @@ class StreamEventProcessor:
 
     def handle_turn_start(self, data: object = None) -> ProcessedStreamEvent:
         return ProcessedStreamEvent(commands=(ShowThinkingSpinner(),))
+
+    def handle_compaction_start(self, data: object = None) -> ProcessedStreamEvent:
+        return ProcessedStreamEvent(commands=(ShowCompactionSpinner(),))
+
+    def handle_compaction_end(self, data: object = None) -> ProcessedStreamEvent:
+        return ProcessedStreamEvent(commands=(HideCompactionSpinner(),))
 
     def handle_noop(self, data: object = None) -> ProcessedStreamEvent:
         return ProcessedStreamEvent()
