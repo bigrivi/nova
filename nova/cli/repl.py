@@ -37,12 +37,14 @@ class NovaCLI:
                 "new": self._handle_new_command,
                 "clear": self._handle_clear_command,
                 "models": self._handle_models_command,
+                "theme": self._handle_theme_command,
                 "install-skill": self._handle_install_skill_command,
                 "install-global-skill": self._handle_install_global_skill_command,
                 "list-agents": self._handle_list_agents_command,
                 "create-agent": self._handle_create_agent_command,
                 "delete-agent": self._handle_delete_agent_command,
                 "sessions": self._handle_sessions_command,
+                "child-status": self._handle_child_status_command,
             },
         )
 
@@ -245,6 +247,43 @@ class NovaCLI:
             self._ui_adapter.update_status_bar()
         return True
 
+    async def _handle_theme_command(self, command: ParsedCommand) -> bool:
+        if self._ui_adapter is None:
+            return True
+
+        arg = command.args.strip()
+        current = self._ui_adapter.current_theme_name()
+        themes = self._ui_adapter.available_theme_names()
+
+        if not arg:
+            selected = await self._ui_adapter.prompt_theme_selection(
+                themes,
+                current_theme=current,
+            )
+            if selected is None:
+                return True
+            arg = selected
+
+        if arg in {"current", "show"}:
+            self._ui_adapter.show_info(f"Current theme: {current}")
+            return True
+
+        if arg in {"list", "ls"}:
+            self._ui_adapter.show_info("Available themes: " + ", ".join(themes))
+            return True
+
+        if arg not in themes:
+            self._ui_adapter.show_error(
+                f"Unknown theme '{arg}'. Use /theme list to see available themes."
+            )
+            return True
+
+        if self._ui_adapter.set_theme_name(arg):
+            self._ui_adapter.show_info(f"Theme switched to: {arg}")
+        else:
+            self._ui_adapter.show_error(f"Failed to switch theme: {arg}")
+        return True
+
     @staticmethod
     def _parse_install_skill_args(raw_args: str) -> tuple[str, bool]:
         try:
@@ -371,6 +410,9 @@ class NovaCLI:
             "created_at": now,
             "updated_at": now,
         })
+        if result.parent_ids:
+            for parent_id in result.parent_ids:
+                await db.add_agent_parent(result.key, parent_id)
         agent_dir = self.settings.home / "agents" / result.key
         agent_dir.mkdir(parents=True, exist_ok=True)
         self._ui_adapter.show_info(f"Agent '{result.key}' created")
@@ -424,6 +466,42 @@ class NovaCLI:
         await self._load_session_by_id(selection.session_id)
         return True
 
+    async def _handle_child_status_command(self, command: ParsedCommand) -> bool:
+        """Handle /child-status command to show child agent sessions."""
+        from nova.session import get_session_manager
+        
+        session_manager = get_session_manager()
+        current_session = session_manager.get_current_session()
+        
+        if not current_session:
+            if self._ui_adapter:
+                self._ui_adapter.show_error("No active session")
+            return True
+        
+        child_sessions = await session_manager.get_child_sessions(current_session.id)
+        
+        if not child_sessions:
+            if self._ui_adapter:
+                self._ui_adapter.show_info("No child sessions found")
+            return True
+        
+        sessions_data = [
+            {
+                "id": s.id,
+                "agent_key": s.agent_key,
+                "title": s.title,
+                "message_count": s.message_count,
+                "created_at": s.created_at,
+                "updated_at": s.updated_at,
+            }
+            for s in child_sessions
+        ]
+        
+        if self._ui_adapter:
+            await self._ui_adapter.prompt_child_status(sessions_data, current_session.id)
+        
+        return True
+
     async def _load_session_by_id(self, session_id: str) -> None:
         if not self._cached_sessions:
             db = await ensure_db()
@@ -456,10 +534,10 @@ class NovaCLI:
             else:
                 self._ui_adapter.print_history_transcript(visible_history)
 
-    async def run(self) -> None:
+    async def run(self, theme: str = "textual-dark") -> None:
         from nova.cli.chat_app import ChatApp
 
-        app = ChatApp(controller=self)
+        app = ChatApp(controller=self, theme=theme)
         self._ui_adapter = app
 
         self.agent = await build_agent(agent_key=self._agent_key)

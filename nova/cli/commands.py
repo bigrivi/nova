@@ -52,6 +52,12 @@ DEFAULT_COMMAND_SPECS: tuple[CommandSpec, ...] = (
         usage="/models",
     ),
     CommandSpec(
+        id="theme",
+        label="Theme",
+        description="View or switch UI theme",
+        usage="/theme",
+    ),
+    CommandSpec(
         id="install-skill",
         label="Install Skill",
         description="Install or update a skill from ClawHub",

@@ -14,11 +14,11 @@ class HistoryMessage(Static):
     }
 
     HistoryMessage Markdown {
-        color: #c0caf5;
+        color: $foreground;
         padding: 0 2;
         margin: 0;
         height: auto;
-        background: #ff0000;
+        background: ansi_default;
     }
     HistoryMessage Markdown > *:last-child {
         margin-bottom: 0;
@@ -40,9 +40,9 @@ class ReasoningBlock(Static):
 
     DEFAULT_CSS = """
     ReasoningBlock {
-        color: #565f89;
+        color: $text-muted;
         background: ansi_default;
-        border-left: solid #565f89;
+        border-left: solid $border-blurred;
         padding: 0 2;
         margin: 0 0 1 0;
         height: auto;
@@ -54,7 +54,9 @@ class ReasoningBlock(Static):
         self._content = content
 
     def on_mount(self) -> None:
+        from nova.cli.theme_colors import get_theme_colors
+        c = get_theme_colors(self.app)
         self.update(Text.assemble(
-            Text("Thinking: ", style="bold #e0af68"),
+            Text("Thinking: ", style=f"bold {c.warning}"),
             (self._content, "italic"),
         ))

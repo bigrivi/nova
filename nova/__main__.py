@@ -30,6 +30,8 @@ def main():
                         help=f"Agent key (default: {DEFAULT_AGENT_KEY})")
     parser.add_argument("--dev", action="store_true",
                         help="[desktop] Load frontend from Vite dev server (http://localhost:5173) instead of built-in server")
+    parser.add_argument("--theme", default="textual-dark",
+                        help="Textual theme to use (default: textual-dark)")
     args = parser.parse_args()
     init_site_packages()
     configure_logging(settings)
@@ -41,7 +43,7 @@ def main():
         run_desktop(settings=settings, dev=args.dev)
         return
 
-    asyncio.run(run_cli(agent_key=args.agent))
+    asyncio.run(run_cli(agent_key=args.agent, theme=args.theme))
 
 
 if __name__ == "__main__":

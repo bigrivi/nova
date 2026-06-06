@@ -19,17 +19,17 @@ class DeleteAgentScreen(ModalScreen[str | None]):
     DeleteAgentScreen > #delete-dialog {
         width: 72;
         height: 60%;
-        background: #1a1b26;
-        border: tall #f7768e;
+        background: $background;
+        border: tall $error;
         padding: 1;
     }
     DeleteAgentScreen #delete-title {
-        color: #f7768e;
+        color: $error;
         text-style: bold;
         padding: 0 0 1 0;
     }
     DeleteAgentScreen #delete-list {
-        background: #1a1b26;
+        background: $background;
         border: none;
         height: 1fr;
     }
@@ -37,13 +37,13 @@ class DeleteAgentScreen(ModalScreen[str | None]):
         padding: 0 1;
     }
     DeleteAgentScreen ListItem:hover {
-        background: #2a2b3d;
+        background: $surface;
     }
     DeleteAgentScreen ListItem > Label {
-        color: #c0caf5;
+        color: $foreground;
     }
     DeleteAgentScreen #delete-hint {
-        color: #565f89;
+        color: $text-muted;
         padding: 1 0 0 0;
         height: 1;
     }

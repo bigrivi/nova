@@ -4,19 +4,17 @@ from rich.text import Text
 from textual.widgets import Static
 
 
-_PREFIX = Text("Thinking: ", style="bold #e0af68")
-
-
 class ReasoningMessage(Static):
 
     DEFAULT_CSS = """
     ReasoningMessage {
-        color: #565f89;
-        background: ansi_default;
-        margin: 0 0 1 0;
-        border-left: solid #565f89;
-        padding: 0 2;
+        width: 100%;
         height: auto;
+        background: ansi_default;
+        color: $text-muted;
+        border-left: solid $border-blurred;
+        margin: 0 0 1 0;
+        padding: 0 2;
     }
     """
     BATCH_SIZE = 32
@@ -42,7 +40,10 @@ class ReasoningMessage(Static):
         self._do_scroll()
 
     def _refresh_display(self) -> None:
-        t = Text.assemble(_PREFIX, (self._accumulated, "italic"))
+        from nova.cli.theme_colors import get_theme_colors
+        c = get_theme_colors(self.app)
+        prefix = Text("Thinking: ", style=f"bold {c.warning}")
+        t = Text.assemble(prefix, (self._accumulated, "italic"))
         self.update(t)
 
     def _do_scroll(self) -> None:

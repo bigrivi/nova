@@ -7,9 +7,11 @@ class ToolResultMessage(Static):
 
     DEFAULT_CSS = """
     ToolResultMessage {
-        color: #565f89;
-        padding: 0 2 0 4;
-        margin: 0 0 1 0;
         height: auto;
+        max-height: 14;
+        color: $text-muted;
+        padding: 0 0 0 0;
+        margin: 0;
+        overflow-y: auto;
     }
     """

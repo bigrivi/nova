@@ -19,17 +19,17 @@ class AgentListScreen(ModalScreen[None]):
     AgentListScreen > #agent-dialog {
         width: 80;
         height: 70%;
-        background: #1a1b26;
-        border: tall #4a9eff;
+        background: $background;
+        border: tall $secondary;
         padding: 1;
     }
     AgentListScreen #agent-title {
-        color: #7aa2f7;
+        color: $secondary;
         text-style: bold;
         padding: 0 0 1 0;
     }
     AgentListScreen #agent-list {
-        background: #1a1b26;
+        background: $background;
         border: none;
         height: 1fr;
     }
@@ -37,27 +37,28 @@ class AgentListScreen(ModalScreen[None]):
         padding: 0 1;
     }
     AgentListScreen ListItem:hover {
-        background: #2a2b3d;
+        background: $surface;
     }
     AgentListScreen ListItem > Label {
-        color: #c0caf5;
+        color: $foreground;
     }
     AgentListScreen #agent-hint {
-        color: #565f89;
+        color: $text-muted;
         padding: 1 0 0 0;
         height: 1;
     }
     """
 
-    def __init__(self, agents: list[dict]) -> None:
+    def __init__(self, agents: list[dict], parent_map: dict[str, list[str]] = None) -> None:
         super().__init__()
         self._agents = agents
+        self._parent_map = parent_map or {}
 
     def compose(self) -> ComposeResult:
         with Vertical(id="agent-dialog"):
             yield Static(f"Agents ({len(self._agents)})", id="agent-title")
             yield ListView(id="agent-list")
-            yield Static("↑↓ navigate · Enter close · Esc close", id="agent-hint")
+            yield Static("navigate close  Esc close", id="agent-hint")
 
     def on_mount(self) -> None:
         list_view = self.query_one("#agent-list", ListView)
@@ -67,8 +68,10 @@ class AgentListScreen(ModalScreen[None]):
             name = agent.get("name", "")
             model = agent.get("model", "")
             provider = agent.get("provider", "")
+            parent_ids = self._parent_map.get(key, [])
+            parents = ", ".join(parent_ids) if parent_ids else "-"
             desc = (agent.get("description") or "").strip()
-            label = f"  {key:<12} {name:<14} {model:<18} {provider}"
+            label = f"  {key:<12} {name:<14} {model:<18} {provider:<12} {parents}"
             if desc:
                 label += f"\n    {desc}"
             items.append(ListItem(Label(label)))
@@ -77,6 +80,9 @@ class AgentListScreen(ModalScreen[None]):
             list_view.index = 0
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
+        self.dismiss(None)
+
+    def key_escape(self) -> None:
         self.dismiss(None)
 
     def key_escape(self) -> None:

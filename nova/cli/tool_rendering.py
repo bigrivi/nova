@@ -1,18 +1,36 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Optional
 
 
 MAX_RENDERED_DIFF_LINES = 80
 
 
-def render_tool_call(tool_call: object) -> str:
+@dataclass(frozen=True)
+class ToolRenderPalette:
+    tool: str
+    text: str
+    muted: str
+    dim: str
+    warning: str
+    success: str
+    error: str
+    info: str
+    path: str
+    string: str
+    diff_title: str
+    status_bg: str
+
+
+def render_tool_call(tool_call: object, palette: ToolRenderPalette | None = None) -> str:
     name = tool_call.name if hasattr(tool_call, "name") else str(tool_call)
     arguments = tool_call.arguments if hasattr(tool_call, "arguments") else ""
-    bullet = "\033[32m•\033[0m"
+    p = palette or DEFAULT_TOOL_PALETTE
+    bullet = f"{p.success}•{_RS}" if palette is not None else "\033[32m•\033[0m"
     action_text = render_tool_action(name, arguments)
-    title = f"\033[1;37m{action_text}\033[0m"
+    title = f"{_BO}{p.text}{action_text}{_RS}" if palette is not None else f"\033[1;37m{action_text}\033[0m"
     raw_args = str(arguments or "").strip()
     if not raw_args or action_text != (name if isinstance(name, str) else str(name)):
         return f"{bullet} {title}"
@@ -29,11 +47,15 @@ def render_tool_call(tool_call: object) -> str:
     compact_args = " ".join(compact_args.split())
     if len(compact_args) > 140:
         compact_args = compact_args[:137] + "..."
-    args_line = f"\033[2;37m{compact_args}\033[0m"
+    args_line = f"{_DI}{p.muted}{compact_args}{_RS}" if palette is not None else f"\033[2;37m{compact_args}\033[0m"
     return f"{bullet} {title}\n  {args_line}"
 
 
-def render_tool_result(tool_name: object, content: object) -> Optional[str]:
+def render_tool_result(
+    tool_name: object,
+    content: object,
+    palette: ToolRenderPalette | None = None,
+) -> Optional[str]:
     if not isinstance(tool_name, str) or not isinstance(content, str):
         return None
 
@@ -47,12 +69,17 @@ def render_tool_result(tool_name: object, content: object) -> Optional[str]:
 
     if normalized_name in {"edit", "write"} and "\n--- " in content and "\n+++ " in content and "\n@@ " in content:
         headline, _, diff_body = stripped.partition("\n\n")
-        rendered_diff = render_diff_block(diff_body or headline)
+        p = palette or DEFAULT_TOOL_PALETTE
+        rendered_diff = render_diff_block(diff_body or headline, palette=palette)
         label = normalized_name.upper()
-        title = f"\033[1;35m[{label} DIFF]\033[0m {headline}"
+        title = (
+            f"{_BO}{p.diff_title}[{label} DIFF]{_RS} {headline}"
+            if palette is not None
+            else f"\033[1;35m[{label} DIFF]\033[0m {headline}"
+        )
         return f"{title}\n{rendered_diff}"
 
-    preview = render_tool_result_preview(normalized_name, stripped)
+    preview = render_tool_result_preview(normalized_name, stripped, palette=palette)
     return preview
 
 
@@ -117,7 +144,33 @@ def render_tool_action(name: object, arguments: object) -> str:
     return name
 
 
-def render_diff_block(text: str, max_rendered_diff_lines: int = MAX_RENDERED_DIFF_LINES) -> str:
+def render_diff_block(
+    text: str,
+    max_rendered_diff_lines: int = MAX_RENDERED_DIFF_LINES,
+    palette: ToolRenderPalette | None = None,
+) -> str:
+    if palette is None:
+        lines = text.splitlines()
+        if len(lines) > max_rendered_diff_lines:
+            hidden = len(lines) - max_rendered_diff_lines
+            lines = lines[:max_rendered_diff_lines]
+            lines.append(f"... ({hidden} more diff lines not shown)")
+
+        rendered: list[str] = []
+        for line in lines:
+            if line.startswith(("--- ", "+++ ")):
+                rendered.append(f"\033[1;36m{line}\033[0m")
+            elif line.startswith("@@"):
+                rendered.append(f"\033[1;33m{line}\033[0m")
+            elif line.startswith("+") and not line.startswith("+++ "):
+                rendered.append(f"\033[32m{line}\033[0m")
+            elif line.startswith("-") and not line.startswith("--- "):
+                rendered.append(f"\033[31m{line}\033[0m")
+            else:
+                rendered.append(line)
+        return "\n".join(rendered)
+
+    p = palette or DEFAULT_TOOL_PALETTE
     lines = text.splitlines()
     if len(lines) > max_rendered_diff_lines:
         hidden = len(lines) - max_rendered_diff_lines
@@ -127,32 +180,45 @@ def render_diff_block(text: str, max_rendered_diff_lines: int = MAX_RENDERED_DIF
     rendered: list[str] = []
     for line in lines:
         if line.startswith(("--- ", "+++ ")):
-            rendered.append(f"\033[1;36m{line}\033[0m")
+            rendered.append(f"{_BO}{p.info}{line}{_RS}")
         elif line.startswith("@@"):
-            rendered.append(f"\033[1;33m{line}\033[0m")
+            rendered.append(f"{_BO}{p.warning}{line}{_RS}")
         elif line.startswith("+") and not line.startswith("+++ "):
-            rendered.append(f"\033[32m{line}\033[0m")
+            rendered.append(f"{p.success}{line}{_RS}")
         elif line.startswith("-") and not line.startswith("--- "):
-            rendered.append(f"\033[31m{line}\033[0m")
+            rendered.append(f"{p.error}{line}{_RS}")
         else:
             rendered.append(line)
     return "\n".join(rendered)
 
 
-def render_tool_result_preview(tool_name: str, content: str) -> str:
+def render_tool_result_preview(
+    tool_name: str,
+    content: str,
+    palette: ToolRenderPalette | None = None,
+) -> str:
     preview_lines = build_tool_preview_lines(tool_name, content)
     if preview_lines is None:
         return content
 
     rendered: list[str] = []
     for index, line in enumerate(preview_lines):
-        rendered.append(style_tool_preview_line(line, is_first=index == 0))
+        rendered.append(style_tool_preview_line(line, is_first=index == 0, palette=palette))
     return "\n".join(rendered)
 
 
-def style_tool_preview_line(line: str, is_first: bool) -> str:
+def style_tool_preview_line(
+    line: str,
+    is_first: bool,
+    palette: ToolRenderPalette | None = None,
+) -> str:
+    if palette is None:
+        prefix = "│"
+        return f"\033[2;37m{prefix} {line}\033[0m"
+
+    p = palette or DEFAULT_TOOL_PALETTE
     prefix = "│"
-    return f"\033[2;37m{prefix} {line}\033[0m"
+    return f"{_DI}{p.muted}{prefix} {line}{_RS}"
 
 
 def build_tool_preview_lines(tool_name: str, content: str) -> Optional[list[str]]:
@@ -418,6 +484,21 @@ def _bgr(r: int, g: int, b: int) -> str:
     return f"\033[48;2;{r};{g};{b}m"
 
 
+def _hex_to_rgb(value: str) -> tuple[int, int, int]:
+    raw = value.strip().lstrip("#")
+    if len(raw) != 6:
+        raise ValueError(f"Expected 6-digit hex color, got {value!r}")
+    return int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16)
+
+
+def _fg_hex(value: str) -> str:
+    return _fgr(*_hex_to_rgb(value))
+
+
+def _bg_hex(value: str) -> str:
+    return _bgr(*_hex_to_rgb(value))
+
+
 _RS = "\033[0m"
 _BO = "\033[1m"
 _DI = "\033[2m"
@@ -438,6 +519,38 @@ _BG_RUN = _bgr(30, 22, 8)
 _BG_OK = _bgr(9, 26, 16)
 _BG_ERR = _bgr(26, 12, 12)
 
+DEFAULT_TOOL_PALETTE = ToolRenderPalette(
+    tool=_C_TOOL,
+    text=_C_TXT,
+    muted=_C_TXT2,
+    dim=_C_TXT3,
+    warning=_C_AMBER,
+    success=_C_GREEN,
+    error=_C_RED,
+    info=_C_CYAN,
+    path=_C_PURPLE,
+    string=_C_STR,
+    diff_title=_C_PURPLE,
+    status_bg=_BG_WAIT,
+)
+
+
+def tool_palette_from_theme(colors) -> ToolRenderPalette:
+    return ToolRenderPalette(
+        tool=_fg_hex(colors.primary),
+        text=_fg_hex(colors.foreground),
+        muted=_fg_hex(colors.text_muted),
+        dim=_fg_hex(colors.text_disabled),
+        warning=_fg_hex(colors.warning),
+        success=_fg_hex(colors.success),
+        error=_fg_hex(colors.error),
+        info=_fg_hex(colors.secondary),
+        path=_fg_hex(colors.primary),
+        string=_fg_hex(colors.secondary),
+        diff_title=_fg_hex(colors.primary),
+        status_bg=_bg_hex(colors.panel),
+    )
+
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 _SEP_LINE = f"{_C_TXT3}{'─' * 48}{_RS}"
@@ -449,59 +562,62 @@ def render_tool_block_header(
     description: str,
     elapsed_ms: int | None,
     spinner_frame: int = 0,
+    palette: ToolRenderPalette | None = None,
 ) -> tuple[str, str]:
+    p = palette or DEFAULT_TOOL_PALETTE
     left_parts: list[str] = []
     right_parts: list[str] = []
 
     if state == "pending":
-        left_parts.append(f"{_C_TXT3}○{_RS}")
+        left_parts.append(f"{p.dim}○{_RS}")
     elif state == "running":
         sp = _SPINNER_FRAMES[spinner_frame % len(_SPINNER_FRAMES)]
-        left_parts.append(f"{_C_AMBER}{sp}{_RS}")
+        left_parts.append(f"{p.warning}{sp}{_RS}")
     elif state == "done":
-        left_parts.append(f"{_C_GREEN}●{_RS}")
+        left_parts.append(f"{p.success}●{_RS}")
     elif state == "error":
-        left_parts.append(f"{_C_RED}●{_RS}")
+        left_parts.append(f"{p.error}●{_RS}")
 
-    left_parts.append(f"  {_C_TOOL}{_BO}{tool_name}{_RS}")
+    left_parts.append(f"  {p.tool}{_BO}{tool_name}{_RS}")
 
     if description:
-        left_parts.append(f"  {_C_TXT2}{description}{_RS}")
+        left_parts.append(f"  {p.muted}{description}{_RS}")
 
     if state == "pending":
-        right_parts.append(f"{_BG_WAIT}{_C_TXT3} PENDING {_RS}")
+        right_parts.append(f"{p.status_bg}{p.dim} PENDING {_RS}")
     elif state == "running":
-        right_parts.append(f"{_BG_RUN}{_C_AMBER} RUNNING {_RS}")
+        right_parts.append(f"{p.status_bg}{p.warning} RUNNING {_RS}")
     elif state == "done":
-        right_parts.append(f"{_BG_OK}{_C_GREEN} DONE {_RS}")
+        right_parts.append(f"{p.status_bg}{p.success} DONE {_RS}")
     elif state == "error":
-        right_parts.append(f"{_BG_ERR}{_C_RED} ERROR {_RS}")
+        right_parts.append(f"{p.status_bg}{p.error} ERROR {_RS}")
 
     if elapsed_ms is not None:
         if elapsed_ms < 1000:
-            right_parts.append(f"  {_C_TXT3}{elapsed_ms}ms{_RS}")
+            right_parts.append(f"  {p.dim}{elapsed_ms}ms{_RS}")
         else:
-            right_parts.append(f"  {_C_TXT3}{elapsed_ms / 1000:.1f}s{_RS}")
+            right_parts.append(f"  {p.dim}{elapsed_ms / 1000:.1f}s{_RS}")
 
     return "".join(left_parts), "".join(right_parts)
 
 
-def render_bash_command(command: str) -> str:
+def render_bash_command(command: str, palette: ToolRenderPalette | None = None) -> str:
     if not command:
         return ""
+    p = palette or DEFAULT_TOOL_PALETTE
     tokens = command.split()
     result: list[str] = []
     for i, tok in enumerate(tokens):
         if i == 0:
-            result.append(f"{_C_CYAN}{tok}{_RS}")
+            result.append(f"{p.info}{tok}{_RS}")
         elif tok.startswith(("--", "-")) and len(tok) > 1:
-            result.append(f"{_C_AMBER}{tok}{_RS}")
+            result.append(f"{p.warning}{tok}{_RS}")
         elif tok.startswith(("~", "/", "./", "../")):
-            result.append(f"{_C_PURPLE}{tok}{_RS}")
+            result.append(f"{p.path}{tok}{_RS}")
         elif tok.startswith(("'", '"')):
-            result.append(f"{_C_STR}{tok}{_RS}")
+            result.append(f"{p.string}{tok}{_RS}")
         else:
-            result.append(f"{_C_TXT}{tok}{_RS}")
+            result.append(f"{p.text}{tok}{_RS}")
     return " ".join(result)
 
 
@@ -573,10 +689,15 @@ def format_tool_params(tool_name: str, arguments: dict) -> list[tuple[str, str]]
     return params
 
 
-def get_tool_description(name: str, arguments: object) -> str:
+def get_tool_description(
+    name: str,
+    arguments: object,
+    palette: ToolRenderPalette | None = None,
+) -> str:
     if isinstance(name, str) and name.strip().lower() == "shell":
         if isinstance(arguments, dict):
             cmd = arguments.get("command", "")
             if cmd:
-                return f"{_C_TXT3}${_RS} {render_bash_command(cmd)}"
+                p = palette or DEFAULT_TOOL_PALETTE
+                return f"{p.dim}${_RS} {render_bash_command(cmd, palette=palette)}"
     return render_tool_action(name, arguments)

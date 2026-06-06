@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Static
+from textual.widgets import Button, Checkbox, Input, Label, Select, Static
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +22,7 @@ class AgentCreateResult:
     provider: str
     description: str
     workspace_dir: str | None = None
+    parent_ids: list[str] | None = None
 
 
 class CreateAgentScreen(ModalScreen[AgentCreateResult | None]):
@@ -33,12 +34,12 @@ class CreateAgentScreen(ModalScreen[AgentCreateResult | None]):
     CreateAgentScreen > #agent-form {
         width: 60;
         height: auto;
-        background: #1a1b26;
-        border: tall #4a9eff;
+        background: $background;
+        border: tall $secondary;
         padding: 1;
     }
     CreateAgentScreen #form-title {
-        color: #7aa2f7;
+        color: $secondary;
         text-style: bold;
         padding: 0 0 1 0;
     }
@@ -46,14 +47,18 @@ class CreateAgentScreen(ModalScreen[AgentCreateResult | None]):
         height: 3;
         margin: 0 0 1 0;
     }
+    CreateAgentScreen .form-row-tall {
+        height: auto;
+        margin: 0 0 1 0;
+    }
     CreateAgentScreen .form-label {
-        color: #c0caf5;
+        color: $foreground;
         width: 14;
         padding: 0 1 0 0;
     }
     CreateAgentScreen .form-input {
-        background: #16161e;
-        color: #c0caf5;
+        background: $panel;
+        color: $foreground;
         border: none;
         padding: 0 1;
         height: 3;
@@ -61,26 +66,35 @@ class CreateAgentScreen(ModalScreen[AgentCreateResult | None]):
     CreateAgentScreen .form-input:focus {
         border: none;
     }
+    CreateAgentScreen #parents-container {
+        height: auto;
+        max-height: 10;
+        overflow-y: auto;
+    }
     CreateAgentScreen #form-buttons {
         height: 3;
         align: center middle;
         margin: 1 0 0 0;
     }
     CreateAgentScreen #btn-create {
-        background: #2d4a9e;
-        color: #c0caf5;
+        background: $secondary;
+        color: $foreground;
         margin: 0 1 0 0;
     }
     CreateAgentScreen #btn-cancel {
-        background: #1a1b26;
-        color: #c0caf5;
+        background: $background;
+        color: $foreground;
     }
     CreateAgentScreen #form-error {
-        color: #f7768e;
+        color: $error;
         height: 1;
         padding: 0 0 1 0;
     }
     """
+
+    def __init__(self, agents: list[dict] = None):
+        super().__init__()
+        self._agents = agents or []
 
     def compose(self) -> ComposeResult:
         with Vertical(id="agent-form"):
@@ -104,6 +118,13 @@ class CreateAgentScreen(ModalScreen[AgentCreateResult | None]):
             with Horizontal(classes="form-row"):
                 yield Label("Work Dir:", classes="form-label")
                 yield Input(placeholder="Optional, absolute path", id="input-workdir", classes="form-input")
+            with Vertical(classes="form-row-tall", id="parents-container"):
+                yield Label("Parents:", classes="form-label")
+                for agent in self._agents:
+                    yield Checkbox(
+                        f"{agent['name']} ({agent['key']})",
+                        id=f"parent-{agent['key']}",
+                    )
             with Horizontal(id="form-buttons"):
                 yield Button("Create", id="btn-create", variant="primary")
                 yield Button("Cancel", id="btn-cancel")
@@ -128,6 +149,14 @@ class CreateAgentScreen(ModalScreen[AgentCreateResult | None]):
             return "Provider is required"
         return None
 
+    def _get_selected_parents(self) -> list[str]:
+        selected = []
+        for agent in self._agents:
+            checkbox = self.query_one(f"#parent-{agent['key']}", Checkbox)
+            if checkbox.value:
+                selected.append(agent["key"])
+        return selected
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-cancel":
             self.dismiss(None)
@@ -138,6 +167,7 @@ class CreateAgentScreen(ModalScreen[AgentCreateResult | None]):
                 self.query_one("#form-error", Static).update(error)
                 return
             self.query_one("#form-error", Static).update("")
+            parent_ids = self._get_selected_parents()
             self.dismiss(AgentCreateResult(
                 key=self.query_one("#input-key", Input).value.strip(),
                 name=self.query_one("#input-name", Input).value.strip(),
@@ -145,6 +175,7 @@ class CreateAgentScreen(ModalScreen[AgentCreateResult | None]):
                 provider=self.query_one("#input-provider", Input).value.strip(),
                 description=self.query_one("#input-desc", Input).value.strip(),
                 workspace_dir=self.query_one("#input-workdir", Input).value.strip() or None,
+                parent_ids=parent_ids if parent_ids else None,
             ))
 
     def key_escape(self) -> None:

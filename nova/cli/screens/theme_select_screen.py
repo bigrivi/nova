@@ -8,12 +8,10 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, ListItem, ListView, Static
 
-from nova.cli.ui import SessionSelection, _format_relative_time, _truncate_label
-
 log = logging.getLogger(__name__)
 
 
-class SessionSelectScreen(ModalScreen[SessionSelection | None]):
+class ThemeSelectScreen(ModalScreen[str | None]):
 
     BINDINGS = [
         Binding("down", "cursor_down", show=False, priority=True),
@@ -22,22 +20,22 @@ class SessionSelectScreen(ModalScreen[SessionSelection | None]):
     ]
 
     DEFAULT_CSS = """
-    SessionSelectScreen {
+    ThemeSelectScreen {
         align: center middle;
     }
-    SessionSelectScreen > #session-dialog {
-        width: 80;
+    ThemeSelectScreen > #theme-dialog {
+        width: 50;
         height: 70%;
         background: $background;
         border: tall $secondary;
         padding: 1;
     }
-    SessionSelectScreen #session-title {
+    ThemeSelectScreen #theme-title {
         color: $secondary;
         text-style: bold;
         padding: 0 0 1 0;
     }
-    SessionSelectScreen #session-search {
+    ThemeSelectScreen #theme-search {
         background: $panel;
         color: $foreground;
         border: none;
@@ -45,79 +43,71 @@ class SessionSelectScreen(ModalScreen[SessionSelection | None]):
         margin: 0 0 1 0;
         height: 3;
     }
-    SessionSelectScreen #session-list {
+    ThemeSelectScreen #theme-search:focus {
+        border: none;
+    }
+    ThemeSelectScreen #theme-list {
         background: $background;
+        color: $foreground;
         border: none;
         height: 1fr;
     }
-    SessionSelectScreen ListItem {
+    ThemeSelectScreen ListItem {
         padding: 0 1;
     }
-    SessionSelectScreen ListItem:hover {
+    ThemeSelectScreen ListItem:hover {
         background: $surface;
     }
-    SessionSelectScreen ListItem > Label {
+    ThemeSelectScreen ListItem > Label {
         color: $foreground;
     }
-    SessionSelectScreen ListItem.current > Label {
+    ThemeSelectScreen ListItem.current {
+        background: $surface;
+    }
+    ThemeSelectScreen ListItem.current > Label {
         color: $warning;
         text-style: bold;
     }
-    SessionSelectScreen #session-hint {
+    ThemeSelectScreen #theme-hint {
         color: $text-muted;
         padding: 1 0 0 0;
         height: 1;
     }
     """
 
-    def __init__(
-        self,
-        sessions: list[dict],
-        current_session_id: str | None,
-    ) -> None:
+    def __init__(self, themes: list[str], current_theme: str) -> None:
         super().__init__()
-        self._sessions = sessions
-        self._current_session_id = current_session_id
+        self._themes = themes
+        self._current_theme = current_theme
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="session-dialog"):
-            yield Static("Select a Session", id="session-title")
-            yield Input(placeholder="Search...", id="session-search")
-            yield ListView(id="session-list")
-            yield Static("↑↓ navigate · Enter select · Esc cancel", id="session-hint")
+        with Vertical(id="theme-dialog"):
+            yield Static("Select a Theme", id="theme-title")
+            yield Input(placeholder="Search...", id="theme-search")
+            yield ListView(id="theme-list")
+            yield Static("↑↓ navigate · Enter select · Esc cancel", id="theme-hint")
 
     def on_mount(self) -> None:
         self._update_list("")
+        self.query_one("#theme-search", Input).focus()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self._update_list(event.value)
 
-    def _session_label(self, session: dict) -> str:
-        title = str(session.get("title") or "Untitled").strip()
-        created_ms = int(session.get("created_at") or 0)
-        updated_ms = int(session.get("updated_at") or 0)
-        created_str = _format_relative_time(created_ms)
-        updated_str = _format_relative_time(updated_ms)
-        conv_width = 40
-        title_block = _truncate_label(title, conv_width)
-        return f"{created_str}  {updated_str}  {title_block}"
-
     def _update_list(self, query: str) -> None:
         q = query.lower().strip()
-        list_view = self.query_one("#session-list", ListView)
+        list_view = self.query_one("#theme-list", ListView)
         list_view.clear()
 
         items: list[ListItem] = []
-        for session in self._sessions:
-            title = str(session.get("title") or "").lower()
-            sid = str(session.get("id") or "").lower()
-            if q and q not in title and q not in sid:
+        for theme in self._themes:
+            if q and q not in theme.lower():
                 continue
-            label = self._session_label(session)
-            item = ListItem(Label(label))
-            if session.get("id") == self._current_session_id:
+            suffix = "  current" if theme == self._current_theme else ""
+            item = ListItem(Label(f"{theme}{suffix}"))
+            if theme == self._current_theme:
                 item.classes = "current"
-            item.data = session.get("id")
+            item.data = theme
             items.append(item)
 
         list_view.extend(items)
@@ -128,24 +118,24 @@ class SessionSelectScreen(ModalScreen[SessionSelection | None]):
         if event.item is None:
             return
         if hasattr(event.item, "data") and event.item.data:
-            self.dismiss(SessionSelection(session_id=event.item.data))
+            self.dismiss(str(event.item.data))
 
     def action_cursor_down(self) -> None:
-        list_view = self.query_one("#session-list", ListView)
+        list_view = self.query_one("#theme-list", ListView)
         if list_view.index is not None and list_view.index < len(list_view.children) - 1:
             list_view.index += 1
 
     def action_cursor_up(self) -> None:
-        list_view = self.query_one("#session-list", ListView)
+        list_view = self.query_one("#theme-list", ListView)
         if list_view.index is not None and list_view.index > 0:
             list_view.index -= 1
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        list_view = self.query_one("#session-list", ListView)
+        list_view = self.query_one("#theme-list", ListView)
         if list_view.index is not None and list_view.children:
             item = list_view.children[list_view.index]
             if hasattr(item, "data") and item.data:
-                self.dismiss(SessionSelection(session_id=item.data))
+                self.dismiss(str(item.data))
 
     def action_cancel(self) -> None:
         self.dismiss(None)

@@ -19,17 +19,17 @@ class DeleteConfirmScreen(ModalScreen[bool]):
     DeleteConfirmScreen > #confirm-dialog {
         width: 54;
         height: auto;
-        background: #1a1b26;
-        border: tall #f7768e;
+        background: $background;
+        border: tall $error;
         padding: 1;
     }
     DeleteConfirmScreen #confirm-title {
-        color: #f7768e;
+        color: $error;
         text-style: bold;
         padding: 0 0 1 0;
     }
     DeleteConfirmScreen #confirm-body {
-        color: #c0caf5;
+        color: $foreground;
         padding: 0 0 1 0;
     }
     DeleteConfirmScreen #confirm-buttons {
@@ -37,13 +37,13 @@ class DeleteConfirmScreen(ModalScreen[bool]):
         align: center middle;
     }
     DeleteConfirmScreen #btn-delete {
-        background: #9e2d2d;
-        color: #c0caf5;
+        background: $error;
+        color: $foreground;
         margin: 0 1 0 0;
     }
     DeleteConfirmScreen #btn-cancel {
-        background: #1a1b26;
-        color: #c0caf5;
+        background: $background;
+        color: $foreground;
     }
     """
 

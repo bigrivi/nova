@@ -9,15 +9,22 @@ class AssistantMessage(Static):
 
     DEFAULT_CSS = """
     AssistantMessage {
-        padding: 0;
-        margin: 0 0 0 0;
-        background: ansi_default;
+        width: 100%;
         height: auto;
+        background: ansi_default;
+        color: $foreground;
+        padding: 0 0;
+        margin: 0;
+    }
+    AssistantMessage > .content {
+        height: auto;
+        padding: 0 0 0 0;
+        margin: 0;
     }
 
     AssistantMessage Markdown {
         background: ansi_default;
-        color: #c0caf5;
+        color: $foreground;
         padding: 0 0;
         margin: 0;
     }
@@ -72,5 +79,7 @@ class AssistantMessage(Static):
         if self._markdown is not None:
             self._markdown.remove()
             self._markdown = None
+        from nova.cli.theme_colors import get_theme_colors
         from rich.text import Text
-        self.update(Text(f"Error: {error}", style="bold #f7768e"))
+        c = get_theme_colors(self.app)
+        self.update(Text(f"Error: {error}", style=f"bold {c.error}"))

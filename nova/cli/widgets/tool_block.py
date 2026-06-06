@@ -8,9 +8,9 @@ from textual.widgets import Static
 from textual.widget import Widget
 
 from nova.cli.tool_rendering import (
-    _C_RED,
     _RS,
     render_tool_block_header,
+    tool_palette_from_theme,
 )
 
 
@@ -26,31 +26,35 @@ class ToolBlock(Widget):
 
     DEFAULT_CSS = """
     ToolBlock {
-        margin: 0;
         height: auto;
+        background: ansi_default;
         padding: 0 2;
-        margin:0 0 1 0;
+        margin: 0 0 1 0;
     }
     ToolBlock > Horizontal {
         height: auto;
         width: auto;
+        background: ansi_default;
         margin: 0;
         padding: 0;
     }
     #hd-left {
         width: 1fr;
         height: auto;
+        background: ansi_default;
         padding: 0 1 0 0;
     }
     #hd-right {
         width: auto;
         height: auto;
+        background: ansi_default;
         padding: 0 1 0 0;
         text-align: right;
     }
     #body {
         height: auto;
         display: none;
+        background: ansi_default;
         padding: 0 1 0 3;
     }
     #body.visible {
@@ -149,6 +153,7 @@ class ToolBlock(Widget):
     def _refresh(self) -> None:
         if self._left_ref is None:
             return
+        palette = self._palette()
         elapsed = self._calc_elapsed() if self._state == "running" else self._elapsed_ms
         left, right = render_tool_block_header(
             self._state,
@@ -156,6 +161,7 @@ class ToolBlock(Widget):
             self._description,
             elapsed,
             self._spinner_frame,
+            palette=palette,
         )
         self._left_ref.update(RichText.from_ansi(left))
         if self._show_right:
@@ -174,13 +180,18 @@ class ToolBlock(Widget):
         else:
             self._body_ref.display = False
 
+    def _palette(self):
+        from nova.cli.theme_colors import get_theme_colors
+        return tool_palette_from_theme(get_theme_colors(self.app))
+
     def _build_body(self) -> str:
         if not self._body_content:
             return ""
+        palette = self._palette()
         parts: list[str] = []
         if self._body_is_error:
             for line in self._body_content.splitlines():
-                parts.append(f"{_C_RED}{line}{_RS}")
+                parts.append(f"{palette.error}{line}{_RS}")
         else:
             for line in self._body_content.splitlines():
                 parts.append(f"{line}")

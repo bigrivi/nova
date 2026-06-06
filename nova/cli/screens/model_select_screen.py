@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, ListItem, ListView, Static
@@ -14,6 +15,12 @@ log = logging.getLogger(__name__)
 
 class ModelSelectScreen(ModalScreen[ModelSelection | None]):
 
+    BINDINGS = [
+        Binding("down", "cursor_down", show=False, priority=True),
+        Binding("up", "cursor_up", show=False, priority=True),
+        Binding("escape", "cancel", show=False, priority=True),
+    ]
+
     DEFAULT_CSS = """
     ModelSelectScreen {
         align: center middle;
@@ -21,18 +28,18 @@ class ModelSelectScreen(ModalScreen[ModelSelection | None]):
     ModelSelectScreen > #model-dialog {
         width: 50;
         height: 70%;
-        background: #1a1b26;
-        border: tall #4a9eff;
+        background: $background;
+        border: tall $secondary;
         padding: 1;
     }
     ModelSelectScreen #model-title {
-        color: #7aa2f7;
+        color: $secondary;
         text-style: bold;
         padding: 0 0 1 0;
     }
     ModelSelectScreen #model-search {
-        background: #16161e;
-        color: #c0caf5;
+        background: $panel;
+        color: $foreground;
         border: none;
         padding: 0 1;
         margin: 0 0 1 0;
@@ -42,8 +49,8 @@ class ModelSelectScreen(ModalScreen[ModelSelection | None]):
         border: none;
     }
     ModelSelectScreen #model-list {
-        background: #1a1b26;
-        color: #c0caf5;
+        background: $background;
+        color: $foreground;
         border: none;
         height: 1fr;
     }
@@ -51,26 +58,26 @@ class ModelSelectScreen(ModalScreen[ModelSelection | None]):
         padding: 0 1;
     }
     ModelSelectScreen ListItem:hover {
-        background: #2a2b3d;
+        background: $surface;
     }
     ModelSelectScreen ListItem > Label {
-        color: #c0caf5;
+        color: $foreground;
     }
     ModelSelectScreen ListItem.current {
-        background: #2a2b3d;
+        background: $surface;
     }
     ModelSelectScreen ListItem.current > Label {
-        color: #7aa2f7;
+        color: $warning;
         text-style: bold;
     }
     ModelSelectScreen .group-header {
-        color: #565f89;
+        color: $text-muted;
         text-style: bold;
         padding: 0 0 0 1;
         height: 1;
     }
     ModelSelectScreen #model-hint {
-        color: #565f89;
+        color: $text-muted;
         padding: 1 0 0 0;
         height: 1;
     }
@@ -141,12 +148,12 @@ class ModelSelectScreen(ModalScreen[ModelSelection | None]):
             provider, model_name = event.item.data
             self.dismiss(ModelSelection(provider=provider, model=model_name))
 
-    def key_down(self) -> None:
+    def action_cursor_down(self) -> None:
         list_view = self.query_one("#model-list", ListView)
         if list_view.index is not None and list_view.index < len(list_view.children) - 1:
             list_view.index += 1
 
-    def key_up(self) -> None:
+    def action_cursor_up(self) -> None:
         list_view = self.query_one("#model-list", ListView)
         if list_view.index is not None and list_view.index > 0:
             list_view.index -= 1
@@ -161,5 +168,5 @@ class ModelSelectScreen(ModalScreen[ModelSelection | None]):
                 provider, model_name = item.data
                 self.dismiss(ModelSelection(provider=provider, model=model_name))
 
-    def key_escape(self) -> None:
+    def action_cancel(self) -> None:
         self.dismiss(None)

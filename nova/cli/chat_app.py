@@ -18,6 +18,7 @@ from nova.cli.screens import (
     DeleteConfirmScreen,
     ModelSelectScreen,
     SessionSelectScreen,
+    ThemeSelectScreen,
 )
 from nova.cli.stream_handler import StreamHandler
 from nova.cli.ui import ModelGroup, ModelSelection, SessionSelection
@@ -55,34 +56,63 @@ class ChatApp(App):
         scrollbar-gutter: stable;
         scrollbar-size: 1 1;
 
-        scrollbar-color: #2a2b3d;
-        scrollbar-color-hover: #4a9eff;
-        scrollbar-color-active: #4a9eff;
+        scrollbar-color: $surface;
+        scrollbar-color-hover: $primary;
+        scrollbar-color-active: $primary;
 
         scrollbar-background: transparent;
     }
 
     Markdown {
         background: ansi_default;
-        color: #c0caf5;
+        color: $foreground;
         padding: 0 2;
         margin: 0 0 1 0;
     }
 
-    MarkdownH1, MarkdownH2, MarkdownH3 {
-        color: #7aa2f7;
+    MarkdownH1, MarkdownH2, MarkdownH3, MarkdownH4, MarkdownH5, MarkdownH6 {
+        color: $text-primary;
         background: ansi_default;
+        text-style: bold;
     }
 
     MarkdownFence {
-        background: #1a1b26;
-        color: #c0caf5;
+        background: ansi_default;
+        color: $foreground;
         margin: 1 0;
     }
 
     MarkdownCode {
-        background: #1a1b26;
-        color: #9ece6a;
+        background: ansi_default;
+        color: $success;
+    }
+
+    MarkdownHorizontalRule {
+        background: ansi_default;
+        border-bottom: solid $border-blurred;
+        height: 1;
+        padding-top: 1;
+        margin-bottom: 1;
+    }
+
+    MarkdownTable {
+        background: ansi_default;
+    }
+
+    MarkdownTableContent {
+        background: ansi_default;
+        keyline: thin $border-blurred;
+    }
+
+    MarkdownTableContent > .header {
+        background: ansi_default;
+        color: $secondary;
+        text-style: bold;
+    }
+
+    MarkdownTableContent > .cell {
+        background: ansi_default;
+        color: $foreground;
     }
 
     #input-wrap {
@@ -93,8 +123,8 @@ class ChatApp(App):
     }
 
     #composer {
-        background: #1a1b26;
-        border-left: tall #4a9eff;
+        background: $background;
+        border-left: tall $primary;
         dock: bottom;
         height: auto;
         padding: 0;
@@ -103,8 +133,8 @@ class ChatApp(App):
     ChatTextArea {
         width: 1fr;
         height: 1;
-        background: #1a1b26;
-        color: #c0caf5;
+        background: $background;
+        color: $foreground;
         border: none;
         padding: 0;
         scrollbar-size: 0 0;
@@ -115,21 +145,21 @@ class ChatApp(App):
     }
 
     ChatTextArea > .text-area--scroll {
-        background: #1a1b26;
+        background: $background;
     }
 
     ChatTextArea .text-area--gutter {
         display: none;
-        background: #1a1b26;
+        background: $background;
     }
 
     ChatTextArea .text-area--cursor-line {
-        background: #1a1b26;
+        background: $background;
     }
 
     ChatTextArea .text-area--cursor {
-        background: #c0caf5;
-        color: #1a1b26;
+        background: $foreground;
+        color: $background;
     }
     """
 
@@ -137,9 +167,10 @@ class ChatApp(App):
         Binding("ctrl+c", "quit", show=False),
     ]
 
-    def __init__(self, controller: ChatControllerProtocol) -> None:
+    def __init__(self, controller: ChatControllerProtocol, theme: str = "textual-dark") -> None:
         super().__init__()
         self._controller: ChatControllerProtocol = controller
+        self.theme = theme
         self._streaming = False
         self._asking = False
         self._current_handler: StreamHandler | None = None
@@ -184,6 +215,20 @@ class ChatApp(App):
     def update_status_bar(self) -> None:
         self._update_status_bar()
 
+    def current_theme_name(self) -> str:
+        return str(self.theme)
+
+    def available_theme_names(self) -> list[str]:
+        return sorted(self.available_themes)
+
+    def set_theme_name(self, theme: str) -> bool:
+        if theme not in self.available_themes:
+            return False
+        self.theme = theme
+        self.refresh_css(animate=False)
+        self._update_status_bar()
+        return True
+
     def _update_status_bar(self) -> None:
         try:
             status = self._controller.get_status()
@@ -207,16 +252,30 @@ class ChatApp(App):
             model = provider = ""
             banner_text = ""
         container = self.query_one("#message-container")
+        from nova.cli.theme_colors import get_theme_colors
+        c = get_theme_colors(self)
+        version_text = RichText.assemble(
+            ("Nova CLI  v0.1.0", f"bold {c.secondary}"),
+        )
+        model_text = RichText.assemble(
+            ("Model", c.text_disabled),
+            ("   ", ""),
+            (model, c.foreground),
+        )
+        provider_text = RichText.assemble(
+            ("Provider", c.text_disabled),
+            ("    ", ""),
+            (provider, f"bold {c.warning}"),
+        )
+        banner_rich = RichText.assemble(
+            version_text, ("\n\n", ""),
+            model_text, ("\n", ""),
+            provider_text, ("\n\n", ""),
+            (banner_text, c.text_muted),
+        )
         container.mount(BannerMessage(Panel(
-            RichText.from_markup(
-                "[bold #7aa2f7]Nova CLI  v0.1.0[/]\n"
-                "\n"
-                f"[#444466]Model[/]   [#c0caf5]{model}[/]\n"
-                f"[#444466]Provider[/]    [#e0af68]{provider}[/]\n"
-                "\n"
-                f"[#565f89]{banner_text}[/]"
-            ),
-            border_style="#2a2b3d",
+            banner_rich,
+            border_style=c.surface,
             padding=(1, 2),
         )))
 
@@ -275,8 +334,10 @@ class ChatApp(App):
             self._show_error_plain(f"Unknown command: {text}")
 
     def _show_error_plain(self, text: str) -> None:
+        from nova.cli.theme_colors import get_theme_colors
+        c = get_theme_colors(self)
         container = self.query_one("#message-container")
-        container.mount(BannerMessage(RichText(text, style="bold #f7768e")))
+        container.mount(BannerMessage(RichText(text, style=f"bold {c.error}")))
 
     async def _handle_message(self, text: str) -> None:
         container = self.query_one("#message-container")
@@ -323,9 +384,11 @@ class ChatApp(App):
         container = self.query_one("#message-container")
 
         if not questions:
+            from nova.cli.theme_colors import get_theme_colors
+            c = get_theme_colors(self)
             container.mount(BannerMessage(
                 RichText("Error: Invalid ask_user payload.",
-                         style="bold #f7768e")
+                         style=f"bold {c.error}")
             ))
             return
 
@@ -399,17 +462,87 @@ class ChatApp(App):
             )
         )
 
+    async def prompt_theme_selection(
+        self,
+        themes: list[str],
+        *,
+        current_theme: str,
+    ) -> str | None:
+        return await self.push_screen_wait(
+            ThemeSelectScreen(themes=themes, current_theme=current_theme)
+        )
+
     async def prompt_agent_list(self, agents: list[dict]) -> None:
-        await self.push_screen_wait(AgentListScreen(agents=agents))
+        from nova.db.database import ensure_db
+        db = await ensure_db()
+        parent_map = {}
+        for agent in agents:
+            key = agent.get("key", "")
+            parents = await db.get_agent_parents(key)
+            if parents:
+                parent_map[key] = parents
+        await self.push_screen_wait(AgentListScreen(agents=agents, parent_map=parent_map))
 
     async def prompt_create_agent(self) -> AgentCreateResult | None:
-        return await self.push_screen_wait(CreateAgentScreen())
+        from nova.db.database import ensure_db
+        db = await ensure_db()
+        agents = await db.list_agents()
+        return await self.push_screen_wait(CreateAgentScreen(agents=agents))
 
     async def prompt_delete_agent(self, agents: list[dict]) -> str | None:
         return await self.push_screen_wait(DeleteAgentScreen(agents=agents))
 
     async def prompt_delete_confirm(self, agent_key: str, session_count: int) -> bool:
         return await self.push_screen_wait(DeleteConfirmScreen(agent_key=agent_key, session_count=session_count))
+
+    async def prompt_child_status(
+        self,
+        child_sessions: list[dict],
+        current_session_id: str | None,
+    ) -> None:
+        from rich.table import Table
+        from rich.panel import Panel
+        from nova.cli.theme_colors import get_theme_colors
+
+        c = get_theme_colors(self)
+        table = Table(
+            title="Child Sessions",
+            show_header=True,
+            header_style=f"bold {c.secondary}",
+            title_style=f"bold {c.secondary}",
+        )
+        table.add_column("ID", style=c.text_muted, width=12)
+        table.add_column("Agent", style=c.success)
+        table.add_column("Title", style=c.foreground)
+        table.add_column("Messages", justify="right", style=c.warning)
+        table.add_column("Created", style=c.text_muted)
+        table.add_column("Updated", style=c.text_muted)
+
+        if not child_sessions:
+            container = self.query_one("#message-container")
+            container.mount(BannerMessage(RichText("No child sessions.", style=c.text_muted)))
+            return
+
+        for session in child_sessions:
+            raw_session_id = session.get("id", "")
+            session_id = raw_session_id[:12]
+            agent_key = session.get("agent_key", "")
+            title = session.get("title", "Untitled")
+            if len(title) > 30:
+                title = title[:27] + "..."
+            message_count = session.get("message_count", 0)
+
+            import time
+            created_at = session.get("created_at", 0)
+            updated_at = session.get("updated_at", 0)
+            created_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(created_at / 1000)) if created_at else "-"
+            updated_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(updated_at / 1000)) if updated_at else "-"
+
+            row_style = f"bold {c.warning}" if raw_session_id == current_session_id else None
+            table.add_row(session_id, agent_key, title, str(message_count), created_str, updated_str, style=row_style)
+
+        container = self.query_one("#message-container")
+        container.mount(BannerMessage(Panel(table, border_style=c.surface)))
 
     def info(self, text: str) -> None:
         self.show_info(text)
@@ -422,8 +555,10 @@ class ChatApp(App):
         container.mount(BannerMessage(text))
 
     def show_error(self, text: str) -> None:
+        from nova.cli.theme_colors import get_theme_colors
+        c = get_theme_colors(self)
         container = self.query_one("#message-container")
-        container.mount(BannerMessage(RichText(text, style="bold #f7768e")))
+        container.mount(BannerMessage(RichText(text, style=f"bold {c.error}")))
 
     def show_user_message(self, content: str) -> None:
         container = self.query_one("#message-container")
@@ -451,7 +586,11 @@ class ChatApp(App):
                 get_tool_description,
                 parse_tool_arguments,
                 render_tool_result,
+                tool_palette_from_theme,
             )
+            from nova.cli.theme_colors import get_theme_colors
+
+            tool_palette = tool_palette_from_theme(get_theme_colors(self))
 
             pending_blocks: dict[str, tuple[str, ToolBlock]] = {}
 
@@ -484,7 +623,7 @@ class ChatApp(App):
                             tc_args = getattr(tc, "arguments", "{}")
 
                         arguments = parse_tool_arguments(tc_args)
-                        description = get_tool_description(tc_name, arguments)
+                        description = get_tool_description(tc_name, arguments, palette=tool_palette)
                         params = format_tool_params(tc_name, arguments)
 
                         block = ToolBlock(tc_name, description, params, show_right=False)
@@ -500,7 +639,7 @@ class ChatApp(App):
                     tool_call_id = getattr(msg, "tool_call_id", None) or ""
                     if content_val.strip() and tool_call_id in pending_blocks:
                         tc_name, block = pending_blocks.pop(tool_call_id)
-                        rendered = render_tool_result(tc_name, content_val)
+                        rendered = render_tool_result(tc_name, content_val, palette=tool_palette)
                         if tc_name and tc_name.lower() in ("edit", "write", "write_files"):
                             block.set_done(rendered or content_val)
                         else:

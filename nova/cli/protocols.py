@@ -106,6 +106,23 @@ class UIAdapterProtocol(Protocol):
     def update_status_bar(self) -> None:
         ...
 
+    def current_theme_name(self) -> str:
+        ...
+
+    def available_theme_names(self) -> list[str]:
+        ...
+
+    def set_theme_name(self, theme: str) -> bool:
+        ...
+
+    async def prompt_theme_selection(
+        self,
+        themes: list[str],
+        *,
+        current_theme: str,
+    ) -> str | None:
+        ...
+
     def print_history_transcript(self, history: list[object]) -> None:
         ...
 
@@ -136,4 +153,11 @@ class UIAdapterProtocol(Protocol):
         ...
 
     async def prompt_delete_confirm(self, agent_key: str, session_count: int) -> bool:
+        ...
+
+    async def prompt_child_status(
+        self,
+        child_sessions: list[dict],
+        current_session_id: str | None,
+    ) -> None:
         ...

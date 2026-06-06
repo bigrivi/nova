@@ -98,8 +98,10 @@ class StreamHandler:
     # ----------------------------------------------------------
 
     def _mount_error(self, text: str) -> None:
+        from nova.cli.theme_colors import get_theme_colors
+        c = get_theme_colors(self._container.app)
         self._container.mount(BannerMessage(
-            RichText(f"Error: {text}", style="bold #f7768e")))
+            RichText(f"Error: {text}", style=f"bold {c.error}")))
         self._container.call_after_refresh(lambda: self._container.scroll_end(
             animate=False
         ))

@@ -25,8 +25,8 @@ class AskUserWizard(Widget):
 
     DEFAULT_CSS = """
     AskUserWizard {
-        background: #1a1b26;
-        border-left: tall #e0af68;
+        background: $background;
+        border-left: tall $warning;
         padding: 1 2;
         margin: 0 0 1 0;
         height: auto;
@@ -35,56 +35,75 @@ class AskUserWizard(Widget):
     #wiz-tabs {
         height: auto;
     }
+    #wiz-tabs Tabs {
+        height: 2;
+    }
+    #wiz-tabs Tab {
+        color: $text-muted;
+        padding: 0 1;
+    }
+    #wiz-tabs Tab:hover {
+        color: $foreground;
+    }
+    #wiz-tabs Tab.-active {
+        color: $secondary;
+        text-style: bold;
+    }
     #wiz-tabs TabPane {
         height: auto;
         padding: 0;
     }
 
     .q-header {
-        color: #7aa2f7;
+        color: $secondary;
         text-style: bold;
         margin: 0 0 0 0;
     }
     .q-question {
-        color: #c0caf5;
+        color: $foreground;
         margin: 0 0 1 0;
     }
 
     .q-list {
-        background: #1a1b26;
-        border: none;
+        background: $background;
+        border: solid $border-blurred;
         height: auto;
         max-height: 12;
         margin: 0 0 1 0;
     }
     .q-list > ListItem {
         padding: 0 1;
-        background: #1a1b26;
+        background: $background;
     }
     .q-list > ListItem:hover {
-        background: #2a2b3d;
+        background: $surface;
     }
     .q-list > ListItem.--highlight {
-        background: #2a2b3d;
+        background: $surface;
     }
     .q-list > ListItem > Label {
-        color: #c0caf5;
+        color: $foreground;
     }
     .q-list > ListItem.--highlight > Label {
-        color: #7aa2f7;
+        color: $secondary;
         text-style: bold;
     }
 
     .q-input {
         margin: 0 0 1 0;
+        background: $background;
+        border: tall $border-blurred;
+    }
+    .q-input:focus {
+        border: tall $primary;
     }
 
     .q-buttons {
         height: auto;
         margin: 0 0 1 0;
     }
-    .q-btn { width: 12; }
-    .q-btn-active { background: #3a3b4d; }
+    .q-btn { width: 12; border: tall $border-blurred; }
+    .q-btn-active { background: $surface; border: tall $secondary; }
 
     #wiz-nav {
         layout: horizontal;
@@ -92,19 +111,19 @@ class AskUserWizard(Widget):
         padding: 0 2;
         align: right middle;
     }
-    .nav-prev { color: #444466; width: auto; margin-right: 2; }
-    .nav-prev:hover { color: #c0caf5; }
-    .nav-next { color: #7aa2f7; text-style: bold; width: auto; }
-    .nav-next:hover { color: #9ece6a; }
-    .nav-next.done { color: #9ece6a; }
+    .nav-prev { color: $foreground-disabled; width: auto; margin-right: 2; }
+    .nav-prev:hover { color: $foreground; }
+    .nav-next { color: $secondary; text-style: bold; width: auto; }
+    .nav-next:hover { color: $success; }
+    .nav-next.done { color: $success; }
 
     .review-line {
-        color: #c0caf5;
+        color: $foreground;
         margin: 0 0 0 1;
     }
 
     #wiz-hint {
-        color: #444466;
+        color: $text-disabled;
         height: 1;
     }
     """

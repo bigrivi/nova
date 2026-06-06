@@ -5,16 +5,17 @@ import time
 from rich.text import Text
 from textual.widgets import Static
 
+from nova.cli.theme_colors import get_theme_colors
+
 
 class Spinner(Static):
 
     DEFAULT_CSS = """
     Spinner {
-        color: #565f89;
+        height: 1;
+        color: $text-muted;
         padding: 0 2 0 2;
-        background: ansi_default;
         margin: 0 0 1 0;
-        height: auto;
     }
     """
 
@@ -35,14 +36,15 @@ class Spinner(Static):
     def _render_frame(self) -> None:
         dots = self.FRAMES[self._frame]
         elapsed = int(time.monotonic() - self._started_at)
+        c = get_theme_colors(self.app)
         self.update(
             Text.assemble(
-                (self._message + " ", "#565f89"),
-                (dots, "#7aa2f7"),
+                (self._message + " ", c.text_muted),
+                (dots, c.secondary),
                 ("  ", ""),
-                (f"{elapsed}s", "#565f89"),
-                (" · ", "#444466"),
-                ("Esc to interrupt", "#565f89"),
+                (f"{elapsed}s", c.text_muted),
+                (" · ", c.text_disabled),
+                ("Esc to interrupt", c.text_muted),
             )
         )
         self._frame = (self._frame + 1) % len(self.FRAMES)

@@ -3,17 +3,19 @@ from __future__ import annotations
 from rich.text import Text
 from textual.widgets import Static
 
+from nova.cli.theme_colors import get_theme_colors
+
 
 class CommandSuggestions(Static):
 
     DEFAULT_CSS = """
     CommandSuggestions {
         dock: bottom;
-        background: #1a1b26;
-        color: #565f89;
+        background: $background;
+        color: $text-muted;
         height: auto;
         padding: 0 2;
-        border-top: solid #2a2b3d;
+        border-top: solid $border-blurred;
     }
     """
 
@@ -29,11 +31,12 @@ class CommandSuggestions(Static):
         if not matched:
             self.visible = False
             return
+        c = get_theme_colors(self.app)
         text = Text()
         for i, spec in enumerate(matched):
             if i > 0:
                 text.append("  ")
-            text.append(f"/{spec.id}", style="bold #7aa2f7")
-            text.append(f" {spec.description}", style="#565f89")
+            text.append(f"/{spec.id}", style=f"bold {c.secondary}")
+            text.append(f" {spec.description}", style=c.text_muted)
         self.update(text)
         self.visible = True

@@ -7,10 +7,10 @@ class BannerMessage(Static):
 
     DEFAULT_CSS = """
     BannerMessage {
-        color: #565f89;
-        padding: 0 2;
-        margin: 0 0 1 0;
-        background: ansi_default;
+        width: 100%;
         height: auto;
+        color: $text-muted;
+        padding: 0;
+        margin: 0;
     }
     """
