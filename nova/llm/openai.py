@@ -260,7 +260,7 @@ class OpenAIProvider(LLMProvider):
         url = f"{self.base_url}/chat/completions"
 
         connector = self._make_connector()
-        session = aiohttp.ClientSession(connector=connector)
+        session = aiohttp.ClientSession(connector=connector, trust_env=True)
 
         try:
             resp = await self._post_with_retry(
@@ -337,11 +337,9 @@ class OpenAIProvider(LLMProvider):
             stream=True,
             tools=tools,
         )
-
         url = f"{self.base_url}/chat/completions"
-
         connector = self._make_connector()
-        session = aiohttp.ClientSession(connector=connector)
+        session = aiohttp.ClientSession(connector=connector, trust_env=True)
 
         try:
             resp = await self._post_with_retry(
