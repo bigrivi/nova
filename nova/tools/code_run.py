@@ -39,6 +39,16 @@ from nova.tools.registry import tool
                 "items": {"type": "string"},
                 "description": "Command line arguments to pass to the script",
             },
+            "description": {
+                "type": "string",
+                "description": (
+                    "Clear, concise description of what this code does in active voice. "
+                    'Never use words like "complex" or "risk" in the description - just describe what it does.\n\n'
+                    "Keep it brief (5-10 words):\n"
+                    '- print("hello") \u2192 "Print a greeting"\n'
+                    '- sum(range(100)) \u2192 "Sum numbers 0 through 99"'
+                ),
+            },
         },
     },
 )
@@ -48,6 +58,7 @@ async def code_run(
     cwd: str = "",
     timeout_seconds: int = 60,
     args: list = None,
+    description: str = "",
 ) -> ToolResult:
     timeout = max(1, min(timeout_seconds, 300))
     safe_args = [str(item) for item in (args or [])]

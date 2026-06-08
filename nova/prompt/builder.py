@@ -62,6 +62,7 @@ When calling a tool, output JSON only:
 - Only call `install_skill` when the user explicitly asks you to install a ClawHub skill.
 - If you are unsure whether a skill is already installed locally, call `list_skills` before `install_skill`.
 - If the skill is already installed and the user did not ask to update or replace it, prefer `load_skill` instead of reinstalling.
+- When calling `shell` or `code_run`, always include a `description` that briefly explains what the command or code does in active voice.
 
 # Current Available Skills
 {available_skills}

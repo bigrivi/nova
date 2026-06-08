@@ -50,11 +50,27 @@ def is_dangerous(command: str) -> bool:
                 "description": "Timeout in seconds (default: 30)",
                 "default": 30,
             },
+            "description": {
+                "type": "string",
+                "description": (
+                    "Clear, concise description of what this command does in active voice. "
+                    'Never use words like "complex" or "risk" in the description - just describe what it does.\n\n'
+                    "For simple commands (git, npm, standard CLI tools), keep it brief (5-10 words):\n"
+                    '- ls \u2192 "List files in current directory"\n'
+                    '- git status \u2192 "Show working tree status"\n'
+                    '- npm install \u2192 "Install package dependencies"\n\n'
+                    "For commands that are harder to parse at a glance (piped commands, obscure flags, etc.), "
+                    "add enough context to clarify what it does:\n"
+                    '- find . -name "*.tmp" -exec rm {} \\; \u2192 "Find and delete all .tmp files recursively"\n'
+                    '- git reset --hard origin/main \u2192 "Discard all local changes and match remote main"\n'
+                    '- curl -s url | jq \'.data[]\' \u2192 "Fetch JSON from URL and extract data array elements"'
+                ),
+            },
         },
         "required": ["command"],
     },
 )
-async def shell(command: str, timeout: int = 30) -> ToolResult:
+async def shell(command: str, timeout: int = 30, description: str = "") -> ToolResult:
     if is_dangerous(command):
         return ToolResult(success=False, content=f"Dangerous command rejected: {command}")
 
