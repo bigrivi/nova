@@ -208,7 +208,7 @@ def test_tool_result_requires_input_returns_pending_input_content():
 
     processed = processor.handle_tool_result({"result": _ToolResult("choose one", requires_input=True)})
 
-    assert processed.commands == (SetPendingInput("choose one"), FinishToolCall("", "", "choose one", "choose one"))
+    assert processed.commands == (SetPendingInput("choose one"), FinishToolCall("", "choose one"))
     assert processed.stop is False
 
 
@@ -217,7 +217,7 @@ def test_tool_result_without_required_input_is_noop():
 
     processed = processor.handle_tool_result({"result": _ToolResult("done")})
 
-    assert processed.commands == (FinishToolCall("", "", "done", "done"),)
+    assert processed.commands == (FinishToolCall("", "done"),)
     assert processed.stop is False
 
 
@@ -228,7 +228,7 @@ def test_tool_call_returns_show_tool_call_command():
 
     assert processed.commands == (
         FinalizeAssistant(),
-        ShowToolCall("call_1", "read", "README.md", [("filePath", "README.md")]),
+        ShowToolCall("call_1", "read", {"filePath": "README.md"}),
     )
     assert processor.tool_calls_seen == 1
 
@@ -255,5 +255,5 @@ def test_successful_tool_result_returns_finish_tool_call_command():
     })
 
     assert processed.commands == (
-        FinishToolCall("call_1", "read", "ok", "\033[2;37m│ Read 1 lines\033[0m\n\033[2;37m│ ok\033[0m"),
+        FinishToolCall("call_1", "ok"),
     )

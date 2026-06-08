@@ -172,6 +172,7 @@ class OpenAIProvider(LLMProvider):
         headers: dict,
         body: dict,
         abort_event: Optional[asyncio.Event],
+        timeout: Optional[aiohttp.ClientTimeout] = None,
     ) -> Optional[aiohttp.ClientResponse]:
         delay = _RETRY_BASE_DELAY
 
@@ -181,7 +182,7 @@ class OpenAIProvider(LLMProvider):
                     url,
                     headers=headers,
                     json=body,
-                    timeout=aiohttp.ClientTimeout(total=self.timeout),
+                    timeout=timeout if timeout is not None else aiohttp.ClientTimeout(total=self.timeout),
                 ),
                 name=f"openai_post_attempt_{attempt}",
             )
@@ -348,6 +349,7 @@ class OpenAIProvider(LLMProvider):
                 headers=headers,
                 body=body,
                 abort_event=abort_event,
+                timeout=aiohttp.ClientTimeout(total=None),
             )
 
             if resp is None:

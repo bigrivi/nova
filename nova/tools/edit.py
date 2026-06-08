@@ -2,7 +2,6 @@
 Edit tool - perform precise file edits.
 """
 
-import difflib
 from pathlib import Path
 
 from nova.llm import ToolResult
@@ -59,9 +58,7 @@ async def edit(filePath: str, oldString: str, newString: str, replaceAll: bool =
         
         if count > 1 and not replaceAll:
             return ToolResult(success=False, content=f"oldString appears {count} times. Provide more context to make unique, or use replaceAll=true.")
-        
-        old_content_norm = content_norm
-        
+
         if replaceAll:
             new_content_norm = content_norm.replace(old_norm, new_norm)
         else:
@@ -69,31 +66,15 @@ async def edit(filePath: str, oldString: str, newString: str, replaceAll: bool =
         
         if is_pure_crlf:
             final_content = new_content_norm.replace("\n", "\r\n")
-            old_content_final = content
         else:
             final_content = new_content_norm
-            old_content_final = content_norm
-        
+
         if final_content and not final_content.endswith("\n"):
             final_content += "\n"
 
         p.write_text(final_content, encoding="utf-8")
-        
-        old_lines = old_content_final.splitlines(keepends=True)
-        new_lines = final_content.splitlines(keepends=True)
-        
-        if not final_content.endswith("\n") and new_lines:
-            new_lines[-1] += "\n"
-        
-        diff = list(difflib.unified_diff(
-            old_lines, new_lines,
-            fromfile=f"a/{p.name}",
-            tofile=f"b/{p.name}",
-            n=3
-        ))
-        
-        diff_text = "".join(diff) if diff else ""
-        return ToolResult(success=True, content=f"Changes applied to {p.name}:\n\n{diff_text}")
+
+        return ToolResult(success=True, content=f"Changes applied to {p.name}")
     
     except Exception as e:
         return ToolResult(success=False, content=f"Error: {e}")

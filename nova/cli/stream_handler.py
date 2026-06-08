@@ -27,6 +27,8 @@ from nova.cli.stream_commands import (
     StartText,
 )
 from nova.cli.stream_processor import StreamEventProcessor
+from nova.cli.theme_colors import get_theme_colors
+from nova.cli.tool_rendering import _DI, _RS, REGISTRY, tool_palette_from_theme
 from nova.cli.widgets import (
     AssistantMessage,
     BannerMessage,
@@ -43,8 +45,6 @@ if TYPE_CHECKING:
 
 
 class StreamHandler:
-
-    _DIFF_TOOLS = frozenset({"edit", "write"})
 
     def __init__(self, container, controller: StreamControllerProtocol, status_bar=None) -> None:
         self._container = container
@@ -100,7 +100,6 @@ class StreamHandler:
     # ----------------------------------------------------------
 
     def _mount_error(self, text: str) -> None:
-        from nova.cli.theme_colors import get_theme_colors
         c = get_theme_colors(self._container.app)
         self._container.mount(BannerMessage(
             RichText(f"Error: {text}", style=f"bold {c.error}")))
@@ -110,11 +109,6 @@ class StreamHandler:
 
     def _mount_info(self, text: str) -> None:
         self._container.mount(BannerMessage(text))
-
-    @staticmethod
-    def _is_diff(content: str) -> bool:
-        return sum(1 for line in content.splitlines()
-                   if line.startswith(("--- ", "+++ ", "@@ "))) >= 3
 
     async def _on_session(self, data) -> bool:
         return await self._apply_processed_event(self._processor.handle_noop(data))
@@ -226,19 +220,48 @@ class StreamHandler:
                 await self._dismiss_spinner()
             case SetPendingInput(content=content):
                 self._controller.set_pending_input({"content": content})
-            case ShowToolCall(call_id=call_id, tool_name=tool_name, description=description, params=params):
-                block = ToolBlock(tool_name, description, params)
+            case ShowToolCall(call_id=call_id, tool_name=tool_name, raw_args=raw_args):
+                args = raw_args or {}
+                palette = tool_palette_from_theme(
+                    get_theme_colors(self._container.app))
+                renderer = REGISTRY.get(tool_name)
+                summary_text = renderer.summary(args) if renderer else tool_name
+                detail_lines: list[str] = []
+                if renderer:
+                    show = renderer.show_detail(
+                        args) if callable(renderer.show_detail) else renderer.show_detail
+                    if show:
+                        if renderer.render_detail:
+                            detail_lines = renderer.render_detail(args, palette)
+                        elif renderer.params:
+                            p = palette
+                            for key, value in (renderer.params(args) or []):
+                                if summary_text and value in summary_text:
+                                    continue
+                                detail_lines.append(
+                                    f"{_DI}{p.muted}{key}{_RS}  {p.text}{value}{_RS}")
+                block = ToolBlock(
+                    tool_name,
+                    summary_text,
+                    detail_lines,
+                    palette=palette,
+                    css_class=renderer.css_class if renderer else None,
+                    raw_args=args,
+                )
                 await self._container.mount(block)
                 block.set_running()
                 self._tool_blocks[call_id] = block
                 log.info("Tool call: %s (%s)", call_id, tool_name)
-            case FinishToolCall(call_id=call_id, tool_name=tool_name, content=content, rendered=rendered):
+            case FinishToolCall(call_id=call_id, content=content):
                 block = self._tool_blocks.pop(call_id, None)
                 if block:
-                    if tool_name and tool_name.lower() in ("edit", "write", "write_files"):
-                        block.set_done(rendered or content)
+                    renderer = REGISTRY.get(block._tool_name)
+                    if renderer and renderer.on_result:
+                        result_lines = renderer.on_result(
+                            content, block._palette())
                     else:
-                        block.set_done()
+                        result_lines = None
+                    block.set_done(result_lines)
             case FailToolCall(call_id=call_id, message=message):
                 block = self._tool_blocks.pop(call_id, None)
                 if block:

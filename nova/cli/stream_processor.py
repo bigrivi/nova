@@ -23,12 +23,7 @@ from nova.cli.stream_commands import (
     StartReasoning,
     StartText,
 )
-from nova.cli.tool_rendering import (
-    format_tool_params,
-    get_tool_description,
-    parse_tool_arguments,
-    render_tool_result,
-)
+from nova.cli.tool_rendering import parse_tool_arguments
 from nova.cli.utils import (
     looks_like_error_message,
     parse_done_payload,
@@ -103,10 +98,12 @@ class StreamEventProcessor:
         call_id = getattr(data, "id", None) or str(self.tool_calls_seen)
         raw_args = getattr(data, "arguments", "")
         arguments = parse_tool_arguments(raw_args)
-        description = get_tool_description(name, arguments)
-        params = format_tool_params(name, arguments)
+
         return ProcessedStreamEvent(
-            commands=(FinalizeAssistant(), ShowToolCall(str(call_id), name, description, params)),
+            commands=(
+                FinalizeAssistant(),
+                ShowToolCall(str(call_id), name, arguments),
+            ),
         )
 
     def handle_done(self, data: object) -> ProcessedStreamEvent:
@@ -156,7 +153,6 @@ class StreamEventProcessor:
         if result is None:
             return ProcessedStreamEvent()
 
-        tool_name = str(data.get("tool", "") or "")
         call_id = str(data.get("tool_call_id", "") or "")
         content = getattr(result, "content", "")
         content_str = content if isinstance(content, str) else ""
@@ -169,6 +165,5 @@ class StreamEventProcessor:
             commands.append(FailToolCall(call_id, content_str))
             return ProcessedStreamEvent(commands=tuple(commands))
 
-        rendered = render_tool_result(tool_name, content_str)
-        commands.append(FinishToolCall(call_id, tool_name, content_str, rendered or ""))
+        commands.append(FinishToolCall(call_id, content_str))
         return ProcessedStreamEvent(commands=tuple(commands))

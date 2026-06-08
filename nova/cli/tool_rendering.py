@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from dataclasses import dataclass
-from typing import Optional
-
+from typing import Callable, Optional
 
 MAX_RENDERED_DIFF_LINES = 80
 
+
+# ── Palette ──────────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class ToolRenderPalette:
@@ -23,501 +25,464 @@ class ToolRenderPalette:
     diff_title: str
     status_bg: str
 
-
-def render_tool_call(tool_call: object, palette: ToolRenderPalette | None = None) -> str:
-    name = tool_call.name if hasattr(tool_call, "name") else str(tool_call)
-    arguments = tool_call.arguments if hasattr(tool_call, "arguments") else ""
-    p = palette or DEFAULT_TOOL_PALETTE
-    bullet = f"{p.success}•{_RS}" if palette is not None else "\033[32m•\033[0m"
-    action_text = render_tool_action(name, arguments)
-    title = f"{_BO}{p.text}{action_text}{_RS}" if palette is not None else f"\033[1;37m{action_text}\033[0m"
-    raw_args = str(arguments or "").strip()
-    if not raw_args or action_text != (name if isinstance(name, str) else str(name)):
-        return f"{bullet} {title}"
-
-    compact_args = raw_args
-    try:
-        compact_args = json.dumps(
-            json.loads(compact_args),
-            ensure_ascii=False,
-            separators=(", ", ": "),
-        )
-    except (TypeError, ValueError):
-        pass
-    compact_args = " ".join(compact_args.split())
-    if len(compact_args) > 140:
-        compact_args = compact_args[:137] + "..."
-    args_line = f"{_DI}{p.muted}{compact_args}{_RS}" if palette is not None else f"\033[2;37m{compact_args}\033[0m"
-    return f"{bullet} {title}\n  {args_line}"
+    def accent(self, name: str = "muted") -> str:
+        return getattr(self, name, self.muted)
 
 
-def render_tool_result(
-    tool_name: object,
-    content: object,
-    palette: ToolRenderPalette | None = None,
-) -> Optional[str]:
-    if not isinstance(tool_name, str) or not isinstance(content, str):
-        return None
+# ── Registry ─────────────────────────────────────────────────────────────────
 
-    normalized_name = tool_name.strip().lower()
-    stripped = content.strip()
-    if not stripped:
-        return None
-
-    if normalized_name == "read_image":
-        return None
-
-    if normalized_name in {"edit", "write"} and "\n--- " in content and "\n+++ " in content and "\n@@ " in content:
-        headline, _, diff_body = stripped.partition("\n\n")
-        p = palette or DEFAULT_TOOL_PALETTE
-        rendered_diff = render_diff_block(diff_body or headline, palette=palette)
-        label = normalized_name.upper()
-        title = (
-            f"{_BO}{p.diff_title}[{label} DIFF]{_RS} {headline}"
-            if palette is not None
-            else f"\033[1;35m[{label} DIFF]\033[0m {headline}"
-        )
-        return f"{title}\n{rendered_diff}"
-
-    preview = render_tool_result_preview(normalized_name, stripped, palette=palette)
-    return preview
+@dataclass
+class ToolRenderer:
+    cat: str
+    icon: str
+    accent_css: str
+    label: str | None = None
+    summary: Callable[[dict], str] = lambda _: ""
+    params: Callable[[dict], list[tuple[str, str]]] | None = None
+    render_detail: Callable[[dict, ToolRenderPalette], list[str]] | None = None
+    on_result: Callable[[str, ToolRenderPalette], list[str]] | None = None
+    on_done: Callable[..., None] | None = None
+    show_detail: bool | Callable[[dict], bool] = True
+    default_open: bool = False
+    show_time: bool = False
+    css_class: str | None = None
 
 
-def render_tool_action(name: object, arguments: object) -> str:
-    if not isinstance(name, str):
-        return str(name)
-
-    args = parse_tool_arguments(arguments)
-    normalized_name = name.strip().lower()
-
-    if normalized_name == "shell":
-        command = args.get("command")
-        if isinstance(command, str) and command.strip():
-            return f"Ran {truncate_preview(command.strip(), limit=80)}"
-    if normalized_name in ("read", "edit", "write"):
-        file_path = args.get("filePath")
-        if isinstance(file_path, str) and file_path.strip():
-            return file_path.strip()
-    if normalized_name == "glob":
-        pattern = args.get("pattern")
-        if isinstance(pattern, str) and pattern.strip():
-            return f"Matched files with {truncate_preview(pattern.strip(), limit=60)}"
-    if normalized_name == "grep":
-        pattern = args.get("pattern")
-        if isinstance(pattern, str) and pattern.strip():
-            return f"Searched code for {truncate_preview(pattern.strip(), limit=60)}"
-    if normalized_name == "web_search":
-        query = args.get("query")
-        if isinstance(query, str) and query.strip():
-            return f'Searched web for "{truncate_preview(query.strip(), limit=60)}"'
-    if normalized_name == "web_fetch":
-        url = args.get("url")
-        if isinstance(url, str) and url.strip():
-            return url.strip()
-    if normalized_name == "search_memory":
-        query = args.get("query")
-        if isinstance(query, str) and query.strip():
-            return f'Searched memory for "{truncate_preview(query.strip(), limit=60)}"'
-    if normalized_name == "write_files":
-        files = args.get("files", [])
-        if isinstance(files, list) and files:
-            return f"{len(files)} files"
-    if normalized_name == "save_memory":
-        key = args.get("key")
-        if isinstance(key, str) and key.strip():
-            return truncate_preview(key.strip(), limit=60)
-    if normalized_name == "delete_memory":
-        memory_id = args.get("id")
-        key = args.get("key")
-        if isinstance(memory_id, str) and memory_id.strip():
-            return memory_id.strip()
-        if isinstance(key, str) and key.strip():
-            return truncate_preview(key.strip(), limit=60)
-    if normalized_name == "list_memories":
-        return ""
-    if normalized_name == "ask_user":
-        qs = args.get("questions", [])
-        if isinstance(qs, list):
-            return f"{len(qs)} question{'s' if len(qs) != 1 else ''}"
-        return "Ask user"
-
-    return name
+REGISTRY: dict[str, ToolRenderer] = {}
 
 
-def render_diff_block(
-    text: str,
-    max_rendered_diff_lines: int = MAX_RENDERED_DIFF_LINES,
-    palette: ToolRenderPalette | None = None,
-) -> str:
-    if palette is None:
-        lines = text.splitlines()
-        if len(lines) > max_rendered_diff_lines:
-            hidden = len(lines) - max_rendered_diff_lines
-            lines = lines[:max_rendered_diff_lines]
-            lines.append(f"... ({hidden} more diff lines not shown)")
+# ── Tool helper factories ───────────────────────────────────────────────────
 
-        rendered: list[str] = []
-        for line in lines:
-            if line.startswith(("--- ", "+++ ")):
-                rendered.append(f"\033[1;36m{line}\033[0m")
-            elif line.startswith("@@"):
-                rendered.append(f"\033[1;33m{line}\033[0m")
-            elif line.startswith("+") and not line.startswith("+++ "):
-                rendered.append(f"\033[32m{line}\033[0m")
-            elif line.startswith("-") and not line.startswith("--- "):
-                rendered.append(f"\033[31m{line}\033[0m")
-            else:
-                rendered.append(line)
-        return "\n".join(rendered)
+def _param_lines(
+    params: list[tuple[str, str]],
+    palette: ToolRenderPalette,
+    description: str = "",
+) -> list[str]:
+    lines: list[str] = []
+    for key, value in params:
+        if description and value in description:
+            continue
+        lines.append(f"\033[2m{palette.muted}{key}{_RS}  {palette.text}{value}{_RS}")
+    return lines
 
-    p = palette or DEFAULT_TOOL_PALETTE
-    lines = text.splitlines()
-    if len(lines) > max_rendered_diff_lines:
-        hidden = len(lines) - max_rendered_diff_lines
-        lines = lines[:max_rendered_diff_lines]
-        lines.append(f"... ({hidden} more diff lines not shown)")
 
-    rendered: list[str] = []
-    for line in lines:
-        if line.startswith(("--- ", "+++ ")):
-            rendered.append(f"{_BO}{p.info}{line}{_RS}")
-        elif line.startswith("@@"):
-            rendered.append(f"{_BO}{p.warning}{line}{_RS}")
-        elif line.startswith("+") and not line.startswith("+++ "):
-            rendered.append(f"{p.success}{line}{_RS}")
-        elif line.startswith("-") and not line.startswith("--- "):
-            rendered.append(f"{p.error}{line}{_RS}")
+async def mount_diff_into_block(block, original: str, modified: str, file_path: str = "") -> None:
+    from textual_diff_view import DiffView
+
+    body = block.query_one("#body")
+    await body.remove_children()
+    dv = DiffView(
+        path_original="", path_modified=file_path,
+        code_original=original,
+        code_modified=modified,
+        split=True, annotations=True,
+    )
+    body.update("")
+    await body.mount(dv)
+    body.display = True
+
+
+async def _edit_on_done(block, raw_args: dict) -> None:
+    await mount_diff_into_block(
+        block,
+        raw_args["oldString"],
+        raw_args["newString"],
+        raw_args.get("filePath", ""),
+    )
+
+
+# ── Render helpers ──────────────────────────────────────────────────────────
+
+def _shell_on_result(content: str, palette: ToolRenderPalette) -> list[str]:
+    has_error = "[stderr]" in content
+    lines: list[str] = []
+    if content:
+        for line in content.rstrip("\n").split("\n"):
+            lines.append(f"{palette.error if has_error else palette.text}{line}{_RS}")
+    return lines
+
+
+def _web_search_render_result(content: str, palette: ToolRenderPalette) -> list[str]:
+    lines: list[str] = []
+    for line in content.strip().split("\n"):
+        lines.append(f"{palette.text}{line}{_RS}")
+    return lines
+
+
+def _web_fetch_render_result(content: str, palette: ToolRenderPalette) -> list[str]:
+    text = content[:600] + ("\n…" if len(content) > 600 else "")
+    return [f"{palette.text}{text}{_RS}"] if text else []
+
+
+def _file_list_result(content: str, palette: ToolRenderPalette) -> list[str]:
+    lines: list[str] = []
+    for line in content.strip().split("\n"):
+        if line.strip():
+            lines.append(f"  {palette.success}✓ {_RS}{palette.text}{line}{_RS}")
+    return lines
+
+
+def _match_list_result(content: str, palette: ToolRenderPalette) -> list[str]:
+    lines: list[str] = []
+    for line in content.strip().split("\n"):
+        if ":" in line and "/" in line:
+            parts = line.split(":", 1)
+            lines.append(f"{palette.path}{parts[0]}{_RS}:{palette.info}{parts[1]}{_RS}")
+        elif line.strip():
+            lines.append(f"{palette.text}{line}{_RS}")
+    return lines
+
+
+def _memory_list_result(content: str, palette: ToolRenderPalette) -> list[str]:
+    lines: list[str] = []
+    for line in content.strip().split("\n"):
+        if ":" in line:
+            parts = line.split(":", 1)
+            lines.append(f"{palette.path}{parts[0]}{_RS}:{palette.text}{parts[1]}{_RS}")
+        elif line.strip():
+            lines.append(f"{palette.muted}{line}{_RS}")
+    return lines
+
+
+def _skill_list_result(content: str, palette: ToolRenderPalette) -> list[str]:
+    lines: list[str] = []
+    for line in content.strip().split("\n"):
+        if line.strip():
+            lines.append(f"{palette.success}◈ {_RS}{palette.text}{line}{_RS}")
+    return lines
+
+
+def _browser_state_detail(args: dict, palette: ToolRenderPalette) -> list[str]:
+    return []
+
+
+def _browser_state_result(content: str, palette: ToolRenderPalette) -> list[str]:
+    lines: list[str] = []
+    for line in content.strip().split("\n"):
+        if line.strip():
+            lines.append(f"{palette.text}{line}{_RS}")
+    return lines
+
+
+def _todo_write_render_detail(args: dict, palette: ToolRenderPalette) -> list[str]:
+    todos = args.get("todos", [])
+    if not isinstance(todos, list):
+        return []
+    lines: list[str] = []
+    for t in todos:
+        if not isinstance(t, dict):
+            continue
+        content = t.get("content", "")
+        status = t.get("status", "pending")
+        if status == "in_progress":
+            lines.append(f"{palette.warning}[•]{_RS}  {palette.warning}{content}{_RS}")
+        elif status == "completed":
+            lines.append(f"{palette.muted}[✓]{_RS}  {palette.muted}{content}{_RS}")
+        elif status == "cancelled":
+            lines.append(f"{palette.muted}[ ]{_RS}  \033[9m{palette.muted}{content}{_RS}")
         else:
-            rendered.append(line)
-    return "\n".join(rendered)
+            lines.append(f"{palette.muted}[ ]{_RS}  {palette.muted}{content}{_RS}")
+    return lines
 
 
-def render_tool_result_preview(
-    tool_name: str,
-    content: str,
-    palette: ToolRenderPalette | None = None,
-) -> str:
-    preview_lines = build_tool_preview_lines(tool_name, content)
-    if preview_lines is None:
-        return content
-
-    rendered: list[str] = []
-    for index, line in enumerate(preview_lines):
-        rendered.append(style_tool_preview_line(line, is_first=index == 0, palette=palette))
-    return "\n".join(rendered)
+def _delegate_to_agent_result(content: str, palette: ToolRenderPalette) -> list[str]:
+    lines: list[str] = []
+    lines.append(f"{palette.success}completed ✓{_RS}")
+    if content.strip():
+        lines.append(f"{palette.dim}{'─' * 40}{_RS}")
+        for line in content.strip().split("\n"):
+            lines.append(f"{palette.text}{line}{_RS}")
+    return lines
 
 
-def style_tool_preview_line(
-    line: str,
-    is_first: bool,
-    palette: ToolRenderPalette | None = None,
-) -> str:
-    if palette is None:
-        prefix = "│"
-        return f"\033[2;37m{prefix} {line}\033[0m"
-
-    p = palette or DEFAULT_TOOL_PALETTE
-    prefix = "│"
-    return f"{_DI}{p.muted}{prefix} {line}{_RS}"
+def _install_skill_result(content: str, palette: ToolRenderPalette) -> list[str]:
+    return [f"{palette.success}installed ✓{_RS}"]
 
 
-def build_tool_preview_lines(tool_name: str, content: str) -> Optional[list[str]]:
-    lines = content.splitlines()
-    if not lines:
-        return [content]
+# ── Browser use helpers ──────────────────────────────────────────────────────
 
-    if tool_name == "shell":
-        return preview_bash_result(lines)
-    if tool_name == "glob":
-        return preview_counted_list(lines, fallback_title="Matched files", item_limit=3)
-    if tool_name == "grep":
-        return preview_counted_list(lines, fallback_title="Search matches", item_limit=3)
-    if tool_name == "read":
-        return preview_read_result(lines)
-    if tool_name == "load_skill":
-        return preview_load_skill_result(lines)
-    if tool_name == "web_search":
-        return preview_web_search_result(lines)
-    if tool_name == "web_fetch":
-        return preview_web_fetch_result(lines)
-    if tool_name == "search_memory":
-        return preview_search_memory_result(lines)
-    if tool_name == "list_memories":
-        return preview_list_memories_result(lines)
-    if tool_name == "save_memory":
-        return preview_save_memory_result(lines)
-    if tool_name == "delete_memory":
-        return preview_delete_memory_result(lines)
-    return None
+_BROWSER_STATE_ACTIONS = frozenset({
+    "get_state", "get_dropdown_options", "extract_content", "web_search",
+})
 
 
-def parse_tool_arguments(arguments: object) -> dict:
-    if isinstance(arguments, dict):
-        return arguments
-    if not isinstance(arguments, str):
-        return {}
-    text = arguments.strip()
-    if not text:
-        return {}
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+def _browser_use_show_detail(args: dict) -> bool:
+    return args.get("action", "") in _BROWSER_STATE_ACTIONS
 
 
-def truncate_preview(text: str, limit: int = 120) -> str:
-    compact = " ".join(text.split())
-    if len(compact) <= limit:
-        return compact
-    return compact[: limit - 3] + "..."
+def _browser_use_show_time(args: dict) -> bool:
+    return args.get("action", "") not in _BROWSER_STATE_ACTIONS
 
 
-def preview_bash_result(lines: list[str]) -> list[str]:
-    if lines and lines[0].strip() == "(no output)":
-        return ["(no output)"]
-    return preview_generic_lines(lines, max_lines=4)
+def _browser_use_summary(args: dict) -> str:
+    action = args.get("action", "")
+    if action == "go_to_url":
+        url = args.get("url", "") or ""
+        return f"go_to_url {url}" if url else action
+    if action == "click_element":
+        return f"click_element [{args.get('index')}]"
+    if action == "input_text":
+        t = args.get("text", "")
+        idx = args.get("index")
+        return f"input_text [{idx}]: {t[:40]}" if t else f"input_text [{idx}]"
+    if action == "web_search":
+        q = args.get("query", "")
+        return f'web_search: "{q[:40]}"' if q else action
+    if action == "scroll_to_text":
+        t = args.get("text", "")
+        return f'scroll_to_text: "{t[:40]}"' if t else action
+    if action == "scroll_down":
+        amount = args.get("scroll_amount", "")
+        return f"scroll_down [{amount}]" if amount else action
+    if action == "scroll_up":
+        amount = args.get("scroll_amount", "")
+        return f"scroll_up [{amount}]" if amount else action
+    if action == "extract_content":
+        goal = args.get("goal", "")
+        return f'extract: "{goal[:40]}"' if goal else action
+    if action == "switch_tab":
+        return f"switch_tab [{args.get('tab_id')}]"
+    if action == "open_tab":
+        url = args.get("url", "") or ""
+        return f"open_tab {url}" if url else action
+    if action == "send_keys":
+        return f"send_keys: {args.get('keys', '')}"
+    if action == "get_dropdown_options":
+        return f"get_dropdown_options [{args.get('index')}]"
+    if action == "select_dropdown_option":
+        t = args.get("text", "")
+        idx = args.get("index")
+        return f"select_option [{idx}]: {t[:40]}" if t else f"select_option [{idx}]"
+    if action == "go_back":
+        return "go_back"
+    if action == "wait":
+        seconds = args.get("seconds", "")
+        return f"wait [{seconds}s]" if seconds else action
+    if action == "close_tab":
+        return "close_tab"
+    if action == "cleanup":
+        return "cleanup"
+    return action
 
 
-def preview_read_result(lines: list[str]) -> list[str]:
-    visible_lines = [line for line in lines if line.strip()]
-    if not visible_lines:
-        return ["(empty file)"]
+# ── Register all tools ───────────────────────────────────────────────────────
 
-    preview_lines = visible_lines[:3]
-    if len(visible_lines) > 3:
-        preview_lines.append(f"... ({len(visible_lines) - 3} more lines)")
-    first_line = preview_lines[0]
-    return [f"Read {len(visible_lines)} lines", first_line, *preview_lines[1:]]
+def _register_tools() -> None:
+    REGISTRY.update({
 
+        # ── Code & File ──
+        "shell": ToolRenderer(
+            cat="Code & File", icon="⚡", accent_css="warning",
+            summary=lambda a: (
+                a.get("description", "")
+                or (a.get("command", "") or "").split("\n")[0][:48]
+            ),
+            render_detail=lambda a, p: [a["command"]] if a.get("command") else [],
+            on_result=_shell_on_result,
+            show_detail=True, default_open=True, show_time=True,
+        ),
+        "code_run": ToolRenderer(
+            cat="Code & File", icon="⚡", accent_css="warning",
+            summary=lambda a: (
+                a.get("description", "")
+                or (a.get("code", "") or "").split("\n")[0][:48]
+            ),
+            render_detail=lambda a, p: [a.get("code", "")] if a.get("code") else [],
+            on_result=_shell_on_result,
+            show_detail=True, default_open=True, show_time=True,
+        ),
+        "read": ToolRenderer(
+            cat="Code & File", icon="📄", accent_css="muted",
+            summary=lambda a: f"{a.get('filePath', '')}  L{a.get('offset', 1)}–{a.get('offset', 1) + (a.get('limit', 50) or 50) - 1}",
+            params=lambda a: [("filePath", a["filePath"])] if a.get("filePath") else [],
+            show_detail=False,
+        ),
+        "edit": ToolRenderer(
+            cat="Code & File", icon="📝", accent_css="tool",
+            summary=lambda a: a.get("filePath", "") or "",
+            show_detail=False,
+            default_open=True,
+            on_done=_edit_on_done,
+        ),
+        "write": ToolRenderer(
+            cat="Code & File", icon="✏️", accent_css="info",
+            summary=lambda a: a.get("filePath", "") or "",
+            params=lambda a: [("filePath", a["filePath"])] if a.get("filePath") else [],
+            show_detail=False,
+        ),
+        "write_files": ToolRenderer(
+            cat="Code & File", icon="✏️", accent_css="info",
+            summary=lambda a: f"{len(a.get('files', []))} files",
+            params=lambda a: [("files", str(a.get("files", [])))] if a.get("files") else [],
+            on_result=_file_list_result,
+            show_detail=True, default_open=False,
+        ),
 
-def preview_load_skill_result(lines: list[str]) -> list[str]:
-    metadata_lines: list[str] = []
-    saw_full_content_marker = False
+        # ── Search ──
+        "glob": ToolRenderer(
+            cat="Search", icon="🔎", accent_css="info",
+            summary=lambda a: f"{a.get('pattern', '')}  in {a.get('path', '.')}",
+            params=lambda a: [("pattern", a.get("pattern", ""))] if a.get("pattern") else [],
+            on_result=_match_list_result,
+            show_detail=True, default_open=False,
+        ),
+        "grep": ToolRenderer(
+            cat="Search", icon="🔎", accent_css="info",
+            summary=lambda a: f"\"{a.get('pattern', '')}\"  in {a.get('include', '*')}",
+            params=lambda a: (
+                [("pattern", a["pattern"])] + ([("include", a["include"])] if a.get("include") else [])
+            ) if a.get("pattern") else [],
+            on_result=_match_list_result,
+            show_detail=True, default_open=False,
+        ),
+        "web_search": ToolRenderer(
+            cat="Search", icon="🔍", accent_css="success",
+            summary=lambda a: f"\"{a.get('query', '')}\"",
+            params=lambda a: [("query", a.get("query", ""))] if a.get("query") else [],
+            on_result=_web_search_render_result,
+            show_detail=True, default_open=False, show_time=True,
+        ),
+        "web_fetch": ToolRenderer(
+            cat="Search", icon="🌐", accent_css="success",
+            summary=lambda a: a.get("url", "") or "",
+            params=lambda a: [("url", a.get("url", ""))] if a.get("url") else [],
+            on_result=_web_fetch_render_result,
+            show_detail=True, default_open=False, show_time=True,
+        ),
 
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped == "Full SKILL.md:":
-            saw_full_content_marker = True
-            break
-        metadata_lines.append(stripped)
+        # ── Memory ──
+        "save_memory": ToolRenderer(
+            cat="Memory", icon="💾", accent_css="tool",
+            summary=lambda a: f"{a.get('key', '')}  [{a.get('memory_type', 'fact')} · {a.get('scope', 'user')}]",
+            params=lambda a: [("key", a["key"])] if a.get("key") else [],
+            show_detail=False,
+        ),
+        "search_memory": ToolRenderer(
+            cat="Memory", icon="🔮", accent_css="tool",
+            summary=lambda a: f"\"{a.get('query', '')}\"",
+            params=lambda a: [("query", a.get("query", ""))] if a.get("query") else [],
+            on_result=_memory_list_result,
+            show_detail=True, default_open=False,
+        ),
+        "delete_memory": ToolRenderer(
+            cat="Memory", icon="🗑️", accent_css="error",
+            summary=lambda a: a.get("id", "") or a.get("key", "") or "",
+            params=lambda a: [("id", a.get("id", "") or a.get("key", ""))] if a.get("id") or a.get("key") else [],
+            show_detail=False,
+        ),
+        "list_memories": ToolRenderer(
+            cat="Memory", icon="📋", accent_css="tool",
+            summary=lambda a: f"scope:{a.get('scope', 'all')}  limit:{a.get('limit', 20)}",
+            params=lambda a: [("scope", a.get("scope", "")), ("limit", str(a.get("limit", 20)))] if a.get("scope") else [],
+            on_result=_memory_list_result,
+            show_detail=True, default_open=False,
+        ),
 
-    if not metadata_lines:
-        metadata_lines = ["Skill loaded"]
+        # ── Skills ──
+        "list_skills": ToolRenderer(
+            cat="Skills", icon="📦", accent_css="info",
+            summary=lambda _: "installed skills",
+            on_result=_skill_list_result,
+            show_detail=True, default_open=False,
+        ),
+        "load_skill": ToolRenderer(
+            cat="Skills", icon="📥", accent_css="info",
+            summary=lambda a: a.get("skill_name", "") or "",
+            params=lambda a: [("skill_name", a["skill_name"])] if a.get("skill_name") else [],
+            show_detail=False,
+        ),
+        "install_skill": ToolRenderer(
+            cat="Skills", icon="⬇️", accent_css="info",
+            summary=lambda a: f"{a.get('skill_ref', '')}{' --force' if a.get('force') else ''}",
+            params=lambda a: (
+                [("skill_ref", a["skill_ref"])] + ([("force", str(a["force"]))] if a.get("force") is not None else [])
+            ) if a.get("skill_ref") else [],
+            on_result=_install_skill_result,
+            show_detail=True, default_open=False, show_time=True,
+        ),
 
-    preview = metadata_lines[:6]
-    if saw_full_content_marker:
-        preview.append("(full SKILL.md hidden in terminal preview)")
-    return preview
+        # ── Browser ──
+        "browser_use": ToolRenderer(
+            cat="Browser", icon="🌐", accent_css="info",
+            summary=_browser_use_summary,
+            render_detail=_browser_state_detail,
+            on_result=_browser_state_result,
+            show_detail=_browser_use_show_detail,
+            show_time=_browser_use_show_time,
+        ),
 
-
-def preview_counted_list(lines: list[str], fallback_title: str, item_limit: int) -> list[str]:
-    header = lines[0].strip() if lines else fallback_title
-    items = [line for line in lines[1:] if line.strip()]
-    preview = [header]
-    preview.extend(items[:item_limit])
-    if len(items) > item_limit:
-        preview.append(f"... ({len(items) - item_limit} more)")
-    return preview
-
-
-def preview_generic_lines(lines: list[str], max_lines: int) -> list[str]:
-    preview_lines = lines[:max_lines]
-    if len(lines) > max_lines:
-        preview_lines.append(f"... ({len(lines) - max_lines} more lines)")
-    return preview_lines
-
-
-def preview_web_search_result(lines: list[str]) -> list[str]:
-    non_empty = [line.strip() for line in lines if line.strip()]
-    if not non_empty:
-        return ["No search results"]
-
-    title = non_empty[0]
-    url = ""
-    remainder_start = 1
-    if len(non_empty) > 1 and non_empty[1].startswith(("http://", "https://")):
-        url = non_empty[1]
-        remainder_start = 2
-
-    body_lines = non_empty[remainder_start:remainder_start + 2]
-    preview = [title]
-    if url:
-        preview.append(url)
-    preview.extend(body_lines)
-    hidden = len(non_empty) - len(preview)
-    if hidden > 0:
-        preview.append(f"... ({hidden} more lines)")
-    return preview
-
-
-def preview_web_fetch_result(lines: list[str]) -> list[str]:
-    non_empty = [line.strip() for line in lines if line.strip()]
-    if not non_empty:
-        return ["Fetched content is empty"]
-
-    first = non_empty[0]
-    if first.startswith("#"):
-        title = first
-        body_lines = non_empty[1:3]
-        preview = [title, *body_lines]
-        hidden = len(non_empty) - len(preview)
-        if hidden > 0:
-            preview.append(f"... ({hidden} more lines)")
-        return preview
-
-    body_preview = truncate_preview(" ".join(non_empty[:3]), limit=160)
-    preview = [body_preview]
-    if len(non_empty) > 3:
-        preview.append(f"... ({len(non_empty) - 3} more lines)")
-    return preview
-
-
-def preview_search_memory_result(lines: list[str]) -> list[str]:
-    if not lines:
-        return ["No memories found"]
-    header = lines[0].strip()
-    items = extract_memory_summaries(lines[1:], item_limit=3)
-    if not items:
-        return [header]
-    return [header, *items]
-
-
-def preview_list_memories_result(lines: list[str]) -> list[str]:
-    if not lines:
-        return ["No memories stored."]
-    header = lines[0].strip()
-    items = extract_memory_summaries(lines[1:], item_limit=4)
-    if not items:
-        return [header]
-    return [header, *items]
-
-
-def preview_save_memory_result(lines: list[str]) -> list[str]:
-    if not lines:
-        return ["Memory saved."]
-    preview = [lines[0].strip()]
-    summary = extract_first_prefixed_value(lines[1:], "  summary:")
-    scope = extract_first_prefixed_value(lines[1:], "  scope:")
-    memory_type = extract_first_prefixed_value(lines[1:], "  type:")
-    key = extract_first_prefixed_value(lines[1:], "  key:")
-    if summary:
-        preview.append(f"summary: {summary}")
-    elif key:
-        preview.append(f"key: {key}")
-    meta_parts = []
-    if scope:
-        meta_parts.append(scope)
-    if memory_type:
-        meta_parts.append(memory_type)
-    if meta_parts:
-        preview.append(f"meta: {' / '.join(meta_parts)}")
-    return preview
-
-
-def preview_delete_memory_result(lines: list[str]) -> list[str]:
-    return [lines[0].strip()] if lines else ["No memory deleted."]
-
-
-def extract_memory_summaries(lines: list[str], item_limit: int) -> list[str]:
-    items: list[str] = []
-    current_summary: Optional[str] = None
-    current_meta: dict[str, str] = {}
-
-    def flush() -> None:
-        nonlocal current_summary, current_meta
-        if current_summary:
-            meta_parts = []
-            scope = current_meta.get("scope")
-            memory_type = current_meta.get("type")
-            if scope:
-                meta_parts.append(scope)
-            if memory_type:
-                meta_parts.append(memory_type)
-            if meta_parts:
-                items.append(f"{current_summary} [{' / '.join(meta_parts)}]")
-            else:
-                items.append(current_summary)
-        current_summary = None
-        current_meta = {}
-
-    for raw_line in lines:
-        line = raw_line.rstrip()
-        if line.startswith("- id:"):
-            flush()
-            continue
-        if line.startswith("  scope:"):
-            current_meta["scope"] = line.split(":", 1)[1].strip()
-            continue
-        if line.startswith("  type:"):
-            current_meta["type"] = line.split(":", 1)[1].strip()
-            continue
-        if line.startswith("  summary:"):
-            current_summary = line.split(":", 1)[1].strip()
-            continue
-    flush()
-
-    preview = items[:item_limit]
-    if len(items) > item_limit:
-        preview.append(f"... ({len(items) - item_limit} more memories)")
-    return preview
-
-
-def extract_first_prefixed_value(lines: list[str], prefix: str) -> Optional[str]:
-    for line in lines:
-        if line.startswith(prefix):
-            return line.split(":", 1)[1].strip()
-    return None
-
-
-# ═══════════════════════════════════════════════
-# ToolBlock rendering helpers
-# ═══════════════════════════════════════════════
-
-def _fgr(r: int, g: int, b: int) -> str:
-    return f"\033[38;2;{r};{g};{b}m"
+        # ── Other ──
+        "read_image": ToolRenderer(
+            cat="Other", icon="🖼️", accent_css="muted",
+            summary=lambda a: a.get("file_path", "") or "",
+            params=lambda a: [("file_path", a["file_path"])] if a.get("file_path") else [],
+            show_detail=False,
+        ),
+        "todo_write": ToolRenderer(
+            cat="Other", icon="✅", accent_css="warning",
+            summary=lambda a: (
+                (lambda ts: (
+                    f"Working on: {next((t['content'] for t in ts if t.get('status') == 'in_progress'), '')[:60]}"
+                    if any(t.get('status') == 'in_progress' for t in ts if isinstance(t, dict))
+                    else (
+                        f"Completed: {sum(1 for t in ts if isinstance(t, dict) and t.get('status') == 'completed')}/{len(ts)}"
+                        if ts and isinstance(ts[0], dict) and all(not isinstance(t, dict) or t.get('status') in ('completed',) for t in ts)
+                        else "Creating plan" if not any(isinstance(t, dict) and t.get('status') in ('completed', 'in_progress') for t in ts)
+                        else "Updating plan"
+                    )
+                )))(a.get("todos", [])) if a.get("todos") else "",
+            render_detail=_todo_write_render_detail,
+            show_detail=True, default_open=False,
+        ),
+        "delegate_to_agent": ToolRenderer(
+            cat="Other", icon="🤖", accent_css="tool",
+            summary=lambda a: (
+                f"\u2192 {a.get('agent_key', '')}: {(a.get('task', '') or '')[:60]}"
+                if a.get("agent_key") else ""
+            ),
+            params=lambda a: (
+                [("agent", a["agent_key"])]
+                + ([("task", str(a["task"])[:60])] if a.get("task") else [])
+                + ([("timeout", f"{a['timeout']}s")] if a.get("timeout") is not None else [])
+            ) if a.get("agent_key") else [],
+            on_result=_delegate_to_agent_result,
+            show_detail=True, default_open=True, show_time=True,
+        ),
+        "install_python_package": ToolRenderer(
+            cat="Other", icon="📦", accent_css="muted",
+            summary=lambda a: f"{a.get('package', '')}=={a.get('version', '')}" if a.get("version") else a.get("package", ""),
+            params=lambda a: (
+                [("package", a["package"])] + ([("version", a["version"])] if a.get("version") else [])
+            ) if a.get("package") else [],
+            show_detail=False, show_time=True,
+        ),
+    })
 
 
-def _bgr(r: int, g: int, b: int) -> str:
-    return f"\033[48;2;{r};{g};{b}m"
+_register_tools()
 
 
-def _hex_to_rgb(value: str) -> tuple[int, int, int]:
-    raw = value.strip().lstrip("#")
-    if len(raw) != 6:
-        raise ValueError(f"Expected 6-digit hex color, got {value!r}")
-    return int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16)
-
-
-def _fg_hex(value: str) -> str:
-    return _fgr(*_hex_to_rgb(value))
-
-
-def _bg_hex(value: str) -> str:
-    return _bgr(*_hex_to_rgb(value))
-
+# ── ANSI constants ───────────────────────────────────────────────────────────
 
 _RS = "\033[0m"
 _BO = "\033[1m"
 _DI = "\033[2m"
 
-_C_TOOL = _fgr(77, 157, 224)    # blue
-_C_TXT = _fgr(205, 214, 224)   # white
-_C_TXT2 = _fgr(122, 138, 152)   # dim gray
-_C_TXT3 = _fgr(70, 83, 94)      # very dim
-_C_AMBER = _fgr(212, 168, 67)    # amber
-_C_GREEN = _fgr(61, 170, 106)    # green
-_C_RED = _fgr(204, 79, 79)     # red
-_C_CYAN = _fgr(61, 168, 184)    # cyan
-_C_PURPLE = _fgr(138, 112, 214)  # purple
-_C_STR = _fgr(126, 200, 227)   # string/light blue
+_C_TOOL = "\033[38;2;77;157;224m"
+_C_TXT = "\033[38;2;205;214;224m"
+_C_TXT2 = "\033[38;2;122;138;152m"
+_C_TXT3 = "\033[38;2;70;83;94m"
+_C_AMBER = "\033[38;2;212;168;67m"
+_C_GREEN = "\033[38;2;61;170;106m"
+_C_RED = "\033[38;2;204;79;79m"
+_C_CYAN = "\033[38;2;61;168;184m"
+_C_PURPLE = "\033[38;2;138;112;214m"
+_C_STR = "\033[38;2;126;200;227m"
 
-_BG_WAIT = _bgr(26, 32, 48)
-_BG_RUN = _bgr(30, 22, 8)
-_BG_OK = _bgr(9, 26, 16)
-_BG_ERR = _bgr(26, 12, 12)
+_BG_WAIT = "\033[48;2;26;32;48m"
+_BG_RUN = "\033[48;2;30;22;8m"
+_BG_OK = "\033[48;2;9;26;16m"
+_BG_ERR = "\033[48;2;26;12;12m"
 
 DEFAULT_TOOL_PALETTE = ToolRenderPalette(
     tool=_C_TOOL,
@@ -551,10 +516,11 @@ def tool_palette_from_theme(colors) -> ToolRenderPalette:
         status_bg=_bg_hex(colors.panel),
     )
 
+
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
-_SEP_LINE = f"{_C_TXT3}{'─' * 48}{_RS}"
 
+# ── Header rendering ─────────────────────────────────────────────────────────
 
 def render_tool_block_header(
     state: str,
@@ -565,41 +531,72 @@ def render_tool_block_header(
     palette: ToolRenderPalette | None = None,
 ) -> tuple[str, str]:
     p = palette or DEFAULT_TOOL_PALETTE
+    renderer = REGISTRY.get(tool_name)
     left_parts: list[str] = []
     right_parts: list[str] = []
 
-    if state == "pending":
-        left_parts.append(f"{p.dim}○{_RS}")
-    elif state == "running":
-        sp = _SPINNER_FRAMES[spinner_frame % len(_SPINNER_FRAMES)]
-        left_parts.append(f"{p.warning}{sp}{_RS}")
-    elif state == "done":
-        left_parts.append(f"{p.success}●{_RS}")
-    elif state == "error":
-        left_parts.append(f"{p.error}●{_RS}")
-
-    left_parts.append(f"  {p.tool}{_BO}{tool_name}{_RS}")
+    # Left: icon + label + description
+    if renderer:
+        accent = p.accent(renderer.accent_css)
+        label = renderer.label or tool_name
+        icon = renderer.icon
+        icon_cp = icon[0]
+        if unicodedata.east_asian_width(icon_cp) not in ('W', 'F'):
+            icon += "\N{SPACE}"  # pad narrow icons to match wide-emoji column width
+        left_parts.append(f"{icon} {accent}{_BO}{label}{_RS}")
+    else:
+        left_parts.append(f"  {p.tool}{_BO}{tool_name}{_RS}")
 
     if description:
         left_parts.append(f"  {p.muted}{description}{_RS}")
 
-    if state == "pending":
-        right_parts.append(f"{p.status_bg}{p.dim} PENDING {_RS}")
-    elif state == "running":
-        right_parts.append(f"{p.status_bg}{p.warning} RUNNING {_RS}")
+    # Right: state indicator + elapsed
+    if state == "running":
+        sp = _SPINNER_FRAMES[spinner_frame % len(_SPINNER_FRAMES)]
+        right_parts.append(f"{p.warning}{sp} running{_RS}")
     elif state == "done":
-        right_parts.append(f"{p.status_bg}{p.success} DONE {_RS}")
+        accent = p.accent(renderer.accent_css) if renderer else p.success
+        right_parts.append(f"{accent}✓{_RS}")
+        if elapsed_ms is not None and elapsed_ms >= 100:
+            if elapsed_ms < 1000:
+                right_parts.append(f"  {p.dim}{elapsed_ms}ms{_RS}")
+            else:
+                right_parts.append(f"  {p.dim}{elapsed_ms / 1000:.1f}s{_RS}")
     elif state == "error":
-        right_parts.append(f"{p.status_bg}{p.error} ERROR {_RS}")
-
-    if elapsed_ms is not None:
-        if elapsed_ms < 1000:
-            right_parts.append(f"  {p.dim}{elapsed_ms}ms{_RS}")
-        else:
-            right_parts.append(f"  {p.dim}{elapsed_ms / 1000:.1f}s{_RS}")
+        right_parts.append(f"{p.error}✗{_RS}")
 
     return "".join(left_parts), "".join(right_parts)
 
+
+# ── Diff rendering ───────────────────────────────────────────────────────────
+
+def render_diff_block(
+    text: str,
+    max_rendered_diff_lines: int = MAX_RENDERED_DIFF_LINES,
+    palette: ToolRenderPalette | None = None,
+) -> str:
+    p = palette or DEFAULT_TOOL_PALETTE
+    rendered: list[str] = []
+    lines = text.split("\n")
+    if len(lines) > max_rendered_diff_lines:
+        lines = lines[:max_rendered_diff_lines]
+        lines.append(f"\033[2m{p.dim}... ({len(lines)} more lines truncated){_RS}")
+
+    for line in lines:
+        if line.startswith("---") or line.startswith("+++"):
+            rendered.append(f"{_BO}{p.info}{line}{_RS}")
+        elif line.startswith("@@"):
+            rendered.append(f"{_BO}{p.warning}{line}{_RS}")
+        elif line.startswith("+"):
+            rendered.append(f"{p.success}{line}{_RS}")
+        elif line.startswith("-"):
+            rendered.append(f"{p.error}{line}{_RS}")
+        else:
+            rendered.append(f"{line}")
+    return "\n".join(rendered)
+
+
+# ── Tool utilities ───────────────────────────────────────────────────────────
 
 def render_bash_command(command: str, palette: ToolRenderPalette | None = None) -> str:
     if not command:
@@ -621,83 +618,46 @@ def render_bash_command(command: str, palette: ToolRenderPalette | None = None) 
     return " ".join(result)
 
 
-def format_tool_params(tool_name: str, arguments: dict) -> list[tuple[str, str]]:
-    name = tool_name.strip().lower()
-    params: list[tuple[str, str]] = []
-
-    if name == "shell":
-        pass
-    elif name == "read":
-        fp = arguments.get("filePath", "")
-        if fp:
-            params.append(("filePath", fp))
-    elif name == "write":
-        fp = arguments.get("filePath", "")
-        if fp:
-            params.append(("filePath", fp))
-    elif name == "edit":
-        fp = arguments.get("filePath", "")
-        if fp:
-            params.append(("filePath", fp))
-    elif name == "glob":
-        p = arguments.get("pattern", "")
-        if p:
-            params.append(("pattern", p))
-    elif name == "grep":
-        p = arguments.get("pattern", "")
-        if p:
-            params.append(("pattern", p))
-        inc = arguments.get("include", "")
-        if inc:
-            params.append(("include", inc))
-    elif name == "web_search":
-        q = arguments.get("query", "")
-        if q:
-            params.append(("query", q))
-        mr = arguments.get("maxResults")
-        if mr is not None:
-            params.append(("maxResults", str(mr)))
-    elif name == "web_fetch":
-        u = arguments.get("url", "")
-        if u:
-            params.append(("url", u))
-    elif name == "read_image":
-        fp = arguments.get("filePath", "")
-        if fp:
-            params.append(("filePath", fp))
-    elif name in ("save_memory",):
-        k = arguments.get("key", "")
-        if k:
-            params.append(("key", k))
-    elif name in ("search_memory",):
-        q = arguments.get("query", "")
-        if q:
-            params.append(("query", q))
-    elif name in ("delete_memory",):
-        mid = arguments.get("id", "") or arguments.get("key", "")
-        if mid:
-            params.append(("id", mid))
-    elif name == "ask_user":
-        qs = arguments.get("questions", [])
-        if isinstance(qs, list):
-            for q in qs:
-                if isinstance(q, dict):
-                    h = str(q.get("header", "")).strip() or str(q.get("question", "")).strip()[:40]
-                    if h:
-                        params.append((str(q.get("id", "")), h))
-
-    return params
+def parse_tool_arguments(arguments: object) -> dict:
+    if isinstance(arguments, dict):
+        return arguments
+    if isinstance(arguments, str):
+        try:
+            parsed = json.loads(arguments)
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return {}
 
 
-def get_tool_description(
-    name: str,
-    arguments: object,
-    palette: ToolRenderPalette | None = None,
-) -> str:
-    if isinstance(name, str) and name.strip().lower() == "shell":
-        if isinstance(arguments, dict):
-            cmd = arguments.get("command", "")
-            if cmd:
-                p = palette or DEFAULT_TOOL_PALETTE
-                return f"{p.dim}${_RS} {render_bash_command(cmd, palette=palette)}"
-    return render_tool_action(name, arguments)
+def truncate_preview(text: str, limit: int = 120) -> str:
+    text = text.replace("\n", " ").strip()
+    if len(text) > limit:
+        return text[:limit].rstrip() + "..."
+    return text
+
+
+# ── ANSI color utilities ─────────────────────────────────────────────────────
+
+def _fgr(r: int, g: int, b: int) -> str:
+    return f"\033[38;2;{r};{g};{b}m"
+
+
+def _bgr(r: int, g: int, b: int) -> str:
+    return f"\033[48;2;{r};{g};{b}m"
+
+
+def _hex_to_rgb(value: str) -> tuple[int, int, int]:
+    raw = value.strip().lstrip("#")
+    if len(raw) != 6:
+        raise ValueError(f"Expected 6-digit hex color, got {value!r}")
+    return int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16)
+
+
+def _fg_hex(value: str) -> str:
+    return _fgr(*_hex_to_rgb(value))
+
+
+def _bg_hex(value: str) -> str:
+    return _bgr(*_hex_to_rgb(value))

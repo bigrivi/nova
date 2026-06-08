@@ -83,16 +83,13 @@ class SetPendingInput:
 class ShowToolCall:
     call_id: str
     tool_name: str
-    description: str
-    params: list[tuple[str, str]]
+    raw_args: dict | None = None
 
 
 @dataclass(frozen=True)
 class FinishToolCall:
     call_id: str
-    tool_name: str
     content: str
-    rendered: str
 
 
 @dataclass(frozen=True)
