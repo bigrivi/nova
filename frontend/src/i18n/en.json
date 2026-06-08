@@ -4,6 +4,7 @@
   "common.cancel": "Cancel",
   "common.refresh": "Refresh",
   "common.more": "More",
+  "common.back": "Back",
   "common.previous": "Previous",
   "common.next": "Next",
 
@@ -76,7 +77,13 @@
   "tools.unifiedDiff": "Unified Diff",
   "tools.selectMultiple": "Please answer below with all selected options.",
   "tools.selectSingle": "Please answer below with your selected option.",
+  "tools.review": "Review",
   "tools.textInput": "Please answer below in the composer to continue.",
+  "tools.submit": "Submit",
+  "tools.confirmYes": "Yes",
+  "tools.confirmNo": "No",
+  "tools.answerPlaceholder": "Type your answer...",
+  "tools.requiredHint": "Please answer all required questions",
 
   "reasoning.reasoning": "Reasoning",
   "reasoning.reasoningSteps": "Reasoning · {{count}} steps",

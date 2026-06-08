@@ -11,7 +11,6 @@ from nova.cli.ui import (
     ModelSelection,
     SessionSelection,
 )
-from nova.cli.tool_rendering import render_tool_result
 from nova.cli.utils import looks_like_error_message
 from dataclasses import replace
 
@@ -330,63 +329,6 @@ def test_looks_like_error_message():
     assert looks_like_error_message(" error: bad request ")
     assert not looks_like_error_message("")
     assert not looks_like_error_message("Hello world")
-
-
-def test_render_tool_result_formats_edit_diff():
-    rendered = render_tool_result(
-        "edit",
-        "Changes applied to foo.py:\n\n--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new\n",
-    )
-
-    assert rendered is not None
-    assert "\033[1;35m[EDIT DIFF]\033[0m Changes applied to foo.py:" in rendered
-    assert "\033[1;36m--- a/foo.py\033[0m" in rendered
-    assert "\033[1;36m+++ b/foo.py\033[0m" in rendered
-    assert "\033[31m-old\033[0m" in rendered
-    assert "\033[32m+new\033[0m" in rendered
-
-
-def test_render_tool_result_ignores_other_tools():
-    rendered = render_tool_result("bash", "stdout here")
-    assert rendered is not None
-    assert "stdout here" in rendered
-
-
-def test_render_tool_result_hides_load_skill_body_in_terminal_preview():
-    rendered = render_tool_result(
-        "load_skill",
-        "Skill loaded: code-review\n"
-        "Path: /tmp/skills/code-review\n"
-        "SKILL.md: /tmp/skills/code-review/SKILL.md\n"
-        "Description: Review code changes.\n"
-        "Allowed tools: read, grep\n"
-        "\n"
-        "Full SKILL.md:\n"
-        "---\n"
-        "name: code-review\n"
-        "---\n"
-        "# Code Review\n"
-        "Use the checklist.\n",
-    )
-
-    assert rendered is not None
-    assert "Skill loaded: code-review" in rendered
-    assert "(full SKILL.md hidden in terminal preview)" in rendered
-    assert "# Code Review" not in rendered
-    assert "Use the checklist." not in rendered
-
-
-def test_render_tool_result_truncates_long_diff():
-    diff_lines = ["--- a/foo.py", "+++ b/foo.py", "@@ -1 +1 @@"]
-    diff_lines.extend(f"+line {i}" for i in range(100))
-    rendered = render_tool_result(
-        "write",
-        "File updated - foo.py:\n\n" + "\n".join(diff_lines) + "\n",
-    )
-
-    assert rendered is not None
-    assert "\033[1;35m[WRITE DIFF]\033[0m File updated - foo.py:" in rendered
-    assert "... (23 more diff lines not shown)" in rendered
 
 
 def test_parse_ask_user_payload_returns_empty_for_invalid_json():

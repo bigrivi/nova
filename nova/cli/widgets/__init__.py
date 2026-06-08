@@ -11,7 +11,7 @@ from nova.cli.widgets.reasoning_message import ReasoningMessage
 from nova.cli.widgets.status_bar import StatusBar
 from nova.cli.widgets.chat_text_area import ChatTextArea
 from nova.cli.widgets.command_suggestions import CommandSuggestions
-from nova.cli.widgets.ask_user_widget import AskUserWizard
+from nova.cli.widgets.ask_user_question import AskUserQuestion
 
 __all__ = [
     "MessageState",
@@ -27,5 +27,5 @@ __all__ = [
     "StatusBar",
     "ChatTextArea",
     "CommandSuggestions",
-    "AskUserWizard",
+    "AskUserQuestion",
 ]

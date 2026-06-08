@@ -4,6 +4,7 @@
   "common.cancel": "取消",
   "common.refresh": "刷新",
   "common.more": "更多",
+  "common.back": "返回",
   "common.previous": "上一个",
   "common.next": "下一个",
 
@@ -76,7 +77,13 @@
   "tools.unifiedDiff": "统一 Diff",
   "tools.selectMultiple": "请在下方选择所有选项后回答。",
   "tools.selectSingle": "请在下方选择你的选项后回答。",
+  "tools.review": "确认",
   "tools.textInput": "请在下方输入框中继续回答。",
+  "tools.submit": "提交",
+  "tools.confirmYes": "是",
+  "tools.confirmNo": "否",
+  "tools.answerPlaceholder": "输入你的回答...",
+  "tools.requiredHint": "请回答所有必填问题",
 
   "reasoning.reasoning": "推理",
   "reasoning.reasoningSteps": "推理 · {{count}} 步",

@@ -679,6 +679,9 @@ export function NovaAppShell() {
     setMessages: (messages) => {
       setThreadMessages(currentThreadId, [...messages]);
     },
+    onResumeToolCall: (options) => {
+      void submitPrompt(String(options.payload ?? ""));
+    },
     adapters: {
       attachments: new CompositeAttachmentAdapter([
         new SimpleImageAttachmentAdapter(),

@@ -10,7 +10,7 @@ from textual.widget import Widget
 from nova.cli.ask_user import QuestionData
 
 
-class AskUserWizard(Widget):
+class AskUserQuestion(Widget):
 
     can_focus = True
 
@@ -24,7 +24,7 @@ class AskUserWizard(Widget):
         pass
 
     DEFAULT_CSS = """
-    AskUserWizard {
+    AskUserQuestion {
         background: $background;
         border-left: tall $warning;
         padding: 1 2;
@@ -32,80 +32,81 @@ class AskUserWizard(Widget):
         height: auto;
     }
 
-    #wiz-tabs {
+    #step-tabs {
         height: auto;
     }
-    #wiz-tabs Tabs {
+    #step-tabs Tabs {
         height: 2;
     }
-    #wiz-tabs Tab {
+    #step-tabs Tab {
         color: $text-muted;
         padding: 0 1;
     }
-    #wiz-tabs Tab:hover {
+    #step-tabs Tab:hover {
         color: $foreground;
     }
-    #wiz-tabs Tab.-active {
+    #step-tabs Tab.-active {
         color: $secondary;
         text-style: bold;
     }
-    #wiz-tabs TabPane {
+    #step-tabs TabPane {
         height: auto;
         padding: 0;
     }
 
-    .q-header {
+    .step-header {
         color: $secondary;
         text-style: bold;
         margin: 0 0 0 0;
     }
-    .q-question {
+    .step-question {
         color: $foreground;
         margin: 0 0 1 0;
     }
 
-    .q-list {
+    .option-list {
         background: $background;
         border: solid $border-blurred;
         height: auto;
         max-height: 12;
         margin: 0 0 1 0;
     }
-    .q-list > ListItem {
+    .option-list > ListItem {
         padding: 0 1;
         background: $background;
     }
-    .q-list > ListItem:hover {
+    .option-list > ListItem:hover {
         background: $surface;
     }
-    .q-list > ListItem.--highlight {
+    .option-list > ListItem.--highlight {
         background: $surface;
     }
-    .q-list > ListItem > Label {
+    .option-list > ListItem > Label {
         color: $foreground;
     }
-    .q-list > ListItem.--highlight > Label {
+    .option-list > ListItem.--highlight > Label {
         color: $secondary;
         text-style: bold;
     }
 
-    .q-input {
+    .text-input {
         margin: 0 0 1 0;
         background: $background;
         border: tall $border-blurred;
     }
-    .q-input:focus {
+    .text-input:focus {
         border: tall $primary;
     }
 
-    .q-buttons {
+.confirm-buttons {
+        width: auto;
         height: auto;
-        margin: 0 0 1 0;
+        padding: 0;
     }
-    .q-btn { width: 12; border: tall $border-blurred; }
-    .q-btn-active { background: $surface; border: tall $secondary; }
+    .confirm-btn { width: 12; border: tall $border-blurred; }
+    .confirm-btn-active { background: $surface; border: tall $secondary; }
 
-    #wiz-nav {
+    #step-nav {
         layout: horizontal;
         height: auto;
         padding: 0 2;
@@ -122,7 +123,7 @@ class AskUserWizard(Widget):
         margin: 0 0 0 1;
     }
 
-    #wiz-hint {
+    #step-hint {
         color: $text-disabled;
         height: 1;
     }
@@ -141,23 +142,23 @@ class AskUserWizard(Widget):
 
     def compose(self) -> ComposeResult:
         if self._is_wizard:
-            with TabbedContent(id="wiz-tabs"):
+            with TabbedContent(id="step-tabs"):
                 for i, question in enumerate(self._questions):
                     with TabPane(question.header or f"Step {i+1}", id=f"pane-{i}"):
                         yield from self._compose_card(question, i)
                 with TabPane("Confirm", id="pane-confirm"):
-                    yield Static("Confirm your answers", classes="q-header")
+                    yield Static("Confirm your answers", classes="step-header")
                     yield Static("")
                     for i, question in enumerate(self._questions):
                         yield Static(f"{i+1}. {question.header or question.id}  ", id=f"review-line-{i}", classes="review-line")
                     yield Static("")
-            with Horizontal(id="wiz-nav"):
+            with Horizontal(id="step-nav"):
                 yield Static("", id="nav-prev", classes="nav-prev", markup=True)
                 yield Static("Next \u2192", id="nav-next", classes="nav-next", markup=True)
         else:
             yield from self._compose_card(self._questions[0], 0)
             yield Static("Submit", id="nav-submit", classes="nav-next", markup=True)
-        yield Static(id="wiz-hint")
+        yield Static(id="step-hint")
 
     def on_mount(self) -> None:
         if self._is_wizard:
@@ -171,7 +172,7 @@ class AskUserWizard(Widget):
 
     def _compose_card(self, question: QuestionData, i: int) -> list[Widget]:
         widgets: list[Widget] = []
-        widgets.append(Static(question.question, classes="q-question"))
+        widgets.append(Static(question.question, classes="step-question"))
         if question.input_type == "select":
             opts = question.options or []
             items = [
@@ -180,15 +181,15 @@ class AskUserWizard(Widget):
                 for j, o in enumerate(opts, 1)
             ]
             widgets.append(
-                ListView(*items, classes="q-list", id=f"q-list-{i}"))
+                ListView(*items, classes="option-list", id=f"option-list-{i}"))
         elif question.input_type == "text":
             widgets.append(Input(placeholder="Type your answer...",
-                           classes="q-input", id=f"q-input-{i}"))
+                           classes="text-input", id=f"text-input-{i}"))
         elif question.input_type == "confirm":
             widgets.append(Horizontal(
-                Button("Yes", id=f"q-yes-{i}", classes="q-btn"),
-                Button("No", id=f"q-no-{i}", classes="q-btn"),
-                classes="q-buttons",
+                Button("Yes", id=f"btn-yes-{i}", classes="confirm-btn"),
+                Button("No", id=f"btn-no-{i}", classes="confirm-btn"),
+                classes="confirm-buttons",
             ))
         return widgets
 
@@ -200,7 +201,7 @@ class AskUserWizard(Widget):
         if question.input_type == "select":
             self.focus()
         elif question.input_type == "text":
-            inp = self.query_one(f"#q-input-{i}", Input)
+            inp = self.query_one(f"#text-input-{i}", Input)
             inp.focus()
         elif question.input_type == "confirm":
             self._confirm_values[i] = False
@@ -228,7 +229,7 @@ class AskUserWizard(Widget):
             if 0 <= idx < len(opts):
                 self._answers[question.id] = opts[idx]["label"]
         elif question.input_type == "text":
-            inp = self.query_one(f"#q-input-{self._current_step}", Input)
+            inp = self.query_one(f"#text-input-{self._current_step}", Input)
             val = inp.value.strip()
             if val:
                 self._answers[question.id] = val
@@ -247,7 +248,7 @@ class AskUserWizard(Widget):
             opts = question.options or []
             return len(opts) > 0
         elif question.input_type == "text":
-            inp = self.query_one(f"#q-input-{self._current_step}", Input)
+            inp = self.query_one(f"#text-input-{self._current_step}", Input)
             return bool(inp.value.strip())
         elif question.input_type == "confirm":
             return True
@@ -298,7 +299,7 @@ class AskUserWizard(Widget):
             elif question.input_type == "text":
                 try:
                     self.query_one(
-                        f"#q-input-{self._current_step}", Input).focus()
+                        f"#text-input-{self._current_step}", Input).focus()
                 except Exception:
                     self.focus()
 
@@ -338,7 +339,7 @@ class AskUserWizard(Widget):
             nav_next.set_classes("nav-next")
 
     def _update_hint(self) -> None:
-        hint = self.query_one("#wiz-hint")
+        hint = self.query_one("#step-hint")
         if self._is_review:
             hint.update("Enter Submit \u00b7 Back to edit \u00b7 Esc dismiss")
         elif self._is_wizard:
@@ -386,7 +387,7 @@ class AskUserWizard(Widget):
     # ── List highlight (select cards) ────────────────────
 
     def _update_list_highlight(self, step: int) -> None:
-        lst = self.query_one(f"#q-list-{step}", ListView)
+        lst = self.query_one(f"#option-list-{step}", ListView)
         for i, item in enumerate(lst.children):
             cls = "--highlight"
             if i == self._selected_idx[step]:
@@ -398,10 +399,10 @@ class AskUserWizard(Widget):
 
     def _update_confirm_highlight(self, step: int) -> None:
         val = self._confirm_values[step]
-        yes_btn = self.query_one(f"#q-yes-{step}", Button)
-        no_btn = self.query_one(f"#q-no-{step}", Button)
-        yes_btn.classes = "q-btn q-btn-active" if val else "q-btn"
-        no_btn.classes = "q-btn q-btn-active" if not val else "q-btn"
+        yes_btn = self.query_one(f"#btn-yes-{step}", Button)
+        no_btn = self.query_one(f"#btn-no-{step}", Button)
+        yes_btn.classes = "confirm-btn confirm-btn-active" if val else "confirm-btn"
+        no_btn.classes = "confirm-btn confirm-btn-active" if not val else "confirm-btn"
 
     # ── Submit ───────────────────────────────────────────
 
@@ -447,22 +448,22 @@ class AskUserWizard(Widget):
             if event.key == "up":
                 event.stop()
                 list_view = self.query_one(
-                    f"#q-list-{self._current_step}", ListView)
+                    f"#option-list-{self._current_step}", ListView)
                 if list_view.index is not None and list_view.index > 0:
                     list_view.index -= 1
                 return
             if event.key == "down":
                 event.stop()
                 list_view = self.query_one(
-                    f"#q-list-{self._current_step}", ListView)
+                    f"#option-list-{self._current_step}", ListView)
                 if list_view.index is not None and list_view.index < len(list_view.children) - 1:
                     list_view.index += 1
                 return
             elif event.key == "enter":
                 list_view = self.query_one(
-                    f"#q-list-{self._current_step}", ListView)
+                    f"#option-list-{self._current_step}", ListView)
                 event.stop()
-                lst = self.query_one(f"#q-list-{self._current_step}", ListView)
+                lst = self.query_one(f"#option-list-{self._current_step}", ListView)
                 idx = lst.index
                 self._selected_idx[self._current_step] = idx
                 self._update_list_highlight(self._current_step)
@@ -496,7 +497,7 @@ class AskUserWizard(Widget):
         for i, question in enumerate(self._questions):
             if question.input_type != "select":
                 continue
-            lst = self.query_one(f"#q-list-{i}", ListView)
+            lst = self.query_one(f"#option-list-{i}", ListView)
             if event.list_view is not lst:
                 continue
             items = list(lst.children)
@@ -515,7 +516,7 @@ class AskUserWizard(Widget):
         for i, question in enumerate(self._questions):
             if question.input_type != "text":
                 continue
-            inp = self.query_one(f"#q-input-{i}", Input)
+            inp = self.query_one(f"#text-input-{i}", Input)
             if event.input is not inp:
                 continue
             self._current_step = i
@@ -548,16 +549,16 @@ class AskUserWizard(Widget):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id or ""
-        if btn_id.startswith("q-yes-"):
+        if btn_id.startswith("btn-yes-"):
             for i in range(len(self._questions)):
-                if btn_id == f"q-yes-{i}":
+                if btn_id == f"btn-yes-{i}":
                     self._confirm_values[i] = True
                     self._update_confirm_highlight(i)
                     event.stop()
                     return
-        elif btn_id.startswith("q-no-"):
+        elif btn_id.startswith("btn-no-"):
             for i in range(len(self._questions)):
-                if btn_id == f"q-no-{i}":
+                if btn_id == f"btn-no-{i}":
                     self._confirm_values[i] = False
                     self._update_confirm_highlight(i)
                     event.stop()

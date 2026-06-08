@@ -24,7 +24,7 @@ from nova.cli.screens import (
 from nova.cli.stream_handler import StreamHandler
 from nova.cli.ui import ModelGroup, ModelSelection, SessionSelection
 from nova.cli.widgets import (
-    AskUserWizard,
+    AskUserQuestion,
     AssistantMessage,
     BannerMessage,
     ChatTextArea,
@@ -285,12 +285,12 @@ class ChatApp(App):
     # =====================================================
 
     def on_click(self, event) -> None:
-        # Don't steal focus from AskUserWizard on click
+        # Don't steal focus from AskUserQuestion on click
         if not self._asking:
             self.query_one(ChatTextArea).focus()
 
     def on_focus(self, event) -> None:
-        # Don't force focus back to ChatTextArea while AskUserWizard is active
+        # Don't force focus back to ChatTextArea while AskUserQuestion is active
         if not self._asking and not isinstance(event.widget, ChatTextArea):
             self.query_one(ChatTextArea).focus()
 
@@ -393,20 +393,20 @@ class ChatApp(App):
             ))
             return
 
-        widget = AskUserWizard(questions)
+        widget = AskUserQuestion(questions)
         self._asking = True
         await container.mount(widget)
         widget.scroll_visible()
-        log.debug("AskUserWizard mounted with %d questions", len(questions))
+        log.debug("AskUserQuestion mounted with %d questions", len(questions))
 
-    async def on_ask_user_wizard_submitted(
-        self, event: AskUserWizard.Submitted
+    async def on_ask_user_question_submitted(
+        self, event: AskUserQuestion.Submitted
     ) -> None:
-        """Fired when user submits answers in AskUserWizard."""
+        """Fired when user submits answers in AskUserQuestion."""
         answers = event.answers
-        log.debug("AskUserWizard answers: %s", answers)
+        log.debug("AskUserQuestion answers: %s", answers)
 
-        await self.query_one(AskUserWizard).remove()
+        await self.query_one(AskUserQuestion).remove()
         self._asking = False
         self.query_one(ChatTextArea).focus()
 
@@ -419,11 +419,11 @@ class ChatApp(App):
         user_msg.scroll_visible()
         await self._run_stream(answer_text)
 
-    async def on_ask_user_wizard_dismissed(
-        self, event: AskUserWizard.Dismissed
+    async def on_ask_user_question_dismissed(
+        self, event: AskUserQuestion.Dismissed
     ) -> None:
-        if self.query_one_or_none(AskUserWizard):
-            await self.query_one(AskUserWizard).remove()
+        if self.query_one_or_none(AskUserQuestion):
+            await self.query_one(AskUserQuestion).remove()
         self._asking = False
         self.query_one(ChatTextArea).focus()
 
@@ -585,10 +585,8 @@ class ChatApp(App):
 
         async def _render() -> None:
             from nova.cli.tool_rendering import (
-                format_tool_params,
-                get_tool_description,
+                REGISTRY,
                 parse_tool_arguments,
-                render_tool_result,
                 tool_palette_from_theme,
             )
             from nova.cli.theme_colors import get_theme_colors
@@ -636,10 +634,11 @@ class ChatApp(App):
                                 tc_args = getattr(tc, "arguments", "{}")
 
                             arguments = parse_tool_arguments(tc_args)
-                            description = get_tool_description(tc_name, arguments, palette=tool_palette)
-                            params = format_tool_params(tc_name, arguments)
+                            renderer = REGISTRY.get(tc_name)
+                            description = renderer.summary(arguments) if renderer else tc_name
 
-                            block = ToolBlock(tc_name, description, params, show_right=False)
+                            block = ToolBlock(tc_name, description, show_right=False,
+                                              raw_args=arguments)
                             block.set_done()
                             await mount_history_widget(block)
 
@@ -652,11 +651,12 @@ class ChatApp(App):
                         tool_call_id = getattr(msg, "tool_call_id", None) or ""
                         if content_val.strip() and tool_call_id in pending_blocks:
                             tc_name, block = pending_blocks.pop(tool_call_id)
-                            rendered = render_tool_result(tc_name, content_val, palette=tool_palette)
-                            if tc_name and tc_name.lower() in ("edit", "write", "write_files"):
-                                block.set_done(rendered or content_val)
-                            else:
-                                block.set_done()
+                            renderer = REGISTRY.get(tc_name)
+                            result_lines = None
+                            if renderer and renderer.on_result:
+                                result_lines = renderer.on_result(
+                                    content_val, tool_palette)
+                            block.set_done(result_lines)
                         continue
 
                     if role == "system" and content_val.strip():
