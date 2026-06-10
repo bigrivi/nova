@@ -16,40 +16,45 @@ from nova.cli.tool_rendering import (
     render_tool_block_header,
 )
 
+MAX_BODY_LINES = 15
+
+
+class _ClickableBody(Static):
+    def on_click(self) -> None:
+        parent = self.parent
+        if parent and isinstance(parent, ToolBlock):
+            parent._on_body_click()
+
 
 class ToolBlock(Widget):
 
     DEFAULT_CSS = """
     ToolBlock {
         height: auto;
-        background: ansi_default;
-        padding: 0 2;
+        padding: 1 1;
         margin: 0 0 1 0;
+        background: $surface;
     }
     ToolBlock > Horizontal {
         height: auto;
         width: auto;
-        background: ansi_default;
         margin: 0;
         padding: 0;
     }
     #hd-left {
         width: 1fr;
         height: auto;
-        background: ansi_default;
         padding: 0 1 0 0;
     }
     #hd-right {
         width: auto;
         height: auto;
-        background: ansi_default;
         padding: 0 1 0 0;
         text-align: right;
     }
     #body {
         height: auto;
         display: none;
-        background: ansi_default;
         padding: 0 1 0 3;
     }
     #body.visible {
@@ -92,12 +97,18 @@ class ToolBlock(Widget):
         self._renderer = REGISTRY.get(tool_name)
         self._pending_diff = False
         self._diff_mounted = False
+        self._body_expanded = False
 
     def compose(self):
         with Horizontal():
             yield Static(id="hd-left")
             yield Static(id="hd-right")
-        yield Static(id="body")
+        yield _ClickableBody(id="body")
+
+    def _on_body_click(self) -> None:
+        if self._body_ref and self._body_ref.display:
+            self._body_expanded = not self._body_expanded
+            self._refresh()
 
     # ----------------------------------------------------------------
     # Public API
@@ -110,15 +121,26 @@ class ToolBlock(Widget):
         self._timer_handle = self.set_interval(0.12, self._tick)
         self._refresh()
 
+    def _should_show_detail(self) -> bool:
+        if not self._renderer:
+            return True
+        if callable(self._renderer.show_detail):
+            return self._renderer.show_detail(self._raw_args)
+        return self._renderer.show_detail
+
     def set_done(self, result_lines: list[str] | None = None) -> None:
         self._state = "done"
         self._elapsed_ms = self._calc_elapsed()
         self._result_lines = result_lines
         self._body_is_error = False
+        self._body_expanded = False
         self._expanded = (
-            (self._renderer and self._renderer.default_open)
-            or bool(self._detail_lines)
-            or bool(self._result_lines)
+            self._should_show_detail()
+            and (
+                (self._renderer and self._renderer.default_open)
+                or bool(self._detail_lines)
+                or bool(self._result_lines)
+            )
         )
         self._stop_timer()
         if self._renderer and self._renderer.on_done and not self._diff_mounted:
@@ -225,16 +247,23 @@ class ToolBlock(Widget):
         lines: list[str] = []
 
         if self._detail_lines:
-            lines.extend(self._detail_lines)
+            for l in self._detail_lines:
+                lines.extend(l.split("\n"))
 
         if self._result_lines:
             if lines:
                 lines.append(f"{p.dim}{'─' * 40}{_RS}")
             if self._body_is_error:
                 for line in self._result_lines:
-                    lines.append(f"{p.error}{line}{_RS}")
+                    lines.extend(line.split("\n"))
+                    lines[-1] = f"{p.error}{lines[-1]}{_RS}"
             else:
                 for line in self._result_lines:
-                    lines.append(f"{line}")
+                    lines.extend(line.split("\n"))
+
+        if not self._body_expanded and len(lines) > MAX_BODY_LINES:
+            hidden = len(lines) - MAX_BODY_LINES
+            lines = lines[:MAX_BODY_LINES]
+            lines.append(f"{p.dim}... ({hidden} more lines, click to expand){_RS}")
 
         return "\n".join(lines)

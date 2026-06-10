@@ -4,16 +4,16 @@ from rich.text import Text
 from textual.timer import Timer
 from textual.widgets import Static
 
-from nova.cli.theme_colors import get_theme_colors
+from nova.cli.theme_colors import ThemeColors, get_theme_colors
 
-_SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+BLINK_INTERVAL = 0.5
 
 
 class StatusBar(Static):
 
     DEFAULT_CSS = """
     StatusBar {
-        background: $panel;
+        background: $background;
         color: $text-muted;
         height: 1;
         padding: 0 2;
@@ -26,20 +26,23 @@ class StatusBar(Static):
         self._model_label = model_label
         self._provider_label = provider_label
         self._status = "idle"
-        self._spinner_frame = 0
+        self._dot_visible = True
         self._spinner_timer: Timer | None = None
+        self._colors: ThemeColors | None = None
 
     def on_mount(self) -> None:
+        self._colors = get_theme_colors(self.app)
         self.set_idle()
 
     def _tick(self) -> None:
-        self._spinner_frame = (self._spinner_frame + 1) % len(_SPINNER_CHARS)
+        self._dot_visible = not self._dot_visible
         self._update_display()
 
     def _start_spinner(self) -> None:
         if self._spinner_timer is not None:
             return
-        self._spinner_timer = self.set_interval(0.12, self._tick)
+        self._dot_visible = True
+        self._spinner_timer = self.set_interval(BLINK_INTERVAL, self._tick)
 
     def _stop_spinner(self) -> None:
         if self._spinner_timer is not None:
@@ -53,7 +56,7 @@ class StatusBar(Static):
 
     def set_generating(self) -> None:
         self._status = "generating"
-        self._spinner_frame = 0
+        self._dot_visible = True
         self._start_spinner()
         self._update_display()
 
@@ -63,18 +66,20 @@ class StatusBar(Static):
         self._update_display()
 
     def _update_display(self) -> None:
-        c = get_theme_colors(self.app)
+        c = self._colors
+        if c is None:
+            return
         if self._status == "generating":
-            dot_char = _SPINNER_CHARS[self._spinner_frame]
-            dot_color = f"bold {c.primary}" if self._spinner_frame % 2 == 0 else f"bold {c.warning}"
+            if self._dot_visible:
+                parts = [("● ", f"bold {c.primary}")]
+            else:
+                parts = [("○ ", c.text_muted)]
         else:
-            dot_char = "●"
-            dot_color = f"bold {c.success}"
-        parts = [(dot_char + " ", dot_color)]
+            parts = [("● ", f"bold {c.success}")]
         if self._model_label:
             parts.append((" · ", c.text_muted))
             parts.append((self._model_label, c.foreground))
         if self._provider_label:
-            parts.append((" · ", c.text_muted))
-            parts.append((self._provider_label, f"bold {c.warning}"))
+            parts.append(("  ", c.text_muted))
+            parts.append((self._provider_label, c.text_muted))
         self.update(Text.assemble(*parts))

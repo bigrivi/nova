@@ -32,7 +32,7 @@ class AssistantMessage(Static):
     BATCH_SIZE = 32
     FIRST_BATCH_SIZE = 5
 
-    def __init__(self) -> None:
+    def __init__(self, request_scroll=None) -> None:
         super().__init__()
         self.state = MessageState.STREAMING
         self.full_text = ""
@@ -40,6 +40,7 @@ class AssistantMessage(Static):
         self._buffer = ""
         self._scroll_pending = False
         self._has_rendered = False
+        self._request_scroll = request_scroll
 
     def on_mount(self) -> None:
         self._markdown = Markdown()
@@ -55,6 +56,9 @@ class AssistantMessage(Static):
             self.request_scroll()
 
     def request_scroll(self):
+        if self._request_scroll is not None:
+            self._request_scroll()
+            return
         if self._scroll_pending:
             return
         self._scroll_pending = True
