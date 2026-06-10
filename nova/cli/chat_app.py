@@ -6,9 +6,12 @@ from typing import TYPE_CHECKING
 
 from rich.panel import Panel
 from rich.text import Text as RichText
+from textual.actions import SkipAction
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
+from textual.message import Message as TextualMessage
+from textual.widget import Widget
 from textual.widgets import TextArea
 
 from nova.cli.screens import (
@@ -38,8 +41,45 @@ from nova.cli.widgets import (
 
 log = logging.getLogger(__name__)
 
+
+INITIAL_HISTORY_MESSAGES = 120
+LOAD_OLDER_BATCH = 60
+MAX_WINDOW_WIDGETS = 240
+EVICT_BATCH = 60
+AT_BOTTOM_THRESHOLD = 4
+
 if TYPE_CHECKING:
     from nova.cli.protocols import ChatControllerProtocol
+
+
+def _split_history_window(history: list, initial_size: int = INITIAL_HISTORY_MESSAGES) -> tuple[list, list]:
+    if initial_size <= 0 or len(history) <= initial_size:
+        return [], list(history)
+    return list(history[:-initial_size]), list(history[-initial_size:])
+
+
+class MessageContainer(ScrollableContainer):
+    """Scrollable chat container that emits edge events for lazy history loading."""
+
+    class ScrolledToTop(TextualMessage):
+        pass
+
+    class ScrolledToBottom(TextualMessage):
+        pass
+
+    def on_mouse_scroll_up(self, event) -> None:
+        self.call_after_refresh(self._check_top)
+
+    def on_mouse_scroll_down(self, event) -> None:
+        self.call_after_refresh(self._check_bottom)
+
+    def _check_top(self) -> None:
+        if self.scroll_y <= 1:
+            self.post_message(self.ScrolledToTop())
+
+    def _check_bottom(self) -> None:
+        if self.scroll_y + self.size.height >= self.virtual_size.height - AT_BOTTOM_THRESHOLD:
+            self.post_message(self.ScrolledToBottom())
 
 
 class ChatApp(App):
@@ -102,7 +142,7 @@ class ChatApp(App):
 
     MarkdownTableContent {
         background: ansi_default;
-        keyline: thin $border-blurred;
+        keyline: thin #666666;
     }
 
     MarkdownTableContent > .header {
@@ -124,7 +164,7 @@ class ChatApp(App):
     }
 
     #composer {
-        background: $background;
+        background: $surface;
         border-left: tall $primary;
         dock: bottom;
         height: auto;
@@ -134,7 +174,7 @@ class ChatApp(App):
     ChatTextArea {
         width: 1fr;
         height: 1;
-        background: $background;
+        background: $surface;
         color: $foreground;
         border: none;
         padding: 0;
@@ -146,26 +186,29 @@ class ChatApp(App):
     }
 
     ChatTextArea > .text-area--scroll {
-        background: $background;
+        background: $surface;
     }
 
     ChatTextArea .text-area--gutter {
         display: none;
-        background: $background;
+        background: $surface;
     }
 
     ChatTextArea .text-area--cursor-line {
-        background: $background;
+        background: $surface;
     }
 
     ChatTextArea .text-area--cursor {
         background: $foreground;
-        color: $background;
+        color: $surface;
     }
     """
 
     BINDINGS = [
         Binding("ctrl+c", "quit", show=False),
+        Binding("down", "suggestions_down", show=False, priority=True),
+        Binding("up", "suggestions_up", show=False, priority=True),
+        Binding("enter", "suggestions_select", show=False, priority=True),
     ]
 
     def __init__(self, controller: ChatControllerProtocol, theme: str = "textual-dark") -> None:
@@ -175,13 +218,19 @@ class ChatApp(App):
         self._streaming = False
         self._asking = False
         self._current_handler: StreamHandler | None = None
+        self._older_history: list = []
+        self._loading_history = False
+        self._scroll_pending = False
+        self._scroll_retries = 0
 
     def action_quit(self) -> None:
         self.exit()
 
     def key_escape(self) -> None:
-        """Stop streaming when Escape is pressed, but only if no modal is active."""
         if self._asking:
+            return
+        if self._suggestions_visible():
+            self._suggestions_dismiss()
             return
         if self._streaming:
             self._streaming = False
@@ -193,12 +242,12 @@ class ChatApp(App):
     # =====================================================
 
     def compose(self) -> ComposeResult:
-        yield ScrollableContainer(id="message-container")
-        yield CommandSuggestions(id="suggestions")
+        yield MessageContainer(id="message-container")
         with Vertical(id="composer"):
             with Horizontal(id="input-wrap"):
                 yield ChatTextArea()
             yield StatusBar()
+        yield CommandSuggestions(id="suggestions")
 
     def on_mount(self) -> None:
         self.query_one(ChatTextArea).focus()
@@ -298,21 +347,52 @@ class ChatApp(App):
     # Command Suggestions
     # =====================================================
 
-    def on_text_area_changed(self, event: TextArea.Changed) -> None:
-        self._update_suggestions()
+    async def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        await self._update_suggestions()
 
-    def _update_suggestions(self) -> None:
+    async def _update_suggestions(self) -> None:
         text = self.query_one(ChatTextArea).text.strip()
         suggestions = self.query_one("#suggestions", CommandSuggestions)
         if text.startswith("/"):
             try:
                 specs = self._controller.command_registry.specs
             except Exception:
-                suggestions.visible = False
+                suggestions.display = False
                 return
-            suggestions.update_suggestions(specs, text[1:])
+            await suggestions.update_suggestions(specs, text[1:])
         else:
-            suggestions.visible = False
+            suggestions.display = False
+
+    def _suggestions_visible(self) -> bool:
+        return self.query_one("#suggestions", CommandSuggestions).display
+
+    def _suggestions_dismiss(self) -> None:
+        self.query_one("#suggestions", CommandSuggestions).display = False
+
+    def action_suggestions_down(self) -> None:
+        if not self._suggestions_visible():
+            raise SkipAction()
+        self.query_one("#suggestions", CommandSuggestions).action_cursor_down()
+
+    def action_suggestions_up(self) -> None:
+        if not self._suggestions_visible():
+            raise SkipAction()
+        self.query_one("#suggestions", CommandSuggestions).action_cursor_up()
+
+    def action_suggestions_select(self) -> None:
+        if not self._suggestions_visible():
+            raise SkipAction()
+        suggestions = self.query_one("#suggestions", CommandSuggestions)
+        item = suggestions.highlighted_child
+        if item is None or not hasattr(item, 'data'):
+            return
+        spec = item.data
+        text_area = self.query_one(ChatTextArea)
+        text_area.text = spec.usage or f"/{spec.id}"
+        suggestions.display = False
+        self.handle_submit(text_area.text)
+        text_area.clear()
+        text_area.sync_height()
 
     # =====================================================
     # Submit
@@ -339,12 +419,14 @@ class ChatApp(App):
         c = get_theme_colors(self)
         container = self.query_one("#message-container")
         container.mount(BannerMessage(RichText(text, style=f"bold {c.error}")))
+        self._request_scroll_end()
 
     async def _handle_message(self, text: str) -> None:
         container = self.query_one("#message-container")
         user_msg = UserMessage(text)
         await container.mount(user_msg)
-        user_msg.scroll_visible()
+        self._request_scroll_end(force=True)
+        await self._evict_top_if_needed(container, force=True)
         await self._run_stream(text)
 
     # =====================================================
@@ -354,7 +436,9 @@ class ChatApp(App):
     async def _run_stream(self, text: str) -> None:
         container = self.query_one("#message-container")
         handler = StreamHandler(container, self._controller,
-                                status_bar=self.query_one(StatusBar))
+                                status_bar=self.query_one(StatusBar),
+                                request_scroll_end=self._request_scroll_end,
+                                is_at_bottom=lambda: self._is_at_bottom(container))
         self._current_handler = handler
         self._streaming = True
 
@@ -415,8 +499,9 @@ class ChatApp(App):
 
         container = self.query_one("#message-container")
         user_msg = UserMessage(answer_text)
-        container.mount(user_msg)
-        user_msg.scroll_visible()
+        await container.mount(user_msg)
+        self._request_scroll_end(force=True)
+        await self._evict_top_if_needed(container, force=True)
         await self._run_stream(answer_text)
 
     async def on_ask_user_question_dismissed(
@@ -426,6 +511,189 @@ class ChatApp(App):
             await self.query_one(AskUserQuestion).remove()
         self._asking = False
         self.query_one(ChatTextArea).focus()
+
+    # =====================================================
+    # Message window / scrolling
+    # =====================================================
+
+    def _is_at_bottom(self, container=None) -> bool:
+        container = container or self.query_one("#message-container")
+        return (
+            container.scroll_y + container.size.height
+            >= container.virtual_size.height - AT_BOTTOM_THRESHOLD
+        )
+
+    def _request_scroll_end(self, *, force: bool = False) -> None:
+        if self._scroll_pending:
+            return
+        container = self.query_one("#message-container")
+        if not force and not self._is_at_bottom(container):
+            return
+        self._scroll_pending = True
+        self._scroll_retries = 0
+        container.call_after_refresh(lambda: self._finish_scroll_end(force=force))
+
+    def _finish_scroll_end(self, *, force: bool = False) -> None:
+        container = self.query_one("#message-container")
+        self._scroll_pending = False
+        if not force and not self._is_at_bottom(container):
+            return
+        container.scroll_end(animate=False, immediate=True)
+        if self._is_at_bottom(container):
+            self._scroll_retries = 0
+            return
+        if self._scroll_retries >= 2:
+            self._scroll_retries = 0
+            return
+        self._scroll_retries += 1
+        self._scroll_pending = True
+        container.call_after_refresh(lambda: self._finish_scroll_end(force=force))
+
+    async def _after_refresh(self, container) -> None:
+        loop = asyncio.get_running_loop()
+        done = loop.create_future()
+
+        def _complete() -> None:
+            if not done.done():
+                done.set_result(None)
+
+        container.call_after_refresh(_complete)
+        await done
+
+    async def _load_older_history(self) -> None:
+        if self._loading_history or not self._older_history:
+            return
+        self._loading_history = True
+        try:
+            container = self.query_one("#message-container")
+            batch = self._older_history[-LOAD_OLDER_BATCH:]
+            self._older_history = self._older_history[:-LOAD_OLDER_BATCH]
+            height_before = container.virtual_size.height
+            insert_before = self._first_message_child(container)
+            pending_blocks: dict[str, tuple[str, ToolBlock]] = {}
+            prepared: list[tuple[Widget, object]] = []
+            for msg in batch:
+                prepared.extend((widget, msg) for widget in self._build_history_widgets(msg, pending_blocks))
+            for widget, msg in reversed(prepared):
+                setattr(widget, "_nova_history_message", msg)
+                if insert_before:
+                    await container.mount(widget, before=insert_before)
+                else:
+                    await container.mount(widget)
+                insert_before = widget
+                await asyncio.sleep(0)
+            await self._after_refresh(container)
+            delta = container.virtual_size.height - height_before
+            container.scroll_y += delta
+        finally:
+            self._loading_history = False
+
+    def _first_message_child(self, container) -> Widget | None:
+        for child in container.children:
+            if not isinstance(child, BannerMessage):
+                return child
+        return None
+
+    async def _evict_top_if_needed(self, container=None, *, force: bool = False) -> None:
+        container = container or self.query_one("#message-container")
+        if not force and not self._is_at_bottom(container):
+            return
+        children = [child for child in container.children if self._is_evictable(child)]
+        if len(children) <= MAX_WINDOW_WIDGETS:
+            return
+        to_evict = children[:EVICT_BATCH]
+        evicted_messages = []
+        seen_message_ids = set()
+        height_before = container.virtual_size.height
+        for child in to_evict:
+            msg = getattr(child, "_nova_history_message", None)
+            msg_id = getattr(msg, "id", id(msg)) if msg is not None else None
+            if msg is not None and msg_id not in seen_message_ids:
+                evicted_messages.append(msg)
+                seen_message_ids.add(msg_id)
+            await child.remove()
+            await asyncio.sleep(0)
+        if evicted_messages:
+            self._older_history = evicted_messages + self._older_history
+        await self._after_refresh(container)
+        delta = container.virtual_size.height - height_before
+        container.scroll_y = max(0, container.scroll_y + delta)
+
+    def _is_evictable(self, widget: Widget) -> bool:
+        if isinstance(widget, (BannerMessage, AskUserQuestion)):
+            return False
+        if self._current_handler is not None and widget is self._current_handler.assistant:
+            return False
+        if isinstance(widget, ToolBlock) and getattr(widget, "_state", None) == "running":
+            return False
+        return True
+
+    def _build_history_widgets(self, msg, pending_blocks: dict[str, tuple[str, ToolBlock]]) -> list[Widget]:
+        from nova.cli.tool_rendering import (
+            REGISTRY,
+            parse_tool_arguments,
+            tool_palette_from_theme,
+        )
+        from nova.cli.theme_colors import get_theme_colors
+
+        widgets: list[Widget] = []
+        role = getattr(msg, "role", None)
+        content = getattr(msg, "content", None) or ""
+
+        if role == "user":
+            if content.strip():
+                widgets.append(UserMessage(content))
+            return widgets
+
+        if role == "assistant":
+            reasoning_content = getattr(msg, "reasoning_content", None) or ""
+            reasoning_elapsed_ms = getattr(msg, "reasoning_elapsed_ms", None)
+            tool_calls = getattr(msg, "tool_calls", None) or []
+            if content.strip():
+                widgets.append(HistoryMessage(content, reasoning_content, elapsed_ms=reasoning_elapsed_ms))
+            for tc in tool_calls:
+                if isinstance(tc, dict):
+                    tc_name = tc.get("name", tc.get("function", {}).get("name", "tool"))
+                    tc_id = tc.get("id", "")
+                    tc_args = tc.get("arguments", tc.get("function", {}).get("arguments", "{}"))
+                else:
+                    tc_name = getattr(tc, "name", "tool")
+                    tc_id = getattr(tc, "id", "")
+                    tc_args = getattr(tc, "arguments", "{}")
+                arguments = parse_tool_arguments(tc_args)
+                renderer = REGISTRY.get(tc_name)
+                description = renderer.summary(arguments) if renderer else tc_name
+                tool_palette = tool_palette_from_theme(get_theme_colors(self))
+                detail_lines = renderer.render_detail(arguments, tool_palette) if renderer and renderer.render_detail else []
+                block = ToolBlock(tc_name, description, detail_lines=detail_lines, show_right=False, raw_args=arguments)
+                block.set_done()
+                widgets.append(block)
+                if tc_id:
+                    pending_blocks[tc_id] = (tc_name, block)
+            return widgets
+
+        if role == "tool":
+            tool_call_id = getattr(msg, "tool_call_id", None) or ""
+            if content.strip() and tool_call_id in pending_blocks:
+                tc_name, block = pending_blocks.pop(tool_call_id)
+                renderer = REGISTRY.get(tc_name)
+                result_lines = None
+                if renderer and renderer.on_result:
+                    result_lines = renderer.on_result(content, block._palette())
+                block.set_done(result_lines)
+            return widgets
+
+        if role == "system" and content.strip():
+            widgets.append(HistoryMessage(content, ""))
+        return widgets
+
+    def on_message_container_scrolled_to_top(self, event: MessageContainer.ScrolledToTop) -> None:
+        if not self._loading_history and self._older_history:
+            self.run_worker(self._load_older_history())
+
+    def on_message_container_scrolled_to_bottom(self, event: MessageContainer.ScrolledToBottom) -> None:
+        container = self.query_one("#message-container")
+        self.run_worker(self._evict_top_if_needed(container))
 
     # =====================================================
     # Cancel Stream (ESC)
@@ -522,6 +790,7 @@ class ChatApp(App):
         if not child_sessions:
             container = self.query_one("#message-container")
             container.mount(BannerMessage(RichText("No child sessions.", style=c.text_muted)))
+            self._request_scroll_end()
             return
 
         for session in child_sessions:
@@ -544,6 +813,7 @@ class ChatApp(App):
 
         container = self.query_one("#message-container")
         container.mount(BannerMessage(Panel(table, border_style=c.surface)))
+        self._request_scroll_end()
 
     def info(self, text: str) -> None:
         self.show_info(text)
@@ -554,20 +824,24 @@ class ChatApp(App):
     def show_info(self, text: str) -> None:
         container = self.query_one("#message-container")
         container.mount(BannerMessage(text))
+        self._request_scroll_end()
 
     def show_error(self, text: str) -> None:
         from nova.cli.theme_colors import get_theme_colors
         c = get_theme_colors(self)
         container = self.query_one("#message-container")
         container.mount(BannerMessage(RichText(text, style=f"bold {c.error}")))
+        self._request_scroll_end()
 
     def show_user_message(self, content: str) -> None:
         container = self.query_one("#message-container")
         container.mount(UserMessage(content))
+        self._request_scroll_end()
 
     def clear_screen(self) -> None:
         container = self.query_one("#message-container")
         container.remove_children()
+        self._older_history = []
         self._print_banner()
 
     def shutdown(self) -> None:
@@ -580,90 +854,30 @@ class ChatApp(App):
         container = self.query_one("#message-container")
         container.remove_children()
         self._print_banner()
+        self._older_history, visible_history = _split_history_window(history)
         loading = BannerMessage("Loading history...")
         container.mount(loading)
 
         async def _render() -> None:
-            from nova.cli.tool_rendering import (
-                REGISTRY,
-                parse_tool_arguments,
-                tool_palette_from_theme,
-            )
-            from nova.cli.theme_colors import get_theme_colors
-
-            tool_palette = tool_palette_from_theme(get_theme_colors(self))
-
             pending_blocks: dict[str, tuple[str, ToolBlock]] = {}
             batch_size = 20
             mounted_count = 0
 
-            async def mount_history_widget(widget) -> None:
+            async def mount_history_widget(widget, msg) -> None:
                 nonlocal mounted_count
+                setattr(widget, "_nova_history_message", msg)
                 await container.mount(widget)
                 mounted_count += 1
                 if mounted_count % batch_size == 0:
                     await asyncio.sleep(0)
 
             try:
-                for msg in history:
-                    role = getattr(msg, "role", None)
-                    content_val = getattr(msg, "content", None) or ""
-
-                    if role == "user":
-                        if content_val.strip():
-                            await mount_history_widget(UserMessage(content_val))
-                        continue
-
-                    if role == "assistant":
-                        rc = getattr(msg, "reasoning_content", None) or ""
-                        tool_calls = getattr(msg, "tool_calls", None) or []
-
-                        if content_val.strip():
-                            await mount_history_widget(HistoryMessage(content_val, rc))
-
-                        for tc in tool_calls:
-                            if isinstance(tc, dict):
-                                tc_name = tc.get("name", tc.get(
-                                    "function", {}).get("name", "tool"))
-                                tc_id = tc.get("id", "")
-                                tc_args = tc.get("arguments", tc.get(
-                                    "function", {}).get("arguments", "{}"))
-                            else:
-                                tc_name = getattr(tc, "name", "tool")
-                                tc_id = getattr(tc, "id", "")
-                                tc_args = getattr(tc, "arguments", "{}")
-
-                            arguments = parse_tool_arguments(tc_args)
-                            renderer = REGISTRY.get(tc_name)
-                            description = renderer.summary(arguments) if renderer else tc_name
-
-                            block = ToolBlock(tc_name, description, show_right=False,
-                                              raw_args=arguments)
-                            block.set_done()
-                            await mount_history_widget(block)
-
-                            if tc_id:
-                                pending_blocks[tc_id] = (tc_name, block)
-
-                        continue
-
-                    if role == "tool":
-                        tool_call_id = getattr(msg, "tool_call_id", None) or ""
-                        if content_val.strip() and tool_call_id in pending_blocks:
-                            tc_name, block = pending_blocks.pop(tool_call_id)
-                            renderer = REGISTRY.get(tc_name)
-                            result_lines = None
-                            if renderer and renderer.on_result:
-                                result_lines = renderer.on_result(
-                                    content_val, tool_palette)
-                            block.set_done(result_lines)
-                        continue
-
-                    if role == "system" and content_val.strip():
-                        await mount_history_widget(HistoryMessage(content_val, ""))
+                for msg in visible_history:
+                    for widget in self._build_history_widgets(msg, pending_blocks):
+                        await mount_history_widget(widget, msg)
             finally:
                 await loading.remove()
 
-            container.scroll_end(animate=False)
+            self._request_scroll_end(force=True)
 
         self.run_worker(_render())
