@@ -41,6 +41,7 @@ class Message:
     images: Optional[list[str]] = None
     reasoning_content: Optional[str] = None
     group_id: Optional[str] = None
+    reasoning_elapsed_ms: Optional[int] = None
 
 
 @dataclass
@@ -138,6 +139,7 @@ CREATE TABLE IF NOT EXISTS messages (
     images TEXT,
     reasoning_content TEXT,
     group_id TEXT,
+    reasoning_elapsed_ms INTEGER,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
@@ -229,6 +231,7 @@ class Database:
             images=images,
             reasoning_content=row_dict.get("reasoning_content"),
             group_id=row_dict.get("group_id"),
+            reasoning_elapsed_ms=row_dict.get("reasoning_elapsed_ms"),
         )
 
     @staticmethod
@@ -317,6 +320,7 @@ class Database:
         images: Optional[list[str]] = None,
         reasoning_content: Optional[str] = None,
         group_id: Optional[str] = None,
+        reasoning_elapsed_ms: Optional[int] = None,
     ) -> Message:
         await self._ensure_connected()
         msg_id = str(uuid.uuid4())
@@ -326,8 +330,8 @@ class Database:
 
         await self._conn.execute(
             """INSERT INTO messages
-            (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 msg_id,
                 session_id,
@@ -341,6 +345,7 @@ class Database:
                 images_json,
                 reasoning_content,
                 group_id,
+                reasoning_elapsed_ms,
             ),
         )
         await self._conn.execute(
@@ -360,6 +365,7 @@ class Database:
             summary=1 if summary else 0,
             reasoning_content=reasoning_content,
             group_id=group_id,
+            reasoning_elapsed_ms=reasoning_elapsed_ms,
         )
 
     async def get_messages(

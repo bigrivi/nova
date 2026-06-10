@@ -4,7 +4,7 @@ Compaction Module Tests using pytest
 
 import pytest
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 from nova.agent.compaction import (
     estimate_tokens,
@@ -15,6 +15,8 @@ from nova.agent.compaction import (
     _get_content,
     _get_role,
     _get_tool_calls,
+    _get_tool_call_ids,
+    _get_tool_call_id,
     _get_msg_id,
 )
 
@@ -309,6 +311,93 @@ class TestHelperFunctions:
     def test_get_tool_calls(self):
         msg = MockMessage("1", "assistant", "Hi", tool_calls=[{"name": "read"}])
         assert len(_get_tool_calls(msg)) == 1
+
+    def test_get_tool_call_ids_from_list(self):
+        msg = MockMessage("1", "assistant", "", tool_calls=[{"id": "call_123"}, {"id": "call_456"}])
+        ids = _get_tool_call_ids(msg)
+        assert ids == ["call_123", "call_456"]
+
+    def test_get_tool_call_ids_from_json_string(self):
+        msg = MockMessage("1", "assistant", "", tool_calls='[{"id": "call_abc"}]')
+        ids = _get_tool_call_ids(msg)
+        assert ids == ["call_abc"]
+
+    def test_get_tool_call_ids_empty(self):
+        msg = MockMessage("1", "user", "hello")
+        assert _get_tool_call_ids(msg) == []
+
+    def test_get_tool_call_id_from_object(self):
+        msg = MockMessage("2", "tool", "result")
+        msg.tool_call_id = "call_xyz"
+        assert _get_tool_call_id(msg) == "call_xyz"
+
+    def test_get_tool_call_id_from_dict(self):
+        msg = {"role": "tool", "tool_call_id": "call_xyz"}
+        assert _get_tool_call_id(msg) == "call_xyz"
+
+    def test_get_tool_call_id_empty(self):
+        msg = MockMessage("2", "tool", "result")
+        assert _get_tool_call_id(msg) == ""
+
+
+@pytest.mark.asyncio
+async def test_compact_orphaned_tool_response_is_also_compacted():
+    """When split separates tool_call assistant from its response, the orphaned
+    tool response is also compacted to avoid tool message without preceding tool_calls."""
+    from nova.agent.compaction import compact
+    from nova.db.database import Database, DatabaseConfig, MessageFilter
+    from nova.session.manager import SessionContext
+
+    db = Database(DatabaseConfig(path=":memory:"))
+    await db.connect()
+
+    try:
+        session_id = "test-orphan-session"
+        session = SessionContext.create()
+        session.id = session_id
+        await db.save_session(session)
+
+        # 4 messages: [0] user, [1] assistant with tool_calls, [2] tool response, [3] user
+        await db.add_message(session_id, "user", "search for something")
+        await db.add_message(
+            session_id, "assistant", "",
+            tool_calls=[{"id": "call_orphan", "type": "function",
+                         "function": {"name": "web_search", "arguments": '{"q":"test"}'}}],
+        )
+        await db.add_message(
+            session_id, "tool", "search results here",
+            tool_call_id="call_orphan",
+        )
+        await db.add_message(session_id, "user", "tell me more")
+
+        # Force split at 2: compact [0,1], keep [2,3]
+        # [1] = assistant with call_orphan is compacted → [2] should also be compacted
+        with patch("nova.agent.compaction.find_split_point", return_value=2):
+            mock_llm = AsyncMock()
+            mock_llm.chat.return_value = MagicMock(content="Summary of conversation")
+
+            await compact(session_id, db, mock_llm, "gpt-4o")
+
+        # Active messages should NOT include the orphaned tool response
+        active = await db.get_messages(session_id)
+        for msg in active:
+            assert msg.tool_call_id != "call_orphan", \
+                f"orphaned tool response {msg.id} should be compacted"
+
+        # The last user message should still be active
+        assert any(m.content == "tell me more" for m in active)
+
+        # Summary was inserted
+        assert any(m.summary == 1 for m in active)
+
+        # All messages (including compacted) — verify tool response IS compacted
+        all_msgs = await db.get_messages(session_id, MessageFilter(include_compacted=True))
+        orphan = [m for m in all_msgs if m.tool_call_id == "call_orphan"]
+        assert len(orphan) == 1
+        assert orphan[0].compacted == 1, \
+            f"orphaned tool response should have compacted=1, got {orphan[0].compacted}"
+    finally:
+        await db.close()
 
 
 @pytest.mark.asyncio

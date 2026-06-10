@@ -39,4 +39,5 @@ class SessionProtocol(Protocol):
         images: Optional[list[str]] = None,
         reasoning_content: Optional[str] = None,
         group_id: Optional[str] = None,
+        reasoning_elapsed_ms: Optional[int] = None,
     ) -> Message: ...

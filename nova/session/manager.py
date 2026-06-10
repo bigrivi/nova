@@ -141,6 +141,7 @@ class SessionManager(SessionProtocol):
         images: Optional[list[str]] = None,
         reasoning_content: Optional[str] = None,
         group_id: Optional[str] = None,
+        reasoning_elapsed_ms: Optional[int] = None,
     ) -> Message:
         session = self.get_current_session()
         if not session:
@@ -157,6 +158,7 @@ class SessionManager(SessionProtocol):
                 images=images,
                 reasoning_content=reasoning_content,
                 group_id=group_id,
+                reasoning_elapsed_ms=reasoning_elapsed_ms,
             )
             session.updated_at = int(time.time() * 1000)
             session.turn_count += 1

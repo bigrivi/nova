@@ -127,7 +127,7 @@ class OpenAIProvider(LLMProvider):
                     })
                 m = {"role": "user", "content": content_list}
             else:
-                m = {"role": role, "content": content}
+                m = {"role": role, "content": content or ""}
 
             if role == "assistant":
                 rc = getattr(msg, "reasoning_content", None) or get_attr(
@@ -369,14 +369,21 @@ class OpenAIProvider(LLMProvider):
                 accumulated_content = ""
                 accumulated_tool_calls: dict[int, dict[str, str | bool]] = {}
 
-                async for line in resp.content:
+                it = resp.content.__aiter__()
+                while True:
                     if abort_event and abort_event.is_set():
                         resp.close()
                         yield Done(content=accumulated_content, tool_calls=[], aborted=True)
                         return
+                    try:
+                        line = await asyncio.wait_for(it.__anext__(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        continue
+                    except StopAsyncIteration:
+                        break
 
                     line = line.decode("utf-8").strip()
-                    log.info(f"line={line}")
+                    # log.info(f"line={line}")
                     if not line or line == "data: [DONE]":
                         continue
                     log.debug("OpenAI provider stream chunk: %s", line)

@@ -80,7 +80,7 @@ async def shell(command: str, timeout: int = 30, description: str = "") -> ToolR
 
     kwargs: dict = {
         "stdout": subprocess.PIPE,
-        "stderr": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
         "text": True,
         "cwd": cwd,
     }
@@ -91,7 +91,7 @@ async def shell(command: str, timeout: int = 30, description: str = "") -> ToolR
         proc = subprocess.Popen(args, **kwargs)
 
         try:
-            stdout, stderr = proc.communicate(timeout=timeout)
+            stdout, _ = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             kill_process_tree(proc.pid)
             proc.wait()
@@ -100,11 +100,12 @@ async def shell(command: str, timeout: int = 30, description: str = "") -> ToolR
                 content=f"Timed out after {timeout}s (process killed)",
             )
 
-        out = stdout
-        if stderr:
-            out += ("\n" if out else "") + "[stderr]\n" + stderr
+        success = proc.returncode == 0
+        content = stdout.strip() or "(no output)"
+        if not success:
+            content = "[stderr]\n" + content
 
-        return ToolResult(success=True, content=out.strip() or "(no output)")
+        return ToolResult(success=success, content=content)
 
     except Exception as e:
         return ToolResult(success=False, content=f"Error: {e}")

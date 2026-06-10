@@ -8,6 +8,7 @@ Two-layer compaction strategy:
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -279,8 +280,25 @@ async def compact(
         content=f"[Previous conversation summary]\n{summary}",
         summary=True,
     )
+    # Also compact tool responses whose tool_call assistant was compacted
+    compacted_tc_ids = set()
+    for m in old:
+        if _get_role(m) != "assistant":
+            continue
+        compacted_tc_ids.update(_get_tool_call_ids(m))
+
+    orphan_ids = []
+    for m in recent:
+        if _get_role(m) != "tool":
+            continue
+        if _get_tool_call_id(m) in compacted_tc_ids:
+            orphan_ids.append(_get_msg_id(m))
+
+    if orphan_ids:
+        log.info("[Compaction] also compacting %d orphaned tool responses", len(orphan_ids))
+
     old_ids = [_get_msg_id(m) for m in old]
-    await db.mark_messages_compacted_by_ids(session_id, old_ids)
+    await db.mark_messages_compacted_by_ids(session_id, old_ids + orphan_ids)
     await db.update_session_compacted_at(session_id, now_ms)
 
     after_tokens = estimate_tokens(recent)
@@ -344,3 +362,25 @@ def _get_msg_id(msg) -> str:
     if isinstance(msg, dict):
         return msg.get("id", "")
     return getattr(msg, "id", "")
+
+
+def _get_tool_call_ids(msg) -> list[str]:
+    """Extract tool call IDs from an assistant message's tool_calls field."""
+    tc = _get_tool_calls(msg)
+    if not tc:
+        return []
+    if isinstance(tc, str):
+        try:
+            tc = json.loads(tc)
+        except (json.JSONDecodeError, TypeError):
+            return []
+    if isinstance(tc, list):
+        return [t["id"] for t in tc if isinstance(t, dict) and t.get("id")]
+    return []
+
+
+def _get_tool_call_id(msg) -> str:
+    """Get the tool_call_id for a tool response message."""
+    if isinstance(msg, dict):
+        return msg.get("tool_call_id", "") or ""
+    return getattr(msg, "tool_call_id", "") or ""

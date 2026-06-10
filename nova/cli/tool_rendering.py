@@ -62,7 +62,8 @@ def _param_lines(
     for key, value in params:
         if description and value in description:
             continue
-        lines.append(f"\033[2m{palette.muted}{key}{_RS}  {palette.text}{value}{_RS}")
+        lines.append(
+            f"\033[2m{palette.muted}{key}{_RS}  {palette.text}{value}{_RS}")
     return lines
 
 
@@ -94,18 +95,24 @@ async def _edit_on_done(block, raw_args: dict) -> None:
 # ── Render helpers ──────────────────────────────────────────────────────────
 
 def _shell_on_result(content: str, palette: ToolRenderPalette) -> list[str]:
-    has_error = "[stderr]" in content
+    has_error = content.startswith("[stderr]")
     lines: list[str] = []
     if content:
         for line in content.rstrip("\n").split("\n"):
-            lines.append(f"{palette.error if has_error else palette.text}{line}{_RS}")
+            lines.append(
+                f"{palette.error if has_error else palette.text}{line}{_RS}")
     return lines
 
 
 def _web_search_render_result(content: str, palette: ToolRenderPalette) -> list[str]:
     lines: list[str] = []
     for line in content.strip().split("\n"):
-        lines.append(f"{palette.text}{line}{_RS}")
+        if line.startswith("Title: "):
+            lines.append(f"{palette.text}{line[7:]}{_RS}")
+        elif line.startswith("URL: "):
+            lines.append(f"{palette.path}{line[5:]}{_RS}")
+        elif line == "---":
+            lines.append("")
     return lines
 
 
@@ -118,7 +125,8 @@ def _file_list_result(content: str, palette: ToolRenderPalette) -> list[str]:
     lines: list[str] = []
     for line in content.strip().split("\n"):
         if line.strip():
-            lines.append(f"  {palette.success}✓ {_RS}{palette.text}{line}{_RS}")
+            lines.append(
+                f"  {palette.success}✓ {_RS}{palette.text}{line}{_RS}")
     return lines
 
 
@@ -127,7 +135,8 @@ def _match_list_result(content: str, palette: ToolRenderPalette) -> list[str]:
     for line in content.strip().split("\n"):
         if ":" in line and "/" in line:
             parts = line.split(":", 1)
-            lines.append(f"{palette.path}{parts[0]}{_RS}:{palette.info}{parts[1]}{_RS}")
+            lines.append(
+                f"{palette.path}{parts[0]}{_RS}:{palette.info}{parts[1]}{_RS}")
         elif line.strip():
             lines.append(f"{palette.text}{line}{_RS}")
     return lines
@@ -138,7 +147,8 @@ def _memory_list_result(content: str, palette: ToolRenderPalette) -> list[str]:
     for line in content.strip().split("\n"):
         if ":" in line:
             parts = line.split(":", 1)
-            lines.append(f"{palette.path}{parts[0]}{_RS}:{palette.text}{parts[1]}{_RS}")
+            lines.append(
+                f"{palette.path}{parts[0]}{_RS}:{palette.text}{parts[1]}{_RS}")
         elif line.strip():
             lines.append(f"{palette.muted}{line}{_RS}")
     return lines
@@ -175,13 +185,17 @@ def _todo_write_render_detail(args: dict, palette: ToolRenderPalette) -> list[st
         content = t.get("content", "")
         status = t.get("status", "pending")
         if status == "in_progress":
-            lines.append(f"{palette.warning}[•]{_RS}  {palette.warning}{content}{_RS}")
+            lines.append(
+                f"{palette.warning}[•]{_RS}  {palette.warning}{content}{_RS}")
         elif status == "completed":
-            lines.append(f"{palette.muted}[✓]{_RS}  {palette.muted}{content}{_RS}")
+            lines.append(
+                f"{palette.muted}[✓]{_RS}  {palette.muted}{content}{_RS}")
         elif status == "cancelled":
-            lines.append(f"{palette.muted}[ ]{_RS}  \033[9m{palette.muted}{content}{_RS}")
+            lines.append(
+                f"{palette.muted}[ ]{_RS}  \033[9m{palette.muted}{content}{_RS}")
         else:
-            lines.append(f"{palette.muted}[ ]{_RS}  {palette.muted}{content}{_RS}")
+            lines.append(
+                f"{palette.muted}[ ]{_RS}  {palette.muted}{content}{_RS}")
     return lines
 
 
@@ -202,7 +216,7 @@ def _install_skill_result(content: str, palette: ToolRenderPalette) -> list[str]
 # ── Browser use helpers ──────────────────────────────────────────────────────
 
 _BROWSER_STATE_ACTIONS = frozenset({
-    "get_state", "get_dropdown_options", "extract_content", "web_search",
+    "get_dropdown_options", "extract_content", "web_search",
 })
 
 
@@ -277,7 +291,8 @@ def _register_tools() -> None:
                 a.get("description", "")
                 or (a.get("command", "") or "").split("\n")[0][:48]
             ),
-            render_detail=lambda a, p: [a["command"]] if a.get("command") else [],
+            render_detail=lambda a, p: [
+                a["command"]] if a.get("command") else [],
             on_result=_shell_on_result,
             show_detail=True, default_open=True, show_time=True,
         ),
@@ -287,14 +302,16 @@ def _register_tools() -> None:
                 a.get("description", "")
                 or (a.get("code", "") or "").split("\n")[0][:48]
             ),
-            render_detail=lambda a, p: [a.get("code", "")] if a.get("code") else [],
+            render_detail=lambda a, p: [
+                a.get("code", "")] if a.get("code") else [],
             on_result=_shell_on_result,
             show_detail=True, default_open=True, show_time=True,
         ),
         "read": ToolRenderer(
             cat="Code & File", icon="📄", accent_css="muted",
             summary=lambda a: f"{a.get('filePath', '')}  L{a.get('offset', 1)}–{a.get('offset', 1) + (a.get('limit', 50) or 50) - 1}",
-            params=lambda a: [("filePath", a["filePath"])] if a.get("filePath") else [],
+            params=lambda a: [("filePath", a["filePath"])
+                              ] if a.get("filePath") else [],
             show_detail=False,
         ),
         "edit": ToolRenderer(
@@ -307,13 +324,15 @@ def _register_tools() -> None:
         "write": ToolRenderer(
             cat="Code & File", icon="✏️", accent_css="info",
             summary=lambda a: a.get("filePath", "") or "",
-            params=lambda a: [("filePath", a["filePath"])] if a.get("filePath") else [],
+            params=lambda a: [("filePath", a["filePath"])
+                              ] if a.get("filePath") else [],
             show_detail=False,
         ),
         "write_files": ToolRenderer(
             cat="Code & File", icon="✏️", accent_css="info",
             summary=lambda a: f"{len(a.get('files', []))} files",
-            params=lambda a: [("files", str(a.get("files", [])))] if a.get("files") else [],
+            params=lambda a: [("files", str(a.get("files", [])))
+                              ] if a.get("files") else [],
             on_result=_file_list_result,
             show_detail=True, default_open=False,
         ),
@@ -322,7 +341,8 @@ def _register_tools() -> None:
         "glob": ToolRenderer(
             cat="Search", icon="🔎", accent_css="info",
             summary=lambda a: f"{a.get('pattern', '')}  in {a.get('path', '.')}",
-            params=lambda a: [("pattern", a.get("pattern", ""))] if a.get("pattern") else [],
+            params=lambda a: [("pattern", a.get("pattern", ""))
+                              ] if a.get("pattern") else [],
             on_result=_match_list_result,
             show_detail=True, default_open=False,
         ),
@@ -330,7 +350,8 @@ def _register_tools() -> None:
             cat="Search", icon="🔎", accent_css="info",
             summary=lambda a: f"\"{a.get('pattern', '')}\"  in {a.get('include', '*')}",
             params=lambda a: (
-                [("pattern", a["pattern"])] + ([("include", a["include"])] if a.get("include") else [])
+                [("pattern", a["pattern"])] +
+                ([("include", a["include"])] if a.get("include") else [])
             ) if a.get("pattern") else [],
             on_result=_match_list_result,
             show_detail=True, default_open=False,
@@ -338,14 +359,14 @@ def _register_tools() -> None:
         "web_search": ToolRenderer(
             cat="Search", icon="🔍", accent_css="success",
             summary=lambda a: f"\"{a.get('query', '')}\"",
-            params=lambda a: [("query", a.get("query", ""))] if a.get("query") else [],
             on_result=_web_search_render_result,
             show_detail=True, default_open=False, show_time=True,
         ),
         "web_fetch": ToolRenderer(
             cat="Search", icon="🌐", accent_css="success",
             summary=lambda a: a.get("url", "") or "",
-            params=lambda a: [("url", a.get("url", ""))] if a.get("url") else [],
+            params=lambda a: [("url", a.get("url", ""))
+                              ] if a.get("url") else [],
             on_result=_web_fetch_render_result,
             show_detail=True, default_open=False, show_time=True,
         ),
@@ -360,20 +381,23 @@ def _register_tools() -> None:
         "search_memory": ToolRenderer(
             cat="Memory", icon="🔮", accent_css="tool",
             summary=lambda a: f"\"{a.get('query', '')}\"",
-            params=lambda a: [("query", a.get("query", ""))] if a.get("query") else [],
+            params=lambda a: [("query", a.get("query", ""))
+                              ] if a.get("query") else [],
             on_result=_memory_list_result,
             show_detail=True, default_open=False,
         ),
         "delete_memory": ToolRenderer(
             cat="Memory", icon="🗑️", accent_css="error",
             summary=lambda a: a.get("id", "") or a.get("key", "") or "",
-            params=lambda a: [("id", a.get("id", "") or a.get("key", ""))] if a.get("id") or a.get("key") else [],
+            params=lambda a: [("id", a.get("id", "") or a.get("key", ""))] if a.get(
+                "id") or a.get("key") else [],
             show_detail=False,
         ),
         "list_memories": ToolRenderer(
             cat="Memory", icon="📋", accent_css="tool",
             summary=lambda a: f"scope:{a.get('scope', 'all')}  limit:{a.get('limit', 20)}",
-            params=lambda a: [("scope", a.get("scope", "")), ("limit", str(a.get("limit", 20)))] if a.get("scope") else [],
+            params=lambda a: [("scope", a.get("scope", "")), ("limit", str(
+                a.get("limit", 20)))] if a.get("scope") else [],
             on_result=_memory_list_result,
             show_detail=True, default_open=False,
         ),
@@ -388,14 +412,16 @@ def _register_tools() -> None:
         "load_skill": ToolRenderer(
             cat="Skills", icon="📥", accent_css="info",
             summary=lambda a: a.get("skill_name", "") or "",
-            params=lambda a: [("skill_name", a["skill_name"])] if a.get("skill_name") else [],
+            params=lambda a: [("skill_name", a["skill_name"])
+                              ] if a.get("skill_name") else [],
             show_detail=False,
         ),
         "install_skill": ToolRenderer(
             cat="Skills", icon="⬇️", accent_css="info",
             summary=lambda a: f"{a.get('skill_ref', '')}{' --force' if a.get('force') else ''}",
             params=lambda a: (
-                [("skill_ref", a["skill_ref"])] + ([("force", str(a["force"]))] if a.get("force") is not None else [])
+                [("skill_ref", a["skill_ref"])] + ([("force", str(a["force"]))]
+                                                   if a.get("force") is not None else [])
             ) if a.get("skill_ref") else [],
             on_result=_install_skill_result,
             show_detail=True, default_open=False, show_time=True,
@@ -415,7 +441,8 @@ def _register_tools() -> None:
         "read_image": ToolRenderer(
             cat="Other", icon="🖼️", accent_css="muted",
             summary=lambda a: a.get("file_path", "") or "",
-            params=lambda a: [("file_path", a["file_path"])] if a.get("file_path") else [],
+            params=lambda a: [("file_path", a["file_path"])
+                              ] if a.get("file_path") else [],
             show_detail=False,
         ),
         "todo_write": ToolRenderer(
@@ -443,16 +470,19 @@ def _register_tools() -> None:
             params=lambda a: (
                 [("agent", a["agent_key"])]
                 + ([("task", str(a["task"])[:60])] if a.get("task") else [])
-                + ([("timeout", f"{a['timeout']}s")] if a.get("timeout") is not None else [])
+                + ([("timeout", f"{a['timeout']}s")]
+                   if a.get("timeout") is not None else [])
             ) if a.get("agent_key") else [],
             on_result=_delegate_to_agent_result,
             show_detail=True, default_open=True, show_time=True,
         ),
         "install_python_package": ToolRenderer(
             cat="Other", icon="📦", accent_css="muted",
-            summary=lambda a: f"{a.get('package', '')}=={a.get('version', '')}" if a.get("version") else a.get("package", ""),
+            summary=lambda a: f"{a.get('package', '')}=={a.get('version', '')}" if a.get(
+                "version") else a.get("package", ""),
             params=lambda a: (
-                [("package", a["package"])] + ([("version", a["version"])] if a.get("version") else [])
+                [("package", a["package"])] +
+                ([("version", a["version"])] if a.get("version") else [])
             ) if a.get("package") else [],
             show_detail=False, show_time=True,
         ),
@@ -542,7 +572,8 @@ def render_tool_block_header(
         icon = renderer.icon
         icon_cp = icon[0]
         if unicodedata.east_asian_width(icon_cp) not in ('W', 'F'):
-            icon += "\N{SPACE}"  # pad narrow icons to match wide-emoji column width
+            # pad narrow icons to match wide-emoji column width
+            icon += "\N{SPACE}"
         left_parts.append(f"{icon} {accent}{_BO}{label}{_RS}")
     else:
         left_parts.append(f"  {p.tool}{_BO}{tool_name}{_RS}")
@@ -580,7 +611,8 @@ def render_diff_block(
     lines = text.split("\n")
     if len(lines) > max_rendered_diff_lines:
         lines = lines[:max_rendered_diff_lines]
-        lines.append(f"\033[2m{p.dim}... ({len(lines)} more lines truncated){_RS}")
+        lines.append(
+            f"\033[2m{p.dim}... ({len(lines)} more lines truncated){_RS}")
 
     for line in lines:
         if line.startswith("---") or line.startswith("+++"):

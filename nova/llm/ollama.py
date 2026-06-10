@@ -241,11 +241,18 @@ class OllamaProvider(LLMProvider):
                     yield Done(content=f"Error: {error_message}", tool_calls=[])
                     return
 
-                async for line in resp.content:
+                it = resp.content.__aiter__()
+                while True:
                     if abort_event and abort_event.is_set():
                         resp.close()
                         yield Done(content=accumulated_content, tool_calls=[], aborted=True)
                         return
+                    try:
+                        line = await asyncio.wait_for(it.__anext__(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        continue
+                    except StopAsyncIteration:
+                        break
 
                     line = line.decode("utf-8").strip()
                     if not line:
