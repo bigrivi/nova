@@ -71,7 +71,7 @@ class AppendReasoning:
 
 @dataclass(frozen=True)
 class EndReasoning:
-    pass
+    elapsed_ms: int | None = None
 
 
 @dataclass(frozen=True)

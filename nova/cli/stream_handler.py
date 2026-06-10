@@ -46,10 +46,14 @@ if TYPE_CHECKING:
 
 class StreamHandler:
 
-    def __init__(self, container, controller: StreamControllerProtocol, status_bar=None) -> None:
+    def __init__(self, container, controller: StreamControllerProtocol, status_bar=None,
+                 request_scroll_end=None, is_at_bottom=None) -> None:
         self._container = container
         self._controller = controller
         self._status_bar = status_bar
+        self._request_scroll_end = request_scroll_end
+        self._is_at_bottom = is_at_bottom
+        self._follow_scroll = False
         self._spinner: Spinner | None = None
         self.assistant: AssistantMessage | None = None
         self._reasoning_msg: ReasoningMessage | None = None
@@ -103,12 +107,23 @@ class StreamHandler:
         c = get_theme_colors(self._container.app)
         self._container.mount(BannerMessage(
             RichText(f"Error: {text}", style=f"bold {c.error}")))
-        self._container.call_after_refresh(lambda: self._container.scroll_end(
-            animate=False
-        ))
+        self._request_scroll()
 
     def _mount_info(self, text: str) -> None:
         self._container.mount(BannerMessage(text))
+        self._request_scroll()
+
+    def _is_following_bottom(self) -> bool:
+        return self._is_at_bottom is None or self._is_at_bottom()
+
+    def _request_scroll(self, *, force: bool = False, follow: bool | None = None) -> None:
+        should_follow = self._follow_scroll if follow is None else follow
+        if self._request_scroll_end is not None:
+            self._request_scroll_end(force=force or should_follow)
+        elif force or should_follow:
+            self._container.call_after_refresh(
+                lambda: self._container.scroll_end(animate=False)
+            )
 
     async def _on_session(self, data) -> bool:
         return await self._apply_processed_event(self._processor.handle_noop(data))
@@ -161,6 +176,9 @@ class StreamHandler:
 
     async def _on_done(self, data) -> bool:
         processed = self._processor.handle_done(data)
+        for call_id, block in list(self._tool_blocks.items()):
+            block.set_error("Cancelled")
+            del self._tool_blocks[call_id]
         log.info("DONE: action=%s tool_calls=%d",
                  processed, self._processor.tool_calls_seen)
         return await self._apply_processed_event(processed)
@@ -179,30 +197,38 @@ class StreamHandler:
                 if self.assistant is not None:
                     await self.assistant.finalize()
                     self.assistant = None
+                self._reasoning_msg = None
             case StartText():
+                follow = self._is_following_bottom()
                 await self._dismiss_spinner()
                 if self.assistant is None:
-                    self.assistant = AssistantMessage()
+                    self.assistant = AssistantMessage(request_scroll=self._request_scroll)
                     await self._container.mount(self.assistant)
+                    self._request_scroll(follow=follow)
             case AppendText(chunk=chunk):
                 if self.assistant is not None:
+                    self._follow_scroll = self._is_following_bottom()
                     await self.assistant.write_chunk(chunk)
             case EndText():
                 if self.assistant is not None:
+                    self._follow_scroll = self._is_following_bottom()
                     await self.assistant.finalize()
                     self.assistant = None
             case StartReasoning():
+                follow = self._is_following_bottom()
                 await self._dismiss_spinner()
-                if self._reasoning_msg is None:
-                    self._reasoning_msg = ReasoningMessage()
-                    await self._container.mount(self._reasoning_msg)
+                self._reasoning_msg = None
+                self._reasoning_msg = ReasoningMessage(request_scroll=self._request_scroll)
+                await self._container.mount(self._reasoning_msg)
+                self._request_scroll(follow=follow)
             case AppendReasoning(chunk=chunk):
                 if self._reasoning_msg is not None:
+                    self._follow_scroll = self._is_following_bottom()
                     await self._reasoning_msg.append(chunk)
-            case EndReasoning():
+            case EndReasoning(elapsed_ms=elapsed_ms):
                 if self._reasoning_msg is not None:
-                    self._reasoning_msg.finalize()
-                    self._reasoning_msg = None
+                    self._follow_scroll = self._is_following_bottom()
+                    self._reasoning_msg.finalize(elapsed_ms)
             case ShowInfo(message=message):
                 self._mount_info(message)
             case ShowError(message=message):
@@ -221,6 +247,7 @@ class StreamHandler:
             case SetPendingInput(content=content):
                 self._controller.set_pending_input({"content": content})
             case ShowToolCall(call_id=call_id, tool_name=tool_name, raw_args=raw_args):
+                follow = self._is_following_bottom()
                 args = raw_args or {}
                 palette = tool_palette_from_theme(
                     get_theme_colors(self._container.app))
@@ -251,8 +278,10 @@ class StreamHandler:
                 await self._container.mount(block)
                 block.set_running()
                 self._tool_blocks[call_id] = block
+                self._request_scroll(follow=follow)
                 log.info("Tool call: %s (%s)", call_id, tool_name)
             case FinishToolCall(call_id=call_id, content=content):
+                follow = self._is_following_bottom()
                 block = self._tool_blocks.pop(call_id, None)
                 if block:
                     renderer = REGISTRY.get(block._tool_name)
@@ -262,10 +291,13 @@ class StreamHandler:
                     else:
                         result_lines = None
                     block.set_done(result_lines)
+                    self._request_scroll(follow=follow)
             case FailToolCall(call_id=call_id, message=message):
+                follow = self._is_following_bottom()
                 block = self._tool_blocks.pop(call_id, None)
                 if block:
                     block.set_error(message)
+                    self._request_scroll(follow=follow)
                 else:
                     self._mount_error(message)
 

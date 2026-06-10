@@ -89,7 +89,8 @@ class StreamEventProcessor:
         return ProcessedStreamEvent(commands=(AppendReasoning(data),))
 
     def handle_reasoning_end(self, data: object = None) -> ProcessedStreamEvent:
-        return ProcessedStreamEvent(commands=(EndReasoning(),))
+        elapsed_ms = data if isinstance(data, int) else None
+        return ProcessedStreamEvent(commands=(EndReasoning(elapsed_ms=elapsed_ms),))
 
     def handle_tool_call(self, data: object) -> ProcessedStreamEvent:
         self.mark_tool_call_seen()

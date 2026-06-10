@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -264,6 +265,8 @@ class Agent:
         final_done_content = ""
         _text_started = False
         _reasoning_started = False
+        _reasoning_started_at = None
+        reasoning_elapsed_ms = None
 
         log.info(
             f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}")
@@ -284,6 +287,7 @@ class Agent:
                     if chunk.type == "reasoning_delta":
                         if not _reasoning_started:
                             _reasoning_started = True
+                            _reasoning_started_at = time.monotonic()
                             await self._emit(AgentEvent.REASONING_START)
                             yield AgentEvent.REASONING_START, None
                         accumulated_reasoning += chunk.content
@@ -292,8 +296,9 @@ class Agent:
                         if not _text_started:
                             _text_started = True
                             if accumulated_reasoning:
+                                reasoning_elapsed_ms = int((time.monotonic() - _reasoning_started_at) * 1000) if _reasoning_started_at else None
                                 await self._emit(AgentEvent.REASONING_END)
-                                yield AgentEvent.REASONING_END, None
+                                yield AgentEvent.REASONING_END, reasoning_elapsed_ms
                             await self._emit(AgentEvent.TEXT_START)
                             yield AgentEvent.TEXT_START, None
                         accumulated_content += chunk.content
@@ -326,9 +331,10 @@ class Agent:
             return
         finally:
             if accumulated_reasoning and not _text_started:
+                reasoning_elapsed_ms = int((time.monotonic() - _reasoning_started_at) * 1000) if _reasoning_started_at else None
                 await self._emit(AgentEvent.REASONING_END)
                 if not generator_closing:
-                    yield AgentEvent.REASONING_END, None
+                    yield AgentEvent.REASONING_END, reasoning_elapsed_ms
             if _text_started:
                 await self._emit(AgentEvent.TEXT_END, accumulated_content)
                 if not generator_closing:
@@ -361,6 +367,7 @@ class Agent:
                     tc, 'model_dump') else tc for tc in final_tool_calls],
                 reasoning_content=accumulated_reasoning or None,
                 group_id=group_id,
+                reasoning_elapsed_ms=reasoning_elapsed_ms,
             )
             for tc in final_tool_calls:
                 stop_payload = await self._wait_if_aborted()
@@ -426,6 +433,7 @@ class Agent:
                 content=final_content,
                 reasoning_content=accumulated_reasoning or None,
                 group_id=group_id,
+                reasoning_elapsed_ms=reasoning_elapsed_ms,
             )
             done_payload = _done_payload("completed", final_content)
             await self._emit(AgentEvent.DONE, done_payload)
