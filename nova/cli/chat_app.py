@@ -426,7 +426,7 @@ class ChatApp(App):
         user_msg = UserMessage(text)
         user_msg._nova_history_message = SimpleNamespace(role="user", content=text)
         await container.mount(user_msg)
-        self.set_timer(0.5, lambda: container.scroll_end(animate=False, immediate=True))
+        self._request_scroll_end()
         await self._run_stream(text)
         await self._evict_top_if_needed(container, force=True)
 
