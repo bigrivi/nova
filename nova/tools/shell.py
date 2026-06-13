@@ -2,6 +2,7 @@
 Bash tool - run shell commands.
 """
 
+import asyncio
 import os
 import subprocess
 import sys
@@ -91,7 +92,7 @@ async def shell(command: str, timeout: int = 30, description: str = "") -> ToolR
         proc = subprocess.Popen(args, **kwargs)
 
         try:
-            stdout, _ = proc.communicate(timeout=timeout)
+            stdout, _ = await asyncio.to_thread(lambda: proc.communicate(timeout=timeout))
         except subprocess.TimeoutExpired:
             kill_process_tree(proc.pid)
             proc.wait()

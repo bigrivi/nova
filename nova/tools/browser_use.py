@@ -99,7 +99,7 @@ async def _ensure_browser():
         return _page
 
     from nova.tools.dependency_manager import ensure_deps
-    ensure_deps(["playwright"])
+    await ensure_deps(["playwright"])
     from playwright.async_api import async_playwright
 
     _playwright = await async_playwright().start()

@@ -239,6 +239,7 @@ class StreamHandler:
                 if self._status_bar is not None:
                     self._status_bar.set_generating()
             case ShowThinkingSpinner():
+                self._request_scroll()
                 (await self._ensure_spinner()).show_thinking()
             case ShowCompactionSpinner():
                 (await self._ensure_spinner()).show_compacting()

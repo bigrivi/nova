@@ -67,6 +67,7 @@ class MessageContainer(ScrollableContainer):
     class ScrolledToBottom(TextualMessage):
         pass
 
+
     def on_mouse_scroll_up(self, event) -> None:
         self.call_after_refresh(self._check_top)
 
@@ -220,8 +221,7 @@ class ChatApp(App):
         self._current_handler: StreamHandler | None = None
         self._older_history: list = []
         self._loading_history = False
-        self._scroll_pending = False
-        self._scroll_retries = 0
+
 
     def action_quit(self) -> None:
         self.exit()
@@ -425,9 +425,9 @@ class ChatApp(App):
         container = self.query_one("#message-container")
         user_msg = UserMessage(text)
         await container.mount(user_msg)
-        self._request_scroll_end(force=True)
-        await self._evict_top_if_needed(container, force=True)
+        self.set_timer(0.5, lambda: container.scroll_end(animate=False, immediate=True))
         await self._run_stream(text)
+        await self._evict_top_if_needed(container, force=True)
 
     # =====================================================
     # Stream
@@ -524,30 +524,10 @@ class ChatApp(App):
         )
 
     def _request_scroll_end(self, *, force: bool = False) -> None:
-        if self._scroll_pending:
-            return
         container = self.query_one("#message-container")
         if not force and not self._is_at_bottom(container):
             return
-        self._scroll_pending = True
-        self._scroll_retries = 0
-        container.call_after_refresh(lambda: self._finish_scroll_end(force=force))
-
-    def _finish_scroll_end(self, *, force: bool = False) -> None:
-        container = self.query_one("#message-container")
-        self._scroll_pending = False
-        if not force and not self._is_at_bottom(container):
-            return
-        container.scroll_end(animate=False, immediate=True)
-        if self._is_at_bottom(container):
-            self._scroll_retries = 0
-            return
-        if self._scroll_retries >= 2:
-            self._scroll_retries = 0
-            return
-        self._scroll_retries += 1
-        self._scroll_pending = True
-        container.call_after_refresh(lambda: self._finish_scroll_end(force=force))
+        container.scroll_end(animate=False)
 
     async def _after_refresh(self, container) -> None:
         loop = asyncio.get_running_loop()

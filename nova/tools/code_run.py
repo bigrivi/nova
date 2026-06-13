@@ -2,6 +2,7 @@
 Code Run tool - execute Python code.
 """
 
+import asyncio
 import os
 import subprocess
 import sys
@@ -88,12 +89,14 @@ async def code_run(
     
     try:
         cmd = [sys.executable, str(target), *safe_args]
-        result = subprocess.run(
-            cmd,
-            cwd=str(workdir),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+        result = await asyncio.to_thread(
+            lambda: subprocess.run(
+                cmd,
+                cwd=str(workdir),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
         )
         
         output = ""

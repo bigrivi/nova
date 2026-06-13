@@ -6,6 +6,7 @@ Installs packages to ~/.nova/site-packages/ so the frozen app bundle stays lean.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import logging
 import shutil
@@ -41,7 +42,7 @@ def _is_importable(pkg_name: str) -> bool:
         return False
 
 
-def ensure_deps(packages: list[str]) -> None:
+async def ensure_deps(packages: list[str]) -> None:
     """Install missing packages to ~/.nova/site-packages/ with session-level dedup."""
     missing = [
         pkg for pkg in packages
@@ -49,20 +50,22 @@ def ensure_deps(packages: list[str]) -> None:
     ]
     if not missing:
         return
-    _install(missing)
+    await _install(missing)
     _installed_in_session.update(missing)
 
 
-def _install(packages: list[str]) -> None:
+async def _install(packages: list[str]) -> None:
     log.info("Installing missing packages: %s", packages)
     NOVA_SITE_PACKAGES.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        [
-            sys.executable, "-m", "pip", "install",
-            "--target", str(NOVA_SITE_PACKAGES),
-            *packages,
-        ],
-        capture_output=True, text=True, timeout=120,
+    result = await asyncio.to_thread(
+        lambda: subprocess.run(
+            [
+                sys.executable, "-m", "pip", "install",
+                "--target", str(NOVA_SITE_PACKAGES),
+                *packages,
+            ],
+            capture_output=True, text=True, timeout=120,
+        )
     )
     if result.returncode != 0:
         raise RuntimeError(
@@ -94,7 +97,7 @@ def _install(packages: list[str]) -> None:
 async def install_python_package(package: str, version: str = "") -> dict:
     pkg_spec = f"{package}=={version}" if version else package
     try:
-        ensure_deps([pkg_spec])
+        await ensure_deps([pkg_spec])
         return {"success": True, "message": f"{package} is now available."}
     except Exception as e:
         return {"success": False, "error": str(e)}
