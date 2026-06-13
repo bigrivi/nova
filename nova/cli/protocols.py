@@ -123,7 +123,7 @@ class UIAdapterProtocol(Protocol):
     ) -> str | None:
         ...
 
-    def print_history_transcript(self, history: list[object]) -> None:
+    def show_history(self, history: list[object]) -> None:
         ...
 
     async def prompt_model_selection(

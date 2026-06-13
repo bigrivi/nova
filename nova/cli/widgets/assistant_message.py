@@ -47,6 +47,7 @@ class AssistantMessage(Static):
         self.mount(self._markdown)
 
     async def write_chunk(self, chunk: str) -> None:
+        self.full_text += chunk
         self._buffer += chunk
         threshold = self.FIRST_BATCH_SIZE if not self._has_rendered else self.BATCH_SIZE
         if (len(self._buffer) >= threshold or "\n" in self._buffer) and self._markdown is not None:

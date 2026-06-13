@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from rich.panel import Panel
@@ -42,17 +43,16 @@ from nova.cli.widgets import (
 log = logging.getLogger(__name__)
 
 
-INITIAL_HISTORY_MESSAGES = 120
-LOAD_OLDER_BATCH = 60
-MAX_WINDOW_WIDGETS = 240
-EVICT_BATCH = 60
+HISTORY_CHUNK = 50
+MAX_WINDOW_WIDGETS = 50
+EVICT_BATCH = 20
 AT_BOTTOM_THRESHOLD = 4
 
 if TYPE_CHECKING:
     from nova.cli.protocols import ChatControllerProtocol
 
 
-def _split_history_window(history: list, initial_size: int = INITIAL_HISTORY_MESSAGES) -> tuple[list, list]:
+def _split_history_window(history: list, initial_size: int = HISTORY_CHUNK) -> tuple[list, list]:
     if initial_size <= 0 or len(history) <= initial_size:
         return [], list(history)
     return list(history[:-initial_size]), list(history[-initial_size:])
@@ -424,6 +424,7 @@ class ChatApp(App):
     async def _handle_message(self, text: str) -> None:
         container = self.query_one("#message-container")
         user_msg = UserMessage(text)
+        user_msg._nova_history_message = SimpleNamespace(role="user", content=text)
         await container.mount(user_msg)
         self.set_timer(0.5, lambda: container.scroll_end(animate=False, immediate=True))
         await self._run_stream(text)
@@ -446,6 +447,11 @@ class ChatApp(App):
             await handler.run(text)
         finally:
             await handler.finalize()
+
+            for child in reversed(list(container.children)):
+                if isinstance(child, AssistantMessage) and not hasattr(child, "_nova_history_message"):
+                    child._nova_history_message = SimpleNamespace(role="assistant", content=child.full_text)
+                    break
 
             if self._controller.pending_input:
                 await self._handle_pending_ask_user()
@@ -499,6 +505,7 @@ class ChatApp(App):
 
         container = self.query_one("#message-container")
         user_msg = UserMessage(answer_text)
+        user_msg._nova_history_message = SimpleNamespace(role="user", content=answer_text)
         await container.mount(user_msg)
         self._request_scroll_end(force=True)
         await self._evict_top_if_needed(container, force=True)
@@ -546,8 +553,8 @@ class ChatApp(App):
         self._loading_history = True
         try:
             container = self.query_one("#message-container")
-            batch = self._older_history[-LOAD_OLDER_BATCH:]
-            self._older_history = self._older_history[:-LOAD_OLDER_BATCH]
+            batch = self._older_history[-HISTORY_CHUNK:]
+            self._older_history = self._older_history[:-HISTORY_CHUNK]
             height_before = container.virtual_size.height
             insert_before = self._first_message_child(container)
             pending_blocks: dict[str, tuple[str, ToolBlock]] = {}
@@ -827,9 +834,6 @@ class ChatApp(App):
     def shutdown(self) -> None:
         self.exit()
 
-    def print_history_transcript(self, history: list) -> None:
-        self.show_history(history)
-
     def show_history(self, history: list) -> None:
         container = self.query_one("#message-container")
         container.remove_children()
@@ -840,21 +844,11 @@ class ChatApp(App):
 
         async def _render() -> None:
             pending_blocks: dict[str, tuple[str, ToolBlock]] = {}
-            batch_size = 20
-            mounted_count = 0
-
-            async def mount_history_widget(widget, msg) -> None:
-                nonlocal mounted_count
-                setattr(widget, "_nova_history_message", msg)
-                await container.mount(widget)
-                mounted_count += 1
-                if mounted_count % batch_size == 0:
-                    await asyncio.sleep(0)
-
             try:
                 for msg in visible_history:
                     for widget in self._build_history_widgets(msg, pending_blocks):
-                        await mount_history_widget(widget, msg)
+                        setattr(widget, "_nova_history_message", msg)
+                        await container.mount(widget)
             finally:
                 await loading.remove()
 

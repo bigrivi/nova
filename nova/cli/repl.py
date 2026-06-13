@@ -532,7 +532,7 @@ class NovaCLI:
             if not visible_history:
                 self._ui_adapter.info("No messages found")
             else:
-                self._ui_adapter.print_history_transcript(visible_history)
+                self._ui_adapter.show_history(visible_history)
 
     async def run(self, theme: str = "textual-dark") -> None:
         from nova.cli.chat_app import ChatApp

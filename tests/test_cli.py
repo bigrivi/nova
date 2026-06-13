@@ -28,7 +28,7 @@ class _FakeUIAdapter:
         self.error_calls: list[str] = []
         self.show_info_calls: list[str] = []
         self.show_error_calls: list[str] = []
-        self.print_history_transcript_calls: list[object] = []
+        self.show_history_calls: list[object] = []
 
     def info(self, text: str) -> None:
         self.info_calls.append(text)
@@ -45,8 +45,8 @@ class _FakeUIAdapter:
     def update_status_bar(self) -> None:
         pass
 
-    def print_history_transcript(self, messages: list[object]) -> None:
-        self.print_history_transcript_calls.append(messages)
+    def show_history(self, messages: list[object]) -> None:
+        self.show_history_calls.append(messages)
 
     async def prompt_model_selection(self, groups, *, current_provider, current_model):
         return None
@@ -488,7 +488,7 @@ async def test_load_session_by_id_reads_history_messages_from_db(monkeypatch):
     info_messages: list[str] = []
     monkeypatch.setattr(repl._ui_adapter, "info", lambda text: info_messages.append(text))
     transcript_calls: list[object] = []
-    monkeypatch.setattr(repl._ui_adapter, "print_history_transcript", lambda msgs: transcript_calls.append(msgs))
+    monkeypatch.setattr(repl._ui_adapter, "show_history", lambda msgs: transcript_calls.append(msgs))
 
     async def fake_ensure_db():
         return _FakeDb()
