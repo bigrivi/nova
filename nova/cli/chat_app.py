@@ -582,6 +582,8 @@ class ChatApp(App):
         return None
 
     async def _evict_top_if_needed(self, container=None, *, force: bool = False) -> None:
+        if self._loading_history:
+            return
         container = container or self.query_one("#message-container")
         if not force and not self._is_at_bottom(container):
             return
