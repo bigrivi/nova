@@ -132,7 +132,8 @@ class OpenAIProvider(LLMProvider):
                 m = {"role": role, "content": content or ""}
 
             if role == "assistant":
-                rc = getattr(msg, self._reasoning_field, None) or get_attr(msg, self._reasoning_field)
+                rc = getattr(msg, self._reasoning_field, None) or get_attr(
+                    msg, self._reasoning_field)
                 if rc:
                     m["reasoning_content"] = rc
 
@@ -385,7 +386,6 @@ class OpenAIProvider(LLMProvider):
                         break
 
                     line = line.decode("utf-8").strip()
-                    log.info(f"line={line}")
                     if not line or line == "data: [DONE]":
                         continue
                     log.debug("OpenAI provider stream chunk: %s", line)
