@@ -177,6 +177,9 @@ def _parse_provider_configs(raw_providers: Any) -> dict[str, ProviderConfig]:
     return providers
 
 
+_INTERNAL_MODEL_KEYS = {"name", "reasoning_field"}
+
+
 @dataclass(frozen=True)
 class Settings:
     # Filesystem/runtime paths shared across CLI and server modes.
@@ -290,7 +293,7 @@ class Settings:
     def get_request_options(self, model_name: str, provider_name: str) -> dict[str, Any]:
         model_entry = self.get_model_config(
             model_name, provider_name=provider_name)
-        return {k: v for k, v in model_entry.items() if k != "name"}
+        return {k: v for k, v in model_entry.items() if k not in _INTERNAL_MODEL_KEYS}
 
     def get_model_config(self, model_key: str, provider_name: str) -> dict[str, Any]:
         provider_config = self.get_provider_config(provider_name)

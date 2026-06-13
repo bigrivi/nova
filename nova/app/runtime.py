@@ -39,10 +39,16 @@ def build_llm(
     if provider_type == "openai-compatible":
         base_url = str(provider_config.options.get("base_url", "")).strip()
         api_key = str(provider_config.options.get("api_key", "")).strip()
+        model_config = provider_config.models.get(model, {})
+        reasoning_field = model_config.get("reasoning_field")
+        kwargs = {}
+        if reasoning_field:
+            kwargs["reasoning_field"] = reasoning_field
         return OpenAIProvider(
             api_key=api_key,
             base_url=base_url,
             request_options=request_options,
+            **kwargs,
         )
     raise ValueError(f"Unsupported provider type: {provider_type}")
 

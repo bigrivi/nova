@@ -370,6 +370,15 @@ def test_format_answers_for_llm():
     assert "Blue" in result
 
 
+def test_format_answers_for_llm_multi_select():
+    from nova.cli.ask_user import QuestionData
+    qs = [QuestionData(id="q1", question="Which frameworks?", multiple=True)]
+    answers = [("q1", "Textual, React")]
+    result = format_answers_for_llm(answers, qs)
+    assert "Which frameworks?" in result
+    assert "Textual, React" in result
+
+
 def test_command_registry_parses_slash_and_bare_commands():
     registry = CommandRegistry()
 

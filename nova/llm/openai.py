@@ -9,7 +9,7 @@ from typing import AsyncGenerator, Optional
 
 import aiohttp
 
-from nova.llm.provider import LLMProvider, TextDelta, ReasoningDelta, ToolCall, Done
+from nova.llm.provider import LLMProvider, TextDelta, ReasoningDelta, ToolCall, Done, Error
 
 log = logging.getLogger(__name__)
 
@@ -26,11 +26,13 @@ class OpenAIProvider(LLMProvider):
         base_url: Optional[str] = None,
         request_options: Optional[dict] = None,
         timeout: int = 120,
+        reasoning_field: str = "reasoning_content",
     ):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
         self.timeout = timeout
+        self._reasoning_field = reasoning_field
         self._max_tokens = {
             "gpt-4o": 128000,
             "gpt-4o-mini": 128000,
@@ -130,8 +132,7 @@ class OpenAIProvider(LLMProvider):
                 m = {"role": role, "content": content or ""}
 
             if role == "assistant":
-                rc = getattr(msg, "reasoning_content", None) or get_attr(
-                    msg, "reasoning_content")
+                rc = getattr(msg, self._reasoning_field, None) or get_attr(msg, self._reasoning_field)
                 if rc:
                     m["reasoning_content"] = rc
 
@@ -182,7 +183,8 @@ class OpenAIProvider(LLMProvider):
                     url,
                     headers=headers,
                     json=body,
-                    timeout=timeout if timeout is not None else aiohttp.ClientTimeout(total=self.timeout),
+                    timeout=timeout if timeout is not None else aiohttp.ClientTimeout(
+                        total=self.timeout),
                 ),
                 name=f"openai_post_attempt_{attempt}",
             )
@@ -282,7 +284,7 @@ class OpenAIProvider(LLMProvider):
                         url=url, status=resp.status, text=text)
                     log.error(
                         "OpenAI provider request failed: %s", error_message)
-                    return Done(content=f"Error: {error_message}", tool_calls=[])
+                    return Error(message=error_message)
 
                 try:
                     data = await resp.json()
@@ -291,7 +293,7 @@ class OpenAIProvider(LLMProvider):
                     log.error(
                         "OpenAI provider response was not valid JSON (content-type=%s): %.200s",
                         resp.content_type, text)
-                    return Done(content=f"Error: unexpected response from API", tool_calls=[])
+                    return Error(message="unexpected response from API")
 
                 choices = data.get("choices")
                 if not isinstance(choices, list) or not choices:
@@ -317,7 +319,7 @@ class OpenAIProvider(LLMProvider):
                 )
         except Exception as e:
             log.exception("OpenAI provider chat request raised an exception")
-            return Done(content=f"Error: {e}", tool_calls=[])
+            return Error(message=str(e))
         finally:
             await session.close()
             if not connector.closed:
@@ -363,7 +365,7 @@ class OpenAIProvider(LLMProvider):
                         url=url, status=resp.status, text=text)
                     log.error(
                         "OpenAI provider stream request failed: %s", error_message)
-                    yield Done(content=f"Error: {error_message}", tool_calls=[])
+                    yield Error(message=error_message)
                     return
 
                 accumulated_content = ""
@@ -383,7 +385,7 @@ class OpenAIProvider(LLMProvider):
                         break
 
                     line = line.decode("utf-8").strip()
-                    # log.info(f"line={line}")
+                    log.info(f"line={line}")
                     if not line or line == "data: [DONE]":
                         continue
                     log.debug("OpenAI provider stream chunk: %s", line)
@@ -401,7 +403,7 @@ class OpenAIProvider(LLMProvider):
                         choice = choices[0]
                         delta = choice.get("delta", {})
 
-                        reasoning = delta.get("reasoning_content", "")
+                        reasoning = delta.get(self._reasoning_field, "")
                         if reasoning:
                             yield ReasoningDelta(content=reasoning)
 
@@ -484,7 +486,7 @@ class OpenAIProvider(LLMProvider):
             return
         except Exception as e:
             log.exception("OpenAI provider chat_stream raised an exception")
-            yield Done(content=f"Error: {e}", tool_calls=[])
+            yield Error(message=str(e))
         finally:
             await session.close()
             if not connector.closed:

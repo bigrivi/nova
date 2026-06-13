@@ -8,7 +8,7 @@ import json
 import logging
 from typing import AsyncGenerator, Optional
 
-from nova.llm import LLMProvider, Done, ReasoningDelta, ToolCall, TextDelta
+from nova.llm import LLMProvider, Done, ReasoningDelta, ToolCall, TextDelta, Error
 
 log = logging.getLogger(__name__)
 
@@ -154,7 +154,7 @@ class OllamaProvider(LLMProvider):
                         url=url, status=resp.status, text=text)
                     log.error(
                         "Ollama provider request failed: %s", error_message)
-                    return Done(content=f"Error: {error_message}", tool_calls=[])
+                    return Error(message=error_message)
 
                 data = await resp.json()
                 message = data.get("message", {})
@@ -174,7 +174,7 @@ class OllamaProvider(LLMProvider):
                 return Done(content=content, tool_calls=tool_calls)
         except Exception as e:
             log.exception("Ollama provider chat request raised an exception")
-            return Done(content=f"Error: {e}", tool_calls=[])
+            return Error(message=str(e))
         finally:
             await session.close()
 
@@ -238,7 +238,7 @@ class OllamaProvider(LLMProvider):
                         url=url, status=resp.status, text=text)
                     log.error(
                         "Ollama provider stream request failed: %s", error_message)
-                    yield Done(content=f"Error: {error_message}", tool_calls=[])
+                    yield Error(message=error_message)
                     return
 
                 it = resp.content.__aiter__()
@@ -323,7 +323,7 @@ class OllamaProvider(LLMProvider):
             return
         except Exception as e:
             log.exception("Ollama provider chat_stream raised an exception")
-            yield Done(content=f"Error: {e}", tool_calls=[])
+            yield Error(message=str(e))
         finally:
             await session.close()
             if not connector.closed:

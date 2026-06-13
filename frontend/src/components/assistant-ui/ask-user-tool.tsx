@@ -107,6 +107,19 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
     setAnswers((prev) => ({ ...prev, [id]: value }));
   }, []);
 
+  const toggleMultiSelect = useCallback((id: string, label: string) => {
+    setAnswers((prev) => {
+      const current = prev[id] ? prev[id].split(", ").filter(Boolean) : [];
+      const idx = current.indexOf(label);
+      if (idx >= 0) {
+        current.splice(idx, 1);
+      } else {
+        current.push(label);
+      }
+      return { ...prev, [id]: current.join(", ") };
+    });
+  }, []);
+
   const allRequiredFilled = useMemo(
     () => questions?.every((q) => !q.required || answers[q.id]) ?? false,
     [questions, answers],
@@ -118,7 +131,12 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
     if (!currentQuestion) return true;
     if (!currentQuestion.required) return true;
     if (currentQuestion.input_type === "confirm") return true;
-    if (currentQuestion.input_type === "select") return currentQuestion.options.length > 0;
+    if (currentQuestion.input_type === "select") {
+      if (currentQuestion.multiple) {
+        return Boolean(answers[currentQuestion.id]);
+      }
+      return currentQuestion.options.length > 0;
+    }
     return Boolean(answers[currentQuestion.id]);
   }, [currentQuestion, answers]);
 
@@ -233,12 +251,21 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
         ) : q.input_type === "select" ? (
           <div className="space-y-1">
             {q.options.map((opt) => {
-              const selected = answer === opt.label;
+              const isMulti = q.multiple;
+              const selected = isMulti
+                ? (answer ?? "").split(", ").includes(opt.label)
+                : answer === opt.label;
               return (
                 <button
                   key={opt.label}
                   type="button"
-                  onClick={() => setAnswer(aid, opt.label)}
+                  onClick={() => {
+                    if (isMulti) {
+                      toggleMultiSelect(aid, opt.label);
+                    } else {
+                      setAnswer(aid, opt.label);
+                    }
+                  }}
                   className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition-colors ${
                     selected
                       ? "border-sky-400 bg-sky-100 text-sky-900"
@@ -246,7 +273,13 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    {selected && <CheckIcon className="size-4 shrink-0 text-sky-600" />}
+                    {isMulti ? (
+                      <span className="size-4 shrink-0 text-sky-600">
+                        {selected ? "☑" : "☐"}
+                      </span>
+                    ) : (
+                      selected && <CheckIcon className="size-4 shrink-0 text-sky-600" />
+                    )}
                     <div className="min-w-0 flex-1">
                       <div className="font-medium">{opt.label}</div>
                       {opt.description ? (

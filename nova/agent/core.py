@@ -309,6 +309,9 @@ class Agent:
                             return
                         final_done_content = getattr(
                             chunk, "content", "") or final_done_content
+                    elif chunk.type == "error":
+                        yield AgentEvent.ERROR, _error_payload("llm_error", chunk.message)
+                        return
                     elif chunk.type == "tool_call":
                         chunk_id = getattr(chunk, "id", None) or getattr(
                             chunk, "name", "")
