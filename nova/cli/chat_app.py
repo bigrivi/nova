@@ -131,7 +131,7 @@ class ChatApp(App):
 
     MarkdownHorizontalRule {
         background: ansi_default;
-        border-bottom: solid $border-blurred;
+        border-bottom: solid #666666;
         height: 1;
         padding-top: 1;
         margin-bottom: 1;
