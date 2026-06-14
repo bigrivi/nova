@@ -181,14 +181,13 @@ class AISDKStreamAdapter:
 
         if event == AgentEvent.REASONING_END:
             if self._active_reasoning_id is not None:
-                chunks.append(
-                    encode_ai_sdk_sse(
-                        {
-                            "type": "reasoning-end",
-                            "id": self._active_reasoning_id,
-                        }
-                    )
-                )
+                chunk_data: dict[str, Any] = {
+                    "type": "reasoning-end",
+                    "id": self._active_reasoning_id,
+                }
+                if data is not None:
+                    chunk_data["elapsedMs"] = data
+                chunks.append(encode_ai_sdk_sse(chunk_data))
                 self._active_reasoning_id = None
             return chunks
 
@@ -243,6 +242,31 @@ class AISDKStreamAdapter:
                         }
                     )
                 )
+            return chunks
+
+        if event == AgentEvent.COMPACTION_START:
+            data_payload = data if isinstance(data, dict) else {}
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "data-nova-compaction-start",
+                        "data": {
+                            "message_count": data_payload.get("message_count", 0),
+                            "token_count": data_payload.get("token_count", 0),
+                        },
+                    }
+                )
+            )
+            return chunks
+
+        if event == AgentEvent.COMPACTION_END:
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "data-nova-compaction-end",
+                    }
+                )
+            )
             return chunks
 
         if event == AgentEvent.DONE:

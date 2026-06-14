@@ -3,7 +3,9 @@ import {
   CompositeAttachmentAdapter,
   SimpleImageAttachmentAdapter,
   SimpleTextAttachmentAdapter,
+  Tools,
   type ThreadMessageLike,
+  useAui,
   useExternalStoreRuntime,
 } from "@assistant-ui/react";
 import {
@@ -17,6 +19,7 @@ import i18n from "../i18n";
 
 import { Thread } from "../components/assistant-ui/thread";
 import { ThreadList } from "../components/assistant-ui/thread-list";
+import { toolkit } from "../components/assistant-ui/toolkit";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { toThreadMessages } from "../lib/history-messages";
@@ -426,6 +429,8 @@ export function NovaAppShell() {
     setIsRunning(true);
     setComposerText("");
 
+    useReasoningStore.getState().setChainStartTime(Date.now());
+
     setThreadMessages(originThreadId, (previous) => [
       ...buildDraftMessages(previous),
       userMessage,
@@ -478,7 +483,24 @@ export function NovaAppShell() {
             return;
           }
 
+          if (event.type === "data-nova-compaction-start") {
+            useReasoningStore.getState().setCompacting(true);
+            return;
+          }
+
+          if (event.type === "data-nova-compaction-end") {
+            useReasoningStore.getState().setCompacting(false);
+            return;
+          }
+
           if (event.type === "text-start") {
+            const store = useReasoningStore.getState();
+            if (store.chainActive) {
+              if (store.chainStartTime != null) {
+                store.setChainElapsedMs(Date.now() - store.chainStartTime);
+              }
+              store.setChainActive(false);
+            }
             setThreadMessages(activeThreadId, (previous) =>
               previous.map((msg) => {
                 if (msg.id !== assistantMessageId || msg.role !== "assistant") return msg;
@@ -504,6 +526,9 @@ export function NovaAppShell() {
           }
 
           if (event.type === "reasoning-start") {
+            const store = useReasoningStore.getState();
+            store.setChainActive(true);
+            store.setChainStartTime(Date.now());
             setThreadMessages(activeThreadId, (previous) =>
               previous.map((msg) => {
                 if (msg.id !== assistantMessageId || msg.role !== "assistant") return msg;
@@ -518,7 +543,9 @@ export function NovaAppShell() {
           }
 
           if (event.type === "reasoning-delta") {
-            useReasoningStore.getState().setActive(true);
+            const store = useReasoningStore.getState();
+            store.setActive(true);
+            store.setChainActive(true);
             setThreadMessages(activeThreadId, (previous) =>
               setAssistantReasoning(
                 previous,
@@ -531,12 +558,18 @@ export function NovaAppShell() {
 
           if (event.type === "reasoning-end") {
             useReasoningStore.getState().setActive(false);
+            useReasoningStore.getState().setElapsedMs(event.elapsedMs ?? null);
             return;
           }
 
           if (event.type === "tool-input-start") {
             if (!event.toolCallId) {
               return;
+            }
+            const store = useReasoningStore.getState();
+            store.setChainActive(true);
+            if (store.chainStartTime == null) {
+              store.setChainStartTime(Date.now());
             }
             const toolCallId = event.toolCallId;
 
@@ -605,7 +638,15 @@ export function NovaAppShell() {
         ),
       );
     } finally {
-      useReasoningStore.getState().setActive(false);
+      const store = useReasoningStore.getState();
+      if (store.chainActive) {
+        if (store.chainStartTime != null) {
+          store.setChainElapsedMs(Date.now() - store.chainStartTime);
+        }
+        store.setChainActive(false);
+      }
+      store.setChainStartTime(null);
+      store.setActive(false);
       setIsRunning(false);
     }
   }
@@ -703,8 +744,10 @@ export function NovaAppShell() {
     },
   });
 
+  const aui = useAui({ tools: Tools({ toolkit }) });
+
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
+    <AssistantRuntimeProvider aui={aui} runtime={runtime}>
       <TooltipProvider>
         <div className="flex h-screen overflow-hidden bg-background text-foreground">
           <aside

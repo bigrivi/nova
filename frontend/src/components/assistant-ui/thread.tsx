@@ -1,14 +1,13 @@
-import { AskUserTool } from "@/components/assistant-ui/ask-user-tool";
 import { UserMessageAttachments } from "@/components/assistant-ui/attachment";
-import { FileMutationTool } from "@/components/assistant-ui/file-mutation-tool";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
-import { Reasoning, ReasoningGroup } from "@/components/assistant-ui/reasoning";
+import { Reasoning, ReasoningChainGroup, ThinkingIndicator } from "@/components/assistant-ui/reasoning";
 import { ThreadStickyComposer } from "@/components/assistant-ui/thread-sticky-composer";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useReasoningStore } from "@/stores/reasoning-store";
 import type { NovaModelRecord, NovaProviderRecord } from "@/types/nova";
 import {
   ActionBarMorePrimitive,
@@ -16,10 +15,10 @@ import {
   AuiIf,
   BranchPickerPrimitive,
   ErrorPrimitive,
+  groupPartByType,
   MessagePrimitive,
   SuggestionPrimitive,
   ThreadPrimitive,
-  useAssistantToolUI,
   useAuiState,
 } from "@assistant-ui/react";
 import {
@@ -67,7 +66,6 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
 
   return (
     <>
-      <CustomToolUIRegistry />
       <ThreadPrimitive.Root
         className="aui-root aui-thread-root @container relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background"
         style={{
@@ -97,6 +95,8 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
               </ThreadPrimitive.Messages>
             </div>
 
+            <CompactionBanner />
+
             <div
               aria-hidden="true"
               className="shrink-0"
@@ -119,25 +119,6 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
       </ThreadPrimitive.Root>
     </>
   );
-};
-
-const CustomToolUIRegistry: FC = () => {
-  useAssistantToolUI({
-    toolName: "ask_user",
-    render: AskUserTool,
-  });
-
-  useAssistantToolUI({
-    toolName: "edit",
-    render: FileMutationTool,
-  });
-
-  useAssistantToolUI({
-    toolName: "write",
-    render: FileMutationTool,
-  });
-
-  return null;
 };
 
 const ThreadMessage: FC = () => {
@@ -250,6 +231,24 @@ const ThreadSuggestionItem: FC = () => {
   );
 };
 
+const CompactionBanner: FC = () => {
+  const { t } = useTranslation();
+  const compacting = useReasoningStore((s) => s.compacting);
+
+  if (!compacting) return null;
+
+  return (
+    <div className="flex items-center gap-2 px-1 py-1.5 text-xs text-muted-foreground/60">
+      <span className="inline-flex gap-0.5">
+        <span className="size-1 animate-bounce rounded-full bg-muted-foreground/60" style={{ animationDelay: "0ms" }} />
+        <span className="size-1 animate-bounce rounded-full bg-muted-foreground/60" style={{ animationDelay: "150ms" }} />
+        <span className="size-1 animate-bounce rounded-full bg-muted-foreground/60" style={{ animationDelay: "300ms" }} />
+      </span>
+      {t("reasoning.compacting")}
+    </div>
+  );
+};
+
 const MessageError: FC = () => {
   return (
     <MessagePrimitive.Error>
@@ -285,14 +284,35 @@ const AssistantMessage: FC = () => {
         data-slot="aui_assistant-message-content"
         className="wrap-break-word min-w-0 text-foreground leading-relaxed flex flex-col gap-2"
       >
-        <MessagePrimitive.Parts
-          components={{
-            Text: MarkdownText,
-            Reasoning,
-            ReasoningGroup,
-            tools: { Fallback: ToolFallback },
+        <MessagePrimitive.GroupedParts
+          groupBy={groupPartByType({
+            reasoning: ["group-chainOfThought", "group-reasoning"],
+            "tool-call": ["group-chainOfThought", "group-tool"],
+          })}
+        >
+          {({ part, children }) => {
+            switch (part.type) {
+              case "group-chainOfThought":
+                return <ReasoningChainGroup>{children}</ReasoningChainGroup>;
+              case "group-reasoning":
+                return <>{children}</>;
+              case "group-tool":
+                return <>{children}</>;
+              case "text":
+                return <MarkdownText />;
+              case "reasoning":
+                return <Reasoning />;
+              case "tool-call": {
+                const { toolUI, ...toolProps } = part;
+                return toolUI ?? <ToolFallback {...toolProps} />;
+              }
+              case "indicator":
+                return <ThinkingIndicator />;
+              default:
+                return null;
+            }
           }}
-        />
+        </MessagePrimitive.GroupedParts>
         <MessageError />
       </div>
 

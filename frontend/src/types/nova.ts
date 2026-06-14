@@ -23,6 +23,7 @@ export type NovaMessageRecord = {
   time_created: number
   images?: string[] | null
   reasoning_content?: string | null
+  reasoning_elapsed_ms?: number | null
   group_id?: string | null
 }
 
@@ -84,4 +85,5 @@ export type NovaStreamEvent = {
   toolName?: string
   input?: NovaJsonObject
   output?: NovaJsonValue
+  elapsedMs?: number
 }

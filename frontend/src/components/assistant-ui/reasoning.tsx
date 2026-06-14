@@ -1,12 +1,9 @@
 "use client";
 
-import { useState, type FC } from "react";
+import { useState, useEffect, useRef, type FC, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  MessagePartPrimitive,
-  type ReasoningGroupProps,
-} from "@assistant-ui/react";
-import { BrainIcon, ChevronDownIcon } from "lucide-react";
+import { MessagePartPrimitive, useAuiState } from "@assistant-ui/react";
+import { BrainIcon, CheckIcon, ChevronDownIcon, LoaderIcon } from "lucide-react";
 
 import {
   Collapsible,
@@ -16,24 +13,64 @@ import {
 import { cn } from "@/lib/utils";
 import { useReasoningStore } from "@/stores/reasoning-store";
 
-export const Reasoning: FC = () => {
-  return (
-    <MessagePartPrimitive.Text
-      component="div"
-      className="whitespace-pre-wrap px-4 text-sm leading-6 text-muted-foreground"
-    />
-  );
-};
+function formatTime(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  return `${m}m ${s}s`;
+}
 
-export const ReasoningGroup: FC<ReasoningGroupProps> = ({
-  children,
-  startIndex,
-  endIndex,
-}) => {
+function useElapsed(isActive: boolean): number | null {
+  const startRef = useRef<number | null>(null);
+  const [elapsed, setElapsed] = useState<number | null>(null);
+  const finalizedRef = useRef(false);
+  const prevActiveRef = useRef(isActive);
+
+  if (startRef.current == null && isActive) {
+    startRef.current = Date.now();
+  }
+
+  useEffect(() => {
+    if (isActive && !prevActiveRef.current) {
+      startRef.current = Date.now();
+    } else if (!isActive && prevActiveRef.current && startRef.current != null) {
+      setElapsed(Date.now() - startRef.current);
+      finalizedRef.current = true;
+    }
+    prevActiveRef.current = isActive;
+  }, [isActive]);
+
+  useEffect(() => {
+    if (!isActive && startRef.current != null && !finalizedRef.current) {
+      setElapsed(Date.now() - startRef.current);
+      finalizedRef.current = true;
+    }
+  }, [isActive]);
+
+  return elapsed;
+}
+
+export const ReasoningChainGroup = ({ children }: { children: ReactNode }) => {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const isActive = useReasoningStore((s) => s.isActive);
-  const itemCount = endIndex - startIndex + 1;
+  const chainActive = useReasoningStore((s) => s.chainActive);
+  const storeChainElapsedMs = useReasoningStore((s) => s.chainElapsedMs);
+  const [open, setOpen] = useState(chainActive);
+  const wasActiveRef = useRef(chainActive);
+
+  const customMetadata = useAuiState((s) => s.message?.metadata?.custom);
+  const hasChainElapsed = customMetadata != null && 'chainElapsedMs' in customMetadata;
+  const metadataChainElapsedMs = hasChainElapsed
+    ? (customMetadata.chainElapsedMs as number | null | undefined) ?? null
+    : undefined;
+  const chainElapsedMs = storeChainElapsedMs ?? metadataChainElapsedMs;
+
+  useEffect(() => {
+    if (wasActiveRef.current && !chainActive) {
+      setOpen(false);
+    }
+    wasActiveRef.current = chainActive;
+  }, [chainActive]);
 
   return (
     <Collapsible
@@ -48,18 +85,13 @@ export const ReasoningGroup: FC<ReasoningGroupProps> = ({
         >
           <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <BrainIcon className="size-4" />
-            {itemCount > 1
-              ? t(
-                  isActive
-                    ? "reasoning.reasoningStepsInProgress"
-                    : "reasoning.reasoningSteps",
-                  { count: itemCount },
-                )
-              : t(
-                  isActive
-                    ? "reasoning.reasoningInProgress"
-                    : "reasoning.reasoning",
-                )}
+            {chainActive
+              ? t("reasoning.thinking")
+              : chainElapsedMs != null
+                ? t("reasoning.workedFor", { time: formatTime(chainElapsedMs) })
+                : hasChainElapsed
+                  ? t("reasoning.thoughtNoTime")
+                  : t("reasoning.thinking")}
           </span>
           <ChevronDownIcon
             className={cn(
@@ -73,5 +105,72 @@ export const ReasoningGroup: FC<ReasoningGroupProps> = ({
         <div className="space-y-3 border-t px-4 py-3">{children}</div>
       </CollapsibleContent>
     </Collapsible>
+  );
+};
+
+export const Reasoning: FC = () => {
+  const { t } = useTranslation();
+  const isActive = useReasoningStore((s) => s.isActive);
+  const storeElapsedMs = useReasoningStore((s) => s.elapsedMs);
+  const elapsed = useElapsed(isActive);
+  const [open, setOpen] = useState(true);
+
+  const customMetadata = useAuiState((s) => s.message?.metadata?.custom);
+  const hasReasoningElapsed = customMetadata != null && 'reasoningElapsedMs' in customMetadata;
+  const messageElapsedMs = hasReasoningElapsed
+    ? (customMetadata.reasoningElapsedMs as number | null | undefined) ?? null
+    : undefined;
+  const displayMs = elapsed ?? storeElapsedMs ?? messageElapsedMs;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-3 px-4 py-2 text-left"
+        >
+          <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            {isActive ? (
+              <LoaderIcon className="size-3.5 animate-spin" />
+            ) : (
+              <CheckIcon className="size-3.5 text-emerald-500" />
+            )}
+            {isActive
+              ? t("reasoning.thinking")
+              : displayMs != null
+                ? t("reasoning.thought", { time: formatTime(displayMs) })
+                : hasReasoningElapsed
+                  ? t("reasoning.thoughtNoTime")
+                  : t("reasoning.thinking")}
+          </span>
+          <ChevronDownIcon
+            className={cn(
+              "size-4 text-muted-foreground transition-transform duration-200",
+              open && "rotate-180",
+            )}
+          />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="border-l-2 border-muted ml-3 pl-4 pb-3">
+          <MessagePartPrimitive.Text
+            component="div"
+            className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground"
+          />
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+};
+
+export const ThinkingIndicator: FC = () => {
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground">
+      <span className="inline-flex gap-0.5">
+        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "0ms" }} />
+        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "150ms" }} />
+        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground" style={{ animationDelay: "300ms" }} />
+      </span>
+    </div>
   );
 };

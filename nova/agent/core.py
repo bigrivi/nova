@@ -193,8 +193,11 @@ class Agent:
             return args_str
         try:
             return json.loads(args_str)
-        except json.JSONDecodeError:
-            return {}
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Invalid JSON in tool call arguments: {args_str!r}\n"
+                f"Parse error: {e}"
+            )
 
     async def _execute_tool(self, tool_call: ToolCall) -> ToolResult:
         tool_name = tool_call.name if hasattr(
@@ -354,6 +357,22 @@ class Agent:
             tc for tc in accumulated_tool_calls.values()
             if hasattr(tc, 'name') and tc.name
         ]
+
+        valid_tool_calls = []
+        for tc in final_tool_calls:
+            args_str = tc.arguments if hasattr(tc, 'arguments') else "{}"
+            if isinstance(args_str, str):
+                try:
+                    json.loads(args_str)
+                    valid_tool_calls.append(tc)
+                except json.JSONDecodeError:
+                    log.warning(
+                        f"[Turn {turn_count}] Skipping tool call {tc.name} "
+                        f"with invalid JSON arguments: {args_str!r}"
+                    )
+            else:
+                valid_tool_calls.append(tc)
+        final_tool_calls = valid_tool_calls
 
         if final_tool_calls:
             for tc in final_tool_calls:

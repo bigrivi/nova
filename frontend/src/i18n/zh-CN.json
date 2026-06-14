@@ -85,10 +85,11 @@
   "tools.answerPlaceholder": "输入你的回答...",
   "tools.requiredHint": "请回答所有必填问题",
 
-  "reasoning.reasoning": "推理",
-  "reasoning.reasoningSteps": "推理 · {{count}} 步",
-  "reasoning.reasoningInProgress": "推理中",
-  "reasoning.reasoningStepsInProgress": "推理中 · {{count}} 步",
+  "reasoning.thinking": "思考中…",
+  "reasoning.thought": "思考: {{time}}",
+  "reasoning.thoughtNoTime": "思考",
+  "reasoning.workedFor": "耗时 {{time}}",
+  "reasoning.compacting": "正在压缩历史记录…",
 
   "dialog.close": "关闭"
 }

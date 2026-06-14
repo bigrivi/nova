@@ -10,8 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@assistant-ui/react": "^0.12.26",
-    "@assistant-ui/react-markdown": "^0.12.11",
+    "2": "^0.0.1-security",
+    "@assistant-ui/react": "0.14.18",
+    "@assistant-ui/react-markdown": "^0.14.3",
     "@fontsource-variable/geist": "^5.2.8",
     "@tailwindcss/vite": "^4.2.4",
     "class-variance-authority": "^0.7.1",

@@ -85,10 +85,11 @@
   "tools.answerPlaceholder": "Type your answer...",
   "tools.requiredHint": "Please answer all required questions",
 
-  "reasoning.reasoning": "Reasoning",
-  "reasoning.reasoningSteps": "Reasoning · {{count}} steps",
-  "reasoning.reasoningInProgress": "Reasoning…",
-  "reasoning.reasoningStepsInProgress": "Reasoning… · {{count}} steps",
+  "reasoning.thinking": "Thinking…",
+  "reasoning.thought": "Thought for {{time}}",
+  "reasoning.thoughtNoTime": "Thought",
+  "reasoning.workedFor": "Worked for {{time}}",
+  "reasoning.compacting": "Compacting conversation history…",
 
   "dialog.close": "Close"
 }

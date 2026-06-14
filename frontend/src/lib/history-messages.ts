@@ -46,7 +46,8 @@ function parseJsonObject(value: string): NovaJsonObject {
   }
 }
 
-function parseToolResultContent(content: string): unknown {
+function parseToolResultContent(content: string | null | undefined): unknown {
+  if (!content) return {}
   const text = content.trim()
   if (!text) {
     return {}
@@ -70,6 +71,7 @@ export function toThreadMessages(messages: NovaMessageRecord[]): ThreadMessageLi
   >()
 
   const mergedGroupIndices = new Map<string, number>()
+  const chainElapsedByGroup = new Map<string, number>()
 
   for (const message of messages) {
     if (message.role === 'user') {
@@ -133,9 +135,22 @@ export function toThreadMessages(messages: NovaMessageRecord[]): ThreadMessageLi
               partIndex,
             })
           }
+
+          const prev = chainElapsedByGroup.get(message.group_id) ?? 0
+          const add = message.reasoning_elapsed_ms ?? 0
+          const sum = prev + add
+          chainElapsedByGroup.set(message.group_id, sum)
+
           threadMessages[targetIdx] = {
             ...target,
             content: nextContent,
+            metadata: {
+              custom: {
+                ...(target.metadata?.custom as Record<string, unknown> | undefined),
+                reasoningElapsedMs: null,
+                chainElapsedMs: sum || null,
+              },
+            },
           }
         }
         continue
@@ -169,11 +184,22 @@ export function toThreadMessages(messages: NovaMessageRecord[]): ThreadMessageLi
       }
 
       const messageIndex = threadMessages.length
+      const nextGroupElapsed = message.reasoning_elapsed_ms ?? 0
+      if (message.group_id) {
+        chainElapsedByGroup.set(message.group_id, nextGroupElapsed)
+      }
+
       const assistantMessage: ThreadMessageLike = {
         id: message.id,
         role: 'assistant',
         content,
         createdAt: new Date(message.time_created),
+        metadata: {
+          custom: {
+            reasoningElapsedMs: message.reasoning_elapsed_ms ?? null,
+            chainElapsedMs: nextGroupElapsed || null,
+          },
+        },
       }
       threadMessages.push(assistantMessage)
 

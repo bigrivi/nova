@@ -78,6 +78,7 @@ class ChatService:
                 time_created=message.time_created,
                 images=message.images,
                 reasoning_content=message.reasoning_content,
+                reasoning_elapsed_ms=message.reasoning_elapsed_ms,
                 group_id=message.group_id,
             )
             for message in messages
