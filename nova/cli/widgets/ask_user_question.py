@@ -89,10 +89,11 @@ class AskUserQuestion(Widget):
         text-style: bold;
     }
     .option-list > ListItem.--selected > Label {
-        color: $success;
+        color: $secondary;
+        text-style: bold;
     }
     .option-list > ListItem.--selected.--highlight > Label {
-        color: $success;
+        color: $secondary;
         text-style: bold;
     }
 
@@ -145,7 +146,7 @@ class AskUserQuestion(Widget):
         self._selected_indices: list[set[int]] = [set() for _ in questions]
         self._confirm_values = [False] * len(questions)
 
-    # ── Compose ──────────────────────────────────────────
+    # --- Compose ---------------------------------------------------
 
     def compose(self) -> ComposeResult:
         if self._is_wizard:
@@ -161,7 +162,7 @@ class AskUserQuestion(Widget):
                     yield Static("")
             with Horizontal(id="step-nav"):
                 yield Static("", id="nav-prev", classes="nav-prev", markup=True)
-                yield Static("Next \u2192", id="nav-next", classes="nav-next", markup=True)
+                yield Static("Next ->", id="nav-next", classes="nav-next", markup=True)
         else:
             yield from self._compose_card(self._questions[0], 0)
             yield Static("Submit", id="nav-submit", classes="nav-next", markup=True)
@@ -185,7 +186,7 @@ class AskUserQuestion(Widget):
             is_multi = question.multiple
             items = [
                 ListItem(
-                    Label(f"{'[ ]' if is_multi else f'{j}.'} {o['label']}  {o.get('description', '')}"))
+                    Label(f"{'[ ]' if is_multi else f'{j}.'} {o['label']}  {o.get('description', '')}", markup=False))
                 for j, o in enumerate(opts, 1)
             ]
             widgets.append(
@@ -216,7 +217,7 @@ class AskUserQuestion(Widget):
             self._update_confirm_highlight(i)
             self.focus()
 
-    # ── Step navigation ──────────────────────────────────
+    # --- Step navigation ------------------------------------------
 
     @property
     def _is_review(self) -> bool:
@@ -235,7 +236,8 @@ class AskUserQuestion(Widget):
             opts = question.options or []
             if question.multiple:
                 selected = sorted(self._selected_indices[self._current_step])
-                labels = [opts[idx]["label"] for idx in selected if 0 <= idx < len(opts)]
+                labels = [opts[idx]["label"]
+                          for idx in selected if 0 <= idx < len(opts)]
                 if labels:
                     self._answers[question.id] = ", ".join(labels)
                 elif question.id in self._answers:
@@ -341,54 +343,54 @@ class AskUserQuestion(Widget):
             answer = self._answers.get(question.id, "(not answered)")
             widget.update(f"{i+1}. {question.header or question.id}  {answer}")
 
-    # ── UI updates ───────────────────────────────────────
+    # --- UI updates -----------------------------------------------
 
     def _update_nav(self) -> None:
         if not self._is_wizard:
             return
         nav_prev = self.query_one("#nav-prev", Static)
         nav_next = self.query_one("#nav-next", Static)
-        nav_prev.update("\u2190 Back" if self._current_step > 0 else "")
+        nav_prev.update("<- Back" if self._current_step > 0 else "")
         if self._is_review:
             all_ok = self._all_required_filled()
             nav_next.update(
-                "\u2714 Submit" if all_ok else "\u2714 Submit  [dim](fill required first)[/dim]")
+                "Submit" if all_ok else "Submit  [dim](fill required first)[/dim]")
             nav_next.set_classes("nav-next" + (" done" if all_ok else ""))
         else:
-            nav_next.update("Next \u2192")
+            nav_next.update("Next ->")
             nav_next.set_classes("nav-next")
 
     def _update_hint(self) -> None:
         hint = self.query_one("#step-hint")
         if self._is_review:
-            hint.update("Enter Submit \u00b7 Back to edit \u00b7 Esc dismiss")
+            hint.update("Enter Submit - Back to edit - Esc dismiss")
         elif self._is_wizard:
             question = self._current_question()
             if question and question.input_type == "select" and question.multiple:
                 hint.update(
-                    "\u2191\u2193 navigate \u00b7 Space toggle \u00b7 Enter next \u00b7 Esc dismiss")
+                    "^v navigate - Enter toggle - Esc dismiss")
             else:
                 hint.update(
-                    "\u2191\u2193 navigate \u00b7 Enter advance \u00b7 Esc dismiss")
+                    "^v navigate - Enter advance - Esc dismiss")
         else:
             question = self._current_question()
             if question and question.input_type == "select":
                 if question.multiple:
                     hint.update(
-                        "\u2191\u2193 navigate \u00b7 Space toggle \u00b7 Enter submit \u00b7 Esc dismiss")
+                        "^v navigate - Enter toggle - Esc dismiss")
                 else:
                     hint.update(
-                        "\u2191\u2193 navigate \u00b7 Enter select \u00b7 Esc dismiss")
+                        "^v navigate - Enter select - Esc dismiss")
             elif question and question.input_type == "text":
                 hint.update(
-                    "Type answer \u00b7 Enter submit \u00b7 Esc dismiss")
+                    "Type answer - Enter submit - Esc dismiss")
             elif question and question.input_type == "confirm":
                 hint.update(
-                    "\u2190\u2192 switch \u00b7 Enter submit \u00b7 Esc dismiss")
+                    "<-> switch - Enter submit - Esc dismiss")
             else:
                 hint.update("Esc dismiss")
 
-    # ── Click handling (nav / submit) ────────────────────
+    # --- Click handling (nav / submit) ----------------------------
 
     async def _on_click(self, event: Click) -> None:
         target = event.widget
@@ -413,7 +415,7 @@ class AskUserQuestion(Widget):
                 return
         await super()._on_click(event)
 
-    # ── List highlight (select cards) ────────────────────
+    # --- List highlight (select cards) ----------------------------
 
     def _update_list_highlight(self, step: int) -> None:
         lst = self.query_one(f"#option-list-{step}", ListView)
@@ -436,9 +438,10 @@ class AskUserQuestion(Widget):
                     o = opts[i]
                     prefix = "[x]" if i in selected else "[ ]"
                     label = item.query_one(Label)
-                    label.update(f"{prefix} {o['label']}  {o.get('description', '')}")
+                    label.update(
+                        f"{prefix} {o['label']}  {o.get('description', '')}")
 
-    # ── Confirm buttons ──────────────────────────────────
+    # --- Confirm buttons ------------------------------------------
 
     def _update_confirm_highlight(self, step: int) -> None:
         val = self._confirm_values[step]
@@ -447,7 +450,7 @@ class AskUserQuestion(Widget):
         yes_btn.classes = "confirm-btn confirm-btn-active" if val else "confirm-btn"
         no_btn.classes = "confirm-btn confirm-btn-active" if not val else "confirm-btn"
 
-    # ── Submit ───────────────────────────────────────────
+    # --- Submit ---------------------------------------------------
 
     def _submit(self) -> None:
         if not self._is_wizard:
@@ -455,7 +458,7 @@ class AskUserQuestion(Widget):
         answers = [(qid, ans) for qid, ans in self._answers.items()]
         self.post_message(self.Submitted(answers, self._questions))
 
-    # ── Event handlers ───────────────────────────────────
+    # --- Event handlers -------------------------------------------
 
     def on_key(self, event) -> None:
         if event.key == "escape":
@@ -503,34 +506,25 @@ class AskUserQuestion(Widget):
                 if list_view.index is not None and list_view.index < len(list_view.children) - 1:
                     list_view.index += 1
                 return
-            elif event.key == "space":
+            elif event.key == "enter":
+                event.stop()
+                lst = self.query_one(
+                    f"#option-list-{self._current_step}", ListView)
+                idx = lst.index
                 if is_multi:
-                    event.stop()
-                    lst = self.query_one(f"#option-list-{self._current_step}", ListView)
-                    idx = lst.index
+                    # Toggle selection on Enter
                     if idx is not None:
                         if idx in self._selected_indices[self._current_step]:
-                            self._selected_indices[self._current_step].discard(idx)
+                            self._selected_indices[self._current_step].discard(
+                                idx)
+                            lst.index = None
                         else:
                             self._selected_indices[self._current_step].add(idx)
                         self._update_list_highlight(self._current_step)
-                    return
-            elif event.key == "enter":
-                list_view = self.query_one(
-                    f"#option-list-{self._current_step}", ListView)
-                event.stop()
-                lst = self.query_one(f"#option-list-{self._current_step}", ListView)
-                idx = lst.index
-                if is_multi:
-                    if self._is_wizard:
-                        # In wizard mode, Enter advances to next step
-                        self._go_next()
-                    else:
-                        # In single mode, Enter submits (toggle was on Space)
-                        self._submit()
                 else:
                     # Single-select: select and advance/submit
-                    self._selected_indices[self._current_step] = {idx} if idx is not None else set()
+                    self._selected_indices[self._current_step] = {
+                        idx} if idx is not None else set()
                     self._update_list_highlight(self._current_step)
                     if self._is_wizard:
                         self._go_next()
@@ -571,6 +565,7 @@ class AskUserQuestion(Widget):
                 # Toggle selection for multi-select
                 if idx in self._selected_indices[i]:
                     self._selected_indices[i].discard(idx)
+                    lst.index = None
                 else:
                     self._selected_indices[i].add(idx)
                 self._update_list_highlight(i)

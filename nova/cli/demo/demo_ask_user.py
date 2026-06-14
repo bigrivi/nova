@@ -76,6 +76,21 @@ SCENES = {
             input_type="confirm",
         ),
     ]),
+    "5": ("Multi-Select", [
+        QuestionData(
+            id="m1",
+            header="Languages",
+            question="Which programming languages do you know?",
+            input_type="select",
+            multiple=True,
+            options=[
+                {"label": "Python", "description": "General-purpose, scripting"},
+                {"label": "TypeScript", "description": "Web, Node.js"},
+                {"label": "Rust", "description": "Systems, performance"},
+                {"label": "Go", "description": "Cloud, microservices"},
+            ],
+        )
+    ]),
 }
 
 
@@ -101,6 +116,7 @@ class DemoApp(App):
         ("2", "show_scene('2')", "2.Text"),
         ("3", "show_scene('3')", "3.Confirm"),
         ("4", "show_scene('4')", "4.Wizard"),
+        ("5", "show_scene('5')", "5.Multi"),
         ("q", "quit", "Quit"),
     ]
 
@@ -110,7 +126,7 @@ class DemoApp(App):
 
     def compose(self) -> ComposeResult:
         yield Static(
-            "[bold]Demo: Press [cyan]1[/]/[cyan]2[/]/[cyan]3[/]/[cyan]4[/] to switch, [red]q[/] to quit",
+            "[bold]Demo: Press [cyan]1[/]/[cyan]2[/]/[cyan]3[/]/[cyan]4[/]/[cyan]5[/] to switch, [red]q[/] to quit",
             id="scene-picker",
         )
         with Vertical(id="scene-content"):
