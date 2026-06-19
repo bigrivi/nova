@@ -5,6 +5,7 @@ httpx
 prompt_toolkit
 rich
 textual
+opentui
 uvicorn
 
 # Optional: tiktoken for accurate OpenAI model token estimation
