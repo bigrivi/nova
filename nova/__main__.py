@@ -32,6 +32,8 @@ def main():
                         help="[desktop] Load frontend from Vite dev server (http://localhost:5173) instead of built-in server")
     parser.add_argument("--theme", default="textual-dark",
                         help="Textual theme to use (default: textual-dark)")
+    parser.add_argument("--opentui", action="store_true",
+                        help="Use experimental opentui-based chat instead of Textual")
     args = parser.parse_args()
     init_site_packages()
     configure_logging(settings)
@@ -41,6 +43,11 @@ def main():
 
     if args.mode == "desktop":
         run_desktop(settings=settings, dev=args.dev)
+        return
+
+    if args.opentui:
+        from nova.opentui_app.chat_app import ChatApp
+        asyncio.run(ChatApp().run())
         return
 
     asyncio.run(run_cli(agent_key=args.agent, theme=args.theme))
