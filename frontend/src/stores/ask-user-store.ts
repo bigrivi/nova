@@ -1,11 +1,17 @@
 import { create } from "zustand";
 
+type AskUserStatus =
+  | { readonly type: "running" }
+  | { readonly type: "complete" }
+  | { readonly type: "incomplete"; readonly reason: string }
+  | { readonly type: "requires-action"; readonly reason: string };
+
 interface ActiveAskUser {
   args: unknown;
   argsText: string;
-  resume: (text: string) => void;
+  resume: (payload: unknown) => void;
   result: unknown;
-  status: { type: string };
+  status: AskUserStatus;
 }
 
 interface AskUserStore {

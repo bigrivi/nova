@@ -657,16 +657,16 @@ export function NovaAppShell() {
       setIsRunning(false);
 
       if (requiresInput && pendingAskUser) {
-        const askUser = pendingAskUser as NonNullable<typeof pendingAskUser>;
+        const askUser = pendingAskUser as { input: unknown };
         useAskUserStore.getState().setActive({
           args: askUser.input,
           argsText: JSON.stringify(askUser.input),
-          resume: (text: string) => {
-            submitPrompt(text);
+          resume: (text: unknown) => {
+            submitPrompt(String(text));
             useAskUserStore.getState().setActive(null);
           },
           result: null,
-          status: { type: "running" },
+          status: { type: "running" } as const,
         });
       }
     }
