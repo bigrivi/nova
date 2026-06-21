@@ -375,6 +375,7 @@ export function NovaAppShell() {
       return;
     }
 
+    sessionIdRef.current = null;
     startTransition(() => {
       setCurrentThreadId(DRAFT_THREAD_ID);
       setMessagesByThreadId((previous) => ({
@@ -677,6 +678,8 @@ export function NovaAppShell() {
     if (!prompt || isRunning) {
       return;
     }
+
+    sessionIdRef.current = null;
 
     const composerState = runtime.thread.composer.getState();
     const pendingAttachments = composerState.attachments;
