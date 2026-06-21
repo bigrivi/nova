@@ -759,6 +759,7 @@ export function NovaAppShell() {
           if (isRunning || threadId === currentThreadId) {
             return;
           }
+          sessionIdRef.current = null;
           setCurrentThreadId(threadId);
           void loadThread(threadId);
         },
