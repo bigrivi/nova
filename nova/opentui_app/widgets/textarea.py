@@ -13,11 +13,15 @@ _CUSTOM_BINDINGS: list[KeyBinding] = [
 
 class _ChatTextarea(TextareaRenderable):
     def __init__(self, **kwargs):
+        self._on_change = kwargs.pop("on_change", None)
+        self.suggestions_active = False
         super().__init__(**kwargs)
         self._wrapper_box: Box | None = None
 
     def handle_key(self, event) -> bool:
         if getattr(event, "event_type", None) == "release":
+            return False
+        if self.suggestions_active and event.name in ("up", "down", "return", "escape"):
             return False
         result = super().handle_key(event)
         self._sync_height()
@@ -26,6 +30,8 @@ class _ChatTextarea(TextareaRenderable):
     def _notify_content_changed(self) -> None:
         super()._notify_content_changed()
         self._sync_height()
+        if self._on_change:
+            self._on_change(self.plain_text)
 
     def _sync_height(self) -> None:
         try:
