@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import webview
@@ -64,13 +66,7 @@ def show_activation_dialog() -> bool:
 </div>
 <div class="toast" id="toast">Copied!</div>
 <script>
-function copyFp() {{
-  navigator.clipboard.writeText(document.getElementById('fp').textContent).then(function() {{
-    const t = document.getElementById('toast');
-    t.classList.add('show');
-    setTimeout(function() {{ t.classList.remove('show'); }}, 1500);
-  }});
-}}
+function copyFp() {{ pywebview.api.copy_fingerprint(); }}
 function selectFile() {{ pywebview.api.select_file(); }}
 </script>
 </body>
@@ -79,6 +75,19 @@ function selectFile() {{ pywebview.api.select_file(); }}
     activated = False
 
     class API:
+        def copy_fingerprint(self) -> None:
+            text = fp
+            try:
+                if sys.platform == "darwin":
+                    subprocess.run(["pbcopy"], input=text.encode(), check=True)
+                elif sys.platform == "win32":
+                    subprocess.run(["clip"], input=text.encode(), check=True)
+            except Exception:
+                pass
+            window.evaluate_js(
+                "var t=document.getElementById('toast');t.classList.add('show');setTimeout(function(){t.classList.remove('show');},1500);"
+            )
+
         def select_file(self) -> None:
             nonlocal activated
             result = window.create_file_dialog(webview.OPEN_DIALOG, file_types=("License files (*.lic)",))
