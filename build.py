@@ -84,6 +84,14 @@ def package(spec: Path, python: str) -> None:
     )
 
 
+def package_with_obfuscation(spec: Path) -> None:
+    print(f">>> Obfuscating with PyArmor and packaging ({spec.name})...")
+    subprocess.run(
+        ["pyarmor", "gen", "--pack", str(spec), "-r", "nova/desktop/entry.py", "nova/"],
+        cwd=str(ROOT), check=True,
+    )
+
+
 def output_path() -> Path:
     plat = platform()
     if plat == "macos":
@@ -95,6 +103,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build Nova Desktop")
     parser.add_argument("--clean", action="store_true", help="Remove previous build output before building")
     parser.add_argument("--python", default=None, help="Python interpreter to use for PyInstaller (default: .venv/bin/python3)")
+    parser.add_argument("--obfuscate", action="store_true", help="Obfuscate source with PyArmor before packaging")
     args = parser.parse_args()
 
     plat = platform()
@@ -107,7 +116,10 @@ def main() -> None:
         clean()
 
     build_frontend()
-    package(spec, python=python)
+    if args.obfuscate:
+        package_with_obfuscation(spec)
+    else:
+        package(spec, python=python)
 
     out = output_path()
     print(f"\n=== Done: {out} ===")
