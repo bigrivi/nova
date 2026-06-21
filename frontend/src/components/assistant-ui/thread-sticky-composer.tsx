@@ -61,7 +61,7 @@ export function ThreadStickyComposer({
   }, [onHeightChange]);
 
   return (
-    <div ref={containerRef} className="pointer-events-none relative pb-3 pt-3">
+    <div ref={containerRef} className="pointer-events-none relative overflow-x-hidden pb-3 pt-3" style={{ scrollbarGutter: "stable" }}>
       <div className="pointer-events-none absolute inset-x-4 bottom-0 z-0 h-10 bg-background/96 backdrop-blur" />
       <div className="relative z-10 mx-auto w-full max-w-(--thread-max-width) px-4">
         <div className="pointer-events-auto rounded-[24px] border bg-background p-3 shadow-sm transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20">
