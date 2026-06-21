@@ -198,13 +198,7 @@ const AskUserOverlay: FC = () => {
     <div className="absolute inset-x-0 bottom-0 z-50 bg-background">
       <div className="mx-auto w-full max-w-(--thread-max-width) px-4 pb-3 pt-3">
         <div className="max-h-[70vh] overflow-y-auto">
-          <AskUserTool
-            args={active.args}
-            argsText={active.argsText}
-            resume={active.resume}
-            result={active.result}
-            status={active.status}
-          />
+          <AskUserTool {...active as React.ComponentProps<typeof AskUserTool>} />
         </div>
       </div>
     </div>
