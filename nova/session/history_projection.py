@@ -5,7 +5,7 @@ from dataclasses import replace
 from nova.db.database import Database, Message, MessageFilter
 
 
-VISIBLE_HISTORY_TOOL_NAMES = frozenset({"ask_user", "edit", "write"})
+VISIBLE_HISTORY_TOOL_NAMES = frozenset({"edit", "write"})
 _SNIPPED_TOOL_RESULT_MARKER = " chars snipped ...]"
 
 

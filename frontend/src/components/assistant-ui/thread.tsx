@@ -1,8 +1,10 @@
 import { UserMessageAttachments } from "@/components/assistant-ui/attachment";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { Reasoning, ReasoningChainGroup, ThinkingIndicator } from "@/components/assistant-ui/reasoning";
-import { ThreadStickyComposer } from "@/components/assistant-ui/thread-sticky-composer";
+import { AskUserTool } from "@/components/assistant-ui/ask-user-tool";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
+import { useAskUserStore } from "@/stores/ask-user-store";
+import { ThreadStickyComposer } from "@/components/assistant-ui/thread-sticky-composer";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -63,6 +65,7 @@ type ThreadProps = {
 
 export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
   const [composerHeight, setComposerHeight] = useState(0);
+  const activeCall = useAskUserStore((s) => s.active);
 
   return (
     <>
@@ -109,7 +112,9 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
           </div>
         </ThreadPrimitive.Viewport>
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
+        <AskUserOverlay />
+
+        <div className={`pointer-events-none absolute inset-x-0 bottom-0 z-20${activeCall ? ' invisible' : ''}`}>
           <ThreadStickyComposer
             composer={composer}
             modelSelection={modelSelection}
@@ -179,6 +184,29 @@ const ThreadScrollToBottom: FC = () => {
       >
         <ArrowDownIcon />
       </TooltipIconButton>
+    </div>
+  );
+};
+
+
+
+const AskUserOverlay: FC = () => {
+  const active = useAskUserStore((s) => s.active);
+  if (!active) return null;
+
+  return (
+    <div className="absolute inset-x-0 bottom-0 z-50 bg-background">
+      <div className="mx-auto w-full max-w-(--thread-max-width) px-4 pb-3 pt-3">
+        <div className="max-h-[70vh] overflow-y-auto">
+          <AskUserTool
+            args={active.args}
+            argsText={active.argsText}
+            resume={active.resume}
+            result={active.result}
+            status={active.status}
+          />
+        </div>
+      </div>
     </div>
   );
 };
@@ -260,6 +288,8 @@ const MessageError: FC = () => {
 };
 
 const AssistantMessage: FC = () => {
+
+
   return (
     <MessagePrimitive.Root
       data-slot="aui_assistant-message-root"
@@ -304,6 +334,7 @@ const AssistantMessage: FC = () => {
                 return <Reasoning />;
               case "tool-call": {
                 const { toolUI, ...toolProps } = part;
+                if (part.toolName === "ask_user") return null;
                 return toolUI ?? <ToolFallback {...toolProps} />;
               }
               case "indicator":

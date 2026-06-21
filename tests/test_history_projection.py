@@ -79,4 +79,4 @@ def test_project_user_visible_history_keeps_only_visible_tool_calls_and_results(
 
 
 def test_project_user_visible_history_visible_tool_allowlist_is_intentional():
-    assert VISIBLE_HISTORY_TOOL_NAMES == {"ask_user", "edit", "write"}
+    assert VISIBLE_HISTORY_TOOL_NAMES == {"edit", "write"}

@@ -31,6 +31,7 @@ import {
   listSessions,
   streamChat,
 } from "../lib/nova-api";
+import { useAskUserStore } from "../stores/ask-user-store";
 import { useReasoningStore } from "../stores/reasoning-store";
 import type {
   NovaAttachmentData,
@@ -423,15 +424,16 @@ export function NovaAppShell() {
     const assistantMessageId = crypto.randomUUID();
     const userMessage = createTextMessage("user", prompt, userMessageId);
     const assistantMessage = createAssistantMessage(assistantMessageId);
-    let activeThreadId = originThreadId;
+    let activeThreadId = sessionIdRef.current ?? originThreadId;
     let requiresInput = false;
+    let pendingAskUser: { input: unknown } | null = null;
 
     setIsRunning(true);
     setComposerText("");
 
     useReasoningStore.getState().setChainStartTime(Date.now());
 
-    setThreadMessages(originThreadId, (previous) => [
+    setThreadMessages(activeThreadId, (previous) => [
       ...buildDraftMessages(previous),
       userMessage,
       assistantMessage,
@@ -440,7 +442,7 @@ export function NovaAppShell() {
     try {
       await streamChat({
         message: prompt,
-        sessionId: originThreadId === DRAFT_THREAD_ID ? null : originThreadId,
+        sessionId: sessionIdRef.current ?? (originThreadId === DRAFT_THREAD_ID ? null : originThreadId),
         provider: selectedModel?.provider || null,
         model: selectedModel?.model || null,
         attachments,
@@ -450,6 +452,7 @@ export function NovaAppShell() {
             if (!sessionId) {
               return;
             }
+            if (sessionId === sessionIdRef.current) return;
 
             sessionIdRef.current = sessionId;
             activeThreadId = sessionId;
@@ -588,6 +591,10 @@ export function NovaAppShell() {
             }
             const toolCallId = event.toolCallId;
 
+            if (event.toolName === "ask_user") {
+              pendingAskUser = { input: event.input };
+            }
+
             setThreadMessages(activeThreadId, (previous) =>
               upsertAssistantToolCall(previous, assistantMessageId, {
                 toolCallId,
@@ -648,6 +655,20 @@ export function NovaAppShell() {
       store.setChainStartTime(null);
       store.setActive(false);
       setIsRunning(false);
+
+      if (requiresInput && pendingAskUser) {
+        const askUser = pendingAskUser as NonNullable<typeof pendingAskUser>;
+        useAskUserStore.getState().setActive({
+          args: askUser.input,
+          argsText: JSON.stringify(askUser.input),
+          resume: (text: string) => {
+            submitPrompt(text);
+            useAskUserStore.getState().setActive(null);
+          },
+          result: null,
+          status: { type: "running" },
+        });
+      }
     }
   }
 
@@ -705,6 +726,7 @@ export function NovaAppShell() {
   }
 
   const handleCancel = async () => {
+    useAskUserStore.getState().setActive(null);
     const sid = sessionIdRef.current;
     if (sid) {
       await interruptChat(sid);
