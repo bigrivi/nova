@@ -21,3 +21,6 @@ node_modules/
 
 # PyArmor generated files
 *.patched.spec
+
+# License private key
+tools/license_private.pem

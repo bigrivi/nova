@@ -22,6 +22,9 @@ markdownify
 # Desktop GUI shell (pywebview)
 pywebview>=5,<7
 
+# License verification (Ed25519 signature)
+cryptography
+
 # Tree-sitter grammars for opentui Markdown syntax highlighting
 # Each grammar enables highlighting for a specific language
 tree-sitter-python

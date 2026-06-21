@@ -12,10 +12,19 @@ from typing import Optional
 
 from nova.desktop.app import create_window, run
 from nova.desktop.server_thread import ServerThread
+from nova.license.activation import show_activation_dialog
+from nova.license.validator import validate
 from nova.settings import Settings
 
 
 def run_desktop(settings: Optional[Settings] = None, dev: bool = False) -> None:
+    if not dev:
+        status = validate()
+        if not status.is_valid:
+            activated = show_activation_dialog()
+            if not activated:
+                sys.exit(0)
+
     settings = settings or Settings.load_config()
 
     server = ServerThread(settings)
