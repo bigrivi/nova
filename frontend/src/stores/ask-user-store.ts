@@ -3,8 +3,8 @@ import { create } from "zustand";
 type AskUserStatus =
   | { readonly type: "running" }
   | { readonly type: "complete" }
-  | { readonly type: "incomplete"; readonly reason: string }
-  | { readonly type: "requires-action"; readonly reason: string };
+  | { readonly type: "incomplete"; readonly reason: "length" | "other" | "cancelled" | "content-filter" | "error"; readonly error?: unknown }
+  | { readonly type: "requires-action"; readonly reason: "interrupt" };
 
 interface ActiveAskUser {
   args: unknown;
