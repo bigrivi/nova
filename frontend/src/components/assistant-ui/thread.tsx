@@ -78,8 +78,7 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
           autoScroll
           data-slot="aui_thread-viewport"
           turnAnchor="bottom"
-          className="relative flex min-h-0 flex-1 flex-col overflow-y-auto scroll-smooth"
-          style={{ scrollbarGutter: "stable both-edges" }}
+          className="relative flex min-h-0 flex-1 flex-col overflow-y-auto"
         >
           <div className="mx-auto flex min-h-full w-full max-w-(--thread-max-width) flex-col px-4 pt-4">
             <AuiIf condition={(s) => s.thread.isEmpty}>
