@@ -59,7 +59,7 @@ def build_frontend() -> None:
 
 
 def clean() -> None:
-    for d in [ROOT / "build", ROOT / "dist"]:
+    for d in [ROOT / "build", ROOT / "dist", ROOT / "frontend" / "dist"]:
         if d.exists():
             print(f"  Removing {d}...")
             shutil.rmtree(d)
