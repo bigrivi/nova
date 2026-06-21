@@ -24,4 +24,4 @@ def create_window(
 
 
 def run(window: webview.Window) -> None:
-    webview.start()
+    webview.start(debug=True)
