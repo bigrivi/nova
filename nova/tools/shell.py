@@ -87,6 +87,8 @@ async def shell(command: str, timeout: int = 30, description: str = "") -> ToolR
     }
     if sys.platform != "win32":
         kwargs["start_new_session"] = True
+    else:
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
     try:
         proc = subprocess.Popen(args, **kwargs)

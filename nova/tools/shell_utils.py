@@ -113,6 +113,7 @@ def kill_process_tree(pid: int):
         subprocess.run(
             ["taskkill", "/F", "/T", "/PID", str(pid)],
             capture_output=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
     else:
         try:

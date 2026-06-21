@@ -88,27 +88,8 @@ def _resolve_openai_base_url() -> str:
 
 
 def _build_default_config_payload() -> dict[str, Any]:
-    provider_key = "your-provider"
-    provider_name = "your provider name"
-    model_key = "your-model"
-    model_name = "your model"
     return {
-        "providers": {
-            provider_key: {
-                "type": "openai-compatible",
-                "name": provider_name,
-                "options": {
-                    "api_key": "your api key",
-                    "base_url": "https://api.example.com/v1",
-                },
-                "models": {
-                    model_key: {
-                        "name": model_name,
-                        "tools": True,
-                    }
-                },
-            },
-        },
+        "providers": {},
     }
 
 

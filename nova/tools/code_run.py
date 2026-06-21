@@ -89,6 +89,9 @@ async def code_run(
     
     try:
         cmd = [sys.executable, str(target), *safe_args]
+        spawn_kwargs = {}
+        if sys.platform == "win32":
+            spawn_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
         result = await asyncio.to_thread(
             lambda: subprocess.run(
                 cmd,
@@ -96,6 +99,7 @@ async def code_run(
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                **spawn_kwargs,
             )
         )
         

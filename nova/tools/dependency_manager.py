@@ -57,6 +57,9 @@ async def ensure_deps(packages: list[str]) -> None:
 async def _install(packages: list[str]) -> None:
     log.info("Installing missing packages: %s", packages)
     NOVA_SITE_PACKAGES.mkdir(parents=True, exist_ok=True)
+    spawn_kwargs = {}
+    if sys.platform == "win32":
+        spawn_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     result = await asyncio.to_thread(
         lambda: subprocess.run(
             [
@@ -65,6 +68,7 @@ async def _install(packages: list[str]) -> None:
                 *packages,
             ],
             capture_output=True, text=True, timeout=120,
+            **spawn_kwargs,
         )
     )
     if result.returncode != 0:

@@ -69,10 +69,10 @@ export function ThreadStickyComposer({
             ref={composer.ref}
             value={composer.text}
             rows={1}
-            disabled={composer.isRunning}
+            readOnly={composer.isRunning}
             placeholder={t("composer.sendMessage")}
             aria-label={t("composer.messageInput")}
-            className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1 py-1 text-sm outline-none placeholder:text-muted-foreground/80 disabled:cursor-not-allowed"
+            className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1 py-1 text-sm outline-none placeholder:text-muted-foreground/80 readOnly:cursor-default readOnly:opacity-60"
             onChange={(event) => composer.onChange(event.target.value)}
             onKeyDown={composer.onKeyDown}
           />
