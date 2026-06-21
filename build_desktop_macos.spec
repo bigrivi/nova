@@ -102,7 +102,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='Nova.app',
-    icon=None,
+    icon='resources/icon.icns',
     bundle_identifier='ai.nova.desktop',
     info_plist={
         'CFBundleShortVersionString': '1.0.0',

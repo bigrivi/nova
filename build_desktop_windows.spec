@@ -81,6 +81,7 @@ exe = EXE(
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
+    icon='resources/icon.ico',
     disable_windowed_traceback=True,
     argv_emulation=False,
     target_arch=None,
