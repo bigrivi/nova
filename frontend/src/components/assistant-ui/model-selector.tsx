@@ -287,7 +287,7 @@ export function ModelSelector({
   }
 
   const selector = (
-    <Select value={selectedValue} onValueChange={handleValueChange} disabled={!hasModels}>
+    <Select value={selectedValue} onValueChange={handleValueChange}>
       <SelectTrigger
         id={selectId}
         aria-label={t("modelSelector.activeModel")}
