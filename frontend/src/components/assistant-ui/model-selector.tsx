@@ -182,7 +182,6 @@ export function ModelSelector({
   const [providerError, setProviderError] = useState<string | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
 
-  const hasModels = models.length > 0;
   const hasProviders = providers.length > 0;
   const selectId = compact ? "nova-model-select-inline" : "nova-model-select";
   const groupedModels = useMemo(() => groupModels(models), [models]);
