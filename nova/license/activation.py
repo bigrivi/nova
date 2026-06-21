@@ -4,14 +4,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-import webview
-
 from nova.license.fingerprint import fingerprint
 from nova.license.validator import validate, _license_path
 
 
-def show_activation_dialog() -> bool:
+def build_activation_page(frontend_url: str) -> tuple[str, type]:
+    """Return (html, api_class) for embedding in the main window."""
     fp = fingerprint()
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -72,25 +72,20 @@ function selectFile() {{ pywebview.api.select_file(); }}
 </body>
 </html>"""
 
-    activated = False
-
     class API:
         def copy_fingerprint(self) -> None:
-            text = fp
             try:
                 if sys.platform == "darwin":
-                    subprocess.run(["pbcopy"], input=text.encode(), check=True)
+                    subprocess.run(["pbcopy"], input=fp.encode(), check=True)
                 elif sys.platform == "win32":
-                    subprocess.run(["clip"], input=text.encode(), check=True)
+                    subprocess.run(["clip"], input=fp.encode(), check=True)
             except Exception:
                 pass
-            window.evaluate_js(
-                "var t=document.getElementById('toast');t.classList.add('show');setTimeout(function(){t.classList.remove('show');},1500);"
-            )
 
         def select_file(self) -> None:
-            nonlocal activated
-            result = window.create_file_dialog(webview.OPEN_DIALOG, file_types=("License files (*.lic)",))
+            import webview as _wv
+            w = _wv.windows[0]
+            result = w.create_file_dialog(_wv.OPEN_DIALOG, file_types=("License files (*.lic)",))
             if not result:
                 return
             path = Path(result[0])
@@ -100,19 +95,8 @@ function selectFile() {{ pywebview.api.select_file(); }}
 
             status = validate()
             if status.is_valid:
-                nonlocal activated
-                activated = True
-                window.destroy()
+                w.load_url(frontend_url)
             else:
-                window.evaluate_js(f"document.getElementById('error').textContent = {status.message!r}")
+                w.evaluate_js(f"document.getElementById('error').textContent = {status.message!r}")
 
-    window = webview.create_window(
-        "Activate Nova",
-        html=html,
-        width=500,
-        height=420,
-        resizable=False,
-        js_api=API(),
-    )
-    webview.start()
-    return activated
+    return html, API

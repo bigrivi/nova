@@ -1,30 +1,17 @@
-"""
-Desktop application entry point.
-
-Launches the FastAPI backend server in a background thread and opens a
-PyWebView window that loads the Nova frontend.
-"""
-
 from __future__ import annotations
 
 import sys
 from typing import Optional
 
-from nova.desktop.app import create_window, run
+import webview
+
 from nova.desktop.server_thread import ServerThread
-from nova.license.activation import show_activation_dialog
+from nova.license.activation import build_activation_page
 from nova.license.validator import validate
 from nova.settings import Settings
 
 
 def run_desktop(settings: Optional[Settings] = None, dev: bool = False) -> None:
-    if not dev:
-        status = validate()
-        if not status.is_valid:
-            activated = show_activation_dialog()
-            if not activated:
-                sys.exit(0)
-
     settings = settings or Settings.load_config()
 
     server = ServerThread(settings)
@@ -41,9 +28,15 @@ def run_desktop(settings: Optional[Settings] = None, dev: bool = False) -> None:
         url = f"http://{server.host}:{server.port}"
         print(f"[desktop] Backend ready at {url}")
 
-    window = create_window(url)
+    status = validate()
+    if status.is_valid:
+        window = webview.create_window("Nova", url=url, width=1200, height=800, min_size=(800, 600), resizable=True)
+    else:
+        html, api_cls = build_activation_page(url)
+        window = webview.create_window("Nova", html=html, width=500, height=420, resizable=False, js_api=api_cls())
+
     try:
-        run(window)
+        webview.start()
     except KeyboardInterrupt:
         pass
     finally:
