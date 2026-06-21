@@ -231,6 +231,37 @@ python build.py --clean
 On this repo, `build.py` builds `frontend/dist` first, then invokes PyInstaller
 with the platform-specific spec file.
 
+### License Activation
+
+The packaged app requires a per-machine license file (`license.lic`) signed with
+an Ed25519 key. On first launch, the app displays a machine fingerprint and
+prompts the user to select a license file.
+
+**Generate a license for a user:**
+
+```bash
+python tools/gen_license.py \
+    --fingerprint "FINGERPRINT_FROM_USER" \
+    --expires "2027-06-21" \
+    --user "user@example.com" \
+    -o license.lic
+```
+
+The user opens the app, copies the fingerprint shown in the activation dialog,
+and sends it to you. Run the command above with their fingerprint and the
+desired expiry date, then send the resulting `license.lic` back. The user clicks
+"Select License File" in the activation dialog to complete activation.
+
+Pass `--obfuscate` to `build.py` to obfuscate the source code with PyArmor
+before packaging:
+
+```bash
+pip install pyarmor
+python build.py --clean --obfuscate
+```
+
+See `tools/gen_license.py` for more options.
+
 ## Skills
 
 Nova keeps framework-side skill code in `nova/skills/`.
