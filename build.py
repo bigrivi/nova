@@ -44,6 +44,9 @@ def build_frontend() -> None:
     dist_dir = frontend_dir / "dist"
     if not frontend_dir.exists():
         return
+    if dist_dir.exists():
+        print(f">>> Frontend dist already exists at {dist_dir}, skipping build")
+        return
     print(">>> Building frontend...")
     npm = shutil.which("npm")
     if not npm:
