@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 from nova.tools.registry import tool
+from nova.llm import ToolResult
 
 log = logging.getLogger(__name__)
 
@@ -57,20 +58,38 @@ async def ensure_deps(packages: list[str]) -> None:
 async def _install(packages: list[str]) -> None:
     log.info("Installing missing packages: %s", packages)
     NOVA_SITE_PACKAGES.mkdir(parents=True, exist_ok=True)
+
+    pip_args = ["install", "--target", str(NOVA_SITE_PACKAGES), *packages]
+
+    if getattr(sys, "frozen", False):
+        pip_candidates = [
+            [shutil.which("pip3") or shutil.which("pip")],
+            [shutil.which("python3") or shutil.which("python"), "-m", "pip"],
+        ]
+        cmd = None
+        for candidate in pip_candidates:
+            if candidate[0]:
+                cmd = [*candidate, *pip_args]
+                break
+        if not cmd:
+            raise RuntimeError(
+                "pip not found on system. Install Python 3 with pip, "
+                "or use the shell tool to install packages."
+            )
+    else:
+        cmd = [sys.executable, "-m", "pip", *pip_args]
+
     spawn_kwargs = {}
     if sys.platform == "win32":
         spawn_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     result = await asyncio.to_thread(
         lambda: subprocess.run(
-            [
-                sys.executable, "-m", "pip", "install",
-                "--target", str(NOVA_SITE_PACKAGES),
-                *packages,
-            ],
+            cmd,
             capture_output=True, text=True, timeout=120,
             **spawn_kwargs,
         )
     )
+
     if result.returncode != 0:
         raise RuntimeError(
             f"pip install failed for {packages}:\n{result.stderr.strip()}"
@@ -98,10 +117,10 @@ async def _install(packages: list[str]) -> None:
         "required": ["package"],
     },
 )
-async def install_python_package(package: str, version: str = "") -> dict:
+async def install_python_package(package: str, version: str = "") -> ToolResult:
     pkg_spec = f"{package}=={version}" if version else package
     try:
         await ensure_deps([pkg_spec])
-        return {"success": True, "message": f"{package} is now available."}
+        return ToolResult(success=True, content=f"{package} is now available.")
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return ToolResult(success=False, content=f"Error: {e}")

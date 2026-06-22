@@ -86,17 +86,19 @@ async def code_run(
         return ToolResult(success=False, content="Either code or script_path must be provided")
     
     workdir = Path(cwd).resolve() if cwd else Path.cwd()
-    
+    nova_site = Path.home() / ".nova" / "site-packages"
+
     try:
         if getattr(sys, "frozen", False):
-            # PyInstaller bundle: sys.executable = Nova.app, would open a new window.
-            # Use --_run-code flag to execute the script without launching the GUI.
             cmd = [sys.executable, "--_run-code", str(target), *safe_args]
         else:
             cmd = [sys.executable, str(target), *safe_args]
         spawn_kwargs = {}
         if sys.platform == "win32":
             spawn_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        env = os.environ.copy()
+        site_path = str(nova_site)
+        env["PYTHONPATH"] = f"{site_path}:{env['PYTHONPATH']}" if "PYTHONPATH" in env else site_path
         result = await asyncio.to_thread(
             lambda: subprocess.run(
                 cmd,
@@ -104,6 +106,7 @@ async def code_run(
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                env=env,
                 **spawn_kwargs,
             )
         )
