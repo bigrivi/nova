@@ -4,9 +4,9 @@ import {
   SimpleImageAttachmentAdapter,
   SimpleTextAttachmentAdapter,
   Tools,
-  type ThreadMessageLike,
   useAui,
   useExternalStoreRuntime,
+  type ThreadMessageLike,
 } from "@assistant-ui/react";
 import {
   ChevronLeftIcon,
@@ -281,7 +281,11 @@ export function NovaAppShell() {
     }
   }, [selectedModelId]);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
+  const sessionIdRef = useRef(DRAFT_THREAD_ID);
+
+  useEffect(() => {
+    sessionIdRef.current = currentThreadId;
+  }, [currentThreadId]);
 
   const currentMessages = messagesByThreadId[currentThreadId] || [];
   const activeThreadListId = threads.some(
@@ -375,7 +379,6 @@ export function NovaAppShell() {
       return;
     }
 
-    sessionIdRef.current = null;
     startTransition(() => {
       setCurrentThreadId(DRAFT_THREAD_ID);
       setMessagesByThreadId((previous) => ({
@@ -425,7 +428,7 @@ export function NovaAppShell() {
     const assistantMessageId = crypto.randomUUID();
     const userMessage = createTextMessage("user", prompt, userMessageId);
     const assistantMessage = createAssistantMessage(assistantMessageId);
-    let activeThreadId = sessionIdRef.current ?? originThreadId;
+    let activeThreadId = sessionIdRef.current;
     let requiresInput = false;
     let pendingAskUser: { input: unknown } | null = null;
 
@@ -443,7 +446,7 @@ export function NovaAppShell() {
     try {
       await streamChat({
         message: prompt,
-        sessionId: sessionIdRef.current ?? (originThreadId === DRAFT_THREAD_ID ? null : originThreadId),
+        sessionId: sessionIdRef.current === DRAFT_THREAD_ID ? null : sessionIdRef.current,
         provider: selectedModel?.provider || null,
         model: selectedModel?.model || null,
         attachments,
@@ -678,9 +681,6 @@ export function NovaAppShell() {
     if (!prompt || isRunning) {
       return;
     }
-
-    sessionIdRef.current = null;
-
     const composerState = runtime.thread.composer.getState();
     const pendingAttachments = composerState.attachments;
 
@@ -731,7 +731,7 @@ export function NovaAppShell() {
   const handleCancel = async () => {
     useAskUserStore.getState().setActive(null);
     const sid = sessionIdRef.current;
-    if (sid) {
+    if (sid !== DRAFT_THREAD_ID) {
       await interruptChat(sid);
     }
   };
@@ -762,7 +762,6 @@ export function NovaAppShell() {
           if (isRunning || threadId === currentThreadId) {
             return;
           }
-          sessionIdRef.current = null;
           setCurrentThreadId(threadId);
           void loadThread(threadId);
         },
