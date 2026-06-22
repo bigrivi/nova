@@ -6,6 +6,8 @@ Launch command: python -m nova
 
 import asyncio
 import argparse
+import sys
+from pathlib import Path
 
 from nova.cli.main import run_cli
 from nova.desktop.main import run_desktop
@@ -15,6 +17,18 @@ from nova.tools.dependency_manager import init_site_packages
 
 
 def main():
+    # Internal flag: run a Python script and exit (no GUI).
+    # Used by code_run in PyInstaller desktop builds where sys.executable
+    # is the app bundle, not a standalone Python interpreter.
+    if len(sys.argv) >= 3 and sys.argv[1] == "--_run-code":
+        script_path = sys.argv[2]
+        script_args = sys.argv[3:]
+        sys.argv = [script_path, *script_args]
+        sys.path.insert(0, str(Path(script_path).parent))
+        with open(script_path) as f:
+            code = f.read()
+        exec(compile(code, script_path, "exec"), {"__name__": "__main__", "__file__": script_path})
+        sys.exit(0)
     parser = argparse.ArgumentParser(description="Nova CLI/Desktop agent runtime")
     settings = get_settings()
     provider_names = settings.provider_names or []

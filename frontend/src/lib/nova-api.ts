@@ -63,24 +63,6 @@ export async function listProviders(): Promise<NovaProviderRecord[]> {
   return payload.items
 }
 
-export async function getPreferences(): Promise<{
-  selected_provider: string | null
-  selected_model: string | null
-}> {
-  return (await fetch(buildUrl('/api/preferences'))).json()
-}
-
-export async function updatePreferences(prefs: {
-  selected_provider: string
-  selected_model: string
-}): Promise<void> {
-  await fetch(buildUrl('/api/preferences'), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(prefs),
-  })
-}
-
 export async function createProvider(
   payload: NovaProviderCreateRequest,
 ): Promise<NovaModelRecord[]> {
@@ -109,6 +91,25 @@ export async function createModel(
     }),
   )
   return response.items
+}
+
+export async function updateAgent(
+  key: string,
+  data: { model: string; provider: string },
+): Promise<void> {
+  await fetch(buildUrl(`/api/agents/${encodeURIComponent(key)}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+export async function getAgent(
+  key: string,
+): Promise<{ model: string; provider: string } | null> {
+  const res = await fetch(buildUrl(`/api/agents/${encodeURIComponent(key)}`))
+  if (!res.ok) return null
+  return res.json()
 }
 
 export async function listSessions(): Promise<NovaSessionSummary[]> {

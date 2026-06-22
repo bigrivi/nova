@@ -86,6 +86,18 @@ class ConfigService:
         db = await ensure_db()
         return await db.get_agent_parents(child_key)
 
+    async def update_agent_model(self, key: str, model: str, provider: str) -> dict | None:
+        db = await ensure_db()
+        existing = await db.get_agent(key)
+        if existing is None:
+            return None
+        now = int(time.time() * 1000)
+        existing["model"] = model
+        existing["provider"] = provider
+        existing["updated_at"] = now
+        await db.save_agent(existing)
+        return existing
+
     async def get_agent_children(self, parent_key: str) -> list[str]:
         """Get all child keys of an agent."""
         db = await ensure_db()

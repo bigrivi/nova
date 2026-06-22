@@ -1,30 +1,30 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "../ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
 import { createModel, createProvider } from "../../lib/nova-api";
 import type {
-  NovaModelRecord,
-  NovaProviderRecord,
+    NovaModelRecord,
+    NovaProviderRecord,
 } from "../../types/nova";
+import { Button } from "../ui/button";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "../ui/dialog";
+import {
+    Select,
+    SelectContent,
+    SelectGroup,
+    SelectItem,
+    SelectLabel,
+    SelectSeparator,
+    SelectTrigger,
+    SelectValue,
+} from "../ui/select";
 
 type ModelSelectorProps = {
   models: NovaModelRecord[];
@@ -186,7 +186,7 @@ export function ModelSelector({
   const selectId = compact ? "nova-model-select-inline" : "nova-model-select";
   const groupedModels = useMemo(() => groupModels(models), [models]);
   const selectedModel =
-    models.find((model) => model.id === selectedModelId) ?? models[0] ?? null;
+    models.find((model) => model.id === selectedModelId)
   const selectedValue = selectedModel?.id;
 
   function handleValueChange(value: string) {

@@ -1,18 +1,14 @@
 import {
-  AssistantRuntimeProvider,
-  CompositeAttachmentAdapter,
-  SimpleImageAttachmentAdapter,
-  SimpleTextAttachmentAdapter,
-  Tools,
-  useAui,
-  useExternalStoreRuntime,
-  type ThreadMessageLike,
+    AssistantRuntimeProvider,
+    CompositeAttachmentAdapter,
+    SimpleImageAttachmentAdapter,
+    SimpleTextAttachmentAdapter,
+    Tools,
+    useAui,
+    useExternalStoreRuntime,
+    type ThreadMessageLike,
 } from "@assistant-ui/react";
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  LanguagesIcon,
-} from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, LanguagesIcon } from "lucide-react";
 import { startTransition, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
@@ -24,876 +20,941 @@ import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { toThreadMessages } from "../lib/history-messages";
 import {
-  getPreferences,
-  interruptChat,
-  listMessages,
-  listModels,
-  listProviders,
-  listSessions,
-  streamChat,
-  updatePreferences,
+    getAgent,
+    interruptChat,
+    listMessages,
+    listModels,
+    listProviders,
+    listSessions,
+    streamChat,
+    updateAgent,
 } from "../lib/nova-api";
 import { useAskUserStore } from "../stores/ask-user-store";
 import { useReasoningStore } from "../stores/reasoning-store";
 import type {
-  NovaAttachmentData,
-  NovaJsonObject,
-  NovaModelRecord,
-  NovaProviderRecord,
-  NovaSessionSummary,
-  NovaThreadSummary,
+    NovaAttachmentData,
+    NovaJsonObject,
+    NovaModelRecord,
+    NovaProviderRecord,
+    NovaSessionSummary,
+    NovaThreadSummary,
 } from "../types/nova";
 
 const DRAFT_THREAD_ID = "__draft__";
 
 function createTextMessage(
-  role: "user" | "assistant",
-  text: string,
-  id?: string,
+    role: "user" | "assistant",
+    text: string,
+    id?: string,
 ): ThreadMessageLike {
-  return {
-    id: id ?? crypto.randomUUID(),
-    role,
-    content: text,
-    createdAt: new Date(),
-  };
+    return {
+        id: id ?? crypto.randomUUID(),
+        role,
+        content: text,
+        createdAt: new Date(),
+    };
 }
 
 function createAssistantMessage(id?: string): ThreadMessageLike {
-  return {
-    id: id ?? crypto.randomUUID(),
-    role: "assistant",
-    content: [],
-    createdAt: new Date(),
-  };
+    return {
+        id: id ?? crypto.randomUUID(),
+        role: "assistant",
+        content: [],
+        createdAt: new Date(),
+    };
 }
 
 type AssistantPart = Exclude<ThreadMessageLike["content"], string>[number];
 
 function createWelcomeMessage(): ThreadMessageLike {
-  return createTextMessage(
-    "assistant",
-    i18n.t("app.welcomeMessage"),
-    "welcome",
-  );
+    return createTextMessage(
+        "assistant",
+        i18n.t("app.welcomeMessage"),
+        "welcome",
+    );
 }
 
 function createOptimisticSessionTitle(userMessage: string): string {
-  const title = userMessage.trim();
-  if (!title) {
-    return i18n.t("app.newSession");
-  }
+    const title = userMessage.trim();
+    if (!title) {
+        return i18n.t("app.newSession");
+    }
 
-  if (title.length > 50) {
-    return `${title.slice(0, 47)}...`;
-  }
+    if (title.length > 50) {
+        return `${title.slice(0, 47)}...`;
+    }
 
-  return title;
+    return title;
 }
 
 function toThreadTitle(session: NovaSessionSummary) {
-  const untitled = i18n.t("app.untitledSession");
-  return (session.title || untitled).trim() || untitled;
+    const untitled = i18n.t("app.untitledSession");
+    return (session.title || untitled).trim() || untitled;
 }
 
 function toThreadSummary(session: NovaSessionSummary): NovaThreadSummary {
-  return {
-    id: session.id,
-    title: toThreadTitle(session),
-    status: "regular",
-  };
+    return {
+        id: session.id,
+        title: toThreadTitle(session),
+        status: "regular",
+    };
 }
 
 function upsertThread(
-  threads: NovaThreadSummary[],
-  nextThread: NovaThreadSummary,
+    threads: NovaThreadSummary[],
+    nextThread: NovaThreadSummary,
 ): NovaThreadSummary[] {
-  const filtered = threads.filter((thread) => thread.id !== nextThread.id);
-  return [nextThread, ...filtered];
+    const filtered = threads.filter((thread) => thread.id !== nextThread.id);
+    return [nextThread, ...filtered];
 }
 
 function buildDraftMessages(previous: ThreadMessageLike[]) {
-  if (
-    previous.length === 1 &&
-    previous[0]?.id === "welcome" &&
-    previous[0]?.role === "assistant"
-  ) {
-    return [];
-  }
-  return previous;
+    if (
+        previous.length === 1 &&
+        previous[0]?.id === "welcome" &&
+        previous[0]?.role === "assistant"
+    ) {
+        return [];
+    }
+    return previous;
 }
 
 function setAssistantText(
-  messages: ThreadMessageLike[],
-  assistantMessageId: string,
-  updater: (text: string) => string,
+    messages: ThreadMessageLike[],
+    assistantMessageId: string,
+    updater: (text: string) => string,
 ) {
-  return messages.map((message) => {
-    if (message.id !== assistantMessageId || message.role !== "assistant") {
-      return message;
-    }
+    return messages.map((message) => {
+        if (message.id !== assistantMessageId || message.role !== "assistant") {
+            return message;
+        }
 
-    const parts =
-      typeof message.content === "string"
-        ? message.content
-          ? [{ type: "text" as const, text: message.content }]
-          : []
-        : [...message.content];
-    const textPartIndex = parts.findLastIndex((part) => part.type === "text");
-    const currentText =
-      textPartIndex >= 0 && parts[textPartIndex]?.type === "text"
-        ? parts[textPartIndex].text
-        : "";
-    const nextText = updater(currentText);
+        const parts =
+            typeof message.content === "string"
+                ? message.content
+                    ? [{ type: "text" as const, text: message.content }]
+                    : []
+                : [...message.content];
+        const textPartIndex = parts.findLastIndex(
+            (part) => part.type === "text",
+        );
+        const currentText =
+            textPartIndex >= 0 && parts[textPartIndex]?.type === "text"
+                ? parts[textPartIndex].text
+                : "";
+        const nextText = updater(currentText);
 
-    if (textPartIndex >= 0) {
-      parts[textPartIndex] = { type: "text", text: nextText };
-    } else if (nextText) {
-      parts.push({ type: "text", text: nextText });
-    }
+        if (textPartIndex >= 0) {
+            parts[textPartIndex] = { type: "text", text: nextText };
+        } else if (nextText) {
+            parts.push({ type: "text", text: nextText });
+        }
 
-    return {
-      ...message,
-      content: parts,
-    };
-  });
+        return {
+            ...message,
+            content: parts,
+        };
+    });
 }
 
 function setAssistantReasoning(
-  messages: ThreadMessageLike[],
-  assistantMessageId: string,
-  updater: (text: string) => string,
+    messages: ThreadMessageLike[],
+    assistantMessageId: string,
+    updater: (text: string) => string,
 ) {
-  return messages.map((message) => {
-    if (message.id !== assistantMessageId || message.role !== "assistant") {
-      return message;
-    }
+    return messages.map((message) => {
+        if (message.id !== assistantMessageId || message.role !== "assistant") {
+            return message;
+        }
 
-    const parts =
-      typeof message.content === "string"
-        ? message.content
-          ? [{ type: "text" as const, text: message.content }]
-          : []
-        : [...message.content];
+        const parts =
+            typeof message.content === "string"
+                ? message.content
+                    ? [{ type: "text" as const, text: message.content }]
+                    : []
+                : [...message.content];
 
-    const reasoningIndex = parts.findLastIndex(
-      (part) => part.type === "reasoning",
-    );
-    const currentText =
-      reasoningIndex >= 0 && parts[reasoningIndex]?.type === "reasoning"
-        ? parts[reasoningIndex].text
-        : "";
-    const nextText = updater(currentText);
+        const reasoningIndex = parts.findLastIndex(
+            (part) => part.type === "reasoning",
+        );
+        const currentText =
+            reasoningIndex >= 0 && parts[reasoningIndex]?.type === "reasoning"
+                ? parts[reasoningIndex].text
+                : "";
+        const nextText = updater(currentText);
 
-    if (reasoningIndex >= 0) {
-      parts[reasoningIndex] = { type: "reasoning", text: nextText };
-    } else if (nextText) {
-      parts.push({ type: "reasoning", text: nextText });
-    }
+        if (reasoningIndex >= 0) {
+            parts[reasoningIndex] = { type: "reasoning", text: nextText };
+        } else if (nextText) {
+            parts.push({ type: "reasoning", text: nextText });
+        }
 
-    return {
-      ...message,
-      content: parts,
-    };
-  });
+        return {
+            ...message,
+            content: parts,
+        };
+    });
 }
 
 function upsertAssistantToolCall(
-  messages: ThreadMessageLike[],
-  assistantMessageId: string,
-  payload: {
-    toolCallId: string;
-    toolName?: string;
-    input?: NovaJsonObject;
-    output?: unknown;
-  },
+    messages: ThreadMessageLike[],
+    assistantMessageId: string,
+    payload: {
+        toolCallId: string;
+        toolName?: string;
+        input?: NovaJsonObject;
+        output?: unknown;
+    },
 ) {
-  return messages.map((message) => {
-    if (message.id !== assistantMessageId || message.role !== "assistant") {
-      return message;
-    }
+    return messages.map((message) => {
+        if (message.id !== assistantMessageId || message.role !== "assistant") {
+            return message;
+        }
 
-    const parts =
-      typeof message.content === "string"
-        ? message.content
-          ? [{ type: "text" as const, text: message.content }]
-          : []
-        : [...message.content];
-    const toolIndex = parts.findIndex(
-      (part) =>
-        part.type === "tool-call" && part.toolCallId === payload.toolCallId,
-    );
+        const parts =
+            typeof message.content === "string"
+                ? message.content
+                    ? [{ type: "text" as const, text: message.content }]
+                    : []
+                : [...message.content];
+        const toolIndex = parts.findIndex(
+            (part) =>
+                part.type === "tool-call" &&
+                part.toolCallId === payload.toolCallId,
+        );
 
-    const current =
-      toolIndex >= 0 && parts[toolIndex]?.type === "tool-call"
-        ? parts[toolIndex]
-        : null;
+        const current =
+            toolIndex >= 0 && parts[toolIndex]?.type === "tool-call"
+                ? parts[toolIndex]
+                : null;
 
-    const nextPart: AssistantPart = {
-      type: "tool-call",
-      toolCallId: payload.toolCallId,
-      toolName: payload.toolName || current?.toolName || "tool",
-      args: payload.input ?? current?.args ?? {},
-      argsText:
-        payload.input !== undefined
-          ? JSON.stringify(payload.input)
-          : (current?.argsText ?? ""),
-      ...(payload.output !== undefined
-        ? { result: payload.output }
-        : current?.result !== undefined
-          ? { result: current.result }
-          : {}),
-      ...(current?.isError !== undefined ? { isError: current.isError } : {}),
-    };
+        const nextPart: AssistantPart = {
+            type: "tool-call",
+            toolCallId: payload.toolCallId,
+            toolName: payload.toolName || current?.toolName || "tool",
+            args: payload.input ?? current?.args ?? {},
+            argsText:
+                payload.input !== undefined
+                    ? JSON.stringify(payload.input)
+                    : (current?.argsText ?? ""),
+            ...(payload.output !== undefined
+                ? { result: payload.output }
+                : current?.result !== undefined
+                  ? { result: current.result }
+                  : {}),
+            ...(current?.isError !== undefined
+                ? { isError: current.isError }
+                : {}),
+        };
 
-    if (toolIndex >= 0) {
-      parts[toolIndex] = nextPart;
-    } else {
-      parts.push(nextPart);
-    }
+        if (toolIndex >= 0) {
+            parts[toolIndex] = nextPart;
+        } else {
+            parts.push(nextPart);
+        }
 
-    return {
-      ...message,
-      content: parts,
-    };
-  });
+        return {
+            ...message,
+            content: parts,
+        };
+    });
 }
 
 export function NovaAppShell() {
-  const { t } = useTranslation();
-  const [threads, setThreads] = useState<NovaThreadSummary[]>([]);
-  const [messagesByThreadId, setMessagesByThreadId] = useState<
-    Record<string, ThreadMessageLike[]>
-  >({
-    [DRAFT_THREAD_ID]: [createWelcomeMessage()],
-  });
-  const [currentThreadId, setCurrentThreadId] = useState(DRAFT_THREAD_ID);
-  const [models, setModels] = useState<NovaModelRecord[]>([]);
-  const [providers, setProviders] = useState<NovaProviderRecord[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(
-    () => localStorage.getItem("nova-selected-model"),
-  );
-  const [isRunning, setIsRunning] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [composerText, setComposerText] = useState("");
+    const { t } = useTranslation();
+    const [threads, setThreads] = useState<NovaThreadSummary[]>([]);
+    const [messagesByThreadId, setMessagesByThreadId] = useState<
+        Record<string, ThreadMessageLike[]>
+    >({
+        [DRAFT_THREAD_ID]: [createWelcomeMessage()],
+    });
+    const [currentThreadId, setCurrentThreadId] = useState(DRAFT_THREAD_ID);
+    const [models, setModels] = useState<NovaModelRecord[]>([]);
+    const [providers, setProviders] = useState<NovaProviderRecord[]>([]);
+    const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+    const [isRunning, setIsRunning] = useState(false);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [composerText, setComposerText] = useState("");
 
-  useEffect(() => {
-    if (selectedModelId) {
-      localStorage.setItem("nova-selected-model", selectedModelId);
-    }
-  }, [selectedModelId]);
+    const composerRef = useRef<HTMLTextAreaElement | null>(null);
+    const sessionIdRef = useRef(DRAFT_THREAD_ID);
 
-  useEffect(() => {
-    if (!selectedModelId) return;
-    const [provider, model] = selectedModelId.split(":");
-    if (provider && model) {
-      updatePreferences({
-        selected_provider: provider,
-        selected_model: model,
-      }).catch(() => {});
-    }
-  }, [selectedModelId]);
+    useEffect(() => {
+        sessionIdRef.current = currentThreadId;
+    }, [currentThreadId]);
 
-  const composerRef = useRef<HTMLTextAreaElement | null>(null);
-  const sessionIdRef = useRef(DRAFT_THREAD_ID);
+    const currentMessages = messagesByThreadId[currentThreadId] || [];
+    const activeThreadListId = threads.some(
+        (thread) => thread.id === currentThreadId,
+    )
+        ? currentThreadId
+        : undefined;
 
-  useEffect(() => {
-    sessionIdRef.current = currentThreadId;
-  }, [currentThreadId]);
+    useEffect(() => {
+        let cancelled = false;
 
-  const currentMessages = messagesByThreadId[currentThreadId] || [];
-  const activeThreadListId = threads.some(
-    (thread) => thread.id === currentThreadId,
-  )
-    ? currentThreadId
-    : undefined;
+        async function bootstrap() {
+            try {
+                const [availableModels, availableProviders, savedSessions] =
+                    await Promise.all([
+                        listModels(),
+                        listProviders(),
+                        listSessions(),
+                    ]);
 
-  useEffect(() => {
-    let cancelled = false;
+                if (cancelled) {
+                    return;
+                }
 
-    async function bootstrap() {
-      try {
-        const [availableModels, availableProviders, savedSessions] =
-          await Promise.all([listModels(), listProviders(), listSessions()]);
+                try {
+                    const agent = await getAgent("main");
+                    if (agent?.provider && agent?.model) {
+                        const modelId = `${agent.provider}:${agent.model}`;
+                        if (availableModels.some((m) => m.id === modelId)) {
+                            setSelectedModelId(modelId);
+                        }
+                    }
+                } catch {}
 
-        if (cancelled) {
-          return;
+                startTransition(() => {
+                    setModels(availableModels);
+                    setProviders(availableProviders);
+                    setThreads(savedSessions.map(toThreadSummary));
+                });
+            } catch (error) {
+                if (!cancelled) {
+                    console.error(error);
+                }
+            }
         }
 
+        void bootstrap();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    useEffect(() => {
+        const handleLanguageChange = () => {
+            setMessagesByThreadId((prev) => {
+                const draft = prev[DRAFT_THREAD_ID];
+                if (draft?.length === 1 && draft[0]?.id === "welcome") {
+                    return {
+                        ...prev,
+                        [DRAFT_THREAD_ID]: [createWelcomeMessage()],
+                    };
+                }
+                return prev;
+            });
+        };
+        i18n.on("languageChanged", handleLanguageChange);
+        return () => {
+            i18n.off("languageChanged", handleLanguageChange);
+        };
+    }, []);
+
+    async function loadThread(threadId: string) {
         try {
-          const prefs = await getPreferences();
-          if (prefs.selected_provider && prefs.selected_model) {
-            const modelId = `${prefs.selected_provider}:${prefs.selected_model}`;
-            if (availableModels.some((m) => m.id === modelId)) {
-              localStorage.setItem("nova-selected-model", modelId);
-            }
-          }
-        } catch {}
+            const messages = await listMessages(threadId);
+            startTransition(() => {
+                setCurrentThreadId(threadId);
+                setMessagesByThreadId((previous) => ({
+                    ...previous,
+                    [threadId]: toThreadMessages(messages),
+                }));
+            });
+        } catch (error) {
+            console.error("Failed to load thread:", threadId, error);
+        }
+    }
+
+    function setThreadMessages(
+        threadId: string,
+        updater:
+            | ThreadMessageLike[]
+            | ((messages: ThreadMessageLike[]) => ThreadMessageLike[]),
+    ) {
+        setMessagesByThreadId((previous) => {
+            const current = previous[threadId] || [];
+            return {
+                ...previous,
+                [threadId]:
+                    typeof updater === "function" ? updater(current) : updater,
+            };
+        });
+    }
+
+    function switchToDraftThread() {
+        if (isRunning) {
+            return;
+        }
 
         startTransition(() => {
-          setModels(availableModels);
-          setProviders(availableProviders);
-          setThreads(savedSessions.map(toThreadSummary));
-          if (availableModels.length > 0) {
-            setSelectedModelId((current) => current || availableModels[0].id);
-          }
+            setCurrentThreadId(DRAFT_THREAD_ID);
+            setMessagesByThreadId((previous) => ({
+                ...previous,
+                [DRAFT_THREAD_ID]: previous[DRAFT_THREAD_ID] || [
+                    createWelcomeMessage(),
+                ],
+            }));
         });
-      } catch (error) {
-        if (!cancelled) {
-          console.error(error);
+        setComposerText("");
+    }
+
+    useEffect(() => {
+        const textarea = composerRef.current;
+        if (!textarea) {
+            return;
         }
-      }
-    }
 
-    void bootstrap();
+        textarea.style.height = "0px";
+        textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+    }, [composerText]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleLanguageChange = () => {
-      setMessagesByThreadId((prev) => {
-        const draft = prev[DRAFT_THREAD_ID];
-        if (draft?.length === 1 && draft[0]?.id === "welcome") {
-          return { ...prev, [DRAFT_THREAD_ID]: [createWelcomeMessage()] };
+    useEffect(() => {
+        if (isRunning) {
+            return;
         }
-        return prev;
-      });
-    };
-    i18n.on("languageChanged", handleLanguageChange);
-    return () => {
-      i18n.off("languageChanged", handleLanguageChange);
-    };
-  }, []);
 
-  async function loadThread(threadId: string) {
-    try {
-      const messages = await listMessages(threadId);
-      startTransition(() => {
-        setCurrentThreadId(threadId);
-        setMessagesByThreadId((previous) => ({
-          ...previous,
-          [threadId]: toThreadMessages(messages),
-        }));
-      });
-    } catch (error) {
-      console.error("Failed to load thread:", threadId, error);
-    }
-  }
+        const textarea = composerRef.current;
+        if (!textarea) {
+            return;
+        }
 
-  function setThreadMessages(
-    threadId: string,
-    updater:
-      | ThreadMessageLike[]
-      | ((messages: ThreadMessageLike[]) => ThreadMessageLike[]),
-  ) {
-    setMessagesByThreadId((previous) => {
-      const current = previous[threadId] || [];
-      return {
-        ...previous,
-        [threadId]: typeof updater === "function" ? updater(current) : updater,
-      };
-    });
-  }
+        textarea.focus({ preventScroll: true });
+        const caret = textarea.value.length;
+        textarea.setSelectionRange(caret, caret);
+    }, [currentThreadId, isRunning]);
 
-  function switchToDraftThread() {
-    if (isRunning) {
-      return;
-    }
+    async function submitPrompt(
+        prompt: string,
+        attachments?: NovaAttachmentData[],
+    ) {
+        if (!prompt) {
+            return;
+        }
 
-    startTransition(() => {
-      setCurrentThreadId(DRAFT_THREAD_ID);
-      setMessagesByThreadId((previous) => ({
-        ...previous,
-        [DRAFT_THREAD_ID]: previous[DRAFT_THREAD_ID] || [
-          createWelcomeMessage(),
-        ],
-      }));
-    });
-    setComposerText("");
-  }
+        const selectedModel =
+            models.find((item) => item.id === selectedModelId) || null;
+        const originThreadId = currentThreadId;
+        const userMessageId = crypto.randomUUID();
+        const assistantMessageId = crypto.randomUUID();
+        const userMessage = createTextMessage("user", prompt, userMessageId);
+        const assistantMessage = createAssistantMessage(assistantMessageId);
+        let activeThreadId = sessionIdRef.current;
+        let requiresInput = false;
+        let pendingAskUser: { input: unknown } | null = null;
 
-  useEffect(() => {
-    const textarea = composerRef.current;
-    if (!textarea) {
-      return;
-    }
+        setIsRunning(true);
+        setComposerText("");
 
-    textarea.style.height = "0px";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
-  }, [composerText]);
+        useReasoningStore.getState().setChainStartTime(Date.now());
 
-  useEffect(() => {
-    if (isRunning) {
-      return;
-    }
+        setThreadMessages(activeThreadId, (previous) => [
+            ...buildDraftMessages(previous),
+            userMessage,
+            assistantMessage,
+        ]);
 
-    const textarea = composerRef.current;
-    if (!textarea) {
-      return;
-    }
+        try {
+            await streamChat({
+                message: prompt,
+                sessionId:
+                    sessionIdRef.current === DRAFT_THREAD_ID
+                        ? null
+                        : sessionIdRef.current,
+                provider: selectedModel?.provider || null,
+                model: selectedModel?.model || null,
+                attachments,
+                onEvent: (event) => {
+                    if (event.type === "data-nova-session") {
+                        const sessionId = String(event.data?.sessionId || "");
+                        if (!sessionId) {
+                            return;
+                        }
+                        if (sessionId === sessionIdRef.current) return;
 
-    textarea.focus({ preventScroll: true });
-    const caret = textarea.value.length;
-    textarea.setSelectionRange(caret, caret);
-  }, [currentThreadId, isRunning]);
+                        sessionIdRef.current = sessionId;
+                        activeThreadId = sessionId;
+                        startTransition(() => {
+                            setMessagesByThreadId((previous) => {
+                                const sourceMessages =
+                                    previous[originThreadId] || [];
+                                return {
+                                    ...previous,
+                                    [sessionId]: sourceMessages,
+                                    [DRAFT_THREAD_ID]:
+                                        originThreadId === DRAFT_THREAD_ID
+                                            ? [createWelcomeMessage()]
+                                            : previous[DRAFT_THREAD_ID] || [
+                                                  createWelcomeMessage(),
+                                              ],
+                                };
+                            });
+                            setCurrentThreadId(sessionId);
+                            setThreads((previous) => {
+                                const existing = previous.find(
+                                    (thread) => thread.id === sessionId,
+                                );
+                                return upsertThread(
+                                    previous,
+                                    existing ?? {
+                                        id: sessionId,
+                                        title: createOptimisticSessionTitle(
+                                            prompt,
+                                        ),
+                                        status: "regular",
+                                    },
+                                );
+                            });
+                        });
+                        return;
+                    }
 
-  async function submitPrompt(prompt: string, attachments?: NovaAttachmentData[]) {
-    if (!prompt) {
-      return;
-    }
+                    if (event.type === "data-nova-compaction-start") {
+                        useReasoningStore.getState().setCompacting(true);
+                        return;
+                    }
 
-    const selectedModel =
-      models.find((item) => item.id === selectedModelId) || null;
-    const originThreadId = currentThreadId;
-    const userMessageId = crypto.randomUUID();
-    const assistantMessageId = crypto.randomUUID();
-    const userMessage = createTextMessage("user", prompt, userMessageId);
-    const assistantMessage = createAssistantMessage(assistantMessageId);
-    let activeThreadId = sessionIdRef.current;
-    let requiresInput = false;
-    let pendingAskUser: { input: unknown } | null = null;
+                    if (event.type === "data-nova-compaction-end") {
+                        useReasoningStore.getState().setCompacting(false);
+                        return;
+                    }
 
-    setIsRunning(true);
-    setComposerText("");
+                    if (event.type === "text-start") {
+                        const store = useReasoningStore.getState();
+                        if (store.chainActive) {
+                            if (store.chainStartTime != null) {
+                                store.setChainElapsedMs(
+                                    Date.now() - store.chainStartTime,
+                                );
+                            }
+                            store.setChainActive(false);
+                        }
+                        setThreadMessages(activeThreadId, (previous) =>
+                            previous.map((msg) => {
+                                if (
+                                    msg.id !== assistantMessageId ||
+                                    msg.role !== "assistant"
+                                )
+                                    return msg;
+                                const parts =
+                                    typeof msg.content === "string"
+                                        ? msg.content
+                                            ? [
+                                                  {
+                                                      type: "text" as const,
+                                                      text: msg.content,
+                                                  },
+                                              ]
+                                            : []
+                                        : [...msg.content];
+                                parts.push({ type: "text" as const, text: "" });
+                                return { ...msg, content: parts };
+                            }),
+                        );
+                        return;
+                    }
 
-    useReasoningStore.getState().setChainStartTime(Date.now());
+                    if (event.type === "text-delta") {
+                        setThreadMessages(activeThreadId, (previous) =>
+                            setAssistantText(
+                                previous,
+                                assistantMessageId,
+                                (text) => text + (event.delta || ""),
+                            ),
+                        );
+                        return;
+                    }
 
-    setThreadMessages(activeThreadId, (previous) => [
-      ...buildDraftMessages(previous),
-      userMessage,
-      assistantMessage,
-    ]);
+                    if (event.type === "reasoning-start") {
+                        const store = useReasoningStore.getState();
+                        store.setChainActive(true);
+                        store.setChainStartTime(Date.now());
+                        setThreadMessages(activeThreadId, (previous) =>
+                            previous.map((msg) => {
+                                if (
+                                    msg.id !== assistantMessageId ||
+                                    msg.role !== "assistant"
+                                )
+                                    return msg;
+                                const parts =
+                                    typeof msg.content === "string"
+                                        ? msg.content
+                                            ? [
+                                                  {
+                                                      type: "text" as const,
+                                                      text: msg.content,
+                                                  },
+                                              ]
+                                            : []
+                                        : [...msg.content];
+                                parts.push({
+                                    type: "reasoning" as const,
+                                    text: "",
+                                });
+                                return { ...msg, content: parts };
+                            }),
+                        );
+                        return;
+                    }
 
-    try {
-      await streamChat({
-        message: prompt,
-        sessionId: sessionIdRef.current === DRAFT_THREAD_ID ? null : sessionIdRef.current,
-        provider: selectedModel?.provider || null,
-        model: selectedModel?.model || null,
-        attachments,
-        onEvent: (event) => {
-          if (event.type === "data-nova-session") {
-            const sessionId = String(event.data?.sessionId || "");
-            if (!sessionId) {
-              return;
-            }
-            if (sessionId === sessionIdRef.current) return;
+                    if (event.type === "reasoning-delta") {
+                        const store = useReasoningStore.getState();
+                        store.setActive(true);
+                        store.setChainActive(true);
+                        setThreadMessages(activeThreadId, (previous) =>
+                            setAssistantReasoning(
+                                previous,
+                                assistantMessageId,
+                                (text) => text + (event.delta || ""),
+                            ),
+                        );
+                        return;
+                    }
 
-            sessionIdRef.current = sessionId;
-            activeThreadId = sessionId;
-            startTransition(() => {
-              setMessagesByThreadId((previous) => {
-                const sourceMessages = previous[originThreadId] || [];
-                return {
-                  ...previous,
-                  [sessionId]: sourceMessages,
-                  [DRAFT_THREAD_ID]:
-                    originThreadId === DRAFT_THREAD_ID
-                      ? [createWelcomeMessage()]
-                      : previous[DRAFT_THREAD_ID] || [createWelcomeMessage()],
-                };
-              });
-              setCurrentThreadId(sessionId);
-              setThreads((previous) => {
-                const existing = previous.find(
-                  (thread) => thread.id === sessionId,
-                );
-                return upsertThread(
-                  previous,
-                  existing ?? {
-                    id: sessionId,
-                    title: createOptimisticSessionTitle(prompt),
-                    status: "regular",
-                  },
-                );
-              });
+                    if (event.type === "reasoning-end") {
+                        useReasoningStore.getState().setActive(false);
+                        useReasoningStore
+                            .getState()
+                            .setElapsedMs(event.elapsedMs ?? null);
+                        return;
+                    }
+
+                    if (event.type === "tool-input-start") {
+                        if (!event.toolCallId) {
+                            return;
+                        }
+                        const store = useReasoningStore.getState();
+                        store.setChainActive(true);
+                        if (store.chainStartTime == null) {
+                            store.setChainStartTime(Date.now());
+                        }
+                        const toolCallId = event.toolCallId;
+
+                        setThreadMessages(activeThreadId, (previous) =>
+                            upsertAssistantToolCall(
+                                previous,
+                                assistantMessageId,
+                                {
+                                    toolCallId,
+                                    toolName: event.toolName,
+                                },
+                            ),
+                        );
+                        return;
+                    }
+
+                    if (event.type === "tool-input-available") {
+                        if (!event.toolCallId) {
+                            return;
+                        }
+                        const toolCallId = event.toolCallId;
+
+                        if (event.toolName === "ask_user") {
+                            pendingAskUser = { input: event.input };
+                        }
+
+                        setThreadMessages(activeThreadId, (previous) =>
+                            upsertAssistantToolCall(
+                                previous,
+                                assistantMessageId,
+                                {
+                                    toolCallId,
+                                    toolName: event.toolName,
+                                    input: event.input,
+                                },
+                            ),
+                        );
+                        return;
+                    }
+
+                    if (event.type === "tool-output-available") {
+                        if (!event.toolCallId) {
+                            return;
+                        }
+                        const toolCallId = event.toolCallId;
+
+                        setThreadMessages(activeThreadId, (previous) =>
+                            upsertAssistantToolCall(
+                                previous,
+                                assistantMessageId,
+                                {
+                                    toolCallId,
+                                    output: event.output,
+                                },
+                            ),
+                        );
+                        return;
+                    }
+
+                    if (event.type === "data-nova-input-required") {
+                        requiresInput = true;
+                        return;
+                    }
+
+                    if (event.type === "error") {
+                        throw new Error(event.errorText || "Unknown error");
+                    }
+                },
             });
-            return;
-          }
 
-          if (event.type === "data-nova-compaction-start") {
-            useReasoningStore.getState().setCompacting(true);
-            return;
-          }
-
-          if (event.type === "data-nova-compaction-end") {
-            useReasoningStore.getState().setCompacting(false);
-            return;
-          }
-
-          if (event.type === "text-start") {
+            if (requiresInput) {
+                return;
+            }
+        } catch (error) {
+            const messageText =
+                error instanceof Error ? error.message : String(error);
+            setThreadMessages(activeThreadId, (previous) =>
+                setAssistantText(
+                    previous,
+                    assistantMessageId,
+                    () => `[error] ${messageText}`,
+                ),
+            );
+        } finally {
             const store = useReasoningStore.getState();
             if (store.chainActive) {
-              if (store.chainStartTime != null) {
-                store.setChainElapsedMs(Date.now() - store.chainStartTime);
-              }
-              store.setChainActive(false);
+                if (store.chainStartTime != null) {
+                    store.setChainElapsedMs(Date.now() - store.chainStartTime);
+                }
+                store.setChainActive(false);
             }
-            setThreadMessages(activeThreadId, (previous) =>
-              previous.map((msg) => {
-                if (msg.id !== assistantMessageId || msg.role !== "assistant") return msg;
-                const parts = typeof msg.content === "string"
-                  ? (msg.content ? [{ type: "text" as const, text: msg.content }] : [])
-                  : [...msg.content];
-                parts.push({ type: "text" as const, text: "" });
-                return { ...msg, content: parts };
-              }),
-            );
-            return;
-          }
+            store.setChainStartTime(null);
+            store.setActive(false);
+            setIsRunning(false);
 
-          if (event.type === "text-delta") {
-            setThreadMessages(activeThreadId, (previous) =>
-              setAssistantText(
-                previous,
-                assistantMessageId,
-                (text) => text + (event.delta || ""),
-              ),
-            );
-            return;
-          }
-
-          if (event.type === "reasoning-start") {
-            const store = useReasoningStore.getState();
-            store.setChainActive(true);
-            store.setChainStartTime(Date.now());
-            setThreadMessages(activeThreadId, (previous) =>
-              previous.map((msg) => {
-                if (msg.id !== assistantMessageId || msg.role !== "assistant") return msg;
-                const parts = typeof msg.content === "string"
-                  ? (msg.content ? [{ type: "text" as const, text: msg.content }] : [])
-                  : [...msg.content];
-                parts.push({ type: "reasoning" as const, text: "" });
-                return { ...msg, content: parts };
-              }),
-            );
-            return;
-          }
-
-          if (event.type === "reasoning-delta") {
-            const store = useReasoningStore.getState();
-            store.setActive(true);
-            store.setChainActive(true);
-            setThreadMessages(activeThreadId, (previous) =>
-              setAssistantReasoning(
-                previous,
-                assistantMessageId,
-                (text) => text + (event.delta || ""),
-              ),
-            );
-            return;
-          }
-
-          if (event.type === "reasoning-end") {
-            useReasoningStore.getState().setActive(false);
-            useReasoningStore.getState().setElapsedMs(event.elapsedMs ?? null);
-            return;
-          }
-
-          if (event.type === "tool-input-start") {
-            if (!event.toolCallId) {
-              return;
+            if (requiresInput && pendingAskUser) {
+                const askUser = pendingAskUser as { input: unknown };
+                useAskUserStore.getState().setActive({
+                    args: askUser.input,
+                    argsText: JSON.stringify(askUser.input),
+                    resume: (text: unknown) => {
+                        submitPrompt(String(text));
+                        useAskUserStore.getState().setActive(null);
+                    },
+                    result: null,
+                    status: { type: "running" } as const,
+                });
             }
-            const store = useReasoningStore.getState();
-            store.setChainActive(true);
-            if (store.chainStartTime == null) {
-              store.setChainStartTime(Date.now());
-            }
-            const toolCallId = event.toolCallId;
-
-            setThreadMessages(activeThreadId, (previous) =>
-              upsertAssistantToolCall(previous, assistantMessageId, {
-                toolCallId,
-                toolName: event.toolName,
-              }),
-            );
-            return;
-          }
-
-          if (event.type === "tool-input-available") {
-            if (!event.toolCallId) {
-              return;
-            }
-            const toolCallId = event.toolCallId;
-
-            if (event.toolName === "ask_user") {
-              pendingAskUser = { input: event.input };
-            }
-
-            setThreadMessages(activeThreadId, (previous) =>
-              upsertAssistantToolCall(previous, assistantMessageId, {
-                toolCallId,
-                toolName: event.toolName,
-                input: event.input,
-              }),
-            );
-            return;
-          }
-
-          if (event.type === "tool-output-available") {
-            if (!event.toolCallId) {
-              return;
-            }
-            const toolCallId = event.toolCallId;
-
-            setThreadMessages(activeThreadId, (previous) =>
-              upsertAssistantToolCall(previous, assistantMessageId, {
-                toolCallId,
-                output: event.output,
-              }),
-            );
-            return;
-          }
-
-          if (event.type === "data-nova-input-required") {
-            requiresInput = true;
-            return;
-          }
-
-          if (event.type === "error") {
-            throw new Error(event.errorText || "Unknown error");
-          }
-        },
-      });
-
-      if (requiresInput) {
-        return;
-      }
-    } catch (error) {
-      const messageText =
-        error instanceof Error ? error.message : String(error);
-      setThreadMessages(activeThreadId, (previous) =>
-        setAssistantText(
-          previous,
-          assistantMessageId,
-          () => `[error] ${messageText}`,
-        ),
-      );
-    } finally {
-      const store = useReasoningStore.getState();
-      if (store.chainActive) {
-        if (store.chainStartTime != null) {
-          store.setChainElapsedMs(Date.now() - store.chainStartTime);
         }
-        store.setChainActive(false);
-      }
-      store.setChainStartTime(null);
-      store.setActive(false);
-      setIsRunning(false);
+    }
 
-      if (requiresInput && pendingAskUser) {
-        const askUser = pendingAskUser as { input: unknown };
-        useAskUserStore.getState().setActive({
-          args: askUser.input,
-          argsText: JSON.stringify(askUser.input),
-          resume: (text: unknown) => {
-            submitPrompt(String(text));
-            useAskUserStore.getState().setActive(null);
-          },
-          result: null,
-          status: { type: "running" } as const,
+    async function handleComposerSubmit() {
+        const prompt = composerText.trim();
+        if (!prompt || isRunning) {
+            return;
+        }
+        const composerState = runtime.thread.composer.getState();
+        const pendingAttachments = composerState.attachments;
+
+        let processedAttachments: NovaAttachmentData[] | undefined;
+        if (pendingAttachments.length > 0) {
+            const adapter = new CompositeAttachmentAdapter([
+                new SimpleImageAttachmentAdapter(),
+                new SimpleTextAttachmentAdapter(),
+            ]);
+            processedAttachments = [];
+            for (const att of pendingAttachments) {
+                if (att.status.type === "complete" && att.content) {
+                    processedAttachments.push(att as NovaAttachmentData);
+                } else if (att.status.type === "requires-action" && att.file) {
+                    const result = await adapter.send(att as any);
+                    processedAttachments.push(result as NovaAttachmentData);
+                }
+            }
+            runtime.thread.composer.clearAttachments();
+        }
+
+        await submitPrompt(prompt, processedAttachments);
+    }
+
+    function handleConfigModelsUpdated(nextModels: NovaModelRecord[]) {
+        startTransition(() => {
+            setModels(nextModels);
+            setSelectedModelId((current) => {
+                if (
+                    current &&
+                    nextModels.some((model) => model.id === current)
+                ) {
+                    return current;
+                }
+                return nextModels[0]?.id ?? null;
+            });
         });
-      }
     }
-  }
 
-  async function handleComposerSubmit() {
-    const prompt = composerText.trim();
-    if (!prompt || isRunning) {
-      return;
+    async function refreshProviders() {
+        const nextProviders = await listProviders();
+        startTransition(() => {
+            setProviders(nextProviders);
+        });
     }
-    const composerState = runtime.thread.composer.getState();
-    const pendingAttachments = composerState.attachments;
 
-    let processedAttachments: NovaAttachmentData[] | undefined;
-    if (pendingAttachments.length > 0) {
-      const adapter = new CompositeAttachmentAdapter([
-        new SimpleImageAttachmentAdapter(),
-        new SimpleTextAttachmentAdapter(),
-      ]);
-      processedAttachments = [];
-      for (const att of pendingAttachments) {
-        if (att.status.type === "complete" && att.content) {
-          processedAttachments.push(att as NovaAttachmentData);
-        } else if (att.status.type === "requires-action" && att.file) {
-          const result = await adapter.send(att as any);
-          processedAttachments.push(result as NovaAttachmentData);
+    function handleConfigStatus(message: string | null) {
+        console.debug(message);
+    }
+
+    const handleCancel = async () => {
+        useAskUserStore.getState().setActive(null);
+        const sid = sessionIdRef.current;
+        if (sid !== DRAFT_THREAD_ID) {
+            await interruptChat(sid);
         }
-      }
-      runtime.thread.composer.clearAttachments();
-    }
+    };
 
-    await submitPrompt(prompt, processedAttachments);
-  }
-
-  function handleConfigModelsUpdated(nextModels: NovaModelRecord[]) {
-    startTransition(() => {
-      setModels(nextModels);
-      setSelectedModelId((current) => {
-        if (current && nextModels.some((model) => model.id === current)) {
-          return current;
-        }
-        return nextModels[0]?.id ?? null;
-      });
-    });
-  }
-
-  async function refreshProviders() {
-    const nextProviders = await listProviders();
-    startTransition(() => {
-      setProviders(nextProviders);
-    });
-  }
-
-  function handleConfigStatus(message: string | null) {
-    console.debug(message);
-  }
-
-  const handleCancel = async () => {
-    useAskUserStore.getState().setActive(null);
-    const sid = sessionIdRef.current;
-    if (sid !== DRAFT_THREAD_ID) {
-      await interruptChat(sid);
-    }
-  };
-
-  const runtime = useExternalStoreRuntime({
-    messages: currentMessages,
-    isRunning,
-    onNew: async () => {},
-    onCancel: handleCancel,
-    convertMessage: (message) => message,
-    setMessages: (messages) => {
-      setThreadMessages(currentThreadId, [...messages]);
-    },
-    onResumeToolCall: (options) => {
-      void submitPrompt(String(options.payload ?? ""));
-    },
-    adapters: {
-      attachments: new CompositeAttachmentAdapter([
-        new SimpleImageAttachmentAdapter(),
-        new SimpleTextAttachmentAdapter(),
-      ]),
-      threadList: {
-        threadId: activeThreadListId,
-        threads,
-        archivedThreads: [],
-        onSwitchToNewThread: switchToDraftThread,
-        onSwitchToThread: (threadId) => {
-          if (isRunning || threadId === currentThreadId) {
-            return;
-          }
-          setCurrentThreadId(threadId);
-          void loadThread(threadId);
+    const runtime = useExternalStoreRuntime({
+        messages: currentMessages,
+        isRunning,
+        onNew: async () => {},
+        onCancel: handleCancel,
+        convertMessage: (message) => message,
+        setMessages: (messages) => {
+            setThreadMessages(currentThreadId, [...messages]);
         },
-      },
-    },
-  });
-
-  const aui = useAui({ tools: Tools({ toolkit }) });
-
-  return (
-    <AssistantRuntimeProvider aui={aui} runtime={runtime}>
-      <TooltipProvider>
-        <div className="flex h-screen overflow-hidden bg-background text-foreground">
-          <aside
-            className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden bg-sidebar transition-[width,opacity] duration-200 ease-out ${
-              isSidebarCollapsed
-                ? "w-0 opacity-0"
-                : "w-[280px] border-r opacity-100"
-            }`}
-          >
-            {!isSidebarCollapsed && (
-              <>
-                <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-                  <ThreadList />
-                </div>
-                <div className="flex items-center justify-between border-t border-sidebar-border px-3 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <div className="flex size-5 items-center justify-center rounded-md bg-sidebar-accent text-[10px] font-bold text-sidebar-accent-foreground">
-                      N
-                    </div>
-                    <span className="text-sm font-medium text-sidebar-foreground">
-                      Nova
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      i18n.changeLanguage(
-                        i18n.language === "zh-CN" ? "en" : "zh-CN",
-                      )
+        onResumeToolCall: (options) => {
+            void submitPrompt(String(options.payload ?? ""));
+        },
+        adapters: {
+            attachments: new CompositeAttachmentAdapter([
+                new SimpleImageAttachmentAdapter(),
+                new SimpleTextAttachmentAdapter(),
+            ]),
+            threadList: {
+                threadId: activeThreadListId,
+                threads,
+                archivedThreads: [],
+                onSwitchToNewThread: switchToDraftThread,
+                onSwitchToThread: (threadId) => {
+                    if (isRunning || threadId === currentThreadId) {
+                        return;
                     }
-                    className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                    aria-label="Switch language"
-                  >
-                    <LanguagesIcon className="size-4" />
-                  </button>
+                    setCurrentThreadId(threadId);
+                    void loadThread(threadId);
+                },
+            },
+        },
+    });
+
+    const aui = useAui({ tools: Tools({ toolkit }) });
+
+    return (
+        <AssistantRuntimeProvider aui={aui} runtime={runtime}>
+            <TooltipProvider>
+                <div className="flex h-screen overflow-hidden bg-background text-foreground">
+                    <aside
+                        className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden bg-sidebar transition-[width,opacity] duration-200 ease-out ${
+                            isSidebarCollapsed
+                                ? "w-0 opacity-0"
+                                : "w-[280px] border-r opacity-100"
+                        }`}
+                    >
+                        {!isSidebarCollapsed && (
+                            <>
+                                <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+                                    <ThreadList />
+                                </div>
+                                <div className="flex items-center justify-between border-t border-sidebar-border px-3 py-2.5">
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex size-5 items-center justify-center rounded-md bg-sidebar-accent text-[10px] font-bold text-sidebar-accent-foreground">
+                                            N
+                                        </div>
+                                        <span className="text-sm font-medium text-sidebar-foreground">
+                                            Nova
+                                        </span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            i18n.changeLanguage(
+                                                i18n.language === "zh-CN"
+                                                    ? "en"
+                                                    : "zh-CN",
+                                            )
+                                        }
+                                        className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                        aria-label="Switch language"
+                                    >
+                                        <LanguagesIcon className="size-4" />
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </aside>
+
+                    <main
+                        className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background"
+                        style={{ ["--thread-max-width" as string]: "44rem" }}
+                    >
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className={`fixed top-4 z-30 rounded-full bg-background/90 shadow-sm backdrop-blur transition-[left] duration-200 ease-out ${
+                                isSidebarCollapsed ? "left-4" : "left-[296px]"
+                            }`}
+                            aria-label={
+                                isSidebarCollapsed
+                                    ? t("app.expandSidebar")
+                                    : t("app.collapseSidebar")
+                            }
+                            onClick={() =>
+                                setIsSidebarCollapsed((value) => !value)
+                            }
+                        >
+                            {isSidebarCollapsed ? (
+                                <ChevronRightIcon className="size-4" />
+                            ) : (
+                                <ChevronLeftIcon className="size-4" />
+                            )}
+                        </Button>
+
+                        <div className="flex min-h-0 flex-1 flex-col">
+                            <Thread
+                                composer={{
+                                    ref: composerRef,
+                                    text: composerText,
+                                    isRunning,
+                                    onChange: setComposerText,
+                                    onSubmit: () => {
+                                        void handleComposerSubmit();
+                                    },
+                                    onCancel: handleCancel,
+                                    onKeyDown: (event) => {
+                                        if (
+                                            event.key === "Enter" &&
+                                            !event.shiftKey
+                                        ) {
+                                            event.preventDefault();
+                                            void handleComposerSubmit();
+                                        }
+                                    },
+                                }}
+                                modelSelection={{
+                                    models,
+                                    providers,
+                                    selectedModelId,
+                                    onSelect: (value) => {
+                                        setSelectedModelId(value);
+                                        const [provider, model] =
+                                            value.split(":");
+                                        if (provider && model) {
+                                            updateAgent("main", {
+                                                provider,
+                                                model,
+                                            }).catch(() => {});
+                                        }
+                                    },
+                                    onModelsUpdated: handleConfigModelsUpdated,
+                                    onProvidersRefresh: refreshProviders,
+                                    onStatusChange: handleConfigStatus,
+                                }}
+                            />
+                        </div>
+                    </main>
                 </div>
-              </>
-            )}
-          </aside>
-
-          <main
-            className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background"
-            style={{ ["--thread-max-width" as string]: "44rem" }}
-          >
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className={`fixed top-4 z-30 rounded-full bg-background/90 shadow-sm backdrop-blur transition-[left] duration-200 ease-out ${
-                isSidebarCollapsed ? "left-4" : "left-[296px]"
-              }`}
-              aria-label={
-                isSidebarCollapsed
-                  ? t("app.expandSidebar")
-                  : t("app.collapseSidebar")
-              }
-              onClick={() => setIsSidebarCollapsed((value) => !value)}
-            >
-              {isSidebarCollapsed ? (
-                <ChevronRightIcon className="size-4" />
-              ) : (
-                <ChevronLeftIcon className="size-4" />
-              )}
-            </Button>
-
-            <div className="flex min-h-0 flex-1 flex-col">
-              <Thread
-                  composer={{
-                    ref: composerRef,
-                    text: composerText,
-                    isRunning,
-                    onChange: setComposerText,
-                    onSubmit: () => {
-                      void handleComposerSubmit();
-                    },
-                    onCancel: handleCancel,
-                    onKeyDown: (event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        void handleComposerSubmit();
-                      }
-                    },
-                  }}
-                modelSelection={{
-                  models,
-                  providers,
-                  selectedModelId,
-                  onSelect: setSelectedModelId,
-                  onModelsUpdated: handleConfigModelsUpdated,
-                  onProvidersRefresh: refreshProviders,
-                  onStatusChange: handleConfigStatus,
-                }}
-              />
-            </div>
-          </main>
-        </div>
-      </TooltipProvider>
-    </AssistantRuntimeProvider>
-  );
+            </TooltipProvider>
+        </AssistantRuntimeProvider>
+    );
 }
