@@ -63,6 +63,24 @@ export async function listProviders(): Promise<NovaProviderRecord[]> {
   return payload.items
 }
 
+export async function getPreferences(): Promise<{
+  selected_provider: string | null
+  selected_model: string | null
+}> {
+  return (await fetch(buildUrl('/api/preferences'))).json()
+}
+
+export async function updatePreferences(prefs: {
+  selected_provider: string
+  selected_model: string
+}): Promise<void> {
+  await fetch(buildUrl('/api/preferences'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(prefs),
+  })
+}
+
 export async function createProvider(
   payload: NovaProviderCreateRequest,
 ): Promise<NovaModelRecord[]> {

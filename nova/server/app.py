@@ -9,7 +9,7 @@ from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -35,7 +35,7 @@ from nova.server.schemas import (
     ProviderCreateRequest,
     SessionListResponse,
 )
-from nova.settings import Settings, get_settings, reload_settings
+from nova.settings import Settings, get_settings, reload_settings, _load_config_payload, _write_json
 
 
 STREAM_RESPONSE_EXAMPLE = (
@@ -234,6 +234,28 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         if not deleted:
             raise HTTPException(status_code=404, detail=f"Agent '{key}' not found")
         return {"status": "deleted", "key": key}
+
+    @app.get("/api/preferences")
+    async def get_preferences(request: Request):
+        settings = request.app.state.settings
+        if not settings.config_path or not settings.config_path.exists():
+            return {"selected_provider": None, "selected_model": None}
+        payload = _load_config_payload(settings.config_path)
+        return {
+            "selected_provider": payload.get("selected_provider"),
+            "selected_model": payload.get("selected_model"),
+        }
+
+    @app.put("/api/preferences")
+    async def update_preferences(body: dict, request: Request):
+        settings = request.app.state.settings
+        if not settings.config_path:
+            return {"ok": False}
+        payload = _load_config_payload(settings.config_path)
+        payload["selected_provider"] = body.get("selected_provider")
+        payload["selected_model"] = body.get("selected_model")
+        _write_json(settings.config_path, payload)
+        return {"ok": True}
 
     static_dir = settings.frontend_dist_path
     if static_dir and static_dir.exists() and static_dir.is_dir():

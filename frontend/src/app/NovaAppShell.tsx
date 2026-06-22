@@ -24,12 +24,14 @@ import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { toThreadMessages } from "../lib/history-messages";
 import {
+  getPreferences,
   interruptChat,
   listMessages,
   listModels,
   listProviders,
   listSessions,
   streamChat,
+  updatePreferences,
 } from "../lib/nova-api";
 import { useAskUserStore } from "../stores/ask-user-store";
 import { useReasoningStore } from "../stores/reasoning-store";
@@ -280,6 +282,18 @@ export function NovaAppShell() {
       localStorage.setItem("nova-selected-model", selectedModelId);
     }
   }, [selectedModelId]);
+
+  useEffect(() => {
+    if (!selectedModelId) return;
+    const [provider, model] = selectedModelId.split(":");
+    if (provider && model) {
+      updatePreferences({
+        selected_provider: provider,
+        selected_model: model,
+      }).catch(() => {});
+    }
+  }, [selectedModelId]);
+
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const sessionIdRef = useRef(DRAFT_THREAD_ID);
 
@@ -305,6 +319,16 @@ export function NovaAppShell() {
         if (cancelled) {
           return;
         }
+
+        try {
+          const prefs = await getPreferences();
+          if (prefs.selected_provider && prefs.selected_model) {
+            const modelId = `${prefs.selected_provider}:${prefs.selected_model}`;
+            if (availableModels.some((m) => m.id === modelId)) {
+              localStorage.setItem("nova-selected-model", modelId);
+            }
+          }
+        } catch {}
 
         startTransition(() => {
           setModels(availableModels);
