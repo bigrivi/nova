@@ -134,28 +134,92 @@ function getDiffLineClass(line: string): string {
   return "text-slate-200";
 }
 
-const UnifiedDiffBlock = ({ diff }: { diff: string }) => {
-  const { t } = useTranslation();
+function getLineType(line: string): "header" | "add" | "del" | "context" {
+  if (line.startsWith("--- ") || line.startsWith("+++ ") || line.startsWith("@@")) return "header";
+  if (line.startsWith("+") && !line.startsWith("+++ ")) return "add";
+  if (line.startsWith("-") && !line.startsWith("--- ")) return "del";
+  return "context";
+}
+
+type SplitRow = {
+  left: string;
+  right: string;
+  leftClass: string;
+  rightClass: string;
+};
+
+function parseSplitDiff(diff: string): SplitRow[] {
   const lines = diff.split("\n");
+  const rows: SplitRow[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const lt = getLineType(line);
+    if (lt === "header") {
+      const cls = getDiffLineClass(line);
+      rows.push({ left: line, right: line, leftClass: cls, rightClass: cls });
+      i++;
+    } else if (lt === "del") {
+      if (i + 1 < lines.length && getLineType(lines[i + 1]) === "add") {
+        rows.push({
+          left: line,
+          right: lines[i + 1],
+          leftClass: "bg-rose-950/45 text-rose-200",
+          rightClass: "bg-emerald-950/45 text-emerald-200",
+        });
+        i += 2;
+      } else {
+        rows.push({
+          left: line,
+          right: "",
+          leftClass: "bg-rose-950/45 text-rose-200",
+          rightClass: "text-slate-200",
+        });
+        i++;
+      }
+    } else if (lt === "add") {
+      rows.push({
+        left: "",
+        right: line,
+        leftClass: "text-slate-200",
+        rightClass: "bg-emerald-950/45 text-emerald-200",
+      });
+      i++;
+    } else {
+      const cls = "text-slate-200";
+      rows.push({ left: line || " ", right: line || " ", leftClass: cls, rightClass: cls });
+      i++;
+    }
+  }
+  return rows;
+}
+
+const SplitDiffBlock = ({ diff }: { diff: string }) => {
+  const { t } = useTranslation();
+  const rows = useMemo(() => parseSplitDiff(diff), [diff]);
 
   return (
     <div className="mx-4 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-inner">
-      <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-        {t("tools.unifiedDiff")}
+      <div className="grid grid-cols-2 divide-x divide-slate-700">
+        <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{t("tools.original")}</div>
+        <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{t("tools.modified")}</div>
       </div>
-      <pre className="overflow-x-auto py-2 text-[12px] leading-6">
-        {lines.map((line, index) => (
-          <div
-            key={`${index}:${line}`}
-            className={cn(
-              "px-4 font-mono whitespace-pre",
-              getDiffLineClass(line),
-            )}
-          >
-            {line || " "}
-          </div>
-        ))}
-      </pre>
+      <div className="grid grid-cols-2 divide-x divide-slate-700">
+        <div className="overflow-x-auto py-2 text-[12px] font-mono leading-6">
+          {rows.map((row, i) => (
+            <div key={i} className={cn("px-4 whitespace-pre", row.leftClass)}>
+              {row.left || " "}
+            </div>
+          ))}
+        </div>
+        <div className="overflow-x-auto py-2 text-[12px] font-mono leading-6">
+          {rows.map((row, i) => (
+            <div key={i} className={cn("px-4 whitespace-pre", row.rightClass)}>
+              {row.right || " "}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 };
@@ -193,7 +257,7 @@ const FileMutationToolImpl: ToolCallMessagePartComponent = ({
           </p>
         ) : null}
         {model.diff ? (
-          <UnifiedDiffBlock diff={model.diff} />
+          <SplitDiffBlock diff={model.diff} />
         ) : model.plainResult ? (
           <div className="px-4 pb-1">
             <pre className="whitespace-pre-wrap rounded-xl bg-white/80 px-3 py-3 text-[12px] leading-6 text-slate-700">

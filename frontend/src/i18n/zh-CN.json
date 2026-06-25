@@ -74,6 +74,8 @@
   "tools.error": "错误：",
   "tools.edited": "已编辑",
   "tools.wrote": "已写入",
+  "tools.original": "原文",
+  "tools.modified": "修改后",
   "tools.unifiedDiff": "统一 Diff",
   "tools.selectMultiple": "请在下方选择所有选项后回答。",
   "tools.selectSingle": "请在下方选择你的选项后回答。",

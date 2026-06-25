@@ -74,6 +74,8 @@
   "tools.error": "Error:",
   "tools.edited": "Edited",
   "tools.wrote": "Wrote",
+  "tools.original": "Original",
+  "tools.modified": "Modified",
   "tools.unifiedDiff": "Unified Diff",
   "tools.selectMultiple": "Please answer below with all selected options.",
   "tools.selectSingle": "Please answer below with your selected option.",
