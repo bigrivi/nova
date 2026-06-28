@@ -247,8 +247,7 @@ class Agent:
             if tool_name == "shell":
                 args["_approval_manager"] = self._approval
                 args["_agent_event_emitter"] = self._emit_approval
-                if req_id:
-                    args["_skip_wait"] = True
+                args["_skip_wait"] = True
             result = await tool_obj.func(**args)
             log.info(
                 f"Tool {tool_name} result: {result.content[:100] if result.content else 'empty'}...")

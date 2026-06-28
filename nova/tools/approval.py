@@ -34,7 +34,8 @@ class ApprovalManager:
         description: str = "",
         timeout: int | None = None,
     ) -> str:
-        """Create a pending approval request and return its id (non-blocking)."""
+        """Create a pending approval request and return its id (non-blocking).
+        timeout=0 means wait indefinitely (used by wait_with_heartbeat)."""
         if command in self._allowlist:
             return ""
 
