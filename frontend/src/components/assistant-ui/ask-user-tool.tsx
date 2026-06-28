@@ -18,10 +18,11 @@ type AskUserQuestion = {
   id: string;
   header: string;
   question: string;
-  input_type: "text" | "select" | "confirm";
+  input_type: "text" | "select" | "confirm" | "textarea";
   options: AskUserOption[];
   multiple?: boolean;
   required?: boolean;
+  default?: string;
 };
 
 // ── Payload parsers ─────────────────────────────────────────────────
@@ -53,7 +54,10 @@ function normalizeQuestion(raw: Record<string, unknown>): AskUserQuestion | null
     : [];
 
   const normalizedType: AskUserQuestion["input_type"] =
-    inputType === "select" ? "select" : inputType === "confirm" ? "confirm" : "text";
+    inputType === "select" ? "select"
+    : inputType === "confirm" ? "confirm"
+    : inputType === "textarea" ? "textarea"
+    : "text";
 
   return {
     id: String(raw.id ?? "").trim(),
@@ -63,6 +67,7 @@ function normalizeQuestion(raw: Record<string, unknown>): AskUserQuestion | null
     options,
     multiple: Boolean(raw.multiple),
     required: raw.required !== false,
+    default: String(raw.default ?? ""),
   };
 }
 
@@ -94,7 +99,15 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
     normalizeAskUserQuestions(args) ??
     normalizeAskUserQuestions(argsText);
 
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string>>(() =>
+    questions
+      ? Object.fromEntries(
+          questions
+            .filter((q) => q.default)
+            .map((q) => [q.id, q.default!]),
+        )
+      : {},
+  );
   const [activeStep, setActiveStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
 
@@ -293,6 +306,15 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
               );
             })}
           </div>
+        ) : q.input_type === "textarea" ? (
+          <textarea
+            value={answer ?? ""}
+            onChange={(e) => setAnswer(aid, e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={t("tools.answerPlaceholder")}
+            rows={4}
+            className="w-full min-h-[80px] rounded-xl border border-sky-200 bg-white/80 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 resize-y"
+          />
         ) : (
           <input
             type="text"

@@ -3,6 +3,7 @@ import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { Reasoning, ReasoningChainGroup, ThinkingIndicator } from "@/components/assistant-ui/reasoning";
 import { ApprovalDialog } from "@/components/assistant-ui/approval-dialog";
 import { AskUserTool } from "@/components/assistant-ui/ask-user-tool";
+import { CodeRunTool } from "@/components/assistant-ui/code-run-tool";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { useApprovalStore } from "@/stores/approval-store";
 import { useAskUserStore } from "@/stores/ask-user-store";
@@ -38,7 +39,7 @@ import {
   RefreshCwIcon,
 } from "lucide-react";
 import type { KeyboardEvent, RefObject } from "react";
-import { type FC, useEffect, useState } from "react";
+import { type FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 const ASSISTANT_NAME = "Nova";
@@ -67,8 +68,45 @@ type ThreadProps = {
 
 export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
   const [composerHeight, setComposerHeight] = useState(0);
+  const [askUserHeight, setAskUserHeight] = useState(0);
+  const [approvalHeight, setApprovalHeight] = useState(0);
   const activeCall = useAskUserStore((s) => s.active);
   const pendingApproval = useApprovalStore((s) => s.pending);
+
+  const askUserObserverRef = useRef<ResizeObserver | null>(null);
+  const approvalObserverRef = useRef<ResizeObserver | null>(null);
+
+  const askUserRef = useCallback((el: HTMLDivElement | null) => {
+    askUserObserverRef.current?.disconnect();
+    askUserObserverRef.current = null;
+    if (!el) { setAskUserHeight(0); return; }
+    const ro = new ResizeObserver(([entry]) => setAskUserHeight(entry.contentRect.height));
+    ro.observe(el);
+    askUserObserverRef.current = ro;
+  }, []);
+
+  const approvalRef = useCallback((el: HTMLDivElement | null) => {
+    approvalObserverRef.current?.disconnect();
+    approvalObserverRef.current = null;
+    if (!el) { setApprovalHeight(0); return; }
+    const ro = new ResizeObserver(([entry]) => setApprovalHeight(entry.contentRect.height));
+    ro.observe(el);
+    approvalObserverRef.current = ro;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      askUserObserverRef.current?.disconnect();
+      approvalObserverRef.current?.disconnect();
+    };
+  }, []);
+
+  const spacerHeight = useMemo(() => {
+    if (approvalHeight > 0) return approvalHeight + 16;
+    if (askUserHeight > 0) return askUserHeight + 16;
+    if (composerHeight > 0) return composerHeight + 20;
+    return 0;
+  }, [approvalHeight, askUserHeight, composerHeight]);
 
   return (
     <>
@@ -106,17 +144,31 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
             <div
               aria-hidden="true"
               className="shrink-0"
-              style={{
-                height: composerHeight ? `${composerHeight + 20}px` : "0px",
-              }}
+              style={{ height: spacerHeight ? `${spacerHeight}px` : "0px" }}
             />
 
             <ThreadScrollToBottom />
           </div>
         </ThreadPrimitive.Viewport>
 
-        <AskUserOverlay />
-        <ApprovalOverlay />
+        {activeCall && (
+          <div ref={askUserRef} className="absolute inset-x-0 bottom-0 z-50 bg-background">
+            <div className="mx-auto w-full max-w-(--thread-max-width) px-4 pb-3 pt-3">
+              <div className="max-h-[70vh] overflow-y-auto">
+                <AskUserTool {...activeCall as React.ComponentProps<typeof AskUserTool>} />
+              </div>
+            </div>
+          </div>
+        )}
+        {pendingApproval && (
+          <div ref={approvalRef} className="absolute inset-x-0 bottom-0 z-50 bg-background">
+            <div className="mx-auto w-full max-w-(--thread-max-width) px-4 pb-3 pt-3">
+              <div className="max-h-[70vh] overflow-y-auto">
+                <ApprovalDialog />
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className={`pointer-events-none absolute inset-x-0 bottom-0 z-20${activeCall || pendingApproval ? ' invisible' : ''}`}>
           <ThreadStickyComposer
@@ -188,38 +240,6 @@ const ThreadScrollToBottom: FC = () => {
       >
         <ArrowDownIcon />
       </TooltipIconButton>
-    </div>
-  );
-};
-
-
-
-const ApprovalOverlay: FC = () => {
-  const pending = useApprovalStore((s) => s.pending);
-  if (!pending) return null;
-
-  return (
-    <div className="absolute inset-x-0 bottom-0 z-50 bg-background">
-      <div className="mx-auto w-full max-w-(--thread-max-width) px-4 pb-3 pt-3">
-        <div className="max-h-[70vh] overflow-y-auto">
-          <ApprovalDialog />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const AskUserOverlay: FC = () => {
-  const active = useAskUserStore((s) => s.active);
-  if (!active) return null;
-
-  return (
-    <div className="absolute inset-x-0 bottom-0 z-50 bg-background">
-      <div className="mx-auto w-full max-w-(--thread-max-width) px-4 pb-3 pt-3">
-        <div className="max-h-[70vh] overflow-y-auto">
-          <AskUserTool {...active as React.ComponentProps<typeof AskUserTool>} />
-        </div>
-      </div>
     </div>
   );
 };
@@ -348,6 +368,7 @@ const AssistantMessage: FC = () => {
               case "tool-call": {
                 const { toolUI, ...toolProps } = part;
                 if (part.toolName === "ask_user") return null;
+                if (part.toolName === "code_run") return <CodeRunTool {...toolProps} />;
                 return toolUI ?? <ToolFallback {...toolProps} />;
               }
               case "indicator":

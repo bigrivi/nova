@@ -6,7 +6,7 @@ from nova.llm import ToolResult
 from nova.tools.registry import tool
 
 
-_VALID_TYPES = frozenset({"text", "select", "confirm"})
+_VALID_TYPES = frozenset({"text", "select", "confirm", "textarea"})
 
 
 @tool(
@@ -16,6 +16,7 @@ _VALID_TYPES = frozenset({"text", "select", "confirm"})
         "Pass multiple questions for related inputs the user can answer in one batch. "
         "Each question needs a unique id. "
         "input_type 'text' for free-form input (names, paths, emails, etc.). "
+        "input_type 'textarea' for multi-line free-form input (use 'default' to provide a template). "
         "input_type 'select' for choosing from provided options. "
         "input_type 'confirm' for yes/no questions."
     ),
@@ -42,8 +43,12 @@ _VALID_TYPES = frozenset({"text", "select", "confirm"})
                         },
                         "input_type": {
                             "type": "string",
-                            "enum": ["text", "select", "confirm"],
-                            "description": "'text' for typed input, 'select' for choosing from options, 'confirm' for yes/no.",
+                            "enum": ["text", "select", "confirm", "textarea"],
+                            "description": "'text' for typed input, 'textarea' for multi-line input, 'select' for choosing from options, 'confirm' for yes/no.",
+                        },
+                        "default": {
+                            "type": "string",
+                            "description": "Pre-fill value for text/textarea inputs. Use to provide a template the user fills in.",
                         },
                         "options": {
                             "type": "array",
@@ -106,6 +111,7 @@ async def ask_user(questions: list[dict]) -> ToolResult:
             "options": options,
             "multiple": bool(q.get("multiple", False)),
             "required": bool(q.get("required", True)),
+            "default": str(q.get("default", "")),
         })
 
     payload = {"questions": cleaned}

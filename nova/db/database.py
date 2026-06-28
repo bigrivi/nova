@@ -212,7 +212,7 @@ class Database:
                 items.append(tool_call)
             else:
                 items.append(str(tool_call))
-        return json.dumps(items)
+        return json.dumps(items, ensure_ascii=False)
 
     @staticmethod
     def _row_to_message(row_dict: dict[str, Any]) -> Message:
