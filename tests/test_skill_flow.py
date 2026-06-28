@@ -91,7 +91,7 @@ async def test_agent_skill_flow_uses_list_skills_then_load_skill(monkeypatch, tm
         config=AgentConfig(model="test-model", max_iterations=4),
         llm_provider=SkillFlowProvider(),
     )
-    agent.register_all_tools()
+    await agent.register_all_tools()
 
     events = []
     async for event, data in agent.chat_stream("Use the available skill if helpful."):

@@ -476,16 +476,7 @@ def _register_tools() -> None:
             on_result=_delegate_to_agent_result,
             show_detail=True, default_open=True, show_time=True,
         ),
-        "install_python_package": ToolRenderer(
-            cat="Other", icon="📦", accent_css="muted",
-            summary=lambda a: f"{a.get('package', '')}=={a.get('version', '')}" if a.get(
-                "version") else a.get("package", ""),
-            params=lambda a: (
-                [("package", a["package"])] +
-                ([("version", a["version"])] if a.get("version") else [])
-            ) if a.get("package") else [],
-            show_detail=False, show_time=True,
-        ),
+
     })
 
 

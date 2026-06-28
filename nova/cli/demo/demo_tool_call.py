@@ -116,8 +116,6 @@ CATEGORIES: list[tuple[str, list[dict]]] = [
         ])),
         dict(tool_name="delegate_to_agent", arguments=dict(agent_key="code-review",
              task="Review the PR", timeout=300), result="Code review complete. Found 2 issues."),
-        dict(tool_name="install_python_package",
-             arguments=dict(package="httpx", version="0.28.0")),
     ]),
 ]
 

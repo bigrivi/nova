@@ -332,6 +332,7 @@ class OpenAIProvider(LLMProvider):
         model: str,
         tools: list[dict] = None,
         abort_event: Optional[asyncio.Event] = None,
+        timeout: Optional[int] = None,
     ) -> AsyncGenerator[Done, None]:
         formatted_messages = self._format_messages(messages)
         headers = self._build_headers()
@@ -345,6 +346,8 @@ class OpenAIProvider(LLMProvider):
         connector = self._make_connector()
         session = aiohttp.ClientSession(connector=connector, trust_env=True)
 
+        effective_timeout = aiohttp.ClientTimeout(total=timeout) if timeout is not None else aiohttp.ClientTimeout(total=None)
+
         try:
             resp = await self._post_with_retry(
                 session=session,
@@ -352,7 +355,7 @@ class OpenAIProvider(LLMProvider):
                 headers=headers,
                 body=body,
                 abort_event=abort_event,
-                timeout=aiohttp.ClientTimeout(total=None),
+                timeout=effective_timeout,
             )
 
             if resp is None:

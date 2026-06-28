@@ -52,7 +52,6 @@ When calling a tool, output JSON only:
 
 # Tool Usage
 - Prefer tool usage when the required runtime fact is not already present in the prompt.
-- To install a Python package, use the `install_python_package` tool instead of `pip install` via shell.
 - Runtime path context is already provided below. Do not call bash `pwd` just to learn Nova's home or workspace.
 - Only use bash `pwd` when the user explicitly asks for the shell process working directory.
 - `{home}/MEMORY.md` is your long-term memory, auto-injected every session as `## Long-Term Memory`. Use `write` with that path to update facts, preferences, or decisions when they change. Keep it concise.
@@ -107,10 +106,16 @@ When calling a tool, output JSON only:
             parts.append(f"## Soul\n\n{self.config.soul_content}")
 
         if self.config.user_content:
-            parts.append(f"## User\n\n{self.config.user_content}")
+            if has_threats(self.config.user_content):
+                parts.append("## User\n\n[User profile omitted — content flagged as potential injection]")
+            else:
+                parts.append(f"## User\n\n{self.config.user_content}")
 
         if self.config.memory_content:
-            parts.append(f"## Long-Term Memory\n\n{self.config.memory_content}")
+            if has_threats(self.config.memory_content):
+                parts.append("## Long-Term Memory\n\n[Memory omitted — content flagged as potential injection]")
+            else:
+                parts.append(f"## Long-Term Memory\n\n{self.config.memory_content}")
 
         return "\n\n".join(parts)
 

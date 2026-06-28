@@ -121,29 +121,43 @@ class Agent:
             global_skills = Path.home() / ".nova" / "skills"
             self._skill_service = SkillService(skills_dir=skills_dir, fallback_dir=global_skills)
         self._skill_service.scan_skills()
-        soul_content = (agent_dir / "SOUL.md").read_text(
-            encoding="utf-8") if (agent_dir / "SOUL.md").exists() else ""
-        identity_content = (agent_dir / "IDENTITY.md").read_text(
-            encoding="utf-8").strip() if (agent_dir / "IDENTITY.md").exists() else ""
-        user_content = (agent_dir / "USER.md").read_text(
-            encoding="utf-8") if (agent_dir / "USER.md").exists() else ""
-        memory_content = (agent_dir / "MEMORY.md").read_text(
-            encoding="utf-8") if (agent_dir / "MEMORY.md").exists() else ""
-        self._prompt_builder = PromptBuilder(
-            PromptConfig(
-                identity_content=identity_content,
-                soul_content=soul_content,
-                user_content=user_content,
-                memory_content=memory_content,
-                workspace_dir=str(agent_dir),
+        if prompt_config is not None:
+            self._prompt_builder = PromptBuilder(prompt_config)
+        else:
+            soul_content = (agent_dir / "SOUL.md").read_text(
+                encoding="utf-8") if (agent_dir / "SOUL.md").exists() else ""
+            identity_content = (agent_dir / "IDENTITY.md").read_text(
+                encoding="utf-8").strip() if (agent_dir / "IDENTITY.md").exists() else ""
+            user_content = (agent_dir / "USER.md").read_text(
+                encoding="utf-8") if (agent_dir / "USER.md").exists() else ""
+            memory_content = (agent_dir / "MEMORY.md").read_text(
+                encoding="utf-8") if (agent_dir / "MEMORY.md").exists() else ""
+            self._prompt_builder = PromptBuilder(
+                PromptConfig(
+                    identity_content=identity_content,
+                    soul_content=soul_content,
+                    user_content=user_content,
+                    memory_content=memory_content,
+                    workspace_dir=str(agent_dir),
+                )
             )
-        )
         self._abort_event = asyncio.Event()
+
+        self._turns_since_review = 0
+        self._guardrails = ToolGuardrails()
+        self._approval = ApprovalManager()
+        self.memory_manager = MemoryManager()
+        if not is_sub_agent:
+            self.memory_manager.add_provider(BuiltinMemoryProvider())
 
     def interrupt(self) -> None:
         """Interrupt the current execution; the user can trigger this at any time."""
         self._abort_event.set()
         log.info("Agent interrupted")
+
+    def resolve_approval(self, req_id: str, approved: bool, remember: bool = False) -> bool:
+        """Resolve a pending approval request (called from server route)."""
+        return self._approval.resolve(req_id, approved, remember)
 
     def _check_abort(self) -> bool:
         """Check whether execution has been interrupted."""
@@ -178,13 +192,16 @@ class Agent:
                     pass
 
     def _build_system_prompt(self, session_ctx: Any = None) -> str:
-        """Build the dynamic system prompt."""
         tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else []
         available_skills = self._skill_service.list_skills()
-        return self._prompt_builder.build(
+        system = self._prompt_builder.build(
             tools_schemas=tool_schemas,
             available_skills=available_skills,
         )
+        memory_context = getattr(self, '_current_memory_context', '')
+        if memory_context:
+            system += '\n\n' + build_memory_context_block(memory_context)
+        return system
 
     async def _get_messages(self) -> list[LLMMessage]:
         session = self.session.get_current_session()
@@ -227,17 +244,33 @@ class Agent:
         try:
             args = self._parse_tool_args(tool_call.arguments)
             log.info(f"Tool {tool_name} args: {args}")
+            if tool_name == "shell":
+                args["_approval_manager"] = self._approval
+                args["_agent_event_emitter"] = self._emit_approval
+                if req_id:
+                    args["_skip_wait"] = True
             result = await tool_obj.func(**args)
             log.info(
                 f"Tool {tool_name} result: {result.content[:100] if result.content else 'empty'}...")
+            guardrail_action = self._guardrails.observe(tool_name, args, result.success)
+            if guardrail_action == GuardrailAction.HALT:
+                log.warning("Guardrails halted tool loop after %s with %s", tool_name, args)
+                return ToolResult(
+                    success=False,
+                    content="You seem to be repeating the same action. Try a different approach.",
+                )
             return result
         except Exception as e:
             log.error(f"Tool {tool_name} error: {e}")
+            self._guardrails.observe(tool_name, {}, False)
             return ToolResult(success=False, content=f"Tool error: {e}")
 
-    async def _execute_tool_with_abort(self, tc) -> Optional[ToolResult]:
+    async def _emit_approval(self, data: dict) -> None:
+        await self._emit(AgentEvent.APPROVAL_REQUIRED, data)
+
+    async def _execute_tool_with_abort(self, tc, req_id: str = "") -> Optional[ToolResult]:
         tool_task = asyncio.create_task(
-            self._execute_tool(tc),
+            self._execute_tool(tc, req_id=req_id),
             name=f"tool_{tc.name}",
         )
         abort_task = asyncio.create_task(
@@ -277,6 +310,12 @@ class Agent:
             yield AgentEvent.DONE, stop_payload
             return
 
+        session = self.session.get_current_session()
+        self._current_memory_context = await self.memory_manager.prefetch_all(
+            query=getattr(self, '_last_user_input', ''),
+            session_id=session.id if session else '',
+        )
+
         messages = await self._get_messages()
 
         accumulated_content = ""
@@ -287,9 +326,11 @@ class Agent:
         _reasoning_started = False
         _reasoning_started_at = None
         reasoning_elapsed_ms = None
+        _scrubber = StreamingContextScrubber()
 
+        reasoning_timeout = get_reasoning_timeout(self.config.model, default=120)
         log.info(
-            f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}")
+            f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}, timeout={reasoning_timeout}")
         generator_closing = False
         try:
             async for chunk in self.llm.chat_stream(
@@ -297,6 +338,7 @@ class Agent:
                 model=self.config.model,
                 tools=tool_schemas,
                 abort_event=self._abort_event,
+                timeout=reasoning_timeout,
             ):
                 stop_payload = await self._wait_if_aborted()
                 if stop_payload:
@@ -310,8 +352,10 @@ class Agent:
                             _reasoning_started_at = time.monotonic()
                             await self._emit(AgentEvent.REASONING_START)
                             yield AgentEvent.REASONING_START, None
+                        cleaned = _scrubber.feed(chunk.content)
                         accumulated_reasoning += chunk.content
-                        yield AgentEvent.REASONING_DELTA, chunk.content
+                        if cleaned:
+                            yield AgentEvent.REASONING_DELTA, cleaned
                     elif chunk.type == "text_delta":
                         if not _text_started:
                             _text_started = True
@@ -321,8 +365,10 @@ class Agent:
                                 yield AgentEvent.REASONING_END, reasoning_elapsed_ms
                             await self._emit(AgentEvent.TEXT_START)
                             yield AgentEvent.TEXT_START, None
+                        cleaned = _scrubber.feed(chunk.content)
                         accumulated_content += chunk.content
-                        yield AgentEvent.TEXT_DELTA, chunk.content
+                        if cleaned:
+                            yield AgentEvent.TEXT_DELTA, cleaned
                     elif chunk.type == "done":
                         if getattr(chunk, "aborted", False):
                             yield AgentEvent.DONE, _done_payload("stopped", accumulated_content)
@@ -353,6 +399,9 @@ class Agent:
             yield AgentEvent.ERROR, _error_payload("llm_error", str(e))
             return
         finally:
+            flushed = _scrubber.flush()
+            if flushed:
+                accumulated_content += flushed
             if accumulated_reasoning and not _text_started:
                 reasoning_elapsed_ms = int((time.monotonic() - _reasoning_started_at) * 1000) if _reasoning_started_at else None
                 await self._emit(AgentEvent.REASONING_END)
@@ -419,7 +468,46 @@ class Agent:
                 if stop_payload:
                     yield AgentEvent.DONE, stop_payload
                     return
-                result = await self._execute_tool_with_abort(tc)
+
+                req_id = ""
+                tc_name = tc.name if hasattr(tc, 'name') else str(tc)
+                if tc_name == "shell":
+                    try:
+                        tc_args = self._parse_tool_args(
+                            tc.arguments if hasattr(tc, 'arguments') else "{}")
+                        cmd = tc_args.get("command", "")
+                        desc = tc_args.get("description", "") or cmd[:80]
+
+                        blocked, hdesc = is_hardline(cmd)
+                        if blocked:
+                            log.info("Hardline command rejected: %s (%s)", cmd, hdesc)
+                            yield AgentEvent.DONE, _done_payload("stopped", hdesc)
+                            return
+
+                        dangerous, ddesc = is_dangerous(cmd)
+                        if dangerous:
+                            req_id = self._approval.pre_request(cmd, desc, timeout=0)
+                            if req_id:
+                                yield AgentEvent.APPROVAL_REQUIRED, {
+                                    "id": req_id,
+                                    "type": "shell",
+                                    "command": cmd,
+                                    "description": desc,
+                                }
+                                async for tick in self._approval.wait_with_heartbeat(req_id):
+                                    if tick is None:
+                                        yield AgentEvent.APPROVAL_HEARTBEAT, None
+                                    else:
+                                        if not tick:
+                                            yield AgentEvent.DONE, _done_payload("stopped", "Command rejected by user")
+                                            return
+                                        break
+                        else:
+                            req_id = ""
+                    except Exception:
+                        pass
+
+                result = await self._execute_tool_with_abort(tc, req_id=req_id)
                 if result is None:
                     yield AgentEvent.DONE, _done_payload("stopped", "Stopped by user")
                     return
@@ -502,7 +590,11 @@ class Agent:
             )
 
         current_session = self.session.get_current_session()
-        yield AgentEvent.SESSION, current_session.id if current_session else None
+        session_id = current_session.id if current_session else ""
+
+        await self.memory_manager.initialize_all(session_id)
+
+        yield AgentEvent.SESSION, session_id
         await self._emit(AgentEvent.START, user_input)
         yield AgentEvent.START, user_input
 
@@ -522,6 +614,7 @@ class Agent:
                         if part.get("type") == "text":
                             message_text = part.get(
                                 "text", "") + "\n\n" + message_text
+        self._last_user_input = message_text
         await self.session.add_message(
             role="user",
             content=message_text,
@@ -558,38 +651,52 @@ class Agent:
             await self._emit(AgentEvent.COMPACTION_END, compaction_payload)
             yield AgentEvent.COMPACTION_END, compaction_payload
 
-        run_group_id = uuid.uuid4().hex
-        turn_count = 0
-        for _ in range(self.config.max_iterations):
-            turn_count += 1
-            await self._emit(AgentEvent.TURN_START, {"turn": turn_count})
-            yield AgentEvent.TURN_START, {"turn": turn_count}
+        try:
+            run_group_id = uuid.uuid4().hex
+            turn_count = 0
+            for _ in range(self.config.max_iterations):
+                turn_count += 1
+                await self._emit(AgentEvent.TURN_START, {"turn": turn_count})
+                yield AgentEvent.TURN_START, {"turn": turn_count}
 
-            done_payload = None
-            async for event, data in self._run_turn(turn_count, tool_schemas, group_id=run_group_id):
-                if event == AgentEvent.DONE:
-                    done_payload = data
-                else:
-                    yield event, data
+                done_payload = None
+                async for event, data in self._run_turn(turn_count, tool_schemas, group_id=run_group_id):
+                    if event == AgentEvent.DONE:
+                        done_payload = data
+                    else:
+                        yield event, data
 
-            await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
-            yield AgentEvent.TURN_END, {"turn": turn_count}
+                await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
+                yield AgentEvent.TURN_END, {"turn": turn_count}
 
-            if done_payload is not None:
-                await self._emit(AgentEvent.DONE, done_payload)
-                yield AgentEvent.DONE, done_payload
-                return
+                if done_payload is not None:
+                    if done_payload.get("reason") in ("completed", "requires_input"):
+                        asyncio.create_task(
+                            self._sync_turn_memory(done_payload)
+                        )
+                        if self.config.memory_review_interval > 0:
+                            self._turns_since_review += 1
+                            if self._turns_since_review >= self.config.memory_review_interval:
+                                self._turns_since_review = 0
+                                asyncio.create_task(
+                                    self._background_memory_review()
+                                )
+                    await self._emit(AgentEvent.DONE, done_payload)
+                    yield AgentEvent.DONE, done_payload
+                    return
 
-        error_payload = _error_payload(
-            "max_iterations", "Maximum iterations reached")
-        await self._emit(AgentEvent.ERROR, error_payload)
-        log.warning(f"[Turn {turn_count}] Maximum iterations reached")
-        yield AgentEvent.ERROR, error_payload
+            error_payload = _error_payload(
+                "max_iterations", "Maximum iterations reached")
+            await self._emit(AgentEvent.ERROR, error_payload)
+            log.warning(f"[Turn {turn_count}] Maximum iterations reached")
+            yield AgentEvent.ERROR, error_payload
+        finally:
+            await self.memory_manager.shutdown_all()
 
     def register_tool(self, func: Callable, name: str = None) -> None:
         self.tool_registry.register(func, name)
 
-    def register_all_tools(self) -> None:
+    async def register_all_tools(self) -> None:
         from nova import tools as tools_module
         for name in dir(tools_module):
             if name.startswith("_"):
@@ -600,11 +707,127 @@ class Agent:
         self.tool_registry.register(self._skill_tools.list_skills, name="list_skills")
         self.tool_registry.register(self._skill_tools.load_skill, name="load_skill")
         self.tool_registry.register(self._skill_tools.install_skill, name="install_skill")
-        
+
         # Register delegate_to_agent tool if this is not a sub-agent
         if not self.is_sub_agent:
             from nova.tools.delegate import delegate_to_agent
             self.tool_registry.register(delegate_to_agent, name="delegate_to_agent")
+
+        # Register MCP remote tools
+        if not self.is_sub_agent:
+            try:
+                mcp = MCPManager.get_shared()
+                await mcp.ensure_initialized()
+                mcp.register_tools(self.tool_registry)
+            except Exception:
+                log.exception("Failed to initialize MCP servers")
+
+    async def _sync_turn_memory(self, done_payload: dict) -> None:
+        try:
+            session = self.session.get_current_session()
+            session_id = session.id if session else ""
+            user = getattr(self, '_last_user_input', '')
+            assistant = done_payload.get("content", "") or ""
+            if user:
+                await self.memory_manager.sync_all(
+                    user_content=user,
+                    assistant_content=assistant,
+                    session_id=session_id,
+                )
+        except Exception as e:
+            log.warning("Post-turn memory sync failed: %s", e)
+
+    async def _background_memory_review(self) -> None:
+        try:
+            messages = await self.session.get_messages(last_n=40)
+            if len(messages) < 4:
+                return
+
+            from nova.memory.models import MemoryWriteRequest
+            from nova.memory.service import MemoryService
+
+            lines = []
+            for m in messages[-30:]:
+                role = getattr(m, "role", "?")
+                content = getattr(m, "content", "") or ""
+                if role == "tool":
+                    content = content[:200] if len(content) > 200 else content
+                if content:
+                    lines.append(f"[{role}]: {content}")
+
+            prompt = (
+                "Review the recent conversation and extract durable facts "
+                "worth remembering for future sessions.\n\n"
+                "Focus on:\n"
+                "- User preferences, habits, or communication style\n"
+                "- Project architecture decisions or technology choices\n"
+                "- Environment facts (paths, tools, configurations)\n"
+                "- Recurring patterns or workflows\n\n"
+                "Return a JSON array. Each entry must have:\n"
+                "- key: short unique identifier (snake_case)\n"
+                "- content: the full fact text\n"
+                "- summary: 1-line summary\n"
+                "- scope: \"user\" or \"project\" or \"session\"\n"
+                "- memory_type: \"fact\" or \"preference\" or \"decision\" or \"context\"\n"
+                "- tags: list of keywords\n\n"
+                "Conversation:\n" + "\n".join(lines[-30:]) +
+                "\n\nReturn ONLY valid JSON array. If nothing worth saving, "
+                "return []."
+            )
+
+            result = await self.llm.chat(
+                messages=[LLMMessage(role="user", content=prompt)],
+                model=self.config.model,
+            )
+            facts = self._parse_review_facts(result.content)
+            if not facts:
+                return
+
+            service = MemoryService()
+            saved = 0
+            for fact in facts:
+                try:
+                    _, created = await service.save(MemoryWriteRequest(
+                        key=fact.get("key", "auto-review"),
+                        content=fact.get("content", ""),
+                        summary=fact.get("summary", ""),
+                        scope=fact.get("scope", "user"),
+                        memory_type=fact.get("memory_type", "fact"),
+                        tags=fact.get("tags", []),
+                    ))
+                    if created:
+                        saved += 1
+                except Exception as e:
+                    log.debug("Failed to save reviewed fact: %s", e)
+            if saved:
+                log.info("Memory review saved %d new fact(s)", saved)
+        except Exception as e:
+            log.warning("Background memory review failed: %s", e)
+
+    @staticmethod
+    def _parse_review_facts(content: str) -> list[dict]:
+        text = content.strip()
+        if not text:
+            return []
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if len(lines) >= 3:
+                text = "\n".join(lines[1:-1]).strip()
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            start = text.find("[")
+            end = text.rfind("]")
+            if start != -1 and end != -1 and end > start:
+                try:
+                    parsed = json.loads(text[start:end+1])
+                except json.JSONDecodeError:
+                    return []
+            else:
+                return []
+        if not isinstance(parsed, list):
+            return []
+        return parsed
 
     def add_sub_agent(self, sub_agent: "Agent") -> None:
         """Add a sub-agent to this agent's list of sub-agents."""

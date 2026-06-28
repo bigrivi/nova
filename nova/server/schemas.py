@@ -166,6 +166,18 @@ class ResponseErrorEventData(BaseStreamEventData):
     message: str
 
 
+class ApprovalRequiredEventData(BaseStreamEventData):
+    request_id: str
+    command: str
+    description: str
+
+
+class ApproveRequest(BaseModel):
+    request_id: str
+    approved: bool
+    remember: bool = False
+
+
 class StreamEvent(BaseModel):
     type: str
     data: BaseStreamEventData
@@ -216,6 +228,11 @@ class ResponseErrorEvent(StreamEvent):
     data: ResponseErrorEventData
 
 
+class ApprovalRequiredEvent(StreamEvent):
+    type: Literal["approval.required"] = "approval.required"
+    data: ApprovalRequiredEventData
+
+
 ServerStreamEvent: TypeAlias = (
     SessionStartedEvent
     | ResponseStartedEvent
@@ -226,6 +243,7 @@ ServerStreamEvent: TypeAlias = (
     | ResponseCancelledEvent
     | InputRequiredEvent
     | ResponseErrorEvent
+    | ApprovalRequiredEvent
 )
 
 

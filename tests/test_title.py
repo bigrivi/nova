@@ -25,7 +25,7 @@ async def test_title_generation():
         config=AgentConfig(model="gemma4:26b", max_iterations=2),
         llm_provider=llm,
     )
-    agent.register_all_tools()
+    await agent.register_all_tools()
 
     session_id = None
     async for event, data in agent.chat_stream("Help me build a web server in Python", session_id=session_id):

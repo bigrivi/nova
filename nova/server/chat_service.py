@@ -13,6 +13,8 @@ from nova.db.database import ensure_db
 from nova.server.ai_sdk_stream import AISDKStreamAdapter
 from nova.server.request_registry import RequestRegistry
 from nova.server.schemas import (
+    ApprovalRequiredEvent,
+    ApprovalRequiredEventData,
     BaseStreamEventData,
     ChatRequest,
     ChatResponse,
@@ -269,6 +271,14 @@ class ChatService:
                 ResponseCompletedEvent,
                 ResponseCompletedEventData,
                 content=done_content,
+            )
+        if agent_event == AgentEvent.APPROVAL_REQUIRED:
+            return await emit(
+                ApprovalRequiredEvent,
+                ApprovalRequiredEventData,
+                request_id=data.get("id", ""),
+                command=data.get("command", ""),
+                description=data.get("description", ""),
             )
         if agent_event == AgentEvent.ERROR:
             return await emit(

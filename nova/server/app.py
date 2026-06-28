@@ -22,6 +22,7 @@ from nova.config.service import (
 )
 from nova.server.chat_service import ChatService
 from nova.server.schemas import (
+    ApproveRequest,
     ChatRequest,
     ChatResponse,
     InterruptRequest,
@@ -193,6 +194,18 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             session_id=request.session_id,
             interrupted=interrupted,
         )
+
+    @app.post("/api/chat/approve")
+    async def approve(request: ApproveRequest, session_id: str | None = None):
+        if not session_id:
+            raise HTTPException(status_code=400, detail="session_id query parameter required")
+        agent = await app.state.chat_service._request_registry.get(session_id)
+        if agent is None:
+            raise HTTPException(status_code=404, detail="No active agent found for session")
+        resolved = agent.resolve_approval(request.request_id, request.approved, request.remember)
+        if not resolved:
+            raise HTTPException(status_code=404, detail="Approval request not found")
+        return {"status": "resolved", "approved": request.approved}
 
     # ── Agent API ───────────────────────────────────────────────────
 

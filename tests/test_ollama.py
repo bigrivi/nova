@@ -55,7 +55,7 @@ async def test_chat_with_tools(llm):
         ),
         llm_provider=llm,
     )
-    agent.register_all_tools()
+    await agent.register_all_tools()
     
     result = await run_chat(agent, "What files are in /tmp?")
     assert result

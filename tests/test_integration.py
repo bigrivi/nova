@@ -61,7 +61,7 @@ async def test_basic_chat(agent, db):
 @pytest.mark.asyncio
 async def test_tool_registration(agent):
     """Test tool registration"""
-    agent.register_all_tools()
+    await agent.register_all_tools()
     schemas = agent.tool_registry.get_schema()
     tool_names = [s["name"] for s in schemas]
     

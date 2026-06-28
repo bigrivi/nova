@@ -244,6 +244,27 @@ class AISDKStreamAdapter:
                 )
             return chunks
 
+        if event == AgentEvent.APPROVAL_HEARTBEAT:
+            chunks.append(b"data: {\"type\":\"data-nova-heartbeat\"}\n\n")
+            return chunks
+
+        if event == AgentEvent.APPROVAL_REQUIRED:
+            data_payload = data if isinstance(data, dict) else {}
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "data-nova-approval-required",
+                        "data": {
+                            "sessionId": data_payload.get("sessionId", ""),
+                            "requestId": data_payload.get("id", ""),
+                            "command": data_payload.get("command", ""),
+                            "description": data_payload.get("description", ""),
+                        },
+                    }
+                )
+            )
+            return chunks
+
         if event == AgentEvent.COMPACTION_START:
             data_payload = data if isinstance(data, dict) else {}
             chunks.append(

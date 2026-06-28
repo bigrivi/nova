@@ -18,6 +18,10 @@ class RequestRegistry:
         async with self._lock:
             self._active_agents.pop(session_id, None)
 
+    async def get(self, session_id: str) -> Agent | None:
+        async with self._lock:
+            return self._active_agents.get(session_id)
+
     async def interrupt(self, session_id: str) -> bool:
         async with self._lock:
             agent = self._active_agents.get(session_id)

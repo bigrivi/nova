@@ -38,7 +38,7 @@ def agent(llm):
 @pytest.mark.asyncio
 async def test_tool_registration(agent):
     """Test that all tools are registered"""
-    agent.register_all_tools()
+    await agent.register_all_tools()
     schemas = agent.tool_registry.get_schema()
     tool_names = [s.get("function", {}).get("name") or s.get("name") for s in schemas]
     

@@ -184,6 +184,7 @@ class OllamaProvider(LLMProvider):
         model: str,
         tools: list[dict] = None,
         abort_event: Optional[asyncio.Event] = None,
+        timeout: Optional[int] = None,
         **kwargs
     ) -> AsyncGenerator[Done, None]:
         formatted_messages = self._format_messages(messages)
@@ -199,10 +200,12 @@ class OllamaProvider(LLMProvider):
         connector = aiohttp.TCPConnector()
         session = aiohttp.ClientSession(connector=connector)
 
+        effective_timeout = timeout if timeout is not None else self.timeout
+
         try:
             post_task = asyncio.create_task(
                 session.post(url, json=body,
-                             timeout=aiohttp.ClientTimeout(total=self.timeout))
+                             timeout=aiohttp.ClientTimeout(total=effective_timeout))
             )
             abort_task = (
                 asyncio.create_task(abort_event.wait(), name="abort_watcher")

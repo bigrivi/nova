@@ -2,6 +2,7 @@ import json
 import sys
 
 import nova.__main__ as nova_main
+from nova.constants import DEFAULT_AGENT_KEY
 
 
 def _write_config(home, payload):
@@ -13,7 +14,7 @@ def _write_config(home, payload):
 
 
 def test_main_defaults_to_cli(monkeypatch, tmp_path):
-    called = {}
+    called: dict = {}
     home = tmp_path / "nova-main"
     _write_config(
         home,
@@ -42,15 +43,15 @@ def test_main_defaults_to_cli(monkeypatch, tmp_path):
     monkeypatch.setattr(
         nova_main,
         "run_cli",
-        lambda settings: called.update({"settings": settings}),
+        lambda **kw: called.update(kw),
     )
     monkeypatch.setattr(nova_main.asyncio, "run", lambda coro: coro)
     monkeypatch.setattr(sys, "argv", ["nova"])
 
     nova_main.main()
 
-    assert called["settings"].provider == "ollama"
-    assert called["settings"].model == "gemma4:26b"
+    assert called.get("agent_key") == DEFAULT_AGENT_KEY
+    assert called.get("theme") == "textual-dark"
 
 
 def test_main_accepts_configured_provider_alias(monkeypatch, tmp_path):
@@ -96,7 +97,7 @@ def test_main_accepts_configured_provider_alias(monkeypatch, tmp_path):
     monkeypatch.setattr(
         nova_main,
         "run_cli",
-        lambda settings: called.update({"settings": settings}),
+        lambda **kw: called.update(kw),
     )
     monkeypatch.setattr(nova_main.asyncio, "run", lambda coro: coro)
     monkeypatch.setattr(
@@ -107,5 +108,5 @@ def test_main_accepts_configured_provider_alias(monkeypatch, tmp_path):
 
     nova_main.main()
 
-    assert called["settings"].provider == "wbz"
-    assert called["settings"].model == "gpt-5.4"
+    assert called.get("agent_key") == DEFAULT_AGENT_KEY
+    assert called.get("theme") == "textual-dark"
