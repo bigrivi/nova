@@ -308,7 +308,7 @@ async def test_agent_can_complete_memory_tool_flow(db):
         config=AgentConfig(model="test-model", max_iterations=3),
         llm_provider=MemoryToolFlowProvider(),
     )
-    agent.register_all_tools()
+    await agent.register_all_tools()
 
     events = []
     async for event, data in agent.chat_stream("What response style do I prefer?"):

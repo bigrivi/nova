@@ -106,6 +106,7 @@ class LLMProvider(ABC):
         model: str = "gpt-4o",
         tools: list[dict] = None,
         abort_event: Optional[asyncio.Event] = None,
+        timeout: Optional[int] = None,
         **kwargs
     ) -> AsyncGenerator[Any, None]:
         pass

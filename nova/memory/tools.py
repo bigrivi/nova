@@ -10,6 +10,7 @@ from nova.llm import ToolResult
 from nova.memory.models import MemoryWriteRequest
 from nova.memory.service import MemoryService
 from nova.tools.registry import tool
+from nova.tools.threat_patterns import has_threats
 
 
 def _get_service() -> MemoryService:
@@ -89,6 +90,8 @@ async def save_memory(
     tags: Optional[list[str]] = None,
     session_id: Optional[str] = None,
 ) -> ToolResult:
+    if has_threats(content):
+        return ToolResult(success=False, content="Memory content rejected — flagged as potential injection.")
     try:
         record, created = await _get_service().save(
             MemoryWriteRequest(

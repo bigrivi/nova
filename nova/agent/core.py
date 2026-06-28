@@ -17,7 +17,17 @@ from nova.prompt import PromptBuilder, PromptConfig
 from nova.agent.compaction import prepare_compaction, run_compaction_plan, get_context_limit
 from nova.db.database import ensure_db
 from nova.skills.service import SkillService
+from nova.memory.manager import MemoryManager
+from nova.memory.builtin_provider import BuiltinMemoryProvider
+from nova.memory.context import build_memory_context_block
+from nova.memory.scrubber import StreamingContextScrubber
+from nova.mcp.manager import MCPManager
+from nova.settings import get_settings
 from nova.constants import DEFAULT_AGENT_KEY
+from nova.agent.tool_guardrails import ToolGuardrails, GuardrailAction
+from nova.agent.reasoning_timeouts import get_reasoning_timeout
+from nova.tools.approval import ApprovalManager
+from nova.tools.shell import is_hardline, is_dangerous
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +61,11 @@ class AgentEvent(Enum):
     COMPACTION_START = "compaction_start"
     COMPACTION_END = "compaction_end"
 
+    # Danger command approval (desktop / CLI)
+    APPROVAL_REQUIRED = "approval_required"
+    APPROVAL_HEARTBEAT = "approval_heartbeat"
+    APPROVAL_RESULT = "approval_result"
+
 
 def _done_payload(reason: str, content: Optional[str] = None) -> dict[str, Any]:
     return {"reason": reason, "content": content}
@@ -70,6 +85,7 @@ class AgentConfig:
     temperature: float = 0.7
     tools: Optional[list] = None
     compress_threshold: int = 50
+    memory_review_interval: int = 10
 
 
 class Agent:
@@ -82,6 +98,7 @@ class Agent:
         agent_dir: Optional[Path] = None,
         parent_agent: Optional["Agent"] = None,
         is_sub_agent: bool = False,
+        prompt_config: Optional[PromptConfig] = None,
     ):
         self.config = config or AgentConfig()
         self.agent_key = agent_key
@@ -199,7 +216,7 @@ class Agent:
                 f"Parse error: {e}"
             )
 
-    async def _execute_tool(self, tool_call: ToolCall) -> ToolResult:
+    async def _execute_tool(self, tool_call: ToolCall, req_id: str = "") -> ToolResult:
         tool_name = tool_call.name if hasattr(
             tool_call, 'name') else str(tool_call)
         log.info(f"Executing tool: {tool_name}")
