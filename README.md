@@ -341,7 +341,6 @@ Nova currently ships with these built-in tools:
 - `read_image`
 - `ask_user`
 - `todo_write`
-- `install_python_package`
 - `save_memory`
 - `search_memory`
 - `list_memories`
