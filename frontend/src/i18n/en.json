@@ -93,5 +93,10 @@
   "reasoning.workedFor": "Worked for {{time}}",
   "reasoning.compacting": "Compacting conversation history…",
 
-  "dialog.close": "Close"
+  "dialog.close": "Close",
+
+  "approval.title": "Shell Command",
+  "approval.approve": "Approve",
+  "approval.remember": "Approve & Remember",
+  "approval.reject": "Reject"
 }

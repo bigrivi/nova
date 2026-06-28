@@ -1,8 +1,10 @@
 import { UserMessageAttachments } from "@/components/assistant-ui/attachment";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import { Reasoning, ReasoningChainGroup, ThinkingIndicator } from "@/components/assistant-ui/reasoning";
+import { ApprovalDialog } from "@/components/assistant-ui/approval-dialog";
 import { AskUserTool } from "@/components/assistant-ui/ask-user-tool";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
+import { useApprovalStore } from "@/stores/approval-store";
 import { useAskUserStore } from "@/stores/ask-user-store";
 import { ThreadStickyComposer } from "@/components/assistant-ui/thread-sticky-composer";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
@@ -66,6 +68,7 @@ type ThreadProps = {
 export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
   const [composerHeight, setComposerHeight] = useState(0);
   const activeCall = useAskUserStore((s) => s.active);
+  const pendingApproval = useApprovalStore((s) => s.pending);
 
   return (
     <>
@@ -113,8 +116,9 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
         </ThreadPrimitive.Viewport>
 
         <AskUserOverlay />
+        <ApprovalOverlay />
 
-        <div className={`pointer-events-none absolute inset-x-0 bottom-0 z-20${activeCall ? ' invisible' : ''}`}>
+        <div className={`pointer-events-none absolute inset-x-0 bottom-0 z-20${activeCall || pendingApproval ? ' invisible' : ''}`}>
           <ThreadStickyComposer
             composer={composer}
             modelSelection={modelSelection}
@@ -189,6 +193,21 @@ const ThreadScrollToBottom: FC = () => {
 };
 
 
+
+const ApprovalOverlay: FC = () => {
+  const pending = useApprovalStore((s) => s.pending);
+  if (!pending) return null;
+
+  return (
+    <div className="absolute inset-x-0 bottom-0 z-50 bg-background">
+      <div className="mx-auto w-full max-w-(--thread-max-width) px-4 pb-3 pt-3">
+        <div className="max-h-[70vh] overflow-y-auto">
+          <ApprovalDialog />
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const AskUserOverlay: FC = () => {
   const active = useAskUserStore((s) => s.active);

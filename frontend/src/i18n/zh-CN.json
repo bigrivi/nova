@@ -93,5 +93,10 @@
   "reasoning.workedFor": "耗时 {{time}}",
   "reasoning.compacting": "正在压缩历史记录…",
 
-  "dialog.close": "关闭"
+  "dialog.close": "关闭",
+
+  "approval.title": "Shell 命令",
+  "approval.approve": "批准",
+  "approval.remember": "批准并记住",
+  "approval.reject": "拒绝"
 }

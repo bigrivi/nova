@@ -119,6 +119,26 @@ export async function listSessions(): Promise<NovaSessionSummary[]> {
   return payload.items
 }
 
+export async function approveCommand(options: {
+  sessionId: string
+  requestId: string
+  approved: boolean
+  remember?: boolean
+}): Promise<void> {
+  await fetch(
+    buildUrl('/api/chat/approve') + `?session_id=${encodeURIComponent(options.sessionId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        request_id: options.requestId,
+        approved: options.approved,
+        remember: options.remember ?? false,
+      }),
+    },
+  )
+}
+
 export async function interruptChat(sessionId: string): Promise<void> {
   try {
     await fetch(buildUrl('/api/chat/interrupt'), {

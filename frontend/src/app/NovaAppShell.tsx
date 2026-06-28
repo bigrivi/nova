@@ -29,6 +29,7 @@ import {
     streamChat,
     updateAgent,
 } from "../lib/nova-api";
+import { useApprovalStore } from "../stores/approval-store";
 import { useAskUserStore } from "../stores/ask-user-store";
 import { useReasoningStore } from "../stores/reasoning-store";
 import type {
@@ -686,6 +687,20 @@ export function NovaAppShell() {
                                 },
                             ),
                         );
+                        return;
+                    }
+
+                    if (event.type === "data-nova-heartbeat") {
+                        return;
+                    }
+
+                    if (event.type === "data-nova-approval-required") {
+                        useApprovalStore.getState().setPending({
+                            sessionId: activeThreadId,
+                            requestId: String(event.data?.requestId || ""),
+                            command: String(event.data?.command || ""),
+                            description: String(event.data?.description || ""),
+                        });
                         return;
                     }
 
