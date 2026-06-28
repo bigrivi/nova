@@ -15,7 +15,6 @@ import {
 } from "./tool-fallback";
 
 const CodeRunToolImpl: ToolCallMessagePartComponent = ({
-  toolName,
   argsText,
   result,
   status,
