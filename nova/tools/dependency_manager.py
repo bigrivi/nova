@@ -14,7 +14,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from nova.tools.registry import tool
 from nova.llm import ToolResult
 
 log = logging.getLogger(__name__)
@@ -95,32 +94,3 @@ async def _install(packages: list[str]) -> None:
             f"pip install failed for {packages}:\n{result.stderr.strip()}"
         )
 
-
-@tool(
-    name="install_python_package",
-    description="Install a Python package. Use this when you need a library that "
-                "is not currently available (e.g. pandas, matplotlib, playwright, "
-                "numpy, Pillow) to complete the current task. Already installed "
-                "packages are skipped automatically.",
-    parameters={
-        "type": "object",
-        "properties": {
-            "package": {
-                "type": "string",
-                "description": "Python package name to install (e.g. pandas, matplotlib, playwright)",
-            },
-            "version": {
-                "type": "string",
-                "description": "Optional version specifier (e.g. 2.1.0)",
-            },
-        },
-        "required": ["package"],
-    },
-)
-async def install_python_package(package: str, version: str = "") -> ToolResult:
-    pkg_spec = f"{package}=={version}" if version else package
-    try:
-        await ensure_deps([pkg_spec])
-        return ToolResult(success=True, content=f"{package} is now available.")
-    except Exception as e:
-        return ToolResult(success=False, content=f"Error: {e}")

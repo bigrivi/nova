@@ -11,6 +11,7 @@ from pathlib import Path
 
 from nova.cli.main import run_cli
 from nova.desktop.main import run_desktop
+from nova.mcp.manager import MCPManager
 from nova.server import run_server
 from nova.settings import configure_logging, get_settings
 from nova.tools.dependency_manager import init_site_packages
@@ -51,20 +52,29 @@ def main():
     args = parser.parse_args()
     init_site_packages()
     configure_logging(settings)
-    if args.mode == "serve":
-        asyncio.run(run_server(settings=settings))
-        return
 
-    if args.mode == "desktop":
-        run_desktop(settings=settings, dev=args.dev)
-        return
+    try:
+        if args.mode == "serve":
+            asyncio.run(run_server(settings=settings))
+            return
 
-    if args.opentui:
-        from nova.opentui_app.chat_app import ChatApp
-        asyncio.run(ChatApp().run())
-        return
+        if args.mode == "desktop":
+            run_desktop(settings=settings, dev=args.dev)
+            return
 
-    asyncio.run(run_cli(agent_key=args.agent, theme=args.theme))
+        if args.opentui:
+            from nova.opentui_app.chat_app import ChatApp
+            asyncio.run(ChatApp().run())
+            return
+
+        asyncio.run(run_cli(agent_key=args.agent, theme=args.theme))
+    finally:
+        try:
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(MCPManager.get_shared().shutdown())
+            loop.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

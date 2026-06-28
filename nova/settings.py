@@ -180,6 +180,9 @@ class Settings:
     # LLM provider registry.
     providers: dict[str, ProviderConfig] = field(default_factory=dict)
 
+    # MCP server definitions: {name: {command|url, ...}}
+    mcp_servers: dict[str, dict] = field(default_factory=dict)
+
     # Runtime config file path.
     config_path: Path | None = None
 
@@ -195,6 +198,8 @@ class Settings:
         config_path = _ensure_config_file(home)
         config_payload = _load_config_payload(config_path)
         providers = _parse_provider_configs(config_payload.get("providers"))
+        raw_mcp = config_payload.get("mcp_servers")
+        mcp_servers = dict(raw_mcp) if isinstance(raw_mcp, dict) else {}
         raw_frontend_dist = os.getenv("NOVA_FRONTEND_DIST", "").strip()
         frontend_dist_path = Path(raw_frontend_dist) if raw_frontend_dist else None
         return cls(
@@ -210,6 +215,7 @@ class Settings:
             config_path=config_path,
             frontend_dist_path=frontend_dist_path,
             providers=providers,
+            mcp_servers=mcp_servers,
         )
 
     def ensure_directories(self) -> None:

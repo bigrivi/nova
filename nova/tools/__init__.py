@@ -18,8 +18,6 @@ try:
 except ImportError:
     browser_use = None
 from nova.memory.tools import save_memory, search_memory, delete_memory, list_memories
-from nova.tools.dependency_manager import install_python_package
-
 __all__ = [
     "ToolRegistry",
     "tool",
@@ -37,7 +35,6 @@ __all__ = [
     "browser_use",
     "read_image",
     "delegate_to_agent",
-    "install_python_package",
     "save_memory",
     "search_memory",
     "delete_memory",
