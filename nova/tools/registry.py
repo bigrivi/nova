@@ -42,8 +42,11 @@ class Tool:
 class ToolRegistry:
     """Tool registry."""
 
-    def __init__(self):
-        self.tools: dict[str, Tool] = {}
+    def __init__(self, source: "ToolRegistry | None" = None):
+        if source is not None:
+            self.tools = dict(source.tools)
+        else:
+            self.tools: dict[str, Tool] = {}
 
     def register(self, func: Callable, name: str = None) -> None:
         """Register a tool function using decorator metadata."""
@@ -67,6 +70,20 @@ class ToolRegistry:
             return False
         self.register(func, tool_name)
         return True
+
+    def register_direct(
+        self,
+        name: str,
+        description: str,
+        func: Callable,
+        params_schema: dict,
+    ) -> None:
+        self.tools[name] = Tool(
+            name=name,
+            description=description,
+            func=func,
+            params_schema=params_schema,
+        )
 
     def unregister(self, name: str):
         """Unregister a tool."""

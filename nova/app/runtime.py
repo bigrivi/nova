@@ -9,7 +9,14 @@ from pathlib import Path
 from nova.agent import Agent, AgentConfig
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.llm import LLMProvider, OllamaProvider, OpenAIProvider
+from nova.prompt import PromptConfig
 from nova.settings import get_settings
+from nova.skills.tools import SkillTools
+from nova.tools.registry import ToolRegistry
+
+_llm_cache: dict[str, LLMProvider] = {}
+_identity_cache: dict[str, PromptConfig] = {}
+_registry_cache: dict[str, ToolRegistry] = {}
 
 
 def build_llm(
@@ -27,6 +34,11 @@ def build_llm(
         model_keys = list(provider_config.models.keys())
         model = model_keys[0] if model_keys else ""
 
+    cache_key = f"{provider}:{model}"
+    cached = _llm_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     provider_type = provider_config.type or ""
     request_options = settings.get_request_options(
         model_name=model,
@@ -35,8 +47,8 @@ def build_llm(
 
     if provider_type == "ollama":
         base_url = str(provider_config.options.get("base_url", "")).strip()
-        return OllamaProvider(base_url=base_url, request_options=request_options)
-    if provider_type == "openai-compatible":
+        llm = OllamaProvider(base_url=base_url, request_options=request_options)
+    elif provider_type == "openai-compatible":
         base_url = str(provider_config.options.get("base_url", "")).strip()
         api_key = str(provider_config.options.get("api_key", "")).strip()
         model_config = provider_config.models.get(model, {})
@@ -44,13 +56,17 @@ def build_llm(
         kwargs = {}
         if reasoning_field:
             kwargs["reasoning_field"] = reasoning_field
-        return OpenAIProvider(
+        llm = OpenAIProvider(
             api_key=api_key,
             base_url=base_url,
             request_options=request_options,
             **kwargs,
         )
-    raise ValueError(f"Unsupported provider type: {provider_type}")
+    else:
+        raise ValueError(f"Unsupported provider type: {provider_type}")
+
+    _llm_cache[cache_key] = llm
+    return llm
 
 
 async def _agent_dir(agent_key: str) -> Path:
@@ -77,6 +93,21 @@ async def build_agent(
     agent_dir = await _agent_dir(agent_key)
     agent_dir.mkdir(parents=True, exist_ok=True)
 
+    # Cache 1: identity files (SOUL/IDENTITY/USER/MEMORY)
+    dir_key = str(agent_dir)
+    if dir_key not in _identity_cache:
+        _identity_cache[dir_key] = PromptConfig(
+            soul_content=(agent_dir / "SOUL.md").read_text(
+                encoding="utf-8") if (agent_dir / "SOUL.md").exists() else "",
+            identity_content=(agent_dir / "IDENTITY.md").read_text(
+                encoding="utf-8").strip() if (agent_dir / "IDENTITY.md").exists() else "",
+            user_content=(agent_dir / "USER.md").read_text(
+                encoding="utf-8") if (agent_dir / "USER.md").exists() else "",
+            memory_content=(agent_dir / "MEMORY.md").read_text(
+                encoding="utf-8") if (agent_dir / "MEMORY.md").exists() else "",
+            workspace_dir=str(agent_dir),
+        )
+
     if provider is None or model is None:
         try:
             from nova.config.service import ConfigService
@@ -95,12 +126,29 @@ async def build_agent(
             f"Agent '{agent_key}' has no configured provider/model. "
             "Set one via /create-agent or update the DB agents table."
         )
+
+    # Cache 2: LLMProvider
     llm = llm or build_llm(provider=resolved_provider, model=resolved_model)
+
     agent = Agent(
         config=AgentConfig(model=resolved_model, provider=resolved_provider),
         llm_provider=llm,
         agent_key=agent_key,
         agent_dir=agent_dir,
+        prompt_config=_identity_cache[dir_key],
     )
-    agent.register_all_tools()
+
+    # Cache 3: ToolRegistry (shallow copy + rebind skill tools)
+    reg_key = f"{agent_key}:{resolved_model}:{agent.is_sub_agent}"
+    cached_registry = _registry_cache.get(reg_key)
+    if cached_registry is not None:
+        agent.tool_registry = ToolRegistry(source=cached_registry)
+        agent._skill_tools = SkillTools(agent._skill_service)
+        agent.tool_registry.register(agent._skill_tools.list_skills, name="list_skills")
+        agent.tool_registry.register(agent._skill_tools.load_skill, name="load_skill")
+        agent.tool_registry.register(agent._skill_tools.install_skill, name="install_skill")
+    else:
+        await agent.register_all_tools()
+        _registry_cache[reg_key] = agent.tool_registry
+
     return agent
