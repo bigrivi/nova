@@ -24,3 +24,9 @@ node_modules/
 
 # License private key
 tools/license_private.pem
+
+# Local license file
+license.lic
+
+# OpenCode session state
+.omo/
