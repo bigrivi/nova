@@ -1,7 +1,7 @@
 "use client";
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CheckIcon, ChevronLeftIcon, LoaderIcon, MessageSquareQuoteIcon } from "lucide-react";
 
@@ -204,6 +204,31 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
       resume?.(formatted);
     }
   }, [questions, answers, resume, submitted]);
+
+  const handleCancel = useCallback(() => {
+    if (!questions || submitted) return;
+    const lines: string[] = [];
+    for (const q of questions) {
+      lines.push(`Q (${q.id}): ${q.question}`);
+      lines.push(`A: [cancelled by user]`);
+      lines.push("");
+    }
+    setSubmitted(true);
+    resume?.(lines.join("\n").trim());
+  }, [questions, resume, submitted]);
+
+  useEffect(() => {
+    if (submitted) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        handleCancel();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleCancel, submitted]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
