@@ -19,7 +19,6 @@ from nova.db.database import ensure_db
 from nova.skills.service import SkillService
 from nova.memory.manager import MemoryManager
 from nova.memory.builtin_provider import BuiltinMemoryProvider
-from nova.memory.context import build_memory_context_block
 from nova.memory.scrubber import StreamingContextScrubber
 from nova.mcp.manager import MCPManager
 from nova.settings import get_settings
@@ -142,6 +141,8 @@ class Agent:
                 )
             )
         self._abort_event = asyncio.Event()
+        self._base_system_prompt: Optional[str] = None
+        self._memory_modified_this_turn: bool = False
 
         self._turns_since_review = 0
         self._guardrails = ToolGuardrails()
@@ -194,20 +195,20 @@ class Agent:
     def _build_system_prompt(self, session_ctx: Any = None) -> str:
         tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else []
         available_skills = self._skill_service.list_skills()
-        system = self._prompt_builder.build(
+        return self._prompt_builder.build(
             tools_schemas=tool_schemas,
             available_skills=available_skills,
         )
-        memory_context = getattr(self, '_current_memory_context', '')
-        if memory_context:
-            system += '\n\n' + build_memory_context_block(memory_context)
-        return system
 
     async def _get_messages(self) -> list[LLMMessage]:
         session = self.session.get_current_session()
-        system_content = self._build_system_prompt(session)
 
-        messages = [LLMMessage(role="system", content=system_content)]
+        if self._base_system_prompt is None:
+            await self._refresh_memory_index()
+            self._base_system_prompt = self._build_system_prompt(session)
+
+        messages = [LLMMessage(role="system", content=self._base_system_prompt)]
+
         db_messages = await self.session.get_messages()
         for msg in db_messages:
             m = LLMMessage(role=msg.role, content=msg.content)
@@ -309,13 +310,25 @@ class Agent:
             yield AgentEvent.DONE, stop_payload
             return
 
-        session = self.session.get_current_session()
-        self._current_memory_context = await self.memory_manager.prefetch_all(
-            query=getattr(self, '_last_user_input', ''),
-            session_id=session.id if session else '',
-        )
-
         messages = await self._get_messages()
+
+        session = self.session.get_current_session()
+        last_input = getattr(self, '_last_user_input', '')
+        if last_input:
+            memory_context = await self.memory_manager.prefetch_all(
+                query=last_input,
+                session_id=session.id if session else '',
+            )
+            if memory_context.strip():
+                for m in reversed(messages):
+                    if m.role == "user":
+                        m.content = memory_context + "\n\n" + m.content
+                        log.info(
+                            "[Turn %s] Prepended memory context:\n%s",
+                            turn_count,
+                            memory_context,
+                        )
+                        break
 
         accumulated_content = ""
         accumulated_reasoning = ""
@@ -553,6 +566,10 @@ class Agent:
                     log.info(f"[Turn {turn_count}] Paused for user input")
                     yield AgentEvent.DONE, _done_payload("requires_input", "User input required")
                     return
+
+                tool_name = tc.name if hasattr(tc, 'name') else str(tc)
+                if tool_name in ("save_memory", "delete_memory"):
+                    self._memory_modified_this_turn = True
         else:
             await self.session.add_message(
                 role="assistant",
@@ -662,11 +679,18 @@ class Agent:
                 async for event, data in self._run_turn(turn_count, tool_schemas, group_id=run_group_id):
                     if event == AgentEvent.DONE:
                         done_payload = data
+                    elif event == AgentEvent.ERROR:
+                        yield event, data
+                        return
                     else:
                         yield event, data
 
                 await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
                 yield AgentEvent.TURN_END, {"turn": turn_count}
+
+                if self._memory_modified_this_turn:
+                    self._base_system_prompt = None
+                    self._memory_modified_this_turn = False
 
                 if done_payload is not None:
                     if done_payload.get("reason") in ("completed", "requires_input"):
@@ -720,6 +744,22 @@ class Agent:
                 mcp.register_tools(self.tool_registry)
             except Exception:
                 log.exception("Failed to initialize MCP servers")
+
+    async def _refresh_memory_index(self) -> None:
+        """Build the memory index from DB for system prompt inclusion.
+
+        Queries user-scoped memories and stores a compact listing in
+        PromptConfig.memory_index.  This is called once per session (when
+        _base_system_prompt is None) and again after save/delete memory
+        invalidates the cache.
+        """
+        try:
+            from nova.memory.context import build_memory_index_for_system
+            self._prompt_builder.config.memory_index = (
+                await build_memory_index_for_system()
+            )
+        except Exception as e:
+            log.warning("Failed to refresh memory index: %s", e)
 
     async def _sync_turn_memory(self, done_payload: dict) -> None:
         try:

@@ -21,6 +21,7 @@ class PromptConfig:
     soul_content: str = ""
     user_content: str = ""
     memory_content: str = ""
+    memory_index: str = ""
     workspace_dir: str = ""
 
 
@@ -64,6 +65,10 @@ When calling a tool, output JSON only:
 - If the skill is already installed and the user did not ask to update or replace it, prefer `load_skill` instead of reinstalling.
 - When calling `shell` or `code_run`, always include a `description` that briefly explains what the command or code does in active voice.
 
+# Memory
+- Use `search_memory` to look up stored preferences, decisions, and past facts before answering.
+- Use `save_memory` to store important information for future sessions.
+
 # Current Available Skills
 {available_skills}
 
@@ -82,6 +87,7 @@ When calling a tool, output JSON only:
         self,
         tools_schemas: list[dict] = None,
         available_skills: list[Any] | None = None,
+        date: str | None = None,
     ) -> str:
         parts = []
         settings = get_settings()
@@ -95,7 +101,7 @@ When calling a tool, output JSON only:
             identity=identity,
             tools=tools_section,
             available_skills=available_skills_section,
-            date=datetime.now().strftime("%Y-%m-%d %A"),
+            date=date or datetime.now().strftime("%Y-%m-%d %A"),
             home=settings.home,
             workspace_dir=self.config.workspace_dir or str(settings.workspace_dir),
             platform=self._get_platform(),
@@ -110,6 +116,12 @@ When calling a tool, output JSON only:
                 parts.append("## User\n\n[User profile omitted — content flagged as potential injection]")
             else:
                 parts.append(f"## User\n\n{self.config.user_content}")
+
+        if self.config.memory_index:
+            if has_threats(self.config.memory_index):
+                parts.append("## Memory Index\n\n[Index omitted — content flagged as potential injection]")
+            else:
+                parts.append(f"## Memory Index\n\n{self.config.memory_index}")
 
         if self.config.memory_content:
             if has_threats(self.config.memory_content):
@@ -168,6 +180,7 @@ def build_system_prompt(
     tools_schemas: list[dict] = None,
     config: PromptConfig = None,
     available_skills: list[Any] | None = None,
+    date: str | None = None,
 ) -> str:
     builder = PromptBuilder(config)
-    return builder.build(tools_schemas, available_skills)
+    return builder.build(tools_schemas, available_skills, date=date)
