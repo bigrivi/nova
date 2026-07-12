@@ -356,10 +356,8 @@ class Agent:
                                 yield AgentEvent.REASONING_END, reasoning_elapsed_ms
                             await self._emit(AgentEvent.TEXT_START)
                             yield AgentEvent.TEXT_START, None
-                        cleaned = _scrubber.feed(chunk.content)
                         accumulated_content += chunk.content
-                        if cleaned:
-                            yield AgentEvent.TEXT_DELTA, cleaned
+                        yield AgentEvent.TEXT_DELTA, chunk.content
                     elif chunk.type == "done":
                         if getattr(chunk, "aborted", False):
                             yield AgentEvent.DONE, _done_payload("stopped", accumulated_content)
@@ -390,9 +388,6 @@ class Agent:
             yield AgentEvent.ERROR, _error_payload("llm_error", str(e))
             return
         finally:
-            flushed = _scrubber.flush()
-            if flushed:
-                accumulated_content += flushed
             if accumulated_reasoning and not _text_started:
                 reasoning_elapsed_ms = int(
                     (time.monotonic() - _reasoning_started_at) * 1000) if _reasoning_started_at else None
