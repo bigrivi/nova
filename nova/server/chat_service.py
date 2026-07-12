@@ -174,6 +174,7 @@ class ChatService:
             agent_key=request.agent_key,
             provider=request.provider,
             model=request.model,
+            is_new_session=not request.session_id,
         )
         register_key = request.session_id
         if register_key:

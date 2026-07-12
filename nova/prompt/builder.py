@@ -119,9 +119,9 @@ When calling a tool, output JSON only:
 
         if self.config.memory_index:
             if has_threats(self.config.memory_index):
-                parts.append("## Memory Index\n\n[Index omitted — content flagged as potential injection]")
+                parts.append("## Memory Index\n\n[Index omitted — content flagged as potential injection]\n\nUse search_memory when you need details about any available memory.")
             else:
-                parts.append(f"## Memory Index\n\n{self.config.memory_index}")
+                parts.append(f"## Memory Index\n\n{self.config.memory_index}\n\nUse search_memory when you need details about any available memory.")
 
         if self.config.memory_content:
             if has_threats(self.config.memory_content):

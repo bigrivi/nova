@@ -88,6 +88,7 @@ async def build_agent(
     llm: LLMProvider | None = None,
     provider: str | None = None,
     model: str | None = None,
+    is_new_session: bool = False,
 ) -> Agent:
     settings = get_settings()
     agent_dir = await _agent_dir(agent_key)
@@ -95,7 +96,7 @@ async def build_agent(
 
     # Cache 1: identity files (SOUL/IDENTITY/USER/MEMORY)
     dir_key = str(agent_dir)
-    if dir_key not in _identity_cache:
+    if is_new_session or dir_key not in _identity_cache:
         _identity_cache[dir_key] = PromptConfig(
             soul_content=(agent_dir / "SOUL.md").read_text(
                 encoding="utf-8") if (agent_dir / "SOUL.md").exists() else "",

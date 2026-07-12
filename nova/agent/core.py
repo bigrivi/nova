@@ -17,9 +17,6 @@ from nova.prompt import PromptBuilder, PromptConfig
 from nova.agent.compaction import prepare_compaction, run_compaction_plan, get_context_limit
 from nova.db.database import ensure_db
 from nova.skills.service import SkillService
-from nova.memory.manager import MemoryManager
-from nova.memory.builtin_provider import BuiltinMemoryProvider
-from nova.memory.scrubber import StreamingContextScrubber
 from nova.mcp.manager import MCPManager
 from nova.settings import get_settings
 from nova.constants import DEFAULT_AGENT_KEY
@@ -108,7 +105,7 @@ class Agent:
         self.parent_agent = parent_agent
         self.is_sub_agent = is_sub_agent
         self._sub_agents: list["Agent"] = []
-        
+
         if agent_dir is None:
             agent_dir = Path.home() / ".nova" / "agents" / agent_key
         agent_dir.mkdir(parents=True, exist_ok=True)
@@ -118,7 +115,8 @@ class Agent:
         else:
             skills_dir = agent_dir / "skills"
             global_skills = Path.home() / ".nova" / "skills"
-            self._skill_service = SkillService(skills_dir=skills_dir, fallback_dir=global_skills)
+            self._skill_service = SkillService(
+                skills_dir=skills_dir, fallback_dir=global_skills)
         self._skill_service.scan_skills()
         if prompt_config is not None:
             self._prompt_builder = PromptBuilder(prompt_config)
@@ -147,9 +145,6 @@ class Agent:
         self._turns_since_review = 0
         self._guardrails = ToolGuardrails()
         self._approval = ApprovalManager()
-        self.memory_manager = MemoryManager()
-        if not is_sub_agent:
-            self.memory_manager.add_provider(BuiltinMemoryProvider())
 
     def interrupt(self) -> None:
         """Interrupt the current execution; the user can trigger this at any time."""
@@ -207,7 +202,8 @@ class Agent:
             await self._refresh_memory_index()
             self._base_system_prompt = self._build_system_prompt(session)
 
-        messages = [LLMMessage(role="system", content=self._base_system_prompt)]
+        messages = [LLMMessage(
+            role="system", content=self._base_system_prompt)]
 
         db_messages = await self.session.get_messages()
         for msg in db_messages:
@@ -252,9 +248,11 @@ class Agent:
             result = await tool_obj.func(**args)
             log.info(
                 f"Tool {tool_name} result: {result.content[:100] if result.content else 'empty'}...")
-            guardrail_action = self._guardrails.observe(tool_name, args, result.success)
+            guardrail_action = self._guardrails.observe(
+                tool_name, args, result.success)
             if guardrail_action == GuardrailAction.HALT:
-                log.warning("Guardrails halted tool loop after %s with %s", tool_name, args)
+                log.warning(
+                    "Guardrails halted tool loop after %s with %s", tool_name, args)
                 return ToolResult(
                     success=False,
                     content="You seem to be repeating the same action. Try a different approach.",
@@ -312,24 +310,6 @@ class Agent:
 
         messages = await self._get_messages()
 
-        session = self.session.get_current_session()
-        last_input = getattr(self, '_last_user_input', '')
-        if last_input:
-            memory_context = await self.memory_manager.prefetch_all(
-                query=last_input,
-                session_id=session.id if session else '',
-            )
-            if memory_context.strip():
-                for m in reversed(messages):
-                    if m.role == "user":
-                        m.content = memory_context + "\n\n" + m.content
-                        log.info(
-                            "[Turn %s] Prepended memory context:\n%s",
-                            turn_count,
-                            memory_context,
-                        )
-                        break
-
         accumulated_content = ""
         accumulated_reasoning = ""
         accumulated_tool_calls: dict[str, Any] = {}
@@ -338,9 +318,9 @@ class Agent:
         _reasoning_started = False
         _reasoning_started_at = None
         reasoning_elapsed_ms = None
-        _scrubber = StreamingContextScrubber()
 
-        reasoning_timeout = get_reasoning_timeout(self.config.model, default=120)
+        reasoning_timeout = get_reasoning_timeout(
+            self.config.model, default=120)
         log.info(
             f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}, timeout={reasoning_timeout}")
         generator_closing = False
@@ -364,15 +344,14 @@ class Agent:
                             _reasoning_started_at = time.monotonic()
                             await self._emit(AgentEvent.REASONING_START)
                             yield AgentEvent.REASONING_START, None
-                        cleaned = _scrubber.feed(chunk.content)
                         accumulated_reasoning += chunk.content
-                        if cleaned:
-                            yield AgentEvent.REASONING_DELTA, cleaned
+                        yield AgentEvent.REASONING_DELTA, chunk.content
                     elif chunk.type == "text_delta":
                         if not _text_started:
                             _text_started = True
                             if accumulated_reasoning:
-                                reasoning_elapsed_ms = int((time.monotonic() - _reasoning_started_at) * 1000) if _reasoning_started_at else None
+                                reasoning_elapsed_ms = int(
+                                    (time.monotonic() - _reasoning_started_at) * 1000) if _reasoning_started_at else None
                                 await self._emit(AgentEvent.REASONING_END)
                                 yield AgentEvent.REASONING_END, reasoning_elapsed_ms
                             await self._emit(AgentEvent.TEXT_START)
@@ -415,7 +394,8 @@ class Agent:
             if flushed:
                 accumulated_content += flushed
             if accumulated_reasoning and not _text_started:
-                reasoning_elapsed_ms = int((time.monotonic() - _reasoning_started_at) * 1000) if _reasoning_started_at else None
+                reasoning_elapsed_ms = int(
+                    (time.monotonic() - _reasoning_started_at) * 1000) if _reasoning_started_at else None
                 await self._emit(AgentEvent.REASONING_END)
                 if not generator_closing:
                     yield AgentEvent.REASONING_END, reasoning_elapsed_ms
@@ -492,13 +472,15 @@ class Agent:
 
                         blocked, hdesc = is_hardline(cmd)
                         if blocked:
-                            log.info("Hardline command rejected: %s (%s)", cmd, hdesc)
+                            log.info(
+                                "Hardline command rejected: %s (%s)", cmd, hdesc)
                             yield AgentEvent.DONE, _done_payload("stopped", hdesc)
                             return
 
                         dangerous, ddesc = is_dangerous(cmd)
                         if dangerous:
-                            req_id = self._approval.pre_request(cmd, desc, timeout=0)
+                            req_id = self._approval.pre_request(
+                                cmd, desc, timeout=0)
                             if req_id:
                                 yield AgentEvent.APPROVAL_REQUIRED, {
                                     "id": req_id,
@@ -608,8 +590,6 @@ class Agent:
         current_session = self.session.get_current_session()
         session_id = current_session.id if current_session else ""
 
-        await self.memory_manager.initialize_all(session_id)
-
         yield AgentEvent.SESSION, session_id
         await self._emit(AgentEvent.START, user_input)
         yield AgentEvent.START, user_input
@@ -663,58 +643,53 @@ class Agent:
                 model=self.config.model,
                 provider=self.config.provider,
             )
-            current_session.compacted_at = int(datetime.now().timestamp() * 1000)
+            current_session.compacted_at = int(
+                datetime.now().timestamp() * 1000)
             await self._emit(AgentEvent.COMPACTION_END, compaction_payload)
             yield AgentEvent.COMPACTION_END, compaction_payload
 
-        try:
-            run_group_id = uuid.uuid4().hex
-            turn_count = 0
-            for _ in range(self.config.max_iterations):
-                turn_count += 1
-                await self._emit(AgentEvent.TURN_START, {"turn": turn_count})
-                yield AgentEvent.TURN_START, {"turn": turn_count}
+        run_group_id = uuid.uuid4().hex
+        turn_count = 0
+        for _ in range(self.config.max_iterations):
+            turn_count += 1
+            await self._emit(AgentEvent.TURN_START, {"turn": turn_count})
+            yield AgentEvent.TURN_START, {"turn": turn_count}
 
-                done_payload = None
-                async for event, data in self._run_turn(turn_count, tool_schemas, group_id=run_group_id):
-                    if event == AgentEvent.DONE:
-                        done_payload = data
-                    elif event == AgentEvent.ERROR:
-                        yield event, data
-                        return
-                    else:
-                        yield event, data
-
-                await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
-                yield AgentEvent.TURN_END, {"turn": turn_count}
-
-                if self._memory_modified_this_turn:
-                    self._base_system_prompt = None
-                    self._memory_modified_this_turn = False
-
-                if done_payload is not None:
-                    if done_payload.get("reason") in ("completed", "requires_input"):
-                        asyncio.create_task(
-                            self._sync_turn_memory(done_payload)
-                        )
-                        if self.config.memory_review_interval > 0:
-                            self._turns_since_review += 1
-                            if self._turns_since_review >= self.config.memory_review_interval:
-                                self._turns_since_review = 0
-                                asyncio.create_task(
-                                    self._background_memory_review()
-                                )
-                    await self._emit(AgentEvent.DONE, done_payload)
-                    yield AgentEvent.DONE, done_payload
+            done_payload = None
+            async for event, data in self._run_turn(turn_count, tool_schemas, group_id=run_group_id):
+                if event == AgentEvent.DONE:
+                    done_payload = data
+                elif event == AgentEvent.ERROR:
+                    yield event, data
                     return
+                else:
+                    yield event, data
 
-            error_payload = _error_payload(
-                "max_iterations", "Maximum iterations reached")
-            await self._emit(AgentEvent.ERROR, error_payload)
-            log.warning(f"[Turn {turn_count}] Maximum iterations reached")
-            yield AgentEvent.ERROR, error_payload
-        finally:
-            await self.memory_manager.shutdown_all()
+            await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
+            yield AgentEvent.TURN_END, {"turn": turn_count}
+
+            if self._memory_modified_this_turn:
+                self._base_system_prompt = None
+                self._memory_modified_this_turn = False
+
+            if done_payload is not None:
+                if done_payload.get("reason") in ("completed", "requires_input"):
+                    if self.config.memory_review_interval > 0:
+                        self._turns_since_review += 1
+                        if self._turns_since_review >= self.config.memory_review_interval:
+                            self._turns_since_review = 0
+                            asyncio.create_task(
+                                self._background_memory_review()
+                            )
+                await self._emit(AgentEvent.DONE, done_payload)
+                yield AgentEvent.DONE, done_payload
+                return
+
+        error_payload = _error_payload(
+            "max_iterations", "Maximum iterations reached")
+        await self._emit(AgentEvent.ERROR, error_payload)
+        log.warning(f"[Turn {turn_count}] Maximum iterations reached")
+        yield AgentEvent.ERROR, error_payload
 
     def register_tool(self, func: Callable, name: str = None) -> None:
         self.tool_registry.register(func, name)
@@ -727,14 +702,18 @@ class Agent:
             self.tool_registry.register_by_metadata(name)
         from nova.skills.tools import SkillTools
         self._skill_tools = SkillTools(self._skill_service)
-        self.tool_registry.register(self._skill_tools.list_skills, name="list_skills")
-        self.tool_registry.register(self._skill_tools.load_skill, name="load_skill")
-        self.tool_registry.register(self._skill_tools.install_skill, name="install_skill")
+        self.tool_registry.register(
+            self._skill_tools.list_skills, name="list_skills")
+        self.tool_registry.register(
+            self._skill_tools.load_skill, name="load_skill")
+        self.tool_registry.register(
+            self._skill_tools.install_skill, name="install_skill")
 
         # Register delegate_to_agent tool if this is not a sub-agent
         if not self.is_sub_agent:
             from nova.tools.delegate import delegate_to_agent
-            self.tool_registry.register(delegate_to_agent, name="delegate_to_agent")
+            self.tool_registry.register(
+                delegate_to_agent, name="delegate_to_agent")
 
         # Register MCP remote tools
         if not self.is_sub_agent:
@@ -760,21 +739,6 @@ class Agent:
             )
         except Exception as e:
             log.warning("Failed to refresh memory index: %s", e)
-
-    async def _sync_turn_memory(self, done_payload: dict) -> None:
-        try:
-            session = self.session.get_current_session()
-            session_id = session.id if session else ""
-            user = getattr(self, '_last_user_input', '')
-            assistant = done_payload.get("content", "") or ""
-            if user:
-                await self.memory_manager.sync_all(
-                    user_content=user,
-                    assistant_content=assistant,
-                    session_id=session_id,
-                )
-        except Exception as e:
-            log.warning("Post-turn memory sync failed: %s", e)
 
     async def _background_memory_review(self) -> None:
         try:
