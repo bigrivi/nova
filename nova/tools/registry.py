@@ -5,7 +5,10 @@ Tool registry.
 import asyncio
 import json
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Any
+from typing import TYPE_CHECKING, Callable, Optional, Any
+
+if TYPE_CHECKING:
+    from nova.tools.behavior import ToolBehavior
 
 _tool_metadata: dict = {}
 
@@ -45,8 +48,10 @@ class ToolRegistry:
     def __init__(self, source: "ToolRegistry | None" = None):
         if source is not None:
             self.tools = dict(source.tools)
+            self._behaviors = dict(getattr(source, "_behaviors", {}))
         else:
             self.tools: dict[str, Tool] = {}
+            self._behaviors: dict[str, Any] = {}
 
     def register(self, func: Callable, name: str = None) -> None:
         """Register a tool function using decorator metadata."""
@@ -59,6 +64,16 @@ class ToolRegistry:
             params_schema=metadata.get("parameters", {}),
         )
         self.tools[t.name] = t
+
+    def set_behavior(self, name: str, behavior) -> None:
+        """Bind a ToolBehavior to a registered tool."""
+        self._behaviors[name] = behavior
+
+    def behavior_for(self, name: str) -> ToolBehavior:
+        """Get the ToolBehavior for *name*, or a no-op default."""
+        from nova.tools.behavior import DefaultToolBehavior
+
+        return self._behaviors.get(name, DefaultToolBehavior())
 
     def register_by_metadata(self, tool_name: str) -> bool:
         """Register a tool from global metadata."""

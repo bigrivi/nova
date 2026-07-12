@@ -234,31 +234,13 @@ async def shell(
     command: str,
     timeout: int = 30,
     description: str = "",
-    _approval_manager=None,
-    _agent_event_emitter=None,
-    _req_id: str = "",
-    _skip_wait: bool = False,
 ) -> ToolResult:
-    if not _skip_wait:
-        if _approval_manager and _req_id:
-            approved = await _approval_manager.wait_for_result(_req_id)
-            if not approved:
-                return ToolResult(success=False, content="Command rejected by user")
-        elif _approval_manager:
-            approved = await _approval_manager.request(
-                command=command,
-                description=description or command[:80],
-                emitter=_agent_event_emitter,
-            )
-            if not approved:
-                return ToolResult(success=False, content="Command rejected by user")
-        else:
-            blocked, desc = is_hardline(command)
-            if not blocked:
-                blocked, desc = is_dangerous(command)
-            if blocked:
-                return ToolResult(success=False, content=f"Command rejected: {desc}")
+    """Execute a shell command.
 
+    Security checks (hardline/dangerous) are handled upstream by
+    ShellToolBehavior.before_execute — never call this function
+    directly without going through that path.
+    """
     shell_path, _ = detect_shell()
     args = [shell_path] + build_shell_args(shell_path, command)
     cwd = normalize_path(os.getcwd())

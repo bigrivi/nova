@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 import uuid
-from collections.abc import AsyncGenerator, Callable, Coroutine
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -52,38 +52,6 @@ class ApprovalManager:
         self._events[req_id] = asyncio.Event()
         return req_id
 
-    async def wait_for_result(self, req_id: str) -> bool:
-        """Block until the approval is resolved or timed out."""
-        if not req_id:
-            return True
-        event = self._events.get(req_id)
-        if event is None:
-            return False
-        deadline = self._pending[req_id].expires_at
-
-        try:
-            while time.monotonic() < deadline:
-                try:
-                    await asyncio.wait_for(event.wait(), timeout=1)
-                except asyncio.TimeoutError:
-                    continue
-
-                req = self._pending.get(req_id)
-                if req is None:
-                    return False
-                if req.approved is None:
-                    continue
-
-                if req.approved:
-                    return True
-                return False
-
-            log.info("Approval request %s timed out", req_id)
-            return False
-        finally:
-            self._pending.pop(req_id, None)
-            self._events.pop(req_id, None)
-
     async def wait_with_heartbeat(
         self, req_id: str, heartbeat_interval: int = 15,
     ) -> AsyncGenerator[Optional[bool], None]:
@@ -111,27 +79,6 @@ class ApprovalManager:
         finally:
             self._pending.pop(req_id, None)
             self._events.pop(req_id, None)
-
-    async def request(
-        self,
-        command: str,
-        description: str = "",
-        timeout: int | None = None,
-        emitter: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
-    ) -> bool:
-        req_id = self.pre_request(command, description, timeout)
-        if not req_id:
-            return True
-        if emitter:
-            req = self._pending.get(req_id)
-            if req:
-                await emitter({
-                    "id": req_id,
-                    "type": "shell",
-                    "command": command,
-                    "description": description,
-                })
-        return await self.wait_for_result(req_id)
 
     def resolve(self, req_id: str, approved: bool, remember: bool = False) -> bool:
         req = self._pending.get(req_id)

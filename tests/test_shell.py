@@ -1,5 +1,7 @@
 """Tests for the shell tool."""
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from nova.tools.shell import shell, is_dangerous
@@ -54,9 +56,27 @@ async def test_failure_prepends_stderr_marker():
 
 @pytest.mark.asyncio
 async def test_dangerous_command_rejected():
-    result = await shell(command="rm -rf /")
-    assert result.success is False
-    assert "Dangerous command rejected" in result.content
+    """Shell safety checks moved from shell() to ShellToolBehavior."""
+    from nova.tools.behavior import ShellToolBehavior, TurnContext
+
+    mock_approval = MagicMock()
+    mock_approval.pre_request.return_value = ""
+    behavior = ShellToolBehavior(mock_approval)
+    ctx = TurnContext()
+
+    pre_check = await behavior.before_execute({"command": "rm -rf /"}, ctx)
+    assert pre_check.allowed is False
+    assert "recursive delete" in pre_check.reject_reason
+
+    pre_check = await behavior.before_execute(
+        {"command": "dd if=/dev/zero of=/dev/sda"}, ctx
+    )
+    assert pre_check.allowed is False
+    assert pre_check.reject_reason is not None
+
+    pre_check = await behavior.before_execute({"command": "ls -la"}, ctx)
+    assert pre_check.allowed is True
+    assert pre_check.approval_request is None
 
 
 @pytest.mark.asyncio

@@ -23,7 +23,7 @@ from nova.constants import DEFAULT_AGENT_KEY
 from nova.agent.tool_guardrails import ToolGuardrails, GuardrailAction
 from nova.agent.reasoning_timeouts import get_reasoning_timeout
 from nova.tools.approval import ApprovalManager
-from nova.tools.shell import is_hardline, is_dangerous
+from nova.tools.behavior import TurnContext
 
 log = logging.getLogger(__name__)
 
@@ -230,7 +230,7 @@ class Agent:
                 f"Parse error: {e}"
             )
 
-    async def _execute_tool(self, tool_call: ToolCall, req_id: str = "") -> ToolResult:
+    async def _execute_tool(self, tool_call: ToolCall, args: dict, req_id: str = "") -> ToolResult:
         tool_name = tool_call.name if hasattr(
             tool_call, 'name') else str(tool_call)
         log.info(f"Executing tool: {tool_name}")
@@ -239,12 +239,7 @@ class Agent:
             log.warning(f"Tool not found: {tool_call.name}")
             return ToolResult(success=False, content=f"Unknown tool: {tool_call.name}")
         try:
-            args = self._parse_tool_args(tool_call.arguments)
             log.info(f"Tool {tool_name} args: {args}")
-            if tool_name == "shell":
-                args["_approval_manager"] = self._approval
-                args["_agent_event_emitter"] = self._emit_approval
-                args["_skip_wait"] = True
             result = await tool_obj.func(**args)
             log.info(
                 f"Tool {tool_name} result: {result.content[:100] if result.content else 'empty'}...")
@@ -266,9 +261,9 @@ class Agent:
     async def _emit_approval(self, data: dict) -> None:
         await self._emit(AgentEvent.APPROVAL_REQUIRED, data)
 
-    async def _execute_tool_with_abort(self, tc, req_id: str = "") -> Optional[ToolResult]:
+    async def _execute_tool_with_abort(self, tc, args: dict, req_id: str = "") -> Optional[ToolResult]:
         tool_task = asyncio.create_task(
-            self._execute_tool(tc, req_id=req_id),
+            self._execute_tool(tc, args, req_id=req_id),
             name=f"tool_{tc.name}",
         )
         abort_task = asyncio.create_task(
@@ -456,62 +451,44 @@ class Agent:
                     yield AgentEvent.DONE, stop_payload
                     return
 
-                req_id = ""
                 tc_name = tc.name if hasattr(tc, 'name') else str(tc)
-                if tc_name == "shell":
-                    try:
-                        tc_args = self._parse_tool_args(
-                            tc.arguments if hasattr(tc, 'arguments') else "{}")
-                        cmd = tc_args.get("command", "")
-                        desc = tc_args.get("description", "") or cmd[:80]
 
-                        blocked, hdesc = is_hardline(cmd)
-                        if blocked:
-                            log.info(
-                                "Hardline command rejected: %s (%s)", cmd, hdesc)
-                            yield AgentEvent.DONE, _done_payload("stopped", hdesc)
-                            return
+                args = self._parse_tool_args(
+                    tc.arguments if hasattr(tc, 'arguments') else "{}")
+                behavior = self.tool_registry.behavior_for(tc_name)
+                ctx = TurnContext(
+                    approval_manager=self._approval,
+                    event_emitter=self._emit_approval,
+                )
+                pre_check = await behavior.before_execute(args, ctx)
 
-                        dangerous, ddesc = is_dangerous(cmd)
-                        if dangerous:
-                            req_id = self._approval.pre_request(
-                                cmd, desc, timeout=0)
-                            if req_id:
-                                yield AgentEvent.APPROVAL_REQUIRED, {
-                                    "id": req_id,
-                                    "type": "shell",
-                                    "command": cmd,
-                                    "description": desc,
-                                }
-                                async for tick in self._approval.wait_with_heartbeat(req_id):
-                                    if tick is None:
-                                        yield AgentEvent.APPROVAL_HEARTBEAT, None
-                                    else:
-                                        if not tick:
-                                            yield AgentEvent.DONE, _done_payload("stopped", "Command rejected by user")
-                                            return
-                                        break
+                req_id = ""
+                if not pre_check.allowed:
+                    log.info(
+                        "Tool rejected: %s (%s)", tc_name, pre_check.reject_reason)
+                    yield AgentEvent.DONE, _done_payload("stopped", pre_check.reject_reason or "Tool rejected")
+                    return
+
+                if pre_check.approval_request:
+                    req_id = pre_check.approval_request.get("id", "")
+                    yield AgentEvent.APPROVAL_REQUIRED, pre_check.approval_request
+                    async for tick in self._approval.wait_with_heartbeat(req_id):
+                        if tick is None:
+                            yield AgentEvent.APPROVAL_HEARTBEAT, None
                         else:
-                            req_id = ""
-                    except Exception:
-                        pass
+                            if not tick:
+                                yield AgentEvent.DONE, _done_payload("stopped", "Command rejected by user")
+                                return
+                            break
 
-                result = await self._execute_tool_with_abort(tc, req_id=req_id)
+                result = await self._execute_tool_with_abort(tc, args, req_id=req_id)
                 if result is None:
                     yield AgentEvent.DONE, _done_payload("stopped", "Stopped by user")
                     return
 
                 tool_name = tc.name if hasattr(tc, 'name') else str(tc)
-                images = None
-                content = result.content
 
-                if tool_name in ("read_image", "browser_use"):
-                    try:
-                        data = json.loads(content)
-                        images = data.get("images", [])
-                        content = data.get("text", "")
-                    except (json.JSONDecodeError, TypeError):
-                        pass
+                content, images = behavior.postprocess(result.content)
 
                 await self.session.add_message(
                     role="tool",
@@ -535,7 +512,6 @@ class Agent:
                     "result": result,
                 }
                 if not result.success:
-                    tool_name = tc.name if hasattr(tc, 'name') else str(tc)
                     log.info(
                         f"[Turn {turn_count}] Tool failed and will be returned to model context: {tool_name}")
                     continue
@@ -544,8 +520,8 @@ class Agent:
                     yield AgentEvent.DONE, _done_payload("requires_input", "User input required")
                     return
 
-                tool_name = tc.name if hasattr(tc, 'name') else str(tc)
-                if tool_name in ("save_memory", "delete_memory"):
+                behavior.on_success(ctx)
+                if ctx.memory_modified:
                     self._memory_modified_this_turn = True
         else:
             await self.session.add_message(
@@ -718,6 +694,23 @@ class Agent:
                 mcp.register_tools(self.tool_registry)
             except Exception:
                 log.exception("Failed to initialize MCP servers")
+
+        from nova.tools.behavior import (
+            ImageReturningToolBehavior,
+            MemoryMutatingToolBehavior,
+            ShellToolBehavior,
+        )
+
+        self.tool_registry.set_behavior(
+            "shell", ShellToolBehavior(self._approval))
+        self.tool_registry.set_behavior(
+            "read_image", ImageReturningToolBehavior())
+        self.tool_registry.set_behavior(
+            "browser_use", ImageReturningToolBehavior())
+        self.tool_registry.set_behavior(
+            "save_memory", MemoryMutatingToolBehavior())
+        self.tool_registry.set_behavior(
+            "delete_memory", MemoryMutatingToolBehavior())
 
     async def _refresh_memory_index(self) -> None:
         """Build the memory index from DB for system prompt inclusion.
