@@ -1,14 +1,21 @@
 import asyncio
 import base64
 import json
+import logging
 import os
+import re
 import sys
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
+
+if TYPE_CHECKING:
+    from nova.tools.context import ToolContext
+
+log = logging.getLogger(__name__)
 from nova.tools.web_search import TOOL as web_search_tool
 
 _BROWSER_DESCRIPTION = """\
@@ -33,7 +40,6 @@ _playwright = None
 _browser = None
 _context = None
 _page = None
-_extraction_llm = None
 _element_cache: dict[str, list] = {}
 
 
@@ -96,7 +102,12 @@ def _seed_profile(target: str):
 async def _ensure_browser():
     global _playwright, _browser, _context, _page
     if _browser is not None:
-        return _page
+        try:
+            await _page.evaluate("1")
+            return _page
+        except Exception:
+            log.info("Browser page is stale, re-launching")
+            await _cleanup()
 
     from nova.tools.dependency_manager import ensure_deps
     await ensure_deps(["playwright"])
@@ -198,6 +209,14 @@ def _invalidate_cache():
                 "type": "string",
                 "description": "Extraction goal for extract_content action",
             },
+            "keep_attrs": {
+                "type": "string",
+                "description": "REQUIRED when goal needs tag attributes (src, href, etc). Comma-separated attribute names to extract from raw HTML and append to markdown text. Example: goal='find audio src' → keep_attrs='src'. Only for extract_content.",
+            },
+            "selector": {
+                "type": "string",
+                "description": "CSS selector to narrow page DOM before extraction, for extract_content. Defaults to 'main, article, #content, [role=main]' when not set. Set to 'body' or '*' to extract full page.",
+            },
             "keys": {
                 "type": "string",
                 "description": "Keys to send for send_keys action",
@@ -223,9 +242,12 @@ async def browser_use(
     tab_id: Optional[int] = None,
     query: Optional[str] = None,
     goal: Optional[str] = None,
+    keep_attrs: Optional[str] = None,
+    selector: Optional[str] = None,
     keys: Optional[str] = None,
     seconds: Optional[int] = None,
     screenshot: Optional[bool] = None,
+    ctx: Optional["ToolContext"] = None,
 ) -> ToolResult:
     global _page
 
@@ -340,30 +362,65 @@ async def browser_use(
             await asyncio.sleep(seconds_to_wait)
 
         elif action == "extract_content":
+            log.info("extract_content goal=%s selector=%s keep_attrs=%s",
+                      goal, selector, keep_attrs)
             if not goal:
                 return ToolResult(error="Goal required for extract_content")
             import markdownify
-            narrowed = await page.inner_html(
-                "main, article, #content, [role=main]"
-            )
-            raw_html = f"<html><body>{narrowed}</body></html>" if narrowed else await page.content()
-            raw_content = markdownify.markdownify(raw_html)
+            full_html = await page.content()
+            narrowed = ""
+            if selector:
+                try:
+                    narrowed = await page.locator(selector).first.evaluate(
+                        "el => el.outerHTML", timeout=3000
+                    )
+                except Exception as e:
+                    log.info("extract_content selector '%s' failed: %s", selector, e)
+            if not narrowed and selector is None:
+                try:
+                    narrowed = await page.locator(
+                        "main, article, #content, [role=main]"
+                    ).first.evaluate("el => el.outerHTML", timeout=3000)
+                except Exception:
+                    pass
+            raw_html = f"<html><body>{narrowed}</body></html>" if narrowed else full_html
+            resource_section = ""
+            if keep_attrs:
+                attr_patterns = "|".join(
+                    a.strip() for a in keep_attrs.split(",") if a.strip()
+                )
+                if attr_patterns:
+                    resources = re.findall(
+                        rf'<(\w+)\s[^>]*?((?:{attr_patterns})="([^"]+)")[^>]*?>',
+                        raw_html,
+                        re.IGNORECASE,
+                    )
+                    if resources:
+                        seen = set()
+                        lines = []
+                        for tag, full_attr, val in resources:
+                            attr_name = full_attr.split("=", 1)[0]
+                            key = (tag, val)
+                            if key not in seen:
+                                seen.add(key)
+                                lines.append(f"<{tag} {attr_name}={val}>")
+                        resource_section = "\n\n--- Resources ---\n" + "\n".join(lines)
 
-            global _extraction_llm
-            if _extraction_llm is None:
-                from nova.app.runtime import build_llm
-                _extraction_llm = build_llm()
-
+            raw_content = markdownify.markdownify(raw_html) + resource_section
             content_trunc = raw_content[:8000]
-            response = await _extraction_llm.chat(
+            if ctx is None:
+                return ToolResult(success=False, error="ToolContext not available for LLM extraction")
+            response = await ctx.llm.chat(
                 messages=[
                     {"role": "system", "content": "You are a web content extractor. Extract the information relevant to the given goal from the page content. Return only the extracted information, no extra commentary."},
                     {"role": "user", "content": f"Goal: {goal}\n\nPage content:\n{content_trunc}"},
                 ],
+                model=ctx.model,
             )
-            return ToolResult(content=json.dumps({
-                "text": response.content,
-            }, ensure_ascii=False))
+            log.info("extract_content llm response type=%s content=%s",
+                     type(response).__name__,
+                     getattr(response, 'content', str(response))[:500])
+            return ToolResult(content=response.content)
 
         elif action == "switch_tab":
             if tab_id is None:
@@ -399,7 +456,8 @@ async def browser_use(
         }, ensure_ascii=False))
 
     except Exception as e:
-        return ToolResult(error=f"Browser action '{action}' failed: {str(e)}")
+        log.exception("Browser action '%s' failed", action)
+        return ToolResult(success=False, error=f"Browser action '{action}' failed: {str(e)}")
 
 
 async def _get_clickable_elements(page) -> list[dict]:

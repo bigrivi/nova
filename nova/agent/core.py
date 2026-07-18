@@ -240,6 +240,11 @@ class Agent:
             return ToolResult(success=False, content=f"Unknown tool: {tool_call.name}")
         try:
             log.info(f"Tool {tool_name} args: {args}")
+            import inspect
+            if 'ctx' in inspect.signature(tool_obj.func).parameters:
+                from nova.tools.context import ToolContext
+                args['ctx'] = ToolContext(
+                    llm=self.llm, model=self.config.model, provider=self.config.provider)
             result = await tool_obj.func(**args)
             log.info(
                 f"Tool {tool_name} result: {result.content[:100] if result.content else 'empty'}...")
