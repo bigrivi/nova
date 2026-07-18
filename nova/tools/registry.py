@@ -69,7 +69,7 @@ class ToolRegistry:
         """Bind a ToolBehavior to a registered tool."""
         self._behaviors[name] = behavior
 
-    def behavior_for(self, name: str) -> ToolBehavior:
+    def behavior_for(self, name: str) -> "ToolBehavior":
         """Get the ToolBehavior for *name*, or a no-op default."""
         from nova.tools.behavior import DefaultToolBehavior
 
