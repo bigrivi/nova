@@ -207,8 +207,8 @@ is_dangerous_bool = lambda cmd: is_hardline(cmd)[0] or is_dangerous(cmd)[0]
             },
             "timeout": {
                 "type": "integer",
-                "description": "Timeout in seconds (default: 30)",
-                "default": 30,
+                "description": "Timeout in seconds (default: 120)",
+                "default": 120,
             },
             "description": {
                 "type": "string",
@@ -232,7 +232,7 @@ is_dangerous_bool = lambda cmd: is_hardline(cmd)[0] or is_dangerous(cmd)[0]
 )
 async def shell(
     command: str,
-    timeout: int = 30,
+    timeout: int = 120,
     description: str = "",
 ) -> ToolResult:
     """Execute a shell command.
