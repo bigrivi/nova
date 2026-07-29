@@ -4,6 +4,11 @@ Nova is a local personal AI agent assistant. It runs on your machine, uses your
 LLM of choice (local or cloud), remembers context across sessions, and can
 execute code, browse the web, search files, run shell commands, and more.
 
+## 介绍
+
+- [Nova 是什么？](introduction.md) -- 面向普通用户的 Nova 介绍
+- [能力展示](showcase.md) -- 真实场景示例
+
 ## Getting Started
 
 - [Installation](getting-started/installation.md) -- install Nova and its dependencies
