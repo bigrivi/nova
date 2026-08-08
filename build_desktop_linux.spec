@@ -11,16 +11,24 @@ Usage:
 import os
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_all
+
 ROOT = Path(os.environ.get("NOVA_PROJECT_ROOT", Path.cwd()))
 
 block_cipher = None
 
+# pywebview loads its platform backend (webview.platforms.gtk on Linux) and
+# JS assets dynamically, which static analysis misses. Collect everything so
+# mouse interaction / text selection keep working when packaged.
+webview_datas, webview_binaries, webview_hidden = collect_all('webview')
+
 a = Analysis(
     ['nova/desktop/entry.py'],
     pathex=[str(ROOT)],
-    binaries=[],
+    binaries=webview_binaries,
     datas=[
         (str(ROOT / 'frontend' / 'dist'), 'frontend/dist'),
+        *webview_datas,
     ],
     hiddenimports=[
         'nova.server.app',
@@ -30,6 +38,7 @@ a = Analysis(
         'nova.config.service',
         'nova.db.database',
         'nova.license',
+        *webview_hidden,
     ],
     hookspath=[],
     hooksconfig={},
