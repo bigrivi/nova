@@ -1,0 +1,4 @@
+#!/bin/sh
+# Nova TUI launcher: starts the OpenTUI (TypeScript) client, which auto-spawns the Python backend.
+cd "$(dirname "$0")/tui" || exit 1
+exec bun dev

@@ -1,0 +1,25 @@
+{
+  "name": "nova-tui",
+  "module": "src/index.tsx",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run src/index.tsx",
+    "build": "bun --bun tsc --noEmit"
+  },
+  "dependencies": {
+    "@opentui/core": "0.4.5",
+    "@opentui/react": "0.4.5",
+    "react": "^19.2.8",
+    "tree-sitter-wasms": "0.1.13",
+    "web-tree-sitter": "0.25.10",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.2.18"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
