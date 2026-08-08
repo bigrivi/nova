@@ -134,8 +134,9 @@ class OpenAIProvider(LLMProvider):
             if role == "assistant":
                 rc = getattr(msg, self._reasoning_field, None) or get_attr(
                     msg, self._reasoning_field)
-                if rc:
-                    m["reasoning_content"] = rc
+                # DeepSeek thinking mode requires every assistant message in
+                # history to carry this key (empty string is acceptable), else 400
+                m["reasoning_content"] = rc or ""
 
             name = get_attr(msg, "name")
             if name:
@@ -305,7 +306,7 @@ class OpenAIProvider(LLMProvider):
                 msg = choice.get("message", {})
 
                 tool_calls = []
-                if "tool_calls" in msg:
+                if isinstance(msg.get("tool_calls"), list):
                     for tc in msg["tool_calls"]:
                         tool_calls.append(ToolCall(
                             id=tc.get("id", ""),
@@ -391,7 +392,6 @@ class OpenAIProvider(LLMProvider):
                     line = line.decode("utf-8").strip()
                     if not line or line == "data: [DONE]":
                         continue
-                    log.debug("OpenAI provider stream chunk: %s", line)
 
                     if line.startswith("data: "):
                         line = line[6:]
@@ -410,7 +410,7 @@ class OpenAIProvider(LLMProvider):
                         if reasoning:
                             yield ReasoningDelta(content=reasoning)
 
-                        if "tool_calls" in delta:
+                        if isinstance(delta.get("tool_calls"), list):
                             for tc in delta["tool_calls"]:
                                 index = tc.get("index", 0)
                                 if index not in accumulated_tool_calls:
