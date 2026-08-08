@@ -24,7 +24,7 @@ Nova 直接生成邮件草稿。不满意可以接着说：
 
 ```
 把这个网页里的表格提取出来：
-https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)
+https://tradingeconomics.com/china/gdp
 ```
 
 Nova 打开网页，定位到表格区域，提取内容，整理成结构化格式给你。
