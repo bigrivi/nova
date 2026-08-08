@@ -356,7 +356,7 @@ const AssistantMessage: FC = () => {
           {({ part, children }) => {
             switch (part.type) {
               case "group-chainOfThought":
-                return <ReasoningChainGroup>{children}</ReasoningChainGroup>;
+                return <ReasoningChainGroup status={part.status}>{children}</ReasoningChainGroup>;
               case "group-reasoning":
                 return <>{children}</>;
               case "group-tool":
@@ -364,7 +364,7 @@ const AssistantMessage: FC = () => {
               case "text":
                 return <MarkdownText />;
               case "reasoning":
-                return <Reasoning />;
+                return <Reasoning status={part.status} />;
               case "tool-call": {
                 const { toolUI, ...toolProps } = part;
                 if (part.toolName === "ask_user") return null;

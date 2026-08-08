@@ -2,7 +2,12 @@
 
 import { useState, useEffect, useRef, type FC, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { MessagePartPrimitive, useAuiState } from "@assistant-ui/react";
+import {
+  MessagePartPrimitive,
+  useAuiState,
+  type MessagePartStatus,
+  type ToolCallMessagePartStatus,
+} from "@assistant-ui/react";
 import { BrainIcon, CheckIcon, ChevronDownIcon, LoaderIcon } from "lucide-react";
 
 import {
@@ -11,7 +16,6 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { useReasoningStore } from "@/stores/reasoning-store";
 
 function formatTime(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
@@ -51,33 +55,34 @@ function useElapsed(isActive: boolean): number | null {
   return elapsed;
 }
 
-export const ReasoningChainGroup = ({ children }: { children: ReactNode }) => {
+export const ReasoningChainGroup = ({
+  status,
+  children,
+}: {
+  status?: MessagePartStatus | ToolCallMessagePartStatus;
+  children: ReactNode;
+}) => {
   const { t } = useTranslation();
-  const chainActive = useReasoningStore((s) => s.chainActive);
-  const storeChainElapsedMs = useReasoningStore((s) => s.chainElapsedMs);
-  const [open, setOpen] = useState(chainActive);
-  const wasActiveRef = useRef(chainActive);
+  const chainActive = status?.type === "running";
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
 
   const customMetadata = useAuiState((s) => s.message?.metadata?.custom);
+  const messageRunning = useAuiState((s) => s.message?.status?.type === "running");
   const hasChainElapsed = customMetadata != null && 'chainElapsedMs' in customMetadata;
   const metadataChainElapsedMs = hasChainElapsed
     ? (customMetadata.chainElapsedMs as number | null | undefined) ?? null
     : undefined;
-  const chainElapsedMs = storeChainElapsedMs ?? metadataChainElapsedMs;
+  const chainElapsedMs = metadataChainElapsedMs;
 
-  useEffect(() => {
-    if (wasActiveRef.current && !chainActive) {
-      setOpen(false);
-    }
-    wasActiveRef.current = chainActive;
-  }, [chainActive]);
+  // Collapse only on message end; chainActive flips false between tools mid-loop and would flicker the group.
+  const open = userOpen ?? messageRunning;
 
   return (
-    <Collapsible
-      open={open}
-      onOpenChange={setOpen}
-      className="mb-2 rounded-2xl border bg-muted/40"
-    >
+      <Collapsible
+        open={open}
+        onOpenChange={setUserOpen}
+        className="mb-2 rounded-2xl border bg-muted/40"
+      >
       <CollapsibleTrigger asChild>
         <button
           type="button"
@@ -89,9 +94,7 @@ export const ReasoningChainGroup = ({ children }: { children: ReactNode }) => {
               ? t("reasoning.thinking")
               : chainElapsedMs != null
                 ? t("reasoning.workedFor", { time: formatTime(chainElapsedMs) })
-                : hasChainElapsed
-                  ? t("reasoning.thoughtNoTime")
-                  : t("reasoning.thinking")}
+                : t("reasoning.thoughtNoTime")}
           </span>
           <ChevronDownIcon
             className={cn(
@@ -108,10 +111,11 @@ export const ReasoningChainGroup = ({ children }: { children: ReactNode }) => {
   );
 };
 
-export const Reasoning: FC = () => {
+export const Reasoning: FC<{
+  status?: MessagePartStatus | ToolCallMessagePartStatus;
+}> = ({ status }) => {
   const { t } = useTranslation();
-  const isActive = useReasoningStore((s) => s.isActive);
-  const storeElapsedMs = useReasoningStore((s) => s.elapsedMs);
+  const isActive = status?.type === "running";
   const elapsed = useElapsed(isActive);
   const [open, setOpen] = useState(true);
 
@@ -120,7 +124,7 @@ export const Reasoning: FC = () => {
   const messageElapsedMs = hasReasoningElapsed
     ? (customMetadata.reasoningElapsedMs as number | null | undefined) ?? null
     : undefined;
-  const displayMs = elapsed ?? storeElapsedMs ?? messageElapsedMs;
+  const displayMs = elapsed ?? messageElapsedMs;
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -139,9 +143,7 @@ export const Reasoning: FC = () => {
               ? t("reasoning.thinking")
               : displayMs != null
                 ? t("reasoning.thought", { time: formatTime(displayMs) })
-                : hasReasoningElapsed
-                  ? t("reasoning.thoughtNoTime")
-                  : t("reasoning.thinking")}
+                : t("reasoning.thoughtNoTime")}
           </span>
           <ChevronDownIcon
             className={cn(
