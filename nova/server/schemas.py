@@ -42,6 +42,15 @@ class SessionListResponse(BaseModel):
     items: list[SessionSummary]
 
 
+class RenameSessionRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+
+class SessionActionResponse(BaseModel):
+    status: str
+    session_id: str
+
+
 class MessageRecord(BaseModel):
     id: str
     session_id: str

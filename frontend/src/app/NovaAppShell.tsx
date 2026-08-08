@@ -20,12 +20,14 @@ import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { toThreadMessages } from "../lib/history-messages";
 import {
+    deleteSession,
     getAgent,
     interruptChat,
     listMessages,
     listModels,
     listProviders,
     listSessions,
+    renameSession,
     streamChat,
     updateAgent,
 } from "../lib/nova-api";
@@ -193,6 +195,28 @@ function setAssistantReasoning(
         return {
             ...message,
             content: parts,
+        };
+    });
+}
+
+function setAssistantMetadata(
+    messages: ThreadMessageLike[],
+    assistantMessageId: string,
+    updater: (custom: Record<string, unknown>) => Record<string, unknown>,
+) {
+    return messages.map((message) => {
+        if (message.id !== assistantMessageId || message.role !== "assistant") {
+            return message;
+        }
+        const custom = {
+            ...(message.metadata?.custom as Record<string, unknown> | undefined),
+        };
+        return {
+            ...message,
+            metadata: {
+                ...message.metadata,
+                custom: updater(custom),
+            },
         };
     });
 }
@@ -403,6 +427,52 @@ export function NovaAppShell() {
         setComposerText("");
     }
 
+    async function handleRenameThread(threadId: string, newTitle: string) {
+        const title = newTitle.trim();
+        const thread = threads.find((t) => t.id === threadId);
+        if (!title || !thread || title === thread.title) {
+            return;
+        }
+        try {
+            await renameSession(threadId, title);
+            startTransition(() => {
+                setThreads((previous) =>
+                    previous.map((thread) =>
+                        thread.id === threadId
+                            ? { ...thread, title }
+                            : thread,
+                    ),
+                );
+            });
+        } catch (error) {
+            console.error("Failed to rename thread:", threadId, error);
+        }
+    }
+
+    async function handleDeleteThread(threadId: string) {
+        if (isRunning && threadId === currentThreadId) {
+            return;
+        }
+        try {
+            await deleteSession(threadId);
+            startTransition(() => {
+                setThreads((previous) =>
+                    previous.filter((thread) => thread.id !== threadId),
+                );
+                setMessagesByThreadId((previous) => {
+                    const next = { ...previous };
+                    delete next[threadId];
+                    return next;
+                });
+            });
+            if (currentThreadId === threadId) {
+                switchToDraftThread();
+            }
+        } catch (error) {
+            console.error("Failed to delete thread:", threadId, error);
+        }
+    }
+
     useEffect(() => {
         const textarea = composerRef.current;
         if (!textarea) {
@@ -525,13 +595,20 @@ export function NovaAppShell() {
 
                     if (event.type === "text-start") {
                         const store = useReasoningStore.getState();
-                        if (store.chainActive) {
-                            if (store.chainStartTime != null) {
-                                store.setChainElapsedMs(
-                                    Date.now() - store.chainStartTime,
-                                );
-                            }
-                            store.setChainActive(false);
+                        if (store.chainStartTime != null) {
+                            const chainElapsedMs =
+                                Date.now() - store.chainStartTime;
+                            store.setChainStartTime(null);
+                            setThreadMessages(activeThreadId, (previous) =>
+                                setAssistantMetadata(
+                                    previous,
+                                    assistantMessageId,
+                                    (custom) => ({
+                                        ...custom,
+                                        chainElapsedMs,
+                                    }),
+                                ),
+                            );
                         }
                         setThreadMessages(activeThreadId, (previous) =>
                             previous.map((msg) => {
@@ -571,7 +648,6 @@ export function NovaAppShell() {
 
                     if (event.type === "reasoning-start") {
                         const store = useReasoningStore.getState();
-                        store.setChainActive(true);
                         store.setChainStartTime(Date.now());
                         setThreadMessages(activeThreadId, (previous) =>
                             previous.map((msg) => {
@@ -602,9 +678,6 @@ export function NovaAppShell() {
                     }
 
                     if (event.type === "reasoning-delta") {
-                        const store = useReasoningStore.getState();
-                        store.setActive(true);
-                        store.setChainActive(true);
                         setThreadMessages(activeThreadId, (previous) =>
                             setAssistantReasoning(
                                 previous,
@@ -616,10 +689,17 @@ export function NovaAppShell() {
                     }
 
                     if (event.type === "reasoning-end") {
-                        useReasoningStore.getState().setActive(false);
-                        useReasoningStore
-                            .getState()
-                            .setElapsedMs(event.elapsedMs ?? null);
+                        const elapsedMs = event.elapsedMs ?? null;
+                        setThreadMessages(activeThreadId, (previous) =>
+                            setAssistantMetadata(
+                                previous,
+                                assistantMessageId,
+                                (custom) => ({
+                                    ...custom,
+                                    reasoningElapsedMs: elapsedMs,
+                                }),
+                            ),
+                        );
                         return;
                     }
 
@@ -628,7 +708,6 @@ export function NovaAppShell() {
                             return;
                         }
                         const store = useReasoningStore.getState();
-                        store.setChainActive(true);
                         if (store.chainStartTime == null) {
                             store.setChainStartTime(Date.now());
                         }
@@ -730,14 +809,20 @@ export function NovaAppShell() {
             );
         } finally {
             const store = useReasoningStore.getState();
-            if (store.chainActive) {
-                if (store.chainStartTime != null) {
-                    store.setChainElapsedMs(Date.now() - store.chainStartTime);
-                }
-                store.setChainActive(false);
+            if (store.chainStartTime != null) {
+                const chainElapsedMs = Date.now() - store.chainStartTime;
+                store.setChainStartTime(null);
+                setThreadMessages(activeThreadId, (previous) =>
+                    setAssistantMetadata(
+                        previous,
+                        assistantMessageId,
+                        (custom) => ({
+                            ...custom,
+                            chainElapsedMs,
+                        }),
+                    ),
+                );
             }
-            store.setChainStartTime(null);
-            store.setActive(false);
             setIsRunning(false);
 
             if (requiresInput && pendingAskUser) {
@@ -848,6 +933,9 @@ export function NovaAppShell() {
                     setCurrentThreadId(threadId);
                     void loadThread(threadId);
                 },
+                onRename: (threadId, newTitle) =>
+                    handleRenameThread(threadId, newTitle),
+                onDelete: (threadId) => handleDeleteThread(threadId),
             },
         },
     });
@@ -868,7 +956,10 @@ export function NovaAppShell() {
                         {!isSidebarCollapsed && (
                             <>
                                 <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-                                    <ThreadList />
+                                    <ThreadList
+                                        onRename={handleRenameThread}
+                                        onDelete={handleDeleteThread}
+                                    />
                                 </div>
                                 <div className="flex items-center justify-between border-t border-sidebar-border px-3 py-2.5">
                                     <div className="flex items-center gap-2">

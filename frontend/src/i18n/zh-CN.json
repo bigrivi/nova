@@ -7,26 +7,21 @@
   "common.back": "返回",
   "common.previous": "上一个",
   "common.next": "下一个",
-
   "app.welcomeMessage": "你好，我是 Nova，你的 AI 助手。我可以帮你写代码、回答问题等等。今天有什么可以帮你的？",
   "app.newSession": "新建会话",
   "app.untitledSession": "未命名会话",
   "app.expandSidebar": "展开侧边栏",
   "app.collapseSidebar": "收起侧边栏",
-
   "thread.scrollToBottom": "滚动到底部",
   "thread.helloThere": "我是 Nova",
   "thread.howCanIHelp": "你的 AI 助手，随时为你服务",
   "thread.exportAsMarkdown": "导出为 Markdown",
-
   "threadList.savedSessionsAppearHere": "完成首次对话后，保存的会话将显示在此处。",
   "threadList.newThread": "新建对话",
   "threadList.loadingThreads": "加载中",
   "threadList.newChat": "新对话",
-
   "composer.sendMessage": "发送消息...",
   "composer.messageInput": "消息输入",
-
   "modelSelector.ollama": "Ollama",
   "modelSelector.openaiCompatible": "OpenAI 兼容",
   "modelSelector.activeModel": "当前模型",
@@ -58,7 +53,6 @@
   "modelSelector.labelPlaceholder": "gpt-5.4-mini",
   "modelSelector.enableTools": "启用工具",
   "modelSelector.saveModel": "保存模型",
-
   "attachment.attachmentPreview": "附件预览",
   "attachment.imageAttachmentPreview": "图片附件预览",
   "attachment.image": "图片",
@@ -66,7 +60,6 @@
   "attachment.file": "文件",
   "attachment.removeFile": "移除文件",
   "attachment.addAttachment": "添加附件",
-
   "tools.cancelledTool": "已取消的工具",
   "tools.usedTool": "使用的工具",
   "tools.result": "结果：",
@@ -86,17 +79,22 @@
   "tools.confirmNo": "否",
   "tools.answerPlaceholder": "输入你的回答...",
   "tools.requiredHint": "请回答所有必填问题",
-
   "reasoning.thinking": "思考中…",
   "reasoning.thought": "思考: {{time}}",
   "reasoning.thoughtNoTime": "思考",
   "reasoning.workedFor": "耗时 {{time}}",
   "reasoning.compacting": "正在压缩历史记录…",
-
   "dialog.close": "关闭",
-
   "approval.title": "Shell 命令",
   "approval.approve": "批准",
   "approval.remember": "批准并记住",
-  "approval.reject": "拒绝"
+  "approval.reject": "拒绝",
+  "threadList.moreActions": "更多操作",
+  "threadList.rename": "重命名",
+  "threadList.delete": "删除",
+  "threadList.renameDialogTitle": "重命名会话",
+  "threadList.renameDialogDescription": "为这个会话输入一个新名称。",
+  "threadList.renamePlaceholder": "会话名称",
+  "threadList.deleteDialogTitle": "删除会话？",
+  "threadList.deleteDialogDescription": "该会话及其所有消息将被永久删除。"
 }

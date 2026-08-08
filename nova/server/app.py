@@ -34,6 +34,8 @@ from nova.server.schemas import (
     ProviderListResponse,
     ProviderRecord,
     ProviderCreateRequest,
+    RenameSessionRequest,
+    SessionActionResponse,
     SessionListResponse,
 )
 from nova.settings import Settings, get_settings, reload_settings
@@ -108,6 +110,20 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     async def session_messages(session_id: str) -> MessageListResponse:
         response = await app.state.chat_service.list_messages(session_id)
         return response
+
+    @app.patch("/api/sessions/{session_id}", response_model=SessionActionResponse)
+    async def rename_session(session_id: str, request: RenameSessionRequest) -> SessionActionResponse:
+        renamed = await app.state.chat_service.rename_session(session_id, request.title)
+        if not renamed:
+            raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+        return SessionActionResponse(status="renamed", session_id=session_id)
+
+    @app.delete("/api/sessions/{session_id}", response_model=SessionActionResponse)
+    async def delete_session(session_id: str) -> SessionActionResponse:
+        deleted = await app.state.chat_service.delete_session(session_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+        return SessionActionResponse(status="deleted", session_id=session_id)
 
     @app.get("/api/models", response_model=ModelListResponse)
     async def models() -> ModelListResponse:

@@ -119,6 +119,33 @@ export async function listSessions(): Promise<NovaSessionSummary[]> {
   return payload.items
 }
 
+export async function renameSession(
+  sessionId: string,
+  title: string,
+): Promise<void> {
+  const response = await fetch(
+    buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}`),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    },
+  )
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response))
+  }
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  const response = await fetch(
+    buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}`),
+    { method: 'DELETE' },
+  )
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response))
+  }
+}
+
 export async function approveCommand(options: {
   sessionId: string
   requestId: string

@@ -284,6 +284,30 @@ class Database:
         row = await cursor.fetchone()
         return self._row_to_session(row) if row else None
 
+    async def update_session_title(self, session_id: str, title: str) -> bool:
+        """Update a session title. Returns True if the session exists."""
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "UPDATE sessions SET title = ? WHERE id = ?",
+            (title, session_id),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    async def delete_session(self, session_id: str) -> bool:
+        """Delete a session and all of its messages. Returns True if deleted."""
+        await self._ensure_connected()
+        await self._conn.execute(
+            "DELETE FROM messages WHERE session_id = ?",
+            (session_id,),
+        )
+        cursor = await self._conn.execute(
+            "DELETE FROM sessions WHERE id = ?",
+            (session_id,),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
     async def get_all_sessions(self, limit: int = 50, agent_key: str | None = None) -> list[dict]:
         await self._ensure_connected()
         if agent_key:

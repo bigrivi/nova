@@ -7,26 +7,21 @@
   "common.back": "Back",
   "common.previous": "Previous",
   "common.next": "Next",
-
   "app.welcomeMessage": "Hi, I'm Nova, your AI assistant. I can help you write code, answer questions, and more. How can I help you today?",
   "app.newSession": "New Session",
   "app.untitledSession": "Untitled session",
   "app.expandSidebar": "Expand thread list sidebar",
   "app.collapseSidebar": "Collapse thread list sidebar",
-
   "thread.scrollToBottom": "Scroll to bottom",
   "thread.helloThere": "I'm Nova",
   "thread.howCanIHelp": "Your AI assistant, ready to help",
   "thread.exportAsMarkdown": "Export as Markdown",
-
   "threadList.savedSessionsAppearHere": "Saved sessions will appear here after the first completed thread.",
   "threadList.newThread": "New Thread",
   "threadList.loadingThreads": "Loading threads",
   "threadList.newChat": "New Chat",
-
   "composer.sendMessage": "Send a message...",
   "composer.messageInput": "Message input",
-
   "modelSelector.ollama": "Ollama",
   "modelSelector.openaiCompatible": "OpenAI Compatible",
   "modelSelector.activeModel": "Active model",
@@ -58,7 +53,6 @@
   "modelSelector.labelPlaceholder": "gpt-5.4-mini",
   "modelSelector.enableTools": "Enable tools",
   "modelSelector.saveModel": "Save model",
-
   "attachment.attachmentPreview": "Attachment preview",
   "attachment.imageAttachmentPreview": "Image Attachment Preview",
   "attachment.image": "Image",
@@ -66,7 +60,6 @@
   "attachment.file": "File",
   "attachment.removeFile": "Remove file",
   "attachment.addAttachment": "Add Attachment",
-
   "tools.cancelledTool": "Cancelled tool",
   "tools.usedTool": "Used tool",
   "tools.result": "Result:",
@@ -86,17 +79,22 @@
   "tools.confirmNo": "No",
   "tools.answerPlaceholder": "Type your answer...",
   "tools.requiredHint": "Please answer all required questions",
-
   "reasoning.thinking": "Thinking…",
   "reasoning.thought": "Thought for {{time}}",
   "reasoning.thoughtNoTime": "Thought",
   "reasoning.workedFor": "Worked for {{time}}",
   "reasoning.compacting": "Compacting conversation history…",
-
   "dialog.close": "Close",
-
   "approval.title": "Shell Command",
   "approval.approve": "Approve",
   "approval.remember": "Approve & Remember",
-  "approval.reject": "Reject"
+  "approval.reject": "Reject",
+  "threadList.moreActions": "More actions",
+  "threadList.rename": "Rename",
+  "threadList.delete": "Delete",
+  "threadList.renameDialogTitle": "Rename session",
+  "threadList.renameDialogDescription": "Give this session a new name.",
+  "threadList.renamePlaceholder": "Session name",
+  "threadList.deleteDialogTitle": "Delete session?",
+  "threadList.deleteDialogDescription": "This session and all of its messages will be permanently deleted."
 }

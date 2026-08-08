@@ -66,6 +66,15 @@ class ChatService:
         ]
         return SessionListResponse(items=items)
 
+    async def rename_session(self, session_id: str, title: str) -> bool:
+        db = await ensure_db()
+        return await db.update_session_title(session_id, title)
+
+    async def delete_session(self, session_id: str) -> bool:
+        db = await ensure_db()
+        await self._request_registry.unregister(session_id)
+        return await db.delete_session(session_id)
+
     async def list_messages(self, session_id: str) -> MessageListResponse:
         db = await ensure_db()
         messages = await get_user_visible_history(db, session_id)
