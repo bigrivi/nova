@@ -61,7 +61,14 @@ def _format_memory(record) -> str:
             "scope": {
                 "type": "string",
                 "enum": ["user", "project", "session"],
-                "description": "Memory scope: user, project, or session. Use session for turn-local ongoing context.",
+                "description": (
+                    "Memory scope. user: stable cross-session facts/preferences "
+                    "about the user (identity, habits, long-term preferences). "
+                    "project: decisions or conventions tied to the current project "
+                    "or workspace. session: temporary turn-local context only — "
+                    "in-progress task state, ephemeral details for THIS conversation. "
+                    "Default to user when unsure."
+                ),
             },
             "memory_type": {
                 "type": "string",
@@ -172,9 +179,9 @@ async def search_memory(
         return ToolResult(success=False, content=str(exc), error=str(exc))
 
     if not results:
-        return ToolResult(success=True, content=f"No memories found for query: {query}")
+        return ToolResult(success=True, content=f"No relevant memories found for query: {query}")
 
-    lines = [f"Found {len(results)} memories:"]
+    lines = [f"Found {len(results)} memories. Only use those directly relevant to the current question:"]
     lines.extend(_format_memory(record) for record in results)
     return ToolResult(success=True, content="\n".join(lines))
 

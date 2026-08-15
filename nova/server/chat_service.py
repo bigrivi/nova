@@ -70,10 +70,15 @@ class ChatService:
         db = await ensure_db()
         return await db.update_session_title(session_id, title)
 
-    async def delete_session(self, session_id: str) -> bool:
+    async def delete_session(self, session_id: str, delete_memories: bool = False) -> bool:
         db = await ensure_db()
         await self._request_registry.unregister(session_id)
-        return await db.delete_session(session_id)
+        deleted = await db.delete_session(session_id)
+        if deleted and delete_memories:
+            from nova.memory.service import MemoryService
+
+            await MemoryService().delete_by_session(session_id)
+        return deleted
 
     async def list_messages(self, session_id: str) -> MessageListResponse:
         db = await ensure_db()

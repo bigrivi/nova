@@ -241,10 +241,15 @@ class Agent:
         try:
             log.info(f"Tool {tool_name} args: {args}")
             import inspect
-            if 'ctx' in inspect.signature(tool_obj.func).parameters:
+            params = inspect.signature(tool_obj.func).parameters
+            if 'ctx' in params:
                 from nova.tools.context import ToolContext
                 args['ctx'] = ToolContext(
                     llm=self.llm, model=self.config.model, provider=self.config.provider)
+            if 'session_id' in params:
+                current_session = self.session.get_current_session()
+                if current_session is not None and current_session.id:
+                    args['session_id'] = current_session.id
             result = await tool_obj.func(**args)
             log.info(
                 f"Tool {tool_name} result: {result.content[:100] if result.content else 'empty'}...")
@@ -781,6 +786,8 @@ class Agent:
 
             service = MemoryService()
             saved = 0
+            current_session = self.session.get_current_session()
+            session_id = current_session.id if current_session else None
             for fact in facts:
                 try:
                     _, created = await service.save(MemoryWriteRequest(
@@ -790,6 +797,7 @@ class Agent:
                         scope=fact.get("scope", "user"),
                         memory_type=fact.get("memory_type", "fact"),
                         tags=fact.get("tags", []),
+                        session_id=session_id,
                     ))
                     if created:
                         saved += 1

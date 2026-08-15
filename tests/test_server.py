@@ -8,6 +8,8 @@ import json
 
 from nova.db.database import DatabaseConfig, Session, close_db, init_db
 from nova.agent import AgentEvent
+from nova.memory.models import MemoryWriteRequest
+from nova.memory.service import MemoryService
 import nova.server.app as server_app
 import nova.server.chat_service as server_chat_service
 from nova.server import create_app, run_server
@@ -440,6 +442,241 @@ async def test_session_messages_endpoint_returns_history(monkeypatch, tmp_path):
     assert all(item["session_id"] == "sess-2" for item in items)
     assert all(isinstance(item["id"], str) for item in items)
     assert all(isinstance(item["time_created"], int) for item in items)
+
+
+@pytest.mark.asyncio
+async def test_delete_session_without_memories_keeps_memories(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    db = await init_db(DatabaseConfig(path=str(settings.database_path)))
+    await db.save_session(Session(id="sess-delete", title="Delete Test"))
+    await MemoryService().save(
+        request=MemoryWriteRequest(
+            key="session_fact",
+            content="Made during this session.",
+            summary="A session fact.",
+            scope="user",
+            memory_type="fact",
+            session_id="sess-delete",
+        )
+    )
+
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    response = client.delete("/api/sessions/sess-delete")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "deleted"
+    remaining = await MemoryService().list_memories(scope="all")
+    assert len(remaining) == 1
+
+
+@pytest.mark.asyncio
+async def test_memories_endpoint_filters_by_session_id(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+    service = MemoryService()
+    await service.save(
+        request=MemoryWriteRequest(
+            key="sess_a_fact",
+            content="From session A.",
+            summary="Session A fact.",
+            scope="user",
+            memory_type="fact",
+            session_id="sess-a",
+        )
+    )
+    await service.save(
+        request=MemoryWriteRequest(
+            key="sess_b_fact",
+            content="From session B.",
+            summary="Session B fact.",
+            scope="session",
+            memory_type="context",
+            session_id="sess-b",
+        )
+    )
+
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    response = client.get("/api/memories?session_id=sess-a")
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["key"] == "sess_a_fact"
+    assert items[0]["session_id"] == "sess-a"
+
+
+@pytest.mark.asyncio
+async def test_memories_endpoint_empty_session_id_returns_no_memories(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+    service = MemoryService()
+    await service.save(
+        request=MemoryWriteRequest(
+            key="null_sid_fact",
+            content="No session.",
+            summary="Null session fact.",
+            scope="user",
+            memory_type="fact",
+        )
+    )
+    await service.save(
+        request=MemoryWriteRequest(
+            key="sess_fact",
+            content="With session.",
+            summary="Session fact.",
+            scope="user",
+            memory_type="fact",
+            session_id="sess-y",
+        )
+    )
+
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    response = client.get("/api/memories?session_id=")
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert items == []
+    assert all(item["session_id"] is not None for item in items)
+
+
+@pytest.mark.asyncio
+async def test_delete_session_with_delete_memories_purges_memories(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    db = await init_db(DatabaseConfig(path=str(settings.database_path)))
+    await db.save_session(Session(id="sess-purge", title="Purge Test"))
+    service = MemoryService()
+    await service.save(
+        request=MemoryWriteRequest(
+            key="user_pref",
+            content="Keep style.",
+            summary="User preference.",
+            scope="user",
+            memory_type="preference",
+            session_id="sess-purge",
+        )
+    )
+    await service.save(
+        request=MemoryWriteRequest(
+            key="session_note",
+            content="Ephemeral note.",
+            summary="Session note.",
+            scope="session",
+            memory_type="context",
+            session_id="sess-purge",
+        )
+    )
+    await service.save(
+        request=MemoryWriteRequest(
+            key="other_user_fact",
+            content="From another session.",
+            summary="Other session fact.",
+            scope="user",
+            memory_type="fact",
+            session_id="sess-other",
+        )
+    )
+
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    response = client.delete("/api/sessions/sess-purge?delete_memories=true")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "deleted"
+    remaining = await service.list_memories(scope="all")
+    assert len(remaining) == 1
+    assert remaining[0].key == "other_user_fact"
+
+
+@pytest.mark.asyncio
+async def test_memories_endpoint_returns_saved_memories(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+    await MemoryService().save(
+        request=MemoryWriteRequest(
+            key="answer_style",
+            content="Respond with the conclusion first.",
+            summary="User prefers concise answers.",
+            scope="user",
+            memory_type="preference",
+            tags=["style"],
+        )
+    )
+
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    response = client.get("/api/memories")
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["key"] == "answer_style"
+    assert items[0]["scope"] == "user"
+    assert items[0]["memory_type"] == "preference"
+    assert items[0]["summary"] == "User prefers concise answers."
+    assert items[0]["tags"] == ["style"]
+    assert isinstance(items[0]["created_at"], int)
+    assert isinstance(items[0]["updated_at"], int)
+
+
+@pytest.mark.asyncio
+async def test_delete_memory_endpoint_deletes_record(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+    service = MemoryService()
+    saved, _ = await service.save(
+        request=MemoryWriteRequest(
+            key="to_delete",
+            content="Remove me.",
+            summary="Temporary memory.",
+            scope="project",
+            memory_type="context",
+        )
+    )
+
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    response = client.delete(f"/api/memories/{saved.id}")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "deleted"
+    assert response.json()["memory_id"] == saved.id
+
+    remaining = await service.list_memories(scope="all")
+    assert len(remaining) == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_memory_endpoint_returns_404_for_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    response = client.delete("/api/memories/mem_missing")
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"]
 
 
 def test_chat_endpoint_returns_completed_response(monkeypatch):

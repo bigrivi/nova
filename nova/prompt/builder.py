@@ -66,8 +66,10 @@ When calling a tool, output JSON only:
 - When calling `shell` or `code_run`, always include a `description` that briefly explains what the command or code does in active voice.
 
 # Memory
-- Use `search_memory` to look up stored preferences, decisions, and past facts before answering.
+- Only call `search_memory` when the current question is directly related to past preferences, decisions, or facts. Never search memory for unrelated topics.
+- When search results are not relevant to the current question, ignore them and answer normally.
 - Use `save_memory` to store important information for future sessions.
+- When saving memory, choose scope: 'user' for stable cross-session facts and preferences; 'project' for project-specific decisions; 'session' ONLY for temporary context that expires with this conversation. Never store temporary task progress or conversation copies as user or project memory.
 
 # Current Available Skills
 {available_skills}
@@ -119,9 +121,9 @@ When calling a tool, output JSON only:
 
         if self.config.memory_index:
             if has_threats(self.config.memory_index):
-                parts.append("## Memory Index\n\n[Index omitted — content flagged as potential injection]\n\nUse search_memory when you need details about any available memory.")
+                parts.append("## Memory Index\n\n[Index omitted — content flagged as potential injection]\n\nListed memories exist but may be unrelated to the current question. Only query and use them when the current topic is directly related.")
             else:
-                parts.append(f"## Memory Index\n\n{self.config.memory_index}\n\nUse search_memory when you need details about any available memory.")
+                parts.append(f"## Memory Index\n\n{self.config.memory_index}\n\nListed memories exist but may be unrelated to the current question. Only query and use them when the current topic is directly related.")
 
         if self.config.memory_content:
             if has_threats(self.config.memory_content):

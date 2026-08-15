@@ -9,6 +9,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { listMemoriesBySession } from "@/lib/nova-api";
+import type { NovaMemoryRecord } from "@/types/nova";
 import {
   AuiIf,
   ThreadListItemMorePrimitive,
@@ -19,9 +21,19 @@ import { MoreHorizontalIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-rea
 import { useState, useEffect, type FC, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
+const TYPE_LABEL_KEY: Record<NovaMemoryRecord["memory_type"], string> = {
+  fact: "memory.type.fact",
+  preference: "memory.type.preference",
+  decision: "memory.type.decision",
+  context: "memory.type.context",
+};
+
 type ThreadListCallbacks = {
   onRename: (threadId: string, newTitle: string) => Promise<void> | void;
-  onDelete: (threadId: string) => Promise<void> | void;
+  onDelete: (
+    threadId: string,
+    deleteMemories?: boolean,
+  ) => Promise<void> | void;
 };
 
 export const ThreadList: FC<ThreadListCallbacks> = ({ onRename, onDelete }) => {
@@ -92,7 +104,10 @@ type ThreadListItemProps = {
   threadId: string;
   initialTitle?: string;
   onRename: (threadId: string, newTitle: string) => Promise<void> | void;
-  onDelete: (threadId: string) => Promise<void> | void;
+  onDelete: (
+    threadId: string,
+    deleteMemories?: boolean,
+  ) => Promise<void> | void;
 };
 
 const ThreadListItem: FC<ThreadListItemProps> = ({
@@ -178,13 +193,7 @@ const RenameDialog: FC<RenameDialogProps> = ({
   onRename,
 }) => {
   const { t } = useTranslation();
-  const [title, setTitle] = useState("");
-
-  useEffect(() => {
-    if (open) {
-      setTitle(initialTitle ?? "");
-    }
-  }, [open, initialTitle]);
+  const [title, setTitle] = useState(initialTitle ?? "");
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -196,7 +205,11 @@ const RenameDialog: FC<RenameDialogProps> = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      key={open ? "rename-open" : "rename-closed"}
+      open={open}
+      onOpenChange={onOpenChange}
+    >
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>{t("threadList.renameDialogTitle")}</DialogTitle>
@@ -232,7 +245,10 @@ type DeleteDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   threadId: string;
-  onDelete: (threadId: string) => Promise<void> | void;
+  onDelete: (
+    threadId: string,
+    deleteMemories?: boolean,
+  ) => Promise<void> | void;
 };
 
 const DeleteDialog: FC<DeleteDialogProps> = ({
@@ -242,14 +258,50 @@ const DeleteDialog: FC<DeleteDialogProps> = ({
   onDelete,
 }) => {
   const { t } = useTranslation();
+  const [deleteMemories, setDeleteMemories] = useState(false);
+  const [sessionMemories, setSessionMemories] = useState<NovaMemoryRecord[]>([]);
+  const [memoriesLoading, setMemoriesLoading] = useState(true);
+  const [memoriesError, setMemoriesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    let cancelled = false;
+    listMemoriesBySession(threadId)
+      .then((items) => {
+        if (!cancelled) {
+          setSessionMemories(items);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setMemoriesError(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setMemoriesLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, threadId]);
 
   const handleConfirm = () => {
-    void onDelete(threadId);
+    void onDelete(threadId, deleteMemories);
     onOpenChange(false);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      key={open ? "delete-open" : "delete-closed"}
+      open={open}
+      onOpenChange={onOpenChange}
+    >
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>{t("threadList.deleteDialogTitle")}</DialogTitle>
@@ -257,6 +309,58 @@ const DeleteDialog: FC<DeleteDialogProps> = ({
             {t("threadList.deleteDialogDescription")}
           </DialogDescription>
         </DialogHeader>
+        <div className="max-h-40 overflow-y-auto rounded-md border p-2">
+          {memoriesLoading && (
+            <p className="px-1 py-2 text-xs text-muted-foreground">
+              {t("threadList.loadingMemories")}
+            </p>
+          )}
+          {!memoriesLoading && memoriesError && (
+            <p className="px-1 py-2 text-xs text-destructive">
+              {memoriesError}
+            </p>
+          )}
+          {!memoriesLoading && !memoriesError && sessionMemories.length === 0 && (
+            <p className="px-1 py-2 text-xs text-muted-foreground">
+              {t("threadList.noMemories")}
+            </p>
+          )}
+          {!memoriesLoading &&
+            !memoriesError &&
+            sessionMemories.length > 0 && (
+              <ul className="flex flex-col gap-1">
+                {sessionMemories.map((memory) => (
+                  <li
+                    key={memory.id}
+                    className="flex items-center gap-2 rounded bg-muted/60 px-2 py-1.5"
+                  >
+                    <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {t(TYPE_LABEL_KEY[memory.memory_type])}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-xs">
+                      {memory.summary || memory.key}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+        </div>
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-md border p-3">
+          <input
+            type="checkbox"
+            checked={deleteMemories}
+            onChange={(event) => setDeleteMemories(event.target.checked)}
+            className="mt-0.5 size-4 shrink-0 accent-destructive"
+          />
+          <span className="text-sm">
+            <span className="block font-medium text-foreground">
+              {t("threadList.deleteMemoriesLabel")}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {t("threadList.deleteMemoriesDescription")}
+            </span>
+          </span>
+        </label>
         <DialogFooter>
           <DialogClose asChild>
             <Button type="button" variant="outline">

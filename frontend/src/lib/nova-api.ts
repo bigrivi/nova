@@ -1,5 +1,6 @@
 import type {
   NovaAttachmentData,
+  NovaMemoryRecord,
   NovaMessageRecord,
   NovaModelCreateRequest,
   NovaModelRecord,
@@ -136,9 +137,43 @@ export async function renameSession(
   }
 }
 
-export async function deleteSession(sessionId: string): Promise<void> {
+export async function deleteSession(
+  sessionId: string,
+  deleteMemories = false,
+): Promise<void> {
+  const query = deleteMemories ? '?delete_memories=true' : ''
   const response = await fetch(
-    buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}`),
+    buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}${query}`),
+    { method: 'DELETE' },
+  )
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response))
+  }
+}
+
+export async function listMemories(): Promise<NovaMemoryRecord[]> {
+  const payload = await parseJson<JsonResponse<NovaMemoryRecord>>(
+    await fetch(buildUrl('/api/memories')),
+  )
+  return payload.items
+}
+
+export async function listMemoriesBySession(
+  sessionId: string,
+): Promise<NovaMemoryRecord[]> {
+  const payload = await parseJson<JsonResponse<NovaMemoryRecord>>(
+    await fetch(
+      buildUrl(
+        `/api/memories?session_id=${encodeURIComponent(sessionId)}`,
+      ),
+    ),
+  )
+  return payload.items
+}
+
+export async function deleteMemory(memoryId: string): Promise<void> {
+  const response = await fetch(
+    buildUrl(`/api/memories/${encodeURIComponent(memoryId)}`),
     { method: 'DELETE' },
   )
   if (!response.ok) {

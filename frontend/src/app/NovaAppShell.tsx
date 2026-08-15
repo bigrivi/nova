@@ -8,13 +8,14 @@ import {
     useExternalStoreRuntime,
     type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { ChevronLeftIcon, ChevronRightIcon, LanguagesIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, DatabaseIcon, LanguagesIcon } from "lucide-react";
 import { startTransition, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 
 import { Thread } from "../components/assistant-ui/thread";
 import { ThreadList } from "../components/assistant-ui/thread-list";
+import { MemoryManagerDialog } from "../components/assistant-ui/memory-manager-dialog";
 import { toolkit } from "../components/assistant-ui/toolkit";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
@@ -297,8 +298,9 @@ export function NovaAppShell() {
     const [models, setModels] = useState<NovaModelRecord[]>([]);
     const [providers, setProviders] = useState<NovaProviderRecord[]>([]);
     const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
-    const [isRunning, setIsRunning] = useState(false);
-    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+const [isRunning, setIsRunning] = useState(false);
+const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
     const [composerText, setComposerText] = useState("");
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -449,12 +451,15 @@ export function NovaAppShell() {
         }
     }
 
-    async function handleDeleteThread(threadId: string) {
+    async function handleDeleteThread(
+        threadId: string,
+        deleteMemories = false,
+    ) {
         if (isRunning && threadId === currentThreadId) {
             return;
         }
         try {
-            await deleteSession(threadId);
+            await deleteSession(threadId, deleteMemories);
             startTransition(() => {
                 setThreads((previous) =>
                     previous.filter((thread) => thread.id !== threadId),
@@ -970,20 +975,32 @@ export function NovaAppShell() {
                                             Nova
                                         </span>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            i18n.changeLanguage(
-                                                i18n.language === "zh-CN"
-                                                    ? "en"
-                                                    : "zh-CN",
-                                            )
-                                        }
-                                        className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                                        aria-label="Switch language"
-                                    >
-                                        <LanguagesIcon className="size-4" />
-                                    </button>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setIsMemoryDialogOpen(true)
+                                            }
+                                            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                            aria-label={t("memory.manage")}
+                                        >
+                                            <DatabaseIcon className="size-4" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                i18n.changeLanguage(
+                                                    i18n.language === "zh-CN"
+                                                        ? "en"
+                                                        : "zh-CN",
+                                                )
+                                            }
+                                            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                            aria-label="Switch language"
+                                        >
+                                            <LanguagesIcon className="size-4" />
+                                        </button>
+                                    </div>
                                 </div>
                             </>
                         )}
@@ -991,7 +1008,6 @@ export function NovaAppShell() {
 
                     <main
                         className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background"
-                        style={{ ["--thread-max-width" as string]: "44rem" }}
                     >
                         <Button
                             type="button"
@@ -1060,6 +1076,10 @@ export function NovaAppShell() {
                         </div>
                     </main>
                 </div>
+                <MemoryManagerDialog
+                    open={isMemoryDialogOpen}
+                    onOpenChange={setIsMemoryDialogOpen}
+                />
             </TooltipProvider>
         </AssistantRuntimeProvider>
     );

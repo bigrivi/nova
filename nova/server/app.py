@@ -20,6 +20,7 @@ from nova.config.service import (
     ModelCreateRequest as ConfigModelCreateRequest,
     ProviderCreateRequest as ConfigProviderCreateRequest,
 )
+from nova.memory.service import MemoryService
 from nova.server.chat_service import ChatService
 from nova.server.schemas import (
     ApproveRequest,
@@ -27,6 +28,9 @@ from nova.server.schemas import (
     ChatResponse,
     InterruptRequest,
     InterruptResponse,
+    MemoryActionResponse,
+    MemoryListResponse,
+    MemoryRecordSchema,
     ModelCreateRequest,
     ModelListResponse,
     ModelRecord,
@@ -119,8 +123,12 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         return SessionActionResponse(status="renamed", session_id=session_id)
 
     @app.delete("/api/sessions/{session_id}", response_model=SessionActionResponse)
-    async def delete_session(session_id: str) -> SessionActionResponse:
-        deleted = await app.state.chat_service.delete_session(session_id)
+    async def delete_session(
+        session_id: str, delete_memories: bool = False
+    ) -> SessionActionResponse:
+        deleted = await app.state.chat_service.delete_session(
+            session_id, delete_memories=delete_memories
+        )
         if not deleted:
             raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
         return SessionActionResponse(status="deleted", session_id=session_id)
@@ -275,6 +283,39 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         if agent is None:
             raise HTTPException(status_code=404, detail=f"Agent '{key}' not found")
         return agent
+
+    # ── Memory API ──────────────────────────────────────────────────
+
+    @app.get("/api/memories", response_model=MemoryListResponse)
+    async def memories(session_id: str | None = None) -> MemoryListResponse:
+        service = MemoryService()
+        if session_id is not None:
+            records = await service.list_by_session(session_id)
+        else:
+            records = await service.list_memories(scope="all", limit=50)
+        items = [
+            MemoryRecordSchema(
+                id=record.id,
+                key=record.key,
+                scope=record.scope,
+                memory_type=record.memory_type,
+                summary=record.summary,
+                content=record.content,
+                tags=list(record.tags),
+                session_id=record.session_id,
+                created_at=record.created_at,
+                updated_at=record.updated_at,
+            )
+            for record in records
+        ]
+        return MemoryListResponse(items=items)
+
+    @app.delete("/api/memories/{memory_id}", response_model=MemoryActionResponse)
+    async def delete_memory(memory_id: str) -> MemoryActionResponse:
+        deleted = await MemoryService().delete(memory_id=memory_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Memory '{memory_id}' not found")
+        return MemoryActionResponse(status="deleted", memory_id=memory_id)
 
     static_dir = settings.frontend_dist_path
     if static_dir and static_dir.exists() and static_dir.is_dir():

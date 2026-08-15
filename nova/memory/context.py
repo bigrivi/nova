@@ -16,10 +16,10 @@ async def build_memory_index_for_system(
 ) -> str:
     """Build a lightweight memory index for injection into the system prompt.
 
-    Returns a compact listing of available memories (key + summary)
-    that stays stable across turns within a session.  Only user-scoped
-    memories are included because they are the ones that should influence
-    every turn; project- and session-scoped memories are retrieved on
+    Returns a compact listing of available user-scoped memories (key + summary),
+    newest first, as an existence hint. The listing is NOT an instruction to use
+    these memories; callers must only query and use them when the current topic
+    is directly related. Project- and session-scoped memories are retrieved on
     demand via the search_memory tool.
     """
     memory_service = service or MemoryService()

@@ -51,6 +51,28 @@ class SessionActionResponse(BaseModel):
     session_id: str
 
 
+class MemoryRecordSchema(BaseModel):
+    id: str
+    key: str
+    scope: str
+    memory_type: str
+    summary: str
+    content: str
+    tags: list[str] = Field(default_factory=list)
+    session_id: str | None = None
+    created_at: int
+    updated_at: int
+
+
+class MemoryListResponse(BaseModel):
+    items: list[MemoryRecordSchema]
+
+
+class MemoryActionResponse(BaseModel):
+    status: str
+    memory_id: str
+
+
 class MessageRecord(BaseModel):
     id: str
     session_id: str

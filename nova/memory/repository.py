@@ -80,7 +80,7 @@ class MemoryRepository:
             )
         else:
             cursor = await db._conn.execute(
-                "SELECT * FROM memories WHERE key = ? AND scope = ? AND session_id IS NULL",
+                "SELECT * FROM memories WHERE key = ? AND scope = ?",
                 (key, scope),
             )
         row = await cursor.fetchone()
@@ -109,7 +109,7 @@ class MemoryRepository:
                 sql += " AND session_id = ?"
                 params.append(filters.session_id)
             elif filters.scope == "all":
-                sql += " AND (session_id = ? OR session_id IS NULL)"
+                sql += " AND (scope != 'session' OR session_id = ?)"
                 params.append(filters.session_id)
 
         if filters.query.strip():
@@ -131,6 +131,28 @@ class MemoryRepository:
         await db._conn.commit()
         return cursor.rowcount or 0
 
+    async def delete_by_session(self, session_id: str) -> int:
+        """Delete all memories (any scope or type) tied to a session."""
+        db = await ensure_db()
+        await db._ensure_connected()
+        cursor = await db._conn.execute(
+            "DELETE FROM memories WHERE session_id = ?",
+            (session_id,),
+        )
+        await db._conn.commit()
+        return cursor.rowcount or 0
+
+    async def list_by_session(self, session_id: str) -> list[MemoryRecord]:
+        """List all memories (any scope or type) tied to a session."""
+        db = await ensure_db()
+        await db._ensure_connected()
+        cursor = await db._conn.execute(
+            "SELECT * FROM memories WHERE session_id = ? ORDER BY updated_at DESC",
+            (session_id,),
+        )
+        rows = await cursor.fetchall()
+        return [self._row_to_record(row) for row in rows]
+
     async def delete_by_key(
         self,
         key: str,
@@ -146,7 +168,7 @@ class MemoryRepository:
             )
         else:
             cursor = await db._conn.execute(
-                "DELETE FROM memories WHERE key = ? AND scope = ? AND session_id IS NULL",
+                "DELETE FROM memories WHERE key = ? AND scope = ?",
                 (key, scope),
             )
         await db._conn.commit()

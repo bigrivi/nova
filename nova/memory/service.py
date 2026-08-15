@@ -24,6 +24,8 @@ from nova.settings import get_settings
 
 MemoryAISelector = Callable[[str, list[MemoryRecord], int], Awaitable[list[MemoryRecord]]]
 
+MIN_RELEVANCE_SCORE = 5
+
 
 class MemoryService:
     def __init__(self, repository: Optional[MemoryRepository] = None):
@@ -125,6 +127,20 @@ class MemoryService:
             session_id=final_session_id,
         )
 
+    async def delete_by_session(self, session_id: Optional[str]) -> int:
+        """Delete all memories (any scope or type) tied to a session."""
+        normalized_session_id = self._normalize_optional_text(session_id)
+        if not normalized_session_id:
+            return 0
+        return await self.repository.delete_by_session(normalized_session_id)
+
+    async def list_by_session(self, session_id: Optional[str]) -> list[MemoryRecord]:
+        """List all memories (any scope or type) tied to a session."""
+        normalized_session_id = self._normalize_optional_text(session_id)
+        if not normalized_session_id:
+            return []
+        return await self.repository.list_by_session(normalized_session_id)
+
     def _normalize_scope(self, scope: str) -> str:
         normalized = self._normalize_required_text(scope, "scope")
         if normalized not in VALID_MEMORY_SCOPES:
@@ -165,8 +181,6 @@ class MemoryService:
         normalized_session_id = self._normalize_optional_text(session_id)
         if scope == "session" and not normalized_session_id:
             raise ValueError("session_id is required when scope is session")
-        if scope != "session":
-            return None
         return normalized_session_id
 
     def _validate_scope_session_pair(self, scope: str, session_id: Optional[str]) -> None:
@@ -202,16 +216,17 @@ class MemoryService:
                 ]
             ).lower()
             score = 0
-            if normalized_query in haystack:
+            # A full multi-term query appearing verbatim is a strong relevance signal.
+            if len(terms) > 1 and normalized_query in haystack:
                 score += 10
             for term in terms:
+                if term in record.summary.lower():
+                    score += 5
+                if term in record.key.lower():
+                    score += 5
                 if term in haystack:
                     score += 3
-                if term in record.summary.lower():
-                    score += 2
-                if term in record.key.lower():
-                    score += 1
-            if score > 0:
+            if score >= MIN_RELEVANCE_SCORE:
                 scored.append((score, record.updated_at, record))
 
         scored.sort(key=lambda item: (item[0], item[1]), reverse=True)

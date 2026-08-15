@@ -47,6 +47,57 @@ async def test_save_and_search_memory(db):
 
 
 @pytest.mark.asyncio
+async def test_search_rejects_content_only_single_term_match(db):
+    await save_memory(
+        key="animal_fact",
+        content="A zebra crossed the road yesterday.",
+        summary="Some general note.",
+        scope="user",
+        memory_type="fact",
+        tags=[],
+    )
+
+    result = await search_memory(query="zebra", scope="user")
+
+    assert result.success is True
+    assert "No relevant memories" in result.content
+
+
+@pytest.mark.asyncio
+async def test_search_accepts_summary_or_key_match(db):
+    await save_memory(
+        key="python_notes",
+        content="Use ruff for linting.",
+        summary="Python development notes.",
+        scope="user",
+        memory_type="fact",
+        tags=["python"],
+    )
+
+    result = await search_memory(query="python", scope="user")
+
+    assert result.success is True
+    assert "python_notes" in result.content
+
+
+@pytest.mark.asyncio
+async def test_search_results_warn_about_relevance(db):
+    await save_memory(
+        key="answer_style",
+        content="Respond with the conclusion first and keep it concise.",
+        summary="User prefers concise answers.",
+        scope="user",
+        memory_type="preference",
+        tags=["style"],
+    )
+
+    result = await search_memory(query="concise", scope="user")
+
+    assert result.success is True
+    assert "Only use those directly relevant" in result.content
+
+
+@pytest.mark.asyncio
 async def test_save_memory_updates_existing_record(db):
     service = MemoryService()
     first, created = await service.save(
@@ -325,3 +376,58 @@ async def test_agent_can_complete_memory_tool_flow(db):
     assert "User prefers concise answers." in tool_results[0]["result"].content
     assert done_payloads[-1]["reason"] == "completed"
     assert "concise answers" in done_payloads[-1]["content"]
+
+
+class SaveSessionMemoryProvider(LLMProvider):
+    """First turn requests save_memory with scope=session and no session_id."""
+
+    def __init__(self):
+        self._turn = 0
+
+    async def chat(self, messages, model="gpt-4o", stream=False, tools=None, **kwargs):
+        return Done(content="", tool_calls=[])
+
+    async def chat_stream(self, messages, model="gpt-4o", tools=None, **kwargs):
+        self._turn += 1
+        if self._turn == 1:
+            yield ToolCall(
+                id="save-session-1",
+                name="save_memory",
+                arguments=(
+                    '{"key":"active_task","content":"Working on the Nova memory system.",'
+                    '"summary":"Current work item.","scope":"session","memory_type":"context"}'
+                ),
+            )
+            yield Done(content="", tool_calls=[])
+            return
+        yield TextDelta(content="Done.")
+        yield Done(content="Done.", tool_calls=[])
+
+    async def count_tokens(self, text: str, model: str = None) -> int:
+        return len(text)
+
+    def get_max_tokens(self, model: str) -> int:
+        return 128000
+
+
+@pytest.mark.asyncio
+async def test_agent_injects_current_session_id_into_save_memory(db):
+    agent = Agent(
+        config=AgentConfig(model="test-model", max_iterations=3),
+        llm_provider=SaveSessionMemoryProvider(),
+    )
+    await agent.register_all_tools()
+
+    session_id = None
+    async for event, data in agent.chat_stream("Save my current task."):
+        if event == AgentEvent.SESSION:
+            session_id = data
+
+    assert session_id
+    saved = await MemoryService().list_memories(
+        scope="session", session_id=session_id
+    )
+    assert len(saved) == 1
+    assert saved[0].key == "active_task"
+    assert saved[0].scope == "session"
+    assert saved[0].session_id == session_id

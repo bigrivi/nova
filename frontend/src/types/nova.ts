@@ -63,6 +63,19 @@ export type NovaThreadSummary = {
   status: 'regular'
 }
 
+export type NovaMemoryRecord = {
+  id: string
+  key: string
+  scope: 'user' | 'project' | 'session'
+  memory_type: 'fact' | 'preference' | 'decision' | 'context'
+  summary: string
+  content: string
+  tags: string[]
+  session_id: string | null
+  created_at: number
+  updated_at: number
+}
+
 export type NovaAttachmentContent = {
   type: string
   [key: string]: NovaJsonValue | undefined
