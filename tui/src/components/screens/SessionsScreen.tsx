@@ -1,7 +1,7 @@
 /** Sessions 屏幕：浏览/加载持久会话 */
 import { useEffect, useState } from 'react'
-import type { NovaSessionSummary } from '../../api/types.ts'
 import { listMessages, listSessions } from '../../api/nova-api.ts'
+import type { NovaSessionSummary } from '../../api/types.ts'
 import { useChatStore } from '../../stores/chat-store.ts'
 import { useScreenStore } from '../../stores/screen-store.ts'
 import { recordsToMessages } from '../../utils/history.ts'
@@ -46,8 +46,7 @@ export function SessionsScreen() {
       items={sessions}
       filter={(session, query) =>
         !query ||
-        (session.title ?? '').toLowerCase().includes(query.toLowerCase()) ||
-        session.id.includes(query)
+        (session.title ?? '').toLowerCase().includes(query.toLowerCase())
       }
       onSelect={(session) => void handleSelect(session)}
       onClose={() => useScreenStore.getState().close()}
