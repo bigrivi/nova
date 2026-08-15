@@ -1,42 +1,42 @@
-import { UserMessageAttachments } from "@/components/assistant-ui/attachment";
-import { MarkdownText } from "@/components/assistant-ui/markdown-text";
-import { Reasoning, ReasoningChainGroup, ThinkingIndicator } from "@/components/assistant-ui/reasoning";
 import { ApprovalDialog } from "@/components/assistant-ui/approval-dialog";
 import { AskUserTool } from "@/components/assistant-ui/ask-user-tool";
+import { UserMessageAttachments } from "@/components/assistant-ui/attachment";
 import { CodeRunTool } from "@/components/assistant-ui/code-run-tool";
-import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
-import { useApprovalStore } from "@/stores/approval-store";
-import { useAskUserStore } from "@/stores/ask-user-store";
+import { MarkdownText } from "@/components/assistant-ui/markdown-text";
+import { Reasoning, ReasoningChainGroup, ThinkingIndicator } from "@/components/assistant-ui/reasoning";
 import { ThreadStickyComposer } from "@/components/assistant-ui/thread-sticky-composer";
+import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useApprovalStore } from "@/stores/approval-store";
+import { useAskUserStore } from "@/stores/ask-user-store";
 import { useReasoningStore } from "@/stores/reasoning-store";
 import type { NovaModelRecord, NovaProviderRecord } from "@/types/nova";
 import {
-  ActionBarMorePrimitive,
-  ActionBarPrimitive,
-  AuiIf,
-  BranchPickerPrimitive,
-  ErrorPrimitive,
-  groupPartByType,
-  MessagePrimitive,
-  SuggestionPrimitive,
-  ThreadPrimitive,
-  useAuiState,
+    ActionBarMorePrimitive,
+    ActionBarPrimitive,
+    AuiIf,
+    BranchPickerPrimitive,
+    ErrorPrimitive,
+    groupPartByType,
+    MessagePrimitive,
+    SuggestionPrimitive,
+    ThreadPrimitive,
+    useAuiState,
 } from "@assistant-ui/react";
 import {
-  ArrowDownIcon,
-  BotIcon,
-  CheckIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  CopyIcon,
-  DownloadIcon,
-  FileText,
-  MoreHorizontalIcon,
-  RefreshCwIcon,
+    ArrowDownIcon,
+    BotIcon,
+    CheckIcon,
+    ChevronLeftIcon,
+    ChevronRightIcon,
+    CopyIcon,
+    DownloadIcon,
+    FileText,
+    MoreHorizontalIcon,
+    RefreshCwIcon,
 } from "lucide-react";
 import type { KeyboardEvent, RefObject } from "react";
 import { type FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -113,7 +113,7 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
       <ThreadPrimitive.Root
         className="aui-root aui-thread-root @container relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background"
         style={{
-          ["--thread-max-width" as string]: "44rem",
+          ["--thread-max-width" as string]: "48rem",
           ["--composer-radius" as string]: "24px",
           ["--composer-padding" as string]: "10px",
         }}
