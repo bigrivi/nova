@@ -13,6 +13,8 @@ export type ToolCallPart = {
   toolCallId: string
   toolName: string
   argsText: string
+  /** 原始参数对象，供摘要提取；无结构化参数的工具（如 ask_user）为 null */
+  args: Record<string, unknown> | null
   outputText: string
   status: 'running' | 'done' | 'error'
   error?: string
@@ -106,6 +108,14 @@ function toDisplayText(value: unknown): string {
   } catch {
     return String(value)
   }
+}
+
+/** 提取工具参数为普通对象，供摘要展示；非对象（如数组/字符串）返回 null */
+function toArgsObject(value: unknown): Record<string, unknown> | null {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+  return value as Record<string, unknown>
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -233,6 +243,7 @@ export const useChatStore = create<ChatState>((set) => ({
             toolCallId: tool.toolCallId,
             toolName: tool.toolName,
             argsText: '',
+            args: null,
             outputText: '',
             status: 'running',
           },
@@ -246,7 +257,7 @@ export const useChatStore = create<ChatState>((set) => ({
         ...msg,
         parts: msg.parts.map((part) =>
           part.type === 'tool-call' && part.toolCallId === toolCallId
-            ? { ...part, argsText: toDisplayText(input) }
+            ? { ...part, argsText: toDisplayText(input), args: toArgsObject(input) }
             : part,
         ),
       })),

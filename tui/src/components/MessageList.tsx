@@ -1,7 +1,7 @@
 /** 消息列表：ScrollBox 虚拟滚动 + 角色路由 */
 import { useChatStore } from '../stores/chat-store.ts'
-import { UserMessage } from './UserMessage.tsx'
 import { AssistantMessage } from './AssistantMessage.tsx'
+import { UserMessage } from './UserMessage.tsx'
 
 export function MessageList() {
   const messages = useChatStore((state) => state.messages)

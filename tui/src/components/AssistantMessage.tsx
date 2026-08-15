@@ -13,7 +13,6 @@ export function AssistantMessage({ message }: { message: TuiMessage }) {
     <box
       flexDirection="column"
       paddingX={2}
-      paddingBottom={1}
       marginBottom={1}
     >
       {awaitingResponse ? <ThinkingSpinner /> : null}
