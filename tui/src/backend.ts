@@ -7,7 +7,11 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { DEFAULT_API_BASE } from './api/nova-api.ts'
 
 const PROJECT_ROOT = '/Users/andy/Workspace/codes/ai/nova'
-const VENV_PYTHON = `${PROJECT_ROOT}/.venv/bin/python3`
+/** 优先使用用户日常 venv（Python 3.12）；其次项目 .venv；最后系统 python3 */
+const VENV_CANDIDATES = [
+  '/Users/andy/Workspace/codes/python/venvs/ai/bin/python3',
+  `${PROJECT_ROOT}/.venv/bin/python3`,
+]
 
 const HEALTH_TIMEOUT_MS = 15_000
 const HEALTH_POLL_INTERVAL_MS = 300
@@ -20,8 +24,17 @@ export function backendPort(): number {
 }
 
 function pickPython(): string {
-  // 优先项目虚拟环境，保证依赖完整
-  return existsSync(VENV_PYTHON) ? VENV_PYTHON : 'python3'
+  // 环境变量显式指定优先；否则依次探测已知 venv
+  const explicit = process.env.NOVA_PYTHON
+  if (explicit) {
+    return explicit
+  }
+  for (const candidate of VENV_CANDIDATES) {
+    if (existsSync(candidate)) {
+      return candidate
+    }
+  }
+  return 'python3'
 }
 
 async function waitForHealthy(baseUrl: string): Promise<void> {

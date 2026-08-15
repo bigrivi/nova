@@ -1,7 +1,9 @@
-/** 通用可搜索列表：过滤输入 + ↑↓ 选择 + Enter 确认 + Escape 关闭（模态层） */
-import { useMemo, useRef, useState } from 'react'
-import { useKeyboard } from '@opentui/react'
+/** 通用可搜索列表：过滤输入 + ↑↓ 选择 + PageUp/PageDown 翻页 + Enter 确认 + Escape 关闭 */
 import type { InputRenderable } from '@opentui/core'
+import { useKeyboard } from '@opentui/react'
+import { useMemo, useRef, useState } from 'react'
+
+const PAGE_SIZE = 12
 
 export function SearchableList<T>({
   title,
@@ -22,6 +24,7 @@ export function SearchableList<T>({
 }) {
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)
+  const [scrollOffset, setScrollOffset] = useState(0)
   const inputRef = useRef<InputRenderable>(null)
 
   const filtered = useMemo(
@@ -29,20 +32,56 @@ export function SearchableList<T>({
     [items, filter, query],
   )
 
-  const live = useRef({ filtered, selected })
-  live.current = { filtered, selected }
+  const live = useRef({ filtered, selected, scrollOffset })
+  live.current = { filtered, selected, scrollOffset }
 
   useKeyboard((key) => {
-    const { filtered: list, selected: sel } = live.current
+    const { filtered: list, selected: sel, scrollOffset: off } = live.current
     if (key.name === 'up') {
-      setSelected((i) => Math.max(0, i - 1))
+      if (sel > 0) {
+        setSelected(sel - 1)
+      } else if (off > 0) {
+        const nextOffset = off - 1
+        setScrollOffset(nextOffset)
+        setSelected(0)
+      }
       return
     }
     if (key.name === 'down') {
-      setSelected((i) => Math.min(list.length - 1, i + 1))
+      if (sel < list.length - 1 && sel < off + PAGE_SIZE - 1) {
+        setSelected(sel + 1)
+      } else if (sel < list.length - 1) {
+        const nextOffset = off + 1
+        setScrollOffset(nextOffset)
+        setSelected(off + PAGE_SIZE)
+      }
       return
     }
-    if (key.name === 'enter') {
+    if (key.name === 'pageup') {
+      const nextOffset = Math.max(0, off - PAGE_SIZE)
+      setScrollOffset(nextOffset)
+      setSelected(nextOffset)
+      return
+    }
+    if (key.name === 'pagedown') {
+      const maxOffset = Math.max(0, list.length - PAGE_SIZE)
+      const nextOffset = Math.min(maxOffset, off + PAGE_SIZE)
+      setScrollOffset(nextOffset)
+      setSelected(nextOffset)
+      return
+    }
+    if (key.name === 'home') {
+      setScrollOffset(0)
+      setSelected(0)
+      return
+    }
+    if (key.name === 'end') {
+      const maxOffset = Math.max(0, list.length - PAGE_SIZE)
+      setScrollOffset(maxOffset)
+      setSelected(Math.min(list.length - 1, maxOffset + PAGE_SIZE - 1))
+      return
+    }
+    if (key.name === 'return' || key.name === 'enter') {
       const item = list[sel]
       if (item) {
         onSelect(item)
@@ -53,6 +92,10 @@ export function SearchableList<T>({
       onClose()
     }
   })
+
+  const visible = filtered.slice(scrollOffset, scrollOffset + PAGE_SIZE)
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.floor(scrollOffset / PAGE_SIZE) + 1
 
   return (
     <box
@@ -72,11 +115,13 @@ export function SearchableList<T>({
         ref={inputRef}
         flexGrow={1}
         focused
+        value={query}
         placeholder="Filter…"
         placeholderColor="#6e7681"
         onChange={(value) => {
-          setQuery(value)
-          setSelected(0)
+            setQuery(value)
+            setSelected(0)
+            setScrollOffset(0)
         }}
         onSubmit={() => {
           const { filtered: list, selected: sel } = live.current
@@ -87,22 +132,26 @@ export function SearchableList<T>({
         }}
       />
       <box flexDirection="column">
-        {filtered.slice(0, 12).map((item, index) => (
-          <text
-            key={index}
-            height={1}
-            fg={index === selected ? '#4f9cf9' : '#8b949e'}
-            content={`${index === selected ? '▸ ' : '  '}${renderLabel(item)}`}
-          />
-        ))}
-        {filtered.length > 12 ? (
-          <text height={1} fg="#6e7681" content={`  … ${filtered.length} items`} />
-        ) : null}
+        {visible.map((item, index) => {
+          const realIndex = scrollOffset + index
+          return (
+            <text
+              key={realIndex}
+              height={1}
+              fg={realIndex === selected ? '#4f9cf9' : '#8b949e'}
+              content={`${realIndex === selected ? '▸ ' : '  '}${renderLabel(item)}`}
+            />
+          )
+        })}
         {filtered.length === 0 ? (
           <text height={1} fg="#6e7681" content={`  ${emptyText}`} />
         ) : null}
       </box>
-      <text fg="#6e7681">↑↓ select • enter confirm • esc close</text>
+      <text fg="#6e7681">
+        {filtered.length > PAGE_SIZE
+          ? `↑↓ select • PgUp/PgDn page ${currentPage}/${totalPages} • enter confirm • esc close`
+          : '↑↓ select • enter confirm • esc close'}
+      </text>
     </box>
   )
 }
