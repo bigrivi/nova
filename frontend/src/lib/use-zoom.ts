@@ -41,7 +41,7 @@ function readStoredZoom(): number {
 export function useZoom() {
     const [zoom, setZoom] = useState(readStoredZoom);
     const zoomRef = useRef(zoom);
-    const elementRef = useRef<HTMLElement | null>(null);
+    const elementRef = useRef<HTMLDivElement | null>(null);
 
     function applyZoom(nextZoom: number) {
         zoomRef.current = nextZoom;
@@ -57,7 +57,7 @@ export function useZoom() {
         }
     }
 
-    const zoomTargetRef = useCallback((element: HTMLElement | null) => {
+    const zoomTargetRef = useCallback((element: HTMLDivElement | null) => {
         elementRef.current = element;
         if (element) {
             element.style.zoom = String(zoomRef.current);
