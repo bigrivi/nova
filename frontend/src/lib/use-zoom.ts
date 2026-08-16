@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const STORAGE_KEY = "nova.ui.zoom";
 const MIN_ZOOM = 0.5;
@@ -25,11 +25,10 @@ function readStoredZoom(): number {
 }
 
 /**
- * Browser-style page zoom for the desktop shell.
+ * Browser-style zoom scoped to a single element (the thread message list).
  *
- * Applies CSS `zoom` to the root <html> element so text and layout scale
- * together, like Ctrl/Cmd + / - in a browser. pywebview exposes no native
- * zoom API, so this runs entirely inside the webview.
+ * Applies CSS `zoom` to the element returned by the callback ref so only the
+ * messages scale, leaving the sidebar, composer, and dialogs at 100%.
  *
  * Shortcuts:
  *   Cmd/Ctrl + = / +   zoom in
@@ -40,40 +39,56 @@ function readStoredZoom(): number {
  * The level is persisted to localStorage and restored on next launch.
  */
 export function useZoom() {
-    const zoomRef = useRef(1);
+    const [zoom, setZoom] = useState(readStoredZoom);
+    const zoomRef = useRef(zoom);
+    const elementRef = useRef<HTMLElement | null>(null);
+
+    function applyZoom(nextZoom: number) {
+        zoomRef.current = nextZoom;
+        setZoom(nextZoom);
+        const element = elementRef.current;
+        if (element) {
+            element.style.zoom = String(nextZoom);
+        }
+        try {
+            window.localStorage.setItem(STORAGE_KEY, String(nextZoom));
+        } catch {
+            // Storage can be unavailable (private mode); zoom still applies for the session.
+        }
+    }
+
+    const zoomTargetRef = useCallback((element: HTMLElement | null) => {
+        elementRef.current = element;
+        if (element) {
+            element.style.zoom = String(zoomRef.current);
+        }
+    }, []);
 
     useEffect(() => {
-        zoomRef.current = readStoredZoom();
-
-        function applyZoom(zoom: number) {
-            zoomRef.current = zoom;
-            document.documentElement.style.zoom = String(zoom);
-            try {
-                window.localStorage.setItem(STORAGE_KEY, String(zoom));
-            } catch {
-                // Storage can be unavailable (private mode); zoom still applies for the session.
-            }
+        const element = elementRef.current;
+        if (element) {
+            element.style.zoom = String(zoom);
         }
-
-        function zoomBy(delta: number) {
-            const next = Math.round((zoomRef.current + delta) * 10) / 10;
-            applyZoom(clampZoom(next));
-        }
-
-        applyZoom(zoomRef.current);
 
         function handleKeyDown(event: KeyboardEvent) {
             if ((!event.metaKey && !event.ctrlKey) || event.altKey) {
                 return;
             }
-
             const key = event.key;
             if (key === "=" || key === "+") {
                 event.preventDefault();
-                zoomBy(ZOOM_STEP);
+                applyZoom(
+                    clampZoom(
+                        Math.round((zoomRef.current + ZOOM_STEP) * 10) / 10,
+                    ),
+                );
             } else if (key === "-") {
                 event.preventDefault();
-                zoomBy(-ZOOM_STEP);
+                applyZoom(
+                    clampZoom(
+                        Math.round((zoomRef.current - ZOOM_STEP) * 10) / 10,
+                    ),
+                );
             } else if (key === "0") {
                 event.preventDefault();
                 applyZoom(1);
@@ -85,7 +100,10 @@ export function useZoom() {
                 return;
             }
             event.preventDefault();
-            zoomBy(event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
+            const delta = event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
+            applyZoom(
+                clampZoom(Math.round((zoomRef.current + delta) * 10) / 10),
+            );
         }
 
         window.addEventListener("keydown", handleKeyDown);
@@ -95,5 +113,7 @@ export function useZoom() {
             window.removeEventListener("keydown", handleKeyDown);
             window.removeEventListener("wheel", handleWheel);
         };
-    }, []);
+    }, [zoom]);
+
+    return zoomTargetRef;
 }

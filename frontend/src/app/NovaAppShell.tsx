@@ -70,14 +70,6 @@ function createAssistantMessage(id?: string): ThreadMessageLike {
 
 type AssistantPart = Exclude<ThreadMessageLike["content"], string>[number];
 
-function createWelcomeMessage(): ThreadMessageLike {
-    return createTextMessage(
-        "assistant",
-        i18n.t("app.welcomeMessage"),
-        "welcome",
-    );
-}
-
 function createOptimisticSessionTitle(userMessage: string): string {
     const title = userMessage.trim();
     if (!title) {
@@ -292,7 +284,7 @@ export function NovaAppShell() {
     const [messagesByThreadId, setMessagesByThreadId] = useState<
         Record<string, ThreadMessageLike[]>
     >({
-        [DRAFT_THREAD_ID]: [createWelcomeMessage()],
+        [DRAFT_THREAD_ID]: [],
     });
     const [currentThreadId, setCurrentThreadId] = useState(DRAFT_THREAD_ID);
     const [models, setModels] = useState<NovaModelRecord[]>([]);
@@ -362,25 +354,6 @@ const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
         };
     }, []);
 
-    useEffect(() => {
-        const handleLanguageChange = () => {
-            setMessagesByThreadId((prev) => {
-                const draft = prev[DRAFT_THREAD_ID];
-                if (draft?.length === 1 && draft[0]?.id === "welcome") {
-                    return {
-                        ...prev,
-                        [DRAFT_THREAD_ID]: [createWelcomeMessage()],
-                    };
-                }
-                return prev;
-            });
-        };
-        i18n.on("languageChanged", handleLanguageChange);
-        return () => {
-            i18n.off("languageChanged", handleLanguageChange);
-        };
-    }, []);
-
     async function loadThread(threadId: string) {
         try {
             const messages = await listMessages(threadId);
@@ -421,9 +394,7 @@ const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
             setCurrentThreadId(DRAFT_THREAD_ID);
             setMessagesByThreadId((previous) => ({
                 ...previous,
-                [DRAFT_THREAD_ID]: previous[DRAFT_THREAD_ID] || [
-                    createWelcomeMessage(),
-                ],
+                [DRAFT_THREAD_ID]: previous[DRAFT_THREAD_ID] || [],
             }));
         });
         setComposerText("");
@@ -560,12 +531,7 @@ const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
                                 return {
                                     ...previous,
                                     [sessionId]: sourceMessages,
-                                    [DRAFT_THREAD_ID]:
-                                        originThreadId === DRAFT_THREAD_ID
-                                            ? [createWelcomeMessage()]
-                                            : previous[DRAFT_THREAD_ID] || [
-                                                  createWelcomeMessage(),
-                                              ],
+                                    [DRAFT_THREAD_ID]: [],
                                 };
                             });
                             setCurrentThreadId(sessionId);
@@ -912,6 +878,16 @@ const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
     const runtime = useExternalStoreRuntime({
         messages: currentMessages,
         isRunning,
+        suggestions: [
+            { prompt: t("app.suggestion1") },
+            { prompt: t("app.suggestion2") },
+            { prompt: t("app.suggestion3") },
+            { prompt: t("app.suggestion4") },
+            { prompt: t("app.suggestion5") },
+            { prompt: t("app.suggestion6") },
+            { prompt: t("app.suggestion7") },
+            { prompt: t("app.suggestion8") },
+        ],
         onNew: async () => {},
         onCancel: handleCancel,
         convertMessage: (message) => message,
