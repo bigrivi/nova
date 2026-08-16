@@ -51,6 +51,8 @@ def build_llm(
     elif provider_type == "openai-compatible":
         base_url = str(provider_config.options.get("base_url", "")).strip()
         api_key = str(provider_config.options.get("api_key", "")).strip()
+        user_agent = str(
+            provider_config.options.get("user_agent", "")).strip() or None
         model_config = provider_config.models.get(model, {})
         reasoning_field = model_config.get("reasoning_field")
         kwargs = {}
@@ -60,6 +62,7 @@ def build_llm(
             api_key=api_key,
             base_url=base_url,
             request_options=request_options,
+            user_agent=user_agent,
             **kwargs,
         )
     else:

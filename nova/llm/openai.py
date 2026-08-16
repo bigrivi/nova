@@ -27,12 +27,14 @@ class OpenAIProvider(LLMProvider):
         request_options: Optional[dict] = None,
         timeout: int = 120,
         reasoning_field: str = "reasoning_content",
+        user_agent: Optional[str] = None,
     ):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
         self.timeout = timeout
         self._reasoning_field = reasoning_field
+        self._user_agent = user_agent
         self._max_tokens = {
             "gpt-4o": 128000,
             "gpt-4o-mini": 128000,
@@ -57,6 +59,8 @@ class OpenAIProvider(LLMProvider):
         headers = {
             "Content-Type": "application/json",
         }
+        if self._user_agent:
+            headers["User-Agent"] = self._user_agent
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
