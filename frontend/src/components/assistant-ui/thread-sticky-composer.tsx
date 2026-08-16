@@ -1,6 +1,8 @@
 import { ArrowUpIcon, Square } from "lucide-react";
-import { useEffect, useRef, type KeyboardEvent, type RefObject } from "react";
+import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
+
+import { useThreadRuntime } from "@assistant-ui/react";
 
 import { ModelSelector } from "./model-selector";
 import { ComposerAddAttachment, ComposerAttachments } from "./attachment";
@@ -36,6 +38,23 @@ export function ThreadStickyComposer({
 }: ThreadStickyComposerProps) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const composerRuntime = useThreadRuntime()?.composer ?? null;
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const imageFiles = Array.from(event.clipboardData.items)
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    for (const file of imageFiles) {
+      void composerRuntime?.addAttachment(file);
+    }
+  };
 
   useEffect(() => {
     const node = containerRef.current;
@@ -75,6 +94,7 @@ export function ThreadStickyComposer({
             className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1 py-1 text-sm outline-none placeholder:text-muted-foreground/80 readOnly:cursor-default readOnly:opacity-60"
             onChange={(event) => composer.onChange(event.target.value)}
             onKeyDown={composer.onKeyDown}
+            onPaste={handlePaste}
           />
 
           <ComposerAttachments />
