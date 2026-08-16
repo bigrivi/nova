@@ -59,6 +59,24 @@ function createTextMessage(
     };
 }
 
+function buildUserMessageParts(
+    text: string,
+    attachments?: NovaAttachmentData[],
+): ThreadMessageLike["content"] {
+    const imageParts: { type: "image"; image: string }[] = [];
+    for (const attachment of attachments ?? []) {
+        for (const part of attachment.content) {
+            if (part.type === "image" && typeof part.image === "string") {
+                imageParts.push({ type: "image", image: part.image });
+            }
+        }
+    }
+    if (imageParts.length === 0) {
+        return text;
+    }
+    return [...imageParts, { type: "text", text }];
+}
+
 function createAssistantMessage(id?: string): ThreadMessageLike {
     return {
         id: id ?? crypto.randomUUID(),
@@ -487,7 +505,10 @@ const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
         const originThreadId = currentThreadId;
         const userMessageId = crypto.randomUUID();
         const assistantMessageId = crypto.randomUUID();
-        const userMessage = createTextMessage("user", prompt, userMessageId);
+        const userMessage = {
+            ...createTextMessage("user", prompt, userMessageId),
+            content: buildUserMessageParts(prompt, attachments),
+        };
         const assistantMessage = createAssistantMessage(assistantMessageId);
         let activeThreadId = sessionIdRef.current;
         let requiresInput = false;
