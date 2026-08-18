@@ -8,14 +8,19 @@ import {
     useExternalStoreRuntime,
     type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { ChevronLeftIcon, ChevronRightIcon, DatabaseIcon, LanguagesIcon } from "lucide-react";
+import {
+    ChevronLeftIcon,
+    ChevronRightIcon,
+    DatabaseIcon,
+    LanguagesIcon,
+} from "lucide-react";
 import { startTransition, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 
+import { MemoryManagerDialog } from "../components/assistant-ui/memory-manager-dialog";
 import { Thread } from "../components/assistant-ui/thread";
 import { ThreadList } from "../components/assistant-ui/thread-list";
-import { MemoryManagerDialog } from "../components/assistant-ui/memory-manager-dialog";
 import { toolkit } from "../components/assistant-ui/toolkit";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
@@ -220,7 +225,9 @@ function setAssistantMetadata(
             return message;
         }
         const custom = {
-            ...(message.metadata?.custom as Record<string, unknown> | undefined),
+            ...(message.metadata?.custom as
+                | Record<string, unknown>
+                | undefined),
         };
         return {
             ...message,
@@ -308,9 +315,9 @@ export function NovaAppShell() {
     const [models, setModels] = useState<NovaModelRecord[]>([]);
     const [providers, setProviders] = useState<NovaProviderRecord[]>([]);
     const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
-const [isRunning, setIsRunning] = useState(false);
-const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
+    const [isRunning, setIsRunning] = useState(false);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
     const [composerText, setComposerText] = useState("");
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -429,9 +436,7 @@ const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
             startTransition(() => {
                 setThreads((previous) =>
                     previous.map((thread) =>
-                        thread.id === threadId
-                            ? { ...thread, title }
-                            : thread,
+                        thread.id === threadId ? { ...thread, title } : thread,
                     ),
                 );
             });
@@ -899,16 +904,6 @@ const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
     const runtime = useExternalStoreRuntime({
         messages: currentMessages,
         isRunning,
-        suggestions: [
-            { prompt: t("app.suggestion1") },
-            { prompt: t("app.suggestion2") },
-            { prompt: t("app.suggestion3") },
-            { prompt: t("app.suggestion4") },
-            { prompt: t("app.suggestion5") },
-            { prompt: t("app.suggestion6") },
-            { prompt: t("app.suggestion7") },
-            { prompt: t("app.suggestion8") },
-        ],
         onNew: async () => {},
         onCancel: handleCancel,
         convertMessage: (message) => message,
@@ -1003,9 +998,7 @@ const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
                         )}
                     </aside>
 
-                    <main
-                        className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background"
-                    >
+                    <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
                         <Button
                             type="button"
                             variant="outline"
