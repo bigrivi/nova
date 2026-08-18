@@ -2,12 +2,12 @@ import { ArrowUpIcon, Square } from "lucide-react";
 import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useThreadRuntime } from "@assistant-ui/react";
+import { useAui } from "@assistant-ui/react";
 
-import { ModelSelector } from "./model-selector";
-import { ComposerAddAttachment, ComposerAttachments } from "./attachment";
-import { Button } from "../ui/button";
 import type { NovaModelRecord, NovaProviderRecord } from "../../types/nova";
+import { Button } from "../ui/button";
+import { ComposerAddAttachment, ComposerAttachments } from "./attachment";
+import { ModelSelector } from "./model-selector";
 
 type ThreadStickyComposerProps = {
   composer: {
@@ -38,7 +38,7 @@ export function ThreadStickyComposer({
 }: ThreadStickyComposerProps) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const composerRuntime = useThreadRuntime()?.composer ?? null;
+  const aui = useAui()
 
   const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const imageFiles = Array.from(event.clipboardData.items)
@@ -49,10 +49,9 @@ export function ThreadStickyComposer({
     if (imageFiles.length === 0) {
       return;
     }
-
     event.preventDefault();
     for (const file of imageFiles) {
-      void composerRuntime?.addAttachment(file);
+        aui.composer()?.addAttachment(file);
     }
   };
 

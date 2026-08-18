@@ -1,7 +1,7 @@
 "use client"
 
-import * as React from "react"
 import { Avatar as AvatarPrimitive } from "radix-ui"
+import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
@@ -33,7 +33,7 @@ function AvatarImage({
     <AvatarPrimitive.Image
       data-slot="avatar-image"
       className={cn(
-        "aspect-square size-full rounded-full object-cover",
+        "aspect-square size-full object-cover",
         className
       )}
       {...props}
@@ -103,10 +103,8 @@ function AvatarGroupCount({
 }
 
 export {
-  Avatar,
-  AvatarImage,
-  AvatarFallback,
-  AvatarGroup,
-  AvatarGroupCount,
-  AvatarBadge,
+    Avatar, AvatarBadge, AvatarFallback,
+    AvatarGroup,
+    AvatarGroupCount, AvatarImage
 }
+
