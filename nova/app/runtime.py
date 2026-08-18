@@ -9,7 +9,7 @@ from pathlib import Path
 from nova.agent import Agent, AgentConfig
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
-from nova.llm import LLMProvider, OllamaProvider, OpenAIProvider
+from nova.llm import FakerLLMProvider, LLMProvider, OllamaProvider, OpenAIProvider
 from nova.prompt import PromptConfig
 from nova.settings import get_settings
 from nova.skills.tools import SkillTools
@@ -35,7 +35,8 @@ def build_llm(
         model_keys = list(provider_config.models.keys())
         model = model_keys[0] if model_keys else ""
 
-    cache_key = f"{provider}:{model}"
+    provider_type = provider_config.type or ""
+    cache_key = f"{provider_type}:{provider}:{model}"
     cached = _llm_cache.get(cache_key)
     if cached is not None:
         return cached
@@ -45,7 +46,19 @@ def build_llm(
         provider_name=provider,
     )
 
-    if provider_type == "ollama":
+    if provider_type == "faker":
+        options = provider_config.options
+        llm = FakerLLMProvider(
+            seed=_optional_int(options.get("seed")),
+            reasoning_probability=float(options.get("reasoning_probability", 0.25)),
+            error_probability=float(options.get("error_probability", 0.0)),
+            tool_call_probability=float(options.get("tool_call_probability", 0.0)),
+            continue_tool_probability=float(options.get("continue_tool_probability", 0.35)),
+            max_tool_rounds=int(options.get("max_tool_rounds", 3)),
+            max_tool_calls_per_turn=int(options.get("max_tool_calls_per_turn", 2)),
+            max_tokens=int(options.get("max_tokens", 128000)),
+        )
+    elif provider_type == "ollama":
         base_url = str(provider_config.options.get("base_url", "")).strip()
         llm = OllamaProvider(base_url=base_url, request_options=request_options)
     elif provider_type == "openai-compatible":
@@ -70,6 +83,10 @@ def build_llm(
 
     _llm_cache[cache_key] = llm
     return llm
+
+
+def _optional_int(value) -> int | None:
+    return int(value) if value is not None else None
 
 
 async def _agent_dir(agent_key: str) -> Path:
