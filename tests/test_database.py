@@ -5,7 +5,9 @@ import pytest
 import pytest_asyncio
 
 from nova.db import database as db_module
-from nova.db.database import Database, DatabaseConfig, MessageFilter, Session
+from nova.db.sqlite_repository import SqliteRepository
+from nova.db.config import DatabaseConfig
+from nova.session.models import MessageFilter, Session
 from nova.settings import get_settings
 
 class _ToolCall:
@@ -18,14 +20,14 @@ class _ToolCall:
 
 @pytest_asyncio.fixture
 async def db():
-    database = Database(DatabaseConfig(path=":memory:"))
+    database = SqliteRepository(DatabaseConfig(path=":memory:"))
     await database.connect()
     yield database
     await database.close()
 
 
 @pytest.mark.asyncio
-async def test_save_session_roundtrip_preserves_timestamps_and_metadata(db: Database):
+async def test_save_session_roundtrip_preserves_timestamps_and_metadata(db: SqliteRepository):
     created_at = datetime(2026, 4, 23, tzinfo=timezone.utc)
     updated_at = datetime(2026, 4, 24, tzinfo=timezone.utc)
     session = Session(
@@ -47,7 +49,7 @@ async def test_save_session_roundtrip_preserves_timestamps_and_metadata(db: Data
 
 
 @pytest.mark.asyncio
-async def test_get_messages_applies_message_filter_flags(db: Database):
+async def test_get_messages_applies_message_filter_flags(db: SqliteRepository):
     session = Session(id="session-2")
     await db.save_session(session)
 
@@ -87,7 +89,7 @@ async def test_get_messages_applies_message_filter_flags(db: Database):
 
 
 @pytest.mark.asyncio
-async def test_update_and_delete_messages_keep_session_count_in_sync(db: Database):
+async def test_update_and_delete_messages_keep_session_count_in_sync(db: SqliteRepository):
     session = Session(id="session-3")
     await db.save_session(session)
 

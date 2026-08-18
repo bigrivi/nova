@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
-from nova.db.database import Message
+from nova.session.models import Message
 
 if TYPE_CHECKING:
     from nova.session.manager import SessionContext

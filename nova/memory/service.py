@@ -19,6 +19,7 @@ from nova.memory.models import (
     VALID_MEMORY_TYPES,
 )
 from nova.memory.repository import MemoryRepository
+from nova.db.repository import NovaRepository
 from nova.settings import get_settings
 
 
@@ -28,8 +29,12 @@ MIN_RELEVANCE_SCORE = 5
 
 
 class MemoryService:
-    def __init__(self, repository: Optional[MemoryRepository] = None):
-        self.repository = repository or MemoryRepository()
+    def __init__(
+        self,
+        repository: Optional[MemoryRepository] = None,
+        data_source: Optional[NovaRepository] = None,
+    ):
+        self.repository = repository or MemoryRepository(data_source=data_source)
 
     async def save(self, request: MemoryWriteRequest) -> tuple[MemoryRecord, bool]:
         scope = self._normalize_scope(request.scope)

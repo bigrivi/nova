@@ -7,7 +7,8 @@ import pytest_asyncio
 
 from nova import Agent, AgentConfig
 from nova.agent.core import AgentEvent
-from nova.db.database import Database, DatabaseConfig
+from nova.db.sqlite_repository import SqliteRepository
+from nova.db.config import DatabaseConfig
 from nova.llm.provider import Done, LLMProvider, TextDelta, ToolCall
 
 
@@ -69,7 +70,7 @@ class SkillFlowProvider(LLMProvider):
 
 @pytest_asyncio.fixture
 async def db():
-    database = Database(DatabaseConfig(path=":memory:"))
+    database = SqliteRepository(DatabaseConfig(path=":memory:"))
     await database.connect()
 
     from nova.db import database as db_module

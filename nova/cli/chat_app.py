@@ -731,20 +731,18 @@ class ChatApp(App):
         )
 
     async def prompt_agent_list(self, agents: list[dict]) -> None:
-        from nova.db.database import ensure_db
-        db = await ensure_db()
+        data_source = await self.controller._get_data_source()
         parent_map = {}
         for agent in agents:
             key = agent.get("key", "")
-            parents = await db.get_agent_parents(key)
+            parents = await data_source.get_agent_parents(key)
             if parents:
                 parent_map[key] = parents
         await self.push_screen_wait(AgentListScreen(agents=agents, parent_map=parent_map))
 
     async def prompt_create_agent(self) -> AgentCreateResult | None:
-        from nova.db.database import ensure_db
-        db = await ensure_db()
-        agents = await db.list_agents()
+        data_source = await self.controller._get_data_source()
+        agents = await data_source.list_agents()
         return await self.push_screen_wait(CreateAgentScreen(agents=agents))
 
     async def prompt_delete_agent(self, agents: list[dict]) -> str | None:

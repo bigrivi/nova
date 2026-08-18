@@ -6,7 +6,9 @@ import pytest
 from starlette.types import ASGIApp
 import json
 
-from nova.db.database import DatabaseConfig, Session, close_db, init_db
+from nova.db.config import DatabaseConfig
+from nova.session.models import Session
+from nova.db.database import close_db, init_db
 from nova.agent import AgentEvent
 from nova.memory.models import MemoryWriteRequest
 from nova.memory.service import MemoryService

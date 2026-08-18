@@ -6,7 +6,8 @@ import pytest
 
 from nova import Agent, AgentConfig
 from nova.llm import OllamaProvider
-from nova.db.database import Database, DatabaseConfig
+from nova.db.sqlite_repository import SqliteRepository
+from nova.db.config import DatabaseConfig
 from nova.agent.core import AgentEvent
 
 
@@ -14,7 +15,7 @@ from nova.agent.core import AgentEvent
 async def test_title_generation():
     print("=== Test: Session Title Generation ===")
 
-    db = Database(DatabaseConfig(path=":memory:"))
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
 
     from nova.db import database as db_module

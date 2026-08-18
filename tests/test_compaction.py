@@ -345,10 +345,12 @@ async def test_compact_orphaned_tool_response_is_also_compacted():
     """When split separates tool_call assistant from its response, the orphaned
     tool response is also compacted to avoid tool message without preceding tool_calls."""
     from nova.agent.compaction import compact
-    from nova.db.database import Database, DatabaseConfig, MessageFilter
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.config import DatabaseConfig
+    from nova.session.models import MessageFilter
     from nova.session.manager import SessionContext
 
-    db = Database(DatabaseConfig(path=":memory:"))
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
 
     try:
@@ -403,12 +405,13 @@ async def test_compact_orphaned_tool_response_is_also_compacted():
 @pytest.mark.asyncio
 async def test_compact_with_real_llm():
     """Test compaction with real LLM (requires Ollama running)"""
-    from nova.db.database import Database, DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.config import DatabaseConfig
     from nova.session.manager import SessionContext
     from nova.agent.compaction import compact
     from nova.llm import OllamaProvider
     
-    db = Database(DatabaseConfig(path=":memory:"))
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
     
     try:
@@ -443,12 +446,13 @@ async def test_compact_with_real_llm():
 @pytest.mark.asyncio
 async def test_maybe_compact_with_real_llm():
     """Test maybe_compact with real LLM"""
-    from nova.db.database import Database, DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.config import DatabaseConfig
     from nova.session.manager import SessionContext
     from nova.agent.compaction import maybe_compact
     from nova.llm import OllamaProvider
     
-    db = Database(DatabaseConfig(path=":memory:"))
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
     
     try:

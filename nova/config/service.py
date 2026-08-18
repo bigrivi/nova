@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from nova.db.database import ensure_db
+from nova.db import DataSourceProtocol, get_default_data_source
 from nova.settings import Settings, _load_config_payload, _write_json
 
 
@@ -44,24 +44,30 @@ class ModelCreateRequest:
 
 
 class ConfigService:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, data_source: DataSourceProtocol | None = None) -> None:
         if settings.config_path is None:
             raise ConfigValidationError("Nova config path is not available.")
         self._settings = settings
         self._config_path = settings.config_path
+        self._data_source = data_source
+
+    async def _get_data_source(self) -> DataSourceProtocol:
+        if self._data_source is None:
+            self._data_source = await get_default_data_source()
+        return self._data_source
 
     # ── Agent CRUD (DB-backed) ──────────────────────────────────────
 
     async def list_agents(self) -> list[dict]:
-        db = await ensure_db()
-        return await db.list_agents()
+        data_source = await self._get_data_source()
+        return await data_source.list_agents()
 
     async def get_agent(self, key: str) -> dict | None:
-        db = await ensure_db()
-        return await db.get_agent(key)
+        data_source = await self._get_data_source()
+        return await data_source.get_agent(key)
 
     async def save_agent(self, request: AgentCreateRequest) -> dict:
-        db = await ensure_db()
+        data_source = await self._get_data_source()
         now = int(time.time() * 1000)
         agent = {
             "key": request.key,
@@ -74,43 +80,43 @@ class ConfigService:
             "created_at": now,
             "updated_at": now,
         }
-        await db.save_agent(agent)
+        await data_source.save_agent(agent)
 
         if request.parent_ids:
-            await db.set_agent_parents(request.key, request.parent_ids)
+            await data_source.set_agent_parents(request.key, request.parent_ids)
 
         return agent
 
     async def get_agent_parents(self, child_key: str) -> list[str]:
         """Get all parent keys of an agent."""
-        db = await ensure_db()
-        return await db.get_agent_parents(child_key)
+        data_source = await self._get_data_source()
+        return await data_source.get_agent_parents(child_key)
 
     async def update_agent_model(self, key: str, model: str, provider: str) -> dict | None:
-        db = await ensure_db()
-        existing = await db.get_agent(key)
+        data_source = await self._get_data_source()
+        existing = await data_source.get_agent(key)
         if existing is None:
             return None
         now = int(time.time() * 1000)
         existing["model"] = model
         existing["provider"] = provider
         existing["updated_at"] = now
-        await db.save_agent(existing)
+        await data_source.save_agent(existing)
         return existing
 
     async def get_agent_children(self, parent_key: str) -> list[str]:
         """Get all child keys of an agent."""
-        db = await ensure_db()
-        return await db.get_agent_children(parent_key)
+        data_source = await self._get_data_source()
+        return await data_source.get_agent_children(parent_key)
 
     async def get_child_agents(self, parent_key: str) -> list[dict]:
         """Get all child agents of a parent agent (legacy, uses parent_id column)."""
-        db = await ensure_db()
-        return await db.get_child_agents(parent_key)
+        data_source = await self._get_data_source()
+        return await data_source.get_child_agents(parent_key)
 
     async def delete_agent(self, key: str) -> bool:
-        db = await ensure_db()
-        return await db.delete_agent(key)
+        data_source = await self._get_data_source()
+        return await data_source.delete_agent(key)
 
     @property
     def config_path(self) -> Path:

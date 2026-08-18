@@ -20,6 +20,7 @@ from nova.config.service import (
     ModelCreateRequest as ConfigModelCreateRequest,
     ProviderCreateRequest as ConfigProviderCreateRequest,
 )
+from nova.db import DataSourceProtocol, get_default_data_source
 from nova.memory.service import MemoryService
 from nova.server.chat_service import ChatService
 from nova.server.schemas import (
@@ -61,7 +62,17 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(title="Nova API")
     app.state.settings = settings
+    app.state.data_source = None
     app.state.chat_service = ChatService(settings=settings)
+
+    async def initialize_data_source() -> None:
+        app.state.data_source = await get_default_data_source()
+        app.state.chat_service = ChatService(
+            settings=settings,
+            data_source=app.state.data_source,
+        )
+
+    app.state.initialize_data_source = initialize_data_source
 
     def build_model_list_response(settings: Settings) -> ModelListResponse:
         items: list[ModelRecord] = []

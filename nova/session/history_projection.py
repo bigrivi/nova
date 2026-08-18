@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from nova.db.database import Database, Message, MessageFilter
+from nova.db.data_source import DataSourceProtocol
+from nova.session.models import Message, MessageFilter
 
 
 VISIBLE_HISTORY_TOOL_NAMES = frozenset({"edit", "write"})
@@ -17,7 +18,7 @@ def build_user_visible_history_filter() -> MessageFilter:
 
 
 async def get_user_visible_history(
-    db: Database,
+    db: DataSourceProtocol,
     session_id: str,
 ) -> list[Message]:
     return await db.get_messages(

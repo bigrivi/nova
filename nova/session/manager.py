@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 import uuid
 
-from nova.db.database import Message, MessageFilter, ensure_db
+from nova.db import get_default_data_source
+from nova.db.repository import NovaRepository
+from nova.session.models import Message, MessageFilter
 from nova.llm import Message as LLMMessage
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.session.protocol import SessionProtocol
@@ -43,8 +45,14 @@ _current_session: ContextVar[Optional[SessionContext]] = ContextVar(
 
 
 class SessionManager(SessionProtocol):
-    def __init__(self):
+    def __init__(self, data_source: NovaRepository | None = None):
         self._lock = asyncio.Lock()
+        self._data_source = data_source
+
+    async def _get_data_source(self) -> NovaRepository:
+        if self._data_source is None:
+            self._data_source = await get_default_data_source()
+        return self._data_source
 
     def get_current_session(self) -> Optional[SessionContext]:
         return _current_session.get()
@@ -103,13 +111,13 @@ class SessionManager(SessionProtocol):
 
     async def save_session(self, session: SessionContext) -> None:
         async with self._lock:
-            db = await ensure_db()
-            await db.save_session(session)
+            data_source = await self._get_data_source()
+            await data_source.save_session(session)
 
     async def load_session(self, session_id: str) -> Optional[SessionContext]:
         async with self._lock:
-            db = await ensure_db()
-            session_data = await db.get_session(session_id)
+            data_source = await self._get_data_source()
+            session_data = await data_source.get_session(session_id)
             if session_data:
                 ctx = SessionContext(
                     id=session_data["id"],
@@ -148,8 +156,8 @@ class SessionManager(SessionProtocol):
             raise RuntimeError("No active session")
 
         async with self._lock:
-            db = await ensure_db()
-            msg = await db.add_message(
+            data_source = await self._get_data_source()
+            msg = await data_source.add_message(
                 session_id=session.id,
                 role=role,
                 content=content,
@@ -175,8 +183,8 @@ class SessionManager(SessionProtocol):
             return 0
 
         async with self._lock:
-            db = await ensure_db()
-            deleted_count = await db.delete_messages(sid, message_ids)
+            data_source = await self._get_data_source()
+            deleted_count = await data_source.delete_messages(sid, message_ids)
             session = self.get_current_session()
             if session and session.id == sid and deleted_count:
                 session.updated_at = int(time.time() * 1000)
@@ -193,8 +201,8 @@ class SessionManager(SessionProtocol):
         if not sid:
             return []
         async with self._lock:
-            db = await ensure_db()
-            return await db.get_messages(sid, MessageFilter(limit=limit))
+            data_source = await self._get_data_source()
+            return await data_source.get_messages(sid, MessageFilter(limit=limit))
 
     async def get_child_sessions(
         self,
@@ -202,8 +210,8 @@ class SessionManager(SessionProtocol):
     ) -> list[SessionContext]:
         """Get all child sessions of a parent session."""
         async with self._lock:
-            db = await ensure_db()
-            sessions = await db.get_sessions_by_parent_id(parent_session_id)
+            data_source = await self._get_data_source()
+            sessions = await data_source.get_sessions_by_parent_id(parent_session_id)
             child_sessions = []
             for session_data in sessions:
                 ctx = SessionContext(
@@ -229,8 +237,8 @@ class SessionManager(SessionProtocol):
         if not session:
             return
         async with self._lock:
-            db = await ensure_db()
-            await db.compress_messages(session.id, target_count)
+            data_source = await self._get_data_source()
+            await data_source.compress_messages(session.id, target_count)
 
 
 _manager: Optional[SessionManager] = None

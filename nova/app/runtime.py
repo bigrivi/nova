@@ -8,6 +8,7 @@ from pathlib import Path
 
 from nova.agent import Agent, AgentConfig
 from nova.constants import DEFAULT_AGENT_KEY
+from nova.db import DataSourceProtocol, get_default_data_source
 from nova.llm import LLMProvider, OllamaProvider, OpenAIProvider
 from nova.prompt import PromptConfig
 from nova.settings import get_settings
@@ -39,7 +40,6 @@ def build_llm(
     if cached is not None:
         return cached
 
-    provider_type = provider_config.type or ""
     request_options = settings.get_request_options(
         model_name=model,
         provider_name=provider,
@@ -92,6 +92,7 @@ async def build_agent(
     provider: str | None = None,
     model: str | None = None,
     is_new_session: bool = False,
+    data_source: DataSourceProtocol | None = None,
 ) -> Agent:
     settings = get_settings()
     agent_dir = await _agent_dir(agent_key)
@@ -140,6 +141,7 @@ async def build_agent(
         agent_key=agent_key,
         agent_dir=agent_dir,
         prompt_config=_identity_cache[dir_key],
+        data_source=data_source or await get_default_data_source(),
     )
 
     # Cache 3: ToolRegistry (shallow copy + rebind skill tools)

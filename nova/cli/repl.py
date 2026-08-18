@@ -9,7 +9,7 @@ from nova.cli.protocols import ChatStatus, UIAdapterProtocol
 
 from nova.cli.ui import ModelGroup
 from nova.cli.utils import exit_process as _exit_process
-from nova.db.database import ensure_db
+from nova.db import DataSourceProtocol, get_default_data_source
 from nova.session import close_session_manager, get_session_manager
 from nova.session.history_projection import get_user_visible_history
 from nova.settings import get_settings, resolve_model_name, get_provider_name
@@ -18,14 +18,16 @@ from nova.skills.service import SkillService
 from nova.skills.installer import SkillInstallError
 
 log = logging.getLogger(__name__)
+ensure_db = get_default_data_source
 
 
 class NovaCLI:
     """Main CLI orchestrator and StreamControlProtocol implementation."""
 
-    def __init__(self, agent_key: str = DEFAULT_AGENT_KEY):
+    def __init__(self, agent_key: str = DEFAULT_AGENT_KEY, data_source: DataSourceProtocol | None = None):
         self.settings = get_settings()
         self._agent_key = agent_key
+        self._data_source = data_source
         log.info(
             f"Initializing NovaCLI for agent '{agent_key}'")
         self.agent = None
@@ -56,6 +58,13 @@ class NovaCLI:
         self._streaming = False
         self._stop_requested = False
         self._exit_code: Optional[int] = None
+
+    async def _get_data_source(self) -> DataSourceProtocol:
+        data_source = getattr(self, "_data_source", None)
+        if data_source is None:
+            data_source = await ensure_db()
+            self._data_source = data_source
+        return data_source
 
     def get_session_id(self) -> Optional[str]:
         return self.current_id
@@ -156,11 +165,11 @@ class NovaCLI:
         model: str | None = None,
     ) -> None:
         import time
-        db = await ensure_db()
-        record = await db.get_agent(self._agent_key)
+        data_source = await self._get_data_source()
+        record = await data_source.get_agent(self._agent_key)
         if record:
             now = int(time.time() * 1000)
-            await db.save_agent({
+            await data_source.save_agent({
                 "key": self._agent_key,
                 "name": record["name"],
                 "description": record.get("description", ""),
@@ -378,9 +387,8 @@ class NovaCLI:
         return True
 
     async def _handle_list_agents_command(self, command: ParsedCommand) -> bool:
-        from nova.db.database import ensure_db
-        db = await ensure_db()
-        agents = await db.list_agents()
+        data_source = await self._get_data_source()
+        agents = await data_source.list_agents()
         if self._ui_adapter:
             await self._ui_adapter.prompt_agent_list(agents)
         return True
@@ -391,15 +399,14 @@ class NovaCLI:
         result = await self._ui_adapter.prompt_create_agent()
         if result is None:
             return True
-        from nova.db.database import ensure_db
-        db = await ensure_db()
-        existing = await db.get_agent(result.key)
+        data_source = await self._get_data_source()
+        existing = await data_source.get_agent(result.key)
         if existing:
             self._ui_adapter.show_error(f"Agent '{result.key}' already exists")
             return True
         import time
         now = int(time.time() * 1000)
-        await db.save_agent({
+        await data_source.save_agent({
             "key": result.key,
             "name": result.name,
             "model": result.model,
@@ -412,7 +419,7 @@ class NovaCLI:
         })
         if result.parent_ids:
             for parent_id in result.parent_ids:
-                await db.add_agent_parent(result.key, parent_id)
+                await data_source.add_agent_parent(result.key, parent_id)
         agent_dir = self.settings.home / "agents" / result.key
         agent_dir.mkdir(parents=True, exist_ok=True)
         self._ui_adapter.show_info(f"Agent '{result.key}' created")
@@ -422,10 +429,9 @@ class NovaCLI:
         if not self._ui_adapter:
             return True
         from nova.constants import DEFAULT_AGENT_KEY
-        from nova.db.database import ensure_db
         import shutil
-        db = await ensure_db()
-        all_agents = await db.list_agents()
+        data_source = await self._get_data_source()
+        all_agents = await data_source.list_agents()
         deletable = [a for a in all_agents if a.get(
             "key") != DEFAULT_AGENT_KEY]
         if not deletable:
@@ -434,12 +440,12 @@ class NovaCLI:
         key = await self._ui_adapter.prompt_delete_agent(deletable)
         if key is None:
             return True
-        sessions = await db.get_all_sessions(agent_key=key, limit=99999)
+        sessions = await data_source.get_all_sessions(agent_key=key, limit=99999)
         session_count = len(sessions)
         confirmed = await self._ui_adapter.prompt_delete_confirm(key, session_count)
         if not confirmed:
             return True
-        await db.delete_agent(key)
+        await data_source.delete_agent(key)
         agent_dir = self.settings.home / "agents" / key
         if agent_dir.exists():
             shutil.rmtree(agent_dir)
@@ -447,8 +453,8 @@ class NovaCLI:
         return True
 
     async def _handle_sessions_command(self, command: ParsedCommand) -> bool:
-        db = await ensure_db()
-        sessions = await db.get_all_sessions()
+        data_source = await self._get_data_source()
+        sessions = await data_source.get_all_sessions()
         self._cached_sessions = [s for s in sessions if isinstance(s, dict)]
         if not self._cached_sessions:
             if self._ui_adapter:
@@ -504,8 +510,8 @@ class NovaCLI:
 
     async def _load_session_by_id(self, session_id: str) -> None:
         if not self._cached_sessions:
-            db = await ensure_db()
-            sessions = await db.get_all_sessions()
+            data_source = await self._get_data_source()
+            sessions = await data_source.get_all_sessions()
             self._cached_sessions = [
                 s for s in sessions if isinstance(s, dict)]
         sess = next(
@@ -523,8 +529,8 @@ class NovaCLI:
                 self._ui_adapter.error("Failed to load session")
             return
 
-        db = await ensure_db()
-        visible_history = await get_user_visible_history(db, session_id)
+        data_source = await self._get_data_source()
+        visible_history = await get_user_visible_history(data_source, session_id)
         self.current_id = session_id
         title = sess.get("title") or "Untitled"
         if self._ui_adapter:

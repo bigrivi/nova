@@ -1,4 +1,4 @@
-from nova.db.database import Message
+from nova.session.models import Message
 from nova.session.history_projection import (
     VISIBLE_HISTORY_TOOL_NAMES,
     build_user_visible_history_filter,

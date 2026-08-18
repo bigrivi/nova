@@ -9,7 +9,7 @@ from typing import Any, AsyncGenerator, Callable
 from nova.agent import AgentEvent
 from nova.app import build_agent
 from nova.constants import DEFAULT_AGENT_KEY
-from nova.db.database import ensure_db
+from nova.db import DataSourceProtocol, get_default_data_source
 from nova.server.ai_sdk_stream import AISDKStreamAdapter
 from nova.server.request_registry import RequestRegistry
 from nova.server.schemas import (
@@ -48,13 +48,19 @@ from nova.settings import Settings
 
 
 class ChatService:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, data_source: DataSourceProtocol | None = None) -> None:
         self._settings = settings
         self._request_registry = RequestRegistry()
+        self._data_source = data_source
+
+    async def _get_data_source(self) -> DataSourceProtocol:
+        if self._data_source is None:
+            self._data_source = await get_default_data_source()
+        return self._data_source
 
     async def list_sessions(self, agent_key: str | None = None) -> SessionListResponse:
-        db = await ensure_db()
-        sessions = await db.get_all_sessions(agent_key=agent_key)
+        data_source = await self._get_data_source()
+        sessions = await data_source.get_all_sessions(agent_key=agent_key)
         items = [
             SessionSummary(
                 id=session["id"],
@@ -67,13 +73,13 @@ class ChatService:
         return SessionListResponse(items=items)
 
     async def rename_session(self, session_id: str, title: str) -> bool:
-        db = await ensure_db()
-        return await db.update_session_title(session_id, title)
+        data_source = await self._get_data_source()
+        return await data_source.update_session_title(session_id, title)
 
     async def delete_session(self, session_id: str, delete_memories: bool = False) -> bool:
-        db = await ensure_db()
+        data_source = await self._get_data_source()
         await self._request_registry.unregister(session_id)
-        deleted = await db.delete_session(session_id)
+        deleted = await data_source.delete_session(session_id)
         if deleted and delete_memories:
             from nova.memory.service import MemoryService
 
@@ -81,8 +87,8 @@ class ChatService:
         return deleted
 
     async def list_messages(self, session_id: str) -> MessageListResponse:
-        db = await ensure_db()
-        messages = await get_user_visible_history(db, session_id)
+        data_source = await self._get_data_source()
+        messages = await get_user_visible_history(data_source, session_id)
         items = [
             MessageRecord(
                 id=message.id,

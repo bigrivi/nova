@@ -15,10 +15,9 @@ from nova.session.protocol import SessionProtocol
 from nova.tools.registry import ToolRegistry, tool
 from nova.prompt import PromptBuilder, PromptConfig
 from nova.agent.compaction import prepare_compaction, run_compaction_plan, get_context_limit
-from nova.db.database import ensure_db
+from nova.db import DataSourceProtocol, get_default_data_source
 from nova.skills.service import SkillService
 from nova.mcp.manager import MCPManager
-from nova.settings import get_settings
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.agent.tool_guardrails import ToolGuardrails, GuardrailAction
 from nova.agent.reasoning_timeouts import get_reasoning_timeout
@@ -95,11 +94,13 @@ class Agent:
         parent_agent: Optional["Agent"] = None,
         is_sub_agent: bool = False,
         prompt_config: Optional[PromptConfig] = None,
+        data_source: Optional[DataSourceProtocol] = None,
     ):
         self.config = config or AgentConfig()
         self.agent_key = agent_key
         self.llm = llm_provider
         self.session = session_manager or get_session_manager()
+        self._data_source = data_source
         self.tool_registry = ToolRegistry()
         self._event_handlers: dict[AgentEvent, list[Callable]] = {}
         self.parent_agent = parent_agent
@@ -206,17 +207,17 @@ class Agent:
             role="system", content=self._base_system_prompt)]
 
         db_messages = await self.session.get_messages()
-        for msg in db_messages:
-            m = LLMMessage(role=msg.role, content=msg.content)
-            if msg.tool_calls:
-                m.tool_calls = msg.tool_calls
-            if msg.tool_call_id:
-                m.tool_call_id = msg.tool_call_id
-            if msg.images:
-                m.images = msg.images
-            if msg.reasoning_content:
-                m.reasoning_content = msg.reasoning_content
-            messages.append(m)
+        for db_message in db_messages:
+            message = LLMMessage(role=db_message.role, content=db_message.content)
+            if db_message.tool_calls:
+                message.tool_calls = db_message.tool_calls
+            if db_message.tool_call_id:
+                message.tool_call_id = db_message.tool_call_id
+            if db_message.images:
+                message.images = db_message.images
+            if db_message.reasoning_content:
+                message.reasoning_content = db_message.reasoning_content
+            messages.append(message)
         return messages
 
     def _parse_tool_args(self, args_str: str) -> dict:
@@ -600,13 +601,13 @@ class Agent:
 
         tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else None
 
-        db = await ensure_db()
+        data_source = self._data_source or await get_default_data_source()
         compaction_plan = await prepare_compaction(
             session_id=current_session.id if current_session else None,
             message_count=len(await self.session.get_messages()),
             turn_count=current_session.turn_count if current_session else 0,
             last_compacted_at=current_session.compacted_at if current_session else None,
-            db=db,
+            db=data_source,
             model=self.config.model,
             provider=self.config.provider,
         )
@@ -619,7 +620,7 @@ class Agent:
             yield AgentEvent.COMPACTION_START, compaction_payload
             await run_compaction_plan(
                 compaction_plan,
-                db=db,
+                db=data_source,
                 llm=self.llm,
                 model=self.config.model,
                 provider=self.config.provider,
@@ -732,8 +733,11 @@ class Agent:
         """
         try:
             from nova.memory.context import build_memory_index_for_system
+            from nova.memory.service import MemoryService
             self._prompt_builder.config.memory_index = (
-                await build_memory_index_for_system()
+                await build_memory_index_for_system(
+                    service=MemoryService(data_source=self._data_source)
+                )
             )
         except Exception as e:
             log.warning("Failed to refresh memory index: %s", e)
@@ -784,7 +788,7 @@ class Agent:
             if not facts:
                 return
 
-            service = MemoryService()
+            service = MemoryService(data_source=self._data_source)
             saved = 0
             current_session = self.session.get_current_session()
             session_id = current_session.id if current_session else None
@@ -849,33 +853,30 @@ class Agent:
 
     async def get_child_agents(self) -> list[dict]:
         """Get all child agents of this agent from database."""
-        from nova.db.database import ensure_db
-        db = await ensure_db()
-        child_keys = await db.get_agent_children(self.agent_key)
+        data_source = self._data_source or await get_default_data_source()
+        child_keys = await data_source.get_agent_children(self.agent_key)
         children = []
         for key in child_keys:
-            agent = await db.get_agent(key)
+            agent = await data_source.get_agent(key)
             if agent:
                 children.append(agent)
         return children
 
     async def get_parent_agents(self) -> list[dict]:
         """Get all parent agents of this agent from database."""
-        from nova.db.database import ensure_db
-        db = await ensure_db()
-        parent_keys = await db.get_agent_parents(self.agent_key)
+        data_source = self._data_source or await get_default_data_source()
+        parent_keys = await data_source.get_agent_parents(self.agent_key)
         parents = []
         for key in parent_keys:
-            agent = await db.get_agent(key)
+            agent = await data_source.get_agent(key)
             if agent:
                 parents.append(agent)
         return parents
 
     async def get_parent_agent_config(self) -> Optional[dict]:
         """Get the first parent agent configuration from database."""
-        from nova.db.database import ensure_db
-        db = await ensure_db()
-        parent_keys = await db.get_agent_parents(self.agent_key)
+        data_source = self._data_source or await get_default_data_source()
+        parent_keys = await data_source.get_agent_parents(self.agent_key)
         if parent_keys:
-            return await db.get_agent(parent_keys[0])
+            return await data_source.get_agent(parent_keys[0])
         return None

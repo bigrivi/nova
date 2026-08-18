@@ -6,14 +6,15 @@ from nova.agent.core import AgentEvent
 from nova.memory.models import MemoryRecord, MemoryWriteRequest
 from nova.memory.service import MemoryService
 from nova.memory.tools import delete_memory, list_memories, save_memory, search_memory
-from nova.db.database import Database, DatabaseConfig
+from nova.db.sqlite_repository import SqliteRepository
+from nova.db.config import DatabaseConfig
 from nova.llm import ToolResult
 from nova.llm.provider import Done, LLMProvider, TextDelta, ToolCall
 
 
 @pytest_asyncio.fixture
 async def db():
-    database = Database(DatabaseConfig(path=":memory:"))
+    database = SqliteRepository(DatabaseConfig(path=":memory:"))
     await database.connect()
 
     from nova.db import database as db_module

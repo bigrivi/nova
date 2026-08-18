@@ -7,7 +7,7 @@ import pytest
 
 from nova.settings import Settings, configure_logging, get_settings, reload_settings
 from nova.db import database as db_module
-from nova.db.database import Database
+from nova.db.sqlite_repository import SqliteRepository
 from nova.llm.ollama import OllamaProvider
 from nova.llm.openai import OpenAIProvider
 
@@ -369,7 +369,7 @@ async def test_ensure_db_uses_settings_database_path(monkeypatch, tmp_path):
 
     db = await db_module.ensure_db()
 
-    assert isinstance(db, Database)
+    assert isinstance(db, SqliteRepository)
     assert db.config.path == str(home / "nova.db")
 
     await db_module.close_db()

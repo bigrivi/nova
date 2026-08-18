@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Optional
 from nova.llm import LLMProvider
 
 if TYPE_CHECKING:
-    from nova.db.database import Database
+    from nova.db.data_source import DataSourceProtocol
 
 log = logging.getLogger(__name__)
 
@@ -144,7 +144,7 @@ async def maybe_compact(
     message_count: int,
     turn_count: int,
     last_compacted_at: Optional[int],
-    db: "Database",
+    db: "DataSourceProtocol",
     llm: LLMProvider,
     model: str = "gpt-4o",
     provider: str = "ollama",
@@ -176,7 +176,7 @@ async def prepare_compaction(
     message_count: int,
     turn_count: int,
     last_compacted_at: Optional[int],
-    db: "Database",
+    db: "DataSourceProtocol",
     model: str = "gpt-4o",
     provider: str = "ollama",
 ) -> CompactionPlan:
@@ -215,7 +215,7 @@ async def prepare_compaction(
 
 async def run_compaction_plan(
     plan: CompactionPlan,
-    db: "Database",
+    db: "DataSourceProtocol",
     llm: LLMProvider,
     model: str = "gpt-4o",
     provider: str = "ollama",
@@ -226,7 +226,7 @@ async def run_compaction_plan(
     await compact(plan.session_id, db, llm, model, provider, messages=plan.messages)
 
 
-async def snip_tool_results_in_db(db: "Database", session_id: str, messages: list) -> None:
+async def snip_tool_results_in_db(db: "DataSourceProtocol", session_id: str, messages: list) -> None:
     """Layer 1: trim old tool results stored in the database."""
     snip_old_tool_results(messages)
 
@@ -240,7 +240,7 @@ async def snip_tool_results_in_db(db: "Database", session_id: str, messages: lis
 
 async def compact(
     session_id: str,
-    db: "Database",
+    db: "DataSourceProtocol",
     llm: LLMProvider,
     model: str = "gpt-4o",
     provider: str = "ollama",

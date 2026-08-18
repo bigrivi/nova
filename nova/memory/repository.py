@@ -5,17 +5,24 @@ Database-backed memory repository.
 from __future__ import annotations
 
 import json
-import uuid
 from typing import Optional
 
-from nova.db.database import ensure_db
+from nova.db import get_default_data_source
+from nova.db.repository import NovaRepository
 from nova.memory.models import MemoryRecord, MemorySearchFilters
 
 
 class MemoryRepository:
+    def __init__(self, data_source: NovaRepository | None = None):
+        self._data_source = data_source
+
+    async def _get_data_source(self) -> NovaRepository:
+        if self._data_source is None:
+            self._data_source = await get_default_data_source()
+        return self._data_source
+
     async def upsert(self, record: MemoryRecord) -> tuple[MemoryRecord, bool]:
-        db = await ensure_db()
-        await db._ensure_connected()
+        data_source = await self._get_data_source()
 
         existing = await self.get_by_key(
             key=record.key,
@@ -25,44 +32,10 @@ class MemoryRepository:
         if existing:
             record.id = existing.id
             record.created_at = existing.created_at
-            await db._conn.execute(
-                """
-                UPDATE memories
-                SET memory_type = ?, content = ?, summary = ?, tags = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    record.memory_type,
-                    record.content,
-                    record.summary,
-                    json.dumps(record.tags),
-                    record.updated_at,
-                    record.id,
-                ),
-            )
-            await db._conn.commit()
+            await data_source.save_memory(record)
             return record, False
 
-        await db._conn.execute(
-            """
-            INSERT INTO memories (
-                id, key, scope, session_id, memory_type, content, summary, tags, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                record.id or str(uuid.uuid4()),
-                record.key,
-                record.scope,
-                record.session_id,
-                record.memory_type,
-                record.content,
-                record.summary,
-                json.dumps(record.tags),
-                record.created_at,
-                record.updated_at,
-            ),
-        )
-        await db._conn.commit()
+        await data_source.save_memory(record)
         return record, True
 
     async def get_by_key(
@@ -71,86 +44,28 @@ class MemoryRepository:
         scope: str,
         session_id: Optional[str] = None,
     ) -> Optional[MemoryRecord]:
-        db = await ensure_db()
-        await db._ensure_connected()
-        if scope == "session":
-            cursor = await db._conn.execute(
-                "SELECT * FROM memories WHERE key = ? AND scope = ? AND session_id = ?",
-                (key, scope, session_id),
-            )
-        else:
-            cursor = await db._conn.execute(
-                "SELECT * FROM memories WHERE key = ? AND scope = ?",
-                (key, scope),
-            )
-        row = await cursor.fetchone()
+        data_source = await self._get_data_source()
+        row = await data_source.get_memory_by_key(key, scope, session_id)
         return self._row_to_record(row) if row else None
 
     async def list_memories(self, filters: MemorySearchFilters) -> list[MemoryRecord]:
-        db = await ensure_db()
-        await db._ensure_connected()
-        sql = """
-            SELECT *
-            FROM memories
-            WHERE 1 = 1
-        """
-        params: list[object] = []
-
-        if filters.scope != "all":
-            sql += " AND scope = ?"
-            params.append(filters.scope)
-
-        if filters.memory_type:
-            sql += " AND memory_type = ?"
-            params.append(filters.memory_type)
-
-        if filters.session_id:
-            if filters.scope == "session":
-                sql += " AND session_id = ?"
-                params.append(filters.session_id)
-            elif filters.scope == "all":
-                sql += " AND (scope != 'session' OR session_id = ?)"
-                params.append(filters.session_id)
-
-        if filters.query.strip():
-            query = f"%{filters.query.strip().lower()}%"
-            sql += " AND (lower(key) LIKE ? OR lower(summary) LIKE ? OR lower(content) LIKE ? OR lower(tags) LIKE ?)"
-            params.extend([query, query, query, query])
-
-        sql += " ORDER BY updated_at DESC LIMIT ?"
-        params.append(filters.limit)
-
-        cursor = await db._conn.execute(sql, tuple(params))
-        rows = await cursor.fetchall()
+        data_source = await self._get_data_source()
+        rows = await data_source.list_memories(filters)
         return [self._row_to_record(row) for row in rows]
 
     async def delete_by_id(self, memory_id: str) -> int:
-        db = await ensure_db()
-        await db._ensure_connected()
-        cursor = await db._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
-        await db._conn.commit()
-        return cursor.rowcount or 0
+        data_source = await self._get_data_source()
+        return await data_source.delete_memory_by_id(memory_id)
 
     async def delete_by_session(self, session_id: str) -> int:
         """Delete all memories (any scope or type) tied to a session."""
-        db = await ensure_db()
-        await db._ensure_connected()
-        cursor = await db._conn.execute(
-            "DELETE FROM memories WHERE session_id = ?",
-            (session_id,),
-        )
-        await db._conn.commit()
-        return cursor.rowcount or 0
+        data_source = await self._get_data_source()
+        return await data_source.delete_memories_by_session(session_id)
 
     async def list_by_session(self, session_id: str) -> list[MemoryRecord]:
         """List all memories (any scope or type) tied to a session."""
-        db = await ensure_db()
-        await db._ensure_connected()
-        cursor = await db._conn.execute(
-            "SELECT * FROM memories WHERE session_id = ? ORDER BY updated_at DESC",
-            (session_id,),
-        )
-        rows = await cursor.fetchall()
+        data_source = await self._get_data_source()
+        rows = await data_source.list_memories_by_session(session_id)
         return [self._row_to_record(row) for row in rows]
 
     async def delete_by_key(
@@ -159,20 +74,8 @@ class MemoryRepository:
         scope: str,
         session_id: Optional[str] = None,
     ) -> int:
-        db = await ensure_db()
-        await db._ensure_connected()
-        if scope == "session":
-            cursor = await db._conn.execute(
-                "DELETE FROM memories WHERE key = ? AND scope = ? AND session_id = ?",
-                (key, scope, session_id),
-            )
-        else:
-            cursor = await db._conn.execute(
-                "DELETE FROM memories WHERE key = ? AND scope = ?",
-                (key, scope),
-            )
-        await db._conn.commit()
-        return cursor.rowcount or 0
+        data_source = await self._get_data_source()
+        return await data_source.delete_memory_by_key(key, scope, session_id)
 
     def _row_to_record(self, row) -> MemoryRecord:
         return MemoryRecord(

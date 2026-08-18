@@ -14,7 +14,7 @@ from nova.cli.ui import (
 from nova.cli.utils import looks_like_error_message
 from dataclasses import replace
 
-from nova.db.database import Message
+from nova.session.models import Message
 from nova.settings import ProviderConfig, Settings
 from nova.llm.provider import ToolResult
 from nova.skills.models import SkillInstallResult

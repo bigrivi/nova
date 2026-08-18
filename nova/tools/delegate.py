@@ -60,7 +60,7 @@ async def delegate_to_agent(
     try:
         from nova.app.runtime import build_agent
         from nova.session.manager import get_session_manager
-        from nova.db.database import ensure_db
+        from nova.db import get_default_data_source
         
         log.info(f"Delegating task to agent '{agent_key}': {task[:100]}...")
         
@@ -70,10 +70,10 @@ async def delegate_to_agent(
         parent_session_id = current_session.id if current_session else None
         
         # 2. 验证父子关系（支持多父 agent）
-        db = await ensure_db()
-        target_agent = await db.get_agent(agent_key)
+        data_source = await get_default_data_source()
+        target_agent = await data_source.get_agent(agent_key)
         if target_agent:
-            parent_keys = await db.get_agent_parents(agent_key)
+            parent_keys = await data_source.get_agent_parents(agent_key)
             current_agent_key = current_session.agent_key if current_session else None
 
             if parent_keys and current_agent_key not in parent_keys:
