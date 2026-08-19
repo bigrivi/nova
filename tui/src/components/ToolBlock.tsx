@@ -1,154 +1,165 @@
-/** 工具调用块（Claude Code 风格）：单行标题 + 单行结果摘要，不做多行展开 */
-import type { ToolCallPart as ToolCallPartData } from '../stores/chat-store.ts'
+/** Tool call block (Claude Code style): single-line title + single-line result summary, no multi-line expansion */
+import type { ToolCallPart as ToolCallPartData } from "../stores/chat-store.ts";
 
-const DIFF_TOOLS = new Set(['edit', 'write', 'write_files', 'code_run'])
+const DIFF_TOOLS = new Set(["edit", "write", "write_files", "code_run"]);
 
-const STATUS_ICON: Record<ToolCallPartData['status'], string> = {
-  running: '⠸',
-  done: '◉',
-  error: '✗',
-}
+const STATUS_ICON: Record<ToolCallPartData["status"], string> = {
+    running: "⠸",
+    done: "◉",
+    error: "✗",
+};
 
-const STATUS_COLOR: Record<ToolCallPartData['status'], string> = {
-  running: '#d29922',
-  done: '#8b949e',
-  error: '#e5534b',
-}
+const STATUS_COLOR: Record<ToolCallPartData["status"], string> = {
+    running: "#d29922",
+    done: "#8b949e",
+    error: "#e5534b",
+};
 
 function looksLikeDiff(text: string): boolean {
-  return /^(---|\+\+\+|@@)/m.test(text)
+    return /^(---|\+\+\+|@@)/m.test(text);
 }
 
 function truncate(text: string, max = 60): string {
-  const single = text.replace(/\s+/g, ' ').trim()
-  return single.length > max ? `${single.slice(0, max)}…` : single
+    const single = text.replace(/\s+/g, " ").trim();
+    return single.length > max ? `${single.slice(0, max)}…` : single;
 }
 
-/** 单行参数摘要：提取关键字段，形成 Claude Code 式 (file.py) / (query) */
-function summarizeArgs(toolName: string, args: Record<string, unknown> | null): string {
-  if (!args) return ''
-  const pick = (keys: string[]): string => {
-    for (const k of keys) {
-      const v = args[k]
-      if (typeof v === 'string' && v.trim()) return truncate(v.trim())
-      if (v != null) return truncate(String(v))
-    }
-    return ''
-  }
-  const count = (keys: string[]): string => {
-    for (const k of keys) {
-      const v = args[k]
-      if (Array.isArray(v)) return v.length ? `${v.length} items` : ''
-      if (typeof v === 'object' && v != null) {
-        const values = Object.values(v)
-        return values.length ? `${values.length} items` : ''
-      }
-    }
-    return ''
-  }
+/** Single-line argument summary: extract the key fields into a Claude Code-style (file.py) / (query) */
+function summarizeArgs(
+    toolName: string,
+    args: Record<string, unknown> | null,
+): string {
+    if (!args) return "";
+    const pick = (keys: string[]): string => {
+        for (const k of keys) {
+            const v = args[k];
+            if (typeof v === "string" && v.trim()) return truncate(v.trim());
+            if (v != null) return truncate(String(v));
+        }
+        return "";
+    };
+    const count = (keys: string[]): string => {
+        for (const k of keys) {
+            const v = args[k];
+            if (Array.isArray(v)) return v.length ? `${v.length} items` : "";
+            if (typeof v === "object" && v != null) {
+                const values = Object.values(v);
+                return values.length ? `${values.length} items` : "";
+            }
+        }
+        return "";
+    };
 
-  switch (toolName) {
-    case 'read':
-    case 'read_image':
-    case 'edit':
-    case 'write':
-      return pick(['filePath', 'path'])
-    case 'shell':
-      return pick(['command'])
-    case 'code_run':
-      return pick(['script_path']) || 'inline'
-    case 'glob':
-    case 'grep':
-      return pick(['pattern'])
-    case 'web_search':
-      return pick(['query'])
-    case 'web_fetch':
-      return pick(['url'])
-    case 'browser_use':
-      return pick(['action'])
-    case 'save_memory':
-      return pick(['key'])
-    case 'search_memory':
-      return pick(['query'])
-    case 'delete_memory':
-      return pick(['key', 'memory_id'])
-    case 'list_memories':
-      return pick(['scope'])
-    case 'load_skill':
-    case 'install_skill':
-      return pick(['slug', 'name', 'skill'])
-    case 'delegate_to_agent':
-      return pick(['agent_key'])
-    case 'todo_write':
-      return count(['todos'])
-    default:
-      return ''
-  }
+    switch (toolName) {
+        case "read":
+        case "read_image":
+        case "edit":
+        case "write":
+            return pick(["filePath", "path"]);
+        case "shell":
+            return pick(["command"]);
+        case "code_run":
+            return pick(["script_path"]) || "inline";
+        case "glob":
+        case "grep":
+            return pick(["pattern"]);
+        case "web_search":
+            return pick(["query"]);
+        case "web_fetch":
+            return pick(["url"]);
+        case "browser_use":
+            return pick(["action"]);
+        case "save_memory":
+            return pick(["key"]);
+        case "search_memory":
+            return pick(["query"]);
+        case "delete_memory":
+            return pick(["key", "memory_id"]);
+        case "list_memories":
+            return pick(["scope"]);
+        case "load_skill":
+        case "install_skill":
+            return pick(["slug", "name", "skill"]);
+        case "delegate_to_agent":
+            return pick(["agent_key"]);
+        case "todo_write":
+            return count(["todos"]);
+        default:
+            return "";
+    }
 }
 
-/** 单行结果摘要（Claude Code 式）：行数统计 / 首行截断 / 错误信息 */
+/** Single-line result summary (Claude Code style): line count / first-line truncation / error message */
 function summarizeOutput(toolName: string, output: string): string {
-  const text = output.trim()
-  if (!text) return ''
-  const lines = text.split('\n').filter((l) => l.trim())
+    const text = output.trim();
+    if (!text) return "";
+    const lines = text.split("\n").filter((l) => l.trim());
 
-  if (DIFF_TOOLS.has(toolName) && looksLikeDiff(text)) {
-    return ''
-  }
+    if (DIFF_TOOLS.has(toolName) && looksLikeDiff(text)) {
+        return "";
+    }
 
-  switch (toolName) {
-    case 'read':
-      return `Read ${lines.length} lines`
-    case 'write':
-    case 'edit':
-      return 'Done'
-    case 'shell':
-    case 'code_run':
-      return lines.length === 1 ? truncate(lines[0]!, 80) : `${lines.length} lines`
-    case 'glob':
-    case 'grep':
-      return `Found ${lines.length} matches`
-    case 'web_search':
-      return lines.length === 1 ? truncate(lines[0]!, 80) : `${lines.length} lines`
-    case 'save_memory':
-    case 'delete_memory':
-    case 'load_skill':
-    case 'install_skill':
-    case 'todo_write':
-      return lines.length === 1 ? truncate(lines[0]!, 80) : 'Done'
-    default:
-      return truncate(text, 80)
-  }
+    switch (toolName) {
+        case "read":
+            return `Read ${lines.length} lines`;
+        case "write":
+        case "edit":
+            return "Done";
+        case "shell":
+        case "code_run":
+            return lines.length === 1
+                ? truncate(lines[0]!, 80)
+                : `${lines.length} lines`;
+        case "glob":
+        case "grep":
+            return `Found ${lines.length} matches`;
+        case "web_search":
+            return lines.length === 1
+                ? truncate(lines[0]!, 80)
+                : `${lines.length} lines`;
+        case "save_memory":
+        case "delete_memory":
+        case "load_skill":
+        case "install_skill":
+        case "todo_write":
+            return lines.length === 1 ? truncate(lines[0]!, 80) : "Done";
+        default:
+            return truncate(text, 80);
+    }
 }
 
 export function ToolBlock({ part }: { part: ToolCallPartData }) {
-  const { toolName, status, args, outputText, error } = part
-  const color = STATUS_COLOR[status]
-  const icon = STATUS_ICON[status]
-  const summary = summarizeArgs(toolName, args)
-  const label = summary ? `${toolName}(${summary})` : toolName
-  const result = summarizeOutput(toolName, outputText)
+    const { toolName, status, args, outputText, error } = part;
+    const color = STATUS_COLOR[status];
+    const icon = STATUS_ICON[status];
+    const summary = summarizeArgs(toolName, args);
+    const label = summary ? `${toolName}(${summary})` : toolName;
+    const result = summarizeOutput(toolName, outputText);
 
-  const showDiff =
-    status === 'done' &&
-    outputText &&
-    DIFF_TOOLS.has(toolName) &&
-    looksLikeDiff(outputText)
+    const showDiff =
+        status === "done" &&
+        outputText &&
+        DIFF_TOOLS.has(toolName) &&
+        looksLikeDiff(outputText);
 
-  return (
-    <box flexDirection="column" marginBottom={1}>
-      <text fg={color} content={`${icon} ${label}`} />
-      {status === 'error' && error ? (
-        <text fg="#e5534b" content={`  ⎿ ${truncate(error, 100)}`} />
-      ) : null}
-      {status === 'done' && result ? (
-        <text fg="#6e7681" content={`  ⎿ ${result}`} />
-      ) : null}
-      {showDiff ? (
-        <box paddingLeft={2} marginTop={1}>
-          <diff diff={outputText} view="unified" showLineNumbers={false} />
+    return (
+        <box flexDirection="column" marginBottom={1}>
+            <text fg={color} content={`${icon} ${label}`} />
+            {status === "error" && error ? (
+                <text fg="#e5534b" content={`  ⎿ ${truncate(error, 100)}`} />
+            ) : null}
+            {status === "done" && result ? (
+                <text fg="#6e7681" content={`  ⎿ ${result}`} />
+            ) : null}
+            {showDiff ? (
+                <box paddingLeft={2} marginTop={1}>
+                    <diff
+                        diff={outputText}
+                        view="unified"
+                        showLineNumbers={false}
+                    />
+                </box>
+            ) : null}
         </box>
-      ) : null}
-    </box>
-  )
+    );
 }

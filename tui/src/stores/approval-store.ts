@@ -1,4 +1,4 @@
-/** 命令审批状态：待审批的 shell 命令（zustand） */
+/** Command approval state: shell commands pending approval (zustand) */
 import { create } from "zustand";
 
 export type ApprovalPending = {

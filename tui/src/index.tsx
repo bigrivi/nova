@@ -1,50 +1,50 @@
-/** Nova TUI 入口：拉起后端 → 创建渲染器 → 渲染 App → 退出清理 */
-import { join } from 'node:path'
-import { createCliRenderer } from '@opentui/core'
-import { createRoot } from '@opentui/react'
-import { startBackend, stopBackend } from './backend.ts'
-import { App } from './components/App.tsx'
-import { registerExtraParsers } from './tree-sitter.ts'
+/** Nova TUI entry: start the backend → create the renderer → render App → exit and clean up */
+import { createCliRenderer } from "@opentui/core";
+import { createRoot } from "@opentui/react";
+import { join } from "node:path";
+import { startBackend, stopBackend } from "./backend.ts";
+import { App } from "./components/App.tsx";
+import { registerExtraParsers } from "./tree-sitter.ts";
 
 if (!process.env.OTUI_ASSET_ROOT) {
-  process.env.OTUI_ASSET_ROOT = join(import.meta.dir, '..', 'node_modules')
+    process.env.OTUI_ASSET_ROOT = join(import.meta.dir, "..", "node_modules");
 }
 
-registerExtraParsers()
+registerExtraParsers();
 
-let exiting = false
+let exiting = false;
 
 async function exitApp(): Promise<void> {
-  if (exiting) {
-    return
-  }
-  exiting = true
-  try {
-    renderer?.destroy()
-  } catch {
-    // ignore renderer shutdown errors
-  }
-  await stopBackend()
-  process.exit(0)
+    if (exiting) {
+        return;
+    }
+    exiting = true;
+    try {
+        renderer?.destroy();
+    } catch {
+        // ignore renderer shutdown errors
+    }
+    await stopBackend();
+    process.exit(0);
 }
 
-let renderer: Awaited<ReturnType<typeof createCliRenderer>> | null = null
+let renderer: Awaited<ReturnType<typeof createCliRenderer>> | null = null;
 
 async function main(): Promise<void> {
-  if (process.env.NOVA_TUI_BACKEND) {
-    await startBackend()
-  }
+    if (process.env.NOVA_TUI_BACKEND) {
+        await startBackend();
+    }
 
-  renderer = await createCliRenderer({ exitOnCtrlC: false })
-  createRoot(renderer).render(<App onExit={() => void exitApp()} />)
-  renderer.start()
+    renderer = await createCliRenderer({ exitOnCtrlC: false });
+    createRoot(renderer).render(<App onExit={() => void exitApp()} />);
+    renderer.start();
 
-  const shutdown = () => void exitApp()
-  process.on('SIGINT', shutdown)
-  process.on('SIGTERM', shutdown)
+    const shutdown = () => void exitApp();
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
 }
 
 main().catch((err: unknown) => {
-  console.error('[tui] Fatal:', err instanceof Error ? err.message : err)
-  process.exit(1)
-})
+    console.error("[tui] Fatal:", err instanceof Error ? err.message : err);
+    process.exit(1);
+});

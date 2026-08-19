@@ -1,4 +1,4 @@
-/** ask_user 交互状态：问题表单激活/清除（zustand） */
+/** ask_user interaction state: question form active/cleared (zustand) */
 import { create } from "zustand";
 
 export type AskQuestion = {
