@@ -50,6 +50,18 @@ class ProviderConfig:
     models: dict[str, dict[str, Any]]
 
 
+@dataclass(frozen=True)
+class CompactionSettings:
+    """Context compaction thresholds, overridable via config.json ``compaction`` block."""
+
+    token_ratio: float = 0.7          # compact when tokens exceed model_max_tokens * ratio
+    max_messages: int = 100           # compact when message count exceeds this
+    max_turns_between_compact: int = 20  # compact when turns since last compact exceed this
+    snip_max_chars: int = 2000        # Layer 1: trim tool results longer than this
+    snip_preserve_last_n_turns: int = 6  # Layer 1: keep last N turns unchanged
+    summary_keep_ratio: float = 0.3   # Layer 2: keep recent portion of tokens at split
+
+
 def _env_int(name: str, default: int) -> int:
     raw = os.getenv(name)
     if raw is None:
@@ -161,6 +173,21 @@ def _parse_provider_configs(raw_providers: Any) -> dict[str, ProviderConfig]:
 _INTERNAL_MODEL_KEYS = {"name", "reasoning_field"}
 
 
+def _parse_compaction_config(raw: Any) -> CompactionSettings:
+    if raw is None:
+        return CompactionSettings()
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid Nova config: 'compaction' must be an object")
+    return CompactionSettings(
+        token_ratio=float(raw.get("token_ratio", 0.7)),
+        max_messages=int(raw.get("max_messages", 100)),
+        max_turns_between_compact=int(raw.get("max_turns_between_compact", 20)),
+        snip_max_chars=int(raw.get("snip_max_chars", 2000)),
+        snip_preserve_last_n_turns=int(raw.get("snip_preserve_last_n_turns", 6)),
+        summary_keep_ratio=float(raw.get("summary_keep_ratio", 0.3)),
+    )
+
+
 @dataclass(frozen=True)
 class Settings:
     # Filesystem/runtime paths shared across CLI and server modes.
@@ -183,6 +210,9 @@ class Settings:
     # MCP server definitions: {name: {command|url, ...}}
     mcp_servers: dict[str, dict] = field(default_factory=dict)
 
+    # Context compaction thresholds.
+    compaction: CompactionSettings = field(default_factory=CompactionSettings)
+
     # Runtime config file path.
     config_path: Path | None = None
 
@@ -200,6 +230,7 @@ class Settings:
         providers = _parse_provider_configs(config_payload.get("providers"))
         raw_mcp = config_payload.get("mcp_servers")
         mcp_servers = dict(raw_mcp) if isinstance(raw_mcp, dict) else {}
+        compaction = _parse_compaction_config(config_payload.get("compaction"))
         raw_frontend_dist = os.getenv("NOVA_FRONTEND_DIST", "").strip()
         frontend_dist_path = Path(raw_frontend_dist) if raw_frontend_dist else None
         return cls(
@@ -216,6 +247,7 @@ class Settings:
             frontend_dist_path=frontend_dist_path,
             providers=providers,
             mcp_servers=mcp_servers,
+            compaction=compaction,
         )
 
     def ensure_directories(self) -> None:

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 from nova.llm import LLMProvider
+from nova.settings import get_settings
 
 if TYPE_CHECKING:
     from nova.db.data_source import DataSourceProtocol
@@ -121,14 +122,16 @@ def should_compact(
     last_compacted_at: Optional[int],
     model_max_tokens: int = 128000,
     max_turns_between_compact: int = 20,
+    token_ratio: float = 0.7,
+    max_messages: int = 100,
 ) -> bool:
     """Decide whether compaction should run."""
-    threshold = int(model_max_tokens * 0.7)
+    threshold = int(model_max_tokens * token_ratio)
 
     if token_count > threshold:
         return True
 
-    if message_count > 100:
+    if message_count > max_messages:
         return True
 
     if last_compacted_at:
@@ -182,6 +185,7 @@ async def prepare_compaction(
 ) -> CompactionPlan:
     """Load messages and decide whether Layer 2 compaction should run."""
     model_max_tokens = get_context_limit(model, provider)
+    comp = get_settings().compaction
 
     if message_count == 0:
         return CompactionPlan(session_id, [], model_max_tokens, 0, False)
@@ -197,6 +201,9 @@ async def prepare_compaction(
         turn_count=turn_count,
         last_compacted_at=last_compacted_at,
         model_max_tokens=model_max_tokens,
+        max_turns_between_compact=comp.max_turns_between_compact,
+        token_ratio=comp.token_ratio,
+        max_messages=comp.max_messages,
     ):
         return CompactionPlan(session_id, messages, model_max_tokens, token_count, False)
 
@@ -209,6 +216,9 @@ async def prepare_compaction(
         turn_count=turn_count,
         last_compacted_at=last_compacted_at,
         model_max_tokens=model_max_tokens,
+        max_turns_between_compact=comp.max_turns_between_compact,
+        token_ratio=comp.token_ratio,
+        max_messages=comp.max_messages,
     )
     return CompactionPlan(session_id, messages, model_max_tokens, token_count, needs_compaction)
 
@@ -228,7 +238,12 @@ async def run_compaction_plan(
 
 async def snip_tool_results_in_db(db: "DataSourceProtocol", session_id: str, messages: list) -> None:
     """Layer 1: trim old tool results stored in the database."""
-    snip_old_tool_results(messages)
+    comp = get_settings().compaction
+    snip_old_tool_results(
+        messages,
+        max_chars=comp.snip_max_chars,
+        preserve_last_n_turns=comp.snip_preserve_last_n_turns,
+    )
 
     for msg in messages:
         if _get_role(msg) == "tool":
@@ -261,7 +276,8 @@ async def compact(
         return
 
     before_tokens = estimate_tokens(messages)
-    split = find_split_point(messages)
+    comp = get_settings().compaction
+    split = find_split_point(messages, keep_ratio=comp.summary_keep_ratio)
     if split <= 0:
         return
 

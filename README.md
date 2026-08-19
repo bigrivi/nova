@@ -448,6 +448,36 @@ Config rules:
 - `--provider` and `--model` override the config defaults for the current
   process only.
 
+Optional top-level `compaction` block tunes context compaction thresholds:
+
+```json
+{
+  "compaction": {
+    "token_ratio": 0.7,
+    "max_messages": 100,
+    "max_turns_between_compact": 20,
+    "snip_max_chars": 2000,
+    "snip_preserve_last_n_turns": 6,
+    "summary_keep_ratio": 0.3
+  }
+}
+```
+
+Rules:
+
+- `token_ratio`: compact when estimated tokens exceed
+  `context_limit * token_ratio`. Default `0.7`.
+- `max_messages`: compact when the active message count exceeds this.
+  Default `100`.
+- `max_turns_between_compact`: compact when the conversation has run more than
+  this many turns since the last compaction. Default `20`.
+- `snip_max_chars`: Layer 1 trims old tool results longer than this many
+  characters. Default `2000`.
+- `snip_preserve_last_n_turns`: Layer 1 keeps the last N turns unchanged.
+  Default `6`.
+- `summary_keep_ratio`: Layer 2 keeps the recent portion of tokens at the split
+  point. Default `0.3`.
+
 Relevant environment variables:
 
 - `NOVA_HOME`

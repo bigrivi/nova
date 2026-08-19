@@ -115,6 +115,73 @@ def test_app_settings_from_config_and_env(monkeypatch, tmp_path):
     assert settings.server.backend_port == 9001
 
 
+def test_settings_compaction_defaults(monkeypatch, tmp_path):
+    home = tmp_path / "nova-compaction-default-home"
+    _write_config(home, {"providers": {}})
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    settings = Settings.load_config()
+    comp = settings.compaction
+
+    assert comp.token_ratio == 0.7
+    assert comp.max_messages == 100
+    assert comp.max_turns_between_compact == 20
+    assert comp.snip_max_chars == 2000
+    assert comp.snip_preserve_last_n_turns == 6
+    assert comp.summary_keep_ratio == 0.3
+
+
+def test_settings_compaction_from_config(monkeypatch, tmp_path):
+    home = tmp_path / "nova-compaction-home"
+    _write_config(
+        home,
+        {
+            "providers": {},
+            "compaction": {
+                "token_ratio": 0.8,
+                "max_messages": 200,
+                "max_turns_between_compact": 50,
+                "snip_max_chars": 4000,
+                "snip_preserve_last_n_turns": 10,
+                "summary_keep_ratio": 0.5,
+            },
+        },
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    settings = Settings.load_config()
+    comp = settings.compaction
+
+    assert comp.token_ratio == 0.8
+    assert comp.max_messages == 200
+    assert comp.max_turns_between_compact == 50
+    assert comp.snip_max_chars == 4000
+    assert comp.snip_preserve_last_n_turns == 10
+    assert comp.summary_keep_ratio == 0.5
+
+
+def test_settings_compaction_partial_config_keeps_defaults(monkeypatch, tmp_path):
+    home = tmp_path / "nova-compaction-partial-home"
+    _write_config(home, {"providers": {}, "compaction": {"token_ratio": 0.9}})
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    settings = Settings.load_config()
+    comp = settings.compaction
+
+    assert comp.token_ratio == 0.9
+    assert comp.max_messages == 100
+    assert comp.max_turns_between_compact == 20
+
+
+def test_settings_compaction_invalid_block_raises(monkeypatch, tmp_path):
+    home = tmp_path / "nova-compaction-invalid-home"
+    _write_config(home, {"providers": {}, "compaction": "not-an-object"})
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    with pytest.raises(ValueError, match="'compaction' must be an object"):
+        Settings.load_config()
+
+
 def test_existing_config_is_not_overwritten(monkeypatch, tmp_path):
     home = tmp_path / "nova-existing-home"
     config_path = home / "config.json"
