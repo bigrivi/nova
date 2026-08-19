@@ -40,6 +40,7 @@ import {
 import { useApprovalStore } from "../stores/approval-store";
 import { useAskUserStore } from "../stores/ask-user-store";
 import { useReasoningStore } from "../stores/reasoning-store";
+import { useTodoStore } from "../stores/todo-store";
 import type {
     NovaAttachmentData,
     NovaJsonObject,
@@ -382,6 +383,7 @@ export function NovaAppShell() {
     async function loadThread(threadId: string) {
         try {
             const messages = await listMessages(threadId);
+            useTodoStore.getState().clear();
             startTransition(() => {
                 setCurrentThreadId(threadId);
                 setMessagesByThreadId((previous) => ({
@@ -414,6 +416,8 @@ export function NovaAppShell() {
         if (isRunning) {
             return;
         }
+
+        useTodoStore.getState().clear();
 
         startTransition(() => {
             setCurrentThreadId(DRAFT_THREAD_ID);
@@ -521,7 +525,7 @@ export function NovaAppShell() {
 
         setIsRunning(true);
         setComposerText("");
-
+        useTodoStore.getState().clear();
         useReasoningStore.getState().setChainStartTime(Date.now());
 
         setThreadMessages(activeThreadId, (previous) => [
@@ -731,6 +735,10 @@ export function NovaAppShell() {
 
                         if (event.toolName === "ask_user") {
                             pendingAskUser = { input: event.input };
+                        }
+
+                        if (event.toolName === "todo_write") {
+                            useTodoStore.getState().setActive(event.input);
                         }
 
                         setThreadMessages(activeThreadId, (previous) =>

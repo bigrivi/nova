@@ -70,6 +70,7 @@
     "attachment.addAttachment": "添加附件",
     "tools.cancelledTool": "已取消的工具",
     "tools.usedTool": "使用的工具",
+    "tools.todoProgress": "任务进度",
     "tools.result": "结果：",
     "tools.cancelledReason": "取消原因：",
     "tools.error": "错误：",

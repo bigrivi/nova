@@ -126,6 +126,8 @@ const AssistantMessage: FC = () => {
                                 if (part.toolName === "ask_user") return null;
                                 if (part.toolName === "code_run")
                                     return <CodeRunTool {...toolProps} />;
+                                if (part.toolName === "todo_write")
+                                    return null;
                                 return (
                                     toolUI ?? <ToolFallback {...toolProps} />
                                 );

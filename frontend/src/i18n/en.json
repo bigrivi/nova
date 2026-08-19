@@ -70,6 +70,7 @@
     "attachment.addAttachment": "Add Attachment",
     "tools.cancelledTool": "Cancelled tool",
     "tools.usedTool": "Used tool",
+    "tools.todoProgress": "Task Progress",
     "tools.result": "Result:",
     "tools.cancelledReason": "Cancelled reason:",
     "tools.error": "Error:",
