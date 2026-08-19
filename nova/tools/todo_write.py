@@ -6,7 +6,21 @@ from nova.tools.registry import tool
 
 @tool(
     name="todo_write",
-    description="Create and manage a task list for tracking progress. Use when a task is complex and requires multiple steps, or when the user provides a numbered/bulleted list of tasks. Helps organize work and track completion status.",
+    description=(
+        "Create and manage a task list for tracking progress. Use when a task is complex and "
+        "requires multiple steps, or when the user provides a numbered/bulleted list of tasks. "
+        "Helps organize work and track completion status.\n\n"
+        "Protocol (MUST follow):\n"
+        "1. Call this tool IMMEDIATELY when you decide to break the work into steps, before starting the first step.\n"
+        "2. Call it again AFTER EVERY status change: when a task starts, finishes, or is skipped/cancelled. "
+        "Never wait until the whole list is finished before updating it.\n"
+        "3. ALWAYS pass the FULL updated list (every task with its latest status) on every call — "
+        "this tool replaces the whole list; never send only the changed item.\n"
+        "4. Keep at most ONE task `in_progress` at a time. When moving on, mark the previous task "
+        "`completed` (or `cancelled` if skipped) and mark the next task `in_progress`.\n"
+        "5. Keep each task's `content` short, stable, and unchanged once created — never reword existing tasks.\n"
+        "6. When all work is done, the final call must show every task as `completed` (or `cancelled` if not applicable)."
+    ),
     parameters={
         "type": "object",
         "properties": {
