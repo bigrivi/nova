@@ -6,7 +6,7 @@ import json
 import random
 from collections.abc import AsyncGenerator
 
-from nova.llm.provider import Done, Error, LLMProvider, ReasoningDelta, TextDelta, ToolCall
+from nova.llm.provider import ChatStreamEvent, Done, Error, LLMProvider, ReasoningDelta, TextDelta, ToolCall
 
 
 class FakerLLMProvider(LLMProvider):
@@ -83,7 +83,7 @@ class FakerLLMProvider(LLMProvider):
         abort_event: asyncio.Event | None = None,
         timeout: int | None = None,
         **kwargs,
-    ) -> AsyncGenerator[TextDelta | ReasoningDelta | Done | Error, None]:
+    ) -> AsyncGenerator[ChatStreamEvent, None]:
         rng = self._rng(messages, model)
         response = self._response(messages, model, rng)
         if response is None:

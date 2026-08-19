@@ -8,7 +8,7 @@ import json
 import logging
 from typing import AsyncGenerator, Optional
 
-from nova.llm import LLMProvider, Done, ReasoningDelta, ToolCall, TextDelta, Error
+from nova.llm import ChatStreamEvent, LLMProvider, Done, ReasoningDelta, ToolCall, TextDelta, Error
 
 log = logging.getLogger(__name__)
 
@@ -186,7 +186,7 @@ class OllamaProvider(LLMProvider):
         abort_event: Optional[asyncio.Event] = None,
         timeout: Optional[int] = None,
         **kwargs
-    ) -> AsyncGenerator[Done, None]:
+    ) -> AsyncGenerator[ChatStreamEvent, None]:
         formatted_messages = self._format_messages(messages)
 
         url = f"{self.base_url}/api/chat"

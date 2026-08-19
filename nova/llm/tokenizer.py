@@ -19,7 +19,7 @@ def estimate_tokens_by_type(text: str, is_tool_result: bool = False) -> int:
 
 def estimate_message_tokens(message, model: str = "unknown") -> int:
     """Estimate tokens for a single message.
-    
+
     Uses type-aware character estimation with safety margin.
     Optionally uses tiktoken for OpenAI models if available.
     Skips tiktoken if message contains non-text blocks (image, thinking, etc.)
@@ -32,17 +32,17 @@ def estimate_message_tokens(message, model: str = "unknown") -> int:
             if isinstance(block, dict) and block.get("type") in ["image", "thinking", "toolCall"]:
                 has_non_text = True
                 break
-    
+
     # Try real tokenizer first for OpenAI models (only for simple text messages)
     if not has_non_text and ("gpt" in model.lower() or "openai" in model.lower()):
         real_tokens = _estimate_with_tiktoken(message, model)
         if real_tokens is not None:
             return int(real_tokens * SAFETY_MARGIN)
-    
+
     # Fallback to character estimation
     total = 0
     role = _get_role(message)
-    
+
     if isinstance(content, str):
         # Distinguish tool results for estimation
         is_tool = (role == "tool")
@@ -54,25 +54,27 @@ def estimate_message_tokens(message, model: str = "unknown") -> int:
                 if block.get("type") == "text":
                     text = block.get("text", "")
                     is_tool = (role == "tool")
-                    total += estimate_tokens_by_type(text, is_tool_result=is_tool)
+                    total += estimate_tokens_by_type(text,
+                                                     is_tool_result=is_tool)
                 elif block.get("type") == "image":
                     total += IMAGE_CHAR_ESTIMATE // CHARS_PER_TOKEN_TEXT
                 elif block.get("type") == "thinking":
                     thinking = block.get("thinking", "")
-                    total += estimate_tokens_by_type(str(thinking), is_tool_result=False)
-    
+                    total += estimate_tokens_by_type(
+                        str(thinking), is_tool_result=False)
+
     # Add tool calls tokens
     tool_calls = _get_tool_calls(message)
     for tc in tool_calls:
         if isinstance(tc, dict):
             try:
                 total += estimate_tokens_by_type(
-                    str(tc.get("arguments", {})), 
+                    str(tc.get("arguments", {})),
                     is_tool_result=False
                 )
             except:
                 total += 32  # Fallback estimate
-    
+
     # Apply safety margin
     return int(total * SAFETY_MARGIN)
 
@@ -91,7 +93,7 @@ def _estimate_with_tiktoken(message, model: str):
         import tiktoken
         content = _get_content(message)
         text_to_encode = ""
-        
+
         if isinstance(content, str):
             text_to_encode = content
         elif isinstance(content, list):
@@ -100,16 +102,16 @@ def _estimate_with_tiktoken(message, model: str):
                 if isinstance(block, dict) and block.get("type") == "text":
                     parts.append(block.get("text", ""))
             text_to_encode = " ".join(parts)
-        
+
         if not text_to_encode:
             return None
-            
+
         # Try to get encoding for specific model, fallfall to cl100k_base
         try:
             enc = tiktoken.encoding_for_model(model)
         except:
             enc = tiktoken.get_encoding("cl100k_base")
-            
+
         return len(enc.encode(text_to_encode))
     except ImportError:
         return None
@@ -119,7 +121,7 @@ def _estimate_with_tiktoken(message, model: str):
 
 def get_context_limit_with_margin(model: str, provider: str) -> int:
     """Return the context limit for a model, with safety margin.
-    
+
     First tries to read from config.json using provider + model joint lookup:
       providers.<provider>.models.<model>.limit.context
     Falls back to hard-coded defaults.
@@ -128,7 +130,7 @@ def get_context_limit_with_margin(model: str, provider: str) -> int:
     try:
         from nova.settings import get_settings
         settings = get_settings()
-        
+
         if provider in settings.providers:
             provider_config = settings.providers[provider]
             if provider_config.models and model in provider_config.models:
@@ -146,7 +148,7 @@ def get_context_limit_with_margin(model: str, provider: str) -> int:
                         return int(int(ctx) / SAFETY_MARGIN)
     except Exception:
         pass  # Fall back to hard-coded
-    
+
     # Hard-coded defaults
     limits = {
         "gpt-4o": 128000,

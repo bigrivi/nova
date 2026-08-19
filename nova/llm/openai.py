@@ -9,7 +9,7 @@ from typing import AsyncGenerator, Optional
 
 import aiohttp
 
-from nova.llm.provider import LLMProvider, TextDelta, ReasoningDelta, ToolCall, Done, Error
+from nova.llm.provider import ChatStreamEvent, LLMProvider, TextDelta, ReasoningDelta, ToolCall, Done, Error
 
 log = logging.getLogger(__name__)
 
@@ -338,7 +338,7 @@ class OpenAIProvider(LLMProvider):
         tools: list[dict] = None,
         abort_event: Optional[asyncio.Event] = None,
         timeout: Optional[int] = None,
-    ) -> AsyncGenerator[Done, None]:
+    ) -> AsyncGenerator[ChatStreamEvent, None]:
         formatted_messages = self._format_messages(messages)
         headers = self._build_headers()
         body = self._build_body(

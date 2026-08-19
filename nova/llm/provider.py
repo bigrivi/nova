@@ -84,6 +84,9 @@ class Error(ChatEvent):
     message: str = ""
 
 
+ChatStreamEvent = Union[TextDelta, ReasoningDelta, ToolCall, Done, Error]
+
+
 class LLMProvider(ABC):
     """LLM provider interface."""
 
@@ -108,7 +111,7 @@ class LLMProvider(ABC):
         abort_event: Optional[asyncio.Event] = None,
         timeout: Optional[int] = None,
         **kwargs
-    ) -> AsyncGenerator[Any, None]:
+    ) -> AsyncGenerator[ChatStreamEvent, None]:
         pass
 
     @abstractmethod
