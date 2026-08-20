@@ -19,7 +19,6 @@ import { CompactionBanner } from "./thread-compaction-banner";
 import { ThreadComposerContainer } from "./thread-composer";
 import { ThreadMessage } from "./thread-message";
 import { ThreadScrollToBottom } from "./thread-scroll-to-bottom";
-import { TodoProgressPanel } from "./todo-progress-panel";
 
 type ThreadProps = {
     composer: {
@@ -171,9 +170,6 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
                     </div>
                 )}
 
-                <div className="mx-auto w-full max-w-(--thread-max-width) px-4 pb-2">
-                    <TodoProgressPanel />
-                </div>
                 <ThreadComposerContainer
                     composer={composer}
                     modelSelection={modelSelection}

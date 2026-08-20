@@ -8,6 +8,7 @@ import type { NovaModelRecord, NovaProviderRecord } from "../../types/nova";
 import { Button } from "../ui/button";
 import { ComposerAddAttachment, ComposerAttachments } from "./attachment";
 import { ModelSelector } from "./model-selector";
+import { TodoProgressPanel } from "./todo-progress-panel";
 
 type ThreadStickyComposerProps = {
   composer: {
@@ -82,6 +83,9 @@ export function ThreadStickyComposer({
     <div ref={containerRef} className="pointer-events-none relative overflow-x-hidden pb-3 pt-3" style={{ scrollbarGutter: "stable" }}>
       <div className="pointer-events-none absolute inset-x-4 bottom-0 z-0 h-10 bg-background/96 backdrop-blur" />
       <div className="relative z-10 mx-auto w-full max-w-(--thread-max-width) px-4">
+        <div className="pointer-events-auto pb-2">
+          <TodoProgressPanel />
+        </div>
         <div className="pointer-events-auto rounded-[24px] border bg-background p-3 shadow-sm transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20">
           <textarea
             ref={composer.ref}
