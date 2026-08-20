@@ -955,7 +955,7 @@ export function NovaAppShell() {
                         className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden bg-sidebar transition-[width,opacity] duration-200 ease-out ${
                             isSidebarCollapsed
                                 ? "w-0 opacity-0"
-                                : "w-[280px] border-r opacity-100"
+                                : "w-[280px] border-r border-sidebar-border opacity-100"
                         }`}
                     >
                         {!isSidebarCollapsed && (
@@ -968,7 +968,7 @@ export function NovaAppShell() {
                                 </div>
                                 <div className="flex items-center justify-between border-t border-sidebar-border px-3 py-2.5">
                                     <div className="flex items-center gap-2">
-                                        <div className="flex size-5 items-center justify-center rounded-md bg-sidebar-accent text-[10px] font-bold text-sidebar-accent-foreground">
+                                        <div className="flex size-5 items-center justify-center rounded-md bg-sidebar-primary text-[10px] font-bold text-sidebar-primary-foreground">
                                             N
                                         </div>
                                         <span className="text-sm font-medium text-sidebar-foreground">
@@ -981,7 +981,7 @@ export function NovaAppShell() {
                                             onClick={() =>
                                                 setIsMemoryDialogOpen(true)
                                             }
-                                            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                                             aria-label={t("memory.manage")}
                                         >
                                             <DatabaseIcon className="size-4" />
@@ -995,7 +995,7 @@ export function NovaAppShell() {
                                                         : "zh-CN",
                                                 )
                                             }
-                                            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                                             aria-label="Switch language"
                                         >
                                             <LanguagesIcon className="size-4" />

@@ -54,7 +54,7 @@ export const ThreadList: FC<ThreadListCallbacks> = ({ onRename, onDelete }) => {
                     !s.threads.isLoading && s.threads.threadIds.length === 0
                 }
             >
-                <div className="rounded-lg border border-dashed px-3 py-5 text-sm text-muted-foreground">
+                <div className="rounded-lg border border-dashed border-sidebar-border px-3 py-5 text-sm text-sidebar-muted-foreground">
                     {t("threadList.savedSessionsAppearHere")}
                 </div>
             </AuiIf>
@@ -80,7 +80,7 @@ const ThreadListNew: FC = () => {
         <ThreadListPrimitive.New asChild>
             <Button
                 variant="outline"
-                className="aui-thread-list-new h-9 justify-start gap-2 rounded-lg px-3 text-sm hover:bg-muted data-active:bg-muted"
+                className="aui-thread-list-new h-9 justify-start gap-2 rounded-lg border-sidebar-border px-3 text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent"
             >
                 <PlusIcon className="size-4" />
                 {t("threadList.newThread")}
@@ -128,7 +128,7 @@ const ThreadListItem: FC<ThreadListItemProps> = ({
     const [deleteOpen, setDeleteOpen] = useState(false);
 
     return (
-        <ThreadListItemPrimitive.Root className="aui-thread-list-item group flex h-9 cursor-pointer items-center gap-1 rounded-lg transition-[background-color,color,box-shadow] hover:bg-muted focus-visible:bg-muted focus-visible:outline-none data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:shadow-sm">
+        <ThreadListItemPrimitive.Root className="aui-thread-list-item group flex h-9 cursor-pointer items-center gap-1 rounded-lg text-sidebar-foreground transition-[background-color,color,box-shadow] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:bg-sidebar-accent focus-visible:outline-none data-active:bg-sidebar-active data-active:font-medium data-active:text-sidebar-active-foreground">
             <ThreadListItemPrimitive.Trigger className="aui-thread-list-item-trigger flex h-full min-w-0 flex-1 cursor-pointer items-center px-3 text-start text-sm transition-colors">
                 <span className="aui-thread-list-item-title min-w-0 flex-1 truncate">
                     <ThreadListItemPrimitive.Title
@@ -142,7 +142,7 @@ const ThreadListItem: FC<ThreadListItemProps> = ({
                     <button
                         type="button"
                         aria-label={t("threadList.moreActions")}
-                        className="mr-1 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background/60 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none group-hover:opacity-100 data-[state=open]:opacity-100"
+                        className="mr-1 flex size-6 shrink-0 items-center justify-center rounded-md text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground focus-visible:opacity-100 focus-visible:outline-none group-hover:opacity-100 data-[state=open]:opacity-100"
                     >
                         <MoreHorizontalIcon className="size-4" />
                     </button>
