@@ -29,13 +29,16 @@ export function AskUserForm({ questions }: { questions: AskQuestion[] }) {
                 setSelected((i) => Math.min(q.options.length - 1, i + 1));
                 return;
             }
-            if (key.name === "enter") {
+            if (key.name === "return" || key.name === "enter") {
                 answerAndAdvance(q.options[selected]?.label ?? "");
                 return;
             }
         }
         if (q.inputType === "confirm") {
-            if (key.name === "y" || (key.name === "enter" && !key.shift)) {
+            if (
+                key.name === "y" ||
+                ((key.name === "return" || key.name === "enter") && !key.shift)
+            ) {
                 answerAndAdvance("yes");
                 return;
             }

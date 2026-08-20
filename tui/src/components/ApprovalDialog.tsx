@@ -15,7 +15,7 @@ export function ApprovalDialog({
     description: string;
 }) {
     useKeyboard((key) => {
-        if (key.name === "y" || key.name === "enter") {
+        if (key.name === "y" || key.name === "return" || key.name === "enter") {
             resolve(true);
             return;
         }
