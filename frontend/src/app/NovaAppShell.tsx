@@ -955,7 +955,7 @@ export function NovaAppShell() {
                         className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden bg-sidebar transition-[width,opacity] duration-200 ease-out ${
                             isSidebarCollapsed
                                 ? "w-0 opacity-0"
-                                : "w-[280px] border-r border-sidebar-border opacity-100"
+                                : "w-(--sidebar-width) border-r border-sidebar-border opacity-100"
                         }`}
                     >
                         {!isSidebarCollapsed && (
@@ -1012,7 +1012,9 @@ export function NovaAppShell() {
                             variant="outline"
                             size="icon"
                             className={`fixed top-4 z-30 rounded-full bg-background/90 shadow-sm backdrop-blur transition-[left] duration-200 ease-out ${
-                                isSidebarCollapsed ? "left-4" : "left-[296px]"
+                                isSidebarCollapsed
+                                    ? "left-4"
+                                    : "left-[calc(var(--sidebar-width)+1rem)]"
                             }`}
                             aria-label={
                                 isSidebarCollapsed

@@ -42,7 +42,7 @@ const UserText: FC<{ text: string }> = ({ text }) => {
                     </span>
                 </div>
                 {parsed.text && (
-                    <div className="wrap-break-word rounded-2xl bg-muted px-4 py-2.5 text-foreground">
+                    <div className="wrap-break-word rounded-2xl border bg-muted px-4 py-2.5 text-foreground">
                         {parsed.text}
                     </div>
                 )}
@@ -62,7 +62,7 @@ const UserMessage: FC = () => {
             <UserMessageAttachments />
 
             <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
-                <div className="aui-user-message-content wrap-break-word rounded-2xl bg-muted px-4 py-2.5 text-foreground empty:hidden">
+                <div className="aui-user-message-content wrap-break-word rounded-2xl border bg-muted px-4 py-2.5 text-foreground empty:hidden">
                     <MessagePrimitive.Parts
                         components={{
                             Text: UserText,

@@ -111,7 +111,7 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
                     className="relative flex min-h-0 flex-1 flex-col overflow-y-auto"
                     style={{ scrollbarGutter: "stable" }}
                 >
-                    <div className="mx-auto flex min-h-full w-full max-w-(--thread-max-width) flex-col px-4 pt-4">
+                    <div className="mx-auto flex min-h-full w-full max-w-(--thread-max-width) flex-col px-4 pt-14">
                         <div data-slot="aui_message-group" className="mb-5">
                             <div
                                 ref={zoomTargetRef}
