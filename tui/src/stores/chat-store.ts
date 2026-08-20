@@ -26,6 +26,8 @@ export type TuiMessage = {
     role: "user" | "assistant";
     parts: MessagePart[];
     status: "streaming" | "done" | "error";
+    /** True while a new LLM turn is starting but its first part has not arrived yet */
+    pending: boolean;
     error?: string;
 };
 
@@ -41,6 +43,7 @@ type ChatState = {
     model: string;
 
     setSessionId: (sessionId: string) => void;
+    setPending: (messageId: string, pending: boolean) => void;
     addUserMessage: (text: string) => void;
     startAssistantMessage: () => string;
     startTextPart: (messageId: string) => void;
@@ -131,6 +134,13 @@ export const useChatStore = create<ChatState>((set) => ({
 
     setSessionId: (sessionId) => set({ sessionId }),
 
+    setPending: (messageId, pending) =>
+        set((state) => ({
+            messages: patchMessage(state.messages, messageId, (msg) =>
+                msg.pending === pending ? msg : { ...msg, pending },
+            ),
+        })),
+
     addUserMessage: (text) =>
         set((state) => ({
             messages: [
@@ -140,6 +150,7 @@ export const useChatStore = create<ChatState>((set) => ({
                     role: "user",
                     parts: [{ type: "text", text }],
                     status: "done",
+                    pending: false,
                 },
             ],
         })),
@@ -150,7 +161,13 @@ export const useChatStore = create<ChatState>((set) => ({
             isStreaming: true,
             messages: [
                 ...state.messages,
-                { id, role: "assistant", parts: [], status: "streaming" },
+                {
+                    id,
+                    role: "assistant",
+                    parts: [],
+                    status: "streaming",
+                    pending: false,
+                },
             ],
         }));
         return id;
@@ -165,6 +182,7 @@ export const useChatStore = create<ChatState>((set) => ({
                 }
                 return {
                     ...msg,
+                    pending: false,
                     parts: [...msg.parts, { type: "text", text: "" }],
                 };
             }),
@@ -200,6 +218,7 @@ export const useChatStore = create<ChatState>((set) => ({
                 }
                 return {
                     ...msg,
+                    pending: false,
                     parts: [
                         ...msg.parts,
                         {
@@ -264,6 +283,7 @@ export const useChatStore = create<ChatState>((set) => ({
         set((state) => ({
             messages: patchMessage(state.messages, messageId, (msg) => ({
                 ...msg,
+                pending: false,
                 parts: [
                     ...msg.parts.filter(
                         (part) =>
@@ -330,7 +350,9 @@ export const useChatStore = create<ChatState>((set) => ({
         set((state) => ({
             isStreaming: false,
             messages: state.messages.map((msg) =>
-                msg.status === "streaming" ? { ...msg, status: "done" } : msg,
+                msg.status === "streaming"
+                    ? { ...msg, status: "done", pending: false }
+                    : msg,
             ),
         })),
 
@@ -339,7 +361,7 @@ export const useChatStore = create<ChatState>((set) => ({
             isStreaming: false,
             messages: state.messages.map((msg) =>
                 msg.status === "streaming"
-                    ? { ...msg, status: "error", error }
+                    ? { ...msg, status: "error", error, pending: false }
                     : msg,
             ),
         })),

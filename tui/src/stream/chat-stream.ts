@@ -100,6 +100,13 @@ export async function runChatStream(options: ChatRunOptions): Promise<void> {
                         }
                         return;
                     }
+                    case "start-step": {
+                        // Fired on every LLM turn, including the tool-loop calls
+                        // after the first. Mark the message pending so the UI can
+                        // show the thinking indicator again before the next part.
+                        current.setPending(assistantId, true);
+                        return;
+                    }
                     case "text-start": {
                         current.startTextPart(assistantId);
                         return;

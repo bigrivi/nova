@@ -7,14 +7,15 @@ import { ToolCallPartView } from "./parts/ToolCallPart.tsx";
 
 export function AssistantMessage({ message }: { message: TuiMessage }) {
     const isStreaming = message.status === "streaming";
-    const awaitingResponse = isStreaming && message.parts.length === 0;
+    const awaitingResponse =
+        isStreaming && (message.parts.length === 0 || message.pending);
 
     return (
         <box flexDirection="column" paddingX={2} marginBottom={1}>
-            {awaitingResponse ? <ThinkingSpinner /> : null}
             {message.parts.map((part, index) => (
                 <PartView key={index} part={part} streaming={isStreaming} />
             ))}
+            {awaitingResponse ? <ThinkingSpinner /> : null}
             {message.error ? (
                 <text fg="#e5534b" content={message.error} />
             ) : null}
