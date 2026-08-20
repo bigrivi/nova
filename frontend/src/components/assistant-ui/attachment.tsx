@@ -188,7 +188,7 @@ const AttachmentRemove: FC = () => {
                 className="aui-attachment-tile-remove absolute end-1.5 top-1.5 size-3.5 rounded-full bg-white text-muted-foreground opacity-100 shadow-sm hover:bg-white! [&_svg]:text-black hover:[&_svg]:text-destructive"
                 side="top"
             >
-                <XIcon className="aui-attachment-remove-icon size-3 dark:stroke-[2.5px]" />
+                <XIcon className="aui-attachment-remove-icon size-3" />
             </TooltipIconButton>
         </AttachmentPrimitive.Remove>
     );
@@ -218,7 +218,7 @@ export const ComposerAddAttachment: FC = () => {
     const { t } = useTranslation();
     return (
         <ComposerPrimitive.AddAttachment
-            className="aui-composer-add-attachment size-8 rounded-full p-1 font-semibold text-xs hover:bg-muted-foreground/15 dark:border-muted-foreground/15 dark:hover:bg-muted-foreground/30 flex items-center justify-center"
+            className="aui-composer-add-attachment size-8 rounded-full p-1 font-semibold text-xs hover:bg-muted-foreground/15 flex items-center justify-center"
             aria-label={t("attachment.addAttachment")}
         >
             <PlusIcon className="aui-attachment-add-icon size-5 stroke-[1.5px]" />
