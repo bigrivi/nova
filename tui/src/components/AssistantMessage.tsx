@@ -36,8 +36,10 @@ function PartView({
             }
             return (
                 <box flexDirection="row">
-                    <text fg="#3fb950" content="● " />
-                    <MarkdownPart text={part.text} streaming={streaming} />
+                    <text fg="#3fb950" content="●" flexShrink={0} />
+                    <box flexGrow={1} paddingX={1} flexShrink={1}>
+                        <MarkdownPart text={part.text} streaming={streaming} />
+                    </box>
                 </box>
             );
         case "reasoning":

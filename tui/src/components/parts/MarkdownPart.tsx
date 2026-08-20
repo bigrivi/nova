@@ -1,6 +1,6 @@
 /** Text part: OpenTUI markdown streaming render (with tree-sitter syntax highlighting for code blocks) */
-import { useMemo } from "react";
 import { SyntaxStyle, getTreeSitterClient } from "@opentui/core";
+import { useMemo } from "react";
 
 const TOKEN_STYLES = {
     keyword: { fg: "#ff7b72" },
