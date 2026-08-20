@@ -18,7 +18,6 @@ export function recordToMessage(record: NovaMessageRecord): TuiMessage {
             role: "user",
             parts: [{ type: "text", text: record.content }],
             status: "done",
-            pending: false,
         };
     }
     const parts: MessagePart[] = [];
@@ -55,13 +54,7 @@ export function recordToMessage(record: NovaMessageRecord): TuiMessage {
             status: "done",
         });
     }
-    return {
-        id: record.id,
-        role: "assistant",
-        parts,
-        status: "done",
-        pending: false,
-    };
+    return { id: record.id, role: "assistant", parts, status: "done" };
 }
 
 export function recordsToMessages(records: NovaMessageRecord[]): TuiMessage[] {

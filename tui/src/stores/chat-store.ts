@@ -19,15 +19,14 @@ export type ToolCallPart = {
     status: "running" | "done" | "error";
     error?: string;
 };
-export type MessagePart = TextPart | ReasoningPart | ToolCallPart;
+export type PendingPart = { type: "pending" };
+export type MessagePart = TextPart | ReasoningPart | ToolCallPart | PendingPart;
 
 export type TuiMessage = {
     id: string;
     role: "user" | "assistant";
     parts: MessagePart[];
     status: "streaming" | "done" | "error";
-    /** True while a new LLM turn is starting but its first part has not arrived yet */
-    pending: boolean;
     error?: string;
 };
 
@@ -136,9 +135,22 @@ export const useChatStore = create<ChatState>((set) => ({
 
     setPending: (messageId, pending) =>
         set((state) => ({
-            messages: patchMessage(state.messages, messageId, (msg) =>
-                msg.pending === pending ? msg : { ...msg, pending },
-            ),
+            messages: patchMessage(state.messages, messageId, (msg) => {
+                const hasPending = msg.parts.some((p) => p.type === "pending");
+                if (pending && !hasPending) {
+                    return {
+                        ...msg,
+                        parts: [...msg.parts, { type: "pending" }],
+                    };
+                }
+                if (!pending && hasPending) {
+                    return {
+                        ...msg,
+                        parts: msg.parts.filter((p) => p.type !== "pending"),
+                    };
+                }
+                return msg;
+            }),
         })),
 
     addUserMessage: (text) =>
@@ -150,7 +162,6 @@ export const useChatStore = create<ChatState>((set) => ({
                     role: "user",
                     parts: [{ type: "text", text }],
                     status: "done",
-                    pending: false,
                 },
             ],
         })),
@@ -164,9 +175,8 @@ export const useChatStore = create<ChatState>((set) => ({
                 {
                     id,
                     role: "assistant",
-                    parts: [],
+                    parts: [{ type: "pending" }],
                     status: "streaming",
-                    pending: false,
                 },
             ],
         }));
@@ -176,14 +186,16 @@ export const useChatStore = create<ChatState>((set) => ({
     startTextPart: (messageId) =>
         set((state) => ({
             messages: patchMessage(state.messages, messageId, (msg) => {
-                const last = msg.parts[msg.parts.length - 1];
+                const filtered = msg.parts.filter((p) => p.type !== "pending");
+                const last = filtered[filtered.length - 1];
                 if (last?.type === "text") {
-                    return msg;
+                    return filtered === msg.parts
+                        ? msg
+                        : { ...msg, parts: filtered };
                 }
                 return {
                     ...msg,
-                    pending: false,
-                    parts: [...msg.parts, { type: "text", text: "" }],
+                    parts: [...filtered, { type: "text", text: "" }],
                 };
             }),
         })),
@@ -212,15 +224,17 @@ export const useChatStore = create<ChatState>((set) => ({
     startReasoningPart: (messageId) =>
         set((state) => ({
             messages: patchMessage(state.messages, messageId, (msg) => {
-                const last = msg.parts[msg.parts.length - 1];
+                const filtered = msg.parts.filter((p) => p.type !== "pending");
+                const last = filtered[filtered.length - 1];
                 if (last?.type === "reasoning") {
-                    return msg;
+                    return filtered === msg.parts
+                        ? msg
+                        : { ...msg, parts: filtered };
                 }
                 return {
                     ...msg,
-                    pending: false,
                     parts: [
-                        ...msg.parts,
+                        ...filtered,
                         {
                             type: "reasoning",
                             text: "",
@@ -283,11 +297,11 @@ export const useChatStore = create<ChatState>((set) => ({
         set((state) => ({
             messages: patchMessage(state.messages, messageId, (msg) => ({
                 ...msg,
-                pending: false,
                 parts: [
                     ...msg.parts.filter(
                         (part) =>
-                            part.type !== "text" || part.text.trim() !== "",
+                            part.type !== "pending" &&
+                            (part.type !== "text" || part.text.trim() !== ""),
                     ),
                     {
                         type: "tool-call",
@@ -351,7 +365,11 @@ export const useChatStore = create<ChatState>((set) => ({
             isStreaming: false,
             messages: state.messages.map((msg) =>
                 msg.status === "streaming"
-                    ? { ...msg, status: "done", pending: false }
+                    ? {
+                          ...msg,
+                          status: "done",
+                          parts: msg.parts.filter((p) => p.type !== "pending"),
+                      }
                     : msg,
             ),
         })),
@@ -361,7 +379,12 @@ export const useChatStore = create<ChatState>((set) => ({
             isStreaming: false,
             messages: state.messages.map((msg) =>
                 msg.status === "streaming"
-                    ? { ...msg, status: "error", error, pending: false }
+                    ? {
+                          ...msg,
+                          status: "error",
+                          error,
+                          parts: msg.parts.filter((p) => p.type !== "pending"),
+                      }
                     : msg,
             ),
         })),
