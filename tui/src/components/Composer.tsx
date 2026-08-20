@@ -28,10 +28,12 @@ export type ComposerCommandHandler = (id: string, args: string) => void;
 export function Composer({ onCommand }: { onCommand: ComposerCommandHandler }) {
     const isStreaming = useChatStore((state) => state.isStreaming);
     const sessionId = useChatStore((state) => state.sessionId);
-    const modalOpen =
-        useAskUserStore((state) => state.active) !== null ||
-        useApprovalStore((state) => state.pending) !== null ||
-        useScreenStore((state) => state.current) !== null;
+    const askActive = useAskUserStore((state) => state.active) !== null;
+    const approvalPending = useApprovalStore((state) => state.pending) !== null;
+    const screenCurrent = useScreenStore((state) => state.current) !== null;
+    // Keep these calls separate: `||` would skip the later store hooks when an
+    // earlier modal is open, desyncing React's hook chain.
+    const modalOpen = askActive || approvalPending || screenCurrent;
     const textareaRef = useRef<TextareaRenderable>(null);
     const [suggestions, setSuggestions] = useState<CommandSpec[]>([]);
     const [selectedIndex, setSelectedIndex] = useState(0);
