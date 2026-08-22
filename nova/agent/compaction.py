@@ -177,38 +177,6 @@ def should_compact(
     return False
 
 
-async def maybe_compact(
-    session_id: str,
-    message_count: int,
-    turn_count: int,
-    last_compacted_at: Optional[int],
-    db: "DataSourceProtocol",
-    llm: LLMProvider,
-    model: str = "gpt-4o",
-    provider: str = "ollama",
-) -> bool:
-    """Check whether compaction is needed and run it when required.
-
-    Two-layer compaction strategy:
-    1. Layer 1: ``snip_old_tool_results`` trims old tool outputs.
-    2. Layer 2: invoke the LLM to compact history when needed.
-    """
-    messages = await db.get_messages(session_id)
-    plan = await prepare_compaction(
-        session_id=session_id,
-        messages=messages,
-        last_compacted_at=last_compacted_at,
-        db=db,
-        model=model,
-        provider=provider,
-    )
-    if not plan.needs_compaction:
-        return False
-
-    await run_compaction_plan(plan, db, llm, model, provider, messages=messages)
-    return True
-
-
 def evaluate_compaction(
     session_id: str,
     messages: list,

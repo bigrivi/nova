@@ -444,41 +444,40 @@ async def test_compact_with_real_llm():
 
 
 @pytest.mark.asyncio
-async def test_maybe_compact_with_real_llm():
-    """Test maybe_compact with real LLM"""
+async def test_prepare_and_run_compaction_with_real_llm():
     from nova.db.sqlite_repository import SqliteRepository
     from nova.db.config import DatabaseConfig
     from nova.session.manager import SessionContext
-    from nova.agent.compaction import maybe_compact
+    from nova.agent.compaction import prepare_compaction, run_compaction_plan
     from nova.llm import OllamaProvider
-    
+
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
-    
+
     try:
         session_id = "test-session-456"
         session = SessionContext.create()
         session.id = session_id
         await db.save_session(session)
-        
+
         for i in range(5):
             role = "user" if i % 2 == 0 else "assistant"
             content = f"Message {i} with some content"
             await db.add_message(session_id, role, content)
-        
+
         llm = OllamaProvider()
-        
-        did_compact = await maybe_compact(
+        messages = await db.get_messages(session_id)
+        plan = await prepare_compaction(
             session_id=session_id,
-            message_count=5,
-            turn_count=5,
+            messages=messages,
             last_compacted_at=None,
             db=db,
-            llm=llm,
             model="gemma4:26b",
         )
-        
-        assert isinstance(did_compact, bool)
+
+        assert isinstance(plan.needs_compaction, bool)
+        assert plan.message_count == len(messages)
+        await run_compaction_plan(plan, db, llm, "gemma4:26b", messages=messages)
     finally:
         await db.close()
 
