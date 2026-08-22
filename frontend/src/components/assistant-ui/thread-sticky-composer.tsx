@@ -81,12 +81,12 @@ export function ThreadStickyComposer({
 
   return (
     <div ref={containerRef} className="pointer-events-none relative overflow-x-hidden pb-3 pt-3" style={{ scrollbarGutter: "stable" }}>
-      <div className="pointer-events-none absolute inset-x-4 bottom-0 z-0 h-10 bg-background/96 backdrop-blur" />
+      <div className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-t from-background via-background to-transparent" />
       <div className="relative z-10 mx-auto w-full max-w-(--thread-max-width) px-4">
         <div className="pointer-events-auto pb-2">
           <TodoProgressPanel />
         </div>
-        <div className="pointer-events-auto rounded-[24px] border bg-background p-3 shadow-sm transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20">
+        <div className="pointer-events-auto rounded-(--composer-radius) border bg-background p-3 shadow-sm transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20">
           <textarea
             ref={composer.ref}
             value={composer.text}
@@ -129,7 +129,7 @@ export function ThreadStickyComposer({
                 <Button
                   type="button"
                   size="icon"
-                  className="rounded-full"
+                  className="rounded-full transition-colors hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
                   disabled={composer.text.trim().length === 0}
                   onClick={composer.onSubmit}
                 >
