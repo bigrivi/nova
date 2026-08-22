@@ -1,10 +1,16 @@
 /** Tool call block (Claude Code style): single-line title + single-line result summary, no multi-line expansion */
+import { useEffect, useState } from "react";
 import type { ToolCallPart as ToolCallPartData } from "../stores/chat-store.ts";
 
 const DIFF_TOOLS = new Set(["edit", "write", "write_files", "code_run"]);
 
-const STATUS_ICON: Record<ToolCallPartData["status"], string> = {
-    running: "⠸",
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_TICK_MS = 80;
+
+const STATUS_ICON: Record<
+    Exclude<ToolCallPartData["status"], "running">,
+    string
+> = {
     done: "◉",
     error: "✗",
 };
@@ -130,8 +136,18 @@ function summarizeOutput(toolName: string, output: string): string {
 
 export function ToolBlock({ part }: { part: ToolCallPartData }) {
     const { toolName, status, args, outputText, error } = part;
+    const [frame, setFrame] = useState(0);
+    useEffect(() => {
+        if (status !== "running") return;
+        const id = setInterval(
+            () => setFrame((f) => (f + 1) % SPINNER_FRAMES.length),
+            SPINNER_TICK_MS,
+        );
+        return () => clearInterval(id);
+    }, [status]);
     const color = STATUS_COLOR[status];
-    const icon = STATUS_ICON[status];
+    const icon =
+        status === "running" ? SPINNER_FRAMES[frame]! : STATUS_ICON[status];
     const summary = summarizeArgs(toolName, args);
     const label = summary ? `${toolName}(${summary})` : toolName;
     const result = summarizeOutput(toolName, outputText);
