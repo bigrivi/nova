@@ -21,6 +21,7 @@ class ChatRequest(BaseModel):
     provider: str | None = None
     model: str | None = None
     agent_key: str = Field(default="main")
+    workspace_dir: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     attachments: list[AttachmentData] = Field(default_factory=list)
 
@@ -36,6 +37,7 @@ class SessionSummary(BaseModel):
     title: str | None = None
     updated_at: int
     agent_key: str = Field(default="main")
+    workspace_dir: str | None = None
 
 
 class SessionListResponse(BaseModel):
@@ -44,6 +46,21 @@ class SessionListResponse(BaseModel):
 
 class RenameSessionRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
+
+
+class UpdateSessionWorkspaceRequest(BaseModel):
+    workspace_dir: str | None = None
+
+
+class DirectoryEntry(BaseModel):
+    name: str
+    path: str
+
+
+class DirectoryListing(BaseModel):
+    path: str
+    parent: str | None = None
+    entries: list[DirectoryEntry]
 
 
 class SessionActionResponse(BaseModel):

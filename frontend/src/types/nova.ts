@@ -11,6 +11,18 @@ export type NovaSessionSummary = {
     title: string | null;
     updated_at: number;
     agent_key: string;
+    workspace_dir: string | null;
+};
+
+export type NovaDirectoryEntry = {
+    name: string;
+    path: string;
+};
+
+export type NovaDirectoryListing = {
+    path: string;
+    parent: string | null;
+    entries: NovaDirectoryEntry[];
 };
 
 export type NovaMessageRecord = {
@@ -61,6 +73,7 @@ export type NovaThreadSummary = {
     id: string;
     title: string;
     status: "regular";
+    workspace_dir: string | null;
 };
 
 export type NovaMemoryRecord = {

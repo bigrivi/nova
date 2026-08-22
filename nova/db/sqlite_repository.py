@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     agent_key TEXT NOT NULL DEFAULT 'main',
     title TEXT,
     parent_id TEXT,
+    workspace_dir TEXT,
     summary_goal TEXT,
     summary_accomplished TEXT,
     summary_remaining TEXT,
@@ -182,7 +183,17 @@ class SqliteRepository(NovaRepository):
         self._conn = await aiosqlite.connect(path)
         self._conn.row_factory = aiosqlite.Row
         await self._conn.executescript(_DDL)
+        await self._migrate_schema()
         await self._conn.commit()
+
+    async def _migrate_schema(self) -> None:
+        """Idempotent additive migrations for databases created before a column existed."""
+        cursor = await self._conn.execute("PRAGMA table_info(sessions)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if "workspace_dir" not in columns:
+            await self._conn.execute(
+                "ALTER TABLE sessions ADD COLUMN workspace_dir TEXT"
+            )
 
     async def close(self) -> None:
         if self._conn:
@@ -204,8 +215,8 @@ class SqliteRepository(NovaRepository):
         await self._conn.execute(
             """INSERT OR REPLACE INTO sessions
             (id, agent_key, title, parent_id, summary_goal, summary_accomplished, summary_remaining,
-            created_at, updated_at, compacted_at, message_count, turn_count, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            created_at, updated_at, compacted_at, message_count, turn_count, metadata, workspace_dir)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.id,
                 agent_key,
@@ -220,6 +231,7 @@ class SqliteRepository(NovaRepository):
                 session.message_count,
                 session.turn_count,
                 json.dumps(session.metadata) if session.metadata else None,
+                getattr(session, "workspace_dir", None),
             ),
         )
         await self._conn.commit()
@@ -239,6 +251,16 @@ class SqliteRepository(NovaRepository):
         cursor = await self._conn.execute(
             "UPDATE sessions SET title = ? WHERE id = ?",
             (title, session_id),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    async def set_session_workspace(self, session_id: str, workspace_dir: str | None) -> bool:
+        """Set or clear a session's workspace directory. Returns True if the session exists."""
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "UPDATE sessions SET workspace_dir = ? WHERE id = ?",
+            (workspace_dir, session_id),
         )
         await self._conn.commit()
         return cursor.rowcount > 0

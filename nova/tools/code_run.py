@@ -11,6 +11,7 @@ from pathlib import Path
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
+from nova.tools.workspace_context import get_active_workspace
 
 
 @tool(
@@ -85,7 +86,7 @@ async def code_run(
     else:
         return ToolResult(success=False, content="Either code or script_path must be provided")
     
-    workdir = Path(cwd).resolve() if cwd else Path.cwd()
+    workdir = Path(cwd).resolve() if cwd else Path(get_active_workspace() or Path.cwd())
     nova_site = Path.home() / ".nova" / "site-packages"
 
     try:

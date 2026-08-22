@@ -1,5 +1,6 @@
 import type {
     NovaAttachmentData,
+    NovaDirectoryListing,
     NovaMemoryRecord,
     NovaMessageRecord,
     NovaModelCreateRequest,
@@ -19,6 +20,7 @@ type StreamChatOptions = {
     sessionId?: string | null;
     provider?: string | null;
     model?: string | null;
+    workspaceDir?: string | null;
     attachments?: NovaAttachmentData[];
     onEvent: (event: NovaStreamEvent) => void;
 };
@@ -143,6 +145,32 @@ export async function renameSession(
     }
 }
 
+export async function setSessionWorkspace(
+    sessionId: string,
+    workspaceDir: string | null,
+): Promise<void> {
+    const response = await fetch(
+        buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/workspace`),
+        {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ workspace_dir: workspaceDir }),
+        },
+    );
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+}
+
+export async function listDirectory(
+    path?: string | null,
+): Promise<NovaDirectoryListing> {
+    const query = path ? `?path=${encodeURIComponent(path)}` : "";
+    return parseJson<NovaDirectoryListing>(
+        await fetch(buildUrl(`/api/fs/list${query}`)),
+    );
+}
+
 export async function deleteSession(
     sessionId: string,
     deleteMemories = false,
@@ -256,6 +284,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
             session_id: options.sessionId || undefined,
             provider: options.provider || undefined,
             model: options.model || undefined,
+            workspace_dir: options.workspaceDir || undefined,
             attachments: options.attachments || [],
         }),
     });

@@ -112,6 +112,7 @@ class Agent:
         if agent_dir is None:
             agent_dir = Path.home() / ".nova" / "agents" / agent_key
         agent_dir.mkdir(parents=True, exist_ok=True)
+        self.agent_dir = agent_dir
         if agent_key == DEFAULT_AGENT_KEY:
             skills_dir = agent_dir.parent.parent / "skills"
             self._skill_service = SkillService(skills_dir=skills_dir)
@@ -143,6 +144,7 @@ class Agent:
             )
         self._abort_event = asyncio.Event()
         self._base_system_prompt: Optional[str] = None
+        self._active_workspace: Optional[str] = None
         self._memory_modified_this_turn: bool = False
         self._compaction_failures: int = 0
 
@@ -250,7 +252,31 @@ class Agent:
         return self._prompt_builder.build(
             tools_schemas=tool_schemas,
             available_skills=available_skills,
+            workspace_override=self._active_workspace,
         )
+
+    def _apply_active_workspace(self, session_ctx: Any = None) -> None:
+        from nova.tools.workspace_context import set_active_workspace
+
+        override = getattr(session_ctx, "workspace_dir", None) if session_ctx else None
+        if override:
+            resolved = Path(override).expanduser()
+            try:
+                resolved = resolved.resolve()
+            except OSError:
+                pass
+            try:
+                resolved.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                pass
+            effective = str(resolved)
+        else:
+            effective = str(self.agent_dir)
+
+        if effective != self._active_workspace:
+            self._active_workspace = effective
+            self._base_system_prompt = None
+        set_active_workspace(effective)
 
     def _convert_to_llm_messages(self, loaded_messages: list) -> list[LLMMessage]:
         resolved_tool_call_ids = {
@@ -683,6 +709,7 @@ class Agent:
         user_input: str,
         session_id: str | None = None,
         attachments: list[dict] | None = None,
+        workspace_dir: str | None = None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         self._abort_event.clear()
 
@@ -692,15 +719,19 @@ class Agent:
                 await self.session.create_session(
                     persist=True,
                     first_message=user_input,
+                    workspace_dir=workspace_dir,
                 )
         else:
             await self.session.create_session(
                 persist=True,
                 first_message=user_input,
+                workspace_dir=workspace_dir,
             )
 
         current_session = self.session.get_current_session()
         session_id = current_session.id if current_session else ""
+
+        self._apply_active_workspace(current_session)
 
         yield AgentEvent.SESSION, session_id
         await self._emit(AgentEvent.START, user_input)

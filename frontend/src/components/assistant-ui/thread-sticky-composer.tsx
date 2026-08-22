@@ -9,6 +9,7 @@ import { Button } from "../ui/button";
 import { ComposerAddAttachment, ComposerAttachments } from "./attachment";
 import { ModelSelector } from "./model-selector";
 import { TodoProgressPanel } from "./todo-progress-panel";
+import { WorkspaceControl } from "./workspace-control";
 
 type ThreadStickyComposerProps = {
   composer: {
@@ -29,12 +30,17 @@ type ThreadStickyComposerProps = {
     onProvidersRefresh: () => Promise<void>;
     onStatusChange: (message: string | null) => void;
   };
+  workspace: {
+    value: string | null;
+    onChange: (path: string | null) => void;
+  };
   onHeightChange?: (height: number) => void;
 };
 
 export function ThreadStickyComposer({
   composer,
   modelSelection,
+  workspace,
   onHeightChange,
 }: ThreadStickyComposerProps) {
   const { t } = useTranslation();
@@ -103,7 +109,13 @@ export function ThreadStickyComposer({
           <ComposerAttachments />
 
           <div className="mt-3 flex items-center justify-between gap-3">
-            <ComposerAddAttachment />
+            <div className="flex min-w-0 items-center gap-2">
+              <ComposerAddAttachment />
+              <WorkspaceControl
+                value={workspace.value}
+                onChange={workspace.onChange}
+              />
+            </div>
             <div className="flex items-center gap-2">
               <ModelSelector
                 compact

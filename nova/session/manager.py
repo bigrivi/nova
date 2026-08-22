@@ -22,6 +22,7 @@ class SessionContext:
     metadata: dict = field(default_factory=dict)
     title: Optional[str] = None
     parent_id: Optional[str] = None
+    workspace_dir: Optional[str] = None
     summary_goal: Optional[str] = None
     summary_accomplished: Optional[str] = None
     summary_remaining: Optional[str] = None
@@ -67,11 +68,13 @@ class SessionManager(SessionProtocol):
         first_message: str = None,
         agent_key: str = DEFAULT_AGENT_KEY,
         parent_id: Optional[str] = None,
+        workspace_dir: Optional[str] = None,
     ) -> SessionContext:
         session = SessionContext.create(agent_key=agent_key)
         session.metadata = metadata or {}
         session.title = self._generate_title(first_message)
         session.parent_id = parent_id
+        session.workspace_dir = workspace_dir
         self.set_current_session(session)
         if persist:
             await self.save_session(session)
@@ -128,6 +131,7 @@ class SessionManager(SessionProtocol):
                     metadata=json.loads(session_data["metadata"]) if session_data.get(
                         "metadata") else {},
                     parent_id=session_data.get("parent_id"),
+                    workspace_dir=session_data.get("workspace_dir"),
                     summary_goal=session_data.get("summary_goal"),
                     summary_accomplished=session_data.get(
                         "summary_accomplished"),
@@ -226,6 +230,7 @@ class SessionManager(SessionProtocol):
                     updated_at=session_data["updated_at"],
                     metadata=json.loads(session_data["metadata"]) if session_data.get("metadata") else {},
                     parent_id=session_data.get("parent_id"),
+                    workspace_dir=session_data.get("workspace_dir"),
                     summary_goal=session_data.get("summary_goal"),
                     summary_accomplished=session_data.get("summary_accomplished"),
                     summary_remaining=session_data.get("summary_remaining"),

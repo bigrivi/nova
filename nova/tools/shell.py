@@ -10,6 +10,7 @@ import sys
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
+from nova.tools.workspace_context import get_active_workspace
 from nova.tools.shell_utils import (
     build_shell_args,
     detect_shell,
@@ -243,7 +244,7 @@ async def shell(
     """
     shell_path, _ = detect_shell()
     args = [shell_path] + build_shell_args(shell_path, command)
-    cwd = normalize_path(os.getcwd())
+    cwd = normalize_path(get_active_workspace() or os.getcwd())
 
     kwargs: dict = {
         "stdout": subprocess.PIPE,

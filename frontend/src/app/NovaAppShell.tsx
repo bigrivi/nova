@@ -34,6 +34,7 @@ import {
     listProviders,
     listSessions,
     renameSession,
+    setSessionWorkspace,
     streamChat,
     updateAgent,
 } from "../lib/nova-api";
@@ -117,6 +118,7 @@ function toThreadSummary(session: NovaSessionSummary): NovaThreadSummary {
         id: session.id,
         title: toThreadTitle(session),
         status: "regular",
+        workspace_dir: session.workspace_dir ?? null,
     };
 }
 
@@ -313,6 +315,7 @@ export function NovaAppShell() {
         [DRAFT_THREAD_ID]: [],
     });
     const [currentThreadId, setCurrentThreadId] = useState(DRAFT_THREAD_ID);
+    const [workspaceDir, setWorkspaceDir] = useState<string | null>(null);
     const [models, setModels] = useState<NovaModelRecord[]>([]);
     const [providers, setProviders] = useState<NovaProviderRecord[]>([]);
     const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
@@ -384,6 +387,8 @@ export function NovaAppShell() {
         try {
             const messages = await listMessages(threadId);
             useTodoStore.getState().clear();
+            const thread = threads.find((t) => t.id === threadId);
+            setWorkspaceDir(thread?.workspace_dir ?? null);
             startTransition(() => {
                 setCurrentThreadId(threadId);
                 setMessagesByThreadId((previous) => ({
@@ -427,6 +432,26 @@ export function NovaAppShell() {
             }));
         });
         setComposerText("");
+        setWorkspaceDir(null);
+    }
+
+    async function handleWorkspaceChange(path: string | null) {
+        setWorkspaceDir(path);
+        const sid = currentThreadId;
+        if (sid && sid !== DRAFT_THREAD_ID) {
+            try {
+                await setSessionWorkspace(sid, path);
+                setThreads((previous) =>
+                    previous.map((thread) =>
+                        thread.id === sid
+                            ? { ...thread, workspace_dir: path }
+                            : thread,
+                    ),
+                );
+            } catch (error) {
+                console.error("Failed to set session workspace:", sid, error);
+            }
+        }
     }
 
     async function handleRenameThread(threadId: string, newTitle: string) {
@@ -543,6 +568,10 @@ export function NovaAppShell() {
                         : sessionIdRef.current,
                 provider: selectedModel?.provider || null,
                 model: selectedModel?.model || null,
+                workspaceDir:
+                    sessionIdRef.current === DRAFT_THREAD_ID
+                        ? workspaceDir
+                        : null,
                 attachments,
                 onEvent: (event) => {
                     if (event.type === "data-nova-session") {
@@ -577,6 +606,7 @@ export function NovaAppShell() {
                                             prompt,
                                         ),
                                         status: "regular",
+                                        workspace_dir: workspaceDir,
                                     },
                                 );
                             });
@@ -1071,6 +1101,10 @@ export function NovaAppShell() {
                                     onModelsUpdated: handleConfigModelsUpdated,
                                     onProvidersRefresh: refreshProviders,
                                     onStatusChange: handleConfigStatus,
+                                }}
+                                workspace={{
+                                    value: workspaceDir,
+                                    onChange: handleWorkspaceChange,
                                 }}
                             />
                         </div>

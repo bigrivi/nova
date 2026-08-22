@@ -39,6 +39,7 @@ class Session:
     agent_key: str = DEFAULT_AGENT_KEY
     title: Optional[str] = None
     parent_id: Optional[str] = None
+    workspace_dir: Optional[str] = None
     summary_goal: Optional[str] = None
     summary_accomplished: Optional[str] = None
     summary_remaining: Optional[str] = None

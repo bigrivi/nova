@@ -392,6 +392,23 @@ Derived paths:
 - workspace: `~/.nova/workspace/`
 - agents: `~/.nova/agents/`
 
+### Session Workspace
+
+cwd-based tools (`shell`, `code_run`, `glob`, `grep`) run in a resolved
+workspace directory instead of the process launch directory. Resolution order:
+
+1. the session's `workspace_dir`, if set;
+2. otherwise the agent directory (`~/.nova/agents/<agent-key>`).
+
+Each session can optionally target a real directory on the local machine. In the
+desktop/frontend, pick it from the workspace control beside the composer (a
+folder picker that browses the local filesystem). A new chat can choose the
+directory up front; saved sessions can change it later, and clearing it falls
+back to the agent directory. The chosen path is stored per session and is also
+surfaced to the model as the prompt's `Workspace` line. Tools that receive an
+explicit `cwd`/`path` argument still honor it over the session workspace.
+
+
 Override the home directory:
 
 ```bash

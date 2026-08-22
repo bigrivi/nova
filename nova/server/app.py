@@ -42,6 +42,8 @@ from nova.server.schemas import (
     RenameSessionRequest,
     SessionActionResponse,
     SessionListResponse,
+    UpdateSessionWorkspaceRequest,
+    DirectoryListing,
 )
 from nova.settings import Settings, get_settings, reload_settings
 
@@ -132,6 +134,28 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         if not renamed:
             raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
         return SessionActionResponse(status="renamed", session_id=session_id)
+
+    @app.put("/api/sessions/{session_id}/workspace", response_model=SessionActionResponse)
+    async def set_session_workspace(
+        session_id: str, request: UpdateSessionWorkspaceRequest
+    ) -> SessionActionResponse:
+        updated = await app.state.chat_service.set_session_workspace(
+            session_id, request.workspace_dir
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+        return SessionActionResponse(status="workspace_updated", session_id=session_id)
+
+    @app.get("/api/fs/list", response_model=DirectoryListing)
+    async def fs_list(path: str | None = None) -> DirectoryListing:
+        from nova.server.fs_browse import list_directory
+
+        try:
+            return list_directory(path)
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
 
     @app.delete("/api/sessions/{session_id}", response_model=SessionActionResponse)
     async def delete_session(

@@ -36,9 +36,15 @@ type ThreadModelSelection = {
     onStatusChange: (message: string | null) => void;
 };
 
+type ThreadWorkspace = {
+    value: string | null;
+    onChange: (path: string | null) => void;
+};
+
 type ThreadComposerContainerProps = {
     composer: ThreadComposer;
     modelSelection: ThreadModelSelection;
+    workspace: ThreadWorkspace;
     onHeightChange?: (height: number) => void;
     hidden: boolean;
 };
@@ -46,6 +52,7 @@ type ThreadComposerContainerProps = {
 export const ThreadComposerContainer: FC<ThreadComposerContainerProps> = ({
     composer,
     modelSelection,
+    workspace,
     onHeightChange,
     hidden,
 }) => {
@@ -69,6 +76,7 @@ export const ThreadComposerContainer: FC<ThreadComposerContainerProps> = ({
                 <ThreadStickyComposer
                     composer={composer}
                     modelSelection={modelSelection}
+                    workspace={workspace}
                     onHeightChange={onHeightChange}
                 />
             </div>

@@ -39,9 +39,13 @@ type ThreadProps = {
         onProvidersRefresh: () => Promise<void>;
         onStatusChange: (message: string | null) => void;
     };
+    workspace: {
+        value: string | null;
+        onChange: (path: string | null) => void;
+    };
 };
 
-export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
+export const Thread: FC<ThreadProps> = ({ composer, modelSelection, workspace }) => {
     const [composerHeight, setComposerHeight] = useState(0);
     const [askUserHeight, setAskUserHeight] = useState(0);
     const [approvalHeight, setApprovalHeight] = useState(0);
@@ -173,6 +177,7 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
                 <ThreadComposerContainer
                     composer={composer}
                     modelSelection={modelSelection}
+                    workspace={workspace}
                     onHeightChange={setComposerHeight}
                     hidden={Boolean(activeCall || pendingApproval)}
                 />

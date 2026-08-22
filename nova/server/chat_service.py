@@ -47,6 +47,18 @@ from nova.session.history_projection import get_user_visible_history
 from nova.settings import Settings
 
 
+def _normalize_workspace_dir(workspace_dir: str | None) -> str | None:
+    """Trim, expand ~, and resolve a workspace path; blank/None clears it."""
+    if not workspace_dir or not workspace_dir.strip():
+        return None
+    from pathlib import Path
+
+    try:
+        return str(Path(workspace_dir.strip()).expanduser().resolve())
+    except OSError:
+        return workspace_dir.strip()
+
+
 class ChatService:
     def __init__(self, settings: Settings, data_source: DataSourceProtocol | None = None) -> None:
         self._settings = settings
@@ -67,6 +79,7 @@ class ChatService:
                 title=session.get("title"),
                 updated_at=session.get("updated_at", 0),
                 agent_key=session.get("agent_key", DEFAULT_AGENT_KEY),
+                workspace_dir=session.get("workspace_dir"),
             )
             for session in sessions
         ]
@@ -75,6 +88,11 @@ class ChatService:
     async def rename_session(self, session_id: str, title: str) -> bool:
         data_source = await self._get_data_source()
         return await data_source.update_session_title(session_id, title)
+
+    async def set_session_workspace(self, session_id: str, workspace_dir: str | None) -> bool:
+        data_source = await self._get_data_source()
+        normalized = _normalize_workspace_dir(workspace_dir)
+        return await data_source.set_session_workspace(session_id, normalized)
 
     async def delete_session(self, session_id: str, delete_memories: bool = False) -> bool:
         data_source = await self._get_data_source()
@@ -205,6 +223,7 @@ class ChatService:
                 request.message,
                 session_id=request.session_id,
                 attachments=attachment_dicts,
+                workspace_dir=_normalize_workspace_dir(request.workspace_dir),
             ):
                 if event == AgentEvent.SESSION and data and not register_key:
                     register_key = data

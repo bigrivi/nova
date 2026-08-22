@@ -90,6 +90,7 @@ When calling a tool, output JSON only:
         tools_schemas: list[dict] = None,
         available_skills: list[Any] | None = None,
         date: str | None = None,
+        workspace_override: str | None = None,
     ) -> str:
         parts = []
         settings = get_settings()
@@ -105,7 +106,7 @@ When calling a tool, output JSON only:
             available_skills=available_skills_section,
             date=date or datetime.now().strftime("%Y-%m-%d %A"),
             home=settings.home,
-            workspace_dir=self.config.workspace_dir or str(settings.workspace_dir),
+            workspace_dir=workspace_override or self.config.workspace_dir or str(settings.workspace_dir),
             platform=self._get_platform(),
             shell=get_shell_label(),
         ))
