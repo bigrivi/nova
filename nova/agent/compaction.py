@@ -13,6 +13,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from nova.llm import LLMProvider
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+SNIP_MARKER = "chars snipped"
+
 
 @dataclass(frozen=True)
 class CompactionPlan:
@@ -31,18 +34,52 @@ class CompactionPlan:
     token_count: int
     message_count: int
     needs_compaction: bool
+    split_index: int = 0
+    over_threshold: bool = False
 
 
 def estimate_tokens(messages: list, model: str = "unknown") -> int:
-    """Estimate tokens using type-aware character estimation with safety margin.
+    """Character-based token estimate for *messages* taken in isolation.
 
-    - Normal text: chars/4
-    - Tool results: chars/2 (more token-dense)
-    - Images: fixed 8000 char estimate
-    - Applies 1.2x safety margin for estimation inaccuracy
+    Use this whenever messages are being compared against each other or against
+    a budget of their own - split ratios, growth since a compaction, per-message
+    trimming. It must stay independent of any API-reported total, otherwise a
+    subset would appear to weigh as much as the whole prompt.
     """
     from nova.llm.tokenizer import estimate_messages_tokens
     return estimate_messages_tokens(messages, model)
+
+
+def estimate_context_tokens(messages: list, model: str = "unknown") -> int:
+    """Absolute context size of *messages*, anchored on the provider's accounting.
+
+    ``tokens_input`` on an assistant message is the exact prompt size the API
+    charged for the request that produced it, so it already covers the system
+    prompt, the tool schemas and the cached prefix - none of which character
+    heuristics can see. Only the anchor's own output and the messages appended
+    after it are estimated, so the error stops accumulating over a session.
+    """
+    anchor_index = -1
+    anchor_prompt_tokens = 0
+    for index in range(len(messages) - 1, -1, -1):
+        reported = _get_tokens_input(messages[index])
+        if reported:
+            anchor_index = index
+            anchor_prompt_tokens = reported
+            break
+
+    if anchor_index < 0:
+        return estimate_tokens(messages, model)
+
+    anchor_message = messages[anchor_index]
+    anchor_output_tokens = (
+        _get_tokens_output(anchor_message)
+        or estimate_tokens([anchor_message], model)
+    )
+    appended_after_anchor = messages[anchor_index + 1:]
+    return (anchor_prompt_tokens
+            + anchor_output_tokens
+            + estimate_tokens(appended_after_anchor, model))
 
 
 def get_context_limit(model: str, provider: str) -> int:
@@ -58,34 +95,74 @@ def snip_old_tool_results(
     messages: list,
     max_chars: int = 2000,
     preserve_last_n_messages: int = 12,
+    tool_output_token_budget: int = 50000,
+    offload_dir: Optional[str] = None,
 ) -> list:
-    """Layer 1: trim old tool results.
+    """Layer 1: trim tool results under a reverse token budget.
 
-    Keep the last N messages unchanged. For earlier messages, if a tool result exceeds
-    ``max_chars``, keep the first half and the last quarter, and insert an omission marker in the middle.
+    Walking from the newest message backwards and spending a token budget on
+    tool output keeps the results the current task actually depends on intact,
+    whatever their number, and only trims once the budget runs out. A fixed
+    "last N messages" window cannot do that: N recent messages may be a few
+    hundred tokens or a repository-wide grep.
+
+    Trimmed output keeps its tail, where commands put their verdict, and the
+    full text is written to *offload_dir* so the model can read it back.
     """
-    cutoff = max(0, len(messages) - preserve_last_n_messages)
+    keep_verbatim_from = max(0, len(messages) - preserve_last_n_messages)
+    spent_tokens = 0
 
-    for i in range(cutoff):
-        m = messages[i]
-        if _get_role(m) != "tool":
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if _get_role(message) != "tool":
             continue
 
-        content = _get_content(m)
-        if not isinstance(content, str) or len(content) <= max_chars:
+        content = _get_content(message)
+        if not isinstance(content, str) or not content:
             continue
 
-        first_half = content[: max_chars // 2]
-        last_quarter = content[-(max_chars // 4):]
-        snipped = len(content) - len(first_half) - len(last_quarter)
+        tokens = estimate_tokens([message])
+        within_budget = spent_tokens + tokens <= tool_output_token_budget
+        if index >= keep_verbatim_from and within_budget:
+            spent_tokens += tokens
+            continue
+        if len(content) <= max_chars:
+            spent_tokens += tokens
+            continue
 
-        new_content = f"{first_half}\n[... {snipped} chars snipped ...]\n{last_quarter}"
-        if isinstance(m, dict):
-            m["content"] = new_content
+        offload_path = _offload_tool_output(
+            offload_dir, _get_msg_id(message), content)
+        head = content[: max_chars // 4]
+        tail = content[-(max_chars * 3 // 4):]
+        omitted = len(content) - len(head) - len(tail)
+        pointer = f" Full output: {offload_path}" if offload_path else ""
+        new_content = (
+            f"{head}\n[... {omitted} {SNIP_MARKER} ...{pointer}]\n{tail}")
+        if isinstance(message, dict):
+            message["content"] = new_content
         else:
-            m.content = new_content
+            message.content = new_content
+        spent_tokens += estimate_tokens([message])
 
     return messages
+
+
+def _offload_tool_output(
+    offload_dir: Optional[str],
+    message_id: str,
+    content: str,
+) -> Optional[str]:
+    if not offload_dir or not message_id:
+        return None
+    try:
+        directory = Path(offload_dir)
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"{message_id}.txt"
+        path.write_text(content, encoding="utf-8")
+        return str(path)
+    except OSError as error:
+        log.warning("[Compaction] could not offload tool output: %s", error)
+        return None
 
 
 def find_split_point(messages: list, keep_ratio: float = 0.3) -> int:
@@ -101,26 +178,67 @@ def find_split_point(messages: list, keep_ratio: float = 0.3) -> int:
             split = i
             break
 
-    return _advance_to_safe_split(messages, split)
+    return _retreat_to_safe_split(messages, split)
 
 
-def _advance_to_safe_split(messages: list, split: int) -> int:
-    """Move the split forward until it no longer separates an assistant message
-    from the tool responses answering its tool calls.
+def _retreat_to_safe_split(messages: list, split: int) -> int:
+    """Move the split backward to a boundary that is safe to compact at.
 
-    A tool response must never start the recent portion: its declaring assistant
-    would stay in the compacted portion, leaving an orphan tool message that
-    breaks the OpenAI assistant->tool pairing contract (HTTP 400).
+    Retreating (rather than advancing) satisfies three constraints at once:
+
+    * A tool response never starts the recent portion. Its declaring assistant
+      message would otherwise stay behind in the compacted portion, leaving an
+      orphan tool message that violates the assistant->tool pairing contract and
+      makes the provider reject the request.
+    * The recent portion starts on a user message, so the kept history reads as
+      whole turns.
+    * The recent portion can never end up empty, which advancing past a trailing
+      run of tool messages would cause.
+
+    Returning 0 means nothing can be compacted safely and the caller should skip
+    compaction entirely.
     """
-    safe = split
-    while 0 < safe < len(messages) and _get_role(messages[safe]) == "tool":
-        safe += 1
+    safe = min(split, len(messages) - 1) if messages else 0
+    while safe > 0 and _get_role(messages[safe]) == "tool":
+        safe -= 1
+    while safe > 0 and _get_role(messages[safe]) != "user":
+        safe -= 1
     return safe
 
 
+NEW_SUMMARY_ANCHOR = (
+    "Generate a new summary from the transcript below."
+)
+
+PREVIOUS_SUMMARY_ANCHOR = (
+    "The transcript below already contains an earlier summary. You MUST fold "
+    "every still-relevant fact from it into the new summary, so no established "
+    "constraint, decision, or user requirement is lost when the earlier summary "
+    "is discarded."
+)
+
+CONTINUATION_INSTRUCTION = (
+    "This session continues from the summary above; the raw history it replaces "
+    "is no longer available. Resume the last task directly, without recapping "
+    "the summary or asking the user to repeat anything."
+)
+
 SUMMARY_PROMPT_TEMPLATE = """\
-Summarize the following conversation history concisely.
-Preserve key decisions, file paths, tool results, and context needed to continue the conversation.
+You are compacting a coding session so that work can continue in a fresh context window.
+
+{anchor_instruction}
+
+Respond with plain text only. Do not call any tool.
+
+Write these sections, omitting a section only when the transcript has nothing for it:
+
+1. Request and intent - every explicit user request and correction, in the user's own terms.
+2. Technical context - languages, frameworks, architecture and conventions in play.
+3. Files and code - every file examined, created or modified, with the essential snippets and why they matter.
+4. Errors and fixes - each failure encountered and how it was resolved.
+5. Current state - what is finished and verified versus what is still in progress.
+6. Pending work - requested tasks that remain unfinished.
+7. Next step - the single next action that follows from the most recent user request.
 
 ---
 
@@ -131,50 +249,58 @@ Preserve key decisions, file paths, tool results, and context needed to continue
 Summary:"""
 
 
-def count_turns_since_compact(messages: list, last_compacted_at: Optional[int]) -> int:
-    """Count user turns recorded after the last compaction.
+def count_tokens_since_compact(
+    messages: list,
+    last_compacted_at: Optional[int],
+    model: str = "unknown",
+) -> int:
+    """Tokens accumulated after the last compaction.
 
-    ``session.turn_count`` is a cumulative per-message counter that is never
-    reset and is not persisted, so it cannot express "turns since the last
-    compaction". Deriving the count from message timestamps keeps the decision
-    correct in both long-lived CLI processes and stateless server requests.
+    Budgeting only the growth since the previous compaction keeps a large
+    carried prefix - the summary plus the history it preserved - from consuming
+    the whole allowance and forcing a compaction on every single request.
     """
     if not last_compacted_at:
-        return 0
-    turns = 0
-    for m in messages:
-        if _get_role(m) != "user":
-            continue
-        created = _get_time_created(m)
-        if created and created > last_compacted_at:
-            turns += 1
-    return turns
+        return estimate_tokens(messages, model)
+    fresh = [
+        message for message in messages
+        if _get_time_created(message) > last_compacted_at
+    ]
+    return estimate_tokens(fresh, model)
+
+
+def compaction_threshold(model_max_tokens: int) -> int:
+    """Token headroom that must stay free for the reply and the summary request.
+
+    The reserves are absolute rather than a fraction of the window: what they
+    pay for - one model reply and one summarisation request - costs the same
+    whether the window is 32k or 1M. A ratio would starve small windows and
+    waste most of a large one.
+
+    Small windows still need a guard: a flat 24k reserve would leave a 26k
+    window with almost nothing usable and compact on every request, so the
+    reserve never takes more than half of the window.
+    """
+    comp = get_settings().compaction
+    requested_reserve = comp.output_reserve_tokens + comp.summary_reserve_tokens
+    reserve = min(requested_reserve, model_max_tokens // 2)
+    return max(1, model_max_tokens - reserve)
 
 
 def should_compact(
-    message_count: int,
-    token_count: int,
-    turns_since_compact: int,
-    last_compacted_at: Optional[int],
-    model_max_tokens: int = 128000,
-    max_turns_between_compact: int = 20,
-    token_ratio: float = 0.7,
-    max_messages: int = 100,
+    scope_tokens: int,
+    total_tokens: int,
+    model_max_tokens: int,
 ) -> bool:
-    """Decide whether compaction should run."""
-    threshold = int(model_max_tokens * token_ratio)
+    """Decide whether compaction should run, on token pressure alone.
 
-    if token_count > threshold:
+    ``scope_tokens`` is the growth since the last compaction and drives the soft
+    threshold; ``total_tokens`` guards the hard context window so a bloated
+    carried prefix still forces a compaction.
+    """
+    if scope_tokens >= compaction_threshold(model_max_tokens):
         return True
-
-    if message_count > max_messages:
-        return True
-
-    if last_compacted_at:
-        if turns_since_compact > max_turns_between_compact:
-            return True
-
-    return False
+    return total_tokens >= model_max_tokens
 
 
 def evaluate_compaction(
@@ -184,27 +310,35 @@ def evaluate_compaction(
     model: str = "gpt-4o",
     provider: str = "ollama",
 ) -> CompactionPlan:
-    """Pure decision step: no IO, no mutation, no message payload in the result."""
+    """Pure decision step: no IO, no mutation, no message payload in the result.
+
+    A plan only asks for compaction when the history can also be split safely,
+    so callers never announce a compaction that would turn into a no-op.
+    """
     model_max_tokens = get_context_limit(model, provider)
     comp = get_settings().compaction
 
     if not messages:
         return CompactionPlan(session_id, model_max_tokens, 0, 0, False)
 
-    token_count = estimate_tokens(messages)
-    needs_compaction = should_compact(
-        message_count=len(messages),
-        token_count=token_count,
-        turns_since_compact=count_turns_since_compact(
-            messages, last_compacted_at),
-        last_compacted_at=last_compacted_at,
+    token_count = estimate_context_tokens(messages, model)
+    over_threshold = should_compact(
+        scope_tokens=count_tokens_since_compact(
+            messages, last_compacted_at, model),
+        total_tokens=token_count,
         model_max_tokens=model_max_tokens,
-        max_turns_between_compact=comp.max_turns_between_compact,
-        token_ratio=comp.token_ratio,
-        max_messages=comp.max_messages,
     )
+    split_index = find_split_point(
+        messages, keep_ratio=comp.summary_keep_ratio) if over_threshold else 0
     return CompactionPlan(
-        session_id, model_max_tokens, token_count, len(messages), needs_compaction)
+        session_id,
+        model_max_tokens,
+        token_count,
+        len(messages),
+        over_threshold and split_index > 0,
+        split_index,
+        over_threshold,
+    )
 
 
 async def prepare_compaction(
@@ -222,9 +356,13 @@ async def prepare_compaction(
     """
     plan = evaluate_compaction(
         session_id, messages, last_compacted_at, model, provider)
-    if not plan.needs_compaction:
+    if not plan.over_threshold:
         return plan
 
+    # Layer 1 answers to token pressure alone. Gating it on Layer 2's split
+    # point would leave a runaway tool loop untouched whenever the history
+    # cannot be split safely - exactly the case where trimming is the only
+    # defence left.
     await snip_tool_results_in_db(db, session_id, messages)
     return evaluate_compaction(
         session_id, messages, last_compacted_at, model, provider)
@@ -237,28 +375,39 @@ async def run_compaction_plan(
     model: str = "gpt-4o",
     provider: str = "ollama",
     messages: Optional[list] = None,
-) -> None:
+) -> bool:
     """Execute a prepared compaction plan against caller-owned *messages*."""
     if not plan.needs_compaction:
-        return
-    await compact(plan.session_id, db, llm, model, provider, messages=messages)
+        return False
+    return await compact(
+        plan.session_id,
+        db,
+        llm,
+        model,
+        provider,
+        messages=messages,
+        split_index=plan.split_index or None,
+    )
 
 
 async def snip_tool_results_in_db(db: "DataSourceProtocol", session_id: str, messages: list) -> None:
     """Layer 1: trim old tool results stored in the database."""
-    comp = get_settings().compaction
+    settings = get_settings()
+    comp = settings.compaction
     snip_old_tool_results(
         messages,
         max_chars=comp.snip_max_chars,
         preserve_last_n_messages=comp.snip_preserve_last_n_messages,
+        tool_output_token_budget=comp.snip_tool_output_token_budget,
+        offload_dir=str(settings.home / "sessions" / session_id / "tool-output"),
     )
 
-    for msg in messages:
-        if _get_role(msg) == "tool":
-            msg_id = _get_msg_id(msg)
-            content = _get_content(msg)
-            if "[... " in content and " chars snipped ...]" in content:
-                await db.update_message_content(msg_id, content)
+    for message in messages:
+        if _get_role(message) != "tool":
+            continue
+        content = _get_content(message)
+        if SNIP_MARKER in content:
+            await db.update_message_content(_get_msg_id(message), content)
 
 
 async def compact(
@@ -268,26 +417,25 @@ async def compact(
     model: str = "gpt-4o",
     provider: str = "ollama",
     messages: Optional[list] = None,
-) -> None:
-    """Run session compaction (Layer 2).
+    split_index: Optional[int] = None,
+) -> bool:
+    """Run session compaction (Layer 2). Returns whether history was compacted.
 
-    1. Load all uncompacted messages.
-    2. Find the split point.
-    3. Ask the LLM to summarize the older portion.
-    4. Insert the summary message.
-    5. Mark the old messages as compacted.
-    6. Update the session compaction timestamp.
+    A failed summary leaves the session untouched: writing the failure text as a
+    summary would poison the context it is supposed to compress, and marking the
+    old messages compacted would discard them for nothing.
     """
     messages = messages if messages is not None else await db.get_messages(session_id)
 
     if not messages:
-        return
+        return False
 
     before_tokens = estimate_tokens(messages)
     comp = get_settings().compaction
-    split = find_split_point(messages, keep_ratio=comp.summary_keep_ratio)
+    split = split_index if split_index is not None else find_split_point(
+        messages, keep_ratio=comp.summary_keep_ratio)
     if split <= 0:
-        return
+        return False
 
     old = messages[:split]
     recent = messages[split:]
@@ -295,13 +443,19 @@ async def compact(
 
     log.info(f"[Compaction] session={session_id}, before={len(messages)} msgs, {before_tokens} tokens, split at={split}")
 
-    summary = await _generate_summary(old_text, llm, model)
+    summary = await _generate_summary(
+        old_text, llm, model, has_previous_summary=_contains_summary(old))
+    if not summary:
+        log.warning(
+            "[Compaction] session=%s aborted: summary generation failed", session_id)
+        return False
 
     now_ms = int(time.time() * 1000)
     await db.add_message(
         session_id=session_id,
         role="assistant",
-        content=f"[Previous conversation summary]\n{summary}",
+        content=(f"[Previous conversation summary]\n{summary}\n\n"
+                 f"{CONTINUATION_INSTRUCTION}"),
         summary=True,
     )
     # Also compact tool responses whose tool_call assistant was compacted
@@ -327,6 +481,7 @@ async def compact(
 
     after_tokens = estimate_tokens(recent)
     log.info(f"[Compaction] session={session_id}, compacted={len(old)} msgs, after={len(recent)+1} msgs, {after_tokens} tokens")
+    return True
 
 
 def _format_for_summary(messages: list) -> str:
@@ -342,17 +497,40 @@ def _format_for_summary(messages: list) -> str:
     return "\n".join(lines)
 
 
-async def _generate_summary(conversation: str, llm: LLMProvider, model: str) -> str:
-    """Generate a summary with the LLM."""
+async def _generate_summary(
+    conversation: str,
+    llm: LLMProvider,
+    model: str,
+    has_previous_summary: bool = False,
+) -> str:
+    """Generate a summary with the LLM. Returns an empty string on failure."""
     try:
-        prompt = SUMMARY_PROMPT_TEMPLATE.format(conversation=conversation)
+        prompt = SUMMARY_PROMPT_TEMPLATE.format(
+            conversation=conversation,
+            anchor_instruction=(
+                PREVIOUS_SUMMARY_ANCHOR if has_previous_summary
+                else NEW_SUMMARY_ANCHOR),
+        )
         response = await llm.chat(
             messages=[{"role": "user", "content": prompt}],
             model=model,
         )
-        return response.content if hasattr(response, 'content') else str(response)
-    except Exception as e:
-        return f"[Summary generation failed: {e}]"
+        summary = response.content if hasattr(
+            response, 'content') else str(response)
+        return (summary or "").strip()
+    except Exception as error:
+        log.warning("[Compaction] summary generation failed: %s", error)
+        return ""
+
+
+def _contains_summary(messages: list) -> bool:
+    for message in messages:
+        if isinstance(message, dict):
+            if message.get("summary"):
+                return True
+        elif getattr(message, "summary", 0):
+            return True
+    return False
 
 
 def _generate_id() -> str:
@@ -415,3 +593,15 @@ def _get_time_created(msg) -> int:
     if isinstance(msg, dict):
         return int(msg.get("time_created") or 0)
     return int(getattr(msg, "time_created", 0) or 0)
+
+
+def _get_tokens_input(msg) -> int:
+    if isinstance(msg, dict):
+        return int(msg.get("tokens_input") or 0)
+    return int(getattr(msg, "tokens_input", 0) or 0)
+
+
+def _get_tokens_output(msg) -> int:
+    if isinstance(msg, dict):
+        return int(msg.get("tokens_output") or 0)
+    return int(getattr(msg, "tokens_output", 0) or 0)

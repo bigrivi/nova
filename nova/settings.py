@@ -54,12 +54,14 @@ class ProviderConfig:
 class CompactionSettings:
     """Context compaction thresholds, overridable via config.json ``compaction`` block."""
 
-    token_ratio: float = 0.7          # compact when tokens exceed model_max_tokens * ratio
-    max_messages: int = 100           # compact when message count exceeds this
-    max_turns_between_compact: int = 20  # compact when user turns since last compact exceed this
+    output_reserve_tokens: int = 16000  # room kept for the current reply
+    summary_reserve_tokens: int = 8000  # room kept for the summarisation request itself
     snip_max_chars: int = 2000        # Layer 1: trim tool results longer than this
+    snip_tool_output_token_budget: int = 50000  # Layer 1: recent tool output kept verbatim
     snip_preserve_last_n_messages: int = 12  # Layer 1: keep last N messages unchanged
     summary_keep_ratio: float = 0.3   # Layer 2: keep recent portion of tokens at split
+    max_consecutive_failures: int = 3  # stop auto-compacting after this many failures
+    default_context_window: int = 128000  # assumed window when a model is unknown
 
 
 def _env_int(name: str, default: int) -> int:
@@ -179,14 +181,17 @@ def _parse_compaction_config(raw: Any) -> CompactionSettings:
     if not isinstance(raw, dict):
         raise ValueError("Invalid Nova config: 'compaction' must be an object")
     return CompactionSettings(
-        token_ratio=float(raw.get("token_ratio", 0.7)),
-        max_messages=int(raw.get("max_messages", 100)),
-        max_turns_between_compact=int(raw.get("max_turns_between_compact", 20)),
+        output_reserve_tokens=int(raw.get("output_reserve_tokens", 16000)),
+        summary_reserve_tokens=int(raw.get("summary_reserve_tokens", 8000)),
         snip_max_chars=int(raw.get("snip_max_chars", 2000)),
+        snip_tool_output_token_budget=int(
+            raw.get("snip_tool_output_token_budget", 50000)),
         snip_preserve_last_n_messages=int(
             raw.get("snip_preserve_last_n_messages",
                     raw.get("snip_preserve_last_n_turns", 12))),
         summary_keep_ratio=float(raw.get("summary_keep_ratio", 0.3)),
+        max_consecutive_failures=int(raw.get("max_consecutive_failures", 3)),
+        default_context_window=int(raw.get("default_context_window", 128000)),
     )
 
 

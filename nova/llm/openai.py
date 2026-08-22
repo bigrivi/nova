@@ -319,9 +319,12 @@ class OpenAIProvider(LLMProvider):
                                 "arguments", "")
                         ))
 
+                usage = data.get("usage") if isinstance(data, dict) else None
                 return Done(
                     content=msg.get("content", ""),
-                    tool_calls=tool_calls
+                    tool_calls=tool_calls,
+                    tokens_input=(usage or {}).get("prompt_tokens"),
+                    tokens_output=(usage or {}).get("completion_tokens"),
                 )
         except Exception as e:
             log.exception("OpenAI provider chat request raised an exception")
@@ -379,6 +382,8 @@ class OpenAIProvider(LLMProvider):
 
                 accumulated_content = ""
                 accumulated_tool_calls: dict[int, dict[str, str | bool]] = {}
+                usage_tokens_input: Optional[int] = None
+                usage_tokens_output: Optional[int] = None
 
                 it = resp.content.__aiter__()
                 while True:
@@ -402,6 +407,15 @@ class OpenAIProvider(LLMProvider):
 
                     try:
                         data = json.loads(line)
+                        usage = data.get("usage")
+                        if isinstance(usage, dict):
+                            # Providers report usage in a trailing chunk that carries
+                            # no choices; it is the only exact token count available.
+                            if usage.get("prompt_tokens") is not None:
+                                usage_tokens_input = int(usage["prompt_tokens"])
+                            if usage.get("completion_tokens") is not None:
+                                usage_tokens_output = int(
+                                    usage["completion_tokens"])
                         choices = data.get("choices")
                         if not isinstance(choices, list) or not choices:
                             log.debug(
@@ -469,7 +483,12 @@ class OpenAIProvider(LLMProvider):
                                 for _, tool_state in sorted(accumulated_tool_calls.items())
                                 if tool_state["name"]
                             ]
-                            yield Done(content=accumulated_content, tool_calls=tool_calls)
+                            yield Done(
+                                content=accumulated_content,
+                                tool_calls=tool_calls,
+                                tokens_input=usage_tokens_input,
+                                tokens_output=usage_tokens_output,
+                            )
                             return
 
                     except json.JSONDecodeError:
@@ -486,7 +505,12 @@ class OpenAIProvider(LLMProvider):
                     for _, tool_state in sorted(accumulated_tool_calls.items())
                     if tool_state["name"]
                 ]
-                yield Done(content=accumulated_content, tool_calls=final_tool_calls)
+                yield Done(
+                    content=accumulated_content,
+                    tool_calls=final_tool_calls,
+                    tokens_input=usage_tokens_input,
+                    tokens_output=usage_tokens_output,
+                )
 
         except asyncio.CancelledError:
             yield Done(content="", tool_calls=[], aborted=True)

@@ -99,6 +99,8 @@ class InMemoryRepository(NovaRepository):
             reasoning_content=kwargs.get("reasoning_content"),
             group_id=kwargs.get("group_id"),
             reasoning_elapsed_ms=kwargs.get("reasoning_elapsed_ms"),
+            tokens_input=kwargs.get("tokens_input"),
+            tokens_output=kwargs.get("tokens_output"),
         )
         self._messages[message.id] = message
         session = self._sessions.get(session_id)
@@ -112,7 +114,7 @@ class InMemoryRepository(NovaRepository):
         messages = [m for m in self._messages.values() if m.session_id == session_id]
         messages.sort(key=lambda message: message.time_created)
         if not filter_value.include_compacted:
-            messages = [m for m in messages if m.summary == 1 or (m.compacted == 0 and m.summary == 0)]
+            messages = [m for m in messages if m.compacted == 0]
         if filter_value.exclude_tool_role:
             messages = [m for m in messages if m.role != "tool"]
         if filter_value.only_non_summary:

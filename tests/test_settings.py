@@ -123,12 +123,13 @@ def test_settings_compaction_defaults(monkeypatch, tmp_path):
     settings = Settings.load_config()
     comp = settings.compaction
 
-    assert comp.token_ratio == 0.7
-    assert comp.max_messages == 100
-    assert comp.max_turns_between_compact == 20
+    assert comp.output_reserve_tokens == 16000
+    assert comp.summary_reserve_tokens == 8000
     assert comp.snip_max_chars == 2000
-    assert comp.snip_preserve_last_n_turns == 6
+    assert comp.snip_tool_output_token_budget == 50000
+    assert comp.snip_preserve_last_n_messages == 12
     assert comp.summary_keep_ratio == 0.3
+    assert comp.max_consecutive_failures == 3
 
 
 def test_settings_compaction_from_config(monkeypatch, tmp_path):
@@ -138,12 +139,13 @@ def test_settings_compaction_from_config(monkeypatch, tmp_path):
         {
             "providers": {},
             "compaction": {
-                "token_ratio": 0.8,
-                "max_messages": 200,
-                "max_turns_between_compact": 50,
+                "output_reserve_tokens": 32000,
+                "summary_reserve_tokens": 12000,
                 "snip_max_chars": 4000,
-                "snip_preserve_last_n_turns": 10,
+                "snip_tool_output_token_budget": 90000,
+                "snip_preserve_last_n_messages": 20,
                 "summary_keep_ratio": 0.5,
+                "max_consecutive_failures": 5,
             },
         },
     )
@@ -152,25 +154,39 @@ def test_settings_compaction_from_config(monkeypatch, tmp_path):
     settings = Settings.load_config()
     comp = settings.compaction
 
-    assert comp.token_ratio == 0.8
-    assert comp.max_messages == 200
-    assert comp.max_turns_between_compact == 50
+    assert comp.output_reserve_tokens == 32000
+    assert comp.summary_reserve_tokens == 12000
     assert comp.snip_max_chars == 4000
-    assert comp.snip_preserve_last_n_turns == 10
+    assert comp.snip_tool_output_token_budget == 90000
+    assert comp.snip_preserve_last_n_messages == 20
     assert comp.summary_keep_ratio == 0.5
+    assert comp.max_consecutive_failures == 5
 
 
 def test_settings_compaction_partial_config_keeps_defaults(monkeypatch, tmp_path):
     home = tmp_path / "nova-compaction-partial-home"
-    _write_config(home, {"providers": {}, "compaction": {"token_ratio": 0.9}})
+    _write_config(home, {"providers": {}, "compaction": {"summary_keep_ratio": 0.9}})
     monkeypatch.setenv("NOVA_HOME", str(home))
 
     settings = Settings.load_config()
     comp = settings.compaction
 
-    assert comp.token_ratio == 0.9
-    assert comp.max_messages == 100
-    assert comp.max_turns_between_compact == 20
+    assert comp.summary_keep_ratio == 0.9
+    assert comp.output_reserve_tokens == 16000
+    assert comp.snip_preserve_last_n_messages == 12
+
+
+def test_settings_compaction_accepts_the_legacy_snip_key(monkeypatch, tmp_path):
+    home = tmp_path / "nova-compaction-legacy-home"
+    _write_config(
+        home,
+        {"providers": {}, "compaction": {"snip_preserve_last_n_turns": 7}},
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    settings = Settings.load_config()
+
+    assert settings.compaction.snip_preserve_last_n_messages == 7
 
 
 def test_settings_compaction_invalid_block_raises(monkeypatch, tmp_path):

@@ -150,6 +150,8 @@ class SessionManager(SessionProtocol):
         reasoning_content: Optional[str] = None,
         group_id: Optional[str] = None,
         reasoning_elapsed_ms: Optional[int] = None,
+        tokens_input: Optional[int] = None,
+        tokens_output: Optional[int] = None,
     ) -> Message:
         session = self.get_current_session()
         if not session:
@@ -167,6 +169,8 @@ class SessionManager(SessionProtocol):
                 reasoning_content=reasoning_content,
                 group_id=group_id,
                 reasoning_elapsed_ms=reasoning_elapsed_ms,
+                tokens_input=tokens_input,
+                tokens_output=tokens_output,
             )
             session.updated_at = int(time.time() * 1000)
             session.turn_count += 1

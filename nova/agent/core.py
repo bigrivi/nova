@@ -14,7 +14,8 @@ from nova.session import get_session_manager
 from nova.session.protocol import SessionProtocol
 from nova.tools.registry import ToolRegistry, tool
 from nova.prompt import PromptBuilder, PromptConfig
-from nova.agent.compaction import prepare_compaction, run_compaction_plan, get_context_limit
+from nova.agent.compaction import (
+    CompactionPlan, prepare_compaction, run_compaction_plan, get_context_limit)
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.skills.service import SkillService
 from nova.mcp.manager import MCPManager
@@ -23,6 +24,7 @@ from nova.agent.tool_guardrails import ToolGuardrails, GuardrailAction
 from nova.agent.reasoning_timeouts import get_reasoning_timeout
 from nova.tools.approval import ApprovalManager
 from nova.tools.behavior import TurnContext
+from nova.settings import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -142,10 +144,64 @@ class Agent:
         self._abort_event = asyncio.Event()
         self._base_system_prompt: Optional[str] = None
         self._memory_modified_this_turn: bool = False
+        self._compaction_failures: int = 0
 
         self._turns_since_review = 0
         self._guardrails = ToolGuardrails()
         self._approval = ApprovalManager()
+
+    def _compaction_allowed(self) -> bool:
+        """Stop auto-compacting after repeated failures.
+
+        A summariser that keeps failing would otherwise be retried on every
+        request for the rest of the session, spending an API call each time and
+        never making progress.
+        """
+        limit = get_settings().compaction.max_consecutive_failures
+        if limit <= 0:
+            return True
+        if self._compaction_failures < limit:
+            return True
+        log.warning(
+            "Auto-compaction disabled for this agent after %d consecutive failures",
+            self._compaction_failures)
+        return False
+
+    async def _plan_compaction(
+        self,
+        messages: list,
+        session: Any,
+        data_source: DataSourceProtocol,
+    ) -> Optional[CompactionPlan]:
+        """Decide whether Layer 2 should run, after Layer 1 has had its chance.
+
+        Layer 1 lives inside ``prepare_compaction`` and never calls a model, so it
+        runs even while the circuit breaker is open; only the summarisation step
+        is gated.
+        """
+        plan = await prepare_compaction(
+            session_id=session.id if session else None,
+            messages=messages,
+            last_compacted_at=session.compacted_at if session else None,
+            db=data_source,
+            model=self.config.model,
+            provider=self.config.provider,
+        )
+        if not plan.needs_compaction:
+            return None
+        if not self._compaction_allowed():
+            return None
+        return plan
+
+    def _record_compaction_result(self, compacted: bool, session: Any) -> None:
+        if compacted:
+            self._compaction_failures = 0
+            if session is not None:
+                session.compacted_at = int(datetime.now().timestamp() * 1000)
+            return
+        self._compaction_failures += 1
+        log.warning("Compaction failed (%d consecutive)",
+                    self._compaction_failures)
 
     def interrupt(self) -> None:
         """Interrupt the current execution; the user can trigger this at any time."""
@@ -376,6 +432,8 @@ class Agent:
         accumulated_reasoning = ""
         accumulated_tool_calls: dict[str, Any] = {}
         final_done_content = ""
+        reported_tokens_input = None
+        reported_tokens_output = None
         _text_started = False
         _reasoning_started = False
         _reasoning_started_at = None
@@ -426,6 +484,10 @@ class Agent:
                             return
                         final_done_content = getattr(
                             chunk, "content", "") or final_done_content
+                        reported_tokens_input = getattr(
+                            chunk, "tokens_input", None) or reported_tokens_input
+                        reported_tokens_output = getattr(
+                            chunk, "tokens_output", None) or reported_tokens_output
                     elif chunk.type == "error":
                         yield AgentEvent.ERROR, _error_payload("llm_error", chunk.message)
                         return
@@ -505,6 +567,8 @@ class Agent:
                 reasoning_content=accumulated_reasoning or None,
                 group_id=group_id,
                 reasoning_elapsed_ms=reasoning_elapsed_ms,
+                tokens_input=reported_tokens_input,
+                tokens_output=reported_tokens_output,
             )
             executed_tool_ids: set[str] = set()
             for tool_call in final_tool_calls:
@@ -605,6 +669,8 @@ class Agent:
                 reasoning_content=accumulated_reasoning or None,
                 group_id=group_id,
                 reasoning_elapsed_ms=reasoning_elapsed_ms,
+                tokens_input=reported_tokens_input,
+                tokens_output=reported_tokens_output,
             )
             done_payload = _done_payload("completed", final_content)
             await self._emit(AgentEvent.DONE, done_payload)
@@ -667,39 +733,41 @@ class Agent:
 
         data_source = self._data_source or await get_default_data_source()
         session_messages = await self.session.get_messages()
-        compaction_plan = await prepare_compaction(
-            session_id=current_session.id if current_session else None,
-            messages=session_messages,
-            last_compacted_at=current_session.compacted_at if current_session else None,
-            db=data_source,
-            model=self.config.model,
-            provider=self.config.provider,
-        )
-        if compaction_plan.needs_compaction:
-            compaction_payload = {
-                "message_count": compaction_plan.message_count,
-                "token_count": compaction_plan.token_count,
-            }
-            await self._emit(AgentEvent.COMPACTION_START, compaction_payload)
-            yield AgentEvent.COMPACTION_START, compaction_payload
-            await run_compaction_plan(
-                compaction_plan,
-                db=data_source,
-                llm=self.llm,
-                model=self.config.model,
-                provider=self.config.provider,
-                messages=session_messages,
-            )
-            current_session.compacted_at = int(
-                datetime.now().timestamp() * 1000)
-            await self._emit(AgentEvent.COMPACTION_END, compaction_payload)
-            yield AgentEvent.COMPACTION_END, compaction_payload
-            session_messages = await self.session.get_messages()
 
         run_group_id = uuid.uuid4().hex
         turn_count = 0
         for _ in range(self.config.max_iterations):
             turn_count += 1
+            if turn_count > 1:
+                session_messages = await self.session.get_messages()
+
+            # Context pressure is re-checked before every model call, not once per
+            # request: a single request can run many tool turns and each tool
+            # result can be arbitrarily large, so a request that started well
+            # inside the window can overrun it halfway through.
+            compaction_plan = await self._plan_compaction(
+                session_messages, current_session, data_source)
+            if compaction_plan is not None:
+                compaction_payload = {
+                    "message_count": compaction_plan.message_count,
+                    "token_count": compaction_plan.token_count,
+                }
+                await self._emit(AgentEvent.COMPACTION_START, compaction_payload)
+                yield AgentEvent.COMPACTION_START, compaction_payload
+                compacted = await run_compaction_plan(
+                    compaction_plan,
+                    db=data_source,
+                    llm=self.llm,
+                    model=self.config.model,
+                    provider=self.config.provider,
+                    messages=session_messages,
+                )
+                self._record_compaction_result(compacted, current_session)
+                await self._emit(AgentEvent.COMPACTION_END, compaction_payload)
+                yield AgentEvent.COMPACTION_END, compaction_payload
+                if compacted:
+                    session_messages = await self.session.get_messages()
+
             await self._emit(AgentEvent.TURN_START, {"turn": turn_count})
             yield AgentEvent.TURN_START, {"turn": turn_count}
 
@@ -708,7 +776,7 @@ class Agent:
                 turn_count,
                 tool_schemas,
                 group_id=run_group_id,
-                loaded_messages=session_messages if turn_count == 1 else None,
+                loaded_messages=session_messages,
             ):
                 if event == AgentEvent.DONE:
                     done_payload = data

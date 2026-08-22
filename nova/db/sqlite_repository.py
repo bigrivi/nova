@@ -152,6 +152,8 @@ def _row_to_message(row_dict: dict[str, Any]) -> Message:
         reasoning_content=row_dict.get("reasoning_content"),
         group_id=row_dict.get("group_id"),
         reasoning_elapsed_ms=row_dict.get("reasoning_elapsed_ms"),
+        tokens_input=row_dict.get("tokens_input"),
+        tokens_output=row_dict.get("tokens_output"),
     )
 
 
@@ -292,6 +294,8 @@ class SqliteRepository(NovaRepository):
         reasoning_content: Optional[str] = None,
         group_id: Optional[str] = None,
         reasoning_elapsed_ms: Optional[int] = None,
+        tokens_input: Optional[int] = None,
+        tokens_output: Optional[int] = None,
     ) -> Message:
         await self._ensure_connected()
         msg_id = str(uuid.uuid4())
@@ -301,8 +305,8 @@ class SqliteRepository(NovaRepository):
 
         await self._conn.execute(
             """INSERT INTO messages
-            (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 msg_id,
                 session_id,
@@ -317,6 +321,8 @@ class SqliteRepository(NovaRepository):
                 reasoning_content,
                 group_id,
                 reasoning_elapsed_ms,
+                tokens_input,
+                tokens_output,
             ),
         )
         await self._conn.execute(
@@ -337,6 +343,8 @@ class SqliteRepository(NovaRepository):
             reasoning_content=reasoning_content,
             group_id=group_id,
             reasoning_elapsed_ms=reasoning_elapsed_ms,
+            tokens_input=tokens_input,
+            tokens_output=tokens_output,
         )
 
     async def get_messages(
@@ -351,8 +359,7 @@ class SqliteRepository(NovaRepository):
         params: list[object] = [session_id]
 
         if not filter_value.include_compacted:
-            conditions.append(
-                "(summary = 1 OR (compacted = 0 AND summary = 0))")
+            conditions.append("compacted = 0")
 
         if filter_value.exclude_tool_role:
             conditions.append("role != 'tool'")

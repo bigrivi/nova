@@ -64,6 +64,8 @@ class Done(ChatEvent):
     content: str = ""
     tool_calls: list = None
     aborted: bool = False
+    tokens_input: Optional[int] = None
+    tokens_output: Optional[int] = None
 
     def __post_init__(self):
         if self.tool_calls is None:
