@@ -30,3 +30,5 @@ license.lic
 
 # OpenCode session state
 .omo/
+
+yarn.lock
