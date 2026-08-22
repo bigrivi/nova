@@ -138,6 +138,7 @@ async def test_interrupt_after_tool_call_stops_before_tool_execution(db):
     assert [(msg.role, msg.content) for msg in messages] == [
         ("user", "trigger tool call"),
         ("assistant", ""),
+        ("tool", "Tool call cancelled by user."),
     ]
 
 

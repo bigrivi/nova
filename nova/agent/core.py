@@ -152,9 +152,9 @@ class Agent:
         self._abort_event.set()
         log.info("Agent interrupted")
 
-    def resolve_approval(self, req_id: str, approved: bool, remember: bool = False) -> bool:
+    def resolve_approval(self, approval_request_id: str, approved: bool, remember: bool = False) -> bool:
         """Resolve a pending approval request (called from server route)."""
-        return self._approval.resolve(req_id, approved, remember)
+        return self._approval.resolve(approval_request_id, approved, remember)
 
     def _check_abort(self) -> bool:
         """Check whether execution has been interrupted."""
@@ -196,86 +196,110 @@ class Agent:
             available_skills=available_skills,
         )
 
-    async def _get_messages(self) -> list[LLMMessage]:
+    def _convert_to_llm_messages(self, loaded_messages: list) -> list[LLMMessage]:
+        resolved_tool_call_ids = {
+            loaded_message.tool_call_id
+            for loaded_message in loaded_messages
+            if loaded_message.role == "tool" and loaded_message.tool_call_id
+        }
+        declared_tool_call_ids: set[str] = set()
+        for loaded_message in loaded_messages:
+            if loaded_message.role == "assistant" and loaded_message.tool_calls:
+                for tool_call in loaded_message.tool_calls:
+                    tool_call_identifier = tool_call.get(
+                        "id") if isinstance(tool_call, dict) else None
+                    if tool_call_identifier:
+                        declared_tool_call_ids.add(tool_call_identifier)
+
+        converted_messages: list[LLMMessage] = []
+        for loaded_message in loaded_messages:
+            if loaded_message.role == "tool" and loaded_message.tool_call_id not in declared_tool_call_ids:
+                continue
+            llm_message = LLMMessage(
+                role=loaded_message.role, content=loaded_message.content)
+            if loaded_message.tool_calls:
+                llm_message.tool_calls = [
+                    tool_call for tool_call in loaded_message.tool_calls
+                    if (isinstance(tool_call, dict) and tool_call.get("id")
+                        and tool_call["id"] in resolved_tool_call_ids)
+                ]
+            if loaded_message.tool_call_id:
+                llm_message.tool_call_id = loaded_message.tool_call_id
+            if loaded_message.images:
+                llm_message.images = loaded_message.images
+            if loaded_message.reasoning_content:
+                llm_message.reasoning_content = loaded_message.reasoning_content
+            converted_messages.append(llm_message)
+        return converted_messages
+
+    async def _get_messages(self, loaded_messages: Optional[list] = None) -> list[LLMMessage]:
         session = self.session.get_current_session()
 
         if self._base_system_prompt is None:
             await self._refresh_memory_index()
             self._base_system_prompt = self._build_system_prompt(session)
 
-        messages = [LLMMessage(
-            role="system", content=self._base_system_prompt)]
+        if loaded_messages is None:
+            loaded_messages = await self.session.get_messages()
+        return [LLMMessage(
+            role="system", content=self._base_system_prompt)] + self._convert_to_llm_messages(loaded_messages)
 
-        db_messages = await self.session.get_messages()
-        for db_message in db_messages:
-            message = LLMMessage(role=db_message.role, content=db_message.content)
-            if db_message.tool_calls:
-                message.tool_calls = db_message.tool_calls
-            if db_message.tool_call_id:
-                message.tool_call_id = db_message.tool_call_id
-            if db_message.images:
-                message.images = db_message.images
-            if db_message.reasoning_content:
-                message.reasoning_content = db_message.reasoning_content
-            messages.append(message)
-        return messages
-
-    def _parse_tool_args(self, args_str: str) -> dict:
-        if isinstance(args_str, dict):
-            return args_str
+    def _parse_tool_args(self, arguments_text: str) -> dict:
+        if isinstance(arguments_text, dict):
+            return arguments_text
         try:
-            return json.loads(args_str)
-        except json.JSONDecodeError as e:
+            return json.loads(arguments_text)
+        except json.JSONDecodeError as error:
             raise ValueError(
-                f"Invalid JSON in tool call arguments: {args_str!r}\n"
-                f"Parse error: {e}"
+                f"Invalid JSON in tool call arguments: {arguments_text!r}\n"
+                f"Parse error: {error}"
             )
 
-    async def _execute_tool(self, tool_call: ToolCall, args: dict, req_id: str = "") -> ToolResult:
+    async def _execute_tool(self, tool_call: ToolCall, arguments: dict, approval_request_id: str = "") -> ToolResult:
         tool_name = tool_call.name if hasattr(
             tool_call, 'name') else str(tool_call)
         log.info(f"Executing tool: {tool_name}")
-        tool_obj = self.tool_registry.get(tool_call.name)
-        if not tool_obj:
+        registered_tool = self.tool_registry.get(tool_call.name)
+        if not registered_tool:
             log.warning(f"Tool not found: {tool_call.name}")
             return ToolResult(success=False, content=f"Unknown tool: {tool_call.name}")
         try:
-            log.info(f"Tool {tool_name} args: {args}")
+            log.info(f"Tool {tool_name} arguments: {arguments}")
             import inspect
-            params = inspect.signature(tool_obj.func).parameters
-            if 'ctx' in params:
+            tool_parameters = inspect.signature(registered_tool.func).parameters
+            if 'turn_context' in tool_parameters:
                 from nova.tools.context import ToolContext
-                args['ctx'] = ToolContext(
+                arguments['turn_context'] = ToolContext(
                     llm=self.llm, model=self.config.model, provider=self.config.provider)
-            if 'session_id' in params:
+            if 'session_id' in tool_parameters:
                 current_session = self.session.get_current_session()
                 if current_session is not None and current_session.id:
-                    args['session_id'] = current_session.id
-            result = await tool_obj.func(**args)
+                    arguments['session_id'] = current_session.id
+            result = await registered_tool.func(**arguments)
             log.info(
                 f"Tool {tool_name} result: {result.content[:100] if result.content else 'empty'}...")
             guardrail_action = self._guardrails.observe(
-                tool_name, args, result.success)
+                tool_name, arguments, result.success)
             if guardrail_action == GuardrailAction.HALT:
                 log.warning(
-                    "Guardrails halted tool loop after %s with %s", tool_name, args)
+                    "Guardrails halted tool loop after %s with %s", tool_name, arguments)
                 return ToolResult(
                     success=False,
                     content="You seem to be repeating the same action. Try a different approach.",
                 )
             return result
-        except Exception as e:
-            log.error(f"Tool {tool_name} error: {e}")
+        except Exception as error:
+            log.error(f"Tool {tool_name} error: {error}")
             self._guardrails.observe(tool_name, {}, False)
-            return ToolResult(success=False, content=f"Tool error: {e}")
+            return ToolResult(success=False, content=f"Tool error: {error}")
 
     async def _emit_approval(self, data: dict) -> None:
         await self._emit(AgentEvent.APPROVAL_REQUIRED, data)
 
-    async def _execute_tool_with_abort(self, tc, args: dict, req_id: str = "") -> Optional[ToolResult]:
+    async def _execute_tool_with_abort(self, tool_call, arguments: dict, approval_request_id: str = "") -> Optional[ToolResult]:
         tool_task = asyncio.create_task(
-            self._execute_tool(tc, args, req_id=req_id),
-            name=f"tool_{tc.name}",
+            self._execute_tool(tool_call, arguments, approval_request_id=approval_request_id),
+            name=f"tool_{tool_call.name}",
         )
         abort_task = asyncio.create_task(
             self._abort_event.wait(),
@@ -287,34 +311,66 @@ class Agent:
             return_when=asyncio.FIRST_COMPLETED,
         )
 
-        for t in pending:
-            t.cancel()
+        for pending_task in pending:
+            pending_task.cancel()
             try:
-                await t
+                await pending_task
             except (asyncio.CancelledError, Exception):
                 pass
 
         if abort_task in done:
-            log.info("Tool %s aborted", tc.name if hasattr(tc, "name") else tc)
+            log.info("Tool %s aborted", tool_call.name if hasattr(tool_call, "name") else tool_call)
             return None
 
         try:
             return tool_task.result()
-        except Exception as e:
-            return ToolResult(success=False, content=f"Tool error: {e}")
+        except Exception as error:
+            return ToolResult(success=False, content=f"Tool error: {error}")
+
+    async def _persist_cancelled_tools(
+        self,
+        tool_calls: list,
+        executed_tool_call_ids: set[str],
+        group_id: Optional[str],
+    ) -> None:
+        """Write a cancelled tool result for every declared tool call that did
+        not complete, so the assistant->tool pairing stays intact for the LLM
+        and the UI shows the tool as cancelled."""
+        for tool_call in tool_calls:
+            cancelled_tool_call_id = tool_call.id if hasattr(tool_call, "id") else str(tool_call)
+            if cancelled_tool_call_id in executed_tool_call_ids:
+                continue
+            cancelled_tool_name = tool_call.name if hasattr(tool_call, "name") else str(tool_call)
+            result = ToolResult(
+                success=False, content="Tool call cancelled by user.", error="cancelled")
+            await self.session.add_message(
+                role="tool",
+                content=result.content,
+                tool_call_id=cancelled_tool_call_id,
+                group_id=group_id,
+            )
+            await self._emit(
+                AgentEvent.TOOL_RESULT,
+                {
+                    "tool": cancelled_tool_name,
+                    "tool_call_id": cancelled_tool_call_id,
+                    "result": result,
+                },
+            )
 
     async def _run_turn(
         self,
         turn_count: int,
         tool_schemas: Any,
         group_id: Optional[str] = None,
+        loaded_messages: Optional[list] = None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         stop_payload = await self._wait_if_aborted()
         if stop_payload:
             yield AgentEvent.DONE, stop_payload
             return
 
-        messages = await self._get_messages()
+        messages = await self._get_messages(loaded_messages=loaded_messages)
 
         accumulated_content = ""
         accumulated_reasoning = ""
@@ -381,17 +437,17 @@ class Agent:
                                 chunk_id)] = chunk
 
                 if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
-                    for tc in chunk.tool_calls:
-                        tc_id = getattr(tc, "id", None) or getattr(
-                            tc, "name", "")
-                        if tc_id:
-                            accumulated_tool_calls[str(tc_id)] = tc
+                    for tool_call in chunk.tool_calls:
+                        tool_call_identifier = getattr(tool_call, "id", None) or getattr(
+                            tool_call, "name", "")
+                        if tool_call_identifier:
+                            accumulated_tool_calls[str(tool_call_identifier)] = tool_call
         except GeneratorExit:
             generator_closing = True
             raise
-        except Exception as e:
-            log.error(f"[Turn {turn_count}] LLM call failed: {e}")
-            yield AgentEvent.ERROR, _error_payload("llm_error", str(e))
+        except Exception as error:
+            log.error(f"[Turn {turn_count}] LLM call failed: {error}")
+            yield AgentEvent.ERROR, _error_payload("llm_error", str(error))
             return
         finally:
             if accumulated_reasoning and not _text_started:
@@ -413,77 +469,82 @@ class Agent:
 
         final_content = accumulated_content or final_done_content
         final_tool_calls = [
-            tc for tc in accumulated_tool_calls.values()
-            if hasattr(tc, 'name') and tc.name
+            tool_call for tool_call in accumulated_tool_calls.values()
+            if hasattr(tool_call, 'name') and tool_call.name
         ]
 
         valid_tool_calls = []
-        for tc in final_tool_calls:
-            args_str = tc.arguments if hasattr(tc, 'arguments') else "{}"
-            if isinstance(args_str, str):
+        for tool_call in final_tool_calls:
+            arguments_text = tool_call.arguments if hasattr(tool_call, 'arguments') else "{}"
+            if isinstance(arguments_text, str):
                 try:
-                    json.loads(args_str)
-                    valid_tool_calls.append(tc)
+                    json.loads(arguments_text)
+                    valid_tool_calls.append(tool_call)
                 except json.JSONDecodeError:
                     log.warning(
-                        f"[Turn {turn_count}] Skipping tool call {tc.name} "
-                        f"with invalid JSON arguments: {args_str!r}"
+                        f"[Turn {turn_count}] Skipping tool call {tool_call.name} "
+                        f"with invalid JSON arguments: {arguments_text!r}"
                     )
             else:
-                valid_tool_calls.append(tc)
+                valid_tool_calls.append(tool_call)
         final_tool_calls = valid_tool_calls
 
         if final_tool_calls:
-            for tc in final_tool_calls:
-                tc_name = tc.name if hasattr(tc, 'name') else str(tc)
-                tc_args = tc.arguments if hasattr(
-                    tc, 'arguments') else "{}"
+            for tool_call in final_tool_calls:
+                tool_call_name = tool_call.name if hasattr(tool_call, 'name') else str(tool_call)
+                tool_call_arguments = tool_call.arguments if hasattr(
+                    tool_call, 'arguments') else "{}"
                 log.info(
-                    f"[Turn {turn_count}] Calling tool: {tc_name}({tc_args})")
+                    f"[Turn {turn_count}] Calling tool: {tool_call_name}({tool_call_arguments})")
 
             await self.session.add_message(
                 role="assistant",
                 content=final_content,
-                tool_calls=[tc.model_dump() if hasattr(
-                    tc, 'model_dump') else tc for tc in final_tool_calls],
+                tool_calls=[tool_call.model_dump() if hasattr(
+                    tool_call, 'model_dump') else tool_call for tool_call in final_tool_calls],
                 reasoning_content=accumulated_reasoning or None,
                 group_id=group_id,
                 reasoning_elapsed_ms=reasoning_elapsed_ms,
             )
-            for tc in final_tool_calls:
+            executed_tool_ids: set[str] = set()
+            for tool_call in final_tool_calls:
                 stop_payload = await self._wait_if_aborted()
                 if stop_payload:
+                    await self._persist_cancelled_tools(
+                        final_tool_calls, executed_tool_ids, group_id)
                     yield AgentEvent.DONE, stop_payload
                     return
-                await self._emit(AgentEvent.TOOL_CALL, tc)
-                yield AgentEvent.TOOL_CALL, tc
+                await self._emit(AgentEvent.TOOL_CALL, tool_call)
+                yield AgentEvent.TOOL_CALL, tool_call
                 stop_payload = await self._wait_if_aborted()
                 if stop_payload:
+                    await self._persist_cancelled_tools(
+                        final_tool_calls, executed_tool_ids, group_id)
                     yield AgentEvent.DONE, stop_payload
                     return
 
-                tc_name = tc.name if hasattr(tc, 'name') else str(tc)
+                tool_call_name = tool_call.name if hasattr(tool_call, 'name') else str(tool_call)
 
-                args = self._parse_tool_args(
-                    tc.arguments if hasattr(tc, 'arguments') else "{}")
-                behavior = self.tool_registry.behavior_for(tc_name)
-                ctx = TurnContext(
+                arguments = self._parse_tool_args(
+                    tool_call.arguments if hasattr(tool_call, 'arguments') else "{}")
+                behavior = self.tool_registry.behavior_for(tool_call_name)
+                turn_context = TurnContext(
                     approval_manager=self._approval,
                     event_emitter=self._emit_approval,
                 )
-                pre_check = await behavior.before_execute(args, ctx)
+                precheck_result = await behavior.before_execute(arguments, turn_context)
 
-                req_id = ""
-                if not pre_check.allowed:
+                approval_request_id = ""
+                if not precheck_result.allowed:
                     log.info(
-                        "Tool rejected: %s (%s)", tc_name, pre_check.reject_reason)
-                    yield AgentEvent.DONE, _done_payload("stopped", pre_check.reject_reason or "Tool rejected")
+                        "Tool rejected: %s (%s)", tool_call_name, precheck_result.reject_reason)
+                    yield AgentEvent.DONE, _done_payload("stopped", precheck_result.reject_reason or "Tool rejected")
                     return
 
-                if pre_check.approval_request:
-                    req_id = pre_check.approval_request.get("id", "")
-                    yield AgentEvent.APPROVAL_REQUIRED, pre_check.approval_request
-                    async for tick in self._approval.wait_with_heartbeat(req_id):
+                if precheck_result.approval_request:
+                    approval_request_id = precheck_result.approval_request.get("id", "")
+                    yield AgentEvent.APPROVAL_REQUIRED, precheck_result.approval_request
+                    async for tick in self._approval.wait_with_heartbeat(approval_request_id):
                         if tick is None:
                             yield AgentEvent.APPROVAL_HEARTBEAT, None
                         else:
@@ -492,33 +553,36 @@ class Agent:
                                 return
                             break
 
-                result = await self._execute_tool_with_abort(tc, args, req_id=req_id)
+                result = await self._execute_tool_with_abort(tool_call, arguments, approval_request_id=approval_request_id)
                 if result is None:
+                    await self._persist_cancelled_tools(
+                        final_tool_calls, executed_tool_ids, group_id)
                     yield AgentEvent.DONE, _done_payload("stopped", "Stopped by user")
                     return
 
-                tool_name = tc.name if hasattr(tc, 'name') else str(tc)
+                tool_name = tool_call.name if hasattr(tool_call, 'name') else str(tool_call)
 
                 content, images = behavior.postprocess(result.content)
 
                 await self.session.add_message(
                     role="tool",
                     content=content,
-                    tool_call_id=tc.id if hasattr(tc, 'id') else str(tc),
+                    tool_call_id=tool_call.id if hasattr(tool_call, 'id') else str(tool_call),
                     images=images,
                     group_id=group_id,
                 )
-                tool_call_id = tc.id if hasattr(tc, 'id') else str(tc)
+                executed_tool_ids.add(tool_call.id if hasattr(tool_call, 'id') else str(tool_call))
+                tool_call_id = tool_call.id if hasattr(tool_call, 'id') else str(tool_call)
                 await self._emit(
                     AgentEvent.TOOL_RESULT,
                     {
-                        "tool": tc.name if hasattr(tc, 'name') else str(tc),
+                        "tool": tool_call.name if hasattr(tool_call, 'name') else str(tool_call),
                         "tool_call_id": tool_call_id,
                         "result": result,
                     },
                 )
                 yield AgentEvent.TOOL_RESULT, {
-                    "tool": tc.name if hasattr(tc, 'name') else str(tc),
+                    "tool": tool_call.name if hasattr(tool_call, 'name') else str(tool_call),
                     "tool_call_id": tool_call_id,
                     "result": result,
                 }
@@ -531,8 +595,8 @@ class Agent:
                     yield AgentEvent.DONE, _done_payload("requires_input", "User input required")
                     return
 
-                behavior.on_success(ctx)
-                if ctx.memory_modified:
+                behavior.on_success(turn_context)
+                if turn_context.memory_modified:
                     self._memory_modified_this_turn = True
         else:
             await self.session.add_message(
@@ -579,18 +643,18 @@ class Agent:
         image_data: list[str] = []
         message_text = user_input
         if attachments:
-            for att in attachments:
-                if att.get("type") == "image":
-                    for part in att.get("content", []):
-                        if part.get("type") == "image":
-                            img_url = part.get("image", "")
-                            if img_url.startswith("data:"):
-                                _, base64_data = img_url.split(",", 1)
+            for attachment in attachments:
+                if attachment.get("type") == "image":
+                    for content_part in attachment.get("content", []):
+                        if content_part.get("type") == "image":
+                            image_url = content_part.get("image", "")
+                            if image_url.startswith("data:"):
+                                _, base64_data = image_url.split(",", 1)
                                 image_data.append(base64_data)
-                elif att.get("type") == "document":
-                    for part in att.get("content", []):
-                        if part.get("type") == "text":
-                            message_text = part.get(
+                elif attachment.get("type") == "document":
+                    for content_part in attachment.get("content", []):
+                        if content_part.get("type") == "text":
+                            message_text = content_part.get(
                                 "text", "") + "\n\n" + message_text
         self._last_user_input = message_text
         await self.session.add_message(
@@ -602,10 +666,10 @@ class Agent:
         tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else None
 
         data_source = self._data_source or await get_default_data_source()
+        session_messages = await self.session.get_messages()
         compaction_plan = await prepare_compaction(
             session_id=current_session.id if current_session else None,
-            message_count=len(await self.session.get_messages()),
-            turn_count=current_session.turn_count if current_session else 0,
+            messages=session_messages,
             last_compacted_at=current_session.compacted_at if current_session else None,
             db=data_source,
             model=self.config.model,
@@ -613,7 +677,7 @@ class Agent:
         )
         if compaction_plan.needs_compaction:
             compaction_payload = {
-                "message_count": len(compaction_plan.messages),
+                "message_count": compaction_plan.message_count,
                 "token_count": compaction_plan.token_count,
             }
             await self._emit(AgentEvent.COMPACTION_START, compaction_payload)
@@ -624,11 +688,13 @@ class Agent:
                 llm=self.llm,
                 model=self.config.model,
                 provider=self.config.provider,
+                messages=session_messages,
             )
             current_session.compacted_at = int(
                 datetime.now().timestamp() * 1000)
             await self._emit(AgentEvent.COMPACTION_END, compaction_payload)
             yield AgentEvent.COMPACTION_END, compaction_payload
+            session_messages = await self.session.get_messages()
 
         run_group_id = uuid.uuid4().hex
         turn_count = 0
@@ -638,7 +704,12 @@ class Agent:
             yield AgentEvent.TURN_START, {"turn": turn_count}
 
             done_payload = None
-            async for event, data in self._run_turn(turn_count, tool_schemas, group_id=run_group_id):
+            async for event, data in self._run_turn(
+                turn_count,
+                tool_schemas,
+                group_id=run_group_id,
+                loaded_messages=session_messages if turn_count == 1 else None,
+            ):
                 if event == AgentEvent.DONE:
                     done_payload = data
                 elif event == AgentEvent.ERROR:
@@ -700,9 +771,9 @@ class Agent:
         # Register MCP remote tools
         if not self.is_sub_agent:
             try:
-                mcp = MCPManager.get_shared()
-                await mcp.ensure_initialized()
-                mcp.register_tools(self.tool_registry)
+                mcp_manager = MCPManager.get_shared()
+                await mcp_manager.ensure_initialized()
+                mcp_manager.register_tools(self.tool_registry)
             except Exception:
                 log.exception("Failed to initialize MCP servers")
 
@@ -739,8 +810,8 @@ class Agent:
                     service=MemoryService(data_source=self._data_source)
                 )
             )
-        except Exception as e:
-            log.warning("Failed to refresh memory index: %s", e)
+        except Exception as error:
+            log.warning("Failed to refresh memory index: %s", error)
 
     async def _background_memory_review(self) -> None:
         try:
@@ -752,9 +823,9 @@ class Agent:
             from nova.memory.service import MemoryService
 
             lines = []
-            for m in messages[-30:]:
-                role = getattr(m, "role", "?")
-                content = getattr(m, "content", "") or ""
+            for recent_message in messages[-30:]:
+                role = getattr(recent_message, "role", "?")
+                content = getattr(recent_message, "content", "") or ""
                 if role == "tool":
                     content = content[:200] if len(content) > 200 else content
                 if content:
@@ -805,12 +876,12 @@ class Agent:
                     ))
                     if created:
                         saved += 1
-                except Exception as e:
-                    log.debug("Failed to save reviewed fact: %s", e)
+                except Exception as error:
+                    log.debug("Failed to save reviewed fact: %s", error)
             if saved:
                 log.info("Memory review saved %d new fact(s)", saved)
-        except Exception as e:
-            log.warning("Background memory review failed: %s", e)
+        except Exception as error:
+            log.warning("Background memory review failed: %s", error)
 
     @staticmethod
     def _parse_review_facts(content: str) -> list[dict]:
@@ -824,11 +895,11 @@ class Agent:
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError:
-            start = text.find("[")
-            end = text.rfind("]")
-            if start != -1 and end != -1 and end > start:
+            array_start = text.find("[")
+            array_end = text.rfind("]")
+            if array_start != -1 and array_end != -1 and array_end > array_start:
                 try:
-                    parsed = json.loads(text[start:end+1])
+                    parsed = json.loads(text[array_start:array_end + 1])
                 except json.JSONDecodeError:
                     return []
             else:

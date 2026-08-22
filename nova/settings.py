@@ -56,9 +56,9 @@ class CompactionSettings:
 
     token_ratio: float = 0.7          # compact when tokens exceed model_max_tokens * ratio
     max_messages: int = 100           # compact when message count exceeds this
-    max_turns_between_compact: int = 20  # compact when turns since last compact exceed this
+    max_turns_between_compact: int = 20  # compact when user turns since last compact exceed this
     snip_max_chars: int = 2000        # Layer 1: trim tool results longer than this
-    snip_preserve_last_n_turns: int = 6  # Layer 1: keep last N turns unchanged
+    snip_preserve_last_n_messages: int = 12  # Layer 1: keep last N messages unchanged
     summary_keep_ratio: float = 0.3   # Layer 2: keep recent portion of tokens at split
 
 
@@ -183,7 +183,9 @@ def _parse_compaction_config(raw: Any) -> CompactionSettings:
         max_messages=int(raw.get("max_messages", 100)),
         max_turns_between_compact=int(raw.get("max_turns_between_compact", 20)),
         snip_max_chars=int(raw.get("snip_max_chars", 2000)),
-        snip_preserve_last_n_turns=int(raw.get("snip_preserve_last_n_turns", 6)),
+        snip_preserve_last_n_messages=int(
+            raw.get("snip_preserve_last_n_messages",
+                    raw.get("snip_preserve_last_n_turns", 12))),
         summary_keep_ratio=float(raw.get("summary_keep_ratio", 0.3)),
     )
 

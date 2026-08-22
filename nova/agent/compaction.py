@@ -27,9 +27,9 @@ log = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class CompactionPlan:
     session_id: str
-    messages: list
     model_max_tokens: int
     token_count: int
+    message_count: int
     needs_compaction: bool
 
 
@@ -57,14 +57,14 @@ def get_context_limit(model: str, provider: str) -> int:
 def snip_old_tool_results(
     messages: list,
     max_chars: int = 2000,
-    preserve_last_n_turns: int = 6,
+    preserve_last_n_messages: int = 12,
 ) -> list:
     """Layer 1: trim old tool results.
 
-    Keep the last N turns unchanged. For earlier messages, if a tool result exceeds
+    Keep the last N messages unchanged. For earlier messages, if a tool result exceeds
     ``max_chars``, keep the first half and the last quarter, and insert an omission marker in the middle.
     """
-    cutoff = max(0, len(messages) - preserve_last_n_turns)
+    cutoff = max(0, len(messages) - preserve_last_n_messages)
 
     for i in range(cutoff):
         m = messages[i]
@@ -94,12 +94,28 @@ def find_split_point(messages: list, keep_ratio: float = 0.3) -> int:
     target = int(total * keep_ratio)
     running = 0
 
+    split = 0
     for i in range(len(messages) - 1, -1, -1):
         running += estimate_tokens([messages[i]])
         if running >= target:
-            return i
+            split = i
+            break
 
-    return 0
+    return _advance_to_safe_split(messages, split)
+
+
+def _advance_to_safe_split(messages: list, split: int) -> int:
+    """Move the split forward until it no longer separates an assistant message
+    from the tool responses answering its tool calls.
+
+    A tool response must never start the recent portion: its declaring assistant
+    would stay in the compacted portion, leaving an orphan tool message that
+    breaks the OpenAI assistant->tool pairing contract (HTTP 400).
+    """
+    safe = split
+    while 0 < safe < len(messages) and _get_role(messages[safe]) == "tool":
+        safe += 1
+    return safe
 
 
 SUMMARY_PROMPT_TEMPLATE = """\
@@ -115,10 +131,30 @@ Preserve key decisions, file paths, tool results, and context needed to continue
 Summary:"""
 
 
+def count_turns_since_compact(messages: list, last_compacted_at: Optional[int]) -> int:
+    """Count user turns recorded after the last compaction.
+
+    ``session.turn_count`` is a cumulative per-message counter that is never
+    reset and is not persisted, so it cannot express "turns since the last
+    compaction". Deriving the count from message timestamps keeps the decision
+    correct in both long-lived CLI processes and stateless server requests.
+    """
+    if not last_compacted_at:
+        return 0
+    turns = 0
+    for m in messages:
+        if _get_role(m) != "user":
+            continue
+        created = _get_time_created(m)
+        if created and created > last_compacted_at:
+            turns += 1
+    return turns
+
+
 def should_compact(
     message_count: int,
     token_count: int,
-    turn_count: int,
+    turns_since_compact: int,
     last_compacted_at: Optional[int],
     model_max_tokens: int = 128000,
     max_turns_between_compact: int = 20,
@@ -135,7 +171,6 @@ def should_compact(
         return True
 
     if last_compacted_at:
-        turns_since_compact = turn_count
         if turns_since_compact > max_turns_between_compact:
             return True
 
@@ -158,10 +193,10 @@ async def maybe_compact(
     1. Layer 1: ``snip_old_tool_results`` trims old tool outputs.
     2. Layer 2: invoke the LLM to compact history when needed.
     """
+    messages = await db.get_messages(session_id)
     plan = await prepare_compaction(
         session_id=session_id,
-        message_count=message_count,
-        turn_count=turn_count,
+        messages=messages,
         last_compacted_at=last_compacted_at,
         db=db,
         model=model,
@@ -170,57 +205,61 @@ async def maybe_compact(
     if not plan.needs_compaction:
         return False
 
-    await run_compaction_plan(plan, db, llm, model, provider)
+    await run_compaction_plan(plan, db, llm, model, provider, messages=messages)
     return True
 
 
-async def prepare_compaction(
+def evaluate_compaction(
     session_id: str,
-    message_count: int,
-    turn_count: int,
+    messages: list,
     last_compacted_at: Optional[int],
-    db: "DataSourceProtocol",
     model: str = "gpt-4o",
     provider: str = "ollama",
 ) -> CompactionPlan:
-    """Load messages and decide whether Layer 2 compaction should run."""
+    """Pure decision step: no IO, no mutation, no message payload in the result."""
     model_max_tokens = get_context_limit(model, provider)
     comp = get_settings().compaction
 
-    if message_count == 0:
-        return CompactionPlan(session_id, [], model_max_tokens, 0, False)
-
-    messages = await db.get_messages(session_id)
     if not messages:
-        return CompactionPlan(session_id, [], model_max_tokens, 0, False)
-
-    token_count = estimate_tokens(messages)
-    if not should_compact(
-        message_count=message_count,
-        token_count=token_count,
-        turn_count=turn_count,
-        last_compacted_at=last_compacted_at,
-        model_max_tokens=model_max_tokens,
-        max_turns_between_compact=comp.max_turns_between_compact,
-        token_ratio=comp.token_ratio,
-        max_messages=comp.max_messages,
-    ):
-        return CompactionPlan(session_id, messages, model_max_tokens, token_count, False)
-
-    await snip_tool_results_in_db(db, session_id, messages)
+        return CompactionPlan(session_id, model_max_tokens, 0, 0, False)
 
     token_count = estimate_tokens(messages)
     needs_compaction = should_compact(
-        message_count=message_count,
+        message_count=len(messages),
         token_count=token_count,
-        turn_count=turn_count,
+        turns_since_compact=count_turns_since_compact(
+            messages, last_compacted_at),
         last_compacted_at=last_compacted_at,
         model_max_tokens=model_max_tokens,
         max_turns_between_compact=comp.max_turns_between_compact,
         token_ratio=comp.token_ratio,
         max_messages=comp.max_messages,
     )
-    return CompactionPlan(session_id, messages, model_max_tokens, token_count, needs_compaction)
+    return CompactionPlan(
+        session_id, model_max_tokens, token_count, len(messages), needs_compaction)
+
+
+async def prepare_compaction(
+    session_id: str,
+    messages: list,
+    last_compacted_at: Optional[int],
+    db: "DataSourceProtocol",
+    model: str = "gpt-4o",
+    provider: str = "ollama",
+) -> CompactionPlan:
+    """Evaluate *messages*, run Layer 1 snipping when needed, then re-evaluate.
+
+    The caller owns *messages*; Layer 1 trims them in place so the caller's copy
+    stays consistent with what was written back to the database.
+    """
+    plan = evaluate_compaction(
+        session_id, messages, last_compacted_at, model, provider)
+    if not plan.needs_compaction:
+        return plan
+
+    await snip_tool_results_in_db(db, session_id, messages)
+    return evaluate_compaction(
+        session_id, messages, last_compacted_at, model, provider)
 
 
 async def run_compaction_plan(
@@ -229,11 +268,12 @@ async def run_compaction_plan(
     llm: LLMProvider,
     model: str = "gpt-4o",
     provider: str = "ollama",
+    messages: Optional[list] = None,
 ) -> None:
-    """Execute a prepared compaction plan."""
+    """Execute a prepared compaction plan against caller-owned *messages*."""
     if not plan.needs_compaction:
         return
-    await compact(plan.session_id, db, llm, model, provider, messages=plan.messages)
+    await compact(plan.session_id, db, llm, model, provider, messages=messages)
 
 
 async def snip_tool_results_in_db(db: "DataSourceProtocol", session_id: str, messages: list) -> None:
@@ -242,7 +282,7 @@ async def snip_tool_results_in_db(db: "DataSourceProtocol", session_id: str, mes
     snip_old_tool_results(
         messages,
         max_chars=comp.snip_max_chars,
-        preserve_last_n_turns=comp.snip_preserve_last_n_turns,
+        preserve_last_n_messages=comp.snip_preserve_last_n_messages,
     )
 
     for msg in messages:
@@ -400,3 +440,10 @@ def _get_tool_call_id(msg) -> str:
     if isinstance(msg, dict):
         return msg.get("tool_call_id", "") or ""
     return getattr(msg, "tool_call_id", "") or ""
+
+
+def _get_time_created(msg) -> int:
+    """Get the message creation timestamp in milliseconds."""
+    if isinstance(msg, dict):
+        return int(msg.get("time_created") or 0)
+    return int(getattr(msg, "time_created", 0) or 0)

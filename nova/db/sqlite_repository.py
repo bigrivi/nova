@@ -140,7 +140,9 @@ def _row_to_message(row_dict: dict[str, Any]) -> Message:
         id=row_dict["id"],
         session_id=row_dict["session_id"],
         role=row_dict["role"],
-        content=row_dict.get("content") or row_dict.get("data", ""),
+        content=(row_dict.get("content")
+                 if row_dict.get("content") is not None
+                 else (row_dict.get("data") or "")),
         tool_calls=_parse_tool_calls(row_dict.get("tool_calls")),
         tool_call_id=row_dict.get("tool_call_id"),
         time_created=row_dict["time_created"],

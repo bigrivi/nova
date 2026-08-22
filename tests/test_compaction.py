@@ -66,7 +66,7 @@ class TestSnipOldToolResults:
             MockMessage("5", "tool", "C" * 500),
             MockMessage("6", "tool", "D" * 100),
         ]
-        result = snip_old_tool_results(messages, max_chars=2000, preserve_last_n_turns=2)
+        result = snip_old_tool_results(messages, max_chars=2000, preserve_last_n_messages=2)
         
         assert "[... " in result[0].content
         assert " chars snipped " in result[0].content
@@ -80,7 +80,7 @@ class TestSnipOldToolResults:
             MockMessage("3", "tool", "C" * 100),
             MockMessage("4", "tool", "D" * 100),
         ]
-        result = snip_old_tool_results(messages, preserve_last_n_turns=2)
+        result = snip_old_tool_results(messages, preserve_last_n_messages=2)
         
         assert "[... " in result[0].content
         assert "[... " in result[1].content
@@ -138,7 +138,7 @@ class TestShouldCompact:
         assert not should_compact(
             message_count=0,
             token_count=0,
-            turn_count=0,
+            turns_since_compact=0,
             last_compacted_at=None,
         )
 
@@ -149,7 +149,7 @@ class TestShouldCompact:
         assert should_compact(
             message_count=10,
             token_count=threshold + 1000,
-            turn_count=5,
+            turns_since_compact=5,
             last_compacted_at=None,
             model_max_tokens=model_max_tokens,
         )
@@ -161,7 +161,7 @@ class TestShouldCompact:
         assert not should_compact(
             message_count=10,
             token_count=threshold - 1000,
-            turn_count=5,
+            turns_since_compact=5,
             last_compacted_at=None,
             model_max_tokens=model_max_tokens,
         )
@@ -170,7 +170,7 @@ class TestShouldCompact:
         assert should_compact(
             message_count=101,
             token_count=100,
-            turn_count=5,
+            turns_since_compact=5,
             last_compacted_at=None,
         )
 
@@ -178,7 +178,7 @@ class TestShouldCompact:
         assert not should_compact(
             message_count=100,
             token_count=100,
-            turn_count=5,
+            turns_since_compact=5,
             last_compacted_at=None,
         )
 
@@ -189,7 +189,7 @@ class TestShouldCompact:
         assert should_compact(
             message_count=10,
             token_count=1000,
-            turn_count=25,
+            turns_since_compact=25,
             last_compacted_at=now - 3600000,
             max_turns_between_compact=20,
         )
@@ -201,7 +201,7 @@ class TestShouldCompact:
         assert not should_compact(
             message_count=10,
             token_count=1000,
-            turn_count=15,
+            turns_since_compact=15,
             last_compacted_at=now - 3600000,
             max_turns_between_compact=20,
         )
@@ -481,3 +481,178 @@ async def test_maybe_compact_with_real_llm():
         assert isinstance(did_compact, bool)
     finally:
         await db.close()
+
+
+class MockTimedMessage(MockMessage):
+    def __init__(self, id, role, content, tool_calls=None, tool_call_id=None, time_created=0):
+        super().__init__(id, role, content, tool_calls)
+        self.tool_call_id = tool_call_id
+        self.time_created = time_created
+
+
+class TestCountTurnsSinceCompact:
+    def test_zero_without_last_compacted_at(self):
+        from nova.agent.compaction import count_turns_since_compact
+
+        messages = [MockTimedMessage(str(i), "user", "hi", time_created=i)
+                    for i in range(30)]
+        assert count_turns_since_compact(messages, None) == 0
+
+    def test_counts_only_user_messages_after_compaction(self):
+        from nova.agent.compaction import count_turns_since_compact
+
+        messages = [
+            MockTimedMessage("1", "user", "before", time_created=100),
+            MockTimedMessage("2", "assistant", "before", time_created=110),
+            MockTimedMessage("3", "user", "after", time_created=300),
+            MockTimedMessage("4", "assistant", "after", time_created=310),
+            MockTimedMessage("5", "tool", "after", time_created=320),
+            MockTimedMessage("6", "user", "after", time_created=330),
+        ]
+        assert count_turns_since_compact(messages, 200) == 2
+
+    def test_cumulative_history_does_not_trigger_perpetual_compaction(self):
+        from nova.agent.compaction import count_turns_since_compact
+
+        messages = [MockTimedMessage(str(i), "user", "old", time_created=i)
+                    for i in range(1, 200)]
+        messages.append(MockTimedMessage("new", "user", "new", time_created=9999))
+        turns = count_turns_since_compact(messages, 5000)
+        assert turns == 1
+        assert not should_compact(
+            message_count=len(messages),
+            token_count=10,
+            turns_since_compact=turns,
+            last_compacted_at=5000,
+            model_max_tokens=1000000,
+            max_messages=100000,
+            max_turns_between_compact=20,
+        )
+
+
+class TestCjkTokenEstimation:
+    def test_cjk_is_not_underestimated_like_latin(self):
+        from nova.llm.tokenizer import estimate_tokens_by_type
+
+        chinese = "重构上下文压缩机制并修复配对问题" * 10
+        latin = "refactor the context compaction mechanism now" * 10
+        cjk_tokens = estimate_tokens_by_type(chinese)
+        assert cjk_tokens >= len(chinese) * 0.9
+        assert estimate_tokens_by_type(latin) <= len(latin) // 3
+
+    def test_mixed_script_counted_per_script(self):
+        from nova.llm.tokenizer import estimate_tokens_by_type
+
+        mixed = "读取文件 read the file"
+        cjk_count = 4
+        expected = cjk_count + (len(mixed) - cjk_count) // 4
+        assert estimate_tokens_by_type(mixed) == expected
+
+
+class TestSplitPointPairing:
+    def test_split_never_starts_with_tool_message(self):
+        from nova.agent.compaction import _advance_to_safe_split
+
+        messages = [
+            MockTimedMessage("1", "user", "q"),
+            MockTimedMessage("2", "assistant", "", tool_calls=[{"id": "a"}]),
+            MockTimedMessage("3", "tool", "r1", tool_call_id="a"),
+            MockTimedMessage("4", "tool", "r2", tool_call_id="a"),
+            MockTimedMessage("5", "assistant", "done"),
+        ]
+        assert _advance_to_safe_split(messages, 2) == 4
+        assert _advance_to_safe_split(messages, 3) == 4
+        assert _advance_to_safe_split(messages, 4) == 4
+
+    def test_zero_split_is_untouched(self):
+        from nova.agent.compaction import _advance_to_safe_split
+
+        messages = [MockTimedMessage("1", "tool", "r", tool_call_id="a")]
+        assert _advance_to_safe_split(messages, 0) == 0
+
+    def test_find_split_point_returns_safe_boundary(self):
+        messages = [
+            MockTimedMessage("1", "user", "x" * 4000),
+            MockTimedMessage("2", "assistant", "", tool_calls=[{"id": "a"}]),
+            MockTimedMessage("3", "tool", "y" * 4000, tool_call_id="a"),
+            MockTimedMessage("4", "assistant", "z" * 40),
+        ]
+        split = find_split_point(messages, keep_ratio=0.3)
+        assert split == 0 or _get_role(messages[split]) != "tool"
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_loads_messages_once_per_request():
+    """chat_stream owns the single message load; turn 1 reuses it, later turns reload."""
+    from nova import Agent, AgentConfig
+    from nova.agent.core import AgentEvent
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.config import DatabaseConfig
+    from nova.db import database as db_module
+    from nova.llm import ToolResult
+    from nova.llm.provider import Done, LLMProvider, TextDelta, ToolCall
+
+    class ScriptedProvider(LLMProvider):
+        def __init__(self, scripts):
+            self._scripts = scripts
+            self._index = 0
+
+        async def chat(self, messages, model="m", stream=False, tools=None, **kw):
+            return Done(content="summary")
+
+        async def chat_stream(self, messages, model="m", tools=None, **kw):
+            script = self._scripts[min(self._index, len(self._scripts) - 1)]
+            self._index += 1
+            for item in script:
+                await asyncio.sleep(0)
+                yield item
+
+        async def count_tokens(self, text, model=None):
+            return len(text)
+
+        def get_max_tokens(self, model):
+            return 128000
+
+    database = SqliteRepository(DatabaseConfig(path=":memory:"))
+    await database.connect()
+    old_db = db_module._db
+    db_module._db = database
+    try:
+        calls = {"n": 0}
+        original_get_messages = database.get_messages
+
+        async def counted(*args, **kwargs):
+            calls["n"] += 1
+            return await original_get_messages(*args, **kwargs)
+
+        database.get_messages = counted
+
+        agent = Agent(
+            config=AgentConfig(model="test-model", max_iterations=1),
+            llm_provider=ScriptedProvider([[TextDelta(content="hello")]]),
+        )
+        session_id = None
+        async for event, data in agent.chat_stream("first"):
+            if event == AgentEvent.SESSION:
+                session_id = data
+        assert calls["n"] == 1
+
+        calls["n"] = 0
+        agent2 = Agent(
+            config=AgentConfig(model="test-model", max_iterations=3),
+            llm_provider=ScriptedProvider([
+                [ToolCall(id="t1", name="ok_tool", arguments="{}")],
+                [TextDelta(content="done")],
+            ]),
+        )
+
+        async def ok_tool() -> ToolResult:
+            return ToolResult(success=True, content="ok")
+
+        agent2.register_tool(ok_tool, name="ok_tool")
+        async for _event, _data in agent2.chat_stream("second", session_id=session_id):
+            pass
+        assert calls["n"] == 2
+    finally:
+        await database.close()
+        db_module._db = old_db

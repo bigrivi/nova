@@ -5,16 +5,41 @@ CHARS_PER_TOKEN_TEXT = 4          # Normal messages
 CHARS_PER_TOKEN_TOOL = 2          # Tool results are more token-dense
 IMAGE_CHAR_ESTIMATE = 8000            # Fixed estimate for images
 
+# CJK text tokenizes at roughly one token per character, so the Latin-oriented
+# ratios above underestimate Chinese/Japanese/Korean content by 2-4x.
+CHARS_PER_TOKEN_CJK = 1
+
 # Safety margin to account for estimation inaccuracy
 SAFETY_MARGIN = 1.2
 
+_CJK_RANGES = (
+    (0x3040, 0x30FF),    # Hiragana + Katakana
+    (0x3400, 0x4DBF),    # CJK Unified Ideographs Extension A
+    (0x4E00, 0x9FFF),    # CJK Unified Ideographs
+    (0xAC00, 0xD7AF),    # Hangul syllables
+    (0xF900, 0xFAFF),    # CJK Compatibility Ideographs
+    (0x20000, 0x2FA1F),  # CJK Extension B-F
+)
+
+
+def _is_cjk(ch: str) -> bool:
+    code = ord(ch)
+    return any(start <= code <= end for start, end in _CJK_RANGES)
+
+
+def count_cjk_chars(text: str) -> int:
+    return sum(1 for ch in text if _is_cjk(ch))
+
 
 def estimate_tokens_by_type(text: str, is_tool_result: bool = False) -> int:
-    """Character-based estimation with type awareness."""
+    """Character-based estimation with type and script awareness."""
     if not text:
         return 0
     chars_per_token = CHARS_PER_TOKEN_TOOL if is_tool_result else CHARS_PER_TOKEN_TEXT
-    return max(1, len(text) // chars_per_token)
+    cjk_chars = count_cjk_chars(text)
+    other_chars = len(text) - cjk_chars
+    estimated = cjk_chars // CHARS_PER_TOKEN_CJK + other_chars // chars_per_token
+    return max(1, estimated)
 
 
 def estimate_message_tokens(message, model: str = "unknown") -> int:
