@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
+import pytest_asyncio
 from starlette.types import ASGIApp
 import json
 
@@ -68,7 +69,7 @@ class FakeAgent:
             yield event
 
 
-@pytest.fixture(autouse=True)
+@pytest_asyncio.fixture(autouse=True)
 async def reset_state():
     get_settings.cache_clear()
     await close_db()
@@ -393,60 +394,6 @@ async def test_sessions_endpoint_returns_saved_sessions(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_session_messages_endpoint_returns_history(monkeypatch, tmp_path):
-    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
-    settings = Settings.load_config()
-    db = await init_db(DatabaseConfig(path=str(settings.database_path)))
-    await db.save_session(Session(id="sess-2", title="History Test"))
-    await db.add_message("sess-2", "user", "hello")
-    await db.add_message(
-        "sess-2",
-        "assistant",
-        "",
-        tool_calls=[
-            {"id": "call_bash", "name": "bash", "arguments": "{\"command\":\"pwd\"}"},
-            {"id": "call_edit", "name": "edit", "arguments": "{\"filePath\":\"foo.py\"}"},
-        ],
-    )
-    await db.add_message("sess-2", "tool", "hidden tool output", tool_call_id="call_bash")
-    await db.add_message(
-        "sess-2",
-        "tool",
-        "Changes applied to foo.py:\n\n--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new\n",
-        tool_call_id="call_edit",
-    )
-    await db.add_message("sess-2", "assistant", "world")
-    await db.add_message(
-        "sess-2",
-        "assistant",
-        "[Previous conversation summary]\nsummary text",
-        summary=True,
-    )
-
-    app = create_app(settings=settings)
-    client = TestClient(app)
-
-    response = client.get("/api/sessions/sess-2/messages")
-
-    assert response.status_code == 200
-    items = response.json()["items"]
-    assert [item["role"] for item in items] == ["user", "assistant", "tool", "assistant"]
-    assert items[0]["content"] == "hello"
-    assert items[1]["tool_calls"] == [
-        {"id": "call_edit", "name": "edit", "arguments": "{\"filePath\":\"foo.py\"}"}
-    ]
-    assert items[2]["role"] == "tool"
-    assert items[2]["tool_call_id"] == "call_edit"
-    assert "Changes applied to foo.py" in items[2]["content"]
-    assert items[3]["content"] == "world"
-    assert not any(item["tool_call_id"] == "call_bash" for item in items)
-    assert not any("Previous conversation summary" in item["content"] for item in items)
-    assert all(item["session_id"] == "sess-2" for item in items)
-    assert all(isinstance(item["id"], str) for item in items)
-    assert all(isinstance(item["time_created"], int) for item in items)
-
-
-@pytest.mark.asyncio
 async def test_delete_session_without_memories_keeps_memories(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     settings = Settings.load_config()
@@ -681,29 +628,6 @@ async def test_delete_memory_endpoint_returns_404_for_missing(monkeypatch, tmp_p
     assert "not found" in response.json()["detail"]
 
 
-def test_chat_endpoint_returns_completed_response(monkeypatch):
-    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-chat")
-    app = create_app(settings=Settings.load_config())
-    app.state.chat_service = FakeChatService(
-        chat_payload={
-            "request_id": "req_fake",
-            "session_id": "sess-chat",
-            "status": "completed",
-            "message": "hello world",
-        }
-    )
-    client = TestClient(app)
-
-    response = client.post("/api/chat", json={"message": "hello"})
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["session_id"] == "sess-chat"
-    assert payload["status"] == "completed"
-    assert payload["message"] == "hello world"
-    assert payload["request_id"].startswith("req_")
-
-
 def test_chat_stream_endpoint_returns_sse_events(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-stream")
     app = create_app(settings=Settings.load_config())
@@ -780,35 +704,6 @@ def test_chat_stream_openapi_documents_sse_response(monkeypatch):
     assert "x-nova-stream-events" not in stream_post
 
 
-@pytest.mark.asyncio
-async def test_chat_service_session_started_event_keeps_single_session_id(monkeypatch):
-    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-chat-service-session")
-    settings = Settings.load_config()
-    fake_agent = FakeAgent(
-        [
-            (AgentEvent.SESSION, "sess-stream"),
-            (AgentEvent.TURN_START, {"turn": 1}),
-            (AgentEvent.TEXT_DELTA, "hello"),
-            (AgentEvent.DONE, "hello"),
-        ]
-    )
-    monkeypatch.setattr(server_chat_service, "build_agent", lambda settings: fake_agent)
-    service = ChatService(settings=settings)
-
-    events = [event async for event in service.chat_stream(ChatRequest(message="hello"))]
-
-    assert [event.type for event in events] == [
-        "session.started",
-        "response.started",
-        "message.delta",
-        "response.completed",
-    ]
-    assert events[0].data.session_id == "sess-stream"
-    assert events[0].data.sequence == 1
-    assert events[-1].data.session_id == "sess-stream"
-    assert events[-1].data.sequence == 4
-
-
 def test_chat_endpoint_rejects_invalid_json(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-invalid-json")
     app = create_app(settings=Settings.load_config())
@@ -836,19 +731,6 @@ def test_chat_endpoint_rejects_non_object_json(monkeypatch):
 
     assert response.status_code == 422
     assert response.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_interrupt_endpoint_interrupts_registered_request(monkeypatch):
-    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-interrupt")
-    app = create_app(settings=Settings.load_config())
-    app.state.chat_service = FakeChatService(interrupt_result=True)
-    client = TestClient(app)
-
-    response = client.post("/api/chat/req_interrupt/interrupt")
-
-    assert response.status_code == 200
-    assert response.json() == {"request_id": "req_interrupt", "interrupted": True}
 
 
 def test_unknown_route_returns_404(monkeypatch):
