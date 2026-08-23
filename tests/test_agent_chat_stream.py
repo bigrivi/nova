@@ -300,3 +300,102 @@ class TestMemoryReviewScheduling:
                 pass
             await asyncio.sleep(0)
             agent._background_memory_review.assert_not_called()
+
+from nova.llm.faker import FakerLLMProvider
+
+
+@pytest.mark.asyncio
+async def test_e2e_full_chain_multi_turn_with_tools_and_compaction():
+    """Full user execution chain: multi-turn, various tools, compaction, continuation.
+
+    Uses FakerLLMProvider (seeded) to simulate a realistic agent without a live
+    LLM. Covers: session creation, tool loop, multi-turn history, large tool
+    outputs that trigger compaction, and continuation after compaction.
+    """
+    provider = FakerLLMProvider(
+        seed=42,
+        reasoning_probability=0.6,
+        tool_call_probability=0.8,
+        max_tool_rounds=2,
+        max_tool_calls_per_turn=2,
+    )
+
+    async with isolated_agent(provider, max_iterations=5) as (agent, database):
+        async def echo_tool(text: str = "") -> ToolResult:
+            return ToolResult(success=True, content=f"echo:{text}")
+
+        async def calc_tool(a: int = 0, b: int = 0, **kwargs) -> ToolResult:
+            try:
+                return ToolResult(success=True, content=str(int(a) + int(b)))
+            except Exception:
+                return ToolResult(success=True, content="calc:ok")
+
+        agent.register_tool(echo_tool, name="echo_tool")
+        agent.register_tool(calc_tool, name="calc_tool")
+
+        session_id = None
+
+        # Turn 1: initial user request
+        events1 = []
+        async for event, data in agent.chat_stream("帮我创建一个项目计划"):
+            events1.append((event, data))
+            if event == AgentEvent.SESSION and session_id is None:
+                session_id = data
+
+        assert session_id is not None
+        assert any(e == AgentEvent.DONE for e, _ in events1)
+        assert any(
+            e in (AgentEvent.TOOL_CALL, AgentEvent.TEXT_DELTA, AgentEvent.REASONING_DELTA)
+            for e, _ in events1
+        )
+
+        # Turn 2: continue in same session
+        events2 = []
+        async for event, data in agent.chat_stream("继续", session_id=session_id):
+            events2.append((event, data))
+        assert any(e == AgentEvent.DONE for e, _ in events2)
+
+        # Turn 3: inject many large tool messages to exceed compaction threshold
+        for i in range(30):
+            await database.add_message(session_id, "user", f"补充信息 {i}")
+            await database.add_message(
+                session_id,
+                "assistant",
+                "",
+                tool_calls=[
+                    {
+                        "type": "tool_call",
+                        "id": f"call_bulk_{i}",
+                        "name": "echo_tool",
+                        "arguments": '{"text":"hi"}',
+                    }
+                ],
+            )
+            await database.add_message(session_id, "tool", "X" * 8000, tool_call_id=f"call_bulk_{i}")
+
+        # Turn 4: trigger compaction check and continue
+        events4 = []
+        async for event, data in agent.chat_stream("请总结一下目前的进展", session_id=session_id):
+            events4.append((event, data))
+
+        assert any(
+            e == AgentEvent.DONE and d.get("reason") in ("completed", "stopped")
+            for e, d in events4
+        )
+
+        # Verify history integrity: all tool calls have matching responses
+        messages = await agent.session.get_messages(session_id=session_id)
+        declared = set()
+        for message in messages:
+            if message.role == "assistant" and message.tool_calls:
+                for tool_call in message.tool_calls:
+                    if isinstance(tool_call, dict) and tool_call.get("id"):
+                        declared.add(tool_call["id"])
+        resolved = {m.tool_call_id for m in messages if m.role == "tool" and m.tool_call_id}
+        dangling = declared - resolved
+        assert not dangling, f"Dangling tool calls: {dangling}"
+
+        orphan = {
+            m.tool_call_id for m in messages if m.role == "tool" and m.tool_call_id not in declared
+        }
+        assert not orphan, f"Orphan tool messages: {orphan}"
