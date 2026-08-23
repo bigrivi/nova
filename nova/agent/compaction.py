@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from nova.agent.events import AgentEvent
 from nova.llm import LLMProvider
 from nova.settings import get_settings
 
@@ -618,6 +619,7 @@ class CompactionController:
         self.model = model
         self.provider = provider
         self.consecutive_failures = 0
+        self.compacted = False
 
     def summarising_allowed(self) -> bool:
         limit = get_settings().compaction.max_consecutive_failures
@@ -665,3 +667,42 @@ class CompactionController:
         self.consecutive_failures += 1
         log.warning("Compaction failed (%d consecutive)",
                     self.consecutive_failures)
+
+    async def run_with_events(
+        self,
+        messages: list,
+        session: Any,
+        db: "DataSourceProtocol",
+        llm: LLMProvider,
+        emit: Any,
+    ) -> Any:
+        """Compact if needed, announcing it around the summarisation call.
+
+        ``compacted`` records whether history actually changed, so the caller
+        knows when to reload it.
+        """
+        self.compacted = False
+        plan = await self.plan(messages, session, db)
+        if plan is None:
+            return
+
+        payload = {
+            "message_count": plan.message_count,
+            "token_count": plan.token_count,
+        }
+        await emit(AgentEvent.COMPACTION_START, payload)
+        yield AgentEvent.COMPACTION_START, payload
+
+        compacted = await run_compaction_plan(
+            plan,
+            db=db,
+            llm=llm,
+            model=self.model,
+            provider=self.provider,
+            messages=messages,
+        )
+        self.record_result(compacted, session)
+
+        await emit(AgentEvent.COMPACTION_END, payload)
+        yield AgentEvent.COMPACTION_END, payload
+        self.compacted = compacted

@@ -24,6 +24,32 @@ class PromptConfig:
     memory_index: str = ""
     workspace_dir: str = ""
 
+    @classmethod
+    def from_agent_dir(cls, agent_dir) -> "PromptConfig":
+        """Load an agent's persona files from its directory.
+
+        SOUL/IDENTITY/USER/MEMORY are optional; a missing file is an empty
+        section rather than an error.
+        """
+        from pathlib import Path
+
+        agent_dir = Path(agent_dir)
+
+        def read(name: str, strip: bool = False) -> str:
+            path = agent_dir / name
+            if not path.exists():
+                return ""
+            text = path.read_text(encoding="utf-8")
+            return text.strip() if strip else text
+
+        return cls(
+            identity_content=read("IDENTITY.md", strip=True),
+            soul_content=read("SOUL.md"),
+            user_content=read("USER.md"),
+            memory_content=read("MEMORY.md"),
+            workspace_dir=str(agent_dir),
+        )
+
 
 class PromptBuilder:
     SYSTEM_PROMPT_TEMPLATE = """\

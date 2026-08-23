@@ -944,16 +944,16 @@ class TestCompactionCircuitBreaker:
         agent = self._agent()
         limit = get_settings().compaction.max_consecutive_failures
         for _ in range(limit):
-            assert agent._compaction_allowed()
+            assert agent._compaction.summarising_allowed()
             agent._compaction.consecutive_failures += 1
-        assert not agent._compaction_allowed()
+        assert not agent._compaction.summarising_allowed()
 
     def test_a_success_clears_the_failure_streak(self):
         agent = self._agent()
         agent._compaction.consecutive_failures = 99
-        assert not agent._compaction_allowed()
+        assert not agent._compaction.summarising_allowed()
         agent._compaction.consecutive_failures = 0
-        assert agent._compaction_allowed()
+        assert agent._compaction.summarising_allowed()
 
 
 class TestSummaryLifecycle:

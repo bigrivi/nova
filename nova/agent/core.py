@@ -11,9 +11,7 @@ from nova.session import get_session_manager
 from nova.session.protocol import SessionProtocol
 from nova.tools.registry import ToolRegistry, tool
 from nova.prompt import PromptBuilder, PromptConfig
-from nova.agent.compaction import (
-    CompactionController, CompactionPlan, prepare_compaction,
-    run_compaction_plan, get_context_limit)
+from nova.agent.compaction import CompactionController
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.skills.service import SkillService
 from nova.constants import DEFAULT_AGENT_KEY
@@ -52,6 +50,33 @@ class AgentConfig:
     memory_review_interval: int = 10
 
 
+def build_user_message(
+    user_input: str,
+    attachments: Optional[list[dict]] = None,
+) -> tuple[str, list[str]]:
+    """Fold attachments into the text and image payload of a user message.
+
+    Documents are prepended to the prompt because the model reads them as
+    context for the request; images travel separately as base64 data.
+    """
+    image_data: list[str] = []
+    message_text = user_input
+    for attachment in attachments or []:
+        if attachment.get("type") == "image":
+            for content_part in attachment.get("content", []):
+                if content_part.get("type") != "image":
+                    continue
+                image_url = content_part.get("image", "")
+                if image_url.startswith("data:"):
+                    image_data.append(image_url.split(",", 1)[1])
+        elif attachment.get("type") == "document":
+            for content_part in attachment.get("content", []):
+                if content_part.get("type") == "text":
+                    message_text = content_part.get(
+                        "text", "") + "\n\n" + message_text
+    return message_text, image_data
+
+
 class Agent:
     def __init__(
         self,
@@ -84,39 +109,17 @@ class Agent:
             agent_dir = Path.home() / ".nova" / "agents" / agent_key
         agent_dir.mkdir(parents=True, exist_ok=True)
         self.agent_dir = agent_dir
-        if agent_key == DEFAULT_AGENT_KEY:
-            skills_dir = agent_dir.parent.parent / "skills"
-            self._skill_service = SkillService(skills_dir=skills_dir)
-        else:
-            skills_dir = agent_dir / "skills"
-            global_skills = Path.home() / ".nova" / "skills"
-            self._skill_service = SkillService(
-                skills_dir=skills_dir, fallback_dir=global_skills)
+        self._skill_service = self._build_skill_service(agent_key, agent_dir)
         self._skill_service.scan_skills()
-        if prompt_config is not None:
-            self._prompt_builder = PromptBuilder(prompt_config)
-        else:
-            soul_content = (agent_dir / "SOUL.md").read_text(
-                encoding="utf-8") if (agent_dir / "SOUL.md").exists() else ""
-            identity_content = (agent_dir / "IDENTITY.md").read_text(
-                encoding="utf-8").strip() if (agent_dir / "IDENTITY.md").exists() else ""
-            user_content = (agent_dir / "USER.md").read_text(
-                encoding="utf-8") if (agent_dir / "USER.md").exists() else ""
-            memory_content = (agent_dir / "MEMORY.md").read_text(
-                encoding="utf-8") if (agent_dir / "MEMORY.md").exists() else ""
-            self._prompt_builder = PromptBuilder(
-                PromptConfig(
-                    identity_content=identity_content,
-                    soul_content=soul_content,
-                    user_content=user_content,
-                    memory_content=memory_content,
-                    workspace_dir=str(agent_dir),
-                )
-            )
+        self._prompt_builder = PromptBuilder(
+            prompt_config or PromptConfig.from_agent_dir(agent_dir))
+
         self._abort_event = asyncio.Event()
         self._base_system_prompt: Optional[str] = None
         self._active_workspace: Optional[str] = None
         self._memory_modified_this_turn: bool = False
+        self._last_user_input: str = ""
+        self._skill_tools: Any = None
         self._compaction = CompactionController(
             model=self.config.model, provider=self.config.provider)
 
@@ -124,19 +127,14 @@ class Agent:
         self._guardrails = ToolGuardrails()
         self._approval = ApprovalManager()
 
-    def _compaction_allowed(self) -> bool:
-        return self._compaction.summarising_allowed()
-
-    async def _plan_compaction(
-        self,
-        messages: list,
-        session: Any,
-        data_source: DataSourceProtocol,
-    ) -> Optional[CompactionPlan]:
-        return await self._compaction.plan(messages, session, data_source)
-
-    def _record_compaction_result(self, compacted: bool, session: Any) -> None:
-        self._compaction.record_result(compacted, session)
+    @staticmethod
+    def _build_skill_service(agent_key: str, agent_dir: Path) -> SkillService:
+        if agent_key == DEFAULT_AGENT_KEY:
+            return SkillService(skills_dir=agent_dir.parent.parent / "skills")
+        return SkillService(
+            skills_dir=agent_dir / "skills",
+            fallback_dir=Path.home() / ".nova" / "skills",
+        )
 
     def interrupt(self) -> None:
         """Interrupt the current execution; the user can trigger this at any time."""
@@ -374,6 +372,31 @@ class Agent:
         if invoker.memory_modified:
             self._memory_modified_this_turn = True
 
+    async def _resolve_session(
+        self,
+        session_id: Optional[str],
+        user_input: str,
+        workspace_dir: Optional[str],
+    ) -> Any:
+        """Load the requested session, creating one when it is absent."""
+        if session_id and await self.session.load_session(session_id):
+            return self.session.get_current_session()
+        await self.session.create_session(
+            persist=True,
+            first_message=user_input,
+            workspace_dir=workspace_dir,
+        )
+        return self.session.get_current_session()
+
+    def _maybe_schedule_memory_review(self) -> None:
+        if self.config.memory_review_interval <= 0:
+            return
+        self._turns_since_review += 1
+        if self._turns_since_review < self.config.memory_review_interval:
+            return
+        self._turns_since_review = 0
+        asyncio.create_task(self._background_memory_review())
+
     async def chat_stream(
         self,
         user_input: str,
@@ -383,51 +406,21 @@ class Agent:
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         self._abort_event.clear()
 
-        if session_id:
-            loaded = await self.session.load_session(session_id)
-            if not loaded:
-                await self.session.create_session(
-                    persist=True,
-                    first_message=user_input,
-                    workspace_dir=workspace_dir,
-                )
-        else:
-            await self.session.create_session(
-                persist=True,
-                first_message=user_input,
-                workspace_dir=workspace_dir,
-            )
-
-        current_session = self.session.get_current_session()
+        current_session = await self._resolve_session(
+            session_id, user_input, workspace_dir)
         session_id = current_session.id if current_session else ""
-
         self._apply_active_workspace(current_session)
 
         yield AgentEvent.SESSION, session_id
         await self._emit(AgentEvent.START, user_input)
         yield AgentEvent.START, user_input
 
-        image_data: list[str] = []
-        message_text = user_input
-        if attachments:
-            for attachment in attachments:
-                if attachment.get("type") == "image":
-                    for content_part in attachment.get("content", []):
-                        if content_part.get("type") == "image":
-                            image_url = content_part.get("image", "")
-                            if image_url.startswith("data:"):
-                                _, base64_data = image_url.split(",", 1)
-                                image_data.append(base64_data)
-                elif attachment.get("type") == "document":
-                    for content_part in attachment.get("content", []):
-                        if content_part.get("type") == "text":
-                            message_text = content_part.get(
-                                "text", "") + "\n\n" + message_text
+        message_text, image_data = build_user_message(user_input, attachments)
         self._last_user_input = message_text
         await self.session.add_message(
             role="user",
             content=message_text,
-            images=image_data if image_data else None,
+            images=image_data or None,
         )
 
         tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else None
@@ -446,28 +439,12 @@ class Agent:
             # request: a single request can run many tool turns and each tool
             # result can be arbitrarily large, so a request that started well
             # inside the window can overrun it halfway through.
-            compaction_plan = await self._plan_compaction(
-                session_messages, current_session, data_source)
-            if compaction_plan is not None:
-                compaction_payload = {
-                    "message_count": compaction_plan.message_count,
-                    "token_count": compaction_plan.token_count,
-                }
-                await self._emit(AgentEvent.COMPACTION_START, compaction_payload)
-                yield AgentEvent.COMPACTION_START, compaction_payload
-                compacted = await run_compaction_plan(
-                    compaction_plan,
-                    db=data_source,
-                    llm=self.llm,
-                    model=self.config.model,
-                    provider=self.config.provider,
-                    messages=session_messages,
-                )
-                self._record_compaction_result(compacted, current_session)
-                await self._emit(AgentEvent.COMPACTION_END, compaction_payload)
-                yield AgentEvent.COMPACTION_END, compaction_payload
-                if compacted:
-                    session_messages = await self.session.get_messages()
+            async for event, data in self._compaction.run_with_events(
+                session_messages, current_session, data_source, self.llm, self._emit
+            ):
+                yield event, data
+            if self._compaction.compacted:
+                session_messages = await self.session.get_messages()
 
             await self._emit(AgentEvent.TURN_START, {"turn": turn_count})
             yield AgentEvent.TURN_START, {"turn": turn_count}
@@ -496,13 +473,7 @@ class Agent:
 
             if done_payload is not None:
                 if done_payload.get("reason") in ("completed", "requires_input"):
-                    if self.config.memory_review_interval > 0:
-                        self._turns_since_review += 1
-                        if self._turns_since_review >= self.config.memory_review_interval:
-                            self._turns_since_review = 0
-                            asyncio.create_task(
-                                self._background_memory_review()
-                            )
+                    self._maybe_schedule_memory_review()
                 await self._emit(AgentEvent.DONE, done_payload)
                 yield AgentEvent.DONE, done_payload
                 return
