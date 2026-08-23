@@ -14,7 +14,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from nova.llm import LLMProvider
 from nova.settings import get_settings
@@ -605,3 +605,63 @@ def _get_tokens_output(msg) -> int:
     if isinstance(msg, dict):
         return int(msg.get("tokens_output") or 0)
     return int(getattr(msg, "tokens_output", 0) or 0)
+
+
+class CompactionController:
+    """Per-agent compaction policy: what to run, and when to stop trying.
+
+    Owns the consecutive-failure counter, so the circuit breaker state lives
+    next to the compaction logic it guards rather than on the agent.
+    """
+
+    def __init__(self, model: str, provider: str) -> None:
+        self.model = model
+        self.provider = provider
+        self.consecutive_failures = 0
+
+    def summarising_allowed(self) -> bool:
+        limit = get_settings().compaction.max_consecutive_failures
+        if limit <= 0:
+            return True
+        if self.consecutive_failures < limit:
+            return True
+        log.warning(
+            "Auto-compaction disabled for this agent after %d consecutive failures",
+            self.consecutive_failures)
+        return False
+
+    async def plan(
+        self,
+        messages: list,
+        session: Any,
+        db: "DataSourceProtocol",
+    ) -> Optional[CompactionPlan]:
+        """Decide whether Layer 2 should run, after Layer 1 has had its chance.
+
+        Layer 1 lives inside ``prepare_compaction`` and never calls a model, so it
+        runs even while the circuit breaker is open; only the summarisation step
+        is gated.
+        """
+        plan = await prepare_compaction(
+            session_id=session.id if session else None,
+            messages=messages,
+            last_compacted_at=session.compacted_at if session else None,
+            db=db,
+            model=self.model,
+            provider=self.provider,
+        )
+        if not plan.needs_compaction:
+            return None
+        if not self.summarising_allowed():
+            return None
+        return plan
+
+    def record_result(self, compacted: bool, session: Any) -> None:
+        if compacted:
+            self.consecutive_failures = 0
+            if session is not None:
+                session.compacted_at = int(time.time() * 1000)
+            return
+        self.consecutive_failures += 1
+        log.warning("Compaction failed (%d consecutive)",
+                    self.consecutive_failures)

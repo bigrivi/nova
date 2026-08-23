@@ -945,14 +945,14 @@ class TestCompactionCircuitBreaker:
         limit = get_settings().compaction.max_consecutive_failures
         for _ in range(limit):
             assert agent._compaction_allowed()
-            agent._compaction_failures += 1
+            agent._compaction.consecutive_failures += 1
         assert not agent._compaction_allowed()
 
     def test_a_success_clears_the_failure_streak(self):
         agent = self._agent()
-        agent._compaction_failures = 99
+        agent._compaction.consecutive_failures = 99
         assert not agent._compaction_allowed()
-        agent._compaction_failures = 0
+        agent._compaction.consecutive_failures = 0
         assert agent._compaction_allowed()
 
 
@@ -1206,7 +1206,7 @@ class TestInLoopCompaction:
                 config=AgentConfig(model="test-model", max_iterations=5),
                 llm_provider=provider,
             )
-            agent._compaction_failures = 99
+            agent._compaction.consecutive_failures = 99
 
             async def bulky_tool() -> ToolResult:
                 return ToolResult(success=True, content="B" * 400_000)

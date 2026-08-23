@@ -5,7 +5,6 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, Optional
 
@@ -15,61 +14,29 @@ from nova.session.protocol import SessionProtocol
 from nova.tools.registry import ToolRegistry, tool
 from nova.prompt import PromptBuilder, PromptConfig
 from nova.agent.compaction import (
-    CompactionPlan, prepare_compaction, run_compaction_plan, get_context_limit)
+    CompactionController, CompactionPlan, prepare_compaction,
+    run_compaction_plan, get_context_limit)
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.skills.service import SkillService
-from nova.mcp.manager import MCPManager
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.agent.tool_guardrails import ToolGuardrails, GuardrailAction
 from nova.agent.reasoning_timeouts import get_reasoning_timeout
 from nova.tools.approval import ApprovalManager
 from nova.tools.behavior import TurnContext
 from nova.settings import get_settings
+from nova.agent.hierarchy import AgentHierarchy
+from nova.agent.memory_review import MemoryReviewer
+from nova.agent.toolset import ToolsetBuilder
+from nova.agent.events import (
+    AgentEvent,
+    EventBus,
+    done_payload as _done_payload,
+    error_payload as _error_payload,
+)
 
 log = logging.getLogger(__name__)
 
 
-class AgentEvent(Enum):
-    # Session lifecycle
-    SESSION = "session"
-    START = "start"
-    DONE = "done"
-    ERROR = "error"
-
-    # Turn lifecycle
-    TURN_START = "turn_start"
-    TURN_END = "turn_end"
-
-    # Reasoning stream
-    REASONING_START = "reasoning_start"
-    REASONING_DELTA = "reasoning_delta"
-    REASONING_END = "reasoning_end"
-
-    # Text stream
-    TEXT_START = "text_start"
-    TEXT_DELTA = "text_delta"
-    TEXT_END = "text_end"
-
-    # Tool execution
-    TOOL_CALL = "tool_call"
-    TOOL_RESULT = "tool_result"
-
-    # Context compaction
-    COMPACTION_START = "compaction_start"
-    COMPACTION_END = "compaction_end"
-
-    # Danger command approval (desktop / CLI)
-    APPROVAL_REQUIRED = "approval_required"
-    APPROVAL_HEARTBEAT = "approval_heartbeat"
-    APPROVAL_RESULT = "approval_result"
-
-
-def _done_payload(reason: str, content: Optional[str] = None) -> dict[str, Any]:
-    return {"reason": reason, "content": content}
-
-
-def _error_payload(reason: str, message: str) -> dict[str, Any]:
-    return {"reason": reason, "message": message}
 
 
 @dataclass
@@ -104,10 +71,14 @@ class Agent:
         self.session = session_manager or get_session_manager()
         self._data_source = data_source
         self.tool_registry = ToolRegistry()
-        self._event_handlers: dict[AgentEvent, list[Callable]] = {}
+        self._events = EventBus()
         self.parent_agent = parent_agent
         self.is_sub_agent = is_sub_agent
-        self._sub_agents: list["Agent"] = []
+        self._hierarchy = AgentHierarchy(
+            agent_key=agent_key,
+            data_source=data_source,
+            parent_agent=parent_agent,
+        )
 
         if agent_dir is None:
             agent_dir = Path.home() / ".nova" / "agents" / agent_key
@@ -146,28 +117,15 @@ class Agent:
         self._base_system_prompt: Optional[str] = None
         self._active_workspace: Optional[str] = None
         self._memory_modified_this_turn: bool = False
-        self._compaction_failures: int = 0
+        self._compaction = CompactionController(
+            model=self.config.model, provider=self.config.provider)
 
         self._turns_since_review = 0
         self._guardrails = ToolGuardrails()
         self._approval = ApprovalManager()
 
     def _compaction_allowed(self) -> bool:
-        """Stop auto-compacting after repeated failures.
-
-        A summariser that keeps failing would otherwise be retried on every
-        request for the rest of the session, spending an API call each time and
-        never making progress.
-        """
-        limit = get_settings().compaction.max_consecutive_failures
-        if limit <= 0:
-            return True
-        if self._compaction_failures < limit:
-            return True
-        log.warning(
-            "Auto-compaction disabled for this agent after %d consecutive failures",
-            self._compaction_failures)
-        return False
+        return self._compaction.summarising_allowed()
 
     async def _plan_compaction(
         self,
@@ -175,35 +133,10 @@ class Agent:
         session: Any,
         data_source: DataSourceProtocol,
     ) -> Optional[CompactionPlan]:
-        """Decide whether Layer 2 should run, after Layer 1 has had its chance.
-
-        Layer 1 lives inside ``prepare_compaction`` and never calls a model, so it
-        runs even while the circuit breaker is open; only the summarisation step
-        is gated.
-        """
-        plan = await prepare_compaction(
-            session_id=session.id if session else None,
-            messages=messages,
-            last_compacted_at=session.compacted_at if session else None,
-            db=data_source,
-            model=self.config.model,
-            provider=self.config.provider,
-        )
-        if not plan.needs_compaction:
-            return None
-        if not self._compaction_allowed():
-            return None
-        return plan
+        return await self._compaction.plan(messages, session, data_source)
 
     def _record_compaction_result(self, compacted: bool, session: Any) -> None:
-        if compacted:
-            self._compaction_failures = 0
-            if session is not None:
-                session.compacted_at = int(datetime.now().timestamp() * 1000)
-            return
-        self._compaction_failures += 1
-        log.warning("Compaction failed (%d consecutive)",
-                    self._compaction_failures)
+        self._compaction.record_result(compacted, session)
 
     def interrupt(self) -> None:
         """Interrupt the current execution; the user can trigger this at any time."""
@@ -227,24 +160,13 @@ class Agent:
         return None
 
     def on(self, event: AgentEvent, handler: Callable) -> None:
-        if event not in self._event_handlers:
-            self._event_handlers[event] = []
-        self._event_handlers[event].append(handler)
+        self._events.on(event, handler)
 
     def off(self, event: AgentEvent, handler: Callable) -> None:
-        if event in self._event_handlers:
-            self._event_handlers[event].remove(handler)
+        self._events.off(event, handler)
 
     async def _emit(self, event: AgentEvent, data: Any = None) -> None:
-        if event in self._event_handlers:
-            for handler in self._event_handlers[event]:
-                try:
-                    if asyncio.iscoroutinefunction(handler):
-                        await handler(event, data)
-                    else:
-                        handler(event, data)
-                except Exception:
-                    pass
+        await self._events.emit(event, data)
 
     def _build_system_prompt(self, session_ctx: Any = None) -> str:
         tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else []
@@ -847,51 +769,14 @@ class Agent:
         self.tool_registry.register(func, name)
 
     async def register_all_tools(self) -> None:
-        from nova import tools as tools_module
-        for name in dir(tools_module):
-            if name.startswith("_"):
-                continue
-            self.tool_registry.register_by_metadata(name)
-        from nova.skills.tools import SkillTools
-        self._skill_tools = SkillTools(self._skill_service)
-        self.tool_registry.register(
-            self._skill_tools.list_skills, name="list_skills")
-        self.tool_registry.register(
-            self._skill_tools.load_skill, name="load_skill")
-        self.tool_registry.register(
-            self._skill_tools.install_skill, name="install_skill")
-
-        # Register delegate_to_agent tool if this is not a sub-agent
-        if not self.is_sub_agent:
-            from nova.tools.delegate import delegate_to_agent
-            self.tool_registry.register(
-                delegate_to_agent, name="delegate_to_agent")
-
-        # Register MCP remote tools
-        if not self.is_sub_agent:
-            try:
-                mcp_manager = MCPManager.get_shared()
-                await mcp_manager.ensure_initialized()
-                mcp_manager.register_tools(self.tool_registry)
-            except Exception:
-                log.exception("Failed to initialize MCP servers")
-
-        from nova.tools.behavior import (
-            ImageReturningToolBehavior,
-            MemoryMutatingToolBehavior,
-            ShellToolBehavior,
+        builder = ToolsetBuilder(
+            registry=self.tool_registry,
+            skill_service=self._skill_service,
+            approval=self._approval,
+            is_sub_agent=self.is_sub_agent,
         )
-
-        self.tool_registry.set_behavior(
-            "shell", ShellToolBehavior(self._approval))
-        self.tool_registry.set_behavior(
-            "read_image", ImageReturningToolBehavior())
-        self.tool_registry.set_behavior(
-            "browser_use", ImageReturningToolBehavior())
-        self.tool_registry.set_behavior(
-            "save_memory", MemoryMutatingToolBehavior())
-        self.tool_registry.set_behavior(
-            "delete_memory", MemoryMutatingToolBehavior())
+        await builder.build()
+        self._skill_tools = builder.skill_tools
 
     async def _refresh_memory_index(self) -> None:
         """Build the memory index from DB for system prompt inclusion.
@@ -913,109 +798,20 @@ class Agent:
             log.warning("Failed to refresh memory index: %s", error)
 
     async def _background_memory_review(self) -> None:
-        try:
-            messages = await self.session.get_messages(last_n=40)
-            if len(messages) < 4:
-                return
-
-            from nova.memory.models import MemoryWriteRequest
-            from nova.memory.service import MemoryService
-
-            lines = []
-            for recent_message in messages[-30:]:
-                role = getattr(recent_message, "role", "?")
-                content = getattr(recent_message, "content", "") or ""
-                if role == "tool":
-                    content = content[:200] if len(content) > 200 else content
-                if content:
-                    lines.append(f"[{role}]: {content}")
-
-            prompt = (
-                "Review the recent conversation and extract durable facts "
-                "worth remembering for future sessions.\n\n"
-                "Focus on:\n"
-                "- User preferences, habits, or communication style\n"
-                "- Project architecture decisions or technology choices\n"
-                "- Environment facts (paths, tools, configurations)\n"
-                "- Recurring patterns or workflows\n\n"
-                "Return a JSON array. Each entry must have:\n"
-                "- key: short unique identifier (snake_case)\n"
-                "- content: the full fact text\n"
-                "- summary: 1-line summary\n"
-                "- scope: \"user\" or \"project\" or \"session\"\n"
-                "- memory_type: \"fact\" or \"preference\" or \"decision\" or \"context\"\n"
-                "- tags: list of keywords\n\n"
-                "Conversation:\n" + "\n".join(lines[-30:]) +
-                "\n\nReturn ONLY valid JSON array. If nothing worth saving, "
-                "return []."
-            )
-
-            result = await self.llm.chat(
-                messages=[LLMMessage(role="user", content=prompt)],
-                model=self.config.model,
-            )
-            facts = self._parse_review_facts(result.content)
-            if not facts:
-                return
-
-            service = MemoryService(data_source=self._data_source)
-            saved = 0
-            current_session = self.session.get_current_session()
-            session_id = current_session.id if current_session else None
-            for fact in facts:
-                try:
-                    _, created = await service.save(MemoryWriteRequest(
-                        key=fact.get("key", "auto-review"),
-                        content=fact.get("content", ""),
-                        summary=fact.get("summary", ""),
-                        scope=fact.get("scope", "user"),
-                        memory_type=fact.get("memory_type", "fact"),
-                        tags=fact.get("tags", []),
-                        session_id=session_id,
-                    ))
-                    if created:
-                        saved += 1
-                except Exception as error:
-                    log.debug("Failed to save reviewed fact: %s", error)
-            if saved:
-                log.info("Memory review saved %d new fact(s)", saved)
-        except Exception as error:
-            log.warning("Background memory review failed: %s", error)
-
-    @staticmethod
-    def _parse_review_facts(content: str) -> list[dict]:
-        text = content.strip()
-        if not text:
-            return []
-        if text.startswith("```"):
-            lines = text.splitlines()
-            if len(lines) >= 3:
-                text = "\n".join(lines[1:-1]).strip()
-        try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError:
-            array_start = text.find("[")
-            array_end = text.rfind("]")
-            if array_start != -1 and array_end != -1 and array_end > array_start:
-                try:
-                    parsed = json.loads(text[array_start:array_end + 1])
-                except json.JSONDecodeError:
-                    return []
-            else:
-                return []
-        if not isinstance(parsed, list):
-            return []
-        return parsed
+        await MemoryReviewer(
+            llm=self.llm,
+            session=self.session,
+            model=self.config.model,
+            data_source=self._data_source,
+        ).run()
 
     def add_sub_agent(self, sub_agent: "Agent") -> None:
         """Add a sub-agent to this agent's list of sub-agents."""
-        sub_agent.parent_agent = self
-        sub_agent.is_sub_agent = True
-        self._sub_agents.append(sub_agent)
+        self._hierarchy.add_sub_agent(self, sub_agent)
 
     def get_sub_agents(self) -> list["Agent"]:
         """Get all sub-agents of this agent."""
-        return self._sub_agents.copy()
+        return self._hierarchy.sub_agents()
 
     def get_parent_agent(self) -> Optional["Agent"]:
         """Get the parent agent (if this is a sub-agent)."""
@@ -1023,30 +819,12 @@ class Agent:
 
     async def get_child_agents(self) -> list[dict]:
         """Get all child agents of this agent from database."""
-        data_source = self._data_source or await get_default_data_source()
-        child_keys = await data_source.get_agent_children(self.agent_key)
-        children = []
-        for key in child_keys:
-            agent = await data_source.get_agent(key)
-            if agent:
-                children.append(agent)
-        return children
+        return await self._hierarchy.child_agent_records()
 
     async def get_parent_agents(self) -> list[dict]:
         """Get all parent agents of this agent from database."""
-        data_source = self._data_source or await get_default_data_source()
-        parent_keys = await data_source.get_agent_parents(self.agent_key)
-        parents = []
-        for key in parent_keys:
-            agent = await data_source.get_agent(key)
-            if agent:
-                parents.append(agent)
-        return parents
+        return await self._hierarchy.parent_agent_records()
 
     async def get_parent_agent_config(self) -> Optional[dict]:
         """Get the first parent agent configuration from database."""
-        data_source = self._data_source or await get_default_data_source()
-        parent_keys = await data_source.get_agent_parents(self.agent_key)
-        if parent_keys:
-            return await data_source.get_agent(parent_keys[0])
-        return None
+        return await self._hierarchy.first_parent_agent_record()
