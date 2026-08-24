@@ -5,7 +5,6 @@ httpx
 prompt_toolkit
 rich
 textual
-opentui
 uvicorn
 
 # Optional: tiktoken for accurate OpenAI model token estimation
@@ -24,12 +23,3 @@ pywebview>=5,<7
 
 # License verification (Ed25519 signature)
 cryptography
-
-# Tree-sitter grammars for opentui Markdown syntax highlighting
-# Each grammar enables highlighting for a specific language
-tree-sitter-python
-tree-sitter-javascript
-tree-sitter-typescript
-tree-sitter-json
-tree-sitter-bash
-tree-sitter-markdown

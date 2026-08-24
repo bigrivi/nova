@@ -65,9 +65,7 @@ a = Analysis(
         'pyee',
         # TUI-only (not needed by desktop)
         'textual',
-        'opentui',
         'nova.cli',
-        'nova.opentui_app',
         'tree_sitter_python', 'tree_sitter_javascript',
         'tree_sitter_typescript', 'tree_sitter_json',
         'tree_sitter_bash', 'tree_sitter_markdown',

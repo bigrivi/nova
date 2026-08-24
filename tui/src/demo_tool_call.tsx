@@ -201,13 +201,13 @@ const CATEGORIES: Array<{
                 toolName: "todo_write",
                 args: {
                     todos: [
-                        { content: "Fix login bug", status: "in_progress", priority: "high" },
-                        { content: "Write unit tests", status: "pending", priority: "medium" },
-                        { content: "Document API", status: "completed", priority: "low" },
+                        { content: "Fix the login bug on the auth page", status: "in_progress", priority: "high" },
+                        { content: "Write unit tests for auth flow", status: "pending", priority: "medium" },
+                        { content: "Document the public API endpoints", status: "completed", priority: "low" },
                     ],
                 },
                 outputText:
-                    "## Tasks\n1. 🕒 [in_progress] Fix login bug\n2. ⚪ [pending] Write unit tests\n3. ✅ [completed] Document API",
+                    "## Tasks\n1. 🕒 [in_progress] Fix the login bug on the auth page\n2. ⚪ [pending] Write unit tests for auth flow\n3. ✅ [completed] Document the public API endpoints",
             }),
             part({
                 toolName: "delegate_to_agent",
@@ -236,10 +236,11 @@ function DemoApp() {
     });
 
     return (
-        <box flexDirection="column" padding={1}>
+        <box flexDirection="column" padding={1} flexGrow={1}>
             <text fg="#e6edf3">
                 Demo: tool call rendering — q to quit
             </text>
+            <scrollbox flexGrow={1} scrollY viewportCulling>
             <CategoryLabel>Running (spinner)</CategoryLabel>
             <box flexDirection="column" paddingLeft={1}>
                 {RUNNING_SAMPLES.map((p) => (
@@ -250,16 +251,17 @@ function DemoApp() {
             <box paddingLeft={1}>
                 <ThinkingSpinner />
             </box>
-            {CATEGORIES.map(({ label, entries }) => (
-                <box key={label} flexDirection="column">
-                    <CategoryLabel>{label}</CategoryLabel>
-                    <box flexDirection="column" paddingLeft={1}>
-                        {entries.map((entry) => (
-                            <ToolBlock key={entry.toolCallId} part={entry} />
-                        ))}
+                {CATEGORIES.map(({ label, entries }) => (
+                    <box key={label} flexDirection="column">
+                        <CategoryLabel>{label}</CategoryLabel>
+                        <box flexDirection="column" paddingLeft={1}>
+                            {entries.map((entry) => (
+                                <ToolBlock key={entry.toolCallId} part={entry} />
+                            ))}
+                        </box>
                     </box>
-                </box>
-            ))}
+                ))}
+            </scrollbox>
         </box>
     );
 }

@@ -25,44 +25,14 @@ function looksLikeDiff(text: string): boolean {
     return /^(---|\+\+\+|@@)/m.test(text);
 }
 
-const STATUS_MARKERS: Array<[string, keyof StatusCounts]> = [
-    ["[completed]", "completed"],
-    ["✅", "completed"],
-    ["[in_progress]", "in_progress"],
-    ["🕒", "in_progress"],
-    ["[pending]", "pending"],
-    ["⚪", "pending"],
-    ["[cancelled]", "cancelled"],
-    ["❌", "cancelled"],
-];
-
-type StatusCounts = {
-    completed: number;
-    in_progress: number;
-    pending: number;
-    cancelled: number;
+const TAG_ICON: Record<string, string> = {
+    "[completed]": "✅",
+    "[in_progress]": "🕒",
+    "[pending]": "⚪",
+    "[cancelled]": "❌",
 };
 
-/** Count task statuses from the backend's markdown todo listing. */
-function countStatuses(text: string): StatusCounts | null {
-    const counts: StatusCounts = {
-        completed: 0,
-        in_progress: 0,
-        pending: 0,
-        cancelled: 0,
-    };
-    let matched = 0;
-    for (const line of text.split("\n")) {
-        for (const [marker, status] of STATUS_MARKERS) {
-            if (line.includes(marker)) {
-                counts[status] += 1;
-                matched += 1;
-                break;
-            }
-        }
-    }
-    return matched > 0 ? counts : null;
-}
+const EMOJI_ICONS = ["🕒", "✅", "⚪", "❌"];
 
 function truncate(text: string, max = 60): string {
     const single = text.replace(/\s+/g, " ").trim();
@@ -134,6 +104,33 @@ function summarizeArgs(
     }
 }
 
+/** Convert the backend's markdown todo listing into one line per task:
+ * icon + task text, with list numbering and bracket tags removed. */
+function todoItemLines(text: string): string[] {
+    const lines: string[] = [];
+    for (const raw of text.split("\n")) {
+        const line = raw.trim();
+        if (!line || line.startsWith("##")) continue;
+        const stripped = line
+            .replace(/\[(?:completed|in_progress|pending|cancelled)\]/g, "")
+            .replace(/^\d+\.\s*/, "")
+            .trim();
+        // The emoji at the line start is the status marker the backend wrote;
+        // keep it and just drop the redundant bracket tag.
+        if (EMOJI_ICONS.some((emoji) => stripped.startsWith(emoji))) {
+            lines.push(stripped.replace(/\s{2,}/g, " "));
+        } else {
+            for (const [tag, icon] of Object.entries(TAG_ICON)) {
+                if (line.includes(tag)) {
+                    lines.push(`${icon} ${stripped}`);
+                    break;
+                }
+            }
+        }
+    }
+    return lines;
+}
+
 /** Single-line result summary (Claude Code style): line count / first-line truncation / error message */
 function summarizeOutput(toolName: string, output: string): string {
     const text = output.trim();
@@ -163,12 +160,12 @@ function summarizeOutput(toolName: string, output: string): string {
                 ? truncate(lines[0]!, 80)
                 : `${lines.length} lines`;
         case "todo_write": {
-            const counts = countStatuses(text);
-            if (!counts) return lines.length === 1 ? truncate(lines[0]!, 80) : "Done";
-            return (
-                `🕒 ${counts.in_progress} · ⚪ ${counts.pending} · ✅ ${counts.completed}` +
-                (counts.cancelled ? ` · ❌ ${counts.cancelled}` : "")
-            );
+            const itemLines = todoItemLines(text);
+            return itemLines.length
+                ? itemLines.join("\n")
+                : lines.length === 1
+                  ? truncate(lines[0]!, 80)
+                  : "Done";
         }
         case "save_memory":
         case "delete_memory":
@@ -211,7 +208,13 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
                 <text fg="#e5534b" content={`  ⎿ ${truncate(error, 100)}`} />
             ) : null}
             {status === "done" && result ? (
-                <text fg="#6e7681" content={`  ⎿ ${result}`} />
+                result.includes("\n") ? (
+                    result.split("\n").map((line, index) => (
+                        <text key={index} fg="#6e7681" content={`  ⎿ ${line}`} />
+                    ))
+                ) : (
+                    <text fg="#6e7681" content={`  ⎿ ${result}`} />
+                )
             ) : null}
             {showDiff ? (
                 <box paddingLeft={2} marginTop={1}>
