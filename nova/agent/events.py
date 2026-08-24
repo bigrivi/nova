@@ -7,9 +7,9 @@ import the agent and everything it depends on.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from enum import Enum
+from inspect import iscoroutinefunction
 from typing import Any, Callable, Optional
 
 log = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ class EventBus:
     async def emit(self, event: AgentEvent, data: Any = None) -> None:
         for handler in self._handlers.get(event, []):
             try:
-                if asyncio.iscoroutinefunction(handler):
+                if iscoroutinefunction(handler):
                     await handler(event, data)
                 else:
                     handler(event, data)
