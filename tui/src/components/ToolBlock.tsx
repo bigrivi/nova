@@ -25,6 +25,45 @@ function looksLikeDiff(text: string): boolean {
     return /^(---|\+\+\+|@@)/m.test(text);
 }
 
+const STATUS_MARKERS: Array<[string, keyof StatusCounts]> = [
+    ["[completed]", "completed"],
+    ["✅", "completed"],
+    ["[in_progress]", "in_progress"],
+    ["🕒", "in_progress"],
+    ["[pending]", "pending"],
+    ["⚪", "pending"],
+    ["[cancelled]", "cancelled"],
+    ["❌", "cancelled"],
+];
+
+type StatusCounts = {
+    completed: number;
+    in_progress: number;
+    pending: number;
+    cancelled: number;
+};
+
+/** Count task statuses from the backend's markdown todo listing. */
+function countStatuses(text: string): StatusCounts | null {
+    const counts: StatusCounts = {
+        completed: 0,
+        in_progress: 0,
+        pending: 0,
+        cancelled: 0,
+    };
+    let matched = 0;
+    for (const line of text.split("\n")) {
+        for (const [marker, status] of STATUS_MARKERS) {
+            if (line.includes(marker)) {
+                counts[status] += 1;
+                matched += 1;
+                break;
+            }
+        }
+    }
+    return matched > 0 ? counts : null;
+}
+
 function truncate(text: string, max = 60): string {
     const single = text.replace(/\s+/g, " ").trim();
     return single.length > max ? `${single.slice(0, max)}…` : single;
@@ -123,11 +162,18 @@ function summarizeOutput(toolName: string, output: string): string {
             return lines.length === 1
                 ? truncate(lines[0]!, 80)
                 : `${lines.length} lines`;
+        case "todo_write": {
+            const counts = countStatuses(text);
+            if (!counts) return lines.length === 1 ? truncate(lines[0]!, 80) : "Done";
+            return (
+                `🕒 ${counts.in_progress} · ⚪ ${counts.pending} · ✅ ${counts.completed}` +
+                (counts.cancelled ? ` · ❌ ${counts.cancelled}` : "")
+            );
+        }
         case "save_memory":
         case "delete_memory":
         case "load_skill":
         case "install_skill":
-        case "todo_write":
             return lines.length === 1 ? truncate(lines[0]!, 80) : "Done";
         default:
             return truncate(text, 80);

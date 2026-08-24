@@ -12,6 +12,10 @@ import { streamChat } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore, type AskQuestion } from "../stores/ask-user-store.ts";
 import { getChatState } from "../stores/chat-store.ts";
+import {
+    parseTodos,
+    useTodoStore,
+} from "../stores/todo-store.ts";
 
 export type ChatRunOptions = {
     message: string;
@@ -150,6 +154,11 @@ export async function runChatStream(options: ChatRunOptions): Promise<void> {
                             pendingAskQuestions = parseAskQuestions(
                                 event.input,
                             );
+                        }
+                        if (event.toolName === "todo_write") {
+                            useTodoStore
+                                .getState()
+                                .setTodos(parseTodos(event.input));
                         }
                         return;
                     }

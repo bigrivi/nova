@@ -206,6 +206,8 @@ const CATEGORIES: Array<{
                         { content: "Document API", status: "completed", priority: "low" },
                     ],
                 },
+                outputText:
+                    "## Tasks\n1. 🕒 [in_progress] Fix login bug\n2. ⚪ [pending] Write unit tests\n3. ✅ [completed] Document API",
             }),
             part({
                 toolName: "delegate_to_agent",

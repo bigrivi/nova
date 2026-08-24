@@ -19,6 +19,7 @@ from nova.agent.tool_guardrails import GuardrailAction, ToolGuardrails
 from nova.llm import LLMProvider, ToolCall, ToolResult
 from nova.tools.approval import ApprovalManager
 from nova.tools.behavior import TurnContext
+from nova.session.protocol import SessionProtocol
 from nova.tools.registry import ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ class ToolInvoker:
     def __init__(
         self,
         registry: ToolRegistry,
-        session: Any,
+        session: SessionProtocol,
         approval: ApprovalManager,
         guardrails: ToolGuardrails,
         llm: LLMProvider,

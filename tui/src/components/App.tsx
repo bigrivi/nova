@@ -15,6 +15,7 @@ import { CreateAgentScreen } from "./screens/CreateAgentScreen.tsx";
 import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
 import { StatusBar } from "./StatusBar.tsx";
+import { TodoPanel } from "./TodoPanel.tsx";
 
 export type ExitHandler = () => void;
 
@@ -96,6 +97,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     return (
         <box flexDirection="column" flexGrow={1} padding={0}>
             <MessageList />
+            <TodoPanel />
             <Composer onCommand={handleCommand} />
             <StatusBar />
             {askQuestions ? <AskUserForm questions={askQuestions} /> : null}
