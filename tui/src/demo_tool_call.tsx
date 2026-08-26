@@ -219,9 +219,21 @@ const CATEGORIES: Array<{
     },
 ];
 
-const RUNNING_SAMPLES = ["shell", "read", "web_search"].map((name) =>
-    part({ toolName: name, args: { command: "sleep 2", filePath: "big.log", query: "state" }, status: "running" }),
-);
+const RUNNING_SAMPLES = [
+    ...["shell", "read", "web_search"].map((name) =>
+        part({
+            toolName: name,
+            args: { command: "sleep 2", filePath: "big.log", query: "state" },
+            status: "running",
+        }),
+    ),
+    part({
+        toolName: "shell",
+        args: { command: "rm -rf dist", description: "Clean build output" },
+        status: "blocked",
+        error: "Waiting for your approval",
+    }),
+];
 
 function CategoryLabel({ children }: { children: string }) {
     return (

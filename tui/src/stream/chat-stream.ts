@@ -212,6 +212,16 @@ export async function runChatStream(options: ChatRunOptions): Promise<void> {
                             command: String(event.data?.command ?? ""),
                             description: String(event.data?.description ?? ""),
                         });
+                        const blockedToolCallId = String(
+                            event.data?.toolCallId ?? "",
+                        );
+                        if (blockedToolCallId) {
+                            current.setToolStatus(
+                                assistantId,
+                                blockedToolCallId,
+                                "blocked",
+                            );
+                        }
                         return;
                     }
                     case "data-nova-input-required": {

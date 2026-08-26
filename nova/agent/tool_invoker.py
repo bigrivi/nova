@@ -98,6 +98,8 @@ class ToolInvoker:
             approval_request_id = ""
             if precheck.approval_request:
                 approval_request_id = precheck.approval_request.get("id", "")
+                precheck.approval_request["toolCallId"] = _id_of(tool_call)
+                precheck.approval_request["toolName"] = _name_of(tool_call)
                 yield AgentEvent.APPROVAL_REQUIRED, precheck.approval_request
                 async for tick in self._approval.wait_with_heartbeat(approval_request_id):
                     if tick is None:

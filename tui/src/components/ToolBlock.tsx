@@ -16,15 +16,17 @@ const DIFF_TOOLS = new Set(["edit", "write", "write_files", "code_run"]);
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_TICK_MS = 80;
 
-type DisplayStatus = "running" | "done" | "error";
+type DisplayStatus = "running" | "blocked" | "done" | "error";
 
 const GLYPH: Record<Exclude<DisplayStatus, "running">, string> = {
+    blocked: "?",
     done: "✓",
     error: "✗",
 };
 
 const GLYPH_COLOR: Record<DisplayStatus, string> = {
     running: theme.running,
+    blocked: theme.accent,
     done: theme.success,
     error: theme.error,
 };
@@ -212,6 +214,15 @@ function labelFor(
         }
         return "";
     };
+
+    if (status === "blocked") {
+        const command = pickArg("command");
+        if (command) return `Waiting for approval — Run ${backtick(command)}`;
+        const summary = summarizeArgs(toolName, ctx.args);
+        return summary
+            ? `Waiting for approval — ${toolName}(${summary})`
+            : `Waiting for approval — ${toolName}`;
+    }
 
     switch (toolName) {
         case "shell": {

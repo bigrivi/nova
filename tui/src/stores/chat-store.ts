@@ -16,7 +16,7 @@ export type ToolCallPart = {
     /** Raw args object, for summary extraction; null for tools without structured args (e.g. ask_user) */
     args: Record<string, unknown> | null;
     outputText: string;
-    status: "running" | "done" | "error";
+    status: "running" | "blocked" | "done" | "error";
     error?: string;
 };
 export type PendingPart = { type: "pending" };
@@ -63,6 +63,11 @@ type ChatState = {
         messageId: string,
         toolCallId: string,
         output: unknown,
+    ) => void;
+    setToolStatus: (
+        messageId: string,
+        toolCallId: string,
+        status: ToolCallPart["status"],
     ) => void;
     failToolCall: (
         messageId: string,
@@ -343,6 +348,18 @@ export const useChatStore = create<ChatState>((set) => ({
                               outputText: toDisplayText(output),
                               status: "done",
                           }
+                        : part,
+                ),
+            })),
+        })),
+
+    setToolStatus: (messageId, toolCallId, status) =>
+        set((state) => ({
+            messages: patchMessage(state.messages, messageId, (msg) => ({
+                ...msg,
+                parts: msg.parts.map((part) =>
+                    part.type === "tool-call" && part.toolCallId === toolCallId
+                        ? { ...part, status }
                         : part,
                 ),
             })),

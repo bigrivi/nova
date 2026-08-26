@@ -259,6 +259,8 @@ class AISDKStreamAdapter:
                             "requestId": data_payload.get("id", ""),
                             "command": data_payload.get("command", ""),
                             "description": data_payload.get("description", ""),
+                            "toolCallId": data_payload.get("toolCallId", ""),
+                            "toolName": data_payload.get("toolName", ""),
                         },
                     }
                 )
