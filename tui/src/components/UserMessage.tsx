@@ -1,4 +1,5 @@
 import type { TuiMessage } from "../stores/chat-store.ts";
+import { theme } from "../theme.ts";
 
 export function UserMessage({ message }: { message: TuiMessage }) {
     const text = message.parts[0]?.type === "text" ? message.parts[0].text : "";
@@ -11,7 +12,7 @@ export function UserMessage({ message }: { message: TuiMessage }) {
             marginBottom={1}
             minHeight={3}
             justifyContent="center"
-            backgroundColor="#161616"
+            backgroundColor={theme.surface}
         >
             <text content={text} />
         </box>

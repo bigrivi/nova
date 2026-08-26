@@ -1,6 +1,7 @@
 /** Command suggestions dialog: shows matching slash commands and highlights the selected item
  * Always render the box and control it with visible — the OpenTUI reconciler does not support null children (it would corrupt the fibers of sibling components) */
 import type { CommandSpec } from "../commands.ts";
+import { theme } from "../theme.ts";
 
 export function CommandSuggestions({
     items,
@@ -29,7 +30,7 @@ export function CommandSuggestions({
                 />
             ))}
             {items.length > 6 ? (
-                <text height={1} fg="#6e7681" content="  …" />
+                <text height={1} fg={theme.muted} content="  …" />
             ) : null}
         </box>
     );

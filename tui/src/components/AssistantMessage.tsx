@@ -4,6 +4,7 @@ import { MarkdownPart } from "./parts/MarkdownPart.tsx";
 import { ReasoningPart } from "./parts/ReasoningPart.tsx";
 import { ThinkingSpinner } from "./parts/ThinkingSpinner.tsx";
 import { ToolCallPartView } from "./parts/ToolCallPart.tsx";
+import { theme } from "../theme.ts";
 
 export function AssistantMessage({ message }: { message: TuiMessage }) {
     const isStreaming = message.status === "streaming";
@@ -14,7 +15,7 @@ export function AssistantMessage({ message }: { message: TuiMessage }) {
                 <PartView key={index} part={part} streaming={isStreaming} />
             ))}
             {message.error ? (
-                <text fg="#e5534b" content={message.error} />
+                <text fg={theme.error} content={message.error} />
             ) : null}
         </box>
     );
@@ -34,7 +35,7 @@ function PartView({
             }
             return (
                 <box flexDirection="row">
-                    <text fg="#3fb950" content="●" flexShrink={0} />
+                    <text fg={theme.success} content="●" flexShrink={0} />
                     <box flexGrow={1} paddingX={1} flexShrink={1}>
                         <MarkdownPart text={part.text} streaming={streaming} />
                     </box>

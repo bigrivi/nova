@@ -2,6 +2,7 @@
 import { useKeyboard } from "@opentui/react";
 import { approveCommand } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
+import { theme } from "../theme.ts";
 
 export function ApprovalDialog({
     sessionId,
@@ -44,12 +45,12 @@ export function ApprovalDialog({
             border
             borderStyle="rounded"
             borderColor="#d29922"
-            backgroundColor="#0d1117"
+            backgroundColor={theme.surfaceDeep}
         >
-            <text fg="#d29922">Command approval required</text>
-            {description ? <text fg="#8b949e" content={description} /> : null}
-            <text fg="#e3b341" content={command} />
-            <text fg="#6e7681">[y] Approve [n] Reject</text>
+            <text fg={theme.running}>Command approval required</text>
+            {description ? <text fg={theme.subtle} content={description} /> : null}
+            <text fg={theme.running} content={command} />
+            <text fg={theme.muted}>[y] Approve [n] Reject</text>
         </box>
     );
 }

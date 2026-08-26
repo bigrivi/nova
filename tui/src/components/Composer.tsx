@@ -10,6 +10,7 @@ import {
 } from "../commands.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
+import { theme } from "../theme.ts";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
 import { runChatStream } from "../stream/chat-stream.ts";
@@ -158,13 +159,13 @@ export function Composer({ onCommand }: { onCommand: ComposerCommandHandler }) {
                 selectedIndex={selectedIndex}
             />
             <box flexDirection="row" flexGrow={1}>
-                <text fg="#4f9cf9" content="> " height={textareaHeight} />
+                <text fg={theme.accent} content="> " height={textareaHeight} />
                 <textarea
                     ref={textareaRef}
                     flexGrow={1}
                     focused
                     placeholder="Message Nova (Enter to send, Shift+Enter for newline)"
-                    placeholderColor="#6e7681"
+                    placeholderColor={theme.muted}
                     keyBindings={COMPOSER_KEY_BINDINGS}
                     onSubmit={submitCurrent}
                     onContentChange={() => {

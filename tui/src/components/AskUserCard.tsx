@@ -10,9 +10,11 @@ import { useKeyboard } from "@opentui/react";
 import { useEffect, useRef, useState } from "react";
 import type { AskQuestion } from "../stores/ask-user-store.ts";
 
-const ACCENT = "#4f9cf9";
-const MUTED = "#6e7681";
-const OPTION_IDLE = "#8b949e";
+import { theme } from "../theme.ts";
+
+const ACCENT = theme.accent;
+const MUTED = theme.muted;
+const OPTION_IDLE = theme.subtle;
 
 export function AskUserCard({
     questions,

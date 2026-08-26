@@ -15,6 +15,7 @@ import { createCliRenderer } from "@opentui/core";
 import { createRoot, useKeyboard } from "@opentui/react";
 import { join } from "node:path";
 import { ThinkingSpinner } from "./components/parts/ThinkingSpinner.tsx";
+import { theme } from "./theme.ts";
 import { ToolBlock } from "./components/ToolBlock.tsx";
 import type { ToolCallPart as ToolCallPartData } from "./stores/chat-store.ts";
 
@@ -224,7 +225,7 @@ const RUNNING_SAMPLES = ["shell", "read", "web_search"].map((name) =>
 
 function CategoryLabel({ children }: { children: string }) {
     return (
-        <text fg="#58a6ff" marginTop={1}>
+        <text fg={theme.accent} marginTop={1}>
             ▌{children}
         </text>
     );
@@ -237,8 +238,11 @@ function DemoApp() {
 
     return (
         <box flexDirection="column" padding={1} flexGrow={1}>
-            <text fg="#e6edf3">
+            <text fg={theme.foreground}>
                 Demo: tool call rendering — q to quit
+            </text>
+            <text fg={theme.muted}>
+                Verb-tense labels · glyph-only coloring · per-tool sentences
             </text>
             <scrollbox flexGrow={1} scrollY viewportCulling>
             <CategoryLabel>Running (spinner)</CategoryLabel>

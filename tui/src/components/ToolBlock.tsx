@@ -1,45 +1,49 @@
-/** Tool call block (Claude Code style): single-line title + single-line result summary, no multi-line expansion */
+/** Tool call block: status glyph + verb-tense label, output lines below.
+ *
+ * Visual language (see ~/Documents/ai/nova/tool-call-mockup.md):
+ * - Color lives only in the status glyph; label text stays foreground.
+ * - The label is a verb-tense sentence per tool per state
+ *   ("Running `npm test`" -> "Ran `npm test`"), not a fixed name(args) form.
+ * - Multi-line results render one line each under a "  ⎿ " prefix.
+ */
+
 import { useEffect, useState } from "react";
 import type { ToolCallPart as ToolCallPartData } from "../stores/chat-store.ts";
+import { theme } from "../theme.ts";
 
 const DIFF_TOOLS = new Set(["edit", "write", "write_files", "code_run"]);
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_TICK_MS = 80;
 
-const STATUS_ICON: Record<
-    Exclude<ToolCallPartData["status"], "running">,
-    string
-> = {
-    done: "◉",
+type DisplayStatus = "running" | "done" | "error";
+
+const GLYPH: Record<Exclude<DisplayStatus, "running">, string> = {
+    done: "✓",
     error: "✗",
 };
 
-const STATUS_COLOR: Record<ToolCallPartData["status"], string> = {
-    running: "#d29922",
-    done: "#8b949e",
-    error: "#e5534b",
+const GLYPH_COLOR: Record<DisplayStatus, string> = {
+    running: theme.running,
+    done: theme.success,
+    error: theme.error,
 };
 
 function looksLikeDiff(text: string): boolean {
     return /^(---|\+\+\+|@@)/m.test(text);
 }
 
-const TAG_ICON: Record<string, string> = {
-    "[completed]": "✅",
-    "[in_progress]": "🕒",
-    "[pending]": "⚪",
-    "[cancelled]": "❌",
-};
-
-const EMOJI_ICONS = ["🕒", "✅", "⚪", "❌"];
-
 function truncate(text: string, max = 60): string {
     const single = text.replace(/\s+/g, " ").trim();
     return single.length > max ? `${single.slice(0, max)}…` : single;
 }
 
-/** Single-line argument summary: extract the key fields into a Claude Code-style (file.py) / (query) */
+function backtick(value: string): string {
+    return `\`${value}\``;
+}
+
+// ── Argument summaries ─────────────────────────────────────────────
+
 function summarizeArgs(
     toolName: string,
     args: Record<string, unknown> | null,
@@ -104,34 +108,42 @@ function summarizeArgs(
     }
 }
 
-/** Convert the backend's markdown todo listing into one line per task:
- * icon + task text, with list numbering and bracket tags removed. */
-function todoItemLines(text: string): string[] {
-    const lines: string[] = [];
-    for (const raw of text.split("\n")) {
-        const line = raw.trim();
-        if (!line || line.startsWith("##")) continue;
-        const stripped = line
-            .replace(/\[(?:completed|in_progress|pending|cancelled)\]/g, "")
-            .replace(/^\d+\.\s*/, "")
-            .trim();
-        // The emoji at the line start is the status marker the backend wrote;
-        // keep it and just drop the redundant bracket tag.
-        if (EMOJI_ICONS.some((emoji) => stripped.startsWith(emoji))) {
-            lines.push(stripped.replace(/\s{2,}/g, " "));
-        } else {
-            for (const [tag, icon] of Object.entries(TAG_ICON)) {
-                if (line.includes(tag)) {
-                    lines.push(`${icon} ${stripped}`);
-                    break;
-                }
+// ── Result summaries ───────────────────────────────────────────────
+
+const STATUS_MARKERS: Array<[string, keyof StatusCounts]> = [
+    ["[completed]", "completed"],
+    ["[in_progress]", "in_progress"],
+    ["[pending]", "pending"],
+    ["[cancelled]", "cancelled"],
+];
+
+type StatusCounts = {
+    completed: number;
+    in_progress: number;
+    pending: number;
+    cancelled: number;
+};
+
+function countStatuses(text: string): StatusCounts | null {
+    const counts: StatusCounts = {
+        completed: 0,
+        in_progress: 0,
+        pending: 0,
+        cancelled: 0,
+    };
+    let matched = 0;
+    for (const line of text.split("\n")) {
+        for (const [marker, status] of STATUS_MARKERS) {
+            if (line.includes(marker)) {
+                counts[status] += 1;
+                matched += 1;
+                break;
             }
         }
     }
-    return lines;
+    return matched > 0 ? counts : null;
 }
 
-/** Single-line result summary (Claude Code style): line count / first-line truncation / error message */
 function summarizeOutput(toolName: string, output: string): string {
     const text = output.trim();
     if (!text) return "";
@@ -160,12 +172,13 @@ function summarizeOutput(toolName: string, output: string): string {
                 ? truncate(lines[0]!, 80)
                 : `${lines.length} lines`;
         case "todo_write": {
-            const itemLines = todoItemLines(text);
-            return itemLines.length
-                ? itemLines.join("\n")
-                : lines.length === 1
-                  ? truncate(lines[0]!, 80)
-                  : "Done";
+            const counts = countStatuses(text);
+            if (!counts)
+                return lines.length === 1 ? truncate(lines[0]!, 80) : "Done";
+            return (
+                `🕒 ${counts.in_progress} · ⚪ ${counts.pending} · ✅ ${counts.completed}` +
+                (counts.cancelled ? ` · ❌ ${counts.cancelled}` : "")
+            );
         }
         case "save_memory":
         case "delete_memory":
@@ -177,8 +190,121 @@ function summarizeOutput(toolName: string, output: string): string {
     }
 }
 
+// ── Verb-tense labels ──────────────────────────────────────────────
+
+type LabelContext = {
+    args: Record<string, unknown> | null;
+};
+
+/** Per-tool, per-state sentence. Falls back to the tool name alone. */
+function labelFor(
+    toolName: string,
+    status: DisplayStatus,
+    ctx: LabelContext,
+): string {
+    const pickArg = (...keys: string[]): string => {
+        if (!ctx.args) return "";
+        for (const key of keys) {
+            const value = ctx.args[key];
+            if (typeof value === "string" && value.trim())
+                return value.trim().replace(/\s+/g, " ");
+            if (value != null) return String(value);
+        }
+        return "";
+    };
+
+    switch (toolName) {
+        case "shell": {
+            const command = pickArg("command");
+            if (!command) break;
+            if (status === "running") return `Running ${backtick(command)}`;
+            if (status === "error") return `\`${command}\` failed`;
+            return `Ran ${backtick(command)}`;
+        }
+        case "code_run": {
+            const script = pickArg("script_path") || "inline code";
+            if (status === "running") return `Running ${script}`;
+            if (status === "error") return `${script} failed`;
+            return `Ran ${script}`;
+        }
+        case "read": {
+            const filePath = pickArg("filePath", "path");
+            if (!filePath) break;
+            if (status === "running") return `Reading ${backtick(filePath)}`;
+            return `Read ${backtick(filePath)}`;
+        }
+        case "read_image": {
+            const filePath = pickArg("filePath");
+            if (!filePath) break;
+            if (status === "running") return `Reading ${backtick(filePath)}`;
+            return `Read ${backtick(filePath)}`;
+        }
+        case "edit": {
+            const filePath = pickArg("filePath");
+            if (!filePath) break;
+            if (status === "running") return `Editing ${backtick(filePath)}`;
+            return `Edited ${backtick(filePath)}`;
+        }
+        case "write": {
+            const filePath = pickArg("filePath", "path");
+            if (!filePath) break;
+            if (status === "running") return `Writing ${backtick(filePath)}`;
+            return `Wrote ${backtick(filePath)}`;
+        }
+        case "glob": {
+            const pattern = pickArg("pattern");
+            if (!pattern) break;
+            if (status === "running")
+                return `Searching for ${backtick(pattern)}`;
+            return `Searched for ${backtick(pattern)}`;
+        }
+        case "grep": {
+            const pattern = pickArg("pattern");
+            if (!pattern) break;
+            if (status === "running")
+                return `Searching for ${backtick(pattern)}`;
+            return `Found matches for ${backtick(pattern)}`;
+        }
+        case "web_search": {
+            const query = pickArg("query");
+            if (!query) break;
+            if (status === "running")
+                return `Searching the web for ${backtick(query)}`;
+            return `Searched the web for ${backtick(query)}`;
+        }
+        case "web_fetch": {
+            const url = pickArg("url");
+            if (!url) break;
+            if (status === "running") return `Fetching ${backtick(url)}`;
+            return `Fetched ${backtick(url)}`;
+        }
+        // These read fine with the generic name(args) form.
+        case "browser_use":
+        case "read_image":
+        case "save_memory":
+        case "search_memory":
+        case "delete_memory":
+        case "list_memories":
+        case "load_skill":
+        case "install_skill":
+        case "delegate_to_agent":
+        case "todo_write":
+            break;
+    }
+
+    const summary = summarizeArgs(toolName, ctx.args);
+    if (summary) {
+        if (status === "running") return `${toolName}(${summary})…`;
+        return `${toolName}(${summary})`;
+    }
+    return toolName;
+}
+
+// ── Component ──────────────────────────────────────────────────────
+
 export function ToolBlock({ part }: { part: ToolCallPartData }) {
     const { toolName, status, args, outputText, error } = part;
+    const displayStatus = status as DisplayStatus;
     const [frame, setFrame] = useState(0);
     useEffect(() => {
         if (status !== "running") return;
@@ -188,11 +314,13 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
         );
         return () => clearInterval(id);
     }, [status]);
-    const color = STATUS_COLOR[status];
-    const icon =
-        status === "running" ? SPINNER_FRAMES[frame]! : STATUS_ICON[status];
-    const summary = summarizeArgs(toolName, args);
-    const label = summary ? `${toolName}(${summary})` : toolName;
+
+    const glyph =
+        status === "running"
+            ? SPINNER_FRAMES[frame]!
+            : GLYPH[status as Exclude<ToolCallPartData["status"], "running">];
+
+    const label = labelFor(toolName, displayStatus, { args });
     const result = summarizeOutput(toolName, outputText);
 
     const showDiff =
@@ -201,21 +329,25 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
         DIFF_TOOLS.has(toolName) &&
         looksLikeDiff(outputText);
 
+    const resultLines =
+        status === "done" && result && !showDiff ? result.split("\n") : [];
+
     return (
         <box flexDirection="column" marginBottom={1}>
-            <text fg={color} content={`${icon} ${label}`} />
+            <box flexDirection="row">
+                <text
+                    fg={GLYPH_COLOR[displayStatus]}
+                    content={`${glyph} `}
+                    flexShrink={0}
+                />
+                <text fg={theme.foreground} content={label} />
+            </box>
             {status === "error" && error ? (
-                <text fg="#e5534b" content={`  ⎿ ${truncate(error, 100)}`} />
+                <text fg={theme.muted} content={`  ⎿ ${truncate(error, 100)}`} />
             ) : null}
-            {status === "done" && result ? (
-                result.includes("\n") ? (
-                    result.split("\n").map((line, index) => (
-                        <text key={index} fg="#6e7681" content={`  ⎿ ${line}`} />
-                    ))
-                ) : (
-                    <text fg="#6e7681" content={`  ⎿ ${result}`} />
-                )
-            ) : null}
+            {resultLines.map((line, index) => (
+                <text key={index} fg={theme.muted} content={`  ⎿ ${line}`} />
+            ))}
             {showDiff ? (
                 <box paddingLeft={2} marginTop={1}>
                     <diff

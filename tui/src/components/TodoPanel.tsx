@@ -1,6 +1,7 @@
 /** Persistent todo progress panel: always shows the latest todo_write state */
 
 import { useTodoStore } from "../stores/todo-store.ts";
+import { theme } from "../theme.ts";
 import type { TodoItem, TodoStatus } from "../stores/todo-store.ts";
 
 const STATUS_ICON: Record<TodoStatus, string> = {
@@ -37,12 +38,12 @@ export function TodoPanel() {
             flexDirection="column"
             border
             borderStyle="rounded"
-            borderColor="#30363d"
+            borderColor={theme.border}
             paddingX={2}
             paddingY={0}
             marginBottom={0}
         >
-            <text fg="#e6edf3">
+            <text fg={theme.foreground}>
                 Tasks ({summaryLine(todos)})
             </text>
             {todos.map((todo, index) => (

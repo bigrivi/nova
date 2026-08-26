@@ -1,5 +1,6 @@
 /** Reasoning part: header line (Thinking…/Thought (Xs)) + reasoning content */
 import type { ReasoningPart as ReasoningPartData } from "../../stores/chat-store.ts";
+import { theme } from "../../theme.ts";
 
 function formatElapsed(ms: number): string {
     if (ms < 1000) return `${ms}ms`;
@@ -17,10 +18,10 @@ export function ReasoningPart({ part }: { part: ReasoningPartData }) {
         : "Thinking…";
     return (
         <box flexDirection="column" marginBottom={1}>
-            <text marginBottom={1} fg="#d29922">
+            <text marginBottom={1} fg={theme.running}>
                 {label}
             </text>
-            <text fg="#6e7681" content={part.text} />
+            <text fg={theme.muted} content={part.text} />
         </box>
     );
 }

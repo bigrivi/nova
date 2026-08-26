@@ -1,5 +1,6 @@
 /** Bottom status bar: model info + running status */
 import { useChatStore } from "../stores/chat-store.ts";
+import { theme } from "../theme.ts";
 
 export function StatusBar() {
     const isStreaming = useChatStore((state) => state.isStreaming);
@@ -8,7 +9,7 @@ export function StatusBar() {
 
     return (
         <box paddingX={2} flexShrink={0}>
-            <text fg={isStreaming ? "#d29922" : "#6e7681"}>
+            <text fg={isStreaming ? theme.running : theme.muted}>
                 {isStreaming ? "●" : "○"} {provider}/{model}
             </text>
         </box>
