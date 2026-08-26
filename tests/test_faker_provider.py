@@ -348,3 +348,282 @@ async def test_faker_provider_summarizes_tool_result_on_next_turn():
     assert not any(isinstance(event, ToolCall) for event in events)
     assert isinstance(events[-1], Done)
     assert "README content" in events[-1].content
+
+
+@pytest.mark.asyncio
+async def test_faker_content_driven_tool_call_fires_regardless_of_probability():
+    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    tools = [
+        {
+            "function": {
+                "name": "read",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"filePath": {"type": "string"}},
+                    "required": ["filePath"],
+                },
+            }
+        }
+    ]
+
+    events = [
+        event async for event in provider.chat_stream(
+            [{"role": "user", "content": "帮我看下 README.md 的文件内容"}],
+            tools=tools,
+        )
+    ]
+    tool_calls = [event for event in events if isinstance(event, ToolCall)]
+
+    assert len(tool_calls) == 1
+    assert tool_calls[0].name == "read"
+    assert json.loads(tool_calls[0].arguments)["filePath"] == "README.md"
+
+
+@pytest.mark.asyncio
+async def test_faker_content_driven_can_trigger_multiple_tools():
+    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    tools = [
+        {"function": {"name": "glob", "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}}}}},
+        {"function": {"name": "shell", "parameters": {"type": "object", "properties": {"command": {"type": "string"}}}}},
+    ]
+
+    events = [
+        event async for event in provider.chat_stream(
+            [{"role": "user", "content": "先查找文件，然后运行命令"}],
+            tools=tools,
+        )
+    ]
+    names = [event.name for event in events if isinstance(event, ToolCall)]
+
+    assert len(names) == 2
+    assert set(names) == {"glob", "shell"}
+    assert isinstance(events[-1], Done)
+    assert len(events[-1].tool_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_faker_content_driven_skips_unavailable_tools():
+    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    tools = [{"function": {"name": "glob", "parameters": {"type": "object"}}}]
+
+    events = [
+        event async for event in provider.chat_stream(
+            [{"role": "user", "content": "读取文件内容"}],
+            tools=tools,
+        )
+    ]
+
+    assert not any(isinstance(event, ToolCall) for event in events)
+    assert isinstance(events[-1], Done)
+
+
+@pytest.mark.asyncio
+async def test_faker_content_driven_extracts_url_for_web_fetch():
+    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    tools = [
+        {
+            "function": {
+                "name": "web_fetch",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+            }
+        }
+    ]
+
+    events = [
+        event async for event in provider.chat_stream(
+            [{"role": "user", "content": "帮我抓取网页 https://example.com/docs"}],
+            tools=tools,
+        )
+    ]
+    tool_calls = [event for event in events if isinstance(event, ToolCall)]
+
+    assert len(tool_calls) == 1
+    assert tool_calls[0].name == "web_fetch"
+    assert json.loads(tool_calls[0].arguments)["url"] == "https://example.com/docs"
+
+
+@pytest.mark.asyncio
+async def test_faker_content_driven_does_not_refire_while_summarizing_tool_result():
+    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    tools = [{"function": {"name": "read", "parameters": {"type": "object"}}}]
+    messages = [
+        {"role": "user", "content": "帮我看下 README.md 的文件内容"},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "call-1"}]},
+        {"role": "tool", "tool_call_id": "call-1", "content": "README content"},
+    ]
+
+    events = [event async for event in provider.chat_stream(messages, tools=tools)]
+
+    assert not any(isinstance(event, ToolCall) for event in events)
+    assert isinstance(events[-1], Done)
+
+
+@pytest.mark.asyncio
+async def test_faker_content_driven_edit_carries_mock_diff_strings():
+    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    tools = [
+        {
+            "function": {
+                "name": "edit",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filePath": {"type": "string"},
+                        "oldString": {"type": "string"},
+                        "newString": {"type": "string"},
+                    },
+                    "required": ["filePath", "oldString", "newString"],
+                },
+            }
+        }
+    ]
+
+    events = [
+        event async for event in provider.chat_stream(
+            [{"role": "user", "content": "帮我修改文件 app.py"}],
+            tools=tools,
+        )
+    ]
+    tool_calls = [event for event in events if isinstance(event, ToolCall)]
+
+    assert len(tool_calls) == 1
+    assert tool_calls[0].name == "edit"
+    args = json.loads(tool_calls[0].arguments)
+    assert args["filePath"] == "app.py"
+    assert args["oldString"] and args["newString"]
+    assert args["oldString"] != args["newString"]
+
+
+@pytest.mark.asyncio
+async def test_faker_edit_mock_strings_track_file_extension():
+    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    tools = [
+        {
+            "function": {
+                "name": "edit",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "filePath": {"type": "string"},
+                        "oldString": {"type": "string"},
+                        "newString": {"type": "string"},
+                    },
+                    "required": ["filePath", "oldString", "newString"],
+                },
+            }
+        }
+    ]
+
+    events = [
+        event async for event in provider.chat_stream(
+            [{"role": "user", "content": "帮我编辑文件 widget.tsx"}],
+            tools=tools,
+        )
+    ]
+    args = json.loads(next(e for e in events if isinstance(e, ToolCall)).arguments)
+
+    assert args["filePath"] == "widget.tsx"
+    assert "function greet" in args["oldString"]
+    assert "`hi ${name}`" in args["newString"]
+
+
+@pytest.mark.asyncio
+async def test_faker_content_driven_todo_write_generates_realistic_list():
+    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    tools = [
+        {
+            "function": {
+                "name": "todo_write",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todos": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "content": {"type": "string"},
+                                    "status": {
+                                        "type": "string",
+                                        "enum": ["pending", "in_progress", "completed", "cancelled"],
+                                    },
+                                    "priority": {
+                                        "type": "string",
+                                        "enum": ["high", "medium", "low"],
+                                    },
+                                },
+                                "required": ["content", "status", "priority"],
+                            },
+                        },
+                    },
+                    "required": ["todos"],
+                },
+            }
+        }
+    ]
+
+    events = [
+        event async for event in provider.chat_stream(
+            [{"role": "user", "content": "帮我列一个任务清单"}],
+            tools=tools,
+        )
+    ]
+    tool_calls = [event for event in events if isinstance(event, ToolCall)]
+
+    assert len(tool_calls) == 1
+    assert tool_calls[0].name == "todo_write"
+    todos = json.loads(tool_calls[0].arguments)["todos"]
+
+    assert len(todos) >= 3
+    assert sum(1 for todo in todos if todo["status"] == "in_progress") == 1
+    statuses = {todo["status"] for todo in todos}
+    assert "completed" in statuses
+    assert "pending" in statuses
+    for todo in todos:
+        assert todo["content"]
+        assert todo["status"] in {"pending", "in_progress", "completed", "cancelled"}
+        assert todo["priority"] in {"high", "medium", "low"}
+
+
+@pytest.mark.asyncio
+async def test_faker_stream_delay_invokes_sleep_between_chunks(monkeypatch):
+    recorded: list[float] = []
+
+    async def fake_sleep(duration: float) -> None:
+        recorded.append(duration)
+
+    monkeypatch.setattr("nova.llm.faker.asyncio.sleep", fake_sleep)
+    provider = FakerLLMProvider(seed=1, reasoning_probability=1, stream_delay=0.05)
+
+    events = [
+        event async for event in provider.chat_stream(
+            [{"role": "user", "content": "Hello"}]
+        )
+    ]
+
+    assert any(isinstance(event, ReasoningDelta) for event in events)
+    assert recorded, "expected asyncio.sleep to be called when stream_delay > 0"
+    assert all(duration == 0.05 for duration in recorded)
+
+
+@pytest.mark.asyncio
+async def test_faker_no_stream_delay_skips_sleep(monkeypatch):
+    recorded: list[float] = []
+
+    async def fake_sleep(duration: float) -> None:
+        recorded.append(duration)
+
+    monkeypatch.setattr("nova.llm.faker.asyncio.sleep", fake_sleep)
+    provider = FakerLLMProvider(seed=1, reasoning_probability=1, stream_delay=0.0)
+
+    _ = [
+        event async for event in provider.chat_stream(
+            [{"role": "user", "content": "Hello"}]
+        )
+    ]
+
+    assert recorded == []

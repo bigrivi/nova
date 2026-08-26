@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import random
+import re
 from collections.abc import AsyncGenerator
 
 from nova.llm.provider import ChatStreamEvent, Done, Error, LLMProvider, ReasoningDelta, TextDelta, ToolCall
@@ -38,6 +39,61 @@ class FakerLLMProvider(LLMProvider):
         "当前需要把问题拆成几个可验证的小步骤。",
     )
 
+    _TODO_TASKS = (
+        "梳理需求与验收标准",
+        "设计数据结构与接口",
+        "实现核心业务逻辑",
+        "补充单元测试与集成测试",
+        "处理边界情况与错误路径",
+        "更新文档与使用示例",
+        "自测并修复回归问题",
+    )
+
+    _MAX_CONTENT_TOOL_CALLS = 5
+
+    # Iteration order is load-bearing: it defines multi-tool emission order.
+    # Keywords match case-insensitively as substrings of the user message.
+    _TOOL_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("read", ("读取文件", "读取内容", "查看文件", "看看文件", "看下文件", "看一下文件",
+                  "文件内容", "打开文件", "读一下", "read file", "read the file", "open the file", "cat ")),
+        ("read_image", ("看图", "识别图片", "读取图片", "图片内容", "分析图片", "截图内容",
+                        "read image", "read the image", "look at the image", "analyze image", "analyse image")),
+        ("write", ("写入文件", "创建文件", "新建文件", "生成文件", "保存到文件", "写一个文件",
+                   "write a file", "write to file", "create a file", "create file", "new file")),
+        ("edit", ("编辑文件", "修改文件", "改一下文件", "替换内容", "编辑代码",
+                  "edit the file", "edit file", "modify the file", "replace in")),
+        ("glob", ("查找文件", "找文件", "列出文件", "文件列表", "匹配文件",
+                  "find files", "list files", "glob")),
+        ("grep", ("搜索代码", "搜索内容", "查找关键字", "全局搜索", "在代码里找",
+                  "grep", "search for", "search the code", "search in files", "find the text")),
+        ("shell", ("运行命令", "执行命令", "跑一下命令", "终端执行", "命令行",
+                   "run command", "run the command", "execute command", "shell command", "terminal")),
+        ("code_run", ("运行代码", "执行代码", "跑一段代码", "运行脚本", "执行脚本", "跑一下这段",
+                      "run code", "run the code", "execute code", "run the script", "run python")),
+        ("web_search", ("搜索网络", "上网搜", "网上搜索", "联网搜索", "搜一下网络",
+                        "search the web", "web search", "search online", "google")),
+        ("web_fetch", ("抓取网页", "获取网页", "打开网址", "访问链接", "读取网页", "下载网页",
+                       "fetch url", "fetch the page", "open url", "download page")),
+        ("browser_use", ("用浏览器", "浏览器操作", "自动化浏览", "打开浏览器", "网页点击",
+                         "browser", "navigate to", "browse the page")),
+        ("todo_write", ("待办", "任务清单", "任务列表", "计划列表", "todo", "task list", "track tasks")),
+        ("ask_user", ("问我", "询问我", "需要我确认", "让我选择", "ask me", "confirm with me", "clarify with me")),
+        ("delegate_to_agent", ("委派", "交给子代理", "分派任务", "delegate", "sub agent", "hand off to")),
+        ("save_memory", ("记住", "记下来", "保存记忆", "存到记忆", "remember this", "save to memory", "memorize")),
+        ("search_memory", ("回忆", "搜索记忆", "查一下记忆", "recall", "search memory", "what do you remember")),
+        ("list_memories", ("列出记忆", "所有记忆", "全部记忆", "list memories")),
+        ("delete_memory", ("删除记忆", "忘掉", "清除记忆", "delete memory", "forget")),
+        ("list_skills", ("列出技能", "有哪些技能", "查看技能", "list skills", "available skills")),
+        ("load_skill", ("加载技能", "使用技能", "载入技能", "load skill", "use skill")),
+        ("install_skill", ("安装技能", "install skill", "install the skill")),
+    )
+
+    _PATH_PATTERN = re.compile(
+        r"[\w./~-]+\.(?:py|pyi|ts|tsx|js|jsx|mjs|cjs|md|json|toml|yaml|yml|txt|csv|"
+        r"rs|go|java|kt|c|h|cpp|hpp|css|scss|html|sh|cfg|ini|lock)\b",
+        re.IGNORECASE,
+    )
+
     def __init__(
         self,
         seed: int | None = None,
@@ -48,6 +104,7 @@ class FakerLLMProvider(LLMProvider):
         continue_tool_probability: float = 0.35,
         max_tool_rounds: int = 3,
         max_tool_calls_per_turn: int = 2,
+        stream_delay: float = 0.0,
     ) -> None:
         self._seed = seed
         self._reasoning_probability = reasoning_probability
@@ -57,6 +114,7 @@ class FakerLLMProvider(LLMProvider):
         self._continue_tool_probability = continue_tool_probability
         self._max_tool_rounds = max_tool_rounds
         self._max_tool_calls_per_turn = max(1, max_tool_calls_per_turn)
+        self._stream_delay = max(0.0, stream_delay)
 
     async def chat(
         self,
@@ -97,6 +155,8 @@ class FakerLLMProvider(LLMProvider):
                     yield Done(content="", aborted=True)
                     return
                 yield ReasoningDelta(content=chunk)
+                if self._stream_delay:
+                    await asyncio.sleep(self._stream_delay)
 
         tool_calls = self._tool_calls(messages, model, tools, rng)
 
@@ -105,6 +165,8 @@ class FakerLLMProvider(LLMProvider):
                 yield Done(content="", aborted=True)
                 return
             for tool_call in tool_calls:
+                if self._stream_delay:
+                    await asyncio.sleep(self._stream_delay)
                 yield tool_call
             yield Done(content="", tool_calls=tool_calls)
             return
@@ -116,6 +178,8 @@ class FakerLLMProvider(LLMProvider):
                 return
             emitted.append(chunk)
             yield TextDelta(content=chunk)
+            if self._stream_delay:
+                await asyncio.sleep(self._stream_delay)
 
         yield Done(content=response)
 
@@ -150,6 +214,15 @@ class FakerLLMProvider(LLMProvider):
     ) -> list[ToolCall]:
         if not tools:
             return []
+        function_map = self._available_tool_map(tools)
+        if messages and self._message_role(messages[-1]) == "user" and function_map:
+            user_message = self._latest_user_message(messages)
+            matched = self._content_driven_tool_names(user_message, set(function_map))
+            if matched:
+                return [
+                    self._build_tool_call(name, function_map[name], user_message, rng)
+                    for name in matched
+                ]
         tool_results = self._tool_results(messages)
         tool_rounds = self._tool_rounds(messages)
         probability = self._tool_call_probability
@@ -172,6 +245,123 @@ class FakerLLMProvider(LLMProvider):
             call_id = f"call_fake_{rng.randrange(1_000_000_000):09d}"
             calls.append(ToolCall(id=call_id, name=name, arguments=json.dumps(arguments, ensure_ascii=False)))
         return calls
+
+    @staticmethod
+    def _available_tool_map(tools: list[dict]) -> dict[str, dict]:
+        mapping: dict[str, dict] = {}
+        for tool_schema in tools:
+            function = tool_schema.get("function", tool_schema)
+            name = str(function.get("name", ""))
+            if name and name not in mapping:
+                mapping[name] = function
+        return mapping
+
+    @classmethod
+    def _content_driven_tool_names(cls, message: str, available: set[str]) -> list[str]:
+        if not message.strip() or not available:
+            return []
+        haystack = message.lower()
+        matched: list[str] = []
+        for tool_name, keywords in cls._TOOL_KEYWORDS:
+            if tool_name not in available:
+                continue
+            if any(keyword in haystack for keyword in keywords):
+                matched.append(tool_name)
+                if len(matched) >= cls._MAX_CONTENT_TOOL_CALLS:
+                    break
+        return matched
+
+    def _build_tool_call(
+        self,
+        name: str,
+        function: dict,
+        message: str,
+        rng: random.Random,
+    ) -> ToolCall:
+        parameters = function.get("parameters", {})
+        arguments = self._contextual_arguments(name, message, parameters, rng)
+        call_id = f"call_fake_{rng.randrange(1_000_000_000):09d}"
+        return ToolCall(id=call_id, name=name, arguments=json.dumps(arguments, ensure_ascii=False))
+
+    @classmethod
+    def _contextual_arguments(cls, name: str, message: str, schema, rng: random.Random) -> dict:
+        base = dict(cls._generate_arguments(name, schema))
+        if not isinstance(schema, dict):
+            return base
+        properties = schema.get("properties", {})
+        if not isinstance(properties, dict):
+            return base
+        url = cls._extract_url(message)
+        path = cls._extract_path(message)
+        query = cls._condense(message)
+        if url and "url" in properties:
+            base["url"] = url
+        if path:
+            for field in ("filePath", "path"):
+                if field in properties:
+                    base[field] = path
+        if query:
+            for field in ("query", "pattern"):
+                if field in properties:
+                    base[field] = query
+        if name == "edit":
+            old_string, new_string = cls._mock_edit_strings(str(base.get("filePath") or path))
+            if "oldString" in properties:
+                base["oldString"] = old_string
+            if "newString" in properties:
+                base["newString"] = new_string
+        if name == "todo_write" and "todos" in properties:
+            base["todos"] = cls._mock_todos(rng)
+        return base
+
+    @classmethod
+    def _mock_todos(cls, rng: random.Random) -> list[dict]:
+        pool = cls._TODO_TASKS
+        count = rng.randint(3, min(5, len(pool)))
+        indexes = sorted(rng.sample(range(len(pool)), count))
+        in_progress = rng.randint(1, count - 2)
+        priorities = ("high", "medium", "low")
+        todos: list[dict] = []
+        for position, pool_index in enumerate(indexes):
+            if position < in_progress:
+                status = "completed"
+            elif position == in_progress:
+                status = "in_progress"
+            else:
+                status = "pending"
+            todos.append({
+                "content": pool[pool_index],
+                "status": status,
+                "priority": priorities[position % len(priorities)],
+            })
+        return todos
+
+    @staticmethod
+    def _mock_edit_strings(file_hint: str) -> tuple[str, str]:
+        if file_hint.lower().endswith((".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")):
+            return (
+                'function greet(name) {\n  return "hi";\n}',
+                'function greet(name) {\n  return `hi ${name}`;\n}',
+            )
+        return (
+            'def greet(name):\n    return "hi"',
+            'def greet(name):\n    return f"hi {name}"',
+        )
+
+    @staticmethod
+    def _extract_url(message: str) -> str:
+        match = re.search(r"https?://[^\s]+", message)
+        return match.group(0) if match else ""
+
+    @classmethod
+    def _extract_path(cls, message: str) -> str:
+        without_urls = re.sub(r"https?://[^\s]+", " ", message)
+        match = cls._PATH_PATTERN.search(without_urls)
+        return match.group(0) if match else ""
+
+    @staticmethod
+    def _condense(message: str) -> str:
+        return " ".join(message.split())[:80]
 
     @staticmethod
     def _tool_results(messages: list) -> list[str]:

@@ -8,7 +8,7 @@ export function StatusBar() {
     const model = useChatStore((state) => state.model);
 
     return (
-        <box paddingX={2} flexShrink={0}>
+        <box paddingX={2} paddingY={0} marginTop={0} flexShrink={0}>
             <text fg={isStreaming ? theme.running : theme.muted}>
                 {isStreaming ? "●" : "○"} {provider}/{model}
             </text>

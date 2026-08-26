@@ -57,6 +57,7 @@ def build_llm(
             max_tool_rounds=int(options.get("max_tool_rounds", 3)),
             max_tool_calls_per_turn=int(options.get("max_tool_calls_per_turn", 2)),
             max_tokens=int(options.get("max_tokens", 128000)),
+            stream_delay=float(options.get("stream_delay", 0.02)),
         )
     elif provider_type == "ollama":
         base_url = str(provider_config.options.get("base_url", "")).strip()

@@ -18,6 +18,11 @@ const STATUS_COLOR: Record<TodoStatus, string> = {
     cancelled: "#6e7681",
 };
 
+function truncateWide(text: string, max: number): string {
+    const chars = Array.from(text);
+    return chars.length > max ? `${chars.slice(0, max).join("")}…` : text;
+}
+
 function summaryLine(todos: TodoItem[]): string {
     const counts = { completed: 0, in_progress: 0, pending: 0, cancelled: 0 };
     for (const todo of todos) {
@@ -51,7 +56,7 @@ export function TodoPanel() {
                     key={`${index}-${todo.content}`}
                     fg={STATUS_COLOR[todo.status]}
                 >
-                    {`${STATUS_ICON[todo.status]} ${todo.content}${
+                    {`${STATUS_ICON[todo.status]} ${truncateWide(todo.content, 48)}${
                         todo.status === "in_progress" ? " …" : ""
                     }`}
                 </text>

@@ -35,9 +35,45 @@ function looksLikeDiff(text: string): boolean {
     return /^(---|\+\+\+|@@)/m.test(text);
 }
 
+// Renders an edit's change as a diff even when the tool result carries no
+// diff of its own (e.g. the faker provider), built from oldString/newString.
+function buildEditDiff(fileName: string, oldStr: string, newStr: string): string {
+    const a = oldStr.split("\n");
+    const b = newStr.split("\n");
+    let start = 0;
+    while (start < a.length && start < b.length && a[start] === b[start]) start++;
+    let endA = a.length;
+    let endB = b.length;
+    while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+        endA--;
+        endB--;
+    }
+    const lines = [
+        `--- a/${fileName}`,
+        `+++ b/${fileName}`,
+        `@@ -${start + 1},${a.length} +${start + 1},${b.length} @@`,
+    ];
+    for (let i = 0; i < start; i++) lines.push(` ${a[i]}`);
+    for (let i = start; i < endA; i++) lines.push(`-${a[i]}`);
+    for (let i = start; i < endB; i++) lines.push(`+${b[i]}`);
+    for (let i = endA; i < a.length; i++) lines.push(` ${a[i]}`);
+    return lines.join("\n");
+}
+
+function editArgsDiff(args: Record<string, unknown> | null): string {
+    if (!args) return "";
+    const oldStr = args.oldString;
+    const newStr = args.newString;
+    if (typeof oldStr !== "string" || typeof newStr !== "string") return "";
+    if (!oldStr && !newStr) return "";
+    const fileName = typeof args.filePath === "string" ? args.filePath : "file";
+    return buildEditDiff(fileName, oldStr, newStr);
+}
+
 function truncate(text: string, max = 60): string {
     const single = text.replace(/\s+/g, " ").trim();
-    return single.length > max ? `${single.slice(0, max)}…` : single;
+    const chars = Array.from(single);
+    return chars.length > max ? `${chars.slice(0, max).join("")}…` : single;
 }
 
 function backtick(value: string): string {
@@ -126,30 +162,77 @@ type StatusCounts = {
     cancelled: number;
 };
 
-function countStatuses(text: string): StatusCounts | null {
-    const counts: StatusCounts = {
-        completed: 0,
-        in_progress: 0,
-        pending: 0,
-        cancelled: 0,
-    };
-    let matched = 0;
-    for (const line of text.split("\n")) {
+function todosFromArgs(
+    args: Record<string, unknown> | null,
+): Array<{ status: string; content: string }> | null {
+    if (!args) return null;
+    const raw = (args as { todos?: unknown }).todos;
+    if (!Array.isArray(raw) || raw.length === 0) return null;
+    const out: Array<{ status: string; content: string }> = [];
+    for (const item of raw) {
+        if (typeof item !== "object" || item === null) continue;
+        const status = String((item as { status?: unknown }).status ?? "");
+        const content = String((item as { content?: unknown }).content ?? "").trim();
+        if (!content) continue;
+        if (
+            status === "completed" ||
+            status === "in_progress" ||
+            status === "pending" ||
+            status === "cancelled"
+        ) {
+            out.push({ status, content });
+        }
+    }
+    return out.length > 0 ? out : null;
+}
+
+const TODO_ICON: Record<string, string> = {
+    completed: "✅",
+    in_progress: "🕒",
+    pending: "⚪",
+    cancelled: "❌",
+};
+
+function formatTodoLines(
+    todos: Array<{ status: string; content: string }>,
+): string {
+    return todos
+        .map(
+            (t) =>
+                `${TODO_ICON[t.status] ?? "⚪"} ${truncate(t.content, 48)}${
+                    t.status === "in_progress" ? " …" : ""
+                }`,
+        )
+        .join("\n");
+}
+
+function todosFromOutput(text: string): Array<{ status: string; content: string }> | null {
+    const out: Array<{ status: string; content: string }> = [];
+    for (const rawLine of text.split("\n")) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith("##")) continue;
         for (const [marker, status] of STATUS_MARKERS) {
-            if (line.includes(marker)) {
-                counts[status] += 1;
-                matched += 1;
+            const idx = line.indexOf(marker);
+            if (idx !== -1) {
+                const content = line.slice(idx + marker.length).trim().replace(/^[\s\-:·]+/, "");
+                if (content) out.push({ status, content });
                 break;
             }
         }
     }
-    return matched > 0 ? counts : null;
+    return out.length > 0 ? out : null;
 }
 
-function summarizeOutput(toolName: string, output: string): string {
+function summarizeOutput(
+    toolName: string,
+    output: string,
+    args: Record<string, unknown> | null,
+): string {
     const text = output.trim();
-    if (!text) return "";
-    const lines = text.split("\n").filter((l) => l.trim());
+    const lines = text
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
 
     if (DIFF_TOOLS.has(toolName) && looksLikeDiff(text)) {
         return "";
@@ -174,13 +257,15 @@ function summarizeOutput(toolName: string, output: string): string {
                 ? truncate(lines[0]!, 80)
                 : `${lines.length} lines`;
         case "todo_write": {
-            const counts = countStatuses(text);
-            if (!counts)
-                return lines.length === 1 ? truncate(lines[0]!, 80) : "Done";
-            return (
-                `🕒 ${counts.in_progress} · ⚪ ${counts.pending} · ✅ ${counts.completed}` +
-                (counts.cancelled ? ` · ❌ ${counts.cancelled}` : "")
-            );
+            // Prefer structured args — one vivid line per task, not an aggregated count.
+            const argTodos = todosFromArgs(args);
+            if (argTodos) return formatTodoLines(argTodos);
+            const outputTodos = text ? todosFromOutput(text) : null;
+            if (outputTodos) return formatTodoLines(outputTodos);
+            const meaningful = lines.filter((l) => !l.startsWith("##"));
+            if (meaningful.length === 0) return "";
+            if (meaningful.length === 1) return truncate(meaningful[0]!, 80);
+            return "Done";
         }
         case "save_memory":
         case "delete_memory":
@@ -188,6 +273,8 @@ function summarizeOutput(toolName: string, output: string): string {
         case "install_skill":
             return lines.length === 1 ? truncate(lines[0]!, 80) : "Done";
         default:
+            // Avoid leaking a bare markdown header for unknown tools too
+            if (lines.length === 1 && lines[0]!.startsWith("##")) return "";
             return truncate(text, 80);
     }
 }
@@ -332,7 +419,7 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
             : GLYPH[status as Exclude<ToolCallPartData["status"], "running">];
 
     const label = labelFor(toolName, displayStatus, { args });
-    const result = summarizeOutput(toolName, outputText);
+    const result = summarizeOutput(toolName, outputText, args);
 
     const showDiff =
         status === "done" &&
@@ -340,8 +427,11 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
         DIFF_TOOLS.has(toolName) &&
         looksLikeDiff(outputText);
 
+    const argsDiff = showDiff ? "" : editArgsDiff(args);
+    const diffText = showDiff ? outputText : argsDiff;
+
     const resultLines =
-        status === "done" && result && !showDiff ? result.split("\n") : [];
+        status === "done" && result && !diffText ? result.split("\n") : [];
 
     return (
         <box flexDirection="column" marginBottom={1}>
@@ -354,18 +444,20 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
                 <text fg={theme.foreground} content={label} />
             </box>
             {status === "error" && error ? (
-                <text fg={theme.muted} content={`  ⎿ ${truncate(error, 100)}`} />
+                <box flexDirection="column" marginTop={0} paddingLeft={0}>
+                    <text fg={theme.muted} content={`  └ ${truncate(error, 100)}`} />
+                </box>
             ) : null}
-            {resultLines.map((line, index) => (
-                <text key={index} fg={theme.muted} content={`  ⎿ ${line}`} />
-            ))}
-            {showDiff ? (
+            {resultLines.length > 0 ? (
+                <box flexDirection="column">
+                    {resultLines.map((line, index) => (
+                        <text key={index} fg={theme.muted} content={`  └ ${line}`} />
+                    ))}
+                </box>
+            ) : null}
+            {diffText ? (
                 <box paddingLeft={2} marginTop={1}>
-                    <diff
-                        diff={outputText}
-                        view="unified"
-                        showLineNumbers={false}
-                    />
+                    <diff diff={diffText} view="unified" showLineNumbers={false} />
                 </box>
             ) : null}
         </box>
