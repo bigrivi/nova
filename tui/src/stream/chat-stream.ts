@@ -65,6 +65,29 @@ export function parseAskQuestions(input: unknown): AskQuestion[] {
 }
 
 /** Answer format: matches the frontend handleSubmit (Q/A lines, submitted as a new message) */
+/** Submit ask_user answers: clears the active form and starts a new stream */
+export async function submitAskAnswers(
+    questions: import("../stores/ask-user-store.ts").AskQuestion[],
+    answers: Record<string, string>,
+): Promise<void> {
+    useAskUserStore.getState().setActive(null);
+    const text = formatAskAnswers(questions, answers);
+    if (text) {
+        await runChatStream({ message: text });
+    }
+}
+
+/** Cancel the active ask_user form and report cancellation to the model */
+export async function submitAskCancel(
+    questions: import("../stores/ask-user-store.ts").AskQuestion[],
+): Promise<void> {
+    useAskUserStore.getState().setActive(null);
+    const skipped = questions
+        .map((q) => `Q (${q.id}): [cancelled by user]`)
+        .join("\n");
+    await runChatStream({ message: skipped || "[cancelled by user]" });
+}
+
 export function formatAskAnswers(
     questions: AskQuestion[],
     answers: Record<string, string>,

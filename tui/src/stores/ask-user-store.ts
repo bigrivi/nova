@@ -5,7 +5,7 @@ export type AskQuestion = {
     id: string;
     header: string;
     question: string;
-    inputType: "text" | "select" | "confirm";
+    inputType: "text" | "textarea" | "select" | "confirm";
     options: { label: string; value?: string }[];
     multiple: boolean;
     required: boolean;

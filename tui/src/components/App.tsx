@@ -7,7 +7,11 @@ import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
 import { ApprovalDialog } from "./ApprovalDialog.tsx";
-import { AskUserForm } from "./AskUserForm.tsx";
+import { AskUserCard } from "./AskUserCard.tsx";
+import {
+    submitAskAnswers,
+    submitAskCancel,
+} from "../stream/chat-stream.ts";
 import { Composer, type ComposerCommandHandler } from "./Composer.tsx";
 import { MessageList } from "./MessageList.tsx";
 import { AgentsScreen } from "./screens/AgentsScreen.tsx";
@@ -48,7 +52,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             useAskUserStore.getState().active ||
             useApprovalStore.getState().pending
         ) {
-            // Modal keyboard is handled by AskUserForm / ApprovalDialog
+            // Modal keyboard is handled by AskUserCard / ApprovalDialog
             return;
         }
         if (useScreenStore.getState().current) {
@@ -98,9 +102,18 @@ export function App({ onExit }: { onExit: ExitHandler }) {
         <box flexDirection="column" flexGrow={1} padding={0}>
             <MessageList />
             <TodoPanel />
-            <Composer onCommand={handleCommand} />
+            {askQuestions ? (
+                <AskUserCard
+                    questions={askQuestions}
+                    onSubmit={(answers) => {
+                        void submitAskAnswers(askQuestions, answers);
+                    }}
+                    onCancel={() => submitAskCancel(askQuestions)}
+                />
+            ) : (
+                <Composer onCommand={handleCommand} />
+            )}
             <StatusBar />
-            {askQuestions ? <AskUserForm questions={askQuestions} /> : null}
             {approval ? (
                 <ApprovalDialog
                     sessionId={approval.sessionId}
