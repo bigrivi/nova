@@ -292,6 +292,22 @@ class AISDKStreamAdapter:
             )
             return chunks
 
+        if event == AgentEvent.CONTEXT_UPDATE:
+            payload = data if isinstance(data, dict) else {}
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "data-nova-context",
+                        "data": {
+                            "used": int(payload.get("used", 0)),
+                            "limit": int(payload.get("limit", 0)),
+                            "percent": int(payload.get("percent", 0)),
+                        },
+                    }
+                )
+            )
+            return chunks
+
         if event == AgentEvent.DONE:
             reason, content = _parse_done_payload(data)
             chunks.extend(self._close_open_parts())

@@ -1,6 +1,7 @@
 /** Nova TUI entry: start the backend → create the renderer → render App → exit and clean up */
-import { createCliRenderer } from "@opentui/core";
+import { CliRenderEvents, createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
+import { useToastStore } from "./stores/toast-store.ts";
 import { join } from "node:path";
 import { startBackend, stopBackend } from "./backend.ts";
 import { App } from "./components/App.tsx";
@@ -36,6 +37,14 @@ async function main(): Promise<void> {
     }
 
     renderer = await createCliRenderer({ exitOnCtrlC: false });
+    renderer.on(CliRenderEvents.SELECTION, (selection) => {
+        if (selection.isDragging) return;
+        const text = selection.getSelectedText();
+        if (!text?.trim()) return;
+        renderer!.clearSelection();
+        const ok = renderer!.copyToClipboardOSC52(text);
+        if (ok) useToastStore.getState().show("Copied to clipboard");
+    });
     createRoot(renderer).render(<App onExit={() => void exitApp()} />);
     renderer.start();
 

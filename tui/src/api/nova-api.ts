@@ -202,6 +202,14 @@ export async function listMessages(
     return payload.items;
 }
 
+export async function getSessionContext(
+    sessionId: string,
+): Promise<{ used: number; limit: number; percent: number; message_count: number }> {
+    return parseJson<{ used: number; limit: number; percent: number; message_count: number }>(
+        await fetch(buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/context`)),
+    );
+}
+
 function emitFrame(
     frame: string,
     onEvent: (event: NovaStreamEvent) => void,

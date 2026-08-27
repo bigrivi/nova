@@ -5,13 +5,11 @@ import { getAgent } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
+import { useCtxStore } from "../stores/ctx-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
+import { submitAskAnswers, submitAskCancel } from "../stream/chat-stream.ts";
 import { ApprovalDialog } from "./ApprovalDialog.tsx";
 import { AskUserCard } from "./AskUserCard.tsx";
-import {
-    submitAskAnswers,
-    submitAskCancel,
-} from "../stream/chat-stream.ts";
 import { Composer, type ComposerCommandHandler } from "./Composer.tsx";
 import { MessageList } from "./MessageList.tsx";
 import { AgentsScreen } from "./screens/AgentsScreen.tsx";
@@ -19,6 +17,7 @@ import { CreateAgentScreen } from "./screens/CreateAgentScreen.tsx";
 import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
 import { StatusBar } from "./StatusBar.tsx";
+import { Toast } from "./Toast.tsx";
 
 export type ExitHandler = () => void;
 
@@ -68,9 +67,11 @@ export function App({ onExit }: { onExit: ExitHandler }) {
         switch (id) {
             case "new":
                 useChatStore.getState().reset();
+                useCtxStore.getState().clear();
                 return;
             case "clear":
                 useChatStore.setState({ messages: [] });
+                useCtxStore.getState().clear();
                 return;
             case "quit":
             case "exit":
@@ -101,7 +102,13 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     // Composer was crowded/duplicated the todo_write ToolBlock summary line;
     // file kept for future overlay use, history visible via MessageList.
     return (
-        <box flexDirection="column" flexGrow={1} padding={0} gap={0}>
+        <box
+            flexDirection="column"
+            flexGrow={1}
+            padding={0}
+            gap={0}
+            marginBottom={1}
+        >
             <MessageList />
             {askQuestions ? (
                 <AskUserCard
@@ -129,6 +136,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                 <AgentsScreen deletable={screen.kind === "delete-agent"} />
             ) : null}
             {screen?.kind === "create-agent" ? <CreateAgentScreen /> : null}
+            <Toast />
         </box>
     );
 }

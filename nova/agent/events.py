@@ -43,6 +43,7 @@ class AgentEvent(Enum):
     # Context compaction
     COMPACTION_START = "compaction_start"
     COMPACTION_END = "compaction_end"
+    CONTEXT_UPDATE = "context_update"
 
     # Danger command approval (desktop / CLI)
     APPROVAL_REQUIRED = "approval_required"

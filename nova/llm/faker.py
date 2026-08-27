@@ -312,6 +312,8 @@ class FakerLLMProvider(LLMProvider):
                 base["newString"] = new_string
         if name == "todo_write" and "todos" in properties:
             base["todos"] = cls._mock_todos(rng)
+        if name == "ask_user" and "questions" in properties:
+            base["questions"] = cls._mock_ask_questions(message, rng)
         return base
 
     @classmethod
@@ -335,6 +337,66 @@ class FakerLLMProvider(LLMProvider):
                 "priority": priorities[position % len(priorities)],
             })
         return todos
+
+    @classmethod
+    def _mock_ask_questions(cls, message: str, rng: random.Random) -> list[dict]:
+        hay = message.lower()
+        has_cjk = any("\u4e00" <= c <= "\u9fff" for c in message)
+
+        def q(qid, header, question, input_type, options=None, multiple=False, required=True, default=""):
+            return {
+                "id": qid,
+                "header": header,
+                "question": question,
+                "input_type": input_type,
+                "options": options if options is not None else [],
+                "multiple": multiple,
+                "required": required,
+                "default": default,
+            }
+
+        if any(k in hay for k in ("天气", "城市", "weather", "city")):
+            pool = [
+                [q("q0", "当前城市", "请告诉我你想查询哪座城市的天气？", "text")],
+                [q("q0", "Current City", "Which city's weather would you like to check?", "text")] if not has_cjk else None,
+                [q("q0", "出行城市", "请输入出发城市", "text"), q("q1", "出行日期", "请输入出行日期（YYYY-MM-DD）", "text")],
+            ]
+            pool = [p for p in pool if p]
+            return rng.choice(pool)
+        if any(k in hay for k in ("主题", "颜色", "深色", "浅色", "theme", "color")):
+            return [q("q0", "主题偏好" if has_cjk else "Theme", "你更喜欢哪种主题？" if has_cjk else "Which theme do you prefer?", "select",
+                     [{"label": "深色", "description": "适合夜间护眼"}, {"label": "浅色", "description": "适合日间办公"}, {"label": "跟随系统", "description": "自动跟随系统设置"}] if has_cjk else
+                     [{"label": "Dark", "description": "Easy on eyes at night"}, {"label": "Light", "description": "Bright for daytime"}, {"label": "System", "description": "Follow OS setting"}])]
+        if any(k in hay for k in ("语言", "language", "locale")):
+            return [q("q0", "语言偏好", "请选择你偏好的界面语言", "select",
+                     [{"label": "中文", "description": "简体中文"}, {"label": "English", "description": "English"}, {"label": "日本語", "description": "Japanese"}])]
+        if any(k in hay for k in ("部署", "发布", "上线", "deploy", "release")):
+            return [q("q0", "确认部署" if has_cjk else "Confirm Deploy", "是否确认将当前变更部署到生产环境？此操作不可撤销。" if has_cjk else "Confirm deploying current changes to production? This cannot be undone.", "confirm")]
+        if any(k in hay for k in ("删除", "delete", "移除", "remove")):
+            return [q("q0", "确认删除" if has_cjk else "Confirm Delete", "是否确认删除该文件？删除后可在回收站找回。" if has_cjk else "Are you sure you want to delete this file? You can restore from trash.", "confirm")]
+        if any(k in hay for k in ("路径", "文件路径", "path")):
+            return [q("q0", "文件路径" if has_cjk else "File Path", "请输入目标文件的完整路径" if has_cjk else "Please enter the full file path", "text")]
+        if any(k in hay for k in ("邮箱", "email", "mail")):
+            return [q("q0", "联系邮箱", "请输入你的联系邮箱以便接收通知", "text")]
+        if any(k in hay for k in ("框架", "framework", "vue", "react", "angular")):
+            return [q("q0", "技术栈" if has_cjk else "Tech Stack", "请选择你感兴趣的技术栈（可多选）" if has_cjk else "Select the tech stacks you are interested in (multiple)", "select",
+                     [{"label": "React", "description": "Facebook 开源框架"}, {"label": "Vue", "description": "渐进式框架"}, {"label": "Svelte", "description": "编译时框架"}, {"label": "Angular", "description": "Google 企业级框架"}],
+                     multiple=True)]
+        if any(k in hay for k in ("需求", "描述", "背景", "textarea", "详细", "多行")):
+            return [q("q0", "需求描述" if has_cjk else "Requirements", "请详细描述你的需求或背景信息" if has_cjk else "Please describe your requirements in detail", "textarea", default="背景：\n目标：\n约束：" if has_cjk else "Background:\nGoals:\nConstraints:")]
+
+        fallbacks = [
+            [q("q0", "联系邮箱" if has_cjk else "Email", "请输入你的联系邮箱" if has_cjk else "Please enter your email", "text")],
+            [q("q0", "主题偏好" if has_cjk else "Theme", "你更喜欢哪种主题？" if has_cjk else "Which theme do you prefer?", "select",
+               [{"label": "深色", "description": "夜间模式"}, {"label": "浅色", "description": "日间模式"}] if has_cjk else [{"label": "Dark", "description": "Night"}, {"label": "Light", "description": "Day"}])],
+            [q("q0", "确认操作" if has_cjk else "Confirm", "是否继续执行该操作？" if has_cjk else "Do you want to continue?", "confirm")],
+            [q("q0", "补充信息" if has_cjk else "Details", "请补充更多背景信息" if has_cjk else "Please provide more details", "textarea", default="请在此输入..." if has_cjk else "Enter details here...")],
+            [q("q0", "当前城市" if has_cjk else "City", "请告诉我你想查询哪座城市的天气？" if has_cjk else "Which city?", "text"),
+             q("q1", "出行日期" if has_cjk else "Date", "请输入日期 YYYY-MM-DD" if has_cjk else "Enter date YYYY-MM-DD", "text")],
+            [q("q0", "通知方式" if has_cjk else "Notification", "你希望通过哪种方式接收通知？", "select",
+               [{"label": "邮件", "description": "发送到邮箱"}, {"label": "站内信", "description": "站内消息"}, {"label": "短信", "description": "手机短信"}])],
+        ]
+        return rng.choice(fallbacks)
 
     @staticmethod
     def _mock_edit_strings(file_hint: str) -> tuple[str, str]:

@@ -128,6 +128,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         response = await app.state.chat_service.list_messages(session_id)
         return response
 
+    @app.get("/api/sessions/{session_id}/context")
+    async def session_context(session_id: str, provider: str | None = None, model: str | None = None):
+        return await app.state.chat_service.get_context(session_id, provider=provider, model=model)
+
     @app.patch("/api/sessions/{session_id}", response_model=SessionActionResponse)
     async def rename_session(session_id: str, request: RenameSessionRequest) -> SessionActionResponse:
         renamed = await app.state.chat_service.rename_session(session_id, request.title)

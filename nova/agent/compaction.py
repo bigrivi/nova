@@ -682,6 +682,18 @@ class CompactionController:
         knows when to reload it.
         """
         self.compacted = False
+        # Always emit current context usage so the TUI can render the ctx bar
+        # with the same numbers the compaction decision uses.
+        try:
+            used = estimate_context_tokens(messages, self.model)
+            limit = get_context_limit(self.model, self.provider)
+            percent = int(used / limit * 100) if limit else 0
+            ctx_payload = {"used": used, "limit": limit, "percent": min(100, percent)}
+            await emit(AgentEvent.CONTEXT_UPDATE, ctx_payload)
+            yield AgentEvent.CONTEXT_UPDATE, ctx_payload
+        except Exception:
+            pass
+
         plan = await self.plan(messages, session, db)
         if plan is None:
             return
@@ -706,3 +718,14 @@ class CompactionController:
         await emit(AgentEvent.COMPACTION_END, payload)
         yield AgentEvent.COMPACTION_END, payload
         self.compacted = compacted
+        if compacted and session is not None:
+            try:
+                fresh = await db.get_messages(session.id)
+                used_after = estimate_context_tokens(fresh, self.model)
+                limit_after = get_context_limit(self.model, self.provider)
+                percent_after = int(used_after / limit_after * 100) if limit_after else 0
+                ctx_after = {"used": used_after, "limit": limit_after, "percent": min(100, percent_after)}
+                await emit(AgentEvent.CONTEXT_UPDATE, ctx_after)
+                yield AgentEvent.CONTEXT_UPDATE, ctx_after
+            except Exception:
+                pass

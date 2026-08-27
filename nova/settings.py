@@ -172,7 +172,7 @@ def _parse_provider_configs(raw_providers: Any) -> dict[str, ProviderConfig]:
     return providers
 
 
-_INTERNAL_MODEL_KEYS = {"name", "reasoning_field"}
+_INTERNAL_MODEL_KEYS = {"name", "reasoning_field", "limit", "context_window"}
 
 
 def _parse_compaction_config(raw: Any) -> CompactionSettings:

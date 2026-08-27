@@ -125,6 +125,44 @@ class ChatService:
         ]
         return MessageListResponse(items=items)
 
+    async def get_context(self, session_id: str, provider: str | None = None, model: str | None = None) -> dict:
+        from nova.agent.compaction import estimate_context_tokens, get_context_limit
+
+        data_source = await self._get_data_source()
+        # Use raw messages for accurate compaction-aligned estimation
+        try:
+            raw_messages = await data_source.get_messages(session_id)
+        except Exception:
+            raw_messages = []
+        # Resolve provider/model: explicit query wins, else session's agent, else settings default
+        if not provider or not model:
+            try:
+                session = await data_source.get_session(session_id)
+                agent_key = session.get("agent_key") if session else None
+                if agent_key:
+                    from nova.config.service import ConfigService
+
+                    service = ConfigService(self._settings)
+                    agent = await service.get_agent(agent_key)
+                    if agent:
+                        provider = provider or agent.get("provider")
+                        model = model or agent.get("model")
+            except Exception:
+                pass
+        if not provider or not model:
+            # Fallback to first configured provider/model
+            first_provider = next(iter(self._settings.providers.keys()), None)
+            if first_provider:
+                provider = provider or first_provider
+                model = model or next(iter(self._settings.providers[first_provider].models.keys()), "gpt-4o")
+            else:
+                provider = provider or "ollama"
+                model = model or "gpt-4o"
+        used = estimate_context_tokens(raw_messages, model or "unknown")
+        limit = get_context_limit(model or "unknown", provider or "ollama")
+        percent = int(used / limit * 100) if limit else 0
+        return {"used": used, "limit": limit, "percent": min(100, percent), "message_count": len(raw_messages)}
+
     async def interrupt(self, session_id: str) -> bool:
         return await self._request_registry.interrupt(session_id)
 

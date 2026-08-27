@@ -9,7 +9,7 @@ from pathlib import Path
 from nova.agent import Agent, AgentConfig
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
-from nova.llm import FakerLLMProvider, LLMProvider, OllamaProvider, OpenAIProvider
+from nova.llm import FakerLLMProvider, LLMProvider, OllamaProvider, OpenAIProvider, OpenAIResponsesProvider
 from nova.prompt import PromptConfig
 from nova.settings import get_settings
 from nova.skills.tools import SkillTools
@@ -78,6 +78,17 @@ def build_llm(
             request_options=request_options,
             user_agent=user_agent,
             **kwargs,
+        )
+    elif provider_type == "openai-response":
+        base_url = str(provider_config.options.get("base_url", "")).strip()
+        api_key = str(provider_config.options.get("api_key", "")).strip()
+        user_agent = str(
+            provider_config.options.get("user_agent", "")).strip() or None
+        llm = OpenAIResponsesProvider(
+            api_key=api_key,
+            base_url=base_url,
+            request_options=request_options,
+            user_agent=user_agent,
         )
     else:
         raise ValueError(f"Unsupported provider type: {provider_type}")

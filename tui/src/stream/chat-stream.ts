@@ -12,6 +12,7 @@ import { streamChat } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore, type AskQuestion } from "../stores/ask-user-store.ts";
 import { getChatState } from "../stores/chat-store.ts";
+import { useCtxStore } from "../stores/ctx-store.ts";
 import {
     parseTodos,
     useTodoStore,
@@ -245,6 +246,17 @@ export async function runChatStream(options: ChatRunOptions): Promise<void> {
                         throw new Error(
                             event.errorText ?? "Unknown stream error",
                         );
+                    }
+                    case "data-nova-context": {
+                        const ctxData = (event as unknown as { data?: { used?: number; limit?: number; percent?: number } }).data;
+                        const d = ctxData ?? (event as unknown as { used?: number; limit?: number; percent?: number });
+                        const used = Number((d as { used?: number }).used ?? 0);
+                        const limit = Number((d as { limit?: number }).limit ?? 0);
+                        const percent = Number(
+                            (d as { percent?: number }).percent ?? (limit ? Math.round((used / limit) * 100) : 0),
+                        );
+                        useCtxStore.getState().setCtx(used, limit, percent);
+                        return;
                     }
                     default:
                         // data-nova-heartbeat / data-nova-compaction-* / start / finish
