@@ -27,6 +27,41 @@ export const theme = {
     surfaceDeep: "#0d1117",
     /** Borders */
     border: "#30363d",
+
+    // ── Markdown semantic tokens (consumed by MarkdownPart syntaxStyle) ──
+    /** Headings h1..h6 — distinct from body, bold via syntaxStyle */
+    heading: "#79c0ff",
+    /** Inline `code` span */
+    codeInline: "#d2a8ff",
+    /** Link label text — underlined via syntaxStyle */
+    link: "#4f9cf9",
+    /** Link URL inside (parentheses) — muted but still distinct */
+    linkUrl: "#8b949e",
+    /** Blockquote body — italic + muted */
+    quote: "#8b949e",
+    /** List bullet/number marker */
+    bullet: "#79c0ff",
+    /** Horizontal rule */
+    rule: "#484f58",
+    /** Bold text */
+    strong: "#ffa657",
+    /** Italic text */
+    italic: "#d2a8ff",
+    /** Strikethrough */
+    strikethrough: "#8b949e",
+
+    // ── Code-block syntax tokens (tree-sitter) — single source of truth ──
+    syntaxKeyword: "#ff7b72",
+    syntaxString: "#a5d6ff",
+    syntaxComment: "#8b949e",
+    syntaxFunction: "#d2a8ff",
+    syntaxType: "#ffa657",
+    syntaxNumber: "#79c0ff",
+    syntaxOperator: "#ff7b72",
+    syntaxPunctuation: "#c9d1d9",
+    syntaxVariable: "#e6edf3",
+    syntaxVariableBuiltin: "#e6edf3",
+    syntaxLabel: "#a5d6ff",
 } as const;
 
 export type Theme = typeof theme;

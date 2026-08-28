@@ -1,6 +1,7 @@
 """Token estimation utilities with type-aware character estimation."""
 
 import logging
+import re
 from typing import Optional
 
 log = logging.getLogger(__name__)
@@ -26,14 +27,41 @@ _CJK_RANGES = (
     (0x20000, 0x2FA1F),  # CJK Extension B-F
 )
 
+# Built from _CJK_RANGES so the tuple stays the single source of truth.
+_CJK_RE = re.compile(f"[{''.join(f'{chr(s)}-{chr(e)}' for s, e in _CJK_RANGES)}]")
+
+_EXACT_COUNT_MAX_CHARS = 2_000_000
+
+_CJK_SAMPLE_WINDOW = 10_000
+_CJK_SAMPLE_COUNT = 7
+
 
 def _is_cjk(ch: str) -> bool:
-    code = ord(ch)
-    return any(start <= code <= end for start, end in _CJK_RANGES)
+    return bool(_CJK_RE.match(ch))
 
 
 def count_cjk_chars(text: str) -> int:
-    return sum(1 for ch in text if _is_cjk(ch))
+    n = len(text)
+    if n <= _EXACT_COUNT_MAX_CHARS:
+        return len(_CJK_RE.findall(text))
+    # Huge inputs would block the single-threaded asyncio event loop for
+    # minutes (production incident: 4 GB string ~28 min), so estimate from
+    # fixed-size samples instead of scanning the whole string (O(1) vs O(n)).
+    window = _CJK_SAMPLE_WINDOW
+    num = _CJK_SAMPLE_COUNT
+    step = (n - window) // (num - 1) if num > 1 else 0
+    sampled_cjk = 0
+    sampled_total = 0
+    for i in range(num):
+        start = i * step
+        if i == num - 1:
+            start = n - window
+        segment = text[start:start + window]
+        sampled_cjk += len(_CJK_RE.findall(segment))
+        sampled_total += len(segment)
+    if sampled_total == 0:
+        return 0
+    return int(sampled_cjk / sampled_total * n)
 
 
 def estimate_tokens_by_type(text: str, is_tool_result: bool = False) -> int:

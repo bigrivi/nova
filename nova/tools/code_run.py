@@ -11,6 +11,7 @@ from pathlib import Path
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
+from nova.tools.shell_utils import kill_process_tree
 from nova.tools.workspace_context import get_active_workspace
 
 
@@ -94,38 +95,61 @@ async def code_run(
             cmd = [sys.executable, "--_run-code", str(target), *safe_args]
         else:
             cmd = [sys.executable, str(target), *safe_args]
-        spawn_kwargs = {}
+        spawn_kwargs: dict = {}
         if sys.platform == "win32":
             spawn_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        else:
+            spawn_kwargs["start_new_session"] = True
         env = os.environ.copy()
         site_path = str(nova_site)
         env["PYTHONPATH"] = f"{site_path}:{env['PYTHONPATH']}" if "PYTHONPATH" in env else site_path
-        result = await asyncio.to_thread(
-            lambda: subprocess.run(
-                cmd,
-                cwd=str(workdir),
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                env=env,
-                **spawn_kwargs,
-            )
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(workdir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            **spawn_kwargs,
         )
-        
+        try:
+            stdout, stderr = await asyncio.to_thread(lambda: proc.communicate(timeout=timeout))
+        except subprocess.TimeoutExpired:
+            kill_process_tree(proc.pid)
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
+            except Exception:
+                pass
+            return ToolResult(success=False, content=f"Timed out after {timeout}s")
+        except asyncio.CancelledError:
+            # Abort path mirrors shell tool: worker thread's communicate() is still
+            # blocked, so kill the process group and propagate cancellation for
+            # execute_with_abort to mark the call cancelled.
+            kill_process_tree(proc.pid)
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
+            except Exception:
+                pass
+            raise
+
         output = ""
-        if result.stdout:
-            output += result.stdout
-        if result.stderr:
+        if stdout:
+            output += stdout
+        if stderr:
             if output:
                 output += "\n"
-            output += "[stderr]\n" + result.stderr
-        
+            output += "[stderr]\n" + stderr
+
         return ToolResult(
-            success=(result.returncode == 0),
+            success=(proc.returncode == 0),
             content=output.strip() if output else "(no output)",
         )
-    except subprocess.TimeoutExpired:
-        return ToolResult(success=False, content=f"Timed out after {timeout}s")
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return ToolResult(success=False, content=f"Error: {e}")
     finally:

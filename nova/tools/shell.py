@@ -269,6 +269,19 @@ async def shell(
                 success=False,
                 content=f"Timed out after {timeout}s (process killed)",
             )
+        except asyncio.CancelledError:
+            # Abort path: the worker thread's communicate() is still blocked;
+            # kill the process group so the OS process does not survive as orphan,
+            # then reap without blocking indefinitely and propagate cancellation
+            # so execute_with_abort can mark the tool call as cancelled.
+            kill_process_tree(proc.pid)
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
+            except Exception:
+                pass
+            raise
 
         success = proc.returncode == 0
         content = stdout.strip() or "(no output)"
@@ -277,6 +290,8 @@ async def shell(
 
         return ToolResult(success=success, content=content)
 
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         return ToolResult(success=False, content=f"Error: {e}")
 

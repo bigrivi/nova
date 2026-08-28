@@ -16,6 +16,16 @@ log = logging.getLogger(__name__)
 _RETRY_STATUS_CODES = {502, 503, 529}
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 1.0
+# Guard against a model that streams deltas forever without finish_reason
+# (observed incident: Qwen3.8-27B-FP8 repetition loop grew RSS to 4-7 GB).
+# Exceeding the ceiling aborts the stream with Error (not Done) so the
+# agent does not ingest multi-megabyte garbage into message history.
+_MAX_STREAM_CONTENT_CHARS = 2_000_000
+_MAX_STREAM_TOOL_ARG_CHARS = 1_000_000
+# Always bound stalled upstream reads; total is still caller-controlled
+# (total=timeout when set, total=None otherwise) so long legitimate
+# generations are not capped by an overall deadline.
+_STREAM_SOCK_READ_TIMEOUT = 180
 _MAX_TOOL_CALLS = 64
 
 
@@ -354,7 +364,7 @@ class OpenAIProvider(LLMProvider):
         connector = self._make_connector()
         session = aiohttp.ClientSession(connector=connector, trust_env=True)
 
-        effective_timeout = aiohttp.ClientTimeout(total=timeout) if timeout is not None else aiohttp.ClientTimeout(total=None)
+        effective_timeout = aiohttp.ClientTimeout(total=timeout, sock_read=_STREAM_SOCK_READ_TIMEOUT) if timeout is not None else aiohttp.ClientTimeout(total=None, sock_read=_STREAM_SOCK_READ_TIMEOUT)
 
         try:
             resp = await self._post_with_retry(
@@ -449,6 +459,14 @@ class OpenAIProvider(LLMProvider):
                                     accumulated_tool_calls[index]["name"] = func["name"]
                                 if func.get("arguments"):
                                     accumulated_tool_calls[index]["arguments"] += func["arguments"]
+                                    if len(str(accumulated_tool_calls[index]["arguments"])) > _MAX_STREAM_TOOL_ARG_CHARS:
+                                        log.error(
+                                            "OpenAI stream runaway tool args: model=%s size=%s exceeds %s",
+                                            model, len(str(accumulated_tool_calls[index]["arguments"])), _MAX_STREAM_TOOL_ARG_CHARS,
+                                        )
+                                        resp.close()
+                                        yield Error(message=f"model {model} produced runaway/unbounded tool arguments output (>{_MAX_STREAM_TOOL_ARG_CHARS} chars), stream aborted")
+                                        return
 
                                 arguments = str(
                                     accumulated_tool_calls[index]["arguments"] or "")
@@ -469,6 +487,14 @@ class OpenAIProvider(LLMProvider):
 
                         content = delta.get("content", "")
                         if content:
+                            if len(accumulated_content) + len(content) > _MAX_STREAM_CONTENT_CHARS:
+                                log.error(
+                                    "OpenAI stream runaway content: model=%s size=%s exceeds %s",
+                                    model, len(accumulated_content) + len(content), _MAX_STREAM_CONTENT_CHARS,
+                                )
+                                resp.close()
+                                yield Error(message=f"model {model} produced runaway/unbounded output (>{_MAX_STREAM_CONTENT_CHARS} chars), stream aborted")
+                                return
                             accumulated_content += content
                             yield TextDelta(content=content)
 
