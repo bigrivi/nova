@@ -20,7 +20,7 @@ export const useCtxStore = create<CtxState>((set) => ({
             limit,
             percent:
                 percent ??
-                (limit ? Math.min(100, Math.round((used / limit) * 100)) : 0),
+                (limit ? Math.round((used / limit) * 100) : 0),
         }),
     clear: () => set({ used: 0, limit: 0, percent: 0 }),
 }));

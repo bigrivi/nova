@@ -6,12 +6,15 @@
  * - tool-input-* / tool-output-available / data-nova-tool-error   tool calls
  * - data-nova-approval-required  command approval pending → approval store
  * - data-nova-input-required     ask_user pending → activate the ask-user form
+ * - data-nova-context            context window usage → ctx store
+ * - data-nova-compaction-*       history compaction in progress → compaction store
  * - abort / finish / error  finalization
  */
 import { streamChat } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore, type AskQuestion } from "../stores/ask-user-store.ts";
 import { getChatState } from "../stores/chat-store.ts";
+import { useCompactionStore } from "../stores/compaction-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import {
     parseTodos,
@@ -258,8 +261,24 @@ export async function runChatStream(options: ChatRunOptions): Promise<void> {
                         useCtxStore.getState().setCtx(used, limit, percent);
                         return;
                     }
+                    case "data-nova-compaction-start": {
+                        const d = (event as unknown as {
+                            data?: { message_count?: number; token_count?: number };
+                        }).data;
+                        useCompactionStore
+                            .getState()
+                            .start(
+                                Number(d?.message_count ?? 0),
+                                Number(d?.token_count ?? 0),
+                            );
+                        return;
+                    }
+                    case "data-nova-compaction-end": {
+                        useCompactionStore.getState().end();
+                        return;
+                    }
                     default:
-                        // data-nova-heartbeat / data-nova-compaction-* / start / finish
+                        // data-nova-heartbeat / start / finish
                         return;
                 }
             },
@@ -269,5 +288,9 @@ export async function runChatStream(options: ChatRunOptions): Promise<void> {
         getChatState().failStream(
             err instanceof Error ? err.message : String(err),
         );
+    } finally {
+        // A stream that dies mid-compaction never delivers compaction-end, so
+        // the banner would spin forever without this.
+        useCompactionStore.getState().end();
     }
 }

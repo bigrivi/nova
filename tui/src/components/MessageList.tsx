@@ -2,6 +2,7 @@
 import { useChatStore } from "../stores/chat-store.ts";
 import { AssistantMessage } from "./AssistantMessage.tsx";
 import { Banner } from "./Banner.tsx";
+import { CompactionBanner } from "./parts/CompactionBanner.tsx";
 import { UserMessage } from "./UserMessage.tsx";
 
 export function MessageList() {
@@ -25,6 +26,7 @@ export function MessageList() {
                     <AssistantMessage key={msg.id} message={msg} />
                 ),
             )}
+            <CompactionBanner />
         </scrollbox>
     );
 }

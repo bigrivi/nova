@@ -161,7 +161,7 @@ class ChatService:
         used = estimate_context_tokens(raw_messages, model or "unknown")
         limit = get_context_limit(model or "unknown", provider or "ollama")
         percent = int(used / limit * 100) if limit else 0
-        return {"used": used, "limit": limit, "percent": min(100, percent), "message_count": len(raw_messages)}
+        return {"used": used, "limit": limit, "percent": percent, "message_count": len(raw_messages)}
 
     async def interrupt(self, session_id: str) -> bool:
         return await self._request_registry.interrupt(session_id)

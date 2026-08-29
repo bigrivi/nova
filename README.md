@@ -462,6 +462,8 @@ Config rules:
   label in model selection surfaces.
 - `providers.<alias>.options.api_key` stores the provider secret in the local
   user config file.
+- `providers.<alias>.options.extra_body` contents are flattened into the outgoing LLM request body for every model of that provider.
+- `providers.<alias>.models.<model-key>.extra_body` contents are flattened into the request body for that model only; model-level keys take precedence over provider-level keys and nested objects are deep-merged.
 - `--provider` and `--model` override the config defaults for the current
   process only.
 
@@ -775,5 +777,3 @@ desktop-oriented frontend and PyWebView shell, and a shared runtime designed to
 keep agent behavior consistent across surfaces.
 
 When changing this repository, preserve the shared core boundary: agent logic,
-tools, memory, sessions, skills, and provider handling should stay reusable by
-CLI, server, and desktop instead of being forked into one UI surface.

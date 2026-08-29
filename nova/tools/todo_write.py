@@ -3,6 +3,15 @@ from typing import List, Optional
 from nova.llm import ToolResult
 from nova.tools.registry import tool
 
+_STATUS_MARKERS = {
+    "completed": "✅",
+    "in_progress": "🕒",
+    "pending": "⚪",
+    "cancelled": "❌",
+}
+
+_MAX_IN_PROGRESS = 1
+
 
 @tool(
     name="todo_write",
@@ -19,7 +28,10 @@ from nova.tools.registry import tool
         "4. Keep at most ONE task `in_progress` at a time. When moving on, mark the previous task "
         "`completed` (or `cancelled` if skipped) and mark the next task `in_progress`.\n"
         "5. Keep each task's `content` short, stable, and unchanged once created — never reword existing tasks.\n"
-        "6. When all work is done, the final call must show every task as `completed` (or `cancelled` if not applicable)."
+        "6. BEFORE you write your final reply to the user, call this tool one more time with every task "
+        "marked `completed` (or `cancelled` if it no longer applies). Close the list FIRST, then answer — "
+        "the closing call and the final reply must not be the same turn. Doing the work is not the same "
+        "as recording it: a reply that ships while a task is still `in_progress` or `pending` is incomplete."
     ),
     parameters={
         "type": "object",
@@ -50,19 +62,63 @@ from nova.tools.registry import tool
     },
 )
 async def todo_write(todos: List[dict]) -> ToolResult:
-    status_markers = {
-        "completed": "✅",
-        "in_progress": "🕒",
-        "pending": "⚪",
-        "cancelled": "❌",
-    }
     lines = ["## Tasks\n"]
+    counts: dict[str, int] = {}
+    unknown: list[tuple[int, str]] = []
+
     for i, t in enumerate(todos, 1):
         status = str(t.get("status", "pending")).strip() or "pending"
         content = str(t.get("content", "")).strip()
-        marker = status_markers.get(status, "⚪")
+        if status not in _STATUS_MARKERS:
+            unknown.append((i, status))
+        counts[status] = counts.get(status, 0) + 1
+        marker = _STATUS_MARKERS.get(status, "⚪")
         lines.append(f"{i}. {marker} [{status}] {content}")
+
+    lines.extend(_protocol_warnings(counts, unknown))
     return ToolResult(success=True, content="\n".join(lines))
+
+
+def _protocol_warnings(
+    counts: dict[str, int],
+    unknown: list[tuple[int, str]],
+) -> list[str]:
+    """Push protocol violations back at the model through the tool result.
+
+    Models reliably drop the closing call because a finished answer feels
+    terminal, so the reminder has to arrive on the channel they always read.
+    No warning may contain a bracketed status token: when call arguments are
+    unavailable the TUI falls back to scanning this text for ``[completed]``
+    style markers, and would render a warning line as a task.
+    """
+    warnings: list[str] = []
+
+    in_progress = counts.get("in_progress", 0)
+    pending = counts.get("pending", 0)
+    open_count = in_progress + pending
+    if open_count:
+        warnings.append(
+            f"WARNING: {open_count} task(s) still open "
+            f"({in_progress} in_progress, {pending} pending). If the work is finished, "
+            "call todo_write again marking them completed or cancelled BEFORE you write "
+            "your final reply."
+        )
+
+    if in_progress > _MAX_IN_PROGRESS:
+        warnings.append(
+            f"WARNING: {in_progress} tasks are in_progress at once; protocol rule 4 "
+            f"allows only {_MAX_IN_PROGRESS}. Keep exactly one task active."
+        )
+
+    for index, status in unknown:
+        warnings.append(
+            f"WARNING: task {index} has unrecognised status {status!r}; use one of "
+            "pending, in_progress, completed, cancelled."
+        )
+
+    if warnings:
+        warnings.insert(0, "")
+    return warnings
 
 
 TOOL = todo_write

@@ -596,6 +596,33 @@ def _get_time_created(msg) -> int:
     return int(getattr(msg, "time_created", 0) or 0)
 
 
+def _get_session_id(session) -> Optional[str]:
+    """Sessions reach this module both as SessionContext objects and as raw
+    ``db.get_session()`` dicts, so every field read has to accept both."""
+    if session is None:
+        return None
+    if isinstance(session, dict):
+        return session.get("id")
+    return getattr(session, "id", None)
+
+
+def _get_session_compacted_at(session) -> Optional[int]:
+    if session is None:
+        return None
+    if isinstance(session, dict):
+        return session.get("compacted_at")
+    return getattr(session, "compacted_at", None)
+
+
+def _set_session_compacted_at(session, value: int) -> None:
+    if session is None:
+        return
+    if isinstance(session, dict):
+        session["compacted_at"] = value
+        return
+    session.compacted_at = value
+
+
 def _get_tokens_input(msg) -> int:
     if isinstance(msg, dict):
         return int(msg.get("tokens_input") or 0)
@@ -645,9 +672,9 @@ class CompactionController:
         is gated.
         """
         plan = await prepare_compaction(
-            session_id=session.id if session else None,
+            session_id=_get_session_id(session),
             messages=messages,
-            last_compacted_at=session.compacted_at if session else None,
+            last_compacted_at=_get_session_compacted_at(session),
             db=db,
             model=self.model,
             provider=self.provider,
@@ -661,8 +688,7 @@ class CompactionController:
     def record_result(self, compacted: bool, session: Any) -> None:
         if compacted:
             self.consecutive_failures = 0
-            if session is not None:
-                session.compacted_at = int(time.time() * 1000)
+            _set_session_compacted_at(session, int(time.time() * 1000))
             return
         self.consecutive_failures += 1
         log.warning("Compaction failed (%d consecutive)",
@@ -688,7 +714,7 @@ class CompactionController:
             used = estimate_context_tokens(messages, self.model)
             limit = get_context_limit(self.model, self.provider)
             percent = int(used / limit * 100) if limit else 0
-            ctx_payload = {"used": used, "limit": limit, "percent": min(100, percent)}
+            ctx_payload = {"used": used, "limit": limit, "percent": percent}
             await emit(AgentEvent.CONTEXT_UPDATE, ctx_payload)
             yield AgentEvent.CONTEXT_UPDATE, ctx_payload
         except Exception:
@@ -720,11 +746,11 @@ class CompactionController:
         self.compacted = compacted
         if compacted and session is not None:
             try:
-                fresh = await db.get_messages(session.id)
+                fresh = await db.get_messages(_get_session_id(session))
                 used_after = estimate_context_tokens(fresh, self.model)
                 limit_after = get_context_limit(self.model, self.provider)
                 percent_after = int(used_after / limit_after * 100) if limit_after else 0
-                ctx_after = {"used": used_after, "limit": limit_after, "percent": min(100, percent_after)}
+                ctx_after = {"used": used_after, "limit": limit_after, "percent": percent_after}
                 await emit(AgentEvent.CONTEXT_UPDATE, ctx_after)
                 yield AgentEvent.CONTEXT_UPDATE, ctx_after
             except Exception:

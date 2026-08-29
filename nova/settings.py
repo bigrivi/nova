@@ -172,7 +172,16 @@ def _parse_provider_configs(raw_providers: Any) -> dict[str, ProviderConfig]:
     return providers
 
 
-_INTERNAL_MODEL_KEYS = {"name", "reasoning_field", "limit", "context_window"}
+_INTERNAL_MODEL_KEYS = {"name", "reasoning_field", "limit", "context_window", "extra_body"}
+
+
+def _deep_merge(target: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:
+    for key, value in source.items():
+        if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+            target[key] = _deep_merge(dict(target[key]), value)
+        else:
+            target[key] = value
+    return target
 
 
 def _parse_compaction_config(raw: Any) -> CompactionSettings:
@@ -317,9 +326,24 @@ class Settings:
         return api_key
 
     def get_request_options(self, model_name: str, provider_name: str) -> dict[str, Any]:
-        model_entry = self.get_model_config(
-            model_name, provider_name=provider_name)
-        return {k: v for k, v in model_entry.items() if k not in _INTERNAL_MODEL_KEYS}
+        # extra_body contents are flattened into the request body (OpenAI SDK semantics)
+        # rather than sent as a literal "extra_body" field, so vLLM/inferx accepts them;
+        # nested dicts are deep-merged so provider and model layer keys compose instead of clobbering.
+        provider_config = self.get_provider_config(provider_name)
+        model_entry = provider_config.models.get(model_name)
+        if not isinstance(model_entry, dict):
+            model_entry = {}
+        result: dict[str, Any] = {}
+        provider_extra = provider_config.options.get("extra_body")
+        if isinstance(provider_extra, dict):
+            _deep_merge(result, provider_extra)
+        passthrough = {k: v for k, v in model_entry.items() if k not in _INTERNAL_MODEL_KEYS}
+        if passthrough:
+            _deep_merge(result, passthrough)
+        model_extra = model_entry.get("extra_body")
+        if isinstance(model_extra, dict):
+            _deep_merge(result, model_extra)
+        return result
 
     def get_model_config(self, model_key: str, provider_name: str) -> dict[str, Any]:
         provider_config = self.get_provider_config(provider_name)

@@ -303,6 +303,204 @@ def test_settings_model_level_request_options(monkeypatch, tmp_path):
     }
 
 
+def test_settings_provider_level_extra_body_flattened(monkeypatch, tmp_path):
+    home = tmp_path / "nova-provider-extra-body-home"
+    _write_config(
+        home,
+        {
+            "providers": {
+                "openai": {
+                    "type": "openai-compatible",
+                    "options": {
+                        "base_url": "http://openai.local/v1",
+                        "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+                    },
+                    "models": {
+                        "qwen": {"name": "Qwen/Qwen3-27B"},
+                    },
+                }
+            },
+        },
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    settings = Settings.load_config()
+    assert settings.get_request_options("qwen", provider_name="openai") == {
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+
+
+def test_settings_model_level_extra_body_flattened(monkeypatch, tmp_path):
+    home = tmp_path / "nova-model-extra-body-home"
+    _write_config(
+        home,
+        {
+            "providers": {
+                "openai": {
+                    "type": "openai-compatible",
+                    "options": {"base_url": "http://openai.local/v1"},
+                    "models": {
+                        "qwen": {
+                            "name": "Qwen/Qwen3-27B",
+                            "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+                        }
+                    },
+                }
+            },
+        },
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    settings = Settings.load_config()
+    assert settings.get_request_options("qwen", provider_name="openai") == {
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+
+
+def test_settings_extra_body_model_overrides_provider_same_key(monkeypatch, tmp_path):
+    home = tmp_path / "nova-extra-body-precedence-home"
+    _write_config(
+        home,
+        {
+            "providers": {
+                "openai": {
+                    "type": "openai-compatible",
+                    "options": {
+                        "base_url": "http://openai.local/v1",
+                        "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+                    },
+                    "models": {
+                        "qwen": {
+                            "name": "Qwen/Qwen3-27B",
+                            "extra_body": {"chat_template_kwargs": {"enable_thinking": True}},
+                        }
+                    },
+                }
+            },
+        },
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    settings = Settings.load_config()
+    assert settings.get_request_options("qwen", provider_name="openai") == {
+        "chat_template_kwargs": {"enable_thinking": True},
+    }
+
+
+def test_settings_extra_body_deep_merged_different_nested_keys(monkeypatch, tmp_path):
+    home = tmp_path / "nova-extra-body-deep-merge-home"
+    _write_config(
+        home,
+        {
+            "providers": {
+                "openai": {
+                    "type": "openai-compatible",
+                    "options": {
+                        "base_url": "http://openai.local/v1",
+                        "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+                    },
+                    "models": {
+                        "qwen": {
+                            "name": "Qwen/Qwen3-27B",
+                            "extra_body": {"chat_template_kwargs": {"thinking_budget": 512}},
+                        }
+                    },
+                }
+            },
+        },
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    settings = Settings.load_config()
+    assert settings.get_request_options("qwen", provider_name="openai") == {
+        "chat_template_kwargs": {"enable_thinking": False, "thinking_budget": 512},
+    }
+
+
+def test_settings_plain_model_keys_still_pass_through_with_extra_body(monkeypatch, tmp_path):
+    home = tmp_path / "nova-plain-keys-regression-home"
+    _write_config(
+        home,
+        {
+            "providers": {
+                "openai": {
+                    "type": "openai-compatible",
+                    "options": {"base_url": "http://openai.local/v1"},
+                    "models": {
+                        "qwen": {
+                            "name": "Qwen/Qwen3.6-35B-A3B",
+                            "chat_template_kwargs": {"enable_thinking": False},
+                        }
+                    },
+                }
+            },
+        },
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    settings = Settings.load_config()
+    assert settings.get_request_options("qwen", provider_name="openai") == {
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+
+
+def test_settings_extra_body_never_leaks_as_key(monkeypatch, tmp_path):
+    home = tmp_path / "nova-extra-body-no-leak-home"
+    _write_config(
+        home,
+        {
+            "providers": {
+                "openai": {
+                    "type": "openai-compatible",
+                    "options": {
+                        "base_url": "http://openai.local/v1",
+                        "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+                    },
+                    "models": {
+                        "qwen": {
+                            "name": "Qwen/Qwen3-27B",
+                            "extra_body": {"custom_param": 123},
+                        }
+                    },
+                }
+            },
+        },
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    settings = Settings.load_config()
+    result = settings.get_request_options("qwen", provider_name="openai")
+    assert "extra_body" not in result
+    assert result == {
+        "chat_template_kwargs": {"enable_thinking": False},
+        "custom_param": 123,
+    }
+
+
+def test_settings_malformed_extra_body_string_is_ignored(monkeypatch, tmp_path):
+    home = tmp_path / "nova-malformed-extra-body-home"
+    _write_config(
+        home,
+        {
+            "providers": {
+                "openai": {
+                    "type": "openai-compatible",
+                    "options": {
+                        "base_url": "http://openai.local/v1",
+                        "extra_body": "not-a-dict",
+                    },
+                    "models": {
+                        "qwen": {
+                            "name": "Qwen/Qwen3-27B",
+                            "extra_body": "also-not-a-dict",
+                            "chat_template_kwargs": {"enable_thinking": False},
+                        }
+                    },
+                }
+            },
+        },
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    settings = Settings.load_config()
+    result = settings.get_request_options("qwen", provider_name="openai")
+    assert "extra_body" not in result
+    assert result == {"chat_template_kwargs": {"enable_thinking": False}}
+
+
 def test_reload_settings_reloads_config_file(monkeypatch, tmp_path):
     get_settings.cache_clear()
     home = tmp_path / "nova-reload-home"
