@@ -93,15 +93,15 @@ export const ReasoningChainGroup = ({
         <Collapsible
             open={open}
             onOpenChange={setUserOpen}
-            className="mb-2 rounded-2xl border bg-muted/40"
+            className="mb-2 rounded-2xl border border-[#E4E3DF] bg-[#FAFAF9]"
         >
             <CollapsibleTrigger asChild>
                 <button
                     type="button"
                     className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
                 >
-                    <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                        <BrainIcon className="size-4" />
+                    <span className="flex items-center gap-2 text-sm font-medium text-[#6D6BC7]">
+                        <BrainIcon className="size-4 text-[#6D6BC7]" />
                         {chainActive
                             ? t("reasoning.thinking")
                             : chainElapsedMs != null
@@ -112,14 +112,14 @@ export const ReasoningChainGroup = ({
                     </span>
                     <ChevronDownIcon
                         className={cn(
-                            "size-4 text-muted-foreground transition-transform duration-200",
+                            "size-4 text-[#8A8A86] transition-transform duration-200",
                             open && "rotate-180",
                         )}
                     />
                 </button>
             </CollapsibleTrigger>
             <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
-                <div className="space-y-3 border-t px-4 py-3">{children}</div>
+                <div className="space-y-3 border-t border-[#E4E3DF] px-4 py-3">{children}</div>
             </CollapsibleContent>
         </Collapsible>
     );

@@ -128,7 +128,7 @@ const ThreadListItem: FC<ThreadListItemProps> = ({
     const [deleteOpen, setDeleteOpen] = useState(false);
 
     return (
-        <ThreadListItemPrimitive.Root className="aui-thread-list-item group flex h-9 cursor-pointer items-center gap-1 rounded-lg text-sidebar-foreground transition-[background-color,color,box-shadow] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:bg-sidebar-accent focus-visible:outline-none data-active:bg-sidebar-active data-active:font-medium data-active:text-sidebar-active-foreground">
+        <ThreadListItemPrimitive.Root className="aui-thread-list-item group flex h-9 cursor-pointer items-center gap-1 rounded-lg border border-transparent text-sidebar-foreground transition-all hover:border-[#E4E3DF] hover:bg-white hover:shadow-[0_2px_8px_rgba(20,20,18,0.06)] hover:text-sidebar-foreground focus-visible:border-[#E4E3DF] focus-visible:bg-white focus-visible:shadow-[0_2px_8px_rgba(20,20,18,0.06)] focus-visible:outline-none data-active:border-[#E4E3DF] data-active:bg-white data-active:shadow-[0_8px_24px_rgba(20,20,18,0.07)] data-active:font-medium data-active:text-sidebar-active-foreground">
             <ThreadListItemPrimitive.Trigger className="aui-thread-list-item-trigger flex h-full min-w-0 flex-1 cursor-pointer items-center px-3 text-start text-sm transition-colors">
                 <span className="aui-thread-list-item-title min-w-0 flex-1 truncate">
                     <ThreadListItemPrimitive.Title

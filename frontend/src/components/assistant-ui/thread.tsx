@@ -103,7 +103,7 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection, workspace })
             <ThreadPrimitive.Root
                 className="aui-root aui-thread-root @container relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background"
                 style={{
-                    ["--thread-max-width" as string]: "48rem",
+                    ["--thread-max-width" as string]: "50rem",
                     ["--composer-radius" as string]: "24px",
                     ["--composer-padding" as string]: "10px",
                 }}

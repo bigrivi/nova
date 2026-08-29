@@ -985,7 +985,7 @@ export function NovaAppShell() {
                         className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden bg-sidebar transition-[width,opacity] duration-200 ease-out ${
                             isSidebarCollapsed
                                 ? "w-0 opacity-0"
-                                : "w-(--sidebar-width) border-r border-sidebar-border opacity-100"
+                                : "w-(--sidebar-width) opacity-100"
                         }`}
                     >
                         {!isSidebarCollapsed && (
@@ -996,7 +996,7 @@ export function NovaAppShell() {
                                         onDelete={handleDeleteThread}
                                     />
                                 </div>
-                                <div className="flex items-center justify-between border-t border-sidebar-border px-3 py-2.5">
+                                <div className="flex items-center justify-between px-3 py-2.5">
                                     <div className="flex items-center gap-2">
                                         <div className="flex size-5 items-center justify-center rounded-md bg-sidebar-primary text-[10px] font-bold text-sidebar-primary-foreground">
                                             N
@@ -1041,7 +1041,7 @@ export function NovaAppShell() {
                             type="button"
                             variant="outline"
                             size="icon"
-                            className={`fixed top-4 z-30 rounded-full bg-background/90 shadow-sm backdrop-blur transition-[left] duration-200 ease-out ${
+                            className={`fixed top-4 z-30 rounded-full border border-[#E4E3DF] bg-white shadow-[0_8px_24px_rgba(20,20,18,0.07)] backdrop-blur transition-[left] duration-200 ease-out ${
                                 isSidebarCollapsed
                                     ? "left-4"
                                     : "left-[calc(var(--sidebar-width)+1rem)]"
