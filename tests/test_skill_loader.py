@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
-from nova.settings import Settings
 from nova.skills.scanner import SkillParseError, load_skill_document
-from nova.skills.service import SkillService, get_skill_service, initialize_skill_service
+from nova.skills.service import SkillService
 from nova.tools.edit import edit
 from nova.tools.write import write
 
@@ -43,24 +41,6 @@ def _write_skill(
     path = skill_dir / "SKILL.md"
     path.write_text(content, encoding="utf-8")
     return path
-
-
-def _settings_for_home(home: Path) -> Settings:
-    return Settings(
-        home=home,
-        workspace_dir=home / "workspace",
-        logs_dir=home / "logs",
-        database_path=home / "nova.db",
-        host="127.0.0.1",
-        backend_port=8765,
-        ui_port=8501,
-        log_level="INFO",
-        provider="ollama",
-        model="gemma4:26b",
-        ollama_base_url="http://localhost:11434",
-        openai_base_url="https://api.openai.com/v1",
-        openai_api_key="",
-    )
 
 
 def test_load_skill_document_parses_frontmatter_with_regex(tmp_path):
@@ -115,12 +95,11 @@ def test_skill_service_scans_valid_skills_only(tmp_path):
 
 @pytest.mark.asyncio
 async def test_write_tool_does_not_rescan_skill_catalog_automatically(tmp_path):
-    home = tmp_path / "nova-home"
-    settings = _settings_for_home(home)
-    _write_skill(settings.skills_dir, "code-review", name="code-review", description="Review code.")
-    initialize_skill_service(settings)
+    skills_dir = tmp_path / "skills"
+    _write_skill(skills_dir, "code-review", name="code-review", description="Review code.")
+    service = SkillService(skills_dir)
+    service.scan_skills()
 
-    service = get_skill_service()
     assert [skill.name for skill in service.list_skills()] == ["code-review"]
 
     result = await write(
@@ -128,7 +107,7 @@ async def test_write_tool_does_not_rescan_skill_catalog_automatically(tmp_path):
         "description: Handle incidents.\n"
         "allowed-tools: [read]\n"
         "---\n\n# Incident\n\nRespond fast.\n",
-        filePath=str(settings.skills_dir / "incident" / "SKILL.md"),
+        filePath=str(skills_dir / "incident" / "SKILL.md"),
     )
 
     assert result.success is True
@@ -139,15 +118,15 @@ async def test_write_tool_does_not_rescan_skill_catalog_automatically(tmp_path):
 
 @pytest.mark.asyncio
 async def test_edit_tool_does_not_rescan_skill_catalog_automatically(tmp_path):
-    home = tmp_path / "nova-home"
-    settings = _settings_for_home(home)
+    skills_dir = tmp_path / "skills"
     skill_md_path = _write_skill(
-        settings.skills_dir,
+        skills_dir,
         "code-review",
         name="code-review",
         description="Review code.",
     )
-    initialize_skill_service(settings)
+    service = SkillService(skills_dir)
+    service.scan_skills()
 
     result = await edit(
         filePath=str(skill_md_path),
@@ -156,7 +135,6 @@ async def test_edit_tool_does_not_rescan_skill_catalog_automatically(tmp_path):
     )
 
     assert result.success is True
-    service = get_skill_service()
     summaries = service.list_skills()
     assert summaries[0].description == "Review code."
     service.scan_skills()
