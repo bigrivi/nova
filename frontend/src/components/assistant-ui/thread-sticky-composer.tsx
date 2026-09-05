@@ -97,7 +97,7 @@ export function ThreadStickyComposer({
     return (
         <div
             ref={containerRef}
-            className="pointer-events-none relative overflow-x-hidden pb-4 pt-3"
+            className="pointer-events-none relative overflow-x-clip pb-4 pt-3"
             style={{ scrollbarGutter: "stable" }}
         >
             <div className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-t from-background via-background to-transparent" />
