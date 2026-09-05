@@ -1,8 +1,16 @@
-<!-- TODO: logo + badges + hero screenshot -->
+<p align="center">
+  <img src="assets/logo.png" width="120" alt="Nova logo" />
+</p>
 
 # Nova
 
 Your open source AI agent on desktop, terminal, web, and API.
+
+[![CI](https://github.com/bigrivi/nova/actions/workflows/ci.yml/badge.svg)](https://github.com/bigrivi/nova/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)
+
+<!-- TODO: hero screenshot of the TUI -->
 
 One shared Python runtime powers four surfaces: a terminal TUI, an HTTP server, a web frontend, and a desktop app.
 
