@@ -208,7 +208,7 @@ def _parse_compaction_config(raw: Any) -> CompactionSettings:
 
 @dataclass(frozen=True)
 class Settings:
-    # Filesystem/runtime paths shared across CLI and server modes.
+    # Filesystem/runtime paths shared across TUI and server modes.
     home: Path
     workspace_dir: Path
     logs_dir: Path

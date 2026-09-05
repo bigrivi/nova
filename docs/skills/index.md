@@ -12,7 +12,7 @@ Ask Nova to list available skills:
 What skills do you have?
 ```
 
-Or use the `/install-skill` command in the CLI.
+Or use the `/install-skill` command in the TUI.
 
 ## Installing Skills
 
@@ -24,10 +24,10 @@ Can you install the "diagram" skill?
 
 The agent calls `install_skill` to download and install it.
 
-From the CLI:
+From the TUI, type the command in chat:
 
-```bash
-python -m nova cli --command '/install-skill diagram'
+```text
+/install-skill diagram
 ```
 
 ## Using Skills

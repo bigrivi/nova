@@ -45,7 +45,7 @@ class AgentEvent(Enum):
     COMPACTION_END = "compaction_end"
     CONTEXT_UPDATE = "context_update"
 
-    # Danger command approval (desktop / CLI)
+    # Danger command approval (desktop / TUI)
     APPROVAL_REQUIRED = "approval_required"
     APPROVAL_HEARTBEAT = "approval_heartbeat"
     APPROVAL_RESULT = "approval_result"

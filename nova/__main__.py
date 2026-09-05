@@ -9,7 +9,6 @@ import argparse
 import sys
 from pathlib import Path
 
-from nova.cli.main import run_cli
 from nova.desktop.main import run_desktop
 from nova.mcp.manager import MCPManager
 from nova.server import run_server
@@ -30,11 +29,11 @@ def main():
             code = f.read()
         exec(compile(code, script_path, "exec"), {"__name__": "__main__", "__file__": script_path})
         sys.exit(0)
-    parser = argparse.ArgumentParser(description="Nova CLI/Desktop agent runtime")
+    parser = argparse.ArgumentParser(description="Nova agent runtime")
     settings = get_settings()
     provider_names = settings.provider_names or []
-    parser.add_argument("mode", nargs="?", choices=["cli", "serve", "desktop"], default="cli",
-                        help="Run mode: cli (terminal TUI), serve (HTTP backend), desktop (GUI window)")
+    parser.add_argument("mode", nargs="?", choices=["serve", "desktop"], default="serve",
+                        help="Run mode: serve (HTTP backend, default), desktop (GUI window)")
     provider_default = provider_names[0] if provider_names else None
     parser.add_argument("--provider", "-p", choices=provider_names, default=provider_default,
                         help="LLM provider alias (default: first configured provider)")
@@ -45,22 +44,16 @@ def main():
                         help=f"Agent key (default: {DEFAULT_AGENT_KEY})")
     parser.add_argument("--dev", action="store_true",
                         help="[desktop] Load frontend from Vite dev server (http://localhost:5173) instead of built-in server")
-    parser.add_argument("--theme", default="textual-dark",
-                        help="Textual theme to use (default: textual-dark)")
     args = parser.parse_args()
     init_site_packages()
     configure_logging(settings)
 
     try:
-        if args.mode == "serve":
-            asyncio.run(run_server(settings=settings))
-            return
-
         if args.mode == "desktop":
             run_desktop(settings=settings, dev=args.dev)
             return
 
-        asyncio.run(run_cli(agent_key=args.agent, theme=args.theme))
+        asyncio.run(run_server(settings=settings))
     finally:
         try:
             loop = asyncio.new_event_loop()

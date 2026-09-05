@@ -30,9 +30,9 @@ execute code, browse the web, search files, run shell commands, and more.
 
 - [Desktop Overview](desktop/index.md) -- run Nova as a desktop application
 
-## CLI Reference
+## TUI Reference
 
-- [CLI Commands](cli/index.md) -- all CLI commands and options
+- [TUI Commands](tui/index.md) -- all TUI commands and options
 
 ## Memory
 

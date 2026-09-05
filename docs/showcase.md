@@ -449,10 +449,10 @@ Nova 会从记忆中调出来。
 
 ## 试试看
 
-运行 CLI：
+运行 TUI：
 
 ```bash
-python -m nova
+./nova-tui
 ```
 
 或者从构建产物中启动桌面应用。

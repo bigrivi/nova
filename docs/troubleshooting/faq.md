@@ -4,11 +4,11 @@
 
 ### How do I change the model?
 
-In the CLI, type `/models` to see and switch between configured models.
+In the TUI, type `/models` to see and switch between configured models.
 
 ### How do I start a new session?
 
-Type `/new` in the CLI.
+Type `/new` in the TUI.
 
 ### Where is my data stored?
 

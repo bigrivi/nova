@@ -2,7 +2,6 @@ import json
 import sys
 
 import nova.__main__ as nova_main
-from nova.constants import DEFAULT_AGENT_KEY
 
 
 def _write_config(home, payload):
@@ -13,9 +12,53 @@ def _write_config(home, payload):
     )
 
 
-def test_main_defaults_to_cli(monkeypatch, tmp_path):
+def test_main_defaults_to_serve(monkeypatch, tmp_path):
     called: dict = {}
+    ran: dict = {}
     home = tmp_path / "nova-main"
+    _write_config(
+        home,
+        {
+            "model": "gemma4:26b",
+            "model_provider": "ollama",
+            "providers": {
+                "ollama": {
+                    "type": "ollama",
+                    "name": "Ollama (local)",
+                    "options": {
+                        "base_url": "http://localhost:11434",
+                    },
+                    "models": {
+                        "gemma4:26b": {
+                            "name": "gemma4:26b",
+                            "tools": True,
+                        }
+                    },
+                }
+            },
+        },
+    )
+
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    sentinel = object()
+    monkeypatch.setattr(
+        nova_main,
+        "run_server",
+        lambda **kw: called.update(kw) or sentinel,
+    )
+    monkeypatch.setattr(
+        nova_main.asyncio, "run", lambda coro: ran.setdefault("coro", coro))
+    monkeypatch.setattr(sys, "argv", ["nova"])
+
+    nova_main.main()
+
+    assert ran.get("coro") is sentinel
+    assert called.get("settings") is not None
+
+
+def test_main_desktop_dispatch(monkeypatch, tmp_path):
+    called: dict = {}
+    home = tmp_path / "nova-main-desktop"
     _write_config(
         home,
         {
@@ -42,71 +85,16 @@ def test_main_defaults_to_cli(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(home))
     monkeypatch.setattr(
         nova_main,
-        "run_cli",
+        "run_desktop",
         lambda **kw: called.update(kw),
     )
-    monkeypatch.setattr(nova_main.asyncio, "run", lambda coro: coro)
-    monkeypatch.setattr(sys, "argv", ["nova"])
-
-    nova_main.main()
-
-    assert called.get("agent_key") == DEFAULT_AGENT_KEY
-    assert called.get("theme") == "textual-dark"
-
-
-def test_main_accepts_configured_provider_alias(monkeypatch, tmp_path):
-    called = {}
-    home = tmp_path / "nova-main-cli"
-    _write_config(
-        home,
-        {
-            "model": "gpt-5.4",
-            "model_provider": "wbz",
-            "providers": {
-                "wbz": {
-                    "type": "openai-compatible",
-                    "name": "wbz",
-                    "options": {
-                        "base_url": "http://openai.local/v1",
-                    },
-                    "models": {
-                        "gpt-5.4": {
-                            "name": "gpt-5.4",
-                            "tools": True,
-                        }
-                    },
-                },
-                "ollama": {
-                    "type": "ollama",
-                    "name": "Ollama (local)",
-                    "options": {
-                        "base_url": "http://localhost:11434",
-                    },
-                    "models": {
-                        "gemma4:26b": {
-                            "name": "gemma4:26b",
-                            "tools": True,
-                        }
-                    },
-                },
-            },
-        },
-    )
-
-    monkeypatch.setenv("NOVA_HOME", str(home))
-    monkeypatch.setattr(
-        nova_main,
-        "run_cli",
-        lambda **kw: called.update(kw),
-    )
-    monkeypatch.setattr(nova_main.asyncio, "run", lambda coro: coro)
     monkeypatch.setattr(
         sys,
         "argv",
-        ["nova", "cli", "--provider", "wbz", "--model", "gpt-5.4"],
+        ["nova", "desktop"],
     )
 
     nova_main.main()
 
-    assert called.get("agent_key") == DEFAULT_AGENT_KEY
-    assert called.get("theme") == "textual-dark"
+    assert called.get("settings") is not None
+    assert called.get("dev") is False

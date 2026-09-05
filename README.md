@@ -1,10 +1,10 @@
 # Nova
 
-Nova is a local personal AI agent assistant for CLI and desktop workflows.
+Nova is a local personal AI agent assistant for terminal and desktop workflows.
 
 It combines streamed LLM chat, tool calling, persistent sessions, runtime
 skills, long-term memory, and local model/provider configuration into one
-assistant runtime. The CLI is the most complete surface today. The desktop
+assistant runtime. The TUI is the most complete surface today. The desktop
 surface is built around a React frontend, a FastAPI backend, and a PyWebView
 host that reuse the same agent core.
 
@@ -12,7 +12,7 @@ host that reuse the same agent core.
 
 Todo list:
 
-- [x] Textual CLI chat app
+- [x] OpenTUI terminal client (tui/)
 - [x] shared async agent runtime
 - [x] streamed tool-calling loop
 - [x] SQLite-backed sessions, messages, agents, and memories
@@ -33,7 +33,7 @@ Nova should be read as a personal agent assistant tool, not just a chat demo.
 
 Core capabilities:
 
-- Chat with a local or OpenAI-compatible model through CLI, server, or desktop.
+- Chat with a local or OpenAI-compatible model through the TUI, server, or desktop.
 - Let the model use tools for files, shell commands, code execution, search,
   browser automation, image reading, todo tracking, follow-up questions, and
   dependency installation.
@@ -42,7 +42,7 @@ Core capabilities:
   session scopes.
 - Persist local sessions and replay user-visible conversation history.
 - Run multiple configured model providers from `~/.nova/config.json`.
-- Use the same runtime from CLI, HTTP backend, and desktop shell.
+- Use the same runtime from the TUI, HTTP backend, and desktop shell.
 
 The server exists mainly to support the frontend and desktop app. It can also
 be run directly for development and integration tests, but it is not the main
@@ -52,10 +52,10 @@ product surface.
 
 ```text
 frontend/      React + Vite UI built on assistant-ui
+tui/           OpenTUI terminal client (bun + React)
 nova/
   app/        shared runtime assembly
   agent/      agent loop, events, tool execution, and compaction
-  cli/        Textual CLI app, commands, screens, widgets, and stream handling
   config/     config and agent CRUD services
   db/         async SQLite persistence
   desktop/    PyWebView host and backend server thread
@@ -68,6 +68,7 @@ nova/
   tools/      built-in tool implementations and registry
 build.py       cross-platform desktop build script
 nova.py        thin local launcher for `nova.__main__`
+nova-tui       launcher script for the TUI client
 requirements.txt
 ```
 
@@ -85,9 +86,7 @@ Current runtime dependencies include:
 - `aiosqlite`
 - `fastapi`
 - `httpx`
-- `prompt_toolkit`
 - `rich`
-- `textual`
 - `uvicorn`
 - `tiktoken`
 - `playwright`
@@ -103,31 +102,18 @@ playwright install chromium
 Desktop packaging uses PyInstaller. Install it in the build environment before
 running `build.py`.
 
-## Run the CLI
+## Run the TUI
 
-The default mode is CLI:
-
-```bash
-python -m nova
-python -m nova cli
-```
-
-With a configured provider alias and model:
+The terminal client lives in `tui/` (OpenTUI + React, run with bun). It spawns
+the backend itself, so no separate server step is needed:
 
 ```bash
-python -m nova cli --provider ollama --model gemma4:26b
-python -m nova cli --provider openai --model gpt-5.4
+./nova-tui
 ```
 
-Run with a DB-backed agent key:
+TUI behavior highlights:
 
-```bash
-python -m nova cli --agent main
-```
-
-CLI behavior highlights:
-
-- Textual chat interface with a persistent message viewport and bottom composer.
+- Terminal chat interface with a persistent message viewport and bottom composer.
 - Streamed assistant output, reasoning blocks, tool calls, and tool results.
 - Escape can interrupt an in-flight run.
 - Successful `edit` and `write` tool results show file mutation diffs.
@@ -137,17 +123,17 @@ CLI behavior highlights:
 - Runtime skills are summarized in the system prompt so the model can decide
   when to call `list_skills` or `load_skill`.
 
-### CLI Commands
+### TUI Commands
 
-Inside CLI mode:
+Inside the TUI:
 
 - type normal text to chat with Nova
 - `/new` starts a new session
 - `/sessions` browses and loads sessions
 - `/clear` clears the screen
 - `/models` opens model selection
-- `/install-skill <slug-or-url> [--force]` installs one runtime skill
-- `/quit`, `/q`, `exit`, or `quit` exits the app
+- `/install-skill <slug-or-url>` installs one runtime skill
+- `/quit`, `/q` or `exit` exits the app
 
 ## Run the Server
 
@@ -286,7 +272,7 @@ Current runtime skill behavior:
 - The model can call `load_skill` to load the full `SKILL.md` for a known skill.
 - The model can call `install_skill` only when the user explicitly asks to
   install a ClawHub skill.
-- The CLI exposes `/install-skill <slug-or-url> [--force]`.
+- The TUI exposes `/install-skill <slug-or-url> [--force]`.
 - A successful skill install refreshes the catalog immediately.
 
 ## Memory
@@ -371,7 +357,7 @@ Rules:
 - `input_type="text"` means free-form input.
 - `input_type="select"` means choose from `options`.
 - `options` must be empty for text input.
-- The CLI expects this JSON protocol.
+- The TUI expects this JSON protocol.
 
 ## Settings and Runtime Paths
 
@@ -754,7 +740,7 @@ PYTHONPATH=. pytest
 Useful subsets:
 
 ```bash
-PYTHONPATH=. pytest tests/test_cli.py -q
+PYTHONPATH=. pytest tests/test_agent_chat_stream.py -q
 PYTHONPATH=. pytest tests/test_runtime.py -q
 PYTHONPATH=. pytest tests/test_memory.py -q
 PYTHONPATH=. pytest tests/test_server.py -q
@@ -772,7 +758,7 @@ PYTHONPATH=. pytest tests/e2e/test_server_ollama_live_e2e.py -q
 
 ## What the Repository Means Today
 
-Nova is a working personal agent assistant with a complete CLI surface, a
+Nova is a working personal agent assistant with a complete terminal (TUI) surface, a
 desktop-oriented frontend and PyWebView shell, and a shared runtime designed to
 keep agent behavior consistent across surfaces.
 

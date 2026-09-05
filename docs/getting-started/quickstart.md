@@ -111,10 +111,11 @@ reasoning stream.
 ## Step 2: Start Chatting
 
 ```bash
-python -m nova
+./nova-tui
 ```
 
-The CLI starts with your configured model. Type a message and press Enter.
+The TUI (requires [bun](https://bun.sh)) starts with your configured model.
+Type a message and press Enter.
 
 ## Step 3: Try Things
 
@@ -131,9 +132,9 @@ Write a Python script that calculates fibonacci numbers
 
 ## Step 4: Switch Models (Optional)
 
-Inside the CLI, type `/models` to see and switch between configured models.
+Inside the TUI, type `/models` to see and switch between configured models.
 
 ## Next
 
-- [CLI Commands](../cli/index.md) -- all available commands
+- [TUI Commands](../tui/index.md) -- all available commands
 - [Tool Overview](../tools/index.md) -- what Nova's tools can do

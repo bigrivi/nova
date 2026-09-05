@@ -1,13 +1,17 @@
-# CLI Reference
+# TUI Reference
 
-## Starting the CLI
+## Starting the TUI
+
+The terminal client lives in `tui/` (OpenTUI + React, run with bun). It spawns
+the Python backend (`python -m nova serve`) itself, so no separate server step
+is needed:
 
 ```bash
-python -m nova
-python -m nova cli
-python -m nova cli --provider ollama --model gemma4:26b
-python -m nova cli --agent main
+./nova-tui
 ```
+
+The backend port defaults to `8765` and can be overridden with
+`NOVA_BACKEND_PORT`.
 
 ## In-Chat Commands
 
@@ -16,10 +20,11 @@ python -m nova cli --agent main
 | `/new` | Start a new session |
 | `/sessions` | Browse and load past sessions |
 | `/clear` | Clear the screen |
-| `/models` | Open model selection |
+| `/models` | Show available models |
+| `/theme` | View or switch UI theme |
 | `/install-skill <slug>` | Install a skill from ClawHub |
-| `/install-skill <url>` | Install a skill from a URL |
-| `/quit`, `/q`, `exit`, `quit` | Exit the app |
+| `/list-agents`, `/create-agent`, `/delete-agent` | Manage agents |
+| `/quit`, `/q`, `exit` | Exit the app |
 
 ## Server Mode
 
@@ -47,11 +52,3 @@ npm run dev
 ```
 
 Open `http://localhost:5173` in your browser.
-
-## CLI Options
-
-| Option | Description |
-|--------|-------------|
-| `--provider <alias>` | Override the provider alias |
-| `--model <name>` | Override the model name |
-| `--agent <key>` | Run with a specific agent key |

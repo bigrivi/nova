@@ -202,11 +202,3 @@ You can define several providers and switch between them at runtime:
 | `NOVA_LOG_LEVEL` | Log level (default: INFO) |
 | `NOVA_HOST` | Server bind host (default: 127.0.0.1) |
 | `NOVA_BACKEND_PORT` | Server port (default: 8765) |
-
-## CLI Overrides
-
-Override provider and model for a single session:
-
-```bash
-python -m nova cli --provider ollama --model gemma4:26b
-```
