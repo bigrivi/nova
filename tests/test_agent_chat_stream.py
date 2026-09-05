@@ -301,6 +301,84 @@ class TestMemoryReviewScheduling:
             await asyncio.sleep(0)
             agent._background_memory_review.assert_not_called()
 
+class TestProviderMetaRoundTrip:
+    @pytest.mark.asyncio
+    async def test_done_provider_meta_reaches_db(self):
+        provider = ScriptedProvider(
+            [[Done(content="hello", provider_meta={"thinking_signature": "SIG123"})]]
+        )
+        async with isolated_agent(provider) as (agent, _db):
+            session_id = None
+            async for event, data in agent.chat_stream("hi"):
+                if event == AgentEvent.SESSION:
+                    session_id = data
+            messages = await agent.session.get_messages(session_id=session_id)
+            assistant_message = [m for m in messages if m.role == "assistant"][0]
+            assert assistant_message.provider_meta == {"thinking_signature": "SIG123"}
+            assert assistant_message.model == "test-model"
+
+    @pytest.mark.asyncio
+    async def test_provider_meta_survives_convert_to_llm_messages(self):
+        provider = ScriptedProvider(
+            [[Done(content="hello", provider_meta={"thinking_signature": "SIG123"})]]
+        )
+        async with isolated_agent(provider) as (agent, _db):
+            session_id = None
+            async for event, data in agent.chat_stream("hi"):
+                if event == AgentEvent.SESSION:
+                    session_id = data
+            loaded_messages = await agent.session.get_messages(session_id=session_id)
+            llm_messages = agent._convert_to_llm_messages(loaded_messages)
+            assistant_llm_messages = [m for m in llm_messages if m.role == "assistant"]
+            assert len(assistant_llm_messages) >= 1
+            target_message = assistant_llm_messages[0]
+            assert target_message.provider_meta == {"thinking_signature": "SIG123"}
+            assert target_message.model == "test-model"
+
+    @pytest.mark.asyncio
+    async def test_done_without_provider_meta_persists_none(self):
+        provider = ScriptedProvider([[Done(content="hello")]])
+        async with isolated_agent(provider) as (agent, _db):
+            session_id = None
+            async for event, data in agent.chat_stream("hi"):
+                if event == AgentEvent.SESSION:
+                    session_id = data
+            messages = await agent.session.get_messages(session_id=session_id)
+            assistant_message = [m for m in messages if m.role == "assistant"][0]
+            assert assistant_message.provider_meta is None
+
+    @pytest.mark.asyncio
+    async def test_tool_call_turn_keeps_provider_meta(self):
+        provider = ScriptedProvider(
+            [
+                [
+                    ToolCall(id="call-1", name="echo_tool", arguments='{"text":"hi"}'),
+                    Done(provider_meta={"thinking_signature": "SIG_TOOL"}),
+                ],
+                [Done(content="done")],
+            ]
+        )
+        async with isolated_agent(provider) as (agent, _db):
+
+            async def echo_tool(text: str) -> ToolResult:
+                return ToolResult(success=True, content=f"echo:{text}")
+
+            agent.register_tool(echo_tool, name="echo_tool")
+            session_id = None
+            async for event, data in agent.chat_stream("go"):
+                if event == AgentEvent.SESSION:
+                    session_id = data
+            messages = await agent.session.get_messages(session_id=session_id)
+            assistant_with_tools = [
+                m for m in messages if m.role == "assistant" and m.tool_calls
+            ]
+            assert len(assistant_with_tools) == 1
+            assert assistant_with_tools[0].provider_meta == {
+                "thinking_signature": "SIG_TOOL"
+            }
+            assert assistant_with_tools[0].model == "test-model"
+
+
 from nova.llm.faker import FakerLLMProvider
 
 

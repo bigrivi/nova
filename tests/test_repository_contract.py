@@ -136,3 +136,51 @@ async def test_memory_filters_and_deletes_match_contract(repository):
     assert len(filtered) == 1
     assert deleted == 1
     assert await repository.list_memories_by_session("session-4") == []
+
+
+@pytest.mark.asyncio
+async def test_provider_meta_and_model_round_trip(repository):
+    await repository.save_session(Session(id="session-meta"))
+    created = await repository.add_message(
+        "session-meta",
+        "assistant",
+        "thinking hello",
+        provider_meta={"thinking_signature": "SIG123"},
+        model="claude-sonnet-4-5",
+    )
+    assert created.provider_meta == {"thinking_signature": "SIG123"}
+    assert created.model == "claude-sonnet-4-5"
+
+    messages = await repository.get_messages("session-meta", MessageFilter(include_compacted=True))
+    assert len(messages) == 1
+    stored = messages[0]
+    assert stored.provider_meta == {"thinking_signature": "SIG123"}
+    assert isinstance(stored.provider_meta, dict)
+    assert stored.model == "claude-sonnet-4-5"
+
+
+@pytest.mark.asyncio
+async def test_provider_meta_none_round_trips_as_none(repository):
+    await repository.save_session(Session(id="session-meta-none"))
+    created = await repository.add_message("session-meta-none", "assistant", "no meta")
+    assert created.provider_meta is None
+
+    messages = await repository.get_messages("session-meta-none", MessageFilter(include_compacted=True))
+    stored = messages[0]
+    assert stored.provider_meta is None
+
+
+@pytest.mark.asyncio
+async def test_provider_meta_non_ascii_round_trips(repository):
+    await repository.save_session(Session(id="session-meta-unicode"))
+    created = await repository.add_message(
+        "session-meta-unicode",
+        "assistant",
+        "unicode",
+        provider_meta={"thinking_signature": "签名"},
+        model="claude-sonnet-4-5",
+    )
+    messages = await repository.get_messages("session-meta-unicode", MessageFilter(include_compacted=True))
+    stored = messages[0]
+    assert stored.provider_meta == {"thinking_signature": "签名"}
+    assert created.provider_meta == {"thinking_signature": "签名"}

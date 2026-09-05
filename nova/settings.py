@@ -74,6 +74,8 @@ def _env_int(name: str, default: int) -> int:
 def _default_model_for_provider_type(provider_type: str) -> str:
     if provider_type == "ollama":
         return "gemma4:26b"
+    if provider_type == "anthropic":
+        return "claude-sonnet-4-5"
     return ""
 
 

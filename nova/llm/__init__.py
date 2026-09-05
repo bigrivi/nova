@@ -7,6 +7,7 @@ from nova.llm.openai import OpenAIProvider
 from nova.llm.openai_response import OpenAIResponsesProvider
 from nova.llm.ollama import OllamaProvider
 from nova.llm.faker import FakerLLMProvider
+from nova.llm.anthropic import AnthropicProvider
 
 __all__ = [
     "LLMProvider",
@@ -23,4 +24,5 @@ __all__ = [
     "OpenAIResponsesProvider",
     "OllamaProvider",
     "FakerLLMProvider",
+    "AnthropicProvider",
 ]

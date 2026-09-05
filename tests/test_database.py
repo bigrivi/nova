@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 import pytest
 import pytest_asyncio
 
+import aiosqlite
+
 from nova.db import database as db_module
 from nova.db.sqlite_repository import SqliteRepository
 from nova.db.config import DatabaseConfig
@@ -129,3 +131,101 @@ async def test_ensure_db_and_init_db_manage_global_instance(monkeypatch, tmp_pat
     await db_module.close_db()
     assert db_module._db is None
     get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_migrate_adds_provider_meta_column_to_legacy_db(tmp_path):
+    path = str(tmp_path / "legacy.db")
+    old_messages_ddl = """
+    CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        agent_key TEXT NOT NULL DEFAULT 'main',
+        title TEXT,
+        parent_id TEXT,
+        workspace_dir TEXT,
+        summary_goal TEXT,
+        summary_accomplished TEXT,
+        summary_remaining TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        compacted_at INTEGER,
+        message_count INTEGER DEFAULT 0,
+        turn_count INTEGER DEFAULT 0,
+        metadata TEXT,
+        FOREIGN KEY (agent_key) REFERENCES agents(key)
+    );
+    CREATE TABLE IF NOT EXISTS messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL DEFAULT '',
+        model TEXT,
+        format TEXT,
+        variant TEXT,
+        summary INTEGER DEFAULT 0,
+        compacted INTEGER DEFAULT 0,
+        finish TEXT,
+        error TEXT,
+        cost REAL,
+        tokens_input INTEGER,
+        tokens_output INTEGER,
+        time_created INTEGER NOT NULL,
+        data TEXT,
+        tool_calls TEXT,
+        tool_call_id TEXT,
+        images TEXT,
+        reasoning_content TEXT,
+        group_id TEXT,
+        reasoning_elapsed_ms INTEGER,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS agents (
+        key TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        model TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        tools TEXT,
+        workspace_dir TEXT,
+        parent_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
+    """
+    async with aiosqlite.connect(path) as connection:
+        await connection.executescript(old_messages_ddl)
+        await connection.commit()
+        cursor = await connection.execute("PRAGMA table_info(messages)")
+        columns_before = {row[1] for row in await cursor.fetchall()}
+        assert "provider_meta" not in columns_before
+
+    repository = SqliteRepository(DatabaseConfig(path=path))
+    await repository.connect()
+    cursor = await repository._conn.execute("PRAGMA table_info(messages)")
+    columns_after = {row[1] for row in await cursor.fetchall()}
+    assert "provider_meta" in columns_after
+
+    await repository.save_session(Session(id="legacy-session"))
+    created = await repository.add_message(
+        "legacy-session",
+        "assistant",
+        "hello",
+        provider_meta={"thinking_signature": "SIG123"},
+        model="claude-sonnet-4-5",
+    )
+    messages = await repository.get_messages("legacy-session", MessageFilter(include_compacted=True))
+    assert len(messages) == 1
+    assert messages[0].provider_meta == {"thinking_signature": "SIG123"}
+    assert isinstance(messages[0].provider_meta, dict)
+    assert messages[0].model == "claude-sonnet-4-5"
+    assert created.provider_meta == {"thinking_signature": "SIG123"}
+
+    await repository.close()
+
+    # Idempotency: second open must not raise and column must still exist.
+    second = SqliteRepository(DatabaseConfig(path=path))
+    await second.connect()
+    cursor = await second._conn.execute("PRAGMA table_info(messages)")
+    columns_second = {row[1] for row in await cursor.fetchall()}
+    assert "provider_meta" in columns_second
+    await second.close()

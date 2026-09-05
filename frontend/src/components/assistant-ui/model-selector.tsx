@@ -42,7 +42,7 @@ type ModelGroup = {
 
 type ProviderFormState = {
     key: string;
-    type: "ollama" | "openai-compatible";
+    type: "ollama" | "openai-compatible" | "anthropic";
     name: string;
     baseUrl: string;
     apiKey: string;
@@ -57,7 +57,24 @@ type ModelFormState = {
 
 const ADD_PROVIDER_VALUE = "__add_provider__";
 const ADD_MODEL_VALUE = "__add_model__";
-const PROVIDER_TYPE_VALUES = ["ollama", "openai-compatible"] as const;
+const PROVIDER_TYPE_VALUES = [
+    "openai-compatible",
+    "anthropic",
+    "ollama",
+] as const;
+
+const PROVIDER_TYPE_LABEL_KEYS: Record<ProviderFormState["type"], string> = {
+    "openai-compatible": "modelSelector.openaiCompatible",
+    anthropic: "modelSelector.anthropic",
+    ollama: "modelSelector.ollama",
+};
+
+const PROVIDER_TYPE_PLACEHOLDER_KEYS: Record<ProviderFormState["type"], string> =
+    {
+        "openai-compatible": "modelSelector.baseUrlPlaceholderOpenai",
+        anthropic: "modelSelector.baseUrlPlaceholderAnthropic",
+        ollama: "modelSelector.baseUrlPlaceholderOllama",
+    };
 
 function groupModels(models: NovaModelRecord[]): ModelGroup[] {
     const groups = new Map<string, ModelGroup>();
@@ -418,11 +435,7 @@ export function ModelSelector({
                                 <SelectContent>
                                     {PROVIDER_TYPE_VALUES.map((value) => (
                                         <SelectItem key={value} value={value}>
-                                            {value === "ollama"
-                                                ? t("modelSelector.ollama")
-                                                : t(
-                                                      "modelSelector.openaiCompatible",
-                                                  )}
+                                            {t(PROVIDER_TYPE_LABEL_KEYS[value])}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
@@ -442,19 +455,15 @@ export function ModelSelector({
                                     }))
                                 }
                                 className="h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-                                placeholder={
-                                    providerForm.type === "ollama"
-                                        ? t(
-                                              "modelSelector.baseUrlPlaceholderOllama",
-                                          )
-                                        : t(
-                                              "modelSelector.baseUrlPlaceholderOpenai",
-                                          )
-                                }
+                                placeholder={t(
+                                    PROVIDER_TYPE_PLACEHOLDER_KEYS[
+                                        providerForm.type
+                                    ],
+                                )}
                             />
                         </label>
 
-                        {providerForm.type === "openai-compatible" ? (
+                        {providerForm.type !== "ollama" ? (
                             <label className="block space-y-1">
                                 <span className="text-xs font-medium text-foreground">
                                     {t("modelSelector.apiKey")}

@@ -18,7 +18,7 @@ Todo list:
 - [x] SQLite-backed sessions, messages, agents, and memories
 - [x] user/project/session memory tools
 - [x] runtime skill catalog with `list_skills`, `load_skill`, and `install_skill`
-- [x] Ollama and OpenAI-compatible provider support
+- [x] Ollama, Anthropic, OpenAI-compatible, and OpenAI Response provider support
 - [x] FastAPI backend for frontend and desktop integration
 - [x] AI SDK UI compatible SSE stream for `assistant-ui`
 - [x] React + Vite desktop-facing frontend
@@ -59,7 +59,7 @@ nova/
   config/     config and agent CRUD services
   db/         async SQLite persistence
   desktop/    PyWebView host and backend server thread
-  llm/        provider abstraction plus Ollama and OpenAI-compatible providers
+  llm/        provider abstraction plus Ollama, Anthropic, OpenAI-compatible, and OpenAI Response providers
   memory/     structured memory models, repository, service, and tools
   prompt/     system prompt builder
   server/     FastAPI app, chat service, schemas, and SSE adapters
@@ -457,7 +457,7 @@ Config rules:
 
 - `model_provider` is the selected provider alias.
 - `providers.<alias>.type` controls runtime dispatch.
-- Supported provider types are `ollama` and `openai-compatible`.
+- Supported provider types are `ollama`, `anthropic`, `openai-compatible`, and `openai-response`.
 - `providers.<alias>.models.<model-key>.name` is used as the configured model
   label in model selection surfaces.
 - `providers.<alias>.options.api_key` stores the provider secret in the local

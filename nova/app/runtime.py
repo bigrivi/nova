@@ -9,7 +9,7 @@ from pathlib import Path
 from nova.agent import Agent, AgentConfig
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
-from nova.llm import FakerLLMProvider, LLMProvider, OllamaProvider, OpenAIProvider, OpenAIResponsesProvider
+from nova.llm import AnthropicProvider, FakerLLMProvider, LLMProvider, OllamaProvider, OpenAIProvider, OpenAIResponsesProvider
 from nova.prompt import PromptConfig
 from nova.settings import get_settings
 from nova.skills.tools import SkillTools
@@ -89,6 +89,25 @@ def build_llm(
             base_url=base_url,
             request_options=request_options,
             user_agent=user_agent,
+        )
+    elif provider_type == "anthropic":
+        base_url = str(provider_config.options.get("base_url", "")).strip()
+        api_key = str(provider_config.options.get("api_key", "")).strip()
+        user_agent = str(
+            provider_config.options.get("user_agent", "")).strip() or None
+        anthropic_version = str(
+            provider_config.options.get("anthropic_version", "")).strip() or "2023-06-01"
+        raw_betas = provider_config.options.get("betas")
+        betas = [
+            str(item).strip() for item in raw_betas if str(item).strip()
+        ] if isinstance(raw_betas, list) else None
+        llm = AnthropicProvider(
+            api_key=api_key,
+            base_url=base_url,
+            request_options=request_options,
+            user_agent=user_agent,
+            anthropic_version=anthropic_version,
+            betas=betas,
         )
     else:
         raise ValueError(f"Unsupported provider type: {provider_type}")

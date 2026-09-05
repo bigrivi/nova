@@ -18,6 +18,11 @@ class Message:
     tool_call_id: Optional[str] = None
     images: Optional[list[str]] = None
     reasoning_content: Optional[str] = None
+    # Opaque per-vendor state a provider needs handed back verbatim on the next
+    # request (Anthropic thinking signatures today). Never business data, and
+    # never surfaced to the UI.
+    provider_meta: Optional[dict] = None
+    model: Optional[str] = None
 
 
 @dataclass
@@ -66,6 +71,7 @@ class Done(ChatEvent):
     aborted: bool = False
     tokens_input: Optional[int] = None
     tokens_output: Optional[int] = None
+    provider_meta: Optional[dict] = None
 
     def __post_init__(self):
         if self.tool_calls is None:

@@ -14,6 +14,15 @@ class ConfigValidationError(ValueError):
     pass
 
 
+_SUPPORTED_PROVIDER_TYPES: frozenset[str] = frozenset(
+    {"ollama", "openai-compatible", "openai-response", "anthropic"}
+)
+_DEFAULT_BASE_URLS: dict[str, str] = {
+    "ollama": "http://localhost:11434",
+    "anthropic": "https://api.anthropic.com",
+}
+
+
 @dataclass(frozen=True)
 class AgentCreateRequest:
     key: str
@@ -135,20 +144,24 @@ class ConfigService:
             raise ConfigValidationError(f"Provider '{provider_key}' already exists.")
 
         provider_type = request.provider_type.strip()
-        if provider_type not in {"ollama", "openai-compatible"}:
-            raise ConfigValidationError("Provider type must be 'ollama' or 'openai-compatible'.")
+        if provider_type not in _SUPPORTED_PROVIDER_TYPES:
+            raise ConfigValidationError(
+                f"Provider type must be one of: {', '.join(sorted(_SUPPORTED_PROVIDER_TYPES))}."
+            )
 
         display_name = request.name.strip() or provider_key
         base_url = request.base_url.strip()
         api_key = request.api_key.strip()
 
-        if provider_type == "openai-compatible" and not base_url:
-            raise ConfigValidationError("Base URL is required for openai-compatible providers.")
-        if provider_type == "ollama" and not base_url:
-            base_url = "http://localhost:11434"
+        if provider_type in {"openai-compatible", "openai-response"} and not base_url:
+            raise ConfigValidationError(f"Base URL is required for {provider_type} providers.")
+        if not base_url:
+            default_url = _DEFAULT_BASE_URLS.get(provider_type)
+            if default_url:
+                base_url = default_url
 
         options: dict[str, Any] = {"base_url": base_url}
-        if provider_type == "openai-compatible" and api_key:
+        if provider_type in {"openai-compatible", "openai-response", "anthropic"} and api_key:
             options["api_key"] = api_key
 
         providers[provider_key] = {

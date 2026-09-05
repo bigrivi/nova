@@ -31,6 +31,11 @@ class Message:
     reasoning_content: Optional[str] = None
     group_id: Optional[str] = None
     reasoning_elapsed_ms: Optional[int] = None
+    # Opaque per-vendor state that must be handed back verbatim on the next
+    # request (e.g. Anthropic thinking signatures). Never business data, never
+    # surfaced to the UI. reasoning_content must not be rewritten when
+    # provider_meta is present - the signature is over that text.
+    provider_meta: Optional[dict] = None
 
 
 @dataclass

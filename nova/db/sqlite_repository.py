@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from pathlib import Path
@@ -17,6 +18,8 @@ from nova.constants import DEFAULT_AGENT_KEY
 from nova.db.config import DatabaseConfig
 from nova.db.repository import NovaRepository
 from nova.session.models import Message, MessageFilter, Session
+
+log = logging.getLogger(__name__)
 
 
 _DDL = """
@@ -86,6 +89,7 @@ CREATE TABLE IF NOT EXISTS messages (
     reasoning_content TEXT,
     group_id TEXT,
     reasoning_elapsed_ms INTEGER,
+    provider_meta TEXT,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
@@ -134,6 +138,15 @@ def _serialize_tool_calls(tool_calls: Optional[list]) -> Optional[str]:
     return json.dumps(items, ensure_ascii=False)
 
 
+def _parse_provider_meta(raw: Optional[str]) -> Optional[dict]:
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+
 def _row_to_message(row_dict: dict[str, Any]) -> Message:
     images_data = row_dict.get("images")
     images = json.loads(images_data) if images_data else None
@@ -153,6 +166,8 @@ def _row_to_message(row_dict: dict[str, Any]) -> Message:
         reasoning_content=row_dict.get("reasoning_content"),
         group_id=row_dict.get("group_id"),
         reasoning_elapsed_ms=row_dict.get("reasoning_elapsed_ms"),
+        provider_meta=_parse_provider_meta(row_dict.get("provider_meta")),
+        model=row_dict.get("model"),
         tokens_input=row_dict.get("tokens_input"),
         tokens_output=row_dict.get("tokens_output"),
     )
@@ -187,13 +202,38 @@ class SqliteRepository(NovaRepository):
         await self._conn.commit()
 
     async def _migrate_schema(self) -> None:
-        """Idempotent additive migrations for databases created before a column existed."""
-        cursor = await self._conn.execute("PRAGMA table_info(sessions)")
-        columns = {row[1] for row in await cursor.fetchall()}
-        if "workspace_dir" not in columns:
-            await self._conn.execute(
-                "ALTER TABLE sessions ADD COLUMN workspace_dir TEXT"
-            )
+        """Idempotent additive migrations for databases created before a column existed.
+
+        Runs inside connect(), so a failure must never propagate - a schema that
+        is one column behind still serves every other feature. It is logged at
+        error level because the alternative is an opaque "no such column"
+        further down the call stack.
+        """
+        # Table and column names are literals from the map below, never caller
+        # input; SQLite cannot bind identifiers, so interpolation is the only option.
+        required_columns: dict[str, dict[str, str]] = {
+            "sessions": {"workspace_dir": "TEXT"},
+            "messages": {"provider_meta": "TEXT"},
+        }
+        for table, columns_map in required_columns.items():
+            try:
+                cursor = await self._conn.execute(f"PRAGMA table_info({table})")
+                existing = {row[1] for row in await cursor.fetchall()}
+            except Exception as exception:
+                log.error("Could not inspect table %s for migration: %s", table, exception)
+                continue
+            for column, column_type in columns_map.items():
+                if column in existing:
+                    continue
+                try:
+                    await self._conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {column} {column_type}"
+                    )
+                except Exception as exception:
+                    log.error(
+                        "Could not add column %s.%s (%s); writes touching it will fail: %s",
+                        table, column, column_type, exception,
+                    )
 
     async def close(self) -> None:
         if self._conn:
@@ -318,17 +358,20 @@ class SqliteRepository(NovaRepository):
         reasoning_elapsed_ms: Optional[int] = None,
         tokens_input: Optional[int] = None,
         tokens_output: Optional[int] = None,
+        provider_meta: Optional[dict] = None,
+        model: Optional[str] = None,
     ) -> Message:
         await self._ensure_connected()
         msg_id = str(uuid.uuid4())
         now = int(time.time() * 1000)
 
         images_json = json.dumps(images) if images else None
+        provider_meta_json = json.dumps(provider_meta, ensure_ascii=False) if provider_meta else None
 
         await self._conn.execute(
             """INSERT INTO messages
-            (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output, provider_meta, model)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 msg_id,
                 session_id,
@@ -345,6 +388,8 @@ class SqliteRepository(NovaRepository):
                 reasoning_elapsed_ms,
                 tokens_input,
                 tokens_output,
+                provider_meta_json,
+                model,
             ),
         )
         await self._conn.execute(
@@ -365,6 +410,8 @@ class SqliteRepository(NovaRepository):
             reasoning_content=reasoning_content,
             group_id=group_id,
             reasoning_elapsed_ms=reasoning_elapsed_ms,
+            provider_meta=provider_meta,
+            model=model,
             tokens_input=tokens_input,
             tokens_output=tokens_output,
         )

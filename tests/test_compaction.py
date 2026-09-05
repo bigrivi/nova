@@ -1315,3 +1315,255 @@ class TestContextWindowResolution:
 
         assert get_context_limit_with_margin("gemini-3-flash", "unconfigured") == int(
             1_048_576 / SAFETY_MARGIN)
+
+
+# ---------------------------------------------------------------------------
+# Invariant: compaction must never rewrite `reasoning_content` when
+# `provider_meta` is present.
+#
+# Anthropic persists extended-thinking as two halves: the thinking text in
+# `messages.reasoning_content` and the cryptographic signature in
+# `messages.provider_meta` as {"thinking_signature": "..."}. On the next turn
+# the provider recombines them into the block Anthropic demands back verbatim:
+#
+#     {"type": "thinking", "thinking": reasoning_content or "", "signature": signature}
+#
+# The signature is over the thinking text. If compaction ever trims or
+# rewrites `reasoning_content` while leaving `provider_meta` intact, the block
+# silently stops matching its signature and Anthropic returns 400. A truncated
+# text still looks legitimate, so no guard at send time can catch it. These
+# tests lock the current behaviour - Layer 1 only touches `tool` roles and
+# Layer 2 never edits messages (it marks and appends) - and will fire if a
+# future optimisation tries to trim bulky thinking text without handling the
+# signature.
+# ---------------------------------------------------------------------------
+
+
+def test_snip_does_not_touch_reasoning_content_with_provider_meta():
+    """Layer 1 must not trim reasoning_content when provider_meta is present.
+
+    Builds a history with a bulky assistant thinking message (reasoning_content
+    well over max_chars) alongside old tool outputs large enough to be snipped.
+    After snip_old_tool_results the tool output must be trimmed (proving the
+    trim ran) while the assistant's reasoning_content and provider_meta stay
+    byte-for-byte identical.
+    """
+    from nova.agent.compaction import SNIP_MARKER, snip_old_tool_results
+
+    class MockThinkingMessage(MockMessage):
+        def __init__(
+            self,
+            id: str,
+            role: str,
+            content: str,
+            tool_calls=None,
+            reasoning_content=None,
+            provider_meta=None,
+        ):
+            super().__init__(id, role, content, tool_calls)
+            self.reasoning_content = reasoning_content
+            self.provider_meta = provider_meta
+
+    long_reasoning = "R" * 10000
+    signature = "SIG123"
+    assistant_message = MockThinkingMessage(
+        "assistant-thinking",
+        "assistant",
+        "assistant text",
+        reasoning_content=long_reasoning,
+        provider_meta={"thinking_signature": signature},
+    )
+    original_reasoning = assistant_message.reasoning_content
+    original_meta = dict(assistant_message.provider_meta)
+
+    messages = [
+        MockThinkingMessage("tool-old-1", "tool", "A" * 30000),
+        MockThinkingMessage("tool-old-2", "tool", "B" * 30000),
+        assistant_message,
+        MockThinkingMessage("user-1", "user", "Hello"),
+        MockThinkingMessage("tool-recent-large", "tool", "C" * 30000),
+    ]
+
+    result = snip_old_tool_results(
+        messages,
+        max_chars=2000,
+        preserve_last_n_messages=0,
+        tool_output_token_budget=1,
+    )
+
+    # Prove the fixture is not vacuous: at least one tool result was actually snipped.
+    assert any(SNIP_MARKER in (m.content or "") for m in result if m.role == "tool"), (
+        "expected at least one tool message to be snipped; "
+        "check max_chars / preserve_last_n_messages / tool_output_token_budget"
+    )
+    # The assistant thinking message must be untouched.
+    found = next(m for m in result if m.id == "assistant-thinking")
+    assert found.reasoning_content == original_reasoning
+    assert found.reasoning_content == "R" * 10000
+    assert found.provider_meta == original_meta
+    assert found.provider_meta == {"thinking_signature": "SIG123"}
+
+
+@pytest.mark.asyncio
+async def test_compact_does_not_touch_reasoning_content_with_provider_meta():
+    """Layer 2 must not rewrite reasoning_content when provider_meta is present.
+
+    Drives compact() over a history whose recent portion contains an assistant
+    message carrying reasoning_content + provider_meta, then reads the messages
+    back and asserts that message's reasoning_content and provider_meta are
+    unchanged. Reuses the StubSummaryProvider harness from existing compact
+    tests.
+    """
+    from nova.agent.compaction import compact
+    from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.session.manager import SessionContext
+    from nova.session.models import MessageFilter
+
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
+    await db.connect()
+    try:
+        session_id = "test-compact-thinking-preserved"
+        session = SessionContext.create()
+        session.id = session_id
+        await db.save_session(session)
+
+        await db.add_message(session_id, "user", "first question " + "x" * 4000)
+        await db.add_message(session_id, "assistant", "first answer " + "y" * 4000)
+        await db.add_message(session_id, "user", "second question")
+        thinking_text = "R" * 10000
+        signature = "SIG123"
+        thinking_message = await db.add_message(
+            session_id,
+            "assistant",
+            "second answer",
+            reasoning_content=thinking_text,
+            provider_meta={"thinking_signature": signature},
+        )
+        await db.add_message(session_id, "user", "third question")
+        await db.add_message(session_id, "assistant", "third answer")
+
+        original_reasoning = thinking_message.reasoning_content
+        original_meta = dict(thinking_message.provider_meta)
+
+        llm = StubSummaryProvider("the compacted state")
+        # split_index=2 keeps the thinking message in the recent (preserved) portion
+        assert await compact(session_id, db, llm, "gemma4:26b", split_index=2) is True
+
+        all_messages = await db.get_messages(session_id, MessageFilter(include_compacted=True))
+        found = next(m for m in all_messages if m.id == thinking_message.id)
+        assert found.reasoning_content == original_reasoning
+        assert found.reasoning_content == thinking_text
+        assert found.provider_meta == original_meta
+        assert found.provider_meta == {"thinking_signature": signature}
+
+        # The thinking message must still be active (not compacted away).
+        active = await db.get_messages(session_id)
+        assert thinking_message.id in [m.id for m in active]
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_compaction_pipeline_never_rewrites_reasoning_content_when_provider_meta_present():
+    """Generic guard: every message with a truthy provider_meta must keep its
+    reasoning_content byte-for-byte identical after the compaction pipeline.
+
+    Snapshots (id, reasoning_content, provider_meta) for all messages that
+    carry provider_meta before, drives both Layer 1 (snip_old_tool_results with
+    an aggressive budget that definitely trims tool output) and Layer 2
+    (compact) and then asserts the snapshot still matches. This is the test
+    that will fail if any future change adds thinking-trimming anywhere in the
+    pipeline.
+    """
+    import copy
+
+    from nova.agent.compaction import SNIP_MARKER, compact, snip_old_tool_results
+    from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.session.manager import SessionContext
+    from nova.session.models import MessageFilter
+
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
+    await db.connect()
+    try:
+        session_id = "test-generic-thinking-guard"
+        session = SessionContext.create()
+        session.id = session_id
+        await db.save_session(session)
+
+        # Build a history with two thinking messages (one that will fall into
+        # the compacted prefix and one that stays recent) plus bulky tool
+        # outputs that guarantee Layer 1 has something to trim.
+        await db.add_message(session_id, "user", "start " + "x" * 4000)
+        thinking_old_text = "R" * 10000
+        thinking_old = await db.add_message(
+            session_id,
+            "assistant",
+            "old thinking answer",
+            reasoning_content=thinking_old_text,
+            provider_meta={"thinking_signature": "SIG_OLD"},
+        )
+        await db.add_message(session_id, "tool", "A" * 30000, tool_call_id="call-old")
+        await db.add_message(session_id, "user", "middle question")
+        thinking_recent_text = "S" * 12000
+        thinking_recent = await db.add_message(
+            session_id,
+            "assistant",
+            "recent thinking answer",
+            reasoning_content=thinking_recent_text,
+            provider_meta={"thinking_signature": "SIG_RECENT"},
+        )
+        await db.add_message(session_id, "tool", "B" * 30000, tool_call_id="call-recent")
+        await db.add_message(session_id, "user", "final question")
+        await db.add_message(session_id, "assistant", "final answer")
+
+        # Snapshot every message that carries a truthy provider_meta before.
+        before_all = await db.get_messages(session_id, MessageFilter(include_compacted=True))
+        snapshot = [
+            (message.id, message.reasoning_content, copy.deepcopy(message.provider_meta))
+            for message in before_all
+            if message.provider_meta
+        ]
+        assert len(snapshot) == 2, "fixture must contain exactly two thinking messages for the guard"
+
+        # Layer 1: run snip_old_tool_results over the in-memory history with a
+        # budget that forces trimming, and verify the guard holds in-memory.
+        messages_for_snip = await db.get_messages(session_id, MessageFilter(include_compacted=True))
+        snip_old_tool_results(
+            messages_for_snip,
+            max_chars=2000,
+            preserve_last_n_messages=0,
+            tool_output_token_budget=1,
+        )
+        assert any(SNIP_MARKER in (m.content or "") for m in messages_for_snip if m.role == "tool"), (
+            "generic guard fixture is vacuous: no tool output was snipped"
+        )
+        for message_id, expected_reasoning, expected_meta in snapshot:
+            found = next(m for m in messages_for_snip if m.id == message_id)
+            assert found.reasoning_content == expected_reasoning, (
+                f"Layer 1 rewrote reasoning_content for {message_id}"
+            )
+            assert found.provider_meta == expected_meta, (
+                f"Layer 1 rewrote provider_meta for {message_id}"
+            )
+
+        # Layer 2: compact via DB, keeping the recent thinking message in the
+        # preserved tail (split_index=4 corresponds to the user message that
+        # starts the recent portion).
+        llm = StubSummaryProvider("guard summary")
+        assert await compact(session_id, db, llm, "gemma4:26b", split_index=4) is True
+
+        after_all = await db.get_messages(session_id, MessageFilter(include_compacted=True))
+        for message_id, expected_reasoning, expected_meta in snapshot:
+            found = next((m for m in after_all if m.id == message_id), None)
+            assert found is not None, f"message {message_id} disappeared after compaction"
+            assert found.reasoning_content == expected_reasoning, (
+                f"reasoning_content for {message_id} was rewritten by compaction "
+                f"(expected {len(expected_reasoning or '')} chars, got {len(found.reasoning_content or '')})"
+            )
+            assert found.provider_meta == expected_meta, (
+                f"provider_meta for {message_id} was rewritten by compaction"
+            )
+    finally:
+        await db.close()

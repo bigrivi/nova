@@ -49,6 +49,7 @@ class TurnStreamReader:
         self.done_content = ""
         self.tokens_input: Optional[int] = None
         self.tokens_output: Optional[int] = None
+        self.provider_meta: Optional[dict] = None
         self.reasoning_elapsed_ms: Optional[int] = None
         self.outcome = TurnOutcome.CONTINUE
 
@@ -151,6 +152,7 @@ class TurnStreamReader:
             chunk, "tokens_input", None) or self.tokens_input
         self.tokens_output = getattr(
             chunk, "tokens_output", None) or self.tokens_output
+        self.provider_meta = getattr(chunk, "provider_meta", None) or self.provider_meta
 
     def _absorb_tool_call(self, chunk: Any) -> None:
         identifier = getattr(chunk, "id", None) or getattr(chunk, "name", "")

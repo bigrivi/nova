@@ -231,6 +231,10 @@ class Agent:
                 llm_message.images = loaded_message.images
             if loaded_message.reasoning_content:
                 llm_message.reasoning_content = loaded_message.reasoning_content
+            if loaded_message.provider_meta:
+                llm_message.provider_meta = loaded_message.provider_meta
+            if loaded_message.model:
+                llm_message.model = loaded_message.model
             converted_messages.append(llm_message)
         return converted_messages
 
@@ -345,6 +349,8 @@ class Agent:
             reasoning_elapsed_ms=reader.reasoning_elapsed_ms,
             tokens_input=reader.tokens_input,
             tokens_output=reader.tokens_output,
+            provider_meta=reader.provider_meta,
+            model=self.config.model,
         )
 
     async def _invoke_tools(

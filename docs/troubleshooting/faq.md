@@ -52,10 +52,10 @@ pip install --upgrade pyinstaller
 
 ## Configuration
 
-### "Provider type must be 'ollama' or 'openai-compatible'"
+### "Provider type must be one of: anthropic, ollama, openai-compatible, openai-response"
 
-Check that `providers.<alias>.type` in your config is set to either `ollama` or
-`openai-compatible`.
+Check that `providers.<alias>.type` in your config is set to `ollama`,
+`anthropic`, `openai-compatible`, or `openai-response`.
 
 ### "Connection refused" when using Ollama
 
