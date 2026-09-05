@@ -44,7 +44,7 @@ export const ThreadScrollToBottom: FC = () => {
     }
 
     return (
-        <div className="pointer-events-none sticky bottom-28 z-10 flex overflow-visible pb-4 md:bottom-32 md:pb-6">
+        <div className="pointer-events-none sticky bottom-28 z-10 flex overflow-visible pb-4 md:bottom-36 md:pb-6">
             <TooltipIconButton
                 tooltip={t("thread.scrollToBottom")}
                 variant="outline"
