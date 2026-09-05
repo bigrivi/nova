@@ -108,22 +108,11 @@ def load_skill_document(skill_md_path: Path, skills_dir: Path) -> SkillDocument:
     )
 
 
-_scan_cache: dict[str, list[SkillSummary]] = {}
-
-def invalidate_scan_cache() -> None:
-    _scan_cache.clear()
-
-
 def scan_skills_dir(skills_dir: Path) -> list[SkillSummary]:
-    cache_key = str(skills_dir.resolve())
-    cached = _scan_cache.get(cache_key)
-    if cached is not None:
-        return cached
     root = skills_dir.resolve()
     summaries: list[SkillSummary] = []
 
     if not root.exists():
-        _scan_cache[cache_key] = summaries
         return summaries
 
     seen_names: set[str] = set()
@@ -155,6 +144,5 @@ def scan_skills_dir(skills_dir: Path) -> list[SkillSummary]:
             )
         )
 
-    _scan_cache[cache_key] = summaries
     return summaries
 

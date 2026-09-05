@@ -7,7 +7,7 @@ from pathlib import Path
 from nova.skills.catalog import SkillCatalog
 from nova.skills.installer import install_skill_from_clawhub
 from nova.skills.models import SkillDocument, SkillSummary
-from nova.skills.scanner import load_skill_document, scan_skills_dir, invalidate_scan_cache
+from nova.skills.scanner import load_skill_document, scan_skills_dir
 
 
 def _is_within(root: Path, path: Path) -> bool:
@@ -58,7 +58,6 @@ class SkillService:
             skills_dir=self.skills_dir,
             force=force,
         )
-        invalidate_scan_cache()
         self.scan_skills()
         return result
 
@@ -69,6 +68,5 @@ class SkillService:
             skills_dir=target,
             force=force,
         )
-        invalidate_scan_cache()
         self.scan_skills()
         return result
