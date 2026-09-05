@@ -19,16 +19,12 @@ build/
 .vscode/
 node_modules/
 
-# PyArmor generated files
-*.patched.spec
-
-# License private key
-tools/license_private.pem
-
-# Local license file
-license.lic
-
-# OpenCode session state
+# Local agent/tooling state
 .omo/
+.opencode/
+.codegraph
 
 yarn.lock
+
+*.egg-info/
+.eggs/
