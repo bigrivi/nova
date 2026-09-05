@@ -212,7 +212,9 @@ cd tui && bun install && bun run dev
 
 ## Contributing
 
-Set up the dev install and run `pytest` as above, then open a pull request. For bigger changes, open an issue first to discuss the approach.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, how to run the tests, what CI checks, and the commit convention. For bigger changes, open an issue first to discuss the approach.
+
+To report a vulnerability, see [SECURITY.md](SECURITY.md) — please do not open a public issue.
 
 ## License
 

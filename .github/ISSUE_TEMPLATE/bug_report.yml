@@ -1,0 +1,104 @@
+name: Bug report
+description: Report something that is not working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please redact API keys and tokens before you paste config or logs.
+        Keys are stored in plaintext in `~/.nova/config.json` and may appear in `~/.nova/logs/nova.log`.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+      placeholder: Tell us what you saw, including any error message.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen instead?
+      placeholder: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce this?
+      placeholder: |
+        1. Start Nova with `nova serve` or `./nova-tui`
+        2. ...
+        3. Observe the error
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Nova version or commit
+      description: From nova/__init__.py (currently 1.0.0) or the commit SHA on main.
+      placeholder: "e.g. 1.0.0 or e8c49f1"
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface?
+      description: Where did you see the bug?
+      options:
+        - TUI
+        - server
+        - web frontend
+        - desktop
+      default: 0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      description: Your operating system and version.
+      placeholder: "e.g. macOS 14.5, Ubuntu 22.04, Windows 11"
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      description: Output of `python --version`. Nova requires 3.12+.
+      placeholder: "e.g. 3.12.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Model provider type
+      description: Which provider type were you using, if any?
+      options:
+        - ollama
+        - openai-compatible
+        - openai-response
+        - anthropic
+      default: 0
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Paste logs from ~/.nova/logs/nova.log or the terminal. Redact API keys first.
+      placeholder: |
+        Paste relevant lines from ~/.nova/logs/nova.log here.
+        Remember to remove keys before submitting.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
