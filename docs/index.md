@@ -4,19 +4,23 @@ Nova is a local personal AI agent assistant. It runs on your machine, uses your
 LLM of choice (local or cloud), remembers context across sessions, and can
 execute code, browse the web, search files, run shell commands, and more.
 
-## 介绍
-
-- [Nova 是什么？](introduction.md) -- 面向普通用户的 Nova 介绍
-- [能力展示](showcase.md) -- 真实场景示例
-
 ## Getting Started
 
 - [Installation](getting-started/installation.md) -- install Nova and its dependencies
 - [Quickstart](getting-started/quickstart.md) -- your first chat with Nova
 
+## Introduction
+
+- [What is Nova?](introduction.md) -- non-technical introduction, written for general users
+
 ## Configuration
 
 - [Providers & Models](configuration/providers.md) -- set up Ollama, OpenAI, or other LLM providers
+- [Settings](configuration/settings.md) -- runtime paths, env vars, and config file shape
+
+## API
+
+- [Server API](api/index.md) -- HTTP API and SSE streaming contract
 
 ## Tools
 
@@ -42,6 +46,7 @@ execute code, browse the web, search files, run shell commands, and more.
 
 - [Multi-Agent](advanced/multi-agent.md) -- delegate tasks to sub-agents
 - [MCP Integration](advanced/mcp.md) -- connect MCP servers
+- [Context Compaction](advanced/compaction.md) -- two-layer compaction and tuning keys
 - [Security Model](advanced/security.md) -- shell approval, threat detection, tool guardrails
 
 ## Troubleshooting

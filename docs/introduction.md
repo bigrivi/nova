@@ -1,157 +1,159 @@
-# Nova 是什么？
+# What is Nova?
 
-Nova 是一个运行在你电脑上的个人 AI 助手。它像一位能干的朋友——帮你查资料、整理文件、写东西、管理任务，而且这些事情都在你自己的电脑上完成，不需要把数据交给任何人。
+Nova is your open source AI agent on desktop, terminal, web, and API.
 
----
+It lives on your own machine and helps with everyday work -- research, writing, file and data handling, running local commands -- not just coding. The same Python core powers four surfaces: a terminal TUI, an HTTP server, a web frontend, and a desktop app, so what you learn in one place works everywhere.
 
-## 它和 ChatGPT 有什么不同？
+## How is it different from a hosted chat assistant?
 
-如果你用过 ChatGPT、文心一言或 Claude，你可能已经习惯了在网页上打字提问。Nova 走得更远：
+If you have used ChatGPT, Claude, Gemini, or Copilot, you are used to typing into a browser tab and getting text back. Nova goes further: it can act on your computer for you.
 
-| | ChatGPT / 文心一言 | Nova |
+|  | ChatGPT / Claude / Gemini | Nova |
 |---|---|---|
-| **运行在哪里** | 别人的服务器上 | **你的电脑上** |
-| **你的数据** | 上传到云端 | **留在本地** |
-| **能用什么模型** | 只有他们提供的 | **你自己选**——本地模型或任意 API |
-| **能做什么** | 对话、生成文字 | **对话 + 操作你的电脑**——读写文件、运行程序、浏览网页 |
-| **记住你** | 每个会话独立的 | **跨会话记忆**，上次聊的它记得 |
+| **Where it runs** | On someone else's server | **On your machine** |
+| **Your data** | Sent to the cloud | **Stays local** |
+| **Which model** | Only what they offer | **Your choice** -- local or any API |
+| **What it can do** | Chat and generate text | **Chat plus act** -- read and write files, run commands, browse the web |
+| **Memory** | Per-conversation only | **Across sessions**, it remembers what you told it |
 
-一句话总结：**Nova 是住进你电脑里的助手，而不是网页上的聊天框。**
+In short: **Nova is an assistant that lives in your computer, not a chat box on a website.**
 
----
+## What can it do for you?
 
-## 它能帮你做什么？
+### Research and make sense of the web
 
-### 搜东西、整理信息
-
-```
-帮我查一下这个月发布的最值得关注的手机有哪些。
+```text
+Find the most interesting phones released this month and compare them for me.
 ```
 
-Nova 打开多个网页，对比信息，给你一份结论——不用你自己开十几个标签页。
+Nova searches the web, opens pages, fetches them as Markdown, and brings back a summary. No need to juggle a dozen tabs yourself.
 
-### 操作你电脑上的文件
+### Work with files on your machine
 
-```
-帮我把下载文件夹整理一下，图片放一个目录，文档放一个目录。
-```
-
-Nova 扫描你的文件夹，创建结构，移动归类——就像雇了一个人帮你整理电脑。
-
-### 处理文档和数据
-
-```
-帮我分析这个 Excel 表格，看看哪几个月的支出最高。
+```text
+Tidy up my Downloads folder -- put images in one place and documents in another.
 ```
 
-Nova 读取你本地的文件，统计出结果——文件不会上传到任何服务器。
+Nova scans folders, creates structure, and moves files around, just as if you had asked someone to organize your desk.
 
-### 写作和翻译
+### Handle documents and data
 
-```
-帮我把这份产品说明翻译成英文，语气要专业。
-```
-
-```
-帮我写一封邮件给房东，说我想续租。
+```text
+Analyze this spreadsheet and tell me which months had the highest spending.
 ```
 
-### 记住你的信息
+Nova reads local files, runs inline Python if needed, and returns results. Your files never leave your computer.
 
-> 第一次聊天：
-> ```
-> 记住我住在北京朝阳区。
-> ```
->
-> 第二次聊天：
-> ```
-> 帮我找附近的健身房。
-> ```
-> Nova 记得你在朝阳区，搜索结果自然更准。
+### Writing and editing
 
-### 自动执行重复操作
-
-```
-把桌面上所有截图统一缩放成 1920 宽。
+```text
+Translate this product description into professional English.
 ```
 
-Nova 调用本地工具批量完成——不需要你学任何图像处理软件。
+```text
+Help me draft an email to my landlord about renewing my lease.
+```
 
-### 更多……
+### Remember things across sessions
 
-[查看完整能力展示 →](showcase.md)
+```text
+Remember that I live in Austin and prefer morning meetings.
+```
 
----
+Next time you ask for nearby options or scheduling help, Nova already has the context. Memories are stored locally in SQLite, including facts, preferences, and decisions.
 
-## 为什么选择 Nova？
+### Automate repetitive work
 
-### 隐私 —— 你的数据你做主
+```text
+Resize every screenshot on my Desktop to 1920 pixels wide.
+```
 
-Nova 可以完全离线运行。选择本地模型（比如 Ollama），你的所有对话和数据都不会离开你的电脑。适合处理敏感信息、个人文件、工作文档。
+Nova runs shell commands behind an approval gate and executes batch tasks for you.
 
-### 自由 —— 用你喜欢的模型
+### And more
 
-Nova 不绑定任何 AI 公司。你可以：
-- 用本地的免费模型（通过 Ollama）
-- 用 OpenAI 的 GPT 系列
-- 用 DeepSeek、Claude 或其他任何兼容的 API
+Nova can drive a real browser via Playwright, read images, load reusable skills from `~/.nova/skills/`, connect MCP servers for extra tools, and delegate work to sub-agents. Long conversations stay usable thanks to two-layer context compaction. See the [tool overview](tools/index.md) for the full list.
 
-想换就换，同一个 Nova，背后的模型你说了算。
+## Why choose Nova?
 
-### 能力 —— 不只是聊天
+### Privacy -- your data stays with you
 
-大多数 AI 工具只能生成文字。Nova 能：
-- 读取和修改你电脑上的文件
-- 运行命令、执行代码
-- 打开浏览器操作网页
-- 安装和加载专属技能包
+Nova can run fully offline. Pair it with a local model through Ollama and nothing you type or store leaves your machine. That matters for personal files, work documents, and anything sensitive.
 
----
+### Freedom -- use the model you want
 
-## 它是怎么工作的？
+Nova is not tied to a single vendor. You can:
 
-大致原理是这样的：
+- Run a free local model through Ollama
+- Use OpenAI-compatible APIs
+- Use Anthropic or any other supported provider
 
-1. 你告诉 Nova 你想做什么（用自然语言）
-2. Nova 的大语言模型理解你的意图
-3. 如果需要，Nova 自动调用对应的能力（文件操作、搜索、浏览器、运行命令等）
-4. 结果返回给你
+Switch whenever you like. Nova stays the same, the model behind it is your call.
 
-你不需要知道背后用了什么工具，就像你不需要知道手机信号怎么传输也能打电话一样。
+### Capability -- beyond chat
 
----
+Most assistants can only generate text. Nova can also:
 
-## 怎么用？
+- Read and write local files
+- Run shell commands with pattern-based approval
+- Execute inline Python
+- Search the web and fetch pages
+- Control a browser
+- Load skills and MCP tools on demand
+- Remember you across sessions
 
-### 方式一：命令行聊天
+## How does it work?
 
-打开终端，输入：
+1. You describe what you want in plain language.
+2. Nova's model figures out your intent.
+3. When needed, Nova calls the right tool -- file operations, search, browser, shell, and so on.
+4. You get the result back.
+
+You do not need to know which tool ran, just as you do not need to know how your phone routes a call.
+
+## How do you use it?
+
+Install from a clone:
 
 ```bash
-python -m nova
+git clone https://github.com/bigrivi/nova.git && cd nova
+pip install -e .                # Python 3.12+, puts `nova` on your PATH
+playwright install chromium     # only if you want the browser tools
 ```
 
-然后直接打字聊天就行。
+Then start where you prefer:
 
-### 方式二：桌面应用
+```bash
+nova serve            # HTTP backend on http://127.0.0.1:8765
+./nova-tui            # terminal UI (also needs bun), spawns its own backend
+nova desktop          # desktop window
+nova desktop --dev    # desktop against the Vite dev server
+```
 
-Nova 可以打包成 macOS 原生应用，双击图标打开——适合不习惯命令行的用户。
+## What do you need first?
 
----
+You need two things:
 
-## 需要先准备什么？
+1. **Nova itself** -- clone the repo and run `pip install -e .`. Requires Python 3.12+. If you want the terminal UI, also install [bun](https://bun.sh).
+2. **A model** -- either a local install of [Ollama](https://ollama.com) with no API key, or an API key for a hosted provider.
 
-你只需要两样东西：
+Configuration lives at `~/.nova/config.json`. The only top-level keys the code reads are `providers`, `mcp_servers`, and `compaction`. A minimal example:
 
-1. **Nova 本身** —— 克隆仓库、安装依赖，几分钟搞定
-2. **一个 AI 模型** —— 要么在本地装一个（推荐 Ollama，免费），要么配置一个云端 API 密钥
+```json
+{
+  "providers": {
+    "ollama": {
+      "type": "ollama",
+      "options": { "base_url": "http://localhost:11434" },
+      "models": { "qwen2.5:7b": { "name": "qwen2.5:7b", "tools": true } }
+    }
+  }
+}
+```
 
-具体步骤请看 [快速开始](getting-started/quickstart.md)。
+## Next steps
 
----
-
-## 下一步
-
-- [能力展示](showcase.md) —— 看看 Nova 能做什么
-- [快速开始](getting-started/quickstart.md) —— 5 分钟上手
-- [桌面应用](desktop/index.md) —— 如果你想用桌面版
+- [Quickstart](getting-started/quickstart.md) -- 5 minutes to your first chat
+- [Installation](getting-started/installation.md) -- detailed setup
+- [Desktop app](desktop/index.md) -- using the desktop window
+- [Tool overview](tools/index.md) -- everything Nova can do
