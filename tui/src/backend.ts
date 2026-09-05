@@ -2,15 +2,16 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { DEFAULT_API_BASE } from "./api/nova-api.ts";
 
-const PROJECT_ROOT = "/Users/andy/Workspace/codes/ai/nova";
-/** Prefer the user's daily venv (Python 3.12); fall back to the project .venv; finally the system python3 */
+/** "../.." because this file lives in tui/src/ */
+const PROJECT_ROOT = process.env.NOVA_PROJECT_ROOT
+    ? resolve(process.env.NOVA_PROJECT_ROOT)
+    : resolve(import.meta.dir, "..", "..");
 const VENV_CANDIDATES = [
-    "/Users/andy/Workspace/codes/python/venvs/ai/bin/python3",
-    `${PROJECT_ROOT}/.venv/bin/python3`,
+    join(PROJECT_ROOT, ".venv", "bin", "python3"),
 ];
 
 const HEALTH_TIMEOUT_MS = 15_000;
