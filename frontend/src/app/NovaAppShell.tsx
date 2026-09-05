@@ -982,7 +982,7 @@ export function NovaAppShell() {
             <TooltipProvider>
                 <div className="flex h-screen overflow-hidden bg-background text-foreground">
                     <aside
-                        className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden bg-sidebar transition-[width,opacity] duration-200 ease-out ${
+                        className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden border-r border-r-[rgba(0,0,0,0.06)] bg-[#F1F0ED] transition-[width,opacity] duration-200 ease-out ${
                             isSidebarCollapsed
                                 ? "w-0 opacity-0"
                                 : "w-(--sidebar-width) opacity-100"

@@ -11,10 +11,7 @@ import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
-import {
-    type TodoStatus,
-    useTodoStore,
-} from "@/stores/todo-store";
+import { type TodoStatus, useTodoStore } from "@/stores/todo-store";
 
 function normalizeStatus(status: string | undefined): TodoStatus {
     if (
@@ -61,12 +58,8 @@ const TodoProgressPanelImpl = () => {
     }));
 
     const total = todos.length;
-    const completedCount = todos.filter(
-        (t) => t.status === "completed",
-    ).length;
-    const cancelledCount = todos.filter(
-        (t) => t.status === "cancelled",
-    ).length;
+    const completedCount = todos.filter((t) => t.status === "completed").length;
+    const cancelledCount = todos.filter((t) => t.status === "cancelled").length;
     const inProgress = todos.find((t) => t.status === "in_progress");
     const lastCompleted = [...todos]
         .reverse()
@@ -81,73 +74,76 @@ const TodoProgressPanelImpl = () => {
         t("tools.todoProgress");
 
     return (
-        <div className="w-full rounded-lg border bg-background shadow-sm">
-            <button
-                type="button"
-                onClick={() => setOpen((value) => !value)}
-                className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-muted/50"
-            >
-                {inProgress && !allDone ? (
-                    <Loader2Icon className="size-4 shrink-0 animate-spin text-sky-500" />
-                ) : allDone ? (
-                    <CheckCircle2Icon className="size-4 shrink-0 text-emerald-500" />
-                ) : (
-                    <CircleIcon className="size-4 shrink-0 text-muted-foreground/60" />
-                )}
-
-                <span className="min-w-0 flex-1 truncate text-start leading-none">
-                    {summaryText}
-                </span>
-
-                {total > 0 && (
-                    <span
-                        className={cn(
-                            "shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
-                            allDone
-                                ? "bg-emerald-500/10 text-emerald-600"
-                                : "bg-muted text-muted-foreground",
-                        )}
-                    >
-                        {completedCount}/{total}
-                    </span>
-                )}
-
-                <ChevronDownIcon
-                    className={cn(
-                        "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
-                        open && "rotate-180",
+        // Root is intentionally tucked 1px under the Composer below (-mb-px); keep border-b-0 + rounded-b-none so the Composer's top border is the single divider and squared corners don't peek at the sides.
+        <div className="pointer-events-auto pb-0 -mb-5">
+            <div className="relative pb-5 -mb-px w-full rounded-t-lg rounded-b-none border border-b-0 border-[#E4E3DF] bg-[#FAFAF9] shadow-[0_1px_2px_rgba(20,20,18,0.04),0_8px_20px_rgba(20,20,18,0.05)]">
+                <button
+                    type="button"
+                    onClick={() => setOpen((value) => !value)}
+                    className="flex w-full items-center gap-2.5 rounded-t-lg bg-[#FAFAF9] px-4 py-2.5 text-sm hover:bg-muted/50"
+                >
+                    {inProgress && !allDone ? (
+                        <Loader2Icon className="size-4 shrink-0 animate-spin text-sky-500" />
+                    ) : allDone ? (
+                        <CheckCircle2Icon className="size-4 shrink-0 text-emerald-500" />
+                    ) : (
+                        <CircleIcon className="size-4 shrink-0 text-muted-foreground/60" />
                     )}
-                />
-            </button>
 
-            {open && (
-                <div className="border-t px-4 pb-2.5 pt-2">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {t("tools.todoProgress")}
-                    </div>
-                    <ul className="mt-1.5 space-y-1.5">
-                        {todos.map((todo, index) => (
-                            <li
-                                key={index}
-                                className="flex items-center gap-2 text-sm"
-                            >
-                                <StatusIcon status={todo.status} />
-                                <span
-                                    className={cn(
-                                        "min-w-0",
-                                        todo.status === "cancelled" &&
-                                            "text-muted-foreground line-through",
-                                        todo.status === "in_progress" &&
-                                            "font-medium",
-                                    )}
+                    <span className="min-w-0 flex-1 truncate text-start leading-none">
+                        {summaryText}
+                    </span>
+
+                    {total > 0 && (
+                        <span
+                            className={cn(
+                                "shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
+                                allDone
+                                    ? "bg-emerald-500/10 text-emerald-600"
+                                    : "bg-muted text-muted-foreground",
+                            )}
+                        >
+                            {completedCount}/{total}
+                        </span>
+                    )}
+
+                    <ChevronDownIcon
+                        className={cn(
+                            "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
+                            open && "rotate-180",
+                        )}
+                    />
+                </button>
+
+                {open && (
+                    <div className="border-t border-t-[#ECECEA] px-4 pb-2.5 pt-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {t("tools.todoProgress")}
+                        </div>
+                        <ul className="mt-1.5 space-y-1.5">
+                            {todos.map((todo, index) => (
+                                <li
+                                    key={index}
+                                    className="flex items-center gap-2 text-sm"
                                 >
-                                    {todo.content}
-                                </span>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            )}
+                                    <StatusIcon status={todo.status} />
+                                    <span
+                                        className={cn(
+                                            "min-w-0",
+                                            todo.status === "cancelled" &&
+                                                "text-muted-foreground line-through",
+                                            todo.status === "in_progress" &&
+                                                "font-medium",
+                                        )}
+                                    >
+                                        {todo.content}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
