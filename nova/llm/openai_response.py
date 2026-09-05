@@ -57,10 +57,9 @@ class OpenAIResponsesProvider(LLMProvider):
             headers["User-Agent"] = self._user_agent
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        # Zen gateway recommends these for routing
-        headers.setdefault("HTTP-Referer", "https://opencode.ai/")
-        headers.setdefault("X-Title", "opencode")
-        headers.setdefault("x-opencode-client", "cli")
+        # OpenRouter-style app attribution; harmless for gateways that ignore them
+        headers.setdefault("HTTP-Referer", "https://github.com/bigrivi/nova")
+        headers.setdefault("X-Title", "nova")
         return headers
 
     def _format_input(self, messages: list) -> list | str:

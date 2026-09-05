@@ -60,4 +60,4 @@ async def test_web_fetch_retries_cloudflare_and_extracts_text(monkeypatch):
     assert "Hello world" in result.content
     assert len(MockAsyncClient.calls) == 2
     assert MockAsyncClient.calls[0]["headers"]["User-Agent"].startswith("Mozilla/5.0")
-    assert MockAsyncClient.calls[1]["headers"]["User-Agent"] == "opencode"
+    assert MockAsyncClient.calls[1]["headers"]["User-Agent"] == "nova"

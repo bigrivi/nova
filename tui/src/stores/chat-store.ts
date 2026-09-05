@@ -31,8 +31,8 @@ export type TuiMessage = {
 };
 
 /** Model selection for this conversation (P3: taken over by the model selection screen) */
-export const DEFAULT_PROVIDER = "opencode";
-export const DEFAULT_MODEL = "deepseek-v4-flash-free";
+export const DEFAULT_PROVIDER = "";
+export const DEFAULT_MODEL = "";
 
 type ChatState = {
     messages: TuiMessage[];

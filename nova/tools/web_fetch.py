@@ -193,7 +193,7 @@ async def web_fetch(url: str, format: str = "markdown", timeout: float = DEFAULT
             if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
                 response = await client.get(
                     url,
-                    headers={**headers, "User-Agent": "opencode"},
+                    headers={**headers, "User-Agent": "nova"},
                 )
             response.raise_for_status()
 
