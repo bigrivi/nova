@@ -18,6 +18,3 @@ markdownify
 
 # Desktop GUI shell (pywebview)
 pywebview>=5,<7
-
-# License verification (Ed25519 signature)
-cryptography

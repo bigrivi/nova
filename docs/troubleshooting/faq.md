@@ -94,13 +94,6 @@ Remember that I use VS Code for Python
 
 ## Desktop
 
-### License activation fails
-
-Make sure:
-1. The license file wasn't modified after generation
-2. The machine fingerprint matches
-3. The license hasn't expired
-
 ### Desktop app won't launch
 
 Check `~/.nova/logs/nova.log` for error details. Common issues:

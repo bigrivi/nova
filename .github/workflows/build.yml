@@ -23,8 +23,8 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
-      - run: pip install -r requirements.txt pyinstaller pyarmor
-      - run: python build.py --clean --obfuscate
+      - run: pip install -r requirements.txt pyinstaller
+      - run: python build.py --clean
       - name: Package zip
         shell: pwsh
         run: Compress-Archive -Path dist/Nova/* -DestinationPath Nova-Windows.zip

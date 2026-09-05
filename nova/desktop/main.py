@@ -6,8 +6,6 @@ from typing import Optional
 import webview
 
 from nova.desktop.server_thread import ServerThread
-from nova.license.activation import build_activation_page
-from nova.license.validator import validate
 from nova.settings import Settings
 
 
@@ -28,12 +26,7 @@ def run_desktop(settings: Optional[Settings] = None, dev: bool = False) -> None:
         url = f"http://{server.host}:{server.port}"
         print(f"[desktop] Backend ready at {url}")
 
-    status = validate()
-    if status.is_valid:
-        window = webview.create_window("Nova", url=url, width=1200, height=800, min_size=(800, 600), resizable=True, text_select=True)
-    else:
-        html, api_cls = build_activation_page(url)
-        window = webview.create_window("Nova", html=html, width=1200, height=800, min_size=(800, 600), resizable=True, js_api=api_cls(), text_select=True)
+    window = webview.create_window("Nova", url=url, width=1200, height=800, min_size=(800, 600), resizable=True, text_select=True)
 
     try:
         webview.start()

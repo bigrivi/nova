@@ -37,7 +37,6 @@ a = Analysis(
         'nova.app.runtime',
         'nova.config.service',
         'nova.db.database',
-        'nova.license',
         *webview_hidden,
     ],
     hookspath=[],

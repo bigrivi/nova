@@ -84,35 +84,6 @@ def package(spec: Path, python: str) -> None:
     )
 
 
-def package_with_obfuscation(spec: Path) -> None:
-    print(f">>> Obfuscating with PyArmor and packaging ({spec.name})...")
-    pyarmor_bin = shutil.which("pyarmor")
-    if not pyarmor_bin:
-        # .venv is not always on PATH (e.g. local `python build.py` without `pip install pyarmor`)
-        venv_pyarmor = ROOT / ".venv" / "bin" / "pyarmor"
-        if venv_pyarmor.exists():
-            pyarmor_bin = str(venv_pyarmor)
-    if not pyarmor_bin:
-        print("Warning: pyarmor not found, falling back to non-obfuscated packaging", file=sys.stderr)
-        package(spec, python=resolve_python(None))
-        return
-    try:
-        subprocess.run(
-            [pyarmor_bin, "gen", "--pack", str(spec), "-r", "nova/desktop/entry.py", "nova/"],
-            cwd=str(ROOT), check=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        # PyArmor trial expires / file-count limits surface as non-zero exit.
-        # The packaging itself is still valid — warn and fall back instead of failing CI.
-        print(f"Warning: pyarmor failed (exit {exc.returncode}), falling back to non-obfuscated packaging", file=sys.stderr)
-        package(spec, python=resolve_python(None))
-        return
-    except FileNotFoundError:
-        print("Warning: pyarmor not found, falling back to non-obfuscated packaging", file=sys.stderr)
-        package(spec, python=resolve_python(None))
-        return
-
-
 def output_path() -> Path:
     plat = platform()
     if plat == "macos":
@@ -124,7 +95,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build Nova Desktop")
     parser.add_argument("--clean", action="store_true", help="Remove previous build output before building")
     parser.add_argument("--python", default=None, help="Python interpreter to use for PyInstaller (default: .venv/bin/python3)")
-    parser.add_argument("--obfuscate", action="store_true", help="Obfuscate source with PyArmor before packaging")
     args = parser.parse_args()
 
     plat = platform()
@@ -137,10 +107,7 @@ def main() -> None:
         clean()
 
     build_frontend()
-    if args.obfuscate:
-        package_with_obfuscation(spec)
-    else:
-        package(spec, python=python)
+    package(spec, python=python)
 
     out = output_path()
     print(f"\n=== Done: {out} ===")
