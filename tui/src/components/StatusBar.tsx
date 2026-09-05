@@ -1,6 +1,7 @@
 /** Bottom status bar: model info + running status */
 import { useEffect } from "react";
 import { getSessionContext } from "../api/nova-api.ts";
+import { StatusActivityIndicator } from "./StatusActivityIndicator.tsx";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { theme } from "../theme.ts";
@@ -52,6 +53,7 @@ export function StatusBar() {
             flexShrink={0}
         >
             <box flexDirection="row" flexShrink={0} gap={1} alignItems="center">
+                {isStreaming ? <StatusActivityIndicator /> : null}
                 <text
                     fg={isStreaming ? theme.running : theme.muted}
                     content={isStreaming ? "●" : "○"}
