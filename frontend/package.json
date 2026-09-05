@@ -11,7 +11,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "2": "^0.0.1-security",
     "@assistant-ui/react": "0.15.16",
     "@assistant-ui/react-markdown": "^0.14.12",
     "@fontsource-variable/geist": "^5.2.8",
