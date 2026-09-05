@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nova"
+dynamic = ["version"]
+description = "A local personal AI agent assistant for terminal and desktop workflows"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "bigrivi" }]
+keywords = ["ai", "ai-agent", "coding-agent", "cli", "llm", "mcp", "tui"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "aiohttp",
+    "aiosqlite",
+    "fastapi",
+    "httpx",
+    "rich",
+    "uvicorn",
+    "tiktoken",
+    "playwright",
+    "markdownify",
+    "pywebview>=5,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21",
+]
+build = [
+    "pyinstaller",
+]
+
+[project.scripts]
+nova = "nova.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/bigrivi/nova"
+Repository = "https://github.com/bigrivi/nova"
+Issues = "https://github.com/bigrivi/nova/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "nova.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["nova*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "strict"
