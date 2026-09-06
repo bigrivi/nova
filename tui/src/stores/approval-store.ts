@@ -6,6 +6,7 @@ export type ApprovalPending = {
     requestId: string;
     command: string;
     description: string;
+    runId: number;
 };
 
 type ApprovalState = {

@@ -16,6 +16,7 @@ import { useAskUserStore, type AskQuestion } from "../stores/ask-user-store.ts";
 import { getChatState } from "../stores/chat-store.ts";
 import { useCompactionStore } from "../stores/compaction-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
+import { useToastStore } from "../stores/toast-store.ts";
 import {
     parseTodos,
     useTodoStore,
@@ -24,6 +25,25 @@ import {
 export type ChatRunOptions = {
     message: string;
 };
+
+/** Monotonic id per runChatStream call: lets stream teardown clear only the
+approval its own run created, never a newer live one from a later run. */
+let runCounter = 0;
+
+/** Drop a pending approval created by *this* run when its stream ends with
+the dialog still showing: the backend unregisters in its finally, so the
+dialog is unresolvable (any later y → 404). Notify on abnormal end only. */
+function clearStaleApproval(runId: number, notify: boolean): void {
+    const pending = useApprovalStore.getState().pending;
+    if (pending && pending.runId === runId) {
+        useApprovalStore.getState().setPending(null);
+        if (notify) {
+            useToastStore
+                .getState()
+                .show("Approval expired: the request ended before it was answered.", 4000);
+        }
+    }
+}
 
 /** Parse the ask_user tool's input into a list of questions (compatible with both {questions:[...]} and {question:{...}}) */
 export function parseAskQuestions(input: unknown): AskQuestion[] {
@@ -109,6 +129,7 @@ export function formatAskAnswers(
 export async function runChatStream(options: ChatRunOptions): Promise<void> {
     const store = getChatState();
     const { sessionId, provider, model } = store;
+    const runId = ++runCounter;
 
     store.addUserMessage(options.message);
     const assistantId = store.startAssistantMessage();
@@ -208,13 +229,14 @@ export async function runChatStream(options: ChatRunOptions): Promise<void> {
                     case "data-nova-approval-required": {
                         useApprovalStore.getState().setPending({
                             sessionId: String(
-                                event.data?.sessionId ??
-                                    current.sessionId ??
+                                event.data?.sessionId ||
+                                    current.sessionId ||
                                     "",
                             ),
                             requestId: String(event.data?.requestId ?? ""),
                             command: String(event.data?.command ?? ""),
                             description: String(event.data?.description ?? ""),
+                            runId,
                         });
                         const blockedToolCallId = String(
                             event.data?.toolCallId ?? "",
@@ -284,10 +306,12 @@ export async function runChatStream(options: ChatRunOptions): Promise<void> {
             },
         });
         getChatState().completeStream();
+        clearStaleApproval(runId, false);
     } catch (err) {
         getChatState().failStream(
             err instanceof Error ? err.message : String(err),
         );
+        clearStaleApproval(runId, true);
     } finally {
         // A stream that dies mid-compaction never delivers compaction-end, so
         // the banner would spin forever without this.

@@ -2,6 +2,7 @@
 import { useKeyboard } from "@opentui/react";
 import { approveCommand } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
+import { useToastStore } from "../stores/toast-store.ts";
 import { theme } from "../theme.ts";
 
 export function ApprovalDialog({
@@ -29,21 +30,28 @@ export function ApprovalDialog({
         useApprovalStore.getState().setPending(null);
         try {
             await approveCommand({ sessionId, requestId, approved });
-        } catch {
-            // A failed approval does not block the UI; the stream will end with an error
+        } catch (err) {
+            // Surface backend rejections (unknown session/request, session
+            // busy) instead of failing silently; the turn stays parked and
+            // the user can retry once the conflicting request finishes.
+            useToastStore
+                .getState()
+                .show(
+                    `Approve failed: ${err instanceof Error ? err.message : String(err)}`,
+                    4000,
+                );
         }
     }
 
     return (
         <box
-            position="absolute"
-            left="20%"
-            right="20%"
-            top="25%"
+            flexDirection="column"
+            flexShrink={0}
             paddingX={2}
-            paddingY={2}
-            border
-            borderStyle="rounded"
+            paddingY={1}
+            gap={0}
+            border={["top", "bottom"]}
+            borderStyle="single"
             borderColor="#d29922"
             backgroundColor={theme.surfaceDeep}
         >

@@ -118,18 +118,17 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                     }}
                     onCancel={() => submitAskCancel(askQuestions)}
                 />
-            ) : (
-                <Composer onCommand={handleCommand} />
-            )}
-            <StatusBar />
-            {approval ? (
+            ) : approval ? (
                 <ApprovalDialog
                     sessionId={approval.sessionId}
                     requestId={approval.requestId}
                     command={approval.command}
                     description={approval.description}
                 />
-            ) : null}
+            ) : (
+                <Composer onCommand={handleCommand} />
+            )}
+            <StatusBar />
             {screen?.kind === "sessions" ? <SessionsScreen /> : null}
             {screen?.kind === "models" ? <ModelsScreen /> : null}
             {screen?.kind === "agents" || screen?.kind === "delete-agent" ? (

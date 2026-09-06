@@ -269,7 +269,7 @@ class ChatService:
                 yield event, data
         finally:
             if register_key:
-                await self._request_registry.unregister(register_key)
+                await self._request_registry.unregister_if_current(register_key, agent)
 
     async def _map_agent_event(
         self,

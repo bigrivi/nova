@@ -17,6 +17,7 @@ import nova.server.app as server_app
 import nova.server.chat_service as server_chat_service
 from nova.server import create_app, run_server
 from nova.server.chat_service import ChatService
+from nova.server.request_registry import RequestRegistry
 from nova.server.schemas import ChatRequest
 from nova.settings import Settings, get_settings
 
@@ -774,3 +775,86 @@ async def test_run_server_starts_uvicorn(monkeypatch):
     assert captured["port"] == settings.backend_port
     assert captured["log_level"] == settings.log_level.lower()
     assert captured["served"] is True
+
+
+class _StubAgent:
+    def __init__(self, result: bool):
+        self._result = result
+
+    def resolve_approval(self, request_id: str, approved: bool, remember: bool = False) -> bool:
+        return self._result
+
+
+def test_approve_returns_404_for_unknown_session(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/chat/approve?session_id=no-such-session",
+        json={"request_id": "req-1", "approved": True},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No active agent found for session"
+
+
+@pytest.mark.asyncio
+async def test_approve_resolves_registered_request(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    app = create_app(settings=Settings.load_config())
+    await app.state.chat_service._request_registry.register("sess-approve-ok", _StubAgent(True))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/chat/approve?session_id=sess-approve-ok",
+        json={"request_id": "req-1", "approved": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "resolved", "approved": True}
+
+
+@pytest.mark.asyncio
+async def test_approve_returns_404_for_unknown_request(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    app = create_app(settings=Settings.load_config())
+    await app.state.chat_service._request_registry.register("sess-approve-miss", _StubAgent(False))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/chat/approve?session_id=sess-approve-miss",
+        json={"request_id": "req-missing", "approved": True},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Approval request not found"
+
+
+@pytest.mark.asyncio
+async def test_stream_rejects_concurrent_request_with_409(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    app = create_app(settings=Settings.load_config())
+    await app.state.chat_service._request_registry.register("sess-busy", object())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/chat/stream",
+        json={"message": "hello", "session_id": "sess-busy"},
+    )
+
+    assert response.status_code == 409
+    assert "Session is busy" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_registry_try_register_and_guarded_unregister():
+    registry = RequestRegistry()
+    first, second = object(), object()
+
+    assert await registry.try_register("s", first) is True
+    assert await registry.try_register("s", second) is False
+    assert await registry.unregister_if_current("s", second) is False
+    assert await registry.get("s") is first
+    assert await registry.unregister_if_current("s", first) is True
+    assert await registry.get("s") is None

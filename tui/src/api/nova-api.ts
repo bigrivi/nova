@@ -176,7 +176,7 @@ export async function approveCommand(options: {
     approved: boolean;
     remember?: boolean;
 }): Promise<void> {
-    await fetch(
+    const response = await fetch(
         buildUrl("/api/chat/approve") +
             `?session_id=${encodeURIComponent(options.sessionId)}`,
         {
@@ -189,6 +189,9 @@ export async function approveCommand(options: {
             }),
         },
     );
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
 }
 
 export async function listMessages(
