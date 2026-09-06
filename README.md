@@ -14,7 +14,7 @@ Your open source AI agent on desktop, terminal, web, and API.
   <img src="assets/hero-tui.png" alt="Nova TUI fixing a bug: read and edit tool calls with an inline diff" width="800" />
 </p>
 
-One shared Python runtime powers four surfaces: a terminal TUI, an HTTP server, a web frontend, and a desktop app.
+One shared Python runtime powers four surfaces: a terminal TUI, an HTTP server, a web frontend, and a desktop app. Run models locally with Ollama and no API key, or bring your own OpenAI-compatible, Responses, or Anthropic provider. Every shell command passes a three-tier approval gate, any MCP server plugs in as extra tools, and behavior stays identical wherever you work.
 
 ## Why Nova?
 
