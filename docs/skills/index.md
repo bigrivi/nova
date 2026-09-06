@@ -40,7 +40,7 @@ content and follows its instructions.
 
 Skills live in `~/.nova/skills/<skill-name>/`. A minimal skill:
 
-```
+```text
 ~/.nova/skills/my-skill/
   SKILL.md
   scripts/
@@ -49,7 +49,7 @@ Skills live in `~/.nova/skills/<skill-name>/`. A minimal skill:
 
 ### SKILL.md Format
 
-```
+```markdown
 name: My Skill
 description: What this skill does
 allowed_tools: shell, read, write

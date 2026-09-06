@@ -12,17 +12,22 @@
 git clone https://github.com/bigrivi/nova.git
 cd nova
 
-# Install Python dependencies
-pip install -r requirements.txt
+# Install Nova as an editable package (puts `nova` on your PATH)
+pip install -e .
 ```
 
 ## Browser Automation (Optional)
 
-Web search, web fetch, and browser automation tools require Playwright:
+The Playwright package ships with Nova -- `pip install -e .` already includes
+it. Nova's browser tool auto-installs anything else it needs on first use and
+prefers a system Chrome when one is present. To also have the bundled
+Chromium as a fallback:
 
 ```bash
 playwright install chromium
 ```
+
+Web search and web fetch do not require Playwright.
 
 ## Desktop Packaging (Optional)
 
@@ -37,7 +42,7 @@ See [Desktop App](../desktop/index.md) for build instructions.
 ## Verify Installation
 
 ```bash
-python -m nova --help
+nova --help
 ```
 
 You should see the Nova help output.

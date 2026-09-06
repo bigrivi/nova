@@ -24,8 +24,6 @@ Create or edit `~/.nova/config.json`:
 
 ```json
 {
-  "model": "gemma4:26b",
-  "model_provider": "ollama",
   "providers": {
     "ollama": {
       "type": "ollama",
@@ -48,8 +46,6 @@ Create or edit `~/.nova/config.json`:
 
 ```json
 {
-  "model": "gpt-4o",
-  "model_provider": "openai",
   "providers": {
     "openai": {
       "type": "openai-compatible",
@@ -73,8 +69,6 @@ Create or edit `~/.nova/config.json`:
 
 ```json
 {
-  "model": "claude-sonnet-4-5",
-  "model_provider": "anthropic",
   "providers": {
     "anthropic": {
       "type": "anthropic",
@@ -138,3 +132,4 @@ Inside the TUI, type `/models` to see and switch between configured models.
 
 - [TUI Commands](../tui/index.md) -- all available commands
 - [Tool Overview](../tools/index.md) -- what Nova's tools can do
+- [Providers & Models](../configuration/providers.md) -- the full provider config reference

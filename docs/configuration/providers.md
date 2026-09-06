@@ -18,16 +18,18 @@ your computer.
 
 ```json
 {
-  "ollama": {
-    "type": "ollama",
-    "name": "Ollama (local)",
-    "options": {
-      "base_url": "http://localhost:11434"
-    },
-    "models": {
-      "gemma4:26b": {
-        "name": "gemma4:26b",
-        "tools": true
+  "providers": {
+    "ollama": {
+      "type": "ollama",
+      "name": "Ollama (local)",
+      "options": {
+        "base_url": "http://localhost:11434"
+      },
+      "models": {
+        "gemma4:26b": {
+          "name": "gemma4:26b",
+          "tools": true
+        }
       }
     }
   }
@@ -44,17 +46,19 @@ an OpenAI-compatible chat completions API.
 
 ```json
 {
-  "openai": {
-    "type": "openai-compatible",
-    "name": "OpenAI",
-    "options": {
-      "base_url": "https://api.openai.com/v1",
-      "api_key": "sk-your-key-here"
-    },
-    "models": {
-      "gpt-4o": {
-        "name": "gpt-4o",
-        "tools": true
+  "providers": {
+    "openai": {
+      "type": "openai-compatible",
+      "name": "OpenAI",
+      "options": {
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "sk-your-key-here"
+      },
+      "models": {
+        "gpt-4o": {
+          "name": "gpt-4o",
+          "tools": true
+        }
       }
     }
   }
@@ -108,7 +112,16 @@ provider or model level.
 Extended thinking is enabled through `extra_body`:
 
 ```json
-"extra_body": { "thinking": { "type": "enabled", "budget_tokens": 4000 } }
+{
+  "providers": {
+    "anthropic": {
+      "type": "anthropic",
+      "options": {
+        "extra_body": { "thinking": { "type": "enabled", "budget_tokens": 4000 } }
+      }
+    }
+  }
+}
 ```
 
 Thinking text surfaces as Nova's reasoning stream, the same as
@@ -144,17 +157,19 @@ options are `base_url`, `api_key`, and `user_agent`.
 
 ```json
 {
-  "openai-responses": {
-    "type": "openai-response",
-    "name": "OpenAI Responses",
-    "options": {
-      "base_url": "https://api.openai.com/v1",
-      "api_key": "sk-..."
-    },
-    "models": {
-      "gpt-4o": {
-        "name": "gpt-4o",
-        "tools": true
+  "providers": {
+    "openai-responses": {
+      "type": "openai-response",
+      "name": "OpenAI Responses",
+      "options": {
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "sk-..."
+      },
+      "models": {
+        "gpt-4o": {
+          "name": "gpt-4o",
+          "tools": true
+        }
       }
     }
   }
@@ -163,15 +178,23 @@ options are `base_url`, `api_key`, and `user_agent`.
 
 ## Multiple Providers
 
-You can define several providers and switch between them at runtime:
+You can define several providers under `providers`. There is no top-level
+default-model key. Nova resolves the provider and model for each request in
+this order:
+
+1. Explicit `provider` and `model` fields on `POST /api/chat`
+2. The session's agent config -- what `/models` in the TUI or the model
+   selector in the web frontend writes
+3. The first configured provider and its first model
 
 ```json
 {
-  "model": "gemma4:26b",
-  "model_provider": "ollama",
   "providers": {
-    "ollama": { ... },
-    "openai": { ... },
+    "ollama": {
+      "type": "ollama",
+      "options": { "base_url": "http://localhost:11434" },
+      "models": { "gemma4:26b": { "name": "gemma4:26b", "tools": true } }
+    },
     "deepseek": {
       "type": "openai-compatible",
       "name": "DeepSeek",
@@ -190,6 +213,10 @@ You can define several providers and switch between them at runtime:
 }
 ```
 
+Switch at runtime with `/models` in the TUI, the model selector in the web
+frontend, or by starting the backend with
+`nova serve --provider ollama --model gemma4:26b`.
+
 ## Environment Variables
 
 | Variable | Description |
@@ -202,3 +229,5 @@ You can define several providers and switch between them at runtime:
 | `NOVA_LOG_LEVEL` | Log level (default: INFO) |
 | `NOVA_HOST` | Server bind host (default: 127.0.0.1) |
 | `NOVA_BACKEND_PORT` | Server port (default: 8765) |
+| `NOVA_UI_PORT` | Built-in static frontend port (default: 8501) |
+| `NOVA_FRONTEND_DIST` | Override the directory of the built frontend the server serves |

@@ -20,7 +20,7 @@ provide.
 For `text` and `textarea` inputs, the agent can provide a pre-filled default
 value or template:
 
-```
+```text
 Please describe the changes you want to make:
   - Problem:
   - Solution:

@@ -21,7 +21,7 @@ Output:
 During frontend development, run the desktop app against the Vite dev server:
 
 ```bash
-python -m nova desktop --dev
+nova desktop --dev
 ```
 
 ## Running Without Packaging
@@ -32,5 +32,5 @@ The desktop app can also run from the source tree:
 cd frontend
 npm run build
 cd ..
-NOVA_FRONTEND_DIST=frontend/dist python -m nova desktop
+NOVA_FRONTEND_DIST=frontend/dist nova desktop
 ```

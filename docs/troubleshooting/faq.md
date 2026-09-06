@@ -22,24 +22,28 @@ All data is stored in `~/.nova/`:
 ### How do I uninstall Nova?
 
 ```bash
+pip uninstall nova
 rm -rf ~/.nova
-pip uninstall -r requirements.txt
 ```
+
+If you used browser automation, the downloaded Chromium lives in the
+Playwright cache (e.g. `~/Library/Caches/ms-playwright` on macOS,
+`~/.cache/ms-playwright` on Linux) and can be deleted as well.
 
 ## Installation
 
 ### `playwright install chromium` fails
 
-Ensure you have the required system libraries. On macOS:
+This step is optional: Nova installs the Playwright package automatically on
+first use of the browser tool, and prefers a system Chrome when one is
+present. The bundled Chromium is only a fallback.
+
+If the download fails, re-run it -- the usual cause is a network
+interruption. On Linux, if the download succeeds but the browser fails to
+launch, install the system libraries it needs:
 
 ```bash
-brew install playwright
-```
-
-On Linux:
-
-```bash
-sudo apt-get install -y chromium-browser
+playwright install-deps chromium
 ```
 
 ### PyInstaller build fails
