@@ -10,7 +10,9 @@ Your open source AI agent on desktop, terminal, web, and API.
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)
 
-<!-- TODO: hero screenshot of the TUI -->
+<p align="center">
+  <img src="assets/hero-tui.png" alt="Nova TUI fixing a bug: read and edit tool calls with an inline diff" width="800" />
+</p>
 
 One shared Python runtime powers four surfaces: a terminal TUI, an HTTP server, a web frontend, and a desktop app.
 
@@ -132,6 +134,12 @@ More in [Quickstart](docs/getting-started/quickstart.md) and [Installation](docs
 | Desktop | `nova desktop [--dev]` | PyWebView window hosting the built frontend. Build with `python build.py --clean`. |
 
 All four surfaces share the same agent loop, tool registry, and SQLite store. The server is the hub for frontend and desktop, the TUI can also spawn its own backend.
+
+The desktop app, working through a multi-step research task:
+
+<p align="center">
+  <img src="assets/hero-desktop.png" alt="Nova desktop app completing a multi-step research task with tool calls" width="800" />
+</p>
 
 ## Built-in Tools
 
