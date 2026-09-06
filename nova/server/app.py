@@ -4,6 +4,7 @@ FastAPI server app for frontend and desktop integration.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -12,6 +13,8 @@ from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+
+log = logging.getLogger(__name__)
 
 from nova.config.service import (
     AgentCreateRequest,
@@ -236,6 +239,16 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         },
     )
     async def chat_stream(chat_request: ChatRequest):
+        registry = getattr(app.state.chat_service, "_request_registry", None)
+        if chat_request.session_id and registry is not None:
+            from nova.server.request_registry import _RESERVED
+
+            if not await registry.try_register(chat_request.session_id, _RESERVED):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Session is busy: another request is already running for this session. Wait for it to finish before sending another message.",
+                )
+
         async def event_stream():
             async for chunk in app.state.chat_service.chat_stream_ai_sdk(chat_request):
                 yield chunk
@@ -260,13 +273,17 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
     @app.post("/api/chat/approve")
     async def approve(request: ApproveRequest, session_id: str | None = None):
+        from nova.server.request_registry import _RESERVED
+
         if not session_id:
             raise HTTPException(status_code=400, detail="session_id query parameter required")
         agent = await app.state.chat_service._request_registry.get(session_id)
-        if agent is None:
+        if agent is None or agent is _RESERVED:
+            log.warning("approve: no active agent for session %s (request %s)", session_id, request.request_id)
             raise HTTPException(status_code=404, detail="No active agent found for session")
         resolved = agent.resolve_approval(request.request_id, request.approved, request.remember)
         if not resolved:
+            log.warning("approve: unknown request %s for session %s", request.request_id, session_id)
             raise HTTPException(status_code=404, detail="Approval request not found")
         return {"status": "resolved", "approved": request.approved}
 
