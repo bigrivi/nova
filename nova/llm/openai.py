@@ -38,6 +38,8 @@ class OpenAIProvider(LLMProvider):
         timeout: int = 120,
         reasoning_field: str = "reasoning_content",
         user_agent: Optional[str] = None,
+        extra_headers: Optional[dict] = None,
+        session_header: Optional[str] = None,
     ):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
@@ -45,6 +47,8 @@ class OpenAIProvider(LLMProvider):
         self.timeout = timeout
         self._reasoning_field = reasoning_field
         self._user_agent = user_agent
+        self._extra_headers = dict(extra_headers or {})
+        self._session_header = session_header
         self._max_tokens = {
             "gpt-4o": 128000,
             "gpt-4o-mini": 128000,
@@ -65,7 +69,7 @@ class OpenAIProvider(LLMProvider):
         detail = (text or "").strip() or "<empty response>"
         return f"HTTP {status} from {url}: {detail}"
 
-    def _build_headers(self) -> dict[str, str]:
+    def _build_headers(self, session_id: Optional[str] = None) -> dict[str, str]:
         headers = {
             "Content-Type": "application/json",
         }
@@ -73,6 +77,10 @@ class OpenAIProvider(LLMProvider):
             headers["User-Agent"] = self._user_agent
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        if self._extra_headers:
+            headers.update(self._extra_headers)
+        if self._session_header and session_id:
+            headers[self._session_header] = session_id
         return headers
 
     def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] = None) -> dict:
@@ -265,10 +273,11 @@ class OpenAIProvider(LLMProvider):
         stream: bool = False,
         tools: list[dict] = None,
         abort_event: Optional[asyncio.Event] = None,
+        session_id: Optional[str] = None,
     ) -> Done:
         formatted_messages = self._format_messages(messages)
 
-        headers = self._build_headers()
+        headers = self._build_headers(session_id=session_id)
         body = self._build_body(
             messages=formatted_messages,
             model=model,
@@ -351,9 +360,10 @@ class OpenAIProvider(LLMProvider):
         tools: list[dict] = None,
         abort_event: Optional[asyncio.Event] = None,
         timeout: Optional[int] = None,
+        session_id: Optional[str] = None,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         formatted_messages = self._format_messages(messages)
-        headers = self._build_headers()
+        headers = self._build_headers(session_id=session_id)
         body = self._build_body(
             messages=formatted_messages,
             model=model,

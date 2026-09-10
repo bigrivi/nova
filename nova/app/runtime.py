@@ -77,6 +77,7 @@ def build_llm(
             base_url=base_url,
             request_options=request_options,
             user_agent=user_agent,
+            **_header_options(provider_config.options),
             **kwargs,
         )
     elif provider_type == "openai-response":
@@ -89,6 +90,7 @@ def build_llm(
             base_url=base_url,
             request_options=request_options,
             user_agent=user_agent,
+            **_header_options(provider_config.options),
         )
     elif provider_type == "anthropic":
         base_url = str(provider_config.options.get("base_url", "")).strip()
@@ -108,6 +110,7 @@ def build_llm(
             user_agent=user_agent,
             anthropic_version=anthropic_version,
             betas=betas,
+            **_header_options(provider_config.options),
         )
     else:
         raise ValueError(f"Unsupported provider type: {provider_type}")
@@ -118,6 +121,25 @@ def build_llm(
 
 def _optional_int(value) -> int | None:
     return int(value) if value is not None else None
+
+
+def _header_options(options: dict) -> dict:
+    """Extract provider header config: static ``headers`` plus a session header name.
+
+    ``session_header`` names a header (e.g. ``x-opencode-session``) that is
+    filled per request with the active conversation id.
+    """
+    raw_headers = options.get("headers")
+    extra_headers = (
+        {str(key): str(value) for key, value in raw_headers.items()}
+        if isinstance(raw_headers, dict)
+        else {}
+    )
+    raw_session_header = options.get("session_header")
+    session_header = (
+        str(raw_session_header).strip() if raw_session_header else None
+    )
+    return {"extra_headers": extra_headers, "session_header": session_header}
 
 
 async def _agent_dir(agent_key: str) -> Path:

@@ -176,6 +176,51 @@ options are `base_url`, `api_key`, and `user_agent`.
 }
 ```
 
+## Custom Headers and Session ID
+
+`openai-compatible`, `openai-response`, and `anthropic` providers accept two
+extra `options` for controlling HTTP headers:
+
+- `headers` -- an object of static header name/value pairs sent with every
+  provider request.
+- `session_header` -- the name of a header to fill with Nova's current session
+  id, one stable value per conversation. It is applied after `headers`, so it
+  overrides a static value with the same name.
+
+These exist for gateways that require client identification or per-session
+affinity. OpenCode Go, for example, asks every client to send a stable
+`x-opencode-session` id and to identify itself:
+
+```json
+{
+  "providers": {
+    "opencode-go": {
+      "type": "openai-compatible",
+      "name": "OpenCode Go",
+      "options": {
+        "base_url": "https://opencode.ai/zen/go/v1",
+        "api_key": "sk-...",
+        "user_agent": "nova/1.0",
+        "headers": { "x-opencode-client": "nova/1.0" },
+        "session_header": "x-opencode-session"
+      },
+      "models": {
+        "deepseek-v4-flash": { "name": "deepseek-v4-flash", "tools": true }
+      }
+    }
+  }
+}
+```
+
+`user_agent` is a separate option that sets the `User-Agent` header directly.
+Identify Nova with its own value rather than impersonating another client.
+
+A provider's `type` fixes its endpoint: `openai-compatible` posts to
+`/chat/completions`, `openai-response` to `/responses`, and `anthropic` to
+`/messages`. A gateway that exposes models across several endpoints -- OpenCode
+Go does -- needs one provider per endpoint, each carrying the same `headers`
+and `session_header`.
+
 ## Multiple Providers
 
 You can define several providers under `providers`. There is no top-level

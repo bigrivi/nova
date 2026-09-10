@@ -35,12 +35,16 @@ class OpenAIResponsesProvider(LLMProvider):
         request_options: Optional[dict] = None,
         timeout: int = 120,
         user_agent: Optional[str] = None,
+        extra_headers: Optional[dict] = None,
+        session_header: Optional[str] = None,
     ):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
         self.timeout = timeout
         self._user_agent = user_agent
+        self._extra_headers = dict(extra_headers or {})
+        self._session_header = session_header
         self._max_tokens = 1_048_576
 
     def _make_connector(self) -> aiohttp.TCPConnector:
@@ -51,7 +55,7 @@ class OpenAIResponsesProvider(LLMProvider):
         detail = (text or "").strip() or "<empty response>"
         return f"HTTP {status} from {url}: {detail}"
 
-    def _build_headers(self) -> dict[str, str]:
+    def _build_headers(self, session_id: Optional[str] = None) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self._user_agent:
             headers["User-Agent"] = self._user_agent
@@ -60,6 +64,10 @@ class OpenAIResponsesProvider(LLMProvider):
         # OpenRouter-style app attribution; harmless for gateways that ignore them
         headers.setdefault("HTTP-Referer", "https://github.com/bigrivi/nova")
         headers.setdefault("X-Title", "nova")
+        if self._extra_headers:
+            headers.update(self._extra_headers)
+        if self._session_header and session_id:
+            headers[self._session_header] = session_id
         return headers
 
     def _format_input(self, messages: list) -> list | str:
@@ -227,10 +235,10 @@ class OpenAIResponsesProvider(LLMProvider):
             tokens_output=usage.get("output_tokens"),
         )
 
-    async def chat(self, messages: list, model: str, stream: bool = False, tools: list[dict] | None = None, abort_event=None) -> Done | Error:
+    async def chat(self, messages: list, model: str, stream: bool = False, tools: list[dict] | None = None, abort_event=None, session_id: Optional[str] = None) -> Done | Error:
         input_data = self._format_input(messages)
         body = self._build_body(input_data, model, stream=False, tools=tools)
-        headers = self._build_headers()
+        headers = self._build_headers(session_id=session_id)
         url = f"{self.base_url}/responses"
         connector = self._make_connector()
         session = aiohttp.ClientSession(connector=connector, trust_env=True)
@@ -252,10 +260,10 @@ class OpenAIResponsesProvider(LLMProvider):
             if not connector.closed:
                 await connector.close()
 
-    async def chat_stream(self, messages: list, model: str, tools: list[dict] | None = None, abort_event=None, timeout=None) -> AsyncGenerator[ChatStreamEvent, None]:
+    async def chat_stream(self, messages: list, model: str, tools: list[dict] | None = None, abort_event=None, timeout=None, session_id: Optional[str] = None) -> AsyncGenerator[ChatStreamEvent, None]:
         input_data = self._format_input(messages)
         body = self._build_body(input_data, model, stream=True, tools=tools)
-        headers = self._build_headers()
+        headers = self._build_headers(session_id=session_id)
         url = f"{self.base_url}/responses"
         headers["Accept"] = "text/event-stream"
         connector = self._make_connector()

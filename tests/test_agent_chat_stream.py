@@ -48,6 +48,19 @@ class ScriptedProvider(LLMProvider):
         return 128000
 
 
+class SessionCapturingProvider(ScriptedProvider):
+    """Records the session_id the agent forwards to the provider each turn."""
+
+    def __init__(self, scripts: list[list[object]]):
+        super().__init__(scripts)
+        self.seen_session_ids: list[str | None] = []
+
+    async def chat_stream(self, messages, model="m", tools=None, **kwargs):
+        self.seen_session_ids.append(kwargs.get("session_id"))
+        async for item in super().chat_stream(messages, model=model, tools=tools, **kwargs):
+            yield item
+
+
 @contextlib.asynccontextmanager
 async def isolated_agent(provider: LLMProvider, **agent_kwargs):
     database = SqliteRepository(DatabaseConfig(path=":memory:"))
@@ -477,3 +490,17 @@ async def test_e2e_full_chain_multi_turn_with_tools_and_compaction():
             m.tool_call_id for m in messages if m.role == "tool" and m.tool_call_id not in declared
         }
         assert not orphan, f"Orphan tool messages: {orphan}"
+
+
+class TestProviderSessionId:
+    @pytest.mark.asyncio
+    async def test_agent_forwards_its_own_session_id_to_provider(self):
+        provider = SessionCapturingProvider([[TextDelta(content="hi")]])
+        async with isolated_agent(provider) as (agent, _db):
+            session_id = None
+            async for event, data in agent.chat_stream("hello"):
+                if event == AgentEvent.SESSION:
+                    session_id = data
+
+        assert session_id is not None
+        assert provider.seen_session_ids == [session_id]

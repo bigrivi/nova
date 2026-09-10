@@ -309,6 +309,8 @@ class Agent:
     ) -> Any:
         messages = await self._get_messages(loaded_messages=loaded_messages)
         reasoning_timeout = get_reasoning_timeout(self.config.model, default=120)
+        current_session = self.session.get_current_session()
+        session_id = current_session.id if current_session else None
         log.info(
             f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}, timeout={reasoning_timeout}")
         return self.llm.chat_stream(
@@ -317,6 +319,7 @@ class Agent:
             tools=tool_schemas,
             abort_event=self._abort_event,
             timeout=reasoning_timeout,
+            session_id=session_id,
         )
 
     def _executable_tool_calls(self, tool_calls: list, turn_count: int) -> list:

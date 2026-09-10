@@ -138,6 +138,8 @@ class AnthropicProvider(LLMProvider):
         anthropic_version: str = "2023-06-01",
         betas: Optional[list[str]] = None,
         max_tokens: Optional[int] = None,
+        extra_headers: Optional[dict] = None,
+        session_header: Optional[str] = None,
     ):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
@@ -147,6 +149,8 @@ class AnthropicProvider(LLMProvider):
         self._anthropic_version = anthropic_version
         self._betas = list(betas) if betas else None
         self._max_tokens_override = max_tokens
+        self._extra_headers = dict(extra_headers or {})
+        self._session_header = session_header
 
     def _endpoint(self) -> str:
         resolved_base_url = self.base_url or "https://api.anthropic.com"
@@ -166,7 +170,7 @@ class AnthropicProvider(LLMProvider):
         detail = (text or "").strip() or "<empty response>"
         return f"HTTP {status} from {url}: {detail}"
 
-    def _build_headers(self) -> dict[str, str]:
+    def _build_headers(self, session_id: Optional[str] = None) -> dict[str, str]:
         headers = {
             "Content-Type": "application/json",
             "anthropic-version": self._anthropic_version,
@@ -177,6 +181,10 @@ class AnthropicProvider(LLMProvider):
             headers["x-api-key"] = self.api_key
         if self._betas:
             headers["anthropic-beta"] = ",".join(self._betas)
+        if self._extra_headers:
+            headers.update(self._extra_headers)
+        if self._session_header and session_id:
+            headers[self._session_header] = session_id
         return headers
 
     def _format_tools(self, tools: list[dict] | None) -> list[dict]:
@@ -581,9 +589,10 @@ class AnthropicProvider(LLMProvider):
         stream: bool = False,
         tools: list[dict] = None,
         abort_event: Optional[asyncio.Event] = None,
+        session_id: Optional[str] = None,
         **kwargs,
     ) -> Done:
-        headers = self._build_headers()
+        headers = self._build_headers(session_id=session_id)
         body = self._build_body(messages=messages, model=model, stream=stream, tools=tools)
         url = self._endpoint()
         connector = self._make_connector()
@@ -664,9 +673,10 @@ class AnthropicProvider(LLMProvider):
         tools: list[dict] = None,
         abort_event: Optional[asyncio.Event] = None,
         timeout: Optional[int] = None,
+        session_id: Optional[str] = None,
         **kwargs,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
-        headers = self._build_headers()
+        headers = self._build_headers(session_id=session_id)
         headers["Accept"] = "text/event-stream"
         body = self._build_body(messages=messages, model=model, stream=True, tools=tools)
         url = self._endpoint()
