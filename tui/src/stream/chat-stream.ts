@@ -57,32 +57,36 @@ export function parseAskQuestions(input: unknown): AskQuestion[] {
         if (!q || typeof q !== "object") continue;
         const qo = q as Record<string, unknown>;
         const inputType = String(qo.input_type ?? "text").toLowerCase();
+        const options = Array.isArray(qo.options)
+            ? qo.options
+                  .filter(
+                      (o): o is Record<string, unknown> =>
+                          !!o && typeof o === "object",
+                  )
+                  .map((o) => ({
+                      label: String(o.label ?? o.value ?? "").trim(),
+                      value:
+                          o.value !== undefined ? String(o.value) : undefined,
+                      description: String(o.description ?? "").trim(),
+                  }))
+                  .filter((o) => o.label)
+            : [];
         result.push({
-            id: String(qo.id ?? `q${i}`),
-            header: String(qo.header ?? ""),
-            question: String(qo.question ?? ""),
+            id: String(qo.id ?? `q${i}`).trim() || `q${i}`,
+            header: String(qo.header ?? "").trim(),
+            question: String(qo.question ?? "").trim(),
             inputType:
                 inputType === "select"
                     ? "select"
                     : inputType === "confirm"
                       ? "confirm"
-                      : "text",
-            options: Array.isArray(qo.options)
-                ? qo.options
-                      .filter(
-                          (o): o is Record<string, unknown> =>
-                              !!o && typeof o === "object",
-                      )
-                      .map((o) => ({
-                          label: String(o.label ?? o.value ?? ""),
-                          value:
-                              o.value !== undefined
-                                  ? String(o.value)
-                                  : undefined,
-                      }))
-                : [],
+                      : inputType === "textarea"
+                        ? "textarea"
+                        : "text",
+            options,
             multiple: Boolean(qo.multiple),
             required: qo.required !== false,
+            default: String(qo.default ?? ""),
         });
     }
     return result;
