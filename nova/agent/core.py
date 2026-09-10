@@ -295,7 +295,7 @@ class Agent:
             payload = _done_payload("completed", reader.final_content)
             await self._emit(AgentEvent.DONE, payload)
             log.info(
-                f"[Turn {turn_count}] completed tokens_in={reader.tokens_input} "
+                f"[Turn {turn_count}] Completed tokens_in={reader.tokens_input} "
                 f"tokens_out={reader.tokens_output}"
             )
             yield AgentEvent.DONE, payload
@@ -393,7 +393,7 @@ class Agent:
         """Load the requested session, creating one when it is absent."""
         if session_id and await self.session.load_session(session_id):
             current = self.session.get_current_session()
-            log.info("[Session %s] reused", session_id)
+            log.info("[Session %s] Reused", session_id)
             return current
         await self.session.create_session(
             persist=True,
@@ -401,7 +401,7 @@ class Agent:
             workspace_dir=workspace_dir,
         )
         current = self.session.get_current_session()
-        log.info("[Session %s] created", current.id if current else "?")
+        log.info("[Session %s] Created", current.id if current else "?")
         return current
 
     def _maybe_schedule_memory_review(self) -> None:
@@ -434,7 +434,7 @@ class Agent:
         message_text, image_data = build_user_message(user_input, attachments)
         self._last_user_input = message_text
         log.info(
-            "[Session %s] chat start agent=%s provider=%s model=%s workspace=%s "
+            "[Session %s] Chat start agent=%s provider=%s model=%s workspace=%s "
             "input_chars=%d attachments=%d",
             session_id,
             self.agent_key,
@@ -473,7 +473,7 @@ class Agent:
             if self._compaction.compacted:
                 session_messages = await self.session.get_messages()
 
-            log.info("[Turn %d] start", turn_count)
+            log.info("[Turn %d] Start", turn_count)
             await self._emit(AgentEvent.TURN_START, {"turn": turn_count})
             yield AgentEvent.TURN_START, {"turn": turn_count}
 
@@ -488,7 +488,7 @@ class Agent:
                     done_payload = data
                 elif event == AgentEvent.ERROR:
                     log.error(
-                        "[Session %s] agent error: %s",
+                        "[Session %s] Agent error: %s",
                         session_id,
                         data.get("message") if isinstance(data, dict) else data,
                     )
@@ -497,7 +497,7 @@ class Agent:
                 else:
                     yield event, data
 
-            log.info("[Turn %d] end", turn_count)
+            log.info("[Turn %d] End", turn_count)
             await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
             yield AgentEvent.TURN_END, {"turn": turn_count}
 
@@ -511,7 +511,7 @@ class Agent:
                     if isinstance(done_payload, dict)
                     else ""
                 )
-                log.info("[Session %s] done reason=%s", session_id, reason)
+                log.info("[Session %s] Done reason=%s", session_id, reason)
                 if reason in ("completed", "requires_input"):
                     self._maybe_schedule_memory_review()
                 await self._emit(AgentEvent.DONE, done_payload)
