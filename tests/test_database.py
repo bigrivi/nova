@@ -124,6 +124,10 @@ async def test_ensure_db_and_init_db_manage_global_instance(monkeypatch, tmp_pat
     db2 = await db_module.ensure_db()
     assert db1 is db2
 
+    # init_db replaces the process-global instance; close the old one first so
+    # its aiosqlite worker thread is not leaked.
+    await db_module.close_db()
+
     custom = await db_module.init_db(DatabaseConfig(path=str(first_path)))
     assert custom is db_module._db
     assert custom.config.path == str(first_path)
