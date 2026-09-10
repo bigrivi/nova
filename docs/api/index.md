@@ -31,7 +31,7 @@ Liveness check. Always available.
 
 ### `GET /`
 
-Serves the built frontend when `NOVA_FRONTEND_DIST` points at an existing directory. In that case the route is mounted as a static file handler with HTML fallback. When no frontend build is present, it returns a JSON stub:
+Serves the built frontend when `NOVA_FRONTEND_DIST` points at an existing directory. The directory is registered with FastAPI's `app.frontend()`, so `/api/*` path operations always take priority, and a missing browser navigation path falls back to `index.html` for client-side routing. Missing assets (JS, CSS, images) still return `404`. When no frontend build is present, the route returns a JSON stub:
 
 ```json
 {

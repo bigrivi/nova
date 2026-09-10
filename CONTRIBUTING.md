@@ -58,7 +58,7 @@ Each surface has its own entry point:
 
 ```bash
 nova serve                      # FastAPI backend on http://127.0.0.1:8765
-./nova-tui                      # terminal UI, spawns its own backend
+nova tui                        # terminal UI, spawns its own backend
 nova desktop                    # desktop window
 nova desktop --dev              # desktop against Vite dev server
 cd frontend && npm run dev      # web frontend in dev mode, proxies /api to the backend
@@ -72,14 +72,14 @@ CI runs on every push to `main` and on every pull request. The workflow is `.git
 
 * **Python tests**: installs with `pip install -e ".[dev]"` then runs `pytest -q` on Python 3.12.
 * **Frontend typecheck and build**: runs `npm ci` and `npm run build` in `frontend/` on Node 22, which executes `tsc -b && vite build`.
-* **TUI typecheck**: runs `bun install --frozen-lockfile` and `bun run build` in `tui/`, which executes `bun --bun tsc --noEmit`.
+* **TUI typecheck and build**: runs `bun install --frozen-lockfile`, `bun run typecheck`, and `bun run build` in `tui/`. Typecheck executes `bun --bun tsc --noEmit`; build bundles the client to `tui/dist`.
 
 Please run the relevant checks locally before opening a pull request:
 
 ```bash
 pytest -q
 cd frontend && npm run build
-cd tui && bun run build
+cd tui && bun run typecheck && bun run build
 ```
 
 A note on linting: `npm run lint` in `frontend/` currently reports 19 pre-existing eslint errors. It is not yet a CI gate, so you are not expected to clean up unrelated lint noise in your pull request. Just avoid adding new violations.
@@ -106,7 +106,7 @@ Run `git log --oneline -20` yourself to see the current style before you commit.
 ## Project layout
 
 * `nova/` is the shared Python runtime. It holds the agent loop, tools, providers, persistence, and server. Keep agent logic, tools, providers, and persistence here so all four surfaces stay consistent. That rule is stated in the README.
-* `tui/` is the Bun and OpenTUI terminal client. Source lives in `tui/src`, typecheck is `bun run build`.
+* `tui/` is the Bun and OpenTUI terminal client. Source lives in `tui/src`, `bun run typecheck` checks types, and `bun run build` bundles the client to `tui/dist`. `nova tui` runs `tui/dist/index.js` when present, otherwise `tui/src/index.tsx`.
 * `frontend/` is the React web UI built with Vite, assistant-ui, Tailwind, and Zustand. Source lives in `frontend/src`, build is `npm run build`.
 * `tests/` is the Python suite run by `pytest`, including `tests/e2e` for the opt-in live tests.
 * `docs/` holds the documentation site. Start at `docs/index.md`.

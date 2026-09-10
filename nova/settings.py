@@ -389,7 +389,7 @@ def reload_settings() -> Settings:
     return get_settings()
 
 
-def configure_logging(settings: Settings) -> None:
+def configure_logging(settings: Settings, console: bool = False) -> None:
     root = logging.getLogger()
     root.handlers.clear()
     root.setLevel(getattr(logging, settings.log_level, logging.DEBUG))
@@ -407,3 +407,10 @@ def configure_logging(settings: Settings) -> None:
     )
     file_handler.setFormatter(formatter)
     root.addHandler(file_handler)
+
+    if console:
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(
+            logging.Formatter("%(levelname)s %(name)s: %(message)s")
+        )
+        root.addHandler(console_handler)

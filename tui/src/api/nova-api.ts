@@ -19,6 +19,7 @@ type JsonResponse<T> = {
 export type StreamChatOptions = {
     message: string;
     sessionId?: string | null;
+    workspaceDir?: string | null;
     provider?: string | null;
     model?: string | null;
     attachments?: NovaAttachmentData[];
@@ -236,6 +237,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
         body: JSON.stringify({
             message: options.message,
             session_id: options.sessionId || undefined,
+            workspace_dir: options.workspaceDir || undefined,
             provider: options.provider || undefined,
             model: options.model || undefined,
             attachments: options.attachments || [],

@@ -97,7 +97,12 @@ export async function startBackend(): Promise<void> {
         cwd: PROJECT_ROOT,
         // Redirect stdout/stderr to the log file to keep the terminal clean
         stdio: ["ignore", logFd, logFd],
-        env: { ...process.env, NOVA_BACKEND_PORT: String(port) },
+        env: {
+            ...process.env,
+            NOVA_BACKEND_PORT: String(port),
+            NOVA_WORKSPACE_DIR:
+                process.env.NOVA_WORKSPACE_DIR || process.cwd(),
+        },
     });
 
     child.on("exit", (code) => {

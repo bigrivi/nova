@@ -19,6 +19,7 @@ class ApprovalRequest:
     created_at: float
     expires_at: float
     approved: Optional[bool] = None
+    session_id: str = ""
 
 
 class ApprovalManager:
@@ -26,17 +27,18 @@ class ApprovalManager:
         self._default_timeout = default_timeout
         self._pending: dict[str, ApprovalRequest] = {}
         self._events: dict[str, asyncio.Event] = {}
-        self._allowlist: set[str] = set()
+        self._allow_lists: dict[str, set[str]] = {}
 
     def pre_request(
         self,
         command: str,
         description: str = "",
         timeout: int | None = None,
+        session_id: str = "",
     ) -> str:
         """Create a pending approval request and return its id (non-blocking).
         timeout=0 means wait indefinitely (used by wait_with_heartbeat)."""
-        if command in self._allowlist:
+        if command in self._allow_lists.get(session_id, ()):
             return ""
 
         deadline = time.monotonic() + (timeout or self._default_timeout)
@@ -48,6 +50,7 @@ class ApprovalManager:
             description=description,
             created_at=time.monotonic(),
             expires_at=deadline,
+            session_id=session_id,
         )
         self._events[req_id] = asyncio.Event()
         return req_id
@@ -86,14 +89,24 @@ class ApprovalManager:
             return False
         req.approved = approved
         if approved and remember:
-            self._allowlist.add(req.command)
+            self._allow_lists.setdefault(req.session_id, set()).add(req.command)
         event = self._events.get(req_id)
         if event:
             event.set()
         return True
 
-    def add_to_allowlist(self, command: str) -> None:
-        self._allowlist.add(command)
+    def add_to_allowlist(self, command: str, session_id: str = "") -> None:
+        self._allow_lists.setdefault(session_id, set()).add(command)
 
     def get_pending(self) -> list[ApprovalRequest]:
         return [r for r in self._pending.values() if r.approved is None]
+
+
+_manager: Optional[ApprovalManager] = None
+
+
+def get_approval_manager() -> ApprovalManager:
+    global _manager
+    if _manager is None:
+        _manager = ApprovalManager()
+    return _manager

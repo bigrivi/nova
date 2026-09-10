@@ -140,6 +140,7 @@ export async function runChatStream(options: ChatRunOptions): Promise<void> {
         await streamChat({
             message: options.message,
             sessionId,
+            workspaceDir: process.env.NOVA_WORKSPACE_DIR || process.cwd(),
             provider,
             model,
             onEvent: (event) => {

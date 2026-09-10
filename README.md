@@ -78,9 +78,11 @@ One shared Python runtime powers four surfaces: a terminal TUI, an HTTP server, 
 
 ```bash
 git clone https://github.com/bigrivi/nova.git && cd nova
-pip install -e .                # Python 3.12+; puts `nova` on your PATH
+pip install -e .                # Python 3.12+
 playwright install chromium     # only if you want the browser tools
 ```
+
+If `nova` is not found after installing, add the environment's `bin/` directory to `PATH` -- see [Installation](docs/getting-started/installation.md#making-nova-available-on-path).
 
 The TUI also needs [bun](https://bun.sh). For tests and dev tooling, use `pip install -e .[dev]` instead.
 
@@ -93,20 +95,23 @@ Frontend deps are separate: `cd frontend && npm install`.
 
 ```bash
 nova serve                      # HTTP server on http://127.0.0.1:8765
-./nova-tui                      # terminal UI, spawns its own backend
+nova web                        # built web UI in the browser
+nova tui                        # OpenTUI terminal client from any directory
+./nova-tui                      # equivalent source-checkout launcher
 nova desktop                    # desktop window
 nova desktop --dev              # desktop against Vite dev server
 ```
 
-3. For the web frontend in dev mode:
+3. For live reload while working on the frontend, run the backend and Vite separately:
 
 ```bash
+nova serve
 cd frontend && npm install && npm run dev
 ```
 
 Vite proxies `/api/*` to the backend. Override with `NOVA_FRONTEND_PROXY_TARGET` or `VITE_NOVA_API_BASE_URL`.
 
-4. Open the TUI or frontend, pick a model with `/models` or the model selector, and start chatting.
+4. Open the TUI, web UI, or desktop app, pick a model with `/models` or the model selector, and start chatting.
 
 Example config with Ollama:
 
@@ -128,9 +133,9 @@ More in [Quickstart](docs/getting-started/quickstart.md) and [Installation](docs
 
 | Surface | How to run | What it is |
 |---------|------------|------------|
-| TUI | `./nova-tui` | Bun + React + OpenTUI terminal client. Streams text, reasoning, tool calls, and diffs. |
+| TUI | `nova tui` or `./nova-tui` | Bun + React + OpenTUI terminal client. Streams text, reasoning, tool calls, and diffs. |
 | Server | `nova serve` | FastAPI backend on `http://127.0.0.1:8765`. AI SDK UI compatible SSE stream at `POST /api/chat/stream`. |
-| Frontend | `cd frontend && npm run dev` | React 19 + Vite + assistant-ui + Tailwind + Zustand, with i18n. |
+| Web UI | `nova web` | Backend serves the built frontend at `http://127.0.0.1:8765` and opens the browser. Builds `frontend/dist` if missing. Dev mode: `cd frontend && npm run dev`. |
 | Desktop | `nova desktop [--dev]` | PyWebView window hosting the built frontend. Build with `python build.py --clean`. |
 
 All four surfaces share the same agent loop, tool registry, and SQLite store. The server is the hub for frontend and desktop, the TUI can also spawn its own backend.
@@ -215,7 +220,7 @@ Frontend and TUI have their own installs:
 
 ```bash
 cd frontend && npm install && npm run build   # or npm run dev
-cd tui && bun install && bun run dev
+cd tui && bun install && bun run build        # bundles to tui/dist; or bun run dev
 ```
 
 ## Contributing

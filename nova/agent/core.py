@@ -17,7 +17,7 @@ from nova.skills.service import SkillService
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.agent.tool_guardrails import ToolGuardrails
 from nova.agent.reasoning_timeouts import get_reasoning_timeout
-from nova.tools.approval import ApprovalManager
+from nova.tools.approval import get_approval_manager
 from nova.settings import get_settings
 from nova.agent.hierarchy import AgentHierarchy
 from nova.agent.memory_review import MemoryReviewer
@@ -125,7 +125,7 @@ class Agent:
 
         self._turns_since_review = 0
         self._guardrails = ToolGuardrails()
-        self._approval = ApprovalManager()
+        self._approval = get_approval_manager()
 
     @staticmethod
     def _build_skill_service(agent_key: str, agent_dir: Path) -> SkillService:

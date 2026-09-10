@@ -43,6 +43,7 @@ class TurnContext:
 
     approval_manager: Any = None
     event_emitter: Optional[Callable] = None
+    session_id: str = ""
     memory_modified: bool = False
 
 
@@ -126,7 +127,8 @@ class ShellToolBehavior(DefaultToolBehavior):
         # --- dangerous check → pre-approval ----------------------------
         dangerous, ddesc = is_dangerous(cmd)
         if dangerous:
-            req_id = self._approval.pre_request(cmd, desc, timeout=0)
+            req_id = self._approval.pre_request(
+                cmd, desc, timeout=0, session_id=ctx.session_id)
             if req_id:
                 return PreExecutionCheck(
                     approval_request={

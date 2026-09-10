@@ -51,13 +51,14 @@ All variables are read with `os.getenv` at startup. Empty or whitespace-only val
 | `NOVA_BACKEND_PORT` | `8765` | `nova/settings.py:Settings.load_config` | Port the FastAPI server listens on. The TUI reads the same variable in `tui/src/backend.ts:backendPort()` to decide where to connect or spawn the backend. |
 | `NOVA_UI_PORT` | `8501` | `nova/settings.py:Settings.load_config` | UI port, reserved for future use. |
 | `NOVA_LOG_LEVEL` | `INFO` | `nova/settings.py:Settings.load_config` | Logging level passed to `configure_logging`. |
-| `NOVA_FRONTEND_DIST` | _(empty)_ | `nova/settings.py:Settings.load_config` and `nova/desktop/entry.py` | When set to an existing directory, that directory is served at `GET /` as static files. When empty or missing, `GET /` returns the JSON stub. |
+| `NOVA_FRONTEND_DIST` | _(empty)_ | `nova/settings.py:Settings.load_config` and `nova/desktop/entry.py` | When set to an existing directory, FastAPI serves it at `GET /` via `app.frontend()` (with an `index.html` fallback for client-side routing). When empty or missing, `GET /` returns the JSON stub. `nova web` builds `frontend/dist` when needed and points this variable at it. |
 | `NOVA_OLLAMA_BASE_URL` | `http://localhost:11434` | `nova/settings.py:_resolve_ollama_base_url` | Preferred override for the Ollama base URL. Falls back to `OLLAMA_BASE_URL` if not set. |
 | `OLLAMA_BASE_URL` | _(fallback)_ | `nova/settings.py:_resolve_ollama_base_url` | Fallback for Ollama base URL when `NOVA_OLLAMA_BASE_URL` is empty. |
 | `NOVA_OPENAI_BASE_URL` | `https://api.openai.com/v1` | `nova/settings.py:_resolve_openai_base_url` | Preferred override for the OpenAI-compatible base URL. |
 | `OPENAI_BASE_URL` | _(fallback)_ | `nova/settings.py:_resolve_openai_base_url` | Fallback when `NOVA_OPENAI_BASE_URL` is empty. |
 | `NOVA_PROJECT_ROOT` | _(derived)_ | `tui/src/backend.ts` | Where the TUI looks for the repo. If set, it is resolved and used as `cwd` when spawning `python -m nova serve`. If not set, the TUI resolves `../..` from `tui/src/`. `build.py` also sets it when packaging the desktop app. |
 | `NOVA_PYTHON` | `python3` | `tui/src/backend.ts:pickPython()` | Python interpreter the TUI spawns. When set, that exact string is used. When not set, the TUI probes `.venv/bin/python3` under the project root, then falls back to `python3` on `PATH`. |
+| `NOVA_WORKSPACE_DIR` | launch directory | TUI launcher and `tui/src/stream/chat-stream.ts` | Directory sent as the default `workspace_dir` for TUI chat requests. `nova tui` and `./nova-tui` set it from the directory where they were launched. |
 
 ### A subtle point about API keys
 
@@ -147,4 +148,4 @@ nova desktop      # open the PyWebView desktop shell
 nova desktop --dev  # desktop against the Vite dev server
 ```
 
-The TUI is launched separately with `./nova-tui`, which spawns `python -m nova serve` as a child process. The CLI entry point is the `nova` console script, invoked as `nova serve` or `nova desktop`.
+The web UI is launched with `nova web`, which builds `frontend/dist` when missing, sets `NOVA_FRONTEND_DIST`, and opens the browser. The TUI is launched with `nova tui`, which runs the OpenTUI client and spawns `python -m nova serve` as a child process. The source checkout also provides `./nova-tui`. The CLI entry point is the `nova` console script, invoked as `nova serve`, `nova web`, `nova tui`, or `nova desktop`.

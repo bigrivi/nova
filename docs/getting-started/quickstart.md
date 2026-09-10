@@ -105,11 +105,23 @@ reasoning stream.
 ## Step 2: Start Chatting
 
 ```bash
-./nova-tui
+nova tui
 ```
 
-The TUI (requires [bun](https://bun.sh)) starts with your configured model.
+The TUI (requires [bun](https://bun.sh)) starts with your configured model and
+uses the directory where you ran `nova tui` as the session workspace.
 Type a message and press Enter.
+
+To use the web UI instead, run:
+
+```bash
+nova web
+```
+
+`nova web` builds `frontend/dist` if it is missing, serves it through the
+backend at `http://127.0.0.1:8765`, and opens your browser. For live reload
+while developing the frontend, run `nova serve` and
+`cd frontend && npm run dev` in a separate terminal instead.
 
 ## Step 3: Try Things
 

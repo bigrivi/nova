@@ -18,9 +18,13 @@ execute code, browse the web, search files, run shell commands, and more.
 - [Providers & Models](configuration/providers.md) -- set up Ollama, OpenAI, or other LLM providers
 - [Settings](configuration/settings.md) -- runtime paths, env vars, and config file shape
 
+## Web UI
+
+- [Quickstart](getting-started/quickstart.md) -- start the web UI with `nova web`
+
 ## API
 
-- [Server API](api/index.md) -- HTTP API and SSE streaming contract
+- [Server API](api/index.md) -- HTTP API, SSE streaming contract, and how the frontend is served
 
 ## Tools
 

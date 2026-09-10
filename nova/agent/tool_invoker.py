@@ -73,6 +73,8 @@ class ToolInvoker:
         tool_calls: list,
         group_id: Optional[str] = None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
+        current_session = self._session.get_current_session()
+        session_id = current_session.id if current_session and current_session.id else ""
         for tool_call in tool_calls:
             async for event in self._announce(tool_call, tool_calls, group_id):
                 yield event
@@ -84,6 +86,7 @@ class ToolInvoker:
             turn_context = TurnContext(
                 approval_manager=self._approval,
                 event_emitter=self._emit_approval,
+                session_id=session_id,
             )
             precheck = await behavior.before_execute(arguments, turn_context)
 

@@ -13,6 +13,6 @@
 ## Checklist
 
 - [ ] `pytest` passes locally
-- [ ] Frontend and TUI typecheck pass if touched (`npm run build` in `frontend/`, `bun run build` in `tui/`)
+- [ ] Frontend and TUI checks pass if touched (`npm run build` in `frontend/`, `bun run typecheck` in `tui/`)
 - [ ] Docs updated if behavior changed
 - [ ] Commit messages follow Conventional Commits

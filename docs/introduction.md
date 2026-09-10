@@ -117,15 +117,19 @@ Install from a clone:
 
 ```bash
 git clone https://github.com/bigrivi/nova.git && cd nova
-pip install -e .                # Python 3.12+, puts `nova` on your PATH
+pip install -e .                # Python 3.12+
 playwright install chromium     # only if you want the browser tools
 ```
+
+If the `nova` command is not found, the environment's `bin/` directory is not
+on `PATH`; see [Making `nova` available on PATH](getting-started/installation.md#making-nova-available-on-path).
 
 Then start where you prefer:
 
 ```bash
 nova serve            # HTTP backend on http://127.0.0.1:8765
-./nova-tui            # terminal UI (also needs bun), spawns its own backend
+nova web              # web UI in the browser (builds frontend/dist if needed)
+nova tui              # terminal UI (also needs bun), spawns its own backend
 nova desktop          # desktop window
 nova desktop --dev    # desktop against the Vite dev server
 ```

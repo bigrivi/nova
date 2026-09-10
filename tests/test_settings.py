@@ -599,3 +599,27 @@ def test_configure_logging_uses_daily_rotation_with_30_day_retention(monkeypatch
         root.handlers.clear()
         root.handlers.extend(original_handlers)
         root.setLevel(original_level)
+
+
+def test_configure_logging_console_adds_stream_handler(monkeypatch, tmp_path):
+    home = tmp_path / "nova-log-console"
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    settings = Settings.load_config()
+
+    root = logging.getLogger()
+    original_handlers = list(root.handlers)
+    original_level = root.level
+    try:
+        configure_logging(settings, console=True)
+        assert any(isinstance(h, TimedRotatingFileHandler) for h in root.handlers)
+        assert any(
+            isinstance(h, logging.StreamHandler)
+            and not isinstance(h, logging.FileHandler)
+            for h in root.handlers
+        )
+    finally:
+        for handler in list(root.handlers):
+            handler.close()
+        root.handlers.clear()
+        root.handlers.extend(original_handlers)
+        root.setLevel(original_level)
