@@ -103,16 +103,32 @@ class ToolInvoker:
                 approval_request_id = precheck.approval_request.get("id", "")
                 precheck.approval_request["toolCallId"] = _id_of(tool_call)
                 precheck.approval_request["toolName"] = _name_of(tool_call)
+                log.info(
+                    "[Turn %s] Approval required id=%s command=%s",
+                    self._turn_count,
+                    approval_request_id,
+                    str(precheck.approval_request.get("command", ""))[:200],
+                )
                 yield AgentEvent.APPROVAL_REQUIRED, precheck.approval_request
                 async for tick in self._approval.wait_with_heartbeat(approval_request_id):
                     if tick is None:
                         yield AgentEvent.APPROVAL_HEARTBEAT, None
                         continue
                     if not tick:
+                        log.info(
+                            "[Turn %s] Approval denied id=%s",
+                            self._turn_count,
+                            approval_request_id,
+                        )
                         self.outcome = ToolOutcome.STOPPED
                         yield AgentEvent.DONE, done_payload(
                             "stopped", "Command rejected by user")
                         return
+                    log.info(
+                        "[Turn %s] Approval granted id=%s",
+                        self._turn_count,
+                        approval_request_id,
+                    )
                     break
 
             result = await self.execute_with_abort(
