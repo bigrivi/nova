@@ -11,7 +11,7 @@ export type AskQuestion = {
     id: string;
     header: string;
     question: string;
-    inputType: "text" | "textarea" | "select" | "confirm";
+    inputType: "text" | "textarea" | "select";
     options: AskOption[];
     multiple: boolean;
     required: boolean;

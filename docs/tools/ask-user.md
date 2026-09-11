@@ -12,8 +12,7 @@ provide.
 |------|-------------|
 | `text` | Single-line text input |
 | `textarea` | Multi-line text input (Shift+Enter for newline) |
-| `select` | Choose from a list of options |
-| `confirm` | Yes/no confirmation |
+| `select` | Choose from a list of options (use two options for yes/no) |
 
 ## Default Values
 

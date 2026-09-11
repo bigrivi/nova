@@ -6,7 +6,7 @@ from nova.llm import ToolResult
 from nova.tools.registry import tool
 
 
-_VALID_TYPES = frozenset({"text", "select", "confirm", "textarea"})
+_VALID_TYPES = frozenset({"text", "select", "textarea"})
 
 
 @tool(
@@ -17,8 +17,7 @@ _VALID_TYPES = frozenset({"text", "select", "confirm", "textarea"})
         "Each question needs a unique id. "
         "input_type 'text' for free-form input (names, paths, emails, etc.). "
         "input_type 'textarea' for multi-line free-form input (use 'default' to provide a template). "
-        "input_type 'select' for choosing from provided options. "
-        "input_type 'confirm' for yes/no questions."
+        "input_type 'select' for choosing from provided options; for yes/no, use a select with two options."
     ),
     parameters={
         "type": "object",
@@ -43,8 +42,8 @@ _VALID_TYPES = frozenset({"text", "select", "confirm", "textarea"})
                         },
                         "input_type": {
                             "type": "string",
-                            "enum": ["text", "select", "confirm", "textarea"],
-                            "description": "'text' for typed input, 'textarea' for multi-line input, 'select' for choosing from options, 'confirm' for yes/no.",
+                            "enum": ["text", "select", "textarea"],
+                            "description": "'text' for typed input, 'textarea' for multi-line input, 'select' for choosing from options (use two options for yes/no).",
                         },
                         "default": {
                             "type": "string",
@@ -52,7 +51,7 @@ _VALID_TYPES = frozenset({"text", "select", "confirm", "textarea"})
                         },
                         "options": {
                             "type": "array",
-                            "description": "Choices for select questions. Empty array for text/confirm.",
+                            "description": "Choices for select questions. Empty array for text.",
                             "items": {
                                 "type": "object",
                                 "properties": {

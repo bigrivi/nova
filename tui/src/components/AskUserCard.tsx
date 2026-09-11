@@ -1,16 +1,18 @@
 /** Inline ask_user form.
  *
- * Every question renders in one vertical flow so the content grows downward
- * with no fixed height and no outer frame. While a form is pending the
- * Composer is replaced (see App.tsx), so this owns all input.
+ * One question is shown at a time. With more than one question a tab bar
+ * (titles from each question's header) sits above it; answering advances to
+ * the next question automatically and the last answer submits. No outer frame
+ * and no fixed height — the content flows downward. While a form is pending
+ * the Composer is replaced (see App.tsx), so this owns all input.
  *
- * Supported shapes: text, textarea, single select, multi select, confirm.
+ * Supported shapes: text, textarea, single select, and multi select.
  */
 
 import type {
     InputRenderable,
     KeyBinding,
-    TextareaRenderable,
+    TextareaRenderable
 } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { useEffect, useRef, useState } from "react";
@@ -19,6 +21,7 @@ import { theme } from "../theme.ts";
 
 const ACCENT = theme.accent;
 const MUTED = theme.muted;
+const SURFACE = theme.surface
 
 const FREEFORM_KEY_BINDINGS: KeyBinding[] = [
     { name: "enter", action: "submit" },
@@ -49,6 +52,9 @@ export function AskUserCard({
 
     const question = questions[active];
     const isLast = active === questions.length - 1;
+    const isWizard = questions.length > 1;
+    const isReview = isWizard && active === questions.length;
+    const totalSteps = isWizard ? questions.length + 1 : questions.length;
 
     // Latest state for the global key handler without re-registering it on
     // every keystroke.
@@ -72,20 +78,39 @@ export function AskUserCard({
         } else if (q.inputType === "select") {
             const index = q.options.findIndex((o) => o.label === saved);
             setCursor(index >= 0 ? index : 0);
-        } else if (q.inputType === "confirm") {
-            setCursor(saved === "no" ? 1 : 0);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [active]);
 
+
+
     function advance(merged: Record<string, string>): void {
-        if (live.current.isLast) {
+        if (!isWizard) {
             onSubmit(merged);
-        } else {
+            return;
+        }
+        if (live.current.active < questions.length - 1) {
             setCursor(0);
             setDraft("");
             setActive((index) => index + 1);
+            return;
         }
+        setActive(questions.length);
+    }
+
+    function submitReview(): void {
+        const merged = live.current.answers;
+        const allAnswered = questions.every(
+            (q) => !q.required || (merged[q.id] ?? "").trim(),
+        );
+        if (allAnswered) {
+            onSubmit(merged);
+            return;
+        }
+        const firstMissing = questions.findIndex(
+            (q) => q.required && !(merged[q.id] ?? "").trim(),
+        );
+        if (firstMissing >= 0) setActive(firstMissing);
     }
 
     function commit(value: string): void {
@@ -112,20 +137,37 @@ export function AskUserCard({
     function moveCursor(delta: number): void {
         const q = live.current.question;
         if (!q) return;
-        const size = q.inputType === "confirm" ? 2 : q.options.length;
+        const size = q.options.length;
         setCursor((index) =>
             Math.min(Math.max(index + delta, 0), Math.max(size - 1, 0)),
         );
     }
 
     useKeyboard((key) => {
-        const q = live.current.question;
-        if (!q) return;
-
         if (key.name === "escape") {
             onCancel();
             return;
         }
+
+        if (key.name === "tab" && isWizard) {
+            setActive((index) => {
+                const count = totalSteps;
+                return key.shift
+                    ? (index - 1 + count) % count
+                    : (index + 1) % count;
+            });
+            return;
+        }
+
+        if (isReview) {
+            if (key.name === "return" || key.name === "enter") {
+                submitReview();
+            }
+            return;
+        }
+
+        const q = live.current.question;
+        if (!q) return;
 
         if (q.inputType === "select") {
             if (key.name === "up") {
@@ -154,192 +196,164 @@ export function AskUserCard({
             return;
         }
 
-        if (q.inputType === "confirm") {
-            if (key.name === "y") {
-                commit("yes");
-                return;
-            }
-            if (key.name === "n") {
-                commit("no");
-                return;
-            }
-            if (key.name === "left") {
-                setCursor(0);
-                return;
-            }
-            if (key.name === "right") {
-                setCursor(1);
-                return;
-            }
-            if (key.name === "return" || key.name === "enter") {
-                commit(live.current.cursor === 1 ? "no" : "yes");
-            }
-        }
     });
 
-    if (!question) return null;
+    if (!question && !isReview) return null;
 
     return (
-        <box flexDirection="column" flexShrink={0} paddingX={1} gap={0}>
-            {questions.map((q, index) => {
-                const isActive = index === active;
-                const answer = answers[q.id] ?? "";
-                return (
-                    <box
-                        key={q.id}
-                        flexDirection="column"
-                        flexShrink={0}
-                        marginBottom={1}
-                    >
-                        {q.header ? (
-                            <text fg={isActive ? ACCENT : MUTED}>
-                                {q.header}
-                            </text>
-                        ) : null}
-                        <text
-                            fg={isActive ? theme.foreground : theme.subtle}
-                            content={q.question}
-                        />
+        <box
+            flexDirection="column"
+            flexShrink={0}
+            paddingX={2}
+            paddingY={1}
+            marginBottom={1}
+            borderStyle="heavy"
+            borderColor={ACCENT}
+            border = {["left"]}
+            backgroundColor={SURFACE}
+            gap={0}
+        >
+            <box marginBottom={1} flexDirection="row" columnGap={2} flexShrink={0}>
+                {isWizard && questions.map((q, index) => {
+                    const label = q.header || `Q${index + 1}`;
+                    if (index === active) {
+                        return (
+                            <box key={q.id} paddingX={1} backgroundColor={ACCENT}>
+                                <text fg={SURFACE}>{label}</text>
+                            </box>
+                        );
+                    }
+                    return (
+                        <box key={q.id} paddingX={1}>
+                            <text>{label}</text>
+                        </box>
+                    );
+                })}
+                {isWizard ? (
+                    isReview ? (
+                        <box paddingX={1} backgroundColor={ACCENT}>
+                            <text fg={SURFACE}>Confirm</text>
+                        </box>
+                    ) : (
+                        <box paddingX={1}>
+                            <text>Confirm</text>
+                        </box>
+                    )
+                ) : null}
+            </box>
 
-                        {q.inputType === "select" ? (
-                            <box flexDirection="column" flexShrink={0}>
-                                {q.options.map((option, oi) => {
-                                    const picked = q.multiple
-                                        ? answer
-                                              .split(", ")
-                                              .includes(option.label)
-                                        : answer === option.label;
-                                    const pointed = isActive && oi === cursor;
-                                    const mark = q.multiple
-                                        ? picked
-                                            ? "[x] "
-                                            : "[ ] "
-                                        : picked
-                                          ? "(•) "
-                                          : "( ) ";
-                                    return (
-                                        <box
-                                            key={option.label}
-                                            flexDirection="column"
-                                            flexShrink={0}
-                                        >
-                                            <text
-                                                fg={
-                                                    pointed
-                                                        ? ACCENT
-                                                        : theme.foreground
-                                                }
-                                            >
-                                                {pointed ? "▸ " : "  "}
-                                                {mark}
-                                                {option.label}
-                                            </text>
-                                            {option.description ? (
-                                                <text fg={MUTED}>
-                                                    {"    "}
-                                                    {option.description}
-                                                </text>
-                                            ) : null}
-                                        </box>
-                                    );
-                                })}
+            {isReview ? (
+                <box flexDirection="column" flexShrink={0}>
+                    <text fg={ACCENT}>Confirm</text>
+                    {questions.map((q) => {
+                        const answer = answers[q.id] ?? "";
+                        return (
+                            <box key={q.id} flexDirection="column" marginTop={1}>
+                                <text fg={theme.foreground}>
+                                    {q.header || q.question}
+                                </text>
                                 <text fg={MUTED}>
-                                    {q.multiple
-                                        ? "↑↓ move · space toggle · enter confirm"
-                                        : "↑↓ move · enter select"}
+                                    {answer ||
+                                        (q.required
+                                            ? "(not answered)"
+                                            : "(skipped)")}
                                 </text>
                             </box>
-                        ) : null}
+                        );
+                    })}
+                </box>
+            ) : question ? (
+                <box flexDirection="column" flexShrink={0}>
+                {!isWizard && question.header ? (
+                    <text fg={ACCENT}>{question.header}</text>
+                ) : null}
+                <text fg={theme.foreground} content={question.question} />
 
-                        {q.inputType === "confirm" ? (
-                            <box flexDirection="column" flexShrink={0}>
-                                <text
-                                    fg={
-                                        isActive && cursor === 0
-                                            ? ACCENT
-                                            : theme.foreground
-                                    }
+                {question.inputType === "select" ? (
+                    <box flexDirection="column" flexShrink={0} marginTop={1}>
+                        {question.options.map((option, oi) => {
+                            const picked = question.multiple
+                                ? (answers[question.id] ?? "")
+                                      .split(", ")
+                                      .includes(option.label)
+                                : answers[question.id] === option.label;
+                            const pointed = oi === cursor;
+                            const mark = question.multiple
+                                ? picked
+                                    ? "[x] "
+                                    : "[ ] "
+                                : picked
+                                  ? "(•) "
+                                  : "( ) ";
+                            return (
+                                <box
+                                    key={option.label}
+                                    flexDirection="row"
+                                    flexShrink={0}
+                                    columnGap={1}
                                 >
-                                    {isActive && cursor === 0 ? "▸ " : "  "}
-                                    [y] Yes
-                                </text>
-                                <text
-                                    fg={
-                                        isActive && cursor === 1
-                                            ? ACCENT
-                                            : theme.foreground
-                                    }
-                                >
-                                    {isActive && cursor === 1 ? "▸ " : "  "}
-                                    [n] No
-                                </text>
-                            </box>
-                        ) : null}
-
-                        {q.inputType === "text"
-                            ? isActive
-                                ? (
-                                      <input
-                                          key={q.id}
-                                          ref={inputRef}
-                                          focused
-                                          placeholder="Your answer…"
-                                          placeholderColor={MUTED}
-                                          onInput={(value) =>
-                                              setDraft(value ?? "")
-                                          }
-                                          onSubmit={() =>
-                                              commit(live.current.draft)
-                                          }
-                                      />
-                                  )
-                                : (
-                                      <text
-                                          fg={answer ? theme.foreground : MUTED}
-                                      >
-                                          {answer || "(unanswered)"}
-                                      </text>
-                                  )
-                            : null}
-
-                        {q.inputType === "textarea"
-                            ? isActive
-                                ? (
-                                      <textarea
-                                          key={q.id}
-                                          ref={textareaRef}
-                                          focused
-                                          placeholder="Your answer… (enter submits, shift+enter newline)"
-                                          placeholderColor={MUTED}
-                                          keyBindings={FREEFORM_KEY_BINDINGS}
-                                          onContentChange={() =>
-                                              setDraft(
-                                                  textareaRef.current
-                                                      ?.plainText ?? "",
-                                              )
-                                          }
-                                          onSubmit={() =>
-                                              commit(
-                                                  textareaRef.current
-                                                      ?.plainText ?? "",
-                                              )
-                                          }
-                                      />
-                                  )
-                                : (
-                                      <text
-                                          fg={answer ? theme.foreground : MUTED}
-                                      >
-                                          {answer || "(unanswered)"}
-                                      </text>
-                                  )
-                            : null}
+                                    <text
+                                        fg={pointed ? ACCENT : theme.foreground}
+                                    >
+                                        {pointed ? "▸ " : "  "}
+                                        {mark}
+                                        {option.label}
+                                    </text>
+                                    {option.description ? (
+                                        <text fg={MUTED}>
+                                            {option.description}
+                                        </text>
+                                    ) : null}
+                                </box>
+                            );
+                        })}
+                        <text fg={MUTED}>
+                            {question.multiple
+                                ? "↑↓ move · space toggle · enter confirm"
+                                : "↑↓ move · enter select"}
+                        </text>
                     </box>
-                );
-            })}
-            <text fg={MUTED}>
-                {active + 1}/{questions.length} ·{" "}
-                {isLast ? "enter submits" : "enter next"} · esc skip
+                ) : null}
+
+                {question.inputType === "text" ? (
+                    <input
+                        key={question.id}
+                        ref={inputRef}
+                        focused
+                        marginTop={1}
+                        placeholder="Your answer…"
+                        placeholderColor={MUTED}
+                        onInput={(value) => setDraft(value ?? "")}
+                        onSubmit={() => commit(live.current.draft)}
+                    />
+                ) : null}
+
+                {question.inputType === "textarea" ? (
+                    <textarea
+                        key={question.id}
+                        ref={textareaRef}
+                        focused
+                        marginTop={1}
+                        placeholder="Your answer… (enter submits, shift+enter newline)"
+                        placeholderColor={MUTED}
+                        keyBindings={FREEFORM_KEY_BINDINGS}
+                        onContentChange={() =>
+                            setDraft(textareaRef.current?.plainText ?? "")
+                        }
+                        onSubmit={() =>
+                            commit(textareaRef.current?.plainText ?? "")
+                        }
+                    />
+                ) : null}
+                </box>
+            ) : null}
+
+            <text fg={MUTED} marginTop={1}>
+                {active + 1}/{totalSteps} ·{" "}
+                {isReview || (!isWizard && isLast)
+                    ? "enter submits"
+                    : "enter next"}
+                {isWizard ? " · tab switch" : ""} · esc skip
             </text>
         </box>
     );

@@ -6,9 +6,10 @@ import json
 import random
 import re
 from collections.abc import AsyncGenerator
-
+import logging
 from nova.llm.provider import ChatStreamEvent, Done, Error, LLMProvider, ReasoningDelta, TextDelta, ToolCall
 
+log = logging.getLogger(__name__)
 
 class FakerLLMProvider(LLMProvider):
     _GREETING_REPLIES = (
@@ -77,7 +78,11 @@ class FakerLLMProvider(LLMProvider):
         ("browser_use", ("用浏览器", "浏览器操作", "自动化浏览", "打开浏览器", "网页点击",
                          "browser", "navigate to", "browse the page")),
         ("todo_write", ("待办", "任务清单", "任务列表", "计划列表", "todo", "task list", "track tasks")),
-        ("ask_user", ("问我", "询问我", "需要我确认", "让我选择", "ask me", "confirm with me", "clarify with me")),
+        ("ask_user", ("问我", "问我问题", "询问我", "需要我确认", "让我选择", "让我确认",
+                      "问卷", "调查", "多问题", "多个问题",
+                      "ask me", "ask me a question", "confirm with me", "clarify with me",
+                      "let me choose", "survey", "questionnaire", "quiz",
+                      "multi-question", "multi question", "multiple questions")),
         ("delegate_to_agent", ("委派", "交给子代理", "分派任务", "delegate", "sub agent", "hand off to")),
         ("save_memory", ("记住", "记下来", "保存记忆", "存到记忆", "remember this", "save to memory", "memorize")),
         ("search_memory", ("回忆", "搜索记忆", "查一下记忆", "recall", "search memory", "what do you remember")),
@@ -218,6 +223,7 @@ class FakerLLMProvider(LLMProvider):
         if messages and self._message_role(messages[-1]) == "user" and function_map:
             user_message = self._latest_user_message(messages)
             matched = self._content_driven_tool_names(user_message, set(function_map))
+            log.info(f"{matched=}")
             if matched:
                 return [
                     self._build_tool_call(name, function_map[name], user_message, rng)
@@ -355,6 +361,27 @@ class FakerLLMProvider(LLMProvider):
                 "default": default,
             }
 
+        if any(k in hay for k in ("问卷", "调查", "多问题", "多个问题", "survey",
+                                  "questionnaire", "quiz", "multi-question",
+                                  "multi question", "multiple questions")):
+            return [
+                q("q0", "姓名" if has_cjk else "Name",
+                  "请输入你的姓名" if has_cjk else "What is your name?", "text"),
+                q("q1", "技术栈" if has_cjk else "Tech Stack",
+                  "请选择主要技术栈" if has_cjk else "Pick your primary stack", "select",
+                  [{"label": "Python", "description": "后端与数据" if has_cjk else "Backend and data"},
+                   {"label": "TypeScript", "description": "前端与全栈" if has_cjk else "Frontend and full-stack"},
+                   {"label": "Go", "description": "服务与基础设施" if has_cjk else "Services and infra"}]),
+                q("q2", "功能" if has_cjk else "Features",
+                  "选择需要的功能（可多选）" if has_cjk else "Select the features you need (multiple)", "select",
+                  [{"label": "认证" if has_cjk else "Auth", "description": "登录与权限" if has_cjk else "Login and access"},
+                   {"label": "搜索" if has_cjk else "Search", "description": "全文检索" if has_cjk else "Full-text search"},
+                   {"label": "计费" if has_cjk else "Billing", "description": "订阅与支付" if has_cjk else "Subscriptions and payments"}],
+                  multiple=True),
+                q("q3", "备注" if has_cjk else "Notes",
+                  "补充说明" if has_cjk else "Anything else?", "textarea",
+                  default="背景：\n目标：" if has_cjk else "Background:\nGoal:"),
+            ]
         if any(k in hay for k in ("天气", "城市", "weather", "city")):
             pool = [
                 [q("q0", "当前城市", "请告诉我你想查询哪座城市的天气？", "text")],
@@ -371,9 +398,11 @@ class FakerLLMProvider(LLMProvider):
             return [q("q0", "语言偏好", "请选择你偏好的界面语言", "select",
                      [{"label": "中文", "description": "简体中文"}, {"label": "English", "description": "English"}, {"label": "日本語", "description": "Japanese"}])]
         if any(k in hay for k in ("部署", "发布", "上线", "deploy", "release")):
-            return [q("q0", "确认部署" if has_cjk else "Confirm Deploy", "是否确认将当前变更部署到生产环境？此操作不可撤销。" if has_cjk else "Confirm deploying current changes to production? This cannot be undone.", "confirm")]
+            return [q("q0", "确认部署" if has_cjk else "Confirm Deploy", "是否确认将当前变更部署到生产环境？此操作不可撤销。" if has_cjk else "Confirm deploying current changes to production? This cannot be undone.", "select",
+                     [{"label": "是" if has_cjk else "Yes", "description": ""}, {"label": "否" if has_cjk else "No", "description": ""}])]
         if any(k in hay for k in ("删除", "delete", "移除", "remove")):
-            return [q("q0", "确认删除" if has_cjk else "Confirm Delete", "是否确认删除该文件？删除后可在回收站找回。" if has_cjk else "Are you sure you want to delete this file? You can restore from trash.", "confirm")]
+            return [q("q0", "确认删除" if has_cjk else "Confirm Delete", "是否确认删除该文件？删除后可在回收站找回。" if has_cjk else "Are you sure you want to delete this file? You can restore from trash.", "select",
+                     [{"label": "是" if has_cjk else "Yes", "description": ""}, {"label": "否" if has_cjk else "No", "description": ""}])]
         if any(k in hay for k in ("路径", "文件路径", "path")):
             return [q("q0", "文件路径" if has_cjk else "File Path", "请输入目标文件的完整路径" if has_cjk else "Please enter the full file path", "text")]
         if any(k in hay for k in ("邮箱", "email", "mail")):
@@ -389,7 +418,8 @@ class FakerLLMProvider(LLMProvider):
             [q("q0", "联系邮箱" if has_cjk else "Email", "请输入你的联系邮箱" if has_cjk else "Please enter your email", "text")],
             [q("q0", "主题偏好" if has_cjk else "Theme", "你更喜欢哪种主题？" if has_cjk else "Which theme do you prefer?", "select",
                [{"label": "深色", "description": "夜间模式"}, {"label": "浅色", "description": "日间模式"}] if has_cjk else [{"label": "Dark", "description": "Night"}, {"label": "Light", "description": "Day"}])],
-            [q("q0", "确认操作" if has_cjk else "Confirm", "是否继续执行该操作？" if has_cjk else "Do you want to continue?", "confirm")],
+            [q("q0", "确认操作" if has_cjk else "Confirm", "是否继续执行该操作？" if has_cjk else "Do you want to continue?", "select",
+               [{"label": "是" if has_cjk else "Yes", "description": ""}, {"label": "否" if has_cjk else "No", "description": ""}])],
             [q("q0", "补充信息" if has_cjk else "Details", "请补充更多背景信息" if has_cjk else "Please provide more details", "textarea", default="请在此输入..." if has_cjk else "Enter details here...")],
             [q("q0", "当前城市" if has_cjk else "City", "请告诉我你想查询哪座城市的天气？" if has_cjk else "Which city?", "text"),
              q("q1", "出行日期" if has_cjk else "Date", "请输入日期 YYYY-MM-DD" if has_cjk else "Enter date YYYY-MM-DD", "text")],

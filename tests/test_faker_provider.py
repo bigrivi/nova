@@ -590,6 +590,43 @@ async def test_faker_content_driven_todo_write_generates_realistic_list():
 
 
 @pytest.mark.asyncio
+async def test_faker_content_driven_ask_user_survey_covers_all_question_types():
+    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    tools = [
+        {
+            "function": {
+                "name": "ask_user",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"questions": {"type": "array", "items": {"type": "object"}}},
+                    "required": ["questions"],
+                },
+            }
+        }
+    ]
+
+    events = [
+        event async for event in provider.chat_stream(
+            [{"role": "user", "content": "ask me a survey to configure the project"}],
+            tools=tools,
+        )
+    ]
+    tool_calls = [event for event in events if isinstance(event, ToolCall)]
+
+    assert len(tool_calls) == 1
+    assert tool_calls[0].name == "ask_user"
+    questions = json.loads(tool_calls[0].arguments)["questions"]
+    assert [q["input_type"] for q in questions] == [
+        "text",
+        "select",
+        "select",
+        "textarea",
+    ]
+    assert questions[2]["multiple"] is True
+    assert questions[1]["options"] and questions[1]["options"][0]["description"]
+
+
+@pytest.mark.asyncio
 async def test_faker_stream_delay_invokes_sleep_between_chunks(monkeypatch):
     recorded: list[float] = []
 

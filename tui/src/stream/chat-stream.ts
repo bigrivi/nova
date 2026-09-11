@@ -78,11 +78,9 @@ export function parseAskQuestions(input: unknown): AskQuestion[] {
             inputType:
                 inputType === "select"
                     ? "select"
-                    : inputType === "confirm"
-                      ? "confirm"
-                      : inputType === "textarea"
-                        ? "textarea"
-                        : "text",
+                    : inputType === "textarea"
+                      ? "textarea"
+                      : "text",
             options,
             multiple: Boolean(qo.multiple),
             required: qo.required !== false,
