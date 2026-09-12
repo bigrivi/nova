@@ -2,6 +2,7 @@ import { ArrowUpIcon, Square } from "lucide-react";
 import {
     useEffect,
     useRef,
+    useState,
     type ClipboardEvent,
     type KeyboardEvent,
     type RefObject,
@@ -51,7 +52,24 @@ export function ThreadStickyComposer({
 }: ThreadStickyComposerProps) {
     const { t } = useTranslation();
     const containerRef = useRef<HTMLDivElement | null>(null);
+    const [viewportGutter, setViewportGutter] = useState(0);
     const aui = useAui();
+
+    useEffect(() => {
+        const viewport = document.querySelector<HTMLElement>(
+            '[data-slot="aui_thread-viewport"]',
+        );
+        if (!viewport) {
+            return;
+        }
+        const update = () => {
+            setViewportGutter(viewport.offsetWidth - viewport.clientWidth);
+        };
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(viewport);
+        return () => observer.disconnect();
+    }, []);
 
     const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
         const imageFiles = Array.from(event.clipboardData.items)
@@ -97,8 +115,8 @@ export function ThreadStickyComposer({
     return (
         <div
             ref={containerRef}
-            className="pointer-events-none relative overflow-x-clip overflow-y-auto pb-4 pt-3"
-            style={{ scrollbarGutter: "stable" }}
+            className="pointer-events-none relative overflow-x-clip pb-4 pt-3"
+            style={{ paddingRight: viewportGutter }}
         >
             <div className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-t from-background via-background to-transparent" />
             <div className="relative z-10 mx-auto w-full max-w-(--thread-max-width) px-4">
