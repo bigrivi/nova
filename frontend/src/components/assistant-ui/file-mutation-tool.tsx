@@ -11,6 +11,7 @@ import {
     ToolFallbackRoot,
     ToolFallbackTrigger,
 } from "@/components/assistant-ui/tool-fallback";
+import { errorTextFromResult } from "@/lib/tool-result";
 import { cn } from "@/lib/utils";
 
 type FileMutationViewModel = {
@@ -222,8 +223,8 @@ const SplitDiffBlock = ({ diff }: { diff: string }) => {
     const rows = useMemo(() => parseSplitDiff(diff), [diff]);
 
     return (
-        <div className="mx-4 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-inner">
-            <div className="grid grid-cols-2 divide-x divide-slate-700">
+        <div className="max-w-full overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-inner">
+            <div className="grid grid-cols-2 divide-x divide-slate-700 max-[520px]:grid-cols-1 max-[520px]:divide-x-0 max-[520px]:divide-y">
                 <div className="border-b border-slate-800 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                     {t("tools.original")}
                 </div>
@@ -231,23 +232,26 @@ const SplitDiffBlock = ({ diff }: { diff: string }) => {
                     {t("tools.modified")}
                 </div>
             </div>
-            <div className="grid grid-cols-2 divide-x divide-slate-700">
-                <div className="overflow-x-auto py-2 text-[12px] font-mono leading-6">
+            <div className="grid grid-cols-2 divide-x divide-slate-700 max-[520px]:grid-cols-1 max-[520px]:divide-x-0 max-[520px]:divide-y">
+                <div className="min-w-0 overflow-x-auto py-2 text-[12px] font-mono leading-6">
                     {rows.map((row, i) => (
                         <div
                             key={i}
-                            className={cn("px-4 whitespace-pre", row.leftClass)}
+                            className={cn(
+                                "px-4 whitespace-pre-wrap break-all min-[520px]:whitespace-pre min-[520px]:break-normal",
+                                row.leftClass,
+                            )}
                         >
                             {row.left || " "}
                         </div>
                     ))}
                 </div>
-                <div className="overflow-x-auto py-2 text-[12px] font-mono leading-6">
+                <div className="min-w-0 overflow-x-auto py-2 text-[12px] font-mono leading-6">
                     {rows.map((row, i) => (
                         <div
                             key={i}
                             className={cn(
-                                "px-4 whitespace-pre",
+                                "px-4 whitespace-pre-wrap break-all min-[520px]:whitespace-pre min-[520px]:break-normal",
                                 row.rightClass,
                             )}
                         >
@@ -266,6 +270,7 @@ const FileMutationToolImpl: ToolCallMessagePartComponent = ({
     argsText,
     result,
     status,
+    isError,
 }) => {
     const { t } = useTranslation();
     const model = useMemo(
@@ -277,26 +282,36 @@ const FileMutationToolImpl: ToolCallMessagePartComponent = ({
         return null;
     }
 
+    const errored = isError === true;
+
     return (
-        <ToolFallbackRoot className="border-emerald-200/70 bg-emerald-50/50">
-            <ToolFallbackTrigger toolName={model.displayName} status={status} />
+        <ToolFallbackRoot className={cn(errored && "opacity-80")}>
+            <ToolFallbackTrigger
+                toolName={model.displayName}
+                argsText={argsText}
+                status={status}
+                isError={isError}
+            />
             <ToolFallbackContent>
-                <ToolFallbackError status={status} />
+                <ToolFallbackError
+                    status={status}
+                    message={errored ? errorTextFromResult(result) : null}
+                />
                 {model.filePath ? (
-                    <div className="px-4 text-xs font-medium text-emerald-900/80">
+                    <div className="font-mono text-xs font-medium text-[#1D5FA8]">
                         {model.filePath}
                     </div>
                 ) : null}
-                {model.headline ? (
-                    <p className="px-4 text-sm font-medium leading-6 text-slate-900">
+                {errored ? null : model.headline ? (
+                    <p className="font-sans text-sm font-medium leading-6 text-slate-900">
                         {model.headline}
                     </p>
                 ) : null}
-                {model.diff ? (
+                {errored ? null : model.diff ? (
                     <SplitDiffBlock diff={model.diff} />
                 ) : model.plainResult ? (
-                    <div className="px-4 pb-1">
-                        <pre className="whitespace-pre-wrap rounded-xl bg-white/80 px-3 py-3 text-[12px] leading-6 text-slate-700">
+                    <div className="pb-1">
+                        <pre className="whitespace-pre-wrap rounded-xl bg-white px-3 py-3 text-[12px] leading-6 text-slate-700">
                             {model.plainResult}
                         </pre>
                     </div>
