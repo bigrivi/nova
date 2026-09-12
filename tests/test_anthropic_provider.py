@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 
+import aiohttp
 import pytest
 
 from nova.llm.anthropic import AnthropicProvider, _default_max_output_tokens
@@ -25,17 +26,22 @@ class _FakeConnector:
 
 
 class _FakeStreamContent:
-    def __init__(self, lines: list[bytes]):
+    """Mimics aiohttp.StreamReader.readline, including its default line cap."""
+
+    def __init__(self, lines: list[bytes], default_limit: int = 131072):
         self._lines = list(lines)
         self._index = 0
+        self._default_limit = default_limit
 
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self) -> bytes:
+    async def readline(self, *, max_line_length: int | None = None) -> bytes:
         if self._index >= len(self._lines):
-            raise StopAsyncIteration
+            return b""
         line = self._lines[self._index]
+        limit = (
+            max_line_length if max_line_length is not None else self._default_limit
+        )
+        if len(line) > limit:
+            raise aiohttp.http_exceptions.LineTooLong(line[:100] + b"...", limit)
         self._index += 1
         return line
 
@@ -621,6 +627,35 @@ async def test_chat_stream_text_canonical(monkeypatch):
     assert collected[2].tokens_input == 5
     assert collected[2].tokens_output == 7
     assert len([event for event in collected if isinstance(event, TextDelta)]) == 2
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_handles_oversized_sse_line(monkeypatch):
+    big = "x" * 200_000
+    events = [
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}},
+        {"type": "message_delta", "usage": {"output_tokens": 3}, "padding": big},
+        {"type": "message_stop"},
+    ]
+    lines = _sse_lines(events)
+    assert any(len(line) > 131072 for line in lines)
+
+    response = _FakeResponse(status=200, sse_lines=lines)
+    _install_fake(monkeypatch, response)
+    provider = AnthropicProvider(api_key="k")
+
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-3-opus-20240229"
+        )
+    ]
+
+    assert not any(isinstance(event, Error) for event in collected), collected
+    assert any(
+        isinstance(event, TextDelta) and event.content == "hi" for event in collected
+    )
+    assert isinstance(collected[-1], Done)
 
 
 @pytest.mark.asyncio

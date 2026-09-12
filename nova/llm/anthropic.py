@@ -27,6 +27,9 @@ _MAX_STREAM_TOOL_ARG_CHARS = 1_000_000
 # (total=timeout when set, total=None otherwise) so long legitimate
 # generations are not capped by an overall deadline.
 _STREAM_SOCK_READ_TIMEOUT = 180
+# aiohttp caps a single SSE line at the stream reader's high-water mark
+# (~128 KiB); large events (e.g. a big tool_use payload) exceed it.
+_MAX_SSE_LINE_BYTES = 16 * 1024 * 1024
 _MAX_TOOL_CALLS = 64
 
 # Ordered longest-prefix-first so substring matching resolves correctly
@@ -703,17 +706,19 @@ class AnthropicProvider(LLMProvider):
                 tokens_input: Optional[int] = None
                 tokens_output: Optional[int] = None
 
-                stream_lines = response.content.__aiter__()
                 while True:
                     if abort_event and abort_event.is_set():
                         response.close()
                         yield Done(content=accumulated_content, tool_calls=[], aborted=True)
                         return
                     try:
-                        line = await asyncio.wait_for(stream_lines.__anext__(), timeout=0.5)
+                        line = await asyncio.wait_for(
+                            response.content.readline(max_line_length=_MAX_SSE_LINE_BYTES),
+                            timeout=0.5,
+                        )
                     except asyncio.TimeoutError:
                         continue
-                    except StopAsyncIteration:
+                    if not line:
                         break
 
                     line = line.decode("utf-8") if isinstance(line, (bytes, bytearray)) else str(line)
