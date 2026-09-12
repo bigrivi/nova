@@ -24,6 +24,11 @@ _MAX_STREAM_TOOL_ARG_CHARS = 1_000_000
 # (total=timeout when set, total=None otherwise) so long legitimate
 # generations are not capped by an overall deadline.
 _STREAM_SOCK_READ_TIMEOUT = 180
+# aiohttp caps a single SSE line at the stream reader's high-water mark
+# (~128 KiB) and raises LineTooLong beyond it. The Responses stream sends the
+# whole response (all output items, usage, tool calls) as ONE `response.completed`
+# line, which routinely exceeds that. Read lines with an explicit, larger cap.
+_MAX_SSE_LINE_BYTES = 16 * 1024 * 1024
 _MAX_TOOL_CALLS = 64
 
 
@@ -285,17 +290,19 @@ class OpenAIResponsesProvider(LLMProvider):
                 usage_input = None
                 usage_output = None
 
-                it = resp.content.__aiter__()
                 while True:
                     if abort_event and abort_event.is_set():
                         resp.close()
                         yield Done(content=accumulated_content, tool_calls=[], aborted=True)
                         return
                     try:
-                        line = await asyncio.wait_for(it.__anext__(), timeout=0.5)
+                        line = await asyncio.wait_for(
+                            resp.content.readline(max_line_length=_MAX_SSE_LINE_BYTES),
+                            timeout=0.5,
+                        )
                     except asyncio.TimeoutError:
                         continue
-                    except StopAsyncIteration:
+                    if not line:
                         break
                     line = line.decode("utf-8") if isinstance(line, (bytes, bytearray)) else str(line)
                     line = line.strip()
