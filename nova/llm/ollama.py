@@ -12,6 +12,10 @@ from nova.llm import ChatStreamEvent, LLMProvider, Done, ReasoningDelta, ToolCal
 
 log = logging.getLogger(__name__)
 
+# aiohttp caps a single SSE line at the stream reader's high-water mark
+# (~128 KiB); a full JSON response line can exceed it.
+_MAX_SSE_LINE_BYTES = 16 * 1024 * 1024
+
 
 class OllamaProvider(LLMProvider):
     def __init__(
@@ -244,17 +248,19 @@ class OllamaProvider(LLMProvider):
                     yield Error(message=error_message)
                     return
 
-                it = resp.content.__aiter__()
                 while True:
                     if abort_event and abort_event.is_set():
                         resp.close()
                         yield Done(content=accumulated_content, tool_calls=[], aborted=True)
                         return
                     try:
-                        line = await asyncio.wait_for(it.__anext__(), timeout=0.5)
+                        line = await asyncio.wait_for(
+                            resp.content.readline(max_line_length=_MAX_SSE_LINE_BYTES),
+                            timeout=0.5,
+                        )
                     except asyncio.TimeoutError:
                         continue
-                    except StopAsyncIteration:
+                    if not line:
                         break
 
                     line = line.decode("utf-8").strip()
