@@ -7,19 +7,27 @@ import {
     ThinkingIndicator,
 } from "@/components/assistant-ui/reasoning";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
+import { ToolGroup } from "@/components/assistant-ui/tool-group";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-    groupPartByType,
-    MessagePrimitive,
-    useAuiState,
-} from "@assistant-ui/react";
+    buildTimelinePathMap,
+    createTimelineGroupBy,
+} from "@/lib/timeline-grouping";
+import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
 import { BotIcon, FileText } from "lucide-react";
-import { type FC } from "react";
+import { useMemo, type FC } from "react";
+import { useShallow } from "zustand/shallow";
 
 import { AssistantActionBar, BranchPicker } from "./thread-assistant-actions";
 import { MessageError } from "./thread-message-error";
 
 const ASSISTANT_NAME = "Nova";
+
+function groupIndices(part: { type: string }): readonly number[] {
+    return "indices" in part
+        ? ((part as { indices?: readonly number[] }).indices ?? [])
+        : [];
+}
 
 const ATTACHMENT_RE =
     /^<attachment name=(.*?)>\n([\s\S]*?)\n<\/attachment>\n\n([\s\S]*)$/;
@@ -75,6 +83,30 @@ const UserMessage: FC = () => {
 };
 
 const AssistantMessage: FC = () => {
+    const parts = useAuiState(useShallow((s) => s.message.parts));
+    const toolUIs = useAuiState((s) => s.tools.toolUIs);
+    const groupBy = useMemo(
+        () => createTimelineGroupBy(buildTimelinePathMap(parts, { toolUIs })),
+        [parts, toolUIs],
+    );
+
+    const visibleToolIndices = useMemo(() => {
+        const indices = new Set<number>();
+        parts.forEach((part, index) => {
+            if (part.type !== "tool-call") return;
+            const name = part.toolName ?? "";
+            if (name === "ask_user" || name === "todo_write") return;
+            indices.add(index);
+        });
+        return indices;
+    }, [parts]);
+
+    const countVisibleTools = (indices: readonly number[]) =>
+        indices.reduce(
+            (total, index) => (visibleToolIndices.has(index) ? total + 1 : total),
+            0,
+        );
+
     return (
         <MessagePrimitive.Root
             data-slot="aui_assistant-message-root"
@@ -100,27 +132,51 @@ const AssistantMessage: FC = () => {
                 className="wrap-break-word min-w-0 text-foreground leading-relaxed flex flex-col gap-2"
             >
                 <MessagePrimitive.GroupedParts
-                    groupBy={groupPartByType({
-                        reasoning: ["group-chainOfThought", "group-reasoning"],
-                        "tool-call": ["group-chainOfThought", "group-tool"],
-                    })}
+                    groupBy={groupBy}
                 >
                     {({ part, children }) => {
                         switch (part.type) {
                             case "group-chainOfThought":
                                 return (
-                                    <ReasoningChainGroup status={part.status}>
+                                    <ReasoningChainGroup
+                                        status={part.status}
+                                        toolCount={countVisibleTools(
+                                            groupIndices(part),
+                                        )}
+                                    >
                                         {children}
                                     </ReasoningChainGroup>
                                 );
                             case "group-reasoning":
                                 return <>{children}</>;
                             case "group-tool":
-                                return <>{children}</>;
+                                return (
+                                    <ToolGroup
+                                        variant="timeline"
+                                        count={countVisibleTools(
+                                            groupIndices(part),
+                                        )}
+                                    >
+                                        {children}
+                                    </ToolGroup>
+                                );
+                            case "group-tool-standalone":
+                                return (
+                                    <ToolGroup
+                                        variant="standalone"
+                                        count={countVisibleTools(
+                                            groupIndices(part),
+                                        )}
+                                    >
+                                        {children}
+                                    </ToolGroup>
+                                );
+                            case "group-blank":
+                                return null;
                             case "text":
                                 return <MarkdownText />;
                             case "reasoning":
-                                return <Reasoning status={part.status} />;
+                                return <Reasoning />;
                             case "tool-call": {
                                 const { toolUI, ...toolProps } = part;
                                 if (part.toolName === "ask_user") return null;
