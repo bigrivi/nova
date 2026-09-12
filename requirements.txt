@@ -1,6 +1,6 @@
 aiohttp
 aiosqlite
-fastapi
+fastapi>=0.141.1
 httpx
 rich
 uvicorn
