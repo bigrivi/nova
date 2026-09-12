@@ -102,6 +102,7 @@ class MessageRecord(BaseModel):
     reasoning_content: str | None = None
     reasoning_elapsed_ms: int | None = None
     group_id: str | None = None
+    error: str | None = None
 
 
 class MessageListResponse(BaseModel):

@@ -120,6 +120,7 @@ class ChatService:
                 reasoning_content=message.reasoning_content,
                 reasoning_elapsed_ms=message.reasoning_elapsed_ms,
                 group_id=message.group_id,
+                error=message.error,
             )
             for message in messages
         ]
