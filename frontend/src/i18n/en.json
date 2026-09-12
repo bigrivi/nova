@@ -106,8 +106,6 @@
     "reasoning.thought": "Thought for {{time}}",
     "reasoning.thoughtNoTime": "Thought",
     "reasoning.workedFor": "Thought for {{time}}",
-    "reasoning.workedForWithTools": "Thought for {{time}} · {{count}} tool calls",
-    "reasoning.thoughtWithTools": "Thought · {{count}} tool calls",
     "reasoning.toolsCount": "· {{count}} tool calls",
     "reasoning.compacting": "Compacting conversation history…",
     "dialog.close": "Close",

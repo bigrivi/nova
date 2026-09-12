@@ -106,8 +106,6 @@
     "reasoning.thought": "思考: {{time}}",
     "reasoning.thoughtNoTime": "思考",
     "reasoning.workedFor": "已完成思考 · {{time}}",
-    "reasoning.workedForWithTools": "已完成思考 · {{time}} · {{count}} 次工具调用",
-    "reasoning.thoughtWithTools": "思考 · {{count}} 次工具调用",
     "reasoning.toolsCount": "· {{count}} 次工具调用",
     "reasoning.compacting": "正在压缩历史记录…",
     "dialog.close": "关闭",
