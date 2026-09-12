@@ -250,6 +250,7 @@ function upsertAssistantToolCall(
         toolName?: string;
         input?: NovaJsonObject;
         output?: unknown;
+        isError?: boolean;
     },
 ) {
     return messages.map((message) => {
@@ -288,9 +289,11 @@ function upsertAssistantToolCall(
                 : current?.result !== undefined
                   ? { result: current.result }
                   : {}),
-            ...(current?.isError !== undefined
-                ? { isError: current.isError }
-                : {}),
+            ...(payload.isError !== undefined
+                ? { isError: payload.isError }
+                : current?.isError !== undefined
+                  ? { isError: current.isError }
+                  : {}),
         };
 
         if (toolIndex >= 0) {
@@ -799,6 +802,24 @@ export function NovaAppShell() {
                                     toolCallId,
                                     output: event.output,
                                 },
+                            ),
+                        );
+                        return;
+                    }
+
+                    if (event.type === "data-nova-tool-error") {
+                        const toolCallId = String(
+                            event.data?.toolCallId ?? "",
+                        );
+                        if (!toolCallId) {
+                            return;
+                        }
+
+                        setThreadMessages(activeThreadId, (previous) =>
+                            upsertAssistantToolCall(
+                                previous,
+                                assistantMessageId,
+                                { toolCallId, isError: true },
                             ),
                         );
                         return;

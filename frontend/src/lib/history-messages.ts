@@ -269,6 +269,7 @@ export function toThreadMessages(
         nextContent[target.partIndex] = {
             ...part,
             result: parseToolResultContent(message.content),
+            ...(message.error ? { isError: true } : {}),
         };
         threadMessages[target.messageIndex] = {
             ...assistantMessage,
