@@ -147,6 +147,7 @@ class ToolInvoker:
                 tool_call_id=tool_call_id,
                 images=images,
                 group_id=group_id,
+                error=None if result.success else (content or result.error or "error"),
             )
             self._executed_ids.add(tool_call_id)
 
@@ -304,6 +305,7 @@ class ToolInvoker:
                 content=result.content,
                 tool_call_id=tool_call_id,
                 group_id=group_id,
+                error=result.content,
             )
             await self._emit(AgentEvent.TOOL_RESULT, {
                 "tool": _name_of(tool_call),

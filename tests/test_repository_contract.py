@@ -38,6 +38,30 @@ async def test_session_delete_cascades_messages_and_preserves_missing_result(rep
 
 
 @pytest.mark.asyncio
+async def test_tool_message_error_flag_round_trips(repository):
+    await repository.save_session(Session(id="session-error"))
+    await repository.add_message(
+        "session-error",
+        "tool",
+        "Tool call cancelled by user.",
+        tool_call_id="call-1",
+        error="Tool call cancelled by user.",
+    )
+    await repository.add_message(
+        "session-error",
+        "tool",
+        "ok",
+        tool_call_id="call-2",
+    )
+
+    messages = await repository.get_messages("session-error")
+    by_call_id = {message.tool_call_id: message for message in messages}
+
+    assert by_call_id["call-1"].error == "Tool call cancelled by user."
+    assert by_call_id["call-2"].error is None
+
+
+@pytest.mark.asyncio
 async def test_message_mutation_and_compaction_match_contract(repository):
     await repository.save_session(Session(id="session-2"))
     first = await repository.add_message("session-2", "user", "before")

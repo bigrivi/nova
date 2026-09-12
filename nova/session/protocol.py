@@ -40,6 +40,7 @@ class SessionProtocol(Protocol):
         reasoning_content: Optional[str] = None,
         group_id: Optional[str] = None,
         reasoning_elapsed_ms: Optional[int] = None,
+        error: Optional[str] = None,
         tokens_input: Optional[int] = None,
         tokens_output: Optional[int] = None,
     ) -> Message: ...

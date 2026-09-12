@@ -107,6 +107,7 @@ class InMemoryRepository(NovaRepository):
             reasoning_content=kwargs.get("reasoning_content"),
             group_id=kwargs.get("group_id"),
             reasoning_elapsed_ms=kwargs.get("reasoning_elapsed_ms"),
+            error=kwargs.get("error"),
             provider_meta=kwargs.get("provider_meta"),
             model=kwargs.get("model"),
             tokens_input=kwargs.get("tokens_input"),

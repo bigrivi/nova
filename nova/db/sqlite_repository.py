@@ -166,6 +166,7 @@ def _row_to_message(row_dict: dict[str, Any]) -> Message:
         reasoning_content=row_dict.get("reasoning_content"),
         group_id=row_dict.get("group_id"),
         reasoning_elapsed_ms=row_dict.get("reasoning_elapsed_ms"),
+        error=row_dict.get("error"),
         provider_meta=_parse_provider_meta(row_dict.get("provider_meta")),
         model=row_dict.get("model"),
         tokens_input=row_dict.get("tokens_input"),
@@ -360,6 +361,7 @@ class SqliteRepository(NovaRepository):
         tokens_output: Optional[int] = None,
         provider_meta: Optional[dict] = None,
         model: Optional[str] = None,
+        error: Optional[str] = None,
     ) -> Message:
         await self._ensure_connected()
         msg_id = str(uuid.uuid4())
@@ -370,8 +372,8 @@ class SqliteRepository(NovaRepository):
 
         await self._conn.execute(
             """INSERT INTO messages
-            (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output, provider_meta, model)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output, provider_meta, model, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 msg_id,
                 session_id,
@@ -390,6 +392,7 @@ class SqliteRepository(NovaRepository):
                 tokens_output,
                 provider_meta_json,
                 model,
+                error,
             ),
         )
         await self._conn.execute(
@@ -410,6 +413,7 @@ class SqliteRepository(NovaRepository):
             reasoning_content=reasoning_content,
             group_id=group_id,
             reasoning_elapsed_ms=reasoning_elapsed_ms,
+            error=error,
             provider_meta=provider_meta,
             model=model,
             tokens_input=tokens_input,

@@ -140,6 +140,7 @@ async def test_interrupt_after_tool_call_stops_before_tool_execution(db):
         ("assistant", ""),
         ("tool", "Tool call cancelled by user."),
     ]
+    assert messages[2].error == "Tool call cancelled by user."
 
 
 @pytest.mark.asyncio
