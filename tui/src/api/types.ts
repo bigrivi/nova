@@ -29,6 +29,7 @@ export type NovaMessageRecord = {
     reasoning_content?: string | null;
     reasoning_elapsed_ms?: number | null;
     group_id?: string | null;
+    error?: string | null;
 };
 
 export type NovaModelRecord = {

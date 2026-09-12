@@ -60,9 +60,13 @@ export function recordToMessage(record: NovaMessageRecord): TuiMessage {
 export function recordsToMessages(records: NovaMessageRecord[]): TuiMessage[] {
     const messages: TuiMessage[] = [];
     const toolOutputById = new Map<string, string>();
+    const toolErrorById = new Map<string, string>();
     for (const record of records) {
         if (record.role === "tool" && record.tool_call_id) {
             toolOutputById.set(record.tool_call_id, record.content);
+            if (record.error) {
+                toolErrorById.set(record.tool_call_id, record.error);
+            }
         }
     }
     for (const record of records) {
@@ -74,6 +78,15 @@ export function recordsToMessages(records: NovaMessageRecord[]): TuiMessage[] {
         const withOutput = message.parts.map((part) => {
             if (part.type === "tool-call") {
                 const output = toolOutputById.get(part.toolCallId);
+                const error = toolErrorById.get(part.toolCallId);
+                if (error !== undefined) {
+                    return {
+                        ...part,
+                        outputText: output ?? part.outputText,
+                        status: "error" as const,
+                        error,
+                    };
+                }
                 return output !== undefined
                     ? { ...part, outputText: output }
                     : part;
