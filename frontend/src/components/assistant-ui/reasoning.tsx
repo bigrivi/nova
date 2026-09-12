@@ -36,69 +36,46 @@ function formatTime(ms: number): string {
 export const ReasoningChainGroup = ({
     status,
     toolCount,
+    elapsedMs = null,
     children,
 }: {
     status?: MessagePartStatus | ToolCallMessagePartStatus;
     toolCount?: number;
+    elapsedMs?: number | null;
     children: ReactNode;
 }) => {
     const { t } = useTranslation();
     const chainActive = status?.type === "running";
     const [userOpen, setUserOpen] = useState<boolean | null>(null);
 
-    const customMetadata = useAuiState((s) => s.message?.metadata?.custom);
     const messageRunning = useAuiState(
         (s) => s.message?.status?.type === "running",
     );
-    const hasChainElapsed =
-        customMetadata != null && "chainElapsedMs" in customMetadata;
-    const metadataChainElapsedMs = hasChainElapsed
-        ? ((customMetadata.chainElapsedMs as number | null | undefined) ?? null)
-        : undefined;
-    const chainElapsedMs = metadataChainElapsedMs;
 
     // Collapse only on message end; chainActive flips false between tools mid-loop and would flicker the group.
     const open = userOpen ?? messageRunning;
 
     const visibleToolCount = toolCount ?? 0;
+    const chainElapsedMs = elapsedMs;
 
     let headerLabel: string;
     let headerSub: string | null = null;
     if (chainActive) {
         headerLabel = t("reasoning.thinking");
-    } else if (chainElapsedMs != null && visibleToolCount > 0) {
-        const withTools = t("reasoning.workedForWithTools", {
-            time: formatTime(chainElapsedMs),
-            count: visibleToolCount,
-        });
-        if (withTools !== "reasoning.workedForWithTools") {
-            headerLabel = withTools;
-        } else {
-            headerLabel = t("reasoning.workedFor", {
-                time: formatTime(chainElapsedMs),
-            });
-            headerSub = t("reasoning.toolsCount", { count: visibleToolCount });
-            if (headerSub === "reasoning.toolsCount")
-                headerSub = `· ${visibleToolCount} tool calls`;
-        }
     } else if (chainElapsedMs != null) {
         headerLabel = t("reasoning.workedFor", {
             time: formatTime(chainElapsedMs),
         });
-    } else if (visibleToolCount > 0) {
-        const withTools = t("reasoning.thoughtWithTools", {
-            count: visibleToolCount,
-        });
-        if (withTools !== "reasoning.thoughtWithTools") {
-            headerLabel = withTools;
-        } else {
-            headerLabel = t("reasoning.thoughtNoTime");
-            headerSub = t("reasoning.toolsCount", { count: visibleToolCount });
-            if (headerSub === "reasoning.toolsCount")
-                headerSub = `· ${visibleToolCount} tool calls`;
-        }
     } else {
         headerLabel = t("reasoning.thoughtNoTime");
+    }
+
+    if (!chainActive && visibleToolCount > 0) {
+        const toolsCount = t("reasoning.toolsCount", { count: visibleToolCount });
+        headerSub =
+            toolsCount === "reasoning.toolsCount"
+                ? `· ${visibleToolCount} tool calls`
+                : toolsCount;
     }
 
     return (
@@ -121,7 +98,7 @@ export const ReasoningChainGroup = ({
                             {headerLabel}
                         </span>
                         {headerSub ? (
-                            <span className="text-[12px] font-normal text-[#9C978A]">
+                            <span className="font-normal text-[#9C978A]">
                                 {headerSub}
                             </span>
                         ) : null}
@@ -150,9 +127,12 @@ export const ReasoningChainGroup = ({
     );
 };
 
-export const Reasoning: FC = () => {
+export const Reasoning: FC<{ elapsedMs?: number | null }> = ({
+    elapsedMs = null,
+}) => {
     const { t } = useTranslation();
     const inTimeline = useContext(InTimelineContext);
+    const [open, setOpen] = useState(true);
 
     return (
         <div
@@ -168,15 +148,38 @@ export const Reasoning: FC = () => {
                     inTimeline ? "-left-[22px]" : "left-0",
                 )}
             />
-            <div className="min-w-0 break-words text-[14px] leading-[1.75] text-[#6E6A60]">
-                <span className="mr-[6px] text-[12.5px] font-semibold text-[#6E56CF]">
-                    {t("reasoning.thinkingTag")}
-                </span>
-                <MessagePartPrimitive.Text
-                    component="div"
-                    className="whitespace-pre-wrap break-words"
-                />
-            </div>
+            <Collapsible open={open} onOpenChange={setOpen}>
+                <CollapsibleTrigger asChild>
+                    <button
+                        type="button"
+                        className="flex w-full items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6E56CF]/25 focus-visible:ring-inset"
+                    >
+                        <span className="text-[12.5px] font-semibold text-[#6E56CF]">
+                            {t("reasoning.thinkingTag")}
+                        </span>
+                        {elapsedMs != null ? (
+                            <span className="text-[12px] font-normal text-[#9C978A]">
+                                · {formatTime(elapsedMs)}
+                            </span>
+                        ) : null}
+                        <ChevronDownIcon
+                            className={cn(
+                                "size-3.5 shrink-0 text-[#9C978A] transition-transform duration-200 motion-reduce:transition-none",
+                                open && "rotate-180",
+                            )}
+                            aria-hidden="true"
+                        />
+                    </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none">
+                    <div className="min-w-0 break-words pt-1 text-[14px] leading-[1.75] text-[#6E6A60]">
+                        <MessagePartPrimitive.Text
+                            component="div"
+                            className="whitespace-pre-wrap break-words"
+                        />
+                    </div>
+                </CollapsibleContent>
+            </Collapsible>
         </div>
     );
 };

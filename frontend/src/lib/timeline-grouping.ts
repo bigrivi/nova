@@ -13,8 +13,6 @@ const GROUP_TOOL: TimelineGroupKey = "group-tool";
 const GROUP_TOOL_STANDALONE: TimelineGroupKey = "group-tool-standalone";
 const GROUP_BLANK: TimelineGroupKey = "group-blank";
 
-const HIDDEN_TOOL_NAMES = new Set(["ask_user", "todo_write"]);
-
 export type TimelinePart = {
     type: string;
     toolName?: string;
@@ -53,55 +51,78 @@ export function isStandaloneToolCall(
     return Boolean(context?.toolUIs?.[name]?.[0]?.standalone);
 }
 
+function classifyPart(
+    part: TimelinePart,
+    inThinking: boolean,
+    context?: GroupByContext,
+): TimelineGroupKey[] {
+    if (part.type === "reasoning") {
+        return inThinking ? [CHAIN_OF_THOUGHT, GROUP_REASONING] : [];
+    }
+
+    if (part.type === "text") {
+        const blank = (part.text ?? "").trim() === "";
+        return blank && inThinking ? [CHAIN_OF_THOUGHT, GROUP_BLANK] : [];
+    }
+
+    if (part.type === "tool-call") {
+        if (isStandaloneToolCall(part, context)) {
+            return [GROUP_TOOL_STANDALONE];
+        }
+        return inThinking
+            ? [CHAIN_OF_THOUGHT, GROUP_TOOL]
+            : [GROUP_TOOL_STANDALONE];
+    }
+
+    return [];
+}
+
+export function findPrimaryChainStart(
+    parts: readonly TimelinePart[],
+): number {
+    return parts.findIndex((part) => part.type === "reasoning");
+}
+
+export function readPartElapsedMs(part: unknown): number | null {
+    if (part && typeof part === "object" && "elapsedMs" in part) {
+        const value = (part as { elapsedMs?: unknown }).elapsedMs;
+        if (typeof value === "number") {
+            return value;
+        }
+    }
+    return null;
+}
+
 export function buildTimelinePaths(
     parts: readonly TimelinePart[],
     context?: GroupByContext,
 ): TimelineGroupKey[][] {
-    const replyIndex = parts.findIndex(hasReplyText);
-    const thinkingEnd = replyIndex === -1 ? parts.length : replyIndex;
+    const paths: TimelineGroupKey[][] = parts.map(() => []);
 
-    let firstReasoningIndex = -1;
-    for (let index = 0; index < thinkingEnd; index += 1) {
-        if (parts[index]?.type === "reasoning") {
-            firstReasoningIndex = index;
-            break;
+    let index = 0;
+    while (index < parts.length) {
+        if (hasReplyText(parts[index])) {
+            index += 1;
+            continue;
         }
+
+        let end = index;
+        while (end < parts.length && !hasReplyText(parts[end])) {
+            end += 1;
+        }
+
+        const hasThinkingBlock = parts
+            .slice(index, end)
+            .some((part) => part.type === "reasoning");
+
+        for (let cursor = index; cursor < end; cursor += 1) {
+            paths[cursor] = classifyPart(parts[cursor], hasThinkingBlock, context);
+        }
+
+        index = end;
     }
 
-    const hasThinkingBlock = firstReasoningIndex !== -1;
-
-    return parts.map((part, index) => {
-        const inThinking =
-            hasThinkingBlock &&
-            index >= firstReasoningIndex &&
-            index < thinkingEnd;
-
-        if (part.type === "reasoning") {
-            return inThinking ? [CHAIN_OF_THOUGHT, GROUP_REASONING] : [];
-        }
-
-        if (part.type === "text") {
-            const blank = (part.text ?? "").trim() === "";
-            return blank && inThinking ? [CHAIN_OF_THOUGHT, GROUP_BLANK] : [];
-        }
-
-        if (part.type === "tool-call") {
-            const hidden = HIDDEN_TOOL_NAMES.has(part.toolName ?? "");
-            if (hidden) {
-                return inThinking
-                    ? [CHAIN_OF_THOUGHT, GROUP_TOOL]
-                    : [GROUP_TOOL_STANDALONE];
-            }
-            if (isStandaloneToolCall(part, context)) {
-                return [GROUP_TOOL_STANDALONE];
-            }
-            return inThinking
-                ? [CHAIN_OF_THOUGHT, GROUP_TOOL]
-                : [GROUP_TOOL_STANDALONE];
-        }
-
-        return [];
-    });
+    return paths;
 }
 
 export function buildTimelinePathMap(

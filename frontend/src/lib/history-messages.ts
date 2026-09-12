@@ -4,6 +4,19 @@ import type { NovaJsonObject, NovaMessageRecord } from "../types/nova";
 
 type AssistantPart = Exclude<ThreadMessageLike["content"], string>[number];
 
+type ElapsedReasoningPart = { elapsedMs?: number | null };
+
+function reasoningPart(
+    text: string,
+    elapsedMs: number | null | undefined,
+): AssistantPart {
+    return {
+        type: "reasoning",
+        text,
+        elapsedMs: elapsedMs ?? null,
+    } as AssistantPart & ElapsedReasoningPart;
+}
+
 type ToolCallLike = {
     id: string;
     name: string;
@@ -73,7 +86,6 @@ export function toThreadMessages(
     >();
 
     const mergedGroupIndices = new Map<string, number>();
-    const chainElapsedByGroup = new Map<string, number>();
 
     for (const message of messages) {
         if (message.role === "user") {
@@ -118,10 +130,12 @@ export function toThreadMessages(
                 ) {
                     const nextContent = [...target.content];
                     if (message.reasoning_content) {
-                        nextContent.push({
-                            type: "reasoning",
-                            text: message.reasoning_content,
-                        });
+                        nextContent.push(
+                            reasoningPart(
+                                message.reasoning_content,
+                                message.reasoning_elapsed_ms,
+                            ),
+                        );
                     }
                     if (message.content) {
                         nextContent.push({
@@ -148,23 +162,9 @@ export function toThreadMessages(
                         });
                     }
 
-                    const prev = chainElapsedByGroup.get(message.group_id) ?? 0;
-                    const add = message.reasoning_elapsed_ms ?? 0;
-                    const sum = prev + add;
-                    chainElapsedByGroup.set(message.group_id, sum);
-
                     threadMessages[targetIdx] = {
                         ...target,
                         content: nextContent,
-                        metadata: {
-                            custom: {
-                                ...(target.metadata?.custom as
-                                    | Record<string, unknown>
-                                    | undefined),
-                                reasoningElapsedMs: null,
-                                chainElapsedMs: sum || null,
-                            },
-                        },
                     };
                 }
                 continue;
@@ -172,10 +172,12 @@ export function toThreadMessages(
 
             const content: AssistantPart[] = [];
             if (message.reasoning_content) {
-                content.push({
-                    type: "reasoning",
-                    text: message.reasoning_content,
-                });
+                content.push(
+                    reasoningPart(
+                        message.reasoning_content,
+                        message.reasoning_elapsed_ms,
+                    ),
+                );
             }
             if (message.content) {
                 content.push({ type: "text", text: message.content });
@@ -201,23 +203,12 @@ export function toThreadMessages(
             }
 
             const messageIndex = threadMessages.length;
-            const nextGroupElapsed = message.reasoning_elapsed_ms ?? 0;
-            if (message.group_id) {
-                chainElapsedByGroup.set(message.group_id, nextGroupElapsed);
-            }
 
             const assistantMessage: ThreadMessageLike = {
                 id: message.id,
                 role: "assistant",
                 content,
                 createdAt: new Date(message.time_created),
-                metadata: {
-                    custom: {
-                        reasoningElapsedMs:
-                            message.reasoning_elapsed_ms ?? null,
-                        chainElapsedMs: nextGroupElapsed || null,
-                    },
-                },
             };
             threadMessages.push(assistantMessage);
 

@@ -206,7 +206,11 @@ function setAssistantReasoning(
         const nextText = updater(currentText);
 
         if (reasoningIndex >= 0) {
-            parts[reasoningIndex] = { type: "reasoning", text: nextText };
+            parts[reasoningIndex] = {
+                ...parts[reasoningIndex],
+                type: "reasoning",
+                text: nextText,
+            };
         } else if (nextText) {
             parts.push({ type: "reasoning", text: nextText });
         }
@@ -218,26 +222,42 @@ function setAssistantReasoning(
     });
 }
 
-function setAssistantMetadata(
+function setAssistantReasoningElapsed(
     messages: ThreadMessageLike[],
     assistantMessageId: string,
-    updater: (custom: Record<string, unknown>) => Record<string, unknown>,
+    elapsedMs: number,
 ) {
     return messages.map((message) => {
         if (message.id !== assistantMessageId || message.role !== "assistant") {
             return message;
         }
-        const custom = {
-            ...(message.metadata?.custom as
-                | Record<string, unknown>
-                | undefined),
+
+        const parts =
+            typeof message.content === "string"
+                ? message.content
+                    ? [{ type: "text" as const, text: message.content }]
+                    : []
+                : [...message.content];
+
+        const reasoningIndex = parts.findLastIndex(
+            (part) => part.type === "reasoning",
+        );
+        const reasoningPart = parts[reasoningIndex];
+        if (!reasoningPart || reasoningPart.type !== "reasoning") {
+            return message;
+        }
+
+        const nextReasoningPart: AssistantPart & { elapsedMs: number } = {
+            ...reasoningPart,
+            type: "reasoning",
+            text: reasoningPart.text,
+            elapsedMs,
         };
+        parts[reasoningIndex] = nextReasoningPart;
+
         return {
             ...message,
-            metadata: {
-                ...message.metadata,
-                custom: updater(custom),
-            },
+            content: parts,
         };
     });
 }
@@ -554,7 +574,6 @@ export function NovaAppShell() {
         setIsRunning(true);
         setComposerText("");
         useTodoStore.getState().clear();
-        useReasoningStore.getState().setChainStartTime(Date.now());
 
         setThreadMessages(activeThreadId, (previous) => [
             ...buildDraftMessages(previous),
@@ -628,22 +647,6 @@ export function NovaAppShell() {
                     }
 
                     if (event.type === "text-start") {
-                        const store = useReasoningStore.getState();
-                        if (store.chainStartTime != null) {
-                            const chainElapsedMs =
-                                Date.now() - store.chainStartTime;
-                            store.setChainStartTime(null);
-                            setThreadMessages(activeThreadId, (previous) =>
-                                setAssistantMetadata(
-                                    previous,
-                                    assistantMessageId,
-                                    (custom) => ({
-                                        ...custom,
-                                        chainElapsedMs,
-                                    }),
-                                ),
-                            );
-                        }
                         setThreadMessages(activeThreadId, (previous) =>
                             previous.map((msg) => {
                                 if (
@@ -681,8 +684,6 @@ export function NovaAppShell() {
                     }
 
                     if (event.type === "reasoning-start") {
-                        const store = useReasoningStore.getState();
-                        store.setChainStartTime(Date.now());
                         setThreadMessages(activeThreadId, (previous) =>
                             previous.map((msg) => {
                                 if (
@@ -724,14 +725,14 @@ export function NovaAppShell() {
 
                     if (event.type === "reasoning-end") {
                         const elapsedMs = event.elapsedMs ?? null;
+                        if (elapsedMs == null) {
+                            return;
+                        }
                         setThreadMessages(activeThreadId, (previous) =>
-                            setAssistantMetadata(
+                            setAssistantReasoningElapsed(
                                 previous,
                                 assistantMessageId,
-                                (custom) => ({
-                                    ...custom,
-                                    reasoningElapsedMs: elapsedMs,
-                                }),
+                                elapsedMs,
                             ),
                         );
                         return;
@@ -740,10 +741,6 @@ export function NovaAppShell() {
                     if (event.type === "tool-input-start") {
                         if (!event.toolCallId) {
                             return;
-                        }
-                        const store = useReasoningStore.getState();
-                        if (store.chainStartTime == null) {
-                            store.setChainStartTime(Date.now());
                         }
                         const toolCallId = event.toolCallId;
 
@@ -864,21 +861,6 @@ export function NovaAppShell() {
                 ),
             );
         } finally {
-            const store = useReasoningStore.getState();
-            if (store.chainStartTime != null) {
-                const chainElapsedMs = Date.now() - store.chainStartTime;
-                store.setChainStartTime(null);
-                setThreadMessages(activeThreadId, (previous) =>
-                    setAssistantMetadata(
-                        previous,
-                        assistantMessageId,
-                        (custom) => ({
-                            ...custom,
-                            chainElapsedMs,
-                        }),
-                    ),
-                );
-            }
             setIsRunning(false);
 
             if (requiresInput && pendingAskUser) {

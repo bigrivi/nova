@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
     buildTimelinePathMap,
     createTimelineGroupBy,
+    readPartElapsedMs,
 } from "@/lib/timeline-grouping";
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
 import { BotIcon, FileText } from "lucide-react";
@@ -107,6 +108,20 @@ const AssistantMessage: FC = () => {
             0,
         );
 
+    const segmentElapsedMs = (indices: readonly number[]): number | null => {
+        let total = 0;
+        let hasElapsed = false;
+        for (const index of indices) {
+            const part = parts[index];
+            if (!part || part.type !== "reasoning") continue;
+            const value = readPartElapsedMs(part);
+            if (value == null) continue;
+            total += value;
+            hasElapsed = true;
+        }
+        return hasElapsed ? total : null;
+    };
+
     return (
         <MessagePrimitive.Root
             data-slot="aui_assistant-message-root"
@@ -143,6 +158,9 @@ const AssistantMessage: FC = () => {
                                         toolCount={countVisibleTools(
                                             groupIndices(part),
                                         )}
+                                        elapsedMs={segmentElapsedMs(
+                                            groupIndices(part),
+                                        )}
                                     >
                                         {children}
                                     </ReasoningChainGroup>
@@ -176,7 +194,11 @@ const AssistantMessage: FC = () => {
                             case "text":
                                 return <MarkdownText />;
                             case "reasoning":
-                                return <Reasoning />;
+                                return (
+                                    <Reasoning
+                                        elapsedMs={readPartElapsedMs(part)}
+                                    />
+                                );
                             case "tool-call": {
                                 const { toolUI, ...toolProps } = part;
                                 if (part.toolName === "ask_user") return null;
