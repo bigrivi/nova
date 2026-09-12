@@ -293,18 +293,20 @@ const defaultComponents = memoizeMarkdownComponents({
         />
     ),
     table: ({ className, ...props }) => (
-        <table
-            className={cn(
-                "aui-md-table my-2 w-full border-separate border-spacing-0 overflow-y-auto",
-                className,
-            )}
-            {...props}
-        />
+        <div className="aui-md-table-wrap my-2 w-full max-w-full overflow-x-auto">
+            <table
+                className={cn(
+                    "aui-md-table w-full border-separate border-spacing-0",
+                    className,
+                )}
+                {...props}
+            />
+        </div>
     ),
     th: ({ className, ...props }) => (
         <th
             className={cn(
-                "aui-md-th bg-muted px-2 py-1 text-start font-medium first:rounded-ss-lg last:rounded-se-lg [[align=center]]:text-center [[align=right]]:text-right",
+                "aui-md-th border-s border-t border-b border-[#E4E1D9] bg-[#ECEAE3] px-2 py-1 text-start font-medium last:border-e first:rounded-ss-lg last:rounded-se-lg [[align=center]]:text-center [[align=right]]:text-right",
                 className,
             )}
             {...props}
@@ -313,7 +315,7 @@ const defaultComponents = memoizeMarkdownComponents({
     td: ({ className, ...props }) => (
         <td
             className={cn(
-                "aui-md-td border-muted-foreground/20 border-s border-b px-2 py-1 text-start last:border-e [[align=center]]:text-center [[align=right]]:text-right",
+                "aui-md-td border-s border-b border-[#E4E1D9] px-2 py-1 text-start break-words last:border-e [[align=center]]:text-center [[align=right]]:text-right",
                 className,
             )}
             {...props}
@@ -322,7 +324,7 @@ const defaultComponents = memoizeMarkdownComponents({
     tr: ({ className, ...props }) => (
         <tr
             className={cn(
-                "aui-md-tr m-0 border-b p-0 first:border-t [&:last-child>td:first-child]:rounded-es-lg [&:last-child>td:last-child]:rounded-ee-lg",
+                "aui-md-tr m-0 even:bg-[#FAFAF9] [&:hover>td]:bg-[#F1F0ED] [&:last-child>td:first-child]:rounded-es-lg [&:last-child>td:last-child]:rounded-ee-lg",
                 className,
             )}
             {...props}
