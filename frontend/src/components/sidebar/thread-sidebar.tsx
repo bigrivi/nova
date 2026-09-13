@@ -74,6 +74,7 @@ type ThreadSidebarProps = {
 const OPEN_PROJECTS_KEY = "nova.sidebar.open-projects";
 const COLLAPSED_SECTIONS_KEY = "nova.sidebar.collapsed-sections";
 const SECTION_KEYS = ["pinned", "projects", "chats"] as const;
+const OLDER_PAGE_SIZE = 50;
 
 function readStoredStringSet(
     key: string,
@@ -369,6 +370,8 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
     const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
         () => storedCollapsedSections(),
     );
+    const [visibleOlderCount, setVisibleOlderCount] =
+        useState(OLDER_PAGE_SIZE);
     const toggleSection = (key: string) => {
         setCollapsedSections((current) => {
             const next = new Set(current);
@@ -488,10 +491,39 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
                     })}
                 </Section>
                 <Section title={t("sidebar.chats")} collapsed={collapsedSections.has("chats")} onToggle={() => toggleSection("chats")}>
-                    {DATE_BUCKETS.map((key) => groups.chats[key].length ? <Fragment key={key}>
-                        <div className="px-2 pb-1 pt-2 text-[11px] font-semibold text-[#9C978A]">{t(`sidebar.date.${key}`)}</div>
-                        {allRows(groups.chats[key])}
-                    </Fragment> : null)}
+                    {DATE_BUCKETS.map((key) => {
+                        const bucket = groups.chats[key];
+                        if (!bucket.length) return null;
+                        const visible =
+                            key === "older"
+                                ? bucket.slice(0, visibleOlderCount)
+                                : bucket;
+                        const hidden = bucket.length - visible.length;
+                        return (
+                            <Fragment key={key}>
+                                <div className="px-2 pb-1 pt-2 text-[11px] font-semibold text-[#9C978A]">{t(`sidebar.date.${key}`)}</div>
+                                {allRows(visible)}
+                                {key === "older" && hidden > 0 ? (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setVisibleOlderCount(
+                                                (count) => count + OLDER_PAGE_SIZE,
+                                            )
+                                        }
+                                        className="mt-0.5 w-full rounded-lg px-2 py-1.5 text-left text-[12.5px] text-[#9C978A] hover:bg-[#F0EEE7] hover:text-[#201F1C]"
+                                    >
+                                        {t("sidebar.showMoreOlder", {
+                                            count: Math.min(
+                                                OLDER_PAGE_SIZE,
+                                                hidden,
+                                            ),
+                                        })}
+                                    </button>
+                                ) : null}
+                            </Fragment>
+                        );
+                    })}
                 </Section>
             </div>
             <div className="border-t border-[#E4E1D9] p-2">
