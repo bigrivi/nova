@@ -12,6 +12,7 @@ export type NovaSessionSummary = {
     updated_at: number;
     agent_key: string;
     workspace_dir: string | null;
+    pinned: boolean;
 };
 
 export type NovaDirectoryEntry = {
@@ -75,6 +76,8 @@ export type NovaThreadSummary = {
     title: string;
     status: "regular";
     workspace_dir: string | null;
+    pinned: boolean;
+    updated_at: number;
 };
 
 export type NovaMemoryRecord = {

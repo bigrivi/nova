@@ -8,19 +8,14 @@ import {
     useExternalStoreRuntime,
     type ThreadMessageLike,
 } from "@assistant-ui/react";
-import {
-    ChevronLeftIcon,
-    ChevronRightIcon,
-    DatabaseIcon,
-    LanguagesIcon,
-} from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import { startTransition, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 
 import { MemoryManagerDialog } from "../components/assistant-ui/memory-manager-dialog";
 import { Thread } from "../components/assistant-ui/thread";
-import { ThreadList } from "../components/assistant-ui/thread-list";
+import { ThreadSidebar } from "../components/sidebar/thread-sidebar";
 import { toolkit } from "../components/assistant-ui/toolkit";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
@@ -34,6 +29,7 @@ import {
     listProviders,
     listSessions,
     renameSession,
+    setSessionPinned,
     setSessionWorkspace,
     streamChat,
     updateAgent,
@@ -119,6 +115,8 @@ function toThreadSummary(session: NovaSessionSummary): NovaThreadSummary {
         title: toThreadTitle(session),
         status: "regular",
         workspace_dir: session.workspace_dir ?? null,
+        pinned: session.pinned ?? false,
+        updated_at: session.updated_at,
     };
 }
 
@@ -477,6 +475,35 @@ export function NovaAppShell() {
         }
     }
 
+    async function handleMoveThread(threadId: string, path: string | null) {
+        try {
+            await setSessionWorkspace(threadId, path);
+            setThreads((previous) =>
+                previous.map((thread) =>
+                    thread.id === threadId
+                        ? { ...thread, workspace_dir: path }
+                        : thread,
+                ),
+            );
+            if (threadId === currentThreadId) setWorkspaceDir(path);
+        } catch (error) {
+            console.error("Failed to move thread:", threadId, error);
+        }
+    }
+
+    async function handlePinThread(threadId: string, pinned: boolean) {
+        try {
+            await setSessionPinned(threadId, pinned);
+            setThreads((previous) =>
+                previous.map((thread) =>
+                    thread.id === threadId ? { ...thread, pinned } : thread,
+                ),
+            );
+        } catch (error) {
+            console.error("Failed to pin thread:", threadId, error);
+        }
+    }
+
     async function handleRenameThread(threadId: string, newTitle: string) {
         const title = newTitle.trim();
         const thread = threads.find((t) => t.id === threadId);
@@ -499,6 +526,7 @@ export function NovaAppShell() {
 
     async function handleDeleteThread(
         threadId: string,
+        nextThreadId: string | null = null,
         deleteMemories = false,
     ) {
         if (isRunning && threadId === currentThreadId) {
@@ -517,7 +545,12 @@ export function NovaAppShell() {
                 });
             });
             if (currentThreadId === threadId) {
-                switchToDraftThread();
+                if (nextThreadId) {
+                    setCurrentThreadId(nextThreadId);
+                    void loadThread(nextThreadId);
+                } else {
+                    switchToDraftThread();
+                }
             }
         } catch (error) {
             console.error("Failed to delete thread:", threadId, error);
@@ -629,6 +662,8 @@ export function NovaAppShell() {
                                         ),
                                         status: "regular",
                                         workspace_dir: workspaceDir,
+                                        pinned: false,
+                                        updated_at: Date.now(),
                                     },
                                 );
                             });
@@ -984,86 +1019,40 @@ export function NovaAppShell() {
         <AssistantRuntimeProvider aui={aui} runtime={runtime}>
             <TooltipProvider>
                 <div className="flex h-screen overflow-hidden bg-background text-foreground">
-                    <aside
-                        className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden border-r border-r-[rgba(0,0,0,0.06)] bg-[#F1F0ED] transition-[width,opacity] duration-200 ease-out ${
-                            isSidebarCollapsed
-                                ? "w-0 opacity-0"
-                                : "w-(--sidebar-width) opacity-100"
-                        }`}
-                    >
-                        {!isSidebarCollapsed && (
-                            <>
-                                <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-                                    <ThreadList
-                                        onRename={handleRenameThread}
-                                        onDelete={handleDeleteThread}
-                                    />
-                                </div>
-                                <div className="flex items-center justify-between px-3 py-2.5">
-                                    <div className="flex items-center gap-2">
-                                        <div className="flex size-5 items-center justify-center rounded-md bg-sidebar-primary text-[10px] font-bold text-sidebar-primary-foreground">
-                                            N
-                                        </div>
-                                        <span className="text-sm font-medium text-sidebar-foreground">
-                                            Nova
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                setIsMemoryDialogOpen(true)
-                                            }
-                                            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                                            aria-label={t("memory.manage")}
-                                        >
-                                            <DatabaseIcon className="size-4" />
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                i18n.changeLanguage(
-                                                    i18n.language === "zh-CN"
-                                                        ? "en"
-                                                        : "zh-CN",
-                                                )
-                                            }
-                                            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                                            aria-label="Switch language"
-                                        >
-                                            <LanguagesIcon className="size-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                            </>
-                        )}
-                    </aside>
+                    {!isSidebarCollapsed ? (
+                        <ThreadSidebar
+                            threads={threads}
+                            activeThreadId={activeThreadListId}
+                            runningThreadId={
+                                isRunning ? activeThreadListId : undefined
+                            }
+                            disabled={isRunning}
+                            onCollapse={() => setIsSidebarCollapsed(true)}
+                            onNewThread={switchToDraftThread}
+                            onSelectThread={(threadId) => {
+                                if (isRunning || threadId === currentThreadId) return;
+                                setCurrentThreadId(threadId);
+                                void loadThread(threadId);
+                            }}
+                            onRenameThread={handleRenameThread}
+                            onPinThread={handlePinThread}
+                            onMoveThread={handleMoveThread}
+                            onDeleteThread={handleDeleteThread}
+                            onOpenMemory={() => setIsMemoryDialogOpen(true)}
+                        />
+                    ) : null}
 
                     <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
-                        <Button
+                        {isSidebarCollapsed ? <Button
                             type="button"
                             variant="outline"
                             size="icon"
-                            className={`fixed top-4 z-30 rounded-full border border-[#E4E3DF] bg-white shadow-[0_8px_24px_rgba(20,20,18,0.07)] backdrop-blur transition-[left] duration-200 ease-out ${
-                                isSidebarCollapsed
-                                    ? "left-4"
-                                    : "left-[calc(var(--sidebar-width)+1rem)]"
-                            }`}
-                            aria-label={
-                                isSidebarCollapsed
-                                    ? t("app.expandSidebar")
-                                    : t("app.collapseSidebar")
-                            }
-                            onClick={() =>
-                                setIsSidebarCollapsed((value) => !value)
-                            }
+                            className="fixed left-4 top-4 z-30 rounded-full border border-[#E4E3DF] bg-white shadow-[0_8px_24px_rgba(20,20,18,0.07)]"
+                            aria-label={t("app.expandSidebar")}
+                            onClick={() => setIsSidebarCollapsed(false)}
                         >
-                            {isSidebarCollapsed ? (
-                                <ChevronRightIcon className="size-4" />
-                            ) : (
-                                <ChevronLeftIcon className="size-4" />
-                            )}
-                        </Button>
+                            <ChevronRightIcon className="size-4" />
+                        </Button> : null}
 
                         <div className="flex min-h-0 flex-1 flex-col">
                             <Thread

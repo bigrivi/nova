@@ -162,6 +162,23 @@ export async function setSessionWorkspace(
     }
 }
 
+export async function setSessionPinned(
+    sessionId: string,
+    pinned: boolean,
+): Promise<void> {
+    const response = await fetch(
+        buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/pinned`),
+        {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pinned }),
+        },
+    );
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+}
+
 export async function listDirectory(
     path?: string | null,
 ): Promise<NovaDirectoryListing> {

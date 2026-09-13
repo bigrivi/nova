@@ -1,0 +1,562 @@
+"use client";
+
+import {
+    CheckIcon,
+    ChevronRightIcon,
+    DatabaseIcon,
+    FolderIcon,
+    LanguagesIcon,
+    Loader2Icon,
+    MessageCircleIcon,
+    MoreHorizontalIcon,
+    PanelLeftCloseIcon,
+    PencilIcon,
+    PinIcon,
+    PlusIcon,
+    SearchIcon,
+    SettingsIcon,
+    Trash2Icon,
+} from "lucide-react";
+import {
+    Fragment,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    type KeyboardEvent,
+    type ReactNode,
+} from "react";
+import { useTranslation } from "react-i18next";
+
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuSub,
+    DropdownMenuSubContent,
+    DropdownMenuSubTrigger,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import type { NovaThreadSummary } from "@/types/nova";
+
+import {
+    dateBucket,
+    groupThreads,
+    nextThreadAfterDelete,
+    type ChatDateBucket,
+    type SidebarProject,
+} from "./sidebar-model";
+import { HighlightedText } from "./highlight-text";
+import { DeleteThreadDialog } from "./delete-thread-dialog";
+import { MoveToProjectFlyout } from "./move-to-project-flyout";
+
+type ThreadSidebarProps = {
+    threads: NovaThreadSummary[];
+    activeThreadId?: string;
+    runningThreadId?: string;
+    disabled: boolean;
+    onCollapse: () => void;
+    onNewThread: () => void;
+    onSelectThread: (threadId: string) => void;
+    onRenameThread: (threadId: string, title: string) => Promise<void> | void;
+    onPinThread: (threadId: string, pinned: boolean) => Promise<void> | void;
+    onMoveThread: (threadId: string, workspace: string | null) => Promise<void> | void;
+    onDeleteThread: (
+        threadId: string,
+        nextThreadId: string | null,
+    ) => Promise<void> | void;
+    onOpenMemory: () => void;
+};
+
+const DATE_KEYS: ChatDateBucket[] = [
+    "today",
+    "yesterday",
+    "last7Days",
+    "older",
+];
+
+const OPEN_PROJECTS_KEY = "nova.sidebar.open-projects";
+
+function storedOpenProjects(): Set<string> | null {
+    const raw = localStorage.getItem(OPEN_PROJECTS_KEY);
+    if (raw === null) {
+        return null;
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed)
+            ? new Set(
+                  parsed.filter(
+                      (item): item is string => typeof item === "string",
+                  ),
+              )
+            : null;
+    } catch {
+        return null;
+    }
+}
+
+function defaultOpenProjects(projects: SidebarProject[]): Set<string> {
+    return new Set(projects[0] ? [projects[0].key] : []);
+}
+
+function ThreadRow({
+    thread,
+    selected,
+    running,
+    projects,
+    disabled,
+    onSelect,
+    onRename,
+    onPin,
+    onMove,
+    onDelete,
+    showToast,
+}: {
+    thread: NovaThreadSummary;
+    selected: boolean;
+    running: boolean;
+    projects: SidebarProject[];
+    disabled: boolean;
+    onSelect: () => void;
+    onRename: (title: string) => Promise<void> | void;
+    onPin: (pinned: boolean) => Promise<void> | void;
+    onMove: (workspace: string | null) => Promise<void> | void;
+    onDelete: () => Promise<void> | void;
+    showToast: (message: string) => void;
+}) {
+    const { t } = useTranslation();
+    const [renaming, setRenaming] = useState(false);
+    const [title, setTitle] = useState(thread.title);
+    const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [flyoutAnchor, setFlyoutAnchor] = useState<{
+        top: number;
+        left: number;
+        right: number;
+    } | null>(null);
+    const menuContentRef = useRef<HTMLDivElement | null>(null);
+    const flyoutRef = useRef<HTMLDivElement | null>(null);
+
+    const closeAll = () => {
+        setFlyoutAnchor(null);
+        setMenuOpen(false);
+    };
+
+    const saveRename = () => {
+        const next = title.trim();
+        setRenaming(false);
+        if (!next || next === thread.title) {
+            setTitle(thread.title);
+            return;
+        }
+        void onRename(next);
+    };
+
+    const Icon = thread.pinned ? PinIcon : MessageCircleIcon;
+    const currentProject = projects.find(
+        (project) => project.key === thread.workspace_dir,
+    );
+
+    return (
+        <div
+            className={cn(
+                "group/thread flex min-h-8 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13.5px] transition-colors",
+                selected
+                    ? "bg-[#EAF1F9] font-semibold text-[#1D5FA8]"
+                    : "text-[#201F1C] hover:bg-[#F0EEE7]",
+            )}
+        >
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={onSelect}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed"
+                title={thread.title}
+            >
+                <Icon
+                    className={cn(
+                        "size-[15px] shrink-0",
+                        thread.pinned ? "text-[#B7791F]" : selected ? "text-[#1D5FA8]" : "text-[#9C978A]",
+                    )}
+                />
+                {renaming ? (
+                    <input
+                        autoFocus
+                        value={title}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) => setTitle(event.target.value)}
+                        onBlur={saveRename}
+                        onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+                            if (event.key === "Enter") saveRename();
+                            if (event.key === "Escape") {
+                                setTitle(thread.title);
+                                setRenaming(false);
+                            }
+                        }}
+                        className="min-w-0 flex-1 rounded-[5px] border border-[#1D5FA8] bg-white px-1.5 py-0.5 text-[13.5px] font-normal text-[#201F1C] outline-none"
+                    />
+                ) : (
+                    <span className="truncate">{thread.title}</span>
+                )}
+                {running ? (
+                    <Loader2Icon
+                        aria-label={t("sidebar.running")}
+                        className="size-3.5 shrink-0 animate-spin text-[#1D5FA8] motion-reduce:animate-none"
+                    />
+                ) : null}
+            </button>
+
+            {!renaming ? (
+                <DropdownMenu
+                    modal={false}
+                    open={menuOpen}
+                    onOpenChange={(open) => {
+                        setMenuOpen(open);
+                        if (!open) {
+                            setFlyoutAnchor(null);
+                        }
+                    }}
+                >
+                    <DropdownMenuTrigger asChild>
+                        <button
+                            type="button"
+                            className="thread-more flex size-[22px] shrink-0 items-center justify-center rounded-md text-[#9C978A] opacity-0 hover:bg-[#E5E2D9] hover:text-[#201F1C] focus-visible:opacity-100 data-[state=open]:opacity-100 group-hover/thread:opacity-100"
+                            aria-label={t("threadList.moreActions")}
+                        >
+                            <MoreHorizontalIcon className="size-4" />
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                        ref={menuContentRef}
+                        align="start"
+                        side="right"
+                        collisionPadding={12}
+                        className="w-52 border-[#E4E1D9] bg-white"
+                        onFocusOutside={(event) => {
+                            if (
+                                flyoutRef.current?.contains(
+                                    event.target as Node,
+                                )
+                            ) {
+                                event.preventDefault();
+                            }
+                        }}
+                        onInteractOutside={(event) => {
+                            if (
+                                flyoutRef.current?.contains(
+                                    event.target as Node,
+                                )
+                            ) {
+                                event.preventDefault();
+                            }
+                        }}
+                        onEscapeKeyDown={(event) => {
+                            if (flyoutAnchor) {
+                                event.preventDefault();
+                                closeAll();
+                            }
+                        }}
+                    >
+                        <DropdownMenuItem onSelect={() => setRenaming(true)}>
+                            <PencilIcon className="size-4" />
+                            {t("threadList.rename")}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            onSelect={() => {
+                                void onPin(!thread.pinned);
+                                showToast(t(thread.pinned ? "sidebar.unpinnedToast" : "sidebar.pinnedToast"));
+                            }}
+                        >
+                            <PinIcon className="size-4 text-[#B7791F]" />
+                            {t(thread.pinned ? "sidebar.unpin" : "sidebar.pin")}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            onSelect={(event) => {
+                                event.preventDefault();
+                                const rect =
+                                    menuContentRef.current?.getBoundingClientRect();
+                                if (!rect) return;
+                                setFlyoutAnchor({
+                                    top: rect.top,
+                                    left: rect.left,
+                                    right: rect.right,
+                                });
+                            }}
+                        >
+                            <FolderIcon className="size-4" />
+                            <span className="min-w-0 flex-1 truncate">
+                                {t("sidebar.moveToProject")}
+                            </span>
+                            {currentProject ? (
+                                <span className="shrink-0 text-xs text-[#9C978A]">
+                                    {currentProject.label}
+                                </span>
+                            ) : null}
+                            <ChevronRightIcon className="size-3.5 shrink-0 text-[#9C978A]" />
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                            className="text-[#B23B2E] data-highlighted:bg-[#FBEDEA] data-highlighted:text-[#B23B2E]"
+                            onSelect={() => setConfirmDeleteOpen(true)}
+                        >
+                            <Trash2Icon className="size-4" />
+                            {t("threadList.delete")}
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                    {flyoutAnchor ? (
+                        <MoveToProjectFlyout
+                            panelRef={flyoutRef}
+                            anchorRect={flyoutAnchor}
+                            projects={projects}
+                            currentProjectKey={thread.workspace_dir}
+                            onSelect={(projectKey, label) => {
+                                void onMove(projectKey);
+                                showToast(t("sidebar.movedToast", { project: label }));
+                                closeAll();
+                            }}
+                            onRemove={(label) => {
+                                void onMove(null);
+                                showToast(t("sidebar.removedToast", { project: label }));
+                                closeAll();
+                            }}
+                            onClose={closeAll}
+                        />
+                    ) : null}
+                </DropdownMenu>
+            ) : null}
+            <DeleteThreadDialog
+                open={confirmDeleteOpen}
+                onOpenChange={setConfirmDeleteOpen}
+                onConfirm={() => {
+                    void onDelete();
+                    showToast(t("sidebar.deletedToast"));
+                }}
+            />
+        </div>
+    );
+}
+
+export function ThreadSidebar(props: ThreadSidebarProps) {
+    const { t, i18n } = useTranslation();
+    const groups = useMemo(() => groupThreads(props.threads), [props.threads]);
+    const [userOpenProjects, setUserOpenProjects] = useState<Set<string> | null>(
+        () => storedOpenProjects(),
+    );
+    const openProjects = userOpenProjects ?? defaultOpenProjects(groups.projects);
+    const [searchOpen, setSearchOpen] = useState(false);
+    const [query, setQuery] = useState("");
+    const [toast, setToast] = useState<string | null>(null);
+    const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
+        () => new Set(),
+    );
+    const toggleSection = (key: string) => {
+        setCollapsedSections((current) => {
+            const next = new Set(current);
+            if (next.has(key)) {
+                next.delete(key);
+            } else {
+                next.add(key);
+            }
+            return next;
+        });
+    };
+    const toastTimer = useRef<number | null>(null);
+
+    const showToast = (message: string) => {
+        setToast(message);
+        if (toastTimer.current) window.clearTimeout(toastTimer.current);
+        toastTimer.current = window.setTimeout(() => setToast(null), 1600);
+    };
+
+    useEffect(() => {
+        const onKey = (event: globalThis.KeyboardEvent) => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+                event.preventDefault();
+                setSearchOpen((open) => !open);
+            }
+            if (event.key === "Escape") setSearchOpen(false);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, []);
+
+    useEffect(() => {
+        if (userOpenProjects) {
+            localStorage.setItem(
+                OPEN_PROJECTS_KEY,
+                JSON.stringify([...userOpenProjects]),
+            );
+        }
+    }, [userOpenProjects]);
+
+    const toggleProject = (key: string) => {
+        const next = new Set(openProjects);
+        if (next.has(key)) {
+            next.delete(key);
+        } else {
+            next.add(key);
+        }
+        setUserOpenProjects(next);
+    };
+
+    const orderedThreads = useMemo(
+        () => [
+            ...groups.pinned,
+            ...groups.projects.flatMap((project) => project.threads),
+            ...DATE_KEYS.flatMap((key) => groups.chats[key]),
+        ],
+        [groups],
+    );
+
+    const allRows = (items: NovaThreadSummary[]) => items.map((thread) => (
+        <ThreadRow
+            key={thread.id}
+            thread={thread}
+            selected={thread.id === props.activeThreadId}
+            running={thread.id === props.runningThreadId}
+            projects={groups.projects}
+            disabled={props.disabled}
+            onSelect={() => props.onSelectThread(thread.id)}
+            onRename={(title) => props.onRenameThread(thread.id, title)}
+            onPin={(pinned) => props.onPinThread(thread.id, pinned)}
+            onMove={(workspace) => props.onMoveThread(thread.id, workspace)}
+            onDelete={() =>
+                props.onDeleteThread(
+                    thread.id,
+                    nextThreadAfterDelete(orderedThreads, thread.id),
+                )
+            }
+            showToast={showToast}
+        />
+    ));
+
+    const searchResults = query.trim()
+        ? props.threads.filter((thread) => thread.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+        : props.threads.slice(0, 8);
+
+    const groupMeta = (thread: NovaThreadSummary) => {
+        if (thread.workspace_dir) {
+            return (
+                thread.workspace_dir.split(/[\\/]/).filter(Boolean).at(-1) ||
+                thread.workspace_dir
+            );
+        }
+        return t(`sidebar.date.${dateBucket(thread.updated_at)}`);
+    };
+
+    return (
+        <aside className="flex h-screen w-(--sidebar-width) shrink-0 flex-col border-r border-[#E4E1D9] bg-[#FBFAF7] text-[#201F1C]">
+            <div className="flex items-center justify-between px-3.5 pb-2.5 pt-4">
+                <span className="text-[15px] font-bold tracking-[-0.01em]">Nova</span>
+                <div className="flex gap-0.5">
+                    <button type="button" title={t("sidebar.searchTitle")} onClick={() => setSearchOpen(true)} className="flex size-7 items-center justify-center rounded-[7px] text-[#6E6A60] hover:bg-[#EFEDE6] hover:text-[#201F1C]"><SearchIcon className="size-4" /></button>
+                    <button type="button" aria-label={t("app.collapseSidebar")} onClick={props.onCollapse} className="flex size-7 items-center justify-center rounded-[7px] text-[#6E6A60] hover:bg-[#EFEDE6] hover:text-[#201F1C]"><PanelLeftCloseIcon className="size-4" /></button>
+                </div>
+            </div>
+            <div className="px-3 pb-2.5">
+                <button type="button" onClick={props.onNewThread} disabled={props.disabled} className="flex w-full items-center gap-2 rounded-[9px] border border-[#D6D2C7] bg-white px-3 py-2 text-[13.5px] font-medium hover:border-[#1D5FA8] hover:text-[#1D5FA8] disabled:opacity-50"><PlusIcon className="size-[15px]" />{t("threadList.newChat")}</button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+                <Section title={t("sidebar.pinned")} collapsed={collapsedSections.has("pinned")} onToggle={() => toggleSection("pinned")} empty={groups.pinned.length === 0 ? t("sidebar.noPinned") : null}>{allRows(groups.pinned)}</Section>
+                <Section title={t("sidebar.projects")} collapsed={collapsedSections.has("projects")} onToggle={() => toggleSection("projects")} empty={groups.projects.length === 0 ? t("sidebar.noProjects") : null}>
+                    {groups.projects.map((project) => {
+                        const open = openProjects.has(project.key);
+                        return <div key={project.key} className="mb-0.5">
+                            <button type="button" aria-expanded={open} onClick={() => toggleProject(project.key)} className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-semibold hover:bg-[#F0EEE7]">
+                                <ChevronRightIcon className={cn("size-3 text-[#9C978A] transition-transform", open && "rotate-90")} />
+                                <FolderIcon className="size-[15px] text-[#1D5FA8]" />
+                                <span className="truncate">{project.label}</span>
+                                {project.qualifier ? <span className="truncate text-[11px] font-normal text-[#9C978A]">{project.qualifier}</span> : null}
+                                <span className="ml-auto text-[11px] font-medium text-[#9C978A]">{project.threads.length}</span>
+                            </button>
+                            {open ? <div className="ml-5 border-l border-[#E4E1D9] pl-3">{allRows(project.threads)}</div> : null}
+                        </div>;
+                    })}
+                </Section>
+                <Section title={t("sidebar.chats")} collapsed={collapsedSections.has("chats")} onToggle={() => toggleSection("chats")}>
+                    {DATE_KEYS.map((key) => groups.chats[key].length ? <Fragment key={key}>
+                        <div className="px-2 pb-1 pt-2 text-[11px] font-semibold text-[#9C978A]">{t(`sidebar.date.${key}`)}</div>
+                        {allRows(groups.chats[key])}
+                    </Fragment> : null)}
+                </Section>
+            </div>
+            <div className="border-t border-[#E4E1D9] p-2">
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild><button type="button" className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13.5px] text-[#6E6A60] hover:bg-[#F0EEE7] hover:text-[#201F1C]"><SettingsIcon className="size-4" />{t("sidebar.settings")}</button></DropdownMenuTrigger>
+                    <DropdownMenuContent side="top" align="start" collisionPadding={12} className="w-64 border-[#E4E1D9] bg-white">
+                        <DropdownMenuItem onSelect={props.onOpenMemory}><DatabaseIcon className="size-4" />{t("memory.manage")}</DropdownMenuItem>
+                        <DropdownMenuSub>
+                            <DropdownMenuSubTrigger>
+                                <LanguagesIcon className="size-4" />
+                                {t("sidebar.language")}
+                                <span className="ml-auto text-xs text-[#9C978A]">{i18n.language === "zh-CN" ? "简体中文" : "English"}</span>
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent className="border-[#E4E1D9] bg-white">
+                                <DropdownMenuItem onSelect={() => void i18n.changeLanguage("zh-CN")}>
+                                    <CheckIcon className={cn("size-4", i18n.language !== "zh-CN" && "invisible")} />
+                                    简体中文
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => void i18n.changeLanguage("en")}>
+                                    <CheckIcon className={cn("size-4", i18n.language !== "en" && "invisible")} />
+                                    English
+                                </DropdownMenuItem>
+                            </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                        <DropdownMenuSeparator />
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
+            {searchOpen ? <div role="dialog" aria-modal="true" className="fixed inset-0 z-[70] flex items-start justify-center bg-[rgba(28,27,24,.32)] pt-[108px]" onMouseDown={(event) => event.target === event.currentTarget && setSearchOpen(false)}>
+                <div className="flex max-h-[60vh] w-[560px] max-w-[90vw] flex-col overflow-hidden rounded-[13px] bg-white shadow-[0_24px_60px_rgba(0,0,0,.22)]">
+                    <div className="flex items-center gap-2.5 border-b border-[#E4E1D9] px-4 py-3.5"><SearchIcon className="size-[17px] text-[#9C978A]" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("sidebar.searchPlaceholder")} className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" /><kbd className="rounded border border-[#D6D2C7] px-1.5 py-0.5 font-mono text-[11px] text-[#9C978A]">Esc</kbd></div>
+                    <div className="overflow-y-auto p-1.5">{searchResults.length ? searchResults.map((thread) => <button key={thread.id} type="button" onClick={() => { props.onSelectThread(thread.id); setSearchOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13.5px] hover:bg-[#F0EEE7]"><MessageCircleIcon className="size-4 shrink-0 text-[#9C978A]" /><span className="min-w-0 flex-1 truncate"><HighlightedText text={thread.title} query={query.trim()} /></span><span className="shrink-0 text-[11px] text-[#9C978A]">{groupMeta(thread)}</span></button>) : <div className="px-4 py-6 text-center text-[13px] text-[#9C978A]">{t("sidebar.searchEmpty")}</div>}</div>
+                </div>
+            </div> : null}
+            {toast ? <div className="fixed bottom-5 left-1/2 z-[80] -translate-x-1/2 rounded-full bg-[#201F1C] px-3.5 py-2 text-xs text-white">{toast}</div> : null}
+        </aside>
+    );
+}
+
+function Section({
+    title,
+    empty,
+    collapsed,
+    onToggle,
+    children,
+}: {
+    title: string;
+    empty?: string | null;
+    collapsed: boolean;
+    onToggle: () => void;
+    children?: ReactNode;
+}) {
+    return (
+        <section className="mb-1">
+            <button
+                type="button"
+                aria-expanded={!collapsed}
+                onClick={onToggle}
+                className="group/section flex w-full items-center gap-1 rounded-md px-2 pb-1 pt-3 text-left text-[11.5px] font-semibold text-[#6E6A60] hover:text-[#201F1C]"
+            >
+                <span>{title}</span>
+                <ChevronRightIcon
+                    aria-hidden="true"
+                    className={cn(
+                        "section-chev size-3 shrink-0 opacity-0 transition-transform group-hover/section:opacity-100",
+                        collapsed ? "rotate-0 opacity-100" : "rotate-90",
+                    )}
+                />
+            </button>
+            {collapsed ? null : empty ? (
+                <div className="px-2 pb-2.5 pt-0.5 text-[12px] text-[#9C978A]">
+                    {empty}
+                </div>
+            ) : (
+                children
+            )}
+        </section>
+    );
+}
