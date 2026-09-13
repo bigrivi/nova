@@ -1,66 +1,84 @@
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
-import { useAuiState } from "@assistant-ui/react";
+import { ThreadPrimitive } from "@assistant-ui/react";
 import { ArrowDownIcon } from "lucide-react";
 import { useEffect, useState, type FC } from "react";
 import { useTranslation } from "react-i18next";
 
-const SCROLL_TO_BOTTOM_THRESHOLD = 32;
+import { cn } from "@/lib/utils";
 
-export const ThreadScrollToBottom: FC = () => {
+const VIEWPORT_SELECTOR = '[data-slot="aui_thread-viewport"]';
+
+// assistant-ui's isAtBottom ignores style-only changes, so a composer that
+// shrinks (todo panel, ask-user) would leave the button visible with nothing
+// to scroll. Measure the geometry ourselves instead of trusting that flag.
+function isScrolledAwayFromBottom(viewport: HTMLElement): boolean {
+    const { scrollHeight, clientHeight, scrollTop } = viewport;
+    if (scrollHeight <= clientHeight + 1) {
+        return false;
+    }
+    return Math.abs(scrollHeight - scrollTop - clientHeight) > 1;
+}
+
+type ThreadScrollToBottomProps = {
+    /**
+     * Height reserved below the thread content for the composer overlay.
+     * Keeps the button parked just above the composer while scrolling instead
+     * of floating at whatever height the content happens to end at.
+     */
+    bottomOffset?: number;
+};
+
+export const ThreadScrollToBottom: FC<ThreadScrollToBottomProps> = ({
+    bottomOffset = 0,
+}) => {
     const { t } = useTranslation();
-    const isEmpty = useAuiState((s) => s.thread.isEmpty);
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
-        const viewport = document.querySelector<HTMLElement>(
-            '[data-slot="aui_thread-viewport"]',
-        );
+        const viewport = document.querySelector<HTMLElement>(VIEWPORT_SELECTOR);
         if (!viewport) {
-            setIsVisible(false);
             return;
         }
+        const content = viewport.firstElementChild;
+        const update = () => setIsVisible(isScrolledAwayFromBottom(viewport));
 
-        const updateVisibility = () => {
-            const distanceToBottom =
-                viewport.scrollHeight -
-                (viewport.scrollTop + viewport.clientHeight);
-            setIsVisible(distanceToBottom > SCROLL_TO_BOTTOM_THRESHOLD);
-        };
-
-        updateVisibility();
-        viewport.addEventListener("scroll", updateVisibility, {
-            passive: true,
-        });
-        window.addEventListener("resize", updateVisibility);
+        update();
+        viewport.addEventListener("scroll", update, { passive: true });
+        const observer = new ResizeObserver(update);
+        observer.observe(viewport);
+        if (content) {
+            observer.observe(content);
+        }
 
         return () => {
-            viewport.removeEventListener("scroll", updateVisibility);
-            window.removeEventListener("resize", updateVisibility);
+            viewport.removeEventListener("scroll", update);
+            observer.disconnect();
         };
     }, []);
 
-    if (isEmpty || !isVisible) {
-        return null;
-    }
-
     return (
-        <div className="pointer-events-none sticky bottom-28 z-10 flex overflow-visible pb-4 md:bottom-36 md:pb-6">
-            <TooltipIconButton
-                tooltip={t("thread.scrollToBottom")}
-                variant="outline"
-                className="pointer-events-auto absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-background/95 p-3 shadow-sm backdrop-blur"
-                onClick={() => {
-                    const viewport = document.querySelector<HTMLElement>(
-                        '[data-slot="aui_thread-viewport"]',
-                    );
-                    viewport?.scrollTo({
-                        top: viewport.scrollHeight,
-                        behavior: "smooth",
-                    });
-                }}
-            >
-                <ArrowDownIcon />
-            </TooltipIconButton>
+        // mt-auto parks the row at the bottom of the min-h-full column while the
+        // thread is shorter than the viewport; sticky takes over once it is
+        // taller. Either way the button never lands mid-viewport.
+        <div
+            className={cn(
+                "pointer-events-none sticky z-10 mt-auto flex w-full justify-center",
+                !isVisible && "invisible",
+            )}
+            style={
+                bottomOffset > 0 ? { bottom: `${bottomOffset}px` } : undefined
+            }
+        >
+            {/* ScrollToBottom owns the click and disables itself at the bottom. */}
+            <ThreadPrimitive.ScrollToBottom asChild>
+                <TooltipIconButton
+                    tooltip={t("thread.scrollToBottom")}
+                    variant="outline"
+                    className="pointer-events-auto rounded-full bg-background/95 p-3 shadow-sm backdrop-blur disabled:invisible"
+                >
+                    <ArrowDownIcon />
+                </TooltipIconButton>
+            </ThreadPrimitive.ScrollToBottom>
         </div>
     );
 };

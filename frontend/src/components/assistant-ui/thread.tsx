@@ -115,7 +115,10 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection, workspace })
                     className="relative flex min-h-0 flex-1 flex-col overflow-y-auto"
                     style={{ scrollbarGutter: "stable" }}
                 >
-                    <div className="mx-auto flex min-h-full w-full max-w-(--thread-max-width) flex-col px-4 pt-14">
+                    {/* shrink-0 keeps min-h-full from collapsing this column to
+                        the viewport height, which would make it a too-short
+                        sticky containing block for the scroll-to-bottom row. */}
+                    <div className="mx-auto flex min-h-full w-full max-w-(--thread-max-width) shrink-0 flex-col px-4 pt-14">
                         <div data-slot="aui_message-group" className="mb-5">
                             <div
                                 ref={zoomTargetRef}
@@ -141,7 +144,7 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection, workspace })
                             />
                         </AuiIf>
 
-                        <ThreadScrollToBottom />
+                        <ThreadScrollToBottom bottomOffset={spacerHeight} />
                     </div>
                 </ThreadPrimitive.Viewport>
 
