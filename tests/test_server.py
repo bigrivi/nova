@@ -104,6 +104,29 @@ def test_health_endpoint(monkeypatch):
     assert response.json() == {"status": "ok", "service": "nova", "mode": "server"}
 
 
+def test_session_pinned_endpoint_and_summary(monkeypatch):
+    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-pinned")
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    class PinnedService:
+        async def set_session_pinned(self, session_id, pinned):
+            assert session_id == "session-1"
+            assert pinned is True
+            return True
+
+    app.state.chat_service = PinnedService()
+    response = client.put(
+        "/api/sessions/session-1/pinned", json={"pinned": True}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "pinned_updated",
+        "session_id": "session-1",
+    }
+
+
 def test_models_endpoint_returns_configured_models(monkeypatch, tmp_path):
     home = tmp_path / "nova-server-models"
     home.mkdir(parents=True, exist_ok=True)

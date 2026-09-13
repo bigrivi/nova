@@ -45,6 +45,7 @@ class Session:
     title: Optional[str] = None
     parent_id: Optional[str] = None
     workspace_dir: Optional[str] = None
+    pinned: bool = False
     summary_goal: Optional[str] = None
     summary_accomplished: Optional[str] = None
     summary_remaining: Optional[str] = None

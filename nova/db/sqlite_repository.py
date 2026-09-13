@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     title TEXT,
     parent_id TEXT,
     workspace_dir TEXT,
+    pinned INTEGER DEFAULT 0,
     summary_goal TEXT,
     summary_accomplished TEXT,
     summary_remaining TEXT,
@@ -213,7 +214,7 @@ class SqliteRepository(NovaRepository):
         # Table and column names are literals from the map below, never caller
         # input; SQLite cannot bind identifiers, so interpolation is the only option.
         required_columns: dict[str, dict[str, str]] = {
-            "sessions": {"workspace_dir": "TEXT"},
+            "sessions": {"workspace_dir": "TEXT", "pinned": "INTEGER DEFAULT 0"},
             "messages": {"provider_meta": "TEXT"},
         }
         for table, columns_map in required_columns.items():
@@ -256,8 +257,8 @@ class SqliteRepository(NovaRepository):
         await self._conn.execute(
             """INSERT OR REPLACE INTO sessions
             (id, agent_key, title, parent_id, summary_goal, summary_accomplished, summary_remaining,
-            created_at, updated_at, compacted_at, message_count, turn_count, metadata, workspace_dir)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            created_at, updated_at, compacted_at, message_count, turn_count, metadata, workspace_dir, pinned)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.id,
                 agent_key,
@@ -273,6 +274,7 @@ class SqliteRepository(NovaRepository):
                 session.turn_count,
                 json.dumps(session.metadata) if session.metadata else None,
                 getattr(session, "workspace_dir", None),
+                1 if getattr(session, "pinned", False) else 0,
             ),
         )
         await self._conn.commit()
@@ -302,6 +304,15 @@ class SqliteRepository(NovaRepository):
         cursor = await self._conn.execute(
             "UPDATE sessions SET workspace_dir = ? WHERE id = ?",
             (workspace_dir, session_id),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    async def set_session_pinned(self, session_id: str, pinned: bool) -> bool:
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "UPDATE sessions SET pinned = ? WHERE id = ?",
+            (1 if pinned else 0, session_id),
         )
         await self._conn.commit()
         return cursor.rowcount > 0

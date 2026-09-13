@@ -51,6 +51,42 @@ async def test_save_session_roundtrip_preserves_timestamps_and_metadata(db: Sqli
 
 
 @pytest.mark.asyncio
+async def test_connect_migrates_legacy_sessions_with_pinned_column(tmp_path):
+    path = tmp_path / "legacy.db"
+    async with aiosqlite.connect(path) as connection:
+        await connection.execute(
+            """CREATE TABLE sessions (
+            id TEXT PRIMARY KEY,
+            agent_key TEXT NOT NULL DEFAULT 'main',
+            title TEXT,
+            parent_id TEXT,
+            workspace_dir TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            message_count INTEGER DEFAULT 0,
+            turn_count INTEGER DEFAULT 0
+            )"""
+        )
+        await connection.execute(
+            "INSERT INTO sessions (id, created_at, updated_at) VALUES ('legacy', 1, 1)"
+        )
+        await connection.commit()
+
+    repository = SqliteRepository(DatabaseConfig(path=str(path)))
+    await repository.connect()
+    try:
+        stored = await repository.get_session("legacy")
+        assert stored is not None
+        assert stored["pinned"] == 0
+        assert await repository.set_session_pinned("legacy", True) is True
+        stored = await repository.get_session("legacy")
+        assert stored is not None
+        assert stored["pinned"] == 1
+    finally:
+        await repository.close()
+
+
+@pytest.mark.asyncio
 async def test_get_messages_applies_message_filter_flags(db: SqliteRepository):
     session = Session(id="session-2")
     await db.save_session(session)

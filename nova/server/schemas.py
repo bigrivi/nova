@@ -38,6 +38,7 @@ class SessionSummary(BaseModel):
     updated_at: int
     agent_key: str = Field(default="main")
     workspace_dir: str | None = None
+    pinned: bool = False
 
 
 class SessionListResponse(BaseModel):
@@ -50,6 +51,10 @@ class RenameSessionRequest(BaseModel):
 
 class UpdateSessionWorkspaceRequest(BaseModel):
     workspace_dir: str | None = None
+
+
+class UpdateSessionPinnedRequest(BaseModel):
+    pinned: bool
 
 
 class DirectoryEntry(BaseModel):

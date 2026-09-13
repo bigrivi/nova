@@ -38,6 +38,24 @@ async def test_session_delete_cascades_messages_and_preserves_missing_result(rep
 
 
 @pytest.mark.asyncio
+async def test_session_pinned_round_trips_and_updates(repository):
+    await repository.save_session(Session(id="session-pinned", pinned=True))
+
+    stored = await repository.get_session("session-pinned")
+    assert stored is not None
+    assert bool(stored["pinned"]) is True
+
+    updated = await repository.set_session_pinned("session-pinned", False)
+    missing = await repository.set_session_pinned("missing", True)
+    stored = await repository.get_session("session-pinned")
+
+    assert updated is True
+    assert missing is False
+    assert stored is not None
+    assert bool(stored["pinned"]) is False
+
+
+@pytest.mark.asyncio
 async def test_tool_message_error_flag_round_trips(repository):
     await repository.save_session(Session(id="session-error"))
     await repository.add_message(

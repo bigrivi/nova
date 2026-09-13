@@ -80,6 +80,7 @@ class ChatService:
                 updated_at=session.get("updated_at", 0),
                 agent_key=session.get("agent_key", DEFAULT_AGENT_KEY),
                 workspace_dir=session.get("workspace_dir"),
+                pinned=bool(session.get("pinned", 0)),
             )
             for session in sessions
         ]
@@ -93,6 +94,10 @@ class ChatService:
         data_source = await self._get_data_source()
         normalized = _normalize_workspace_dir(workspace_dir)
         return await data_source.set_session_workspace(session_id, normalized)
+
+    async def set_session_pinned(self, session_id: str, pinned: bool) -> bool:
+        data_source = await self._get_data_source()
+        return await data_source.set_session_pinned(session_id, pinned)
 
     async def delete_session(self, session_id: str, delete_memories: bool = False) -> bool:
         data_source = await self._get_data_source()

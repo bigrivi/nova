@@ -46,6 +46,7 @@ from nova.server.schemas import (
     SessionActionResponse,
     SessionListResponse,
     UpdateSessionWorkspaceRequest,
+    UpdateSessionPinnedRequest,
     DirectoryListing,
 )
 from nova.settings import Settings, get_settings, reload_settings
@@ -152,6 +153,17 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         if not updated:
             raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
         return SessionActionResponse(status="workspace_updated", session_id=session_id)
+
+    @app.put("/api/sessions/{session_id}/pinned", response_model=SessionActionResponse)
+    async def set_session_pinned(
+        session_id: str, request: UpdateSessionPinnedRequest
+    ) -> SessionActionResponse:
+        updated = await app.state.chat_service.set_session_pinned(
+            session_id, request.pinned
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+        return SessionActionResponse(status="pinned_updated", session_id=session_id)
 
     @app.get("/api/fs/list", response_model=DirectoryListing)
     async def fs_list(path: str | None = None) -> DirectoryListing:

@@ -45,6 +45,7 @@ class InMemoryRepository(NovaRepository):
             "title": getattr(session, "title", None),
             "parent_id": getattr(session, "parent_id", None),
             "workspace_dir": getattr(session, "workspace_dir", None),
+            "pinned": bool(getattr(session, "pinned", False)),
             "summary_goal": getattr(session, "summary_goal", None),
             "summary_accomplished": getattr(session, "summary_accomplished", None),
             "summary_remaining": getattr(session, "summary_remaining", None),
@@ -72,6 +73,13 @@ class InMemoryRepository(NovaRepository):
         if session is None:
             return False
         session["workspace_dir"] = workspace_dir
+        return True
+
+    async def set_session_pinned(self, session_id: str, pinned: bool) -> bool:
+        session = self._sessions.get(session_id)
+        if session is None:
+            return False
+        session["pinned"] = pinned
         return True
 
     async def delete_session(self, session_id: str) -> bool:
