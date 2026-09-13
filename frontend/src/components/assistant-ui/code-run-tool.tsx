@@ -5,7 +5,6 @@ import { errorTextFromResult } from "@/lib/tool-result";
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import Prism from "prismjs";
 import "prismjs/components/prism-python";
-import "prismjs/themes/prism-tomorrow.css";
 import { memo, useMemo } from "react";
 import {
     ToolFallbackContent,
@@ -64,10 +63,10 @@ const CodeRunToolImpl: ToolCallMessagePartComponent = ({
                                 {description}
                             </p>
                         )}
-                        <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-[#1e1e1e] p-3 text-sm leading-relaxed">
+                        <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-lg border border-[#D6D2C7] bg-white p-3 font-mono text-sm leading-relaxed [tab-size:4]">
                             {highlightedHtml ? (
                                 <code
-                                    className="language-python"
+                                    className="language-python font-mono! [tab-size:4]! bg-transparent! whitespace-pre-wrap! break-words!"
                                     dangerouslySetInnerHTML={{
                                         __html: highlightedHtml,
                                     }}

@@ -1,7 +1,5 @@
 "use client";
 
-import "prismjs/themes/prism-tomorrow.css";
-
 import {
     type CodeHeaderProps,
     MarkdownTextPrimitive,
@@ -107,7 +105,9 @@ const MarkdownSyntaxHighlighter: FC<SyntaxHighlighterProps> = ({
     if (!highlightedHtml) {
         return (
             <Pre className={className}>
-                <Code className={className}>{code}</Code>
+                <Code className={cn(className, "font-mono! [tab-size:4]! bg-transparent! leading-relaxed!")}>
+                    {code}
+                </Code>
             </Pre>
         );
     }
@@ -115,7 +115,7 @@ const MarkdownSyntaxHighlighter: FC<SyntaxHighlighterProps> = ({
     return (
         <Pre className={className}>
             <Code
-                className={className}
+                className={cn(className, "font-mono! [tab-size:4]! bg-transparent! leading-relaxed!")}
                 dangerouslySetInnerHTML={{ __html: highlightedHtml }}
             />
         </Pre>
@@ -146,7 +146,7 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
     };
 
     return (
-        <div className="aui-code-header-root mt-2.5 flex items-center rounded-t-lg border border-border/50 border-b-0 bg-muted/50 px-3 py-1.5 text-xs">
+        <div className="aui-code-header-root mt-2.5 flex items-center rounded-t-lg border border-[#D6D2C7] bg-muted/50 px-3 py-1.5 text-xs">
             {language && language !== "unknown" && (
                 <span className="aui-code-header-language font-medium text-muted-foreground lowercase">
                     {language}
@@ -345,7 +345,7 @@ const defaultComponents = memoizeMarkdownComponents({
     pre: ({ className, ...props }) => (
         <pre
             className={cn(
-                "aui-md-pre overflow-x-auto rounded-t-none rounded-b-lg border border-border/50 border-t-0 bg-muted/30 p-3 text-xs leading-relaxed",
+                "aui-md-pre my-0! overflow-x-auto rounded-t-none! rounded-b-lg! border border-[#D6D2C7] border-t-0 bg-white! p-3! font-mono! text-xs! leading-relaxed! [tab-size:4]!",
                 className,
             )}
             {...props}
