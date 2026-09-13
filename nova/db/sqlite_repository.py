@@ -331,18 +331,18 @@ class SqliteRepository(NovaRepository):
         await self._conn.commit()
         return cursor.rowcount > 0
 
-    async def get_all_sessions(self, limit: int = 50, agent_key: str | None = None) -> list[dict]:
+    async def get_all_sessions(self, limit: int | None = None, agent_key: str | None = None) -> list[dict]:
         await self._ensure_connected()
+        query = "SELECT * FROM sessions"
+        params: list[Any] = []
         if agent_key:
-            cursor = await self._conn.execute(
-                "SELECT * FROM sessions WHERE agent_key = ? ORDER BY updated_at DESC LIMIT ?",
-                (agent_key, limit),
-            )
-        else:
-            cursor = await self._conn.execute(
-                "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?",
-                (limit,),
-            )
+            query += " WHERE agent_key = ?"
+            params.append(agent_key)
+        query += " ORDER BY updated_at DESC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        cursor = await self._conn.execute(query, tuple(params))
         rows = await cursor.fetchall()
         return [_row_to_session(row) for row in rows]
 

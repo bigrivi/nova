@@ -42,10 +42,11 @@ import { cn } from "@/lib/utils";
 import type { NovaThreadSummary } from "@/types/nova";
 
 import {
+    DATE_BUCKETS,
     dateBucket,
     groupThreads,
     nextThreadAfterDelete,
-    type ChatDateBucket,
+    orderedThreads,
     type SidebarProject,
 } from "./sidebar-model";
 import { HighlightedText } from "./highlight-text";
@@ -70,32 +71,48 @@ type ThreadSidebarProps = {
     onOpenMemory: () => void;
 };
 
-const DATE_KEYS: ChatDateBucket[] = [
-    "today",
-    "yesterday",
-    "last7Days",
-    "older",
-];
-
 const OPEN_PROJECTS_KEY = "nova.sidebar.open-projects";
+const COLLAPSED_SECTIONS_KEY = "nova.sidebar.collapsed-sections";
+const SECTION_KEYS = ["pinned", "projects", "chats"] as const;
 
-function storedOpenProjects(): Set<string> | null {
-    const raw = localStorage.getItem(OPEN_PROJECTS_KEY);
+function readStoredStringSet(
+    key: string,
+    allowed?: readonly string[],
+): Set<string> | null {
+    const raw = localStorage.getItem(key);
     if (raw === null) {
         return null;
     }
     try {
         const parsed = JSON.parse(raw);
-        return Array.isArray(parsed)
-            ? new Set(
-                  parsed.filter(
-                      (item): item is string => typeof item === "string",
-                  ),
-              )
-            : null;
+        if (!Array.isArray(parsed)) {
+            return null;
+        }
+        return new Set(
+            parsed.filter(
+                (item): item is string =>
+                    typeof item === "string" &&
+                    (!allowed || allowed.includes(item)),
+            ),
+        );
     } catch {
         return null;
     }
+}
+
+function writeStoredStringSet(key: string, values: Iterable<string>): void {
+    localStorage.setItem(key, JSON.stringify([...values]));
+}
+
+function storedOpenProjects(): Set<string> | null {
+    return readStoredStringSet(OPEN_PROJECTS_KEY);
+}
+
+function storedCollapsedSections(): Set<string> {
+    return (
+        readStoredStringSet(COLLAPSED_SECTIONS_KEY, SECTION_KEYS) ??
+        new Set<string>()
+    );
 }
 
 function defaultOpenProjects(projects: SidebarProject[]): Set<string> {
@@ -350,7 +367,7 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
     const [query, setQuery] = useState("");
     const [toast, setToast] = useState<string | null>(null);
     const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
-        () => new Set(),
+        () => storedCollapsedSections(),
     );
     const toggleSection = (key: string) => {
         setCollapsedSections((current) => {
@@ -385,12 +402,13 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
 
     useEffect(() => {
         if (userOpenProjects) {
-            localStorage.setItem(
-                OPEN_PROJECTS_KEY,
-                JSON.stringify([...userOpenProjects]),
-            );
+            writeStoredStringSet(OPEN_PROJECTS_KEY, userOpenProjects);
         }
     }, [userOpenProjects]);
+
+    useEffect(() => {
+        writeStoredStringSet(COLLAPSED_SECTIONS_KEY, collapsedSections);
+    }, [collapsedSections]);
 
     const toggleProject = (key: string) => {
         const next = new Set(openProjects);
@@ -402,14 +420,7 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
         setUserOpenProjects(next);
     };
 
-    const orderedThreads = useMemo(
-        () => [
-            ...groups.pinned,
-            ...groups.projects.flatMap((project) => project.threads),
-            ...DATE_KEYS.flatMap((key) => groups.chats[key]),
-        ],
-        [groups],
-    );
+    const threadOrder = useMemo(() => orderedThreads(groups), [groups]);
 
     const allRows = (items: NovaThreadSummary[]) => items.map((thread) => (
         <ThreadRow
@@ -426,7 +437,7 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
             onDelete={() =>
                 props.onDeleteThread(
                     thread.id,
-                    nextThreadAfterDelete(orderedThreads, thread.id),
+                    nextThreadAfterDelete(threadOrder, thread.id),
                 )
             }
             showToast={showToast}
@@ -477,7 +488,7 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
                     })}
                 </Section>
                 <Section title={t("sidebar.chats")} collapsed={collapsedSections.has("chats")} onToggle={() => toggleSection("chats")}>
-                    {DATE_KEYS.map((key) => groups.chats[key].length ? <Fragment key={key}>
+                    {DATE_BUCKETS.map((key) => groups.chats[key].length ? <Fragment key={key}>
                         <div className="px-2 pb-1 pt-2 text-[11px] font-semibold text-[#9C978A]">{t(`sidebar.date.${key}`)}</div>
                         {allRows(groups.chats[key])}
                     </Fragment> : null)}

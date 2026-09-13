@@ -90,11 +90,13 @@ class InMemoryRepository(NovaRepository):
             del self._messages[message_id]
         return True
 
-    async def get_all_sessions(self, limit: int = 50, agent_key: str | None = None) -> list[dict]:
+    async def get_all_sessions(self, limit: int | None = None, agent_key: str | None = None) -> list[dict]:
         sessions = list(self._sessions.values())
         if agent_key:
             sessions = [s for s in sessions if s["agent_key"] == agent_key]
         sessions.sort(key=lambda item: item["updated_at"], reverse=True)
+        if limit is None:
+            return [dict(session) for session in sessions]
         return [dict(session) for session in sessions[:limit]]
 
     async def get_sessions_by_parent_id(self, parent_id: str, limit: int = 50) -> list[dict]:

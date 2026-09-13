@@ -38,6 +38,18 @@ async def test_session_delete_cascades_messages_and_preserves_missing_result(rep
 
 
 @pytest.mark.asyncio
+async def test_get_all_sessions_returns_every_session_unless_limited(repository):
+    for index in range(60):
+        await repository.save_session(Session(id=f"session-{index}"))
+
+    everything = await repository.get_all_sessions()
+    limited = await repository.get_all_sessions(limit=5)
+
+    assert len(everything) == 60
+    assert len(limited) == 5
+
+
+@pytest.mark.asyncio
 async def test_session_pinned_round_trips_and_updates(repository):
     await repository.save_session(Session(id="session-pinned", pinned=True))
 

@@ -58,13 +58,14 @@ export function groupThreads(
     };
 
     for (const thread of threads) {
-        if (thread.pinned) continue;
+        // Project membership ignores pinning so an all-pinned project still shows up.
         if (thread.workspace_dir) {
             const items = projectMap.get(thread.workspace_dir) ?? [];
             items.push(thread);
             projectMap.set(thread.workspace_dir, items);
             continue;
         }
+        if (thread.pinned) continue;
         chats[dateBucket(thread.updated_at, now)].push(thread);
     }
 
@@ -90,6 +91,29 @@ export function groupThreads(
         .sort((left, right) => right.latestActivity - left.latestActivity);
 
     return { pinned, projects, chats };
+}
+
+export const DATE_BUCKETS: ChatDateBucket[] = [
+    "today",
+    "yesterday",
+    "last7Days",
+    "older",
+];
+
+export function orderedThreads(groups: SidebarGroups): NovaThreadSummary[] {
+    const seen = new Set<string>();
+    const ordered: NovaThreadSummary[] = [];
+    const push = (thread: NovaThreadSummary) => {
+        if (seen.has(thread.id)) return;
+        seen.add(thread.id);
+        ordered.push(thread);
+    };
+
+    groups.pinned.forEach(push);
+    groups.projects.forEach((project) => project.threads.forEach(push));
+    DATE_BUCKETS.forEach((bucket) => groups.chats[bucket].forEach(push));
+
+    return ordered;
 }
 
 export function nextThreadAfterDelete(
