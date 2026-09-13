@@ -95,7 +95,7 @@ const Welcome: FC = () => {
 
     return (
         greeting ? (
-            <section className="mb-6 flex flex-col items-center px-4 text-center">
+            <section className="mb-3 flex flex-col items-center px-4 text-center">
                 <h1 className="text-3xl">{greeting}</h1>
             </section>
         ) : null
