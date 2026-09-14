@@ -17,6 +17,14 @@ export type NovaSessionSummary = {
     agent_key: string;
 };
 
+export type NovaProjectRecord = {
+    id: string;
+    name: string;
+    path: string | null;
+    created_at: number;
+    updated_at: number;
+};
+
 export type NovaMessageRecord = {
     id: string;
     session_id: string;

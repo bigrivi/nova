@@ -22,14 +22,16 @@ function formatTime(ms: number): string {
 export function SessionsScreen() {
     const [sessions, setSessions] = useState<NovaSessionSummary[]>([]);
     const [error, setError] = useState("");
+    const workspaceDir = process.env.NOVA_WORKSPACE_DIR || process.cwd();
+    const folder = workspaceDir.split("/").filter(Boolean).at(-1) ?? workspaceDir;
 
     useEffect(() => {
-        void listSessions()
+        void listSessions({ workspaceDir })
             .then(setSessions)
             .catch((err: unknown) =>
                 setError(err instanceof Error ? err.message : String(err)),
             );
-    }, []);
+    }, [workspaceDir]);
 
     async function handleSelect(session: NovaSessionSummary): Promise<void> {
         useScreenStore.getState().close();
@@ -46,7 +48,7 @@ export function SessionsScreen() {
 
     return (
         <SearchableList
-            title="Sessions"
+            title={`Sessions · ${folder}`}
             items={sessions}
             filter={(session, query) =>
                 !query ||
@@ -59,7 +61,7 @@ export function SessionsScreen() {
             renderLabel={(session) =>
                 `${session.title ?? "(untitled)"}  —  ${formatTime(session.updated_at)}`
             }
-            emptyText={error || "no sessions yet"}
+            emptyText={error || "no sessions in this folder yet"}
         />
     );
 }

@@ -6,6 +6,7 @@ import type {
     NovaMessageRecord,
     NovaModelCreateRequest,
     NovaModelRecord,
+    NovaProjectRecord,
     NovaProviderCreateRequest,
     NovaProviderRecord,
     NovaSessionSummary,
@@ -20,6 +21,7 @@ export type StreamChatOptions = {
     message: string;
     sessionId?: string | null;
     workspaceDir?: string | null;
+    projectId?: string | null;
     provider?: string | null;
     model?: string | null;
     attachments?: NovaAttachmentData[];
@@ -119,11 +121,35 @@ export async function getAgent(
     return res.json();
 }
 
-export async function listSessions(): Promise<NovaSessionSummary[]> {
+export async function listSessions(options?: {
+    workspaceDir?: string | null;
+}): Promise<NovaSessionSummary[]> {
+    const query = options?.workspaceDir
+        ? `?workspace_dir=${encodeURIComponent(options.workspaceDir)}`
+        : "";
     const payload = await parseJson<JsonResponse<NovaSessionSummary>>(
-        await fetch(buildUrl("/api/sessions")),
+        await fetch(buildUrl(`/api/sessions${query}`)),
     );
     return payload.items;
+}
+
+export async function resolveProject(
+    path: string,
+    name?: string | null,
+): Promise<NovaProjectRecord | null> {
+    try {
+        const response = await fetch(buildUrl("/api/projects/resolve"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path, name: name ?? null }),
+        });
+        if (!response.ok) {
+            return null;
+        }
+        return (await response.json()) as NovaProjectRecord;
+    } catch {
+        return null;
+    }
 }
 
 export async function listAgents(): Promise<NovaAgentRecord[]> {
@@ -238,6 +264,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
             message: options.message,
             session_id: options.sessionId || undefined,
             workspace_dir: options.workspaceDir || undefined,
+            project_id: options.projectId || undefined,
             provider: options.provider || undefined,
             model: options.model || undefined,
             attachments: options.attachments || [],

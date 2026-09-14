@@ -10,7 +10,7 @@
  * - data-nova-compaction-*       history compaction in progress → compaction store
  * - abort / finish / error  finalization
  */
-import { streamChat } from "../api/nova-api.ts";
+import { resolveProject, streamChat } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore, type AskQuestion } from "../stores/ask-user-store.ts";
 import { getChatState } from "../stores/chat-store.ts";
@@ -25,6 +25,21 @@ import {
 export type ChatRunOptions = {
     message: string;
 };
+
+/** The TUI keeps one working directory for its lifetime, so resolve it once. */
+let resolvedProject: { path: string; id: string } | null = null;
+
+async function projectIdForPath(path: string): Promise<string | null> {
+    if (resolvedProject?.path === path) {
+        return resolvedProject.id;
+    }
+    const project = await resolveProject(path);
+    if (!project) {
+        return null;
+    }
+    resolvedProject = { path, id: project.id };
+    return project.id;
+}
 
 /** Monotonic id per runChatStream call: lets stream teardown clear only the
 approval its own run created, never a newer live one from a later run. */
@@ -138,11 +153,15 @@ export async function runChatStream(options: ChatRunOptions): Promise<void> {
 
     let pendingAskQuestions: AskQuestion[] | null = null;
 
+    const workspaceDir = process.env.NOVA_WORKSPACE_DIR || process.cwd();
+    const projectId = await projectIdForPath(workspaceDir);
+
     try {
         await streamChat({
             message: options.message,
             sessionId,
-            workspaceDir: process.env.NOVA_WORKSPACE_DIR || process.cwd(),
+            workspaceDir,
+            projectId,
             provider,
             model,
             onEvent: (event) => {
