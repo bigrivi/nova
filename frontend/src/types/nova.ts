@@ -13,6 +13,15 @@ export type NovaSessionSummary = {
     agent_key: string;
     workspace_dir: string | null;
     pinned: boolean;
+    project_id: string | null;
+};
+
+export type NovaProject = {
+    id: string;
+    name: string;
+    path: string | null;
+    created_at: number;
+    updated_at: number;
 };
 
 export type NovaDirectoryEntry = {
@@ -78,6 +87,7 @@ export type NovaThreadSummary = {
     workspace_dir: string | null;
     pinned: boolean;
     updated_at: number;
+    project_id: string | null;
 };
 
 export type NovaMemoryRecord = {

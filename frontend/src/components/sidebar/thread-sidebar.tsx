@@ -39,7 +39,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { NovaThreadSummary } from "@/types/nova";
+import type { NovaProject, NovaThreadSummary } from "@/types/nova";
 
 import {
     DATE_BUCKETS,
@@ -51,19 +51,29 @@ import {
 } from "./sidebar-model";
 import { HighlightedText } from "./highlight-text";
 import { DeleteThreadDialog } from "./delete-thread-dialog";
+import { DeleteProjectDialog } from "./delete-project-dialog";
+import { CreateProjectDialog } from "./create-project-dialog";
 import { MoveToProjectFlyout } from "./move-to-project-flyout";
 
 type ThreadSidebarProps = {
     threads: NovaThreadSummary[];
+    projects: NovaProject[];
     activeThreadId?: string;
     runningThreadId?: string;
     disabled: boolean;
     onCollapse: () => void;
     onNewThread: () => void;
+    onNewThreadInProject: (projectId: string) => void;
+    onCreateProject: (name: string, path?: string | null) => Promise<NovaProject | null>;
+    onRenameProject: (projectId: string, name: string) => Promise<void> | void;
+    onDeleteProject: (projectId: string) => Promise<void> | void;
     onSelectThread: (threadId: string) => void;
     onRenameThread: (threadId: string, title: string) => Promise<void> | void;
     onPinThread: (threadId: string, pinned: boolean) => Promise<void> | void;
-    onMoveThread: (threadId: string, workspace: string | null) => Promise<void> | void;
+    onMoveThread: (
+        threadId: string,
+        projectId: string | null,
+    ) => Promise<void> | void;
     onDeleteThread: (
         threadId: string,
         nextThreadId: string | null,
@@ -71,7 +81,7 @@ type ThreadSidebarProps = {
     onOpenMemory: () => void;
 };
 
-const OPEN_PROJECTS_KEY = "nova.sidebar.open-projects";
+const OPEN_PROJECTS_KEY = "nova.sidebar.open-projects.v2";
 const COLLAPSED_SECTIONS_KEY = "nova.sidebar.collapsed-sections";
 const SECTION_KEYS = ["pinned", "projects", "chats"] as const;
 const OLDER_PAGE_SIZE = 50;
@@ -117,7 +127,7 @@ function storedCollapsedSections(): Set<string> {
 }
 
 function defaultOpenProjects(projects: SidebarProject[]): Set<string> {
-    return new Set(projects[0] ? [projects[0].key] : []);
+    return new Set(projects[0] ? [projects[0].id] : []);
 }
 
 function ThreadRow({
@@ -131,6 +141,7 @@ function ThreadRow({
     onPin,
     onMove,
     onDelete,
+    onCreateProject,
     showToast,
 }: {
     thread: NovaThreadSummary;
@@ -141,8 +152,9 @@ function ThreadRow({
     onSelect: () => void;
     onRename: (title: string) => Promise<void> | void;
     onPin: (pinned: boolean) => Promise<void> | void;
-    onMove: (workspace: string | null) => Promise<void> | void;
+    onMove: (projectId: string | null) => Promise<void> | void;
     onDelete: () => Promise<void> | void;
+    onCreateProject: (name: string, path?: string | null) => Promise<NovaProject | null>;
     showToast: (message: string) => void;
 }) {
     const { t } = useTranslation();
@@ -175,7 +187,7 @@ function ThreadRow({
 
     const Icon = thread.pinned ? PinIcon : MessageCircleIcon;
     const currentProject = projects.find(
-        (project) => project.key === thread.workspace_dir,
+        (project) => project.id === thread.project_id,
     );
 
     return (
@@ -310,7 +322,7 @@ function ThreadRow({
                             </span>
                             {currentProject ? (
                                 <span className="shrink-0 text-xs text-[#9C978A]">
-                                    {currentProject.label}
+                                    {currentProject.name}
                                 </span>
                             ) : null}
                             <ChevronRightIcon className="size-3.5 shrink-0 text-[#9C978A]" />
@@ -329,15 +341,26 @@ function ThreadRow({
                             panelRef={flyoutRef}
                             anchorRect={flyoutAnchor}
                             projects={projects}
-                            currentProjectKey={thread.workspace_dir}
-                            onSelect={(projectKey, label) => {
-                                void onMove(projectKey);
-                                showToast(t("sidebar.movedToast", { project: label }));
+                            currentProjectId={thread.project_id}
+                            onSelect={(projectId, name) => {
+                                void onMove(projectId);
+                                showToast(t("sidebar.movedToast", { project: name }));
                                 closeAll();
                             }}
-                            onRemove={(label) => {
+                            onRemove={(name) => {
                                 void onMove(null);
-                                showToast(t("sidebar.removedToast", { project: label }));
+                                showToast(t("sidebar.removedToast", { project: name }));
+                                closeAll();
+                            }}
+                            onCreate={async (name) => {
+                                const project = await onCreateProject(name);
+                                if (!project) {
+                                    return;
+                                }
+                                void onMove(project.id);
+                                showToast(
+                                    t("sidebar.movedToast", { project: project.name }),
+                                );
                                 closeAll();
                             }}
                             onClose={closeAll}
@@ -357,14 +380,189 @@ function ThreadRow({
     );
 }
 
+function ProjectRow({
+    project,
+    open,
+    highlighted,
+    disabled,
+    onToggle,
+    onNewThread,
+    onRename,
+    onDelete,
+    children,
+}: {
+    project: SidebarProject;
+    open: boolean;
+    highlighted: boolean;
+    disabled: boolean;
+    onToggle: () => void;
+    onNewThread: () => void;
+    onRename: (name: string) => Promise<void> | void;
+    onDelete: () => Promise<void> | void;
+    children?: ReactNode;
+}) {
+    const { t } = useTranslation();
+    const [renaming, setRenaming] = useState(false);
+    const [name, setName] = useState(project.name);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+    const saveRename = () => {
+        const next = name.trim();
+        setRenaming(false);
+        if (!next || next === project.name) {
+            setName(project.name);
+            return;
+        }
+        void onRename(next);
+    };
+
+    return (
+        <div className="group/project mb-0.5">
+            <div
+                className={cn(
+                    "flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors",
+                    highlighted
+                        ? "bg-[#EAF1F9] text-[#1D5FA8]"
+                        : "text-[#201F1C] hover:bg-[#F0EEE7]",
+                )}
+            >
+                <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={onToggle}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                >
+                    <ChevronRightIcon
+                        className={cn(
+                            "size-3 shrink-0 text-[#9C978A] transition-transform",
+                            open && "rotate-90",
+                        )}
+                    />
+                    <FolderIcon className="size-[15px] shrink-0 text-[#1D5FA8]" />
+                    {renaming ? (
+                        <input
+                            autoFocus
+                            value={name}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={(event) => setName(event.target.value)}
+                            onBlur={saveRename}
+                            onKeyDown={(
+                                event: KeyboardEvent<HTMLInputElement>,
+                            ) => {
+                                if (event.key === "Enter") saveRename();
+                                if (event.key === "Escape") {
+                                    setName(project.name);
+                                    setRenaming(false);
+                                }
+                            }}
+                            className="min-w-0 flex-1 rounded-[5px] border border-[#1D5FA8] bg-white px-1.5 py-0.5 text-[13px] font-normal text-[#201F1C] outline-none"
+                        />
+                    ) : (
+                        <span className="truncate">{project.name}</span>
+                    )}
+                    {project.qualifier ? (
+                        <span className="truncate text-[11px] font-normal text-[#9C978A]">
+                            {project.qualifier}
+                        </span>
+                    ) : null}
+                    <span className="ml-auto shrink-0 text-[11px] font-medium text-[#9C978A]">
+                        {project.threads.length}
+                    </span>
+                </button>
+
+                {!renaming ? (
+                    <>
+                        <button
+                            type="button"
+                            disabled={disabled}
+                            onClick={onNewThread}
+                            title={t("sidebar.newChatInProject")}
+                            aria-label={t("sidebar.newChatInProject")}
+                            className="project-add flex size-[22px] shrink-0 items-center justify-center rounded-md text-[#9C978A] opacity-0 hover:bg-[#E5E2D9] hover:text-[#201F1C] focus-visible:opacity-100 group-hover/project:opacity-100 disabled:cursor-not-allowed"
+                        >
+                            <PlusIcon className="size-3.5" />
+                        </button>
+                        <DropdownMenu
+                            modal={false}
+                            open={menuOpen}
+                            onOpenChange={setMenuOpen}
+                        >
+                            <DropdownMenuTrigger asChild>
+                                <button
+                                    type="button"
+                                    className="project-more flex size-[22px] shrink-0 items-center justify-center rounded-md text-[#9C978A] opacity-0 hover:bg-[#E5E2D9] hover:text-[#201F1C] focus-visible:opacity-100 data-[state=open]:opacity-100 group-hover/project:opacity-100"
+                                    aria-label={t("sidebar.projectActions")}
+                                >
+                                    <MoreHorizontalIcon className="size-4" />
+                                </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                                align="start"
+                                side="right"
+                                collisionPadding={12}
+                                className="w-48 border-[#E4E1D9] bg-white"
+                            >
+                                <DropdownMenuItem
+                                    onSelect={() => setRenaming(true)}
+                                >
+                                    <PencilIcon className="size-4" />
+                                    {t("sidebar.renameProject")}
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    className="text-[#B23B2E] data-highlighted:bg-[#FBEDEA] data-highlighted:text-[#B23B2E]"
+                                    onSelect={() => setConfirmDeleteOpen(true)}
+                                >
+                                    <Trash2Icon className="size-4" />
+                                    {t("sidebar.deleteProject")}
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </>
+                ) : null}
+            </div>
+            {open ? (
+                <div className="ml-5 border-l border-[#E4E1D9] pl-3">
+                    {children}
+                    {project.threads.length === 0 && project.pinnedCount > 0 ? (
+                        <div className="px-2 pb-2 pt-0.5 text-[12px] text-[#9C978A]">
+                            {t("sidebar.projectAllPinned", {
+                                count: project.pinnedCount,
+                            })}
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
+            <DeleteProjectDialog
+                open={confirmDeleteOpen}
+                onOpenChange={setConfirmDeleteOpen}
+                onConfirm={() => void onDelete()}
+            />
+        </div>
+    );
+}
+
 export function ThreadSidebar(props: ThreadSidebarProps) {
     const { t, i18n } = useTranslation();
-    const groups = useMemo(() => groupThreads(props.threads), [props.threads]);
+    const groups = useMemo(
+        () => groupThreads(props.threads, props.projects),
+        [props.threads, props.projects],
+    );
+    // Pinned chats only: their row lives in Pinned, so the project highlight is
+    // what shows the home. A regular chat is already visible inside its project.
+    const activeThread = props.threads.find(
+        (thread) => thread.id === props.activeThreadId,
+    );
+    const pinnedActiveProjectId = activeThread?.pinned
+        ? (activeThread.project_id ?? null)
+        : null;
     const [userOpenProjects, setUserOpenProjects] = useState<Set<string> | null>(
         () => storedOpenProjects(),
     );
     const openProjects = userOpenProjects ?? defaultOpenProjects(groups.projects);
     const [searchOpen, setSearchOpen] = useState(false);
+    const [createProjectOpen, setCreateProjectOpen] = useState(false);
     const [query, setQuery] = useState("");
     const [toast, setToast] = useState<string | null>(null);
     const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
@@ -436,13 +634,14 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
             onSelect={() => props.onSelectThread(thread.id)}
             onRename={(title) => props.onRenameThread(thread.id, title)}
             onPin={(pinned) => props.onPinThread(thread.id, pinned)}
-            onMove={(workspace) => props.onMoveThread(thread.id, workspace)}
+            onMove={(projectId) => props.onMoveThread(thread.id, projectId)}
             onDelete={() =>
                 props.onDeleteThread(
                     thread.id,
                     nextThreadAfterDelete(threadOrder, thread.id),
                 )
             }
+            onCreateProject={props.onCreateProject}
             showToast={showToast}
         />
     ));
@@ -452,11 +651,11 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
         : props.threads.slice(0, 8);
 
     const groupMeta = (thread: NovaThreadSummary) => {
-        if (thread.workspace_dir) {
-            return (
-                thread.workspace_dir.split(/[\\/]/).filter(Boolean).at(-1) ||
-                thread.workspace_dir
-            );
+        const project = thread.project_id
+            ? groups.projects.find((item) => item.id === thread.project_id)
+            : undefined;
+        if (project) {
+            return project.name;
         }
         return t(`sidebar.date.${dateBucket(thread.updated_at)}`);
     };
@@ -475,20 +674,47 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
                 <Section title={t("sidebar.pinned")} collapsed={collapsedSections.has("pinned")} onToggle={() => toggleSection("pinned")} empty={groups.pinned.length === 0 ? t("sidebar.noPinned") : null}>{allRows(groups.pinned)}</Section>
-                <Section title={t("sidebar.projects")} collapsed={collapsedSections.has("projects")} onToggle={() => toggleSection("projects")} empty={groups.projects.length === 0 ? t("sidebar.noProjects") : null}>
-                    {groups.projects.map((project) => {
-                        const open = openProjects.has(project.key);
-                        return <div key={project.key} className="mb-0.5">
-                            <button type="button" aria-expanded={open} onClick={() => toggleProject(project.key)} className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-semibold hover:bg-[#F0EEE7]">
-                                <ChevronRightIcon className={cn("size-3 text-[#9C978A] transition-transform", open && "rotate-90")} />
-                                <FolderIcon className="size-[15px] text-[#1D5FA8]" />
-                                <span className="truncate">{project.label}</span>
-                                {project.qualifier ? <span className="truncate text-[11px] font-normal text-[#9C978A]">{project.qualifier}</span> : null}
-                                <span className="ml-auto text-[11px] font-medium text-[#9C978A]">{project.threads.length}</span>
-                            </button>
-                            {open ? <div className="ml-5 border-l border-[#E4E1D9] pl-3">{allRows(project.threads)}</div> : null}
-                        </div>;
-                    })}
+                <Section
+                    title={t("sidebar.projects")}
+                    collapsed={collapsedSections.has("projects")}
+                    onToggle={() => toggleSection("projects")}
+                    empty={
+                        groups.projects.length === 0
+                            ? t("sidebar.noProjects")
+                            : null
+                    }
+                    actions={
+                        <button
+                            type="button"
+                            disabled={props.disabled}
+                            onClick={() => setCreateProjectOpen(true)}
+                            title={t("sidebar.newProject")}
+                            aria-label={t("sidebar.newProject")}
+                            className="section-add flex size-[22px] items-center justify-center rounded-md text-[#9C978A] hover:bg-[#E5E2D9] hover:text-[#201F1C] disabled:cursor-not-allowed"
+                        >
+                            <PlusIcon className="size-3.5" />
+                        </button>
+                    }
+                >
+                    {groups.projects.map((project) => (
+                        <ProjectRow
+                            key={project.id}
+                            project={project}
+                            open={openProjects.has(project.id)}
+                            highlighted={project.id === pinnedActiveProjectId}
+                            disabled={props.disabled}
+                            onToggle={() => toggleProject(project.id)}
+                            onNewThread={() =>
+                                props.onNewThreadInProject(project.id)
+                            }
+                            onRename={(name) =>
+                                props.onRenameProject(project.id, name)
+                            }
+                            onDelete={() => props.onDeleteProject(project.id)}
+                        >
+                            {allRows(project.threads)}
+                        </ProjectRow>
+                    ))}
                 </Section>
                 <Section title={t("sidebar.chats")} collapsed={collapsedSections.has("chats")} onToggle={() => toggleSection("chats")}>
                     {DATE_BUCKETS.map((key) => {
@@ -559,6 +785,13 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
                 </div>
             </div> : null}
             {toast ? <div className="fixed bottom-5 left-1/2 z-[80] -translate-x-1/2 rounded-full bg-[#201F1C] px-3.5 py-2 text-xs text-white">{toast}</div> : null}
+            <CreateProjectDialog
+                open={createProjectOpen}
+                onOpenChange={setCreateProjectOpen}
+                onCreate={async (name, path) => {
+                    await props.onCreateProject(name, path);
+                }}
+            />
         </aside>
     );
 }
@@ -568,31 +801,40 @@ function Section({
     empty,
     collapsed,
     onToggle,
+    actions,
     children,
 }: {
     title: string;
     empty?: string | null;
     collapsed: boolean;
     onToggle: () => void;
+    actions?: ReactNode;
     children?: ReactNode;
 }) {
     return (
         <section className="mb-1">
-            <button
-                type="button"
-                aria-expanded={!collapsed}
-                onClick={onToggle}
-                className="group/section flex w-full items-center gap-1 rounded-md px-2 pb-1 pt-3 text-left text-[11.5px] font-semibold text-[#6E6A60] hover:text-[#201F1C]"
-            >
-                <span>{title}</span>
-                <ChevronRightIcon
-                    aria-hidden="true"
-                    className={cn(
-                        "section-chev size-3 shrink-0 opacity-0 transition-transform group-hover/section:opacity-100",
-                        collapsed ? "rotate-0 opacity-100" : "rotate-90",
-                    )}
-                />
-            </button>
+            <div className="group/section flex items-center gap-1 rounded-md px-2 pb-1 pt-3">
+                <button
+                    type="button"
+                    aria-expanded={!collapsed}
+                    onClick={onToggle}
+                    className="flex min-w-0 flex-1 items-center gap-1 text-left text-[11.5px] font-semibold text-[#6E6A60] hover:text-[#201F1C]"
+                >
+                    <span>{title}</span>
+                    <ChevronRightIcon
+                        aria-hidden="true"
+                        className={cn(
+                            "section-chev size-3 shrink-0 opacity-0 transition-transform group-hover/section:opacity-100",
+                            collapsed ? "rotate-0 opacity-100" : "rotate-90",
+                        )}
+                    />
+                </button>
+                {actions ? (
+                    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/section:opacity-100">
+                        {actions}
+                    </div>
+                ) : null}
+            </div>
             {collapsed ? null : empty ? (
                 <div className="px-2 pb-2.5 pt-0.5 text-[12px] text-[#9C978A]">
                     {empty}

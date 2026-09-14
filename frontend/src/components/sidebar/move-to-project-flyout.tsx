@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckIcon, FolderIcon, SearchIcon } from "lucide-react";
+import { CheckIcon, FolderIcon, PlusIcon, SearchIcon } from "lucide-react";
 import {
     useCallback,
     useEffect,
@@ -43,17 +43,19 @@ export function MoveToProjectFlyout({
     panelRef,
     anchorRect,
     projects,
-    currentProjectKey,
+    currentProjectId,
     onSelect,
     onRemove,
+    onCreate,
     onClose,
 }: {
     panelRef: RefObject<HTMLDivElement | null>;
     anchorRect: AnchorRect;
     projects: SidebarProject[];
-    currentProjectKey: string | null;
-    onSelect: (projectKey: string, label: string) => void;
-    onRemove: (label: string) => void;
+    currentProjectId: string | null;
+    onSelect: (projectId: string, name: string) => void;
+    onRemove: (name: string) => void;
+    onCreate: (name: string) => Promise<void> | void;
     onClose: () => void;
 }) {
     const { t } = useTranslation();
@@ -110,13 +112,14 @@ export function MoveToProjectFlyout({
         const needle = query.trim().toLocaleLowerCase();
         if (!needle) return projects;
         return projects.filter((project) =>
-            project.label.toLocaleLowerCase().includes(needle),
+            project.name.toLocaleLowerCase().includes(needle),
         );
     }, [projects, query]);
 
     const currentProject = projects.find(
-        (project) => project.key === currentProjectKey,
+        (project) => project.id === currentProjectId,
     );
+    const newProjectName = query.trim();
 
     return createPortal(
         <div
@@ -136,24 +139,24 @@ export function MoveToProjectFlyout({
                 />
             </div>
             <div className="max-h-[208px] overflow-y-auto p-1.5">
-                {matched.length === 0 ? (
+                {matched.length === 0 && !newProjectName ? (
                     <div className="px-2.5 py-4 text-center text-[12.5px] text-[#9C978A]">
                         {t("sidebar.noMatchingProjects")}
                     </div>
                 ) : (
                     matched.map((project) => {
-                        const isCurrent = project.key === currentProjectKey;
+                        const isCurrent = project.id === currentProjectId;
                         return (
                             <button
-                                key={project.key}
+                                key={project.id}
                                 type="button"
-                                onClick={() => onSelect(project.key, project.label)}
+                                onClick={() => onSelect(project.id, project.name)}
                                 className="flex w-full items-center gap-2 rounded-[7px] px-2 py-1.5 text-left text-[13px] text-[#201F1C] hover:bg-[#F0EEE7]"
                             >
                                 <FolderIcon className="size-3.5 shrink-0 text-[#9C978A]" />
                                 <span className="min-w-0 flex-1 truncate">
                                     <HighlightedText
-                                        text={project.label}
+                                        text={project.name}
                                         query={query}
                                     />
                                 </span>
@@ -164,18 +167,32 @@ export function MoveToProjectFlyout({
                         );
                     })
                 )}
+                {newProjectName ? (
+                    <button
+                        type="button"
+                        onClick={() => void onCreate(newProjectName)}
+                        className="flex w-full items-center gap-2 rounded-[7px] px-2 py-1.5 text-left text-[13px] text-[#1D5FA8] hover:bg-[#EAF1F9]"
+                    >
+                        <PlusIcon className="size-3.5 shrink-0" />
+                        <span className="min-w-0 flex-1 truncate">
+                            {t("sidebar.newProjectNamed", {
+                                name: newProjectName,
+                            })}
+                        </span>
+                    </button>
+                ) : null}
             </div>
             {currentProject ? (
                 <button
                     type="button"
-                    onClick={() => onRemove(currentProject.label)}
+                    onClick={() => onRemove(currentProject.name)}
                     className={cn(
                         "w-full border-t border-[#E4E1D9] px-2.5 py-2 text-left text-[13px] text-[#B23B2E]",
                         "hover:bg-[#FBEDEA]",
                     )}
                 >
                     {t("sidebar.removeProjectNamed", {
-                        project: currentProject.label,
+                        project: currentProject.name,
                     })}
                 </button>
             ) : null}

@@ -5,6 +5,7 @@ import type {
     NovaMessageRecord,
     NovaModelCreateRequest,
     NovaModelRecord,
+    NovaProject,
     NovaProviderCreateRequest,
     NovaProviderRecord,
     NovaSessionSummary,
@@ -21,6 +22,7 @@ type StreamChatOptions = {
     provider?: string | null;
     model?: string | null;
     workspaceDir?: string | null;
+    projectId?: string | null;
     attachments?: NovaAttachmentData[];
     onEvent: (event: NovaStreamEvent) => void;
 };
@@ -302,6 +304,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
             provider: options.provider || undefined,
             model: options.model || undefined,
             workspace_dir: options.workspaceDir || undefined,
+            project_id: options.projectId || undefined,
             attachments: options.attachments || [],
         }),
     });
@@ -339,5 +342,87 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
             }
             return;
         }
+    }
+}
+
+export async function listProjects(): Promise<NovaProject[]> {
+    const payload = await parseJson<JsonResponse<NovaProject>>(
+        await fetch(buildUrl("/api/projects")),
+    );
+    return payload.items;
+}
+
+export async function createProject(
+    name: string | null,
+    path: string | null,
+): Promise<NovaProject> {
+    const response = await fetch(buildUrl("/api/projects"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, path }),
+    });
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+    return (await response.json()) as NovaProject;
+}
+
+export async function resolveProject(
+    path: string,
+    name?: string | null,
+): Promise<NovaProject> {
+    const response = await fetch(buildUrl("/api/projects/resolve"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, name: name ?? null }),
+    });
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+    return (await response.json()) as NovaProject;
+}
+
+export async function updateProject(
+    projectId: string,
+    fields: { name?: string; path?: string | null },
+): Promise<NovaProject> {
+    const response = await fetch(
+        buildUrl(`/api/projects/${encodeURIComponent(projectId)}`),
+        {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(fields),
+        },
+    );
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+    return (await response.json()) as NovaProject;
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+    const response = await fetch(
+        buildUrl(`/api/projects/${encodeURIComponent(projectId)}`),
+        { method: "DELETE" },
+    );
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+}
+
+export async function setSessionProject(
+    sessionId: string,
+    projectId: string | null,
+): Promise<void> {
+    const response = await fetch(
+        buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/project`),
+        {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project_id: projectId }),
+        },
+    );
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
     }
 }

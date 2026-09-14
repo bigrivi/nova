@@ -6,19 +6,13 @@ import { useAskUserStore } from "@/stores/ask-user-store";
 import type { NovaModelRecord, NovaProviderRecord } from "@/types/nova";
 import { AuiIf, ThreadPrimitive } from "@assistant-ui/react";
 import type { KeyboardEvent, RefObject } from "react";
-import {
-    type FC,
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from "react";
+import { type FC } from "react";
 
 import { CompactionBanner } from "./thread-compaction-banner";
-import { ThreadComposerContainer } from "./thread-composer";
+import { EmptyState } from "./thread-empty-state";
 import { ThreadMessage } from "./thread-message";
 import { ThreadScrollToBottom } from "./thread-scroll-to-bottom";
+import { ThreadStickyComposer } from "./thread-sticky-composer";
 
 type ThreadProps = {
     composer: {
@@ -39,85 +33,46 @@ type ThreadProps = {
         onProvidersRefresh: () => Promise<void>;
         onStatusChange: (message: string | null) => void;
     };
-    workspace: {
-        value: string | null;
-        onChange: (path: string | null) => void;
-    };
 };
 
-export const Thread: FC<ThreadProps> = ({ composer, modelSelection, workspace }) => {
-    const [composerHeight, setComposerHeight] = useState(0);
-    const [askUserHeight, setAskUserHeight] = useState(0);
-    const [approvalHeight, setApprovalHeight] = useState(0);
+export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
     const zoomTargetRef = useZoom();
     const activeCall = useAskUserStore((s) => s.active);
     const pendingApproval = useApprovalStore((s) => s.pending);
 
-    const askUserObserverRef = useRef<ResizeObserver | null>(null);
-    const approvalObserverRef = useRef<ResizeObserver | null>(null);
-
-    const askUserRef = useCallback((el: HTMLDivElement | null) => {
-        askUserObserverRef.current?.disconnect();
-        askUserObserverRef.current = null;
-        if (!el) {
-            setAskUserHeight(0);
-            return;
-        }
-        const ro = new ResizeObserver(([entry]) =>
-            setAskUserHeight(entry.contentRect.height),
-        );
-        ro.observe(el);
-        askUserObserverRef.current = ro;
-    }, []);
-
-    const approvalRef = useCallback((el: HTMLDivElement | null) => {
-        approvalObserverRef.current?.disconnect();
-        approvalObserverRef.current = null;
-        if (!el) {
-            setApprovalHeight(0);
-            return;
-        }
-        const ro = new ResizeObserver(([entry]) =>
-            setApprovalHeight(entry.contentRect.height),
-        );
-        ro.observe(el);
-        approvalObserverRef.current = ro;
-    }, []);
-
-    useEffect(() => {
-        return () => {
-            askUserObserverRef.current?.disconnect();
-            approvalObserverRef.current?.disconnect();
-        };
-    }, []);
-
-    const spacerHeight = useMemo(() => {
-        if (approvalHeight > 0) return approvalHeight + 16;
-        if (askUserHeight > 0) return askUserHeight + 16;
-        if (composerHeight > 0) return composerHeight + 20;
-        return 0;
-    }, [approvalHeight, askUserHeight, composerHeight]);
+    // One composer, mounted either centered in the empty state or inside the
+    // viewport footer. Only one branch is mounted at a time, so the draft and
+    // textarea ref (both owned by the shell) survive the switch.
+    const composerNode = (
+        <ThreadStickyComposer
+            composer={composer}
+            modelSelection={modelSelection}
+        />
+    );
 
     return (
-        <>
-            <ThreadPrimitive.Root
-                className="aui-root aui-thread-root @container relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background"
-                style={{
-                    ["--thread-max-width" as string]: "50rem",
-                    ["--composer-radius" as string]: "24px",
-                    ["--composer-padding" as string]: "10px",
-                }}
-            >
+        <ThreadPrimitive.Root
+            className="aui-root aui-thread-root @container relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background"
+            style={{
+                ["--thread-max-width" as string]: "50rem",
+                ["--composer-radius" as string]: "24px",
+                ["--composer-padding" as string]: "10px",
+            }}
+        >
+            <AuiIf condition={(s) => s.thread.isEmpty}>
+                <EmptyState>{composerNode}</EmptyState>
+            </AuiIf>
+
+            <AuiIf condition={(s) => !s.thread.isEmpty}>
                 <ThreadPrimitive.Viewport
                     autoScroll
                     data-slot="aui_thread-viewport"
                     turnAnchor="bottom"
                     className="relative flex min-h-0 flex-1 flex-col overflow-y-auto"
-                    style={{ scrollbarGutter: "stable" }}
                 >
                     {/* shrink-0 keeps min-h-full from collapsing this column to
                         the viewport height, which would make it a too-short
-                        sticky containing block for the scroll-to-bottom row. */}
+                        sticky containing block for the footer. */}
                     <div className="mx-auto flex min-h-full w-full max-w-(--thread-max-width) shrink-0 flex-col px-4 pt-14">
                         <div data-slot="aui_message-group" className="mb-5">
                             <div
@@ -132,59 +87,32 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection, workspace })
 
                         <CompactionBanner />
 
-                        <AuiIf condition={(s) => !s.thread.isEmpty}>
-                            <div
-                                aria-hidden="true"
-                                className="shrink-0"
-                                style={{
-                                    height: spacerHeight
-                                        ? `${spacerHeight}px`
-                                        : "0px",
-                                }}
-                            />
-                        </AuiIf>
+                        <ThreadPrimitive.ViewportFooter className="sticky bottom-0 z-20 mt-auto flex w-full flex-col">
+                            <ThreadScrollToBottom />
 
-                        <ThreadScrollToBottom bottomOffset={spacerHeight} />
+                            {pendingApproval ? (
+                                <div className="bg-background pb-3 pt-3">
+                                    <div className="max-h-[70vh] overflow-y-auto">
+                                        <ApprovalDialog />
+                                    </div>
+                                </div>
+                            ) : activeCall ? (
+                                <div className="bg-background pb-3 pt-3">
+                                    <div className="max-h-[70vh] overflow-y-auto">
+                                        <AskUserTool
+                                            {...(activeCall as React.ComponentProps<
+                                                typeof AskUserTool
+                                            >)}
+                                        />
+                                    </div>
+                                </div>
+                            ) : (
+                                composerNode
+                            )}
+                        </ThreadPrimitive.ViewportFooter>
                     </div>
                 </ThreadPrimitive.Viewport>
-
-                {activeCall && (
-                    <div
-                        ref={askUserRef}
-                        className="absolute inset-x-0 bottom-0 z-50 bg-background"
-                    >
-                        <div className="mx-auto w-full max-w-(--thread-max-width) px-4 pb-3 pt-3">
-                            <div className="max-h-[70vh] overflow-y-auto">
-                                <AskUserTool
-                                    {...(activeCall as React.ComponentProps<
-                                        typeof AskUserTool
-                                    >)}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                )}
-                {pendingApproval && (
-                    <div
-                        ref={approvalRef}
-                        className="absolute inset-x-0 bottom-0 z-50 bg-background"
-                    >
-                        <div className="mx-auto w-full max-w-(--thread-max-width) px-4 pb-3 pt-3">
-                            <div className="max-h-[70vh] overflow-y-auto">
-                                <ApprovalDialog />
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                <ThreadComposerContainer
-                    composer={composer}
-                    modelSelection={modelSelection}
-                    workspace={workspace}
-                    onHeightChange={setComposerHeight}
-                    hidden={Boolean(activeCall || pendingApproval)}
-                />
-            </ThreadPrimitive.Root>
-        </>
+            </AuiIf>
+        </ThreadPrimitive.Root>
     );
 };

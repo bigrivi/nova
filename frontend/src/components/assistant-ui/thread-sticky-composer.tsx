@@ -1,8 +1,5 @@
 import { ArrowUpIcon, Square } from "lucide-react";
 import {
-    useEffect,
-    useRef,
-    useState,
     type ClipboardEvent,
     type KeyboardEvent,
     type RefObject,
@@ -16,7 +13,6 @@ import { Button } from "../ui/button";
 import { ComposerAddAttachment, ComposerAttachments } from "./attachment";
 import { ModelSelector } from "./model-selector";
 import { TodoProgressPanel } from "./todo-progress-panel";
-import { WorkspaceControl } from "./workspace-control";
 
 type ThreadStickyComposerProps = {
     composer: {
@@ -37,39 +33,14 @@ type ThreadStickyComposerProps = {
         onProvidersRefresh: () => Promise<void>;
         onStatusChange: (message: string | null) => void;
     };
-    workspace: {
-        value: string | null;
-        onChange: (path: string | null) => void;
-    };
-    onHeightChange?: (height: number) => void;
 };
 
 export function ThreadStickyComposer({
     composer,
     modelSelection,
-    workspace,
-    onHeightChange,
 }: ThreadStickyComposerProps) {
     const { t } = useTranslation();
-    const containerRef = useRef<HTMLDivElement | null>(null);
-    const [viewportGutter, setViewportGutter] = useState(0);
     const aui = useAui();
-
-    useEffect(() => {
-        const viewport = document.querySelector<HTMLElement>(
-            '[data-slot="aui_thread-viewport"]',
-        );
-        if (!viewport) {
-            return;
-        }
-        const update = () => {
-            setViewportGutter(viewport.offsetWidth - viewport.clientWidth);
-        };
-        update();
-        const observer = new ResizeObserver(update);
-        observer.observe(viewport);
-        return () => observer.disconnect();
-    }, []);
 
     const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
         const imageFiles = Array.from(event.clipboardData.items)
@@ -89,37 +60,10 @@ export function ThreadStickyComposer({
         }
     };
 
-    useEffect(() => {
-        const node = containerRef.current;
-        if (!node || !onHeightChange) {
-            return;
-        }
-
-        const reportHeight = () => {
-            onHeightChange(node.offsetHeight);
-        };
-
-        reportHeight();
-
-        const observer = new ResizeObserver(() => {
-            reportHeight();
-        });
-        observer.observe(node);
-
-        return () => {
-            observer.disconnect();
-            onHeightChange(0);
-        };
-    }, [onHeightChange]);
-
     return (
-        <div
-            ref={containerRef}
-            className="pointer-events-none relative overflow-x-clip pb-4 pt-3"
-            style={{ paddingRight: viewportGutter }}
-        >
+        <div className="pointer-events-none relative overflow-x-clip pb-4 pt-3">
             <div className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-t from-background via-background to-transparent" />
-            <div className="relative z-10 mx-auto w-full max-w-(--thread-max-width) px-4">
+            <div className="relative z-10 w-full">
                 <TodoProgressPanel />
                 <div className="pointer-events-auto relative rounded-(--composer-radius) border border-[#E4E3DF] bg-white p-3 shadow-[0_1px_2px_rgba(20,20,18,0.04),0_12px_32px_rgba(20,20,18,0.06)] transition-shadow focus-within:border-ring/75 focus-within:ring-2 focus-within:ring-ring/20">
                     <textarea
@@ -142,10 +86,6 @@ export function ThreadStickyComposer({
                     <div className="mt-3 flex items-center justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-2">
                             <ComposerAddAttachment />
-                            <WorkspaceControl
-                                value={workspace.value}
-                                onChange={workspace.onChange}
-                            />
                         </div>
                         <div className="flex items-center gap-2">
                             <ModelSelector

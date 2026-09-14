@@ -21,18 +21,22 @@ import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { toThreadMessages } from "../lib/history-messages";
 import {
+    createProject,
+    deleteProject,
     deleteSession,
     getAgent,
     interruptChat,
     listMessages,
     listModels,
+    listProjects,
     listProviders,
     listSessions,
     renameSession,
     setSessionPinned,
-    setSessionWorkspace,
+    setSessionProject,
     streamChat,
     updateAgent,
+    updateProject,
 } from "../lib/nova-api";
 import { useApprovalStore } from "../stores/approval-store";
 import { useAskUserStore } from "../stores/ask-user-store";
@@ -42,6 +46,7 @@ import type {
     NovaAttachmentData,
     NovaJsonObject,
     NovaModelRecord,
+    NovaProject,
     NovaProviderRecord,
     NovaSessionSummary,
     NovaThreadSummary,
@@ -117,6 +122,7 @@ function toThreadSummary(session: NovaSessionSummary): NovaThreadSummary {
         workspace_dir: session.workspace_dir ?? null,
         pinned: session.pinned ?? false,
         updated_at: session.updated_at,
+        project_id: session.project_id ?? null,
     };
 }
 
@@ -336,7 +342,8 @@ export function NovaAppShell() {
         [DRAFT_THREAD_ID]: [],
     });
     const [currentThreadId, setCurrentThreadId] = useState(DRAFT_THREAD_ID);
-    const [workspaceDir, setWorkspaceDir] = useState<string | null>(null);
+    const [projects, setProjects] = useState<NovaProject[]>([]);
+    const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
     const [models, setModels] = useState<NovaModelRecord[]>([]);
     const [providers, setProviders] = useState<NovaProviderRecord[]>([]);
     const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
@@ -364,12 +371,17 @@ export function NovaAppShell() {
 
         async function bootstrap() {
             try {
-                const [availableModels, availableProviders, savedSessions] =
-                    await Promise.all([
-                        listModels(),
-                        listProviders(),
-                        listSessions(),
-                    ]);
+                const [
+                    availableModels,
+                    availableProviders,
+                    savedSessions,
+                    savedProjects,
+                ] = await Promise.all([
+                    listModels(),
+                    listProviders(),
+                    listSessions(),
+                    listProjects(),
+                ]);
 
                 if (cancelled) {
                     return;
@@ -389,6 +401,7 @@ export function NovaAppShell() {
                     setModels(availableModels);
                     setProviders(availableProviders);
                     setThreads(savedSessions.map(toThreadSummary));
+                    setProjects(savedProjects);
                 });
             } catch (error) {
                 if (!cancelled) {
@@ -408,8 +421,6 @@ export function NovaAppShell() {
         try {
             const messages = await listMessages(threadId);
             useTodoStore.getState().clear();
-            const thread = threads.find((t) => t.id === threadId);
-            setWorkspaceDir(thread?.workspace_dir ?? null);
             startTransition(() => {
                 setCurrentThreadId(threadId);
                 setMessagesByThreadId((previous) => ({
@@ -438,7 +449,7 @@ export function NovaAppShell() {
         });
     }
 
-    function switchToDraftThread() {
+    function switchToDraftThread(projectId: string | null = null) {
         if (isRunning) {
             return;
         }
@@ -453,39 +464,69 @@ export function NovaAppShell() {
             }));
         });
         setComposerText("");
-        setWorkspaceDir(null);
+        setDraftProjectId(projectId);
     }
 
-    async function handleWorkspaceChange(path: string | null) {
-        setWorkspaceDir(path);
-        const sid = currentThreadId;
-        if (sid && sid !== DRAFT_THREAD_ID) {
-            try {
-                await setSessionWorkspace(sid, path);
-                setThreads((previous) =>
-                    previous.map((thread) =>
-                        thread.id === sid
-                            ? { ...thread, workspace_dir: path }
-                            : thread,
-                    ),
-                );
-            } catch (error) {
-                console.error("Failed to set session workspace:", sid, error);
-            }
+    function handleNewThreadInProject(projectId: string) {
+        switchToDraftThread(projectId);
+    }
+
+    async function handleCreateProject(
+        name: string,
+        path: string | null = null,
+    ): Promise<NovaProject | null> {
+        try {
+            const project = await createProject(name, path);
+            setProjects((previous) => [project, ...previous]);
+            return project;
+        } catch (error) {
+            console.error("Failed to create project:", error);
+            return null;
         }
     }
 
-    async function handleMoveThread(threadId: string, path: string | null) {
+    async function handleRenameProject(projectId: string, name: string) {
         try {
-            await setSessionWorkspace(threadId, path);
+            const project = await updateProject(projectId, { name });
+            setProjects((previous) =>
+                previous.map((item) => (item.id === projectId ? project : item)),
+            );
+        } catch (error) {
+            console.error("Failed to rename project:", projectId, error);
+        }
+    }
+
+    async function handleDeleteProject(projectId: string) {
+        try {
+            await deleteProject(projectId);
+            setProjects((previous) =>
+                previous.filter((item) => item.id !== projectId),
+            );
             setThreads((previous) =>
                 previous.map((thread) =>
-                    thread.id === threadId
-                        ? { ...thread, workspace_dir: path }
+                    thread.project_id === projectId
+                        ? { ...thread, project_id: null }
                         : thread,
                 ),
             );
-            if (threadId === currentThreadId) setWorkspaceDir(path);
+        } catch (error) {
+            console.error("Failed to delete project:", projectId, error);
+        }
+    }
+
+    async function handleMoveThread(
+        threadId: string,
+        projectId: string | null,
+    ) {
+        try {
+            await setSessionProject(threadId, projectId);
+            setThreads((previous) =>
+                previous.map((thread) =>
+                    thread.id === threadId
+                        ? { ...thread, project_id: projectId }
+                        : thread,
+                ),
+            );
         } catch (error) {
             console.error("Failed to move thread:", threadId, error);
         }
@@ -623,9 +664,9 @@ export function NovaAppShell() {
                         : sessionIdRef.current,
                 provider: selectedModel?.provider || null,
                 model: selectedModel?.model || null,
-                workspaceDir:
+                projectId:
                     sessionIdRef.current === DRAFT_THREAD_ID
-                        ? workspaceDir
+                        ? draftProjectId
                         : null,
                 attachments,
                 onEvent: (event) => {
@@ -661,7 +702,8 @@ export function NovaAppShell() {
                                             prompt,
                                         ),
                                         status: "regular",
-                                        workspace_dir: workspaceDir,
+                                        workspace_dir: null,
+                                        project_id: draftProjectId,
                                         pinned: false,
                                         updated_at: Date.now(),
                                     },
@@ -1022,6 +1064,7 @@ export function NovaAppShell() {
                     {!isSidebarCollapsed ? (
                         <ThreadSidebar
                             threads={threads}
+                            projects={projects}
                             activeThreadId={activeThreadListId}
                             runningThreadId={
                                 isRunning ? activeThreadListId : undefined
@@ -1029,6 +1072,10 @@ export function NovaAppShell() {
                             disabled={isRunning}
                             onCollapse={() => setIsSidebarCollapsed(true)}
                             onNewThread={switchToDraftThread}
+                            onNewThreadInProject={handleNewThreadInProject}
+                            onCreateProject={handleCreateProject}
+                            onRenameProject={handleRenameProject}
+                            onDeleteProject={handleDeleteProject}
                             onSelectThread={(threadId) => {
                                 if (isRunning || threadId === currentThreadId) return;
                                 setCurrentThreadId(threadId);
@@ -1093,10 +1140,6 @@ export function NovaAppShell() {
                                     onModelsUpdated: handleConfigModelsUpdated,
                                     onProvidersRefresh: refreshProviders,
                                     onStatusChange: handleConfigStatus,
-                                }}
-                                workspace={{
-                                    value: workspaceDir,
-                                    onChange: handleWorkspaceChange,
                                 }}
                             />
                         </div>

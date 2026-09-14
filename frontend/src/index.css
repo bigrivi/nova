@@ -112,6 +112,9 @@
 
 @media (pointer: coarse) {
   .thread-more,
+  .project-more,
+  .project-add,
+  .section-add,
   .section-chev {
     opacity: 1;
   }

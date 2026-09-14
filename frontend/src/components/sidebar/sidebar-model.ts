@@ -1,11 +1,13 @@
-import type { NovaThreadSummary } from "@/types/nova";
+import type { NovaProject, NovaThreadSummary } from "@/types/nova";
 
 export type ChatDateBucket = "today" | "yesterday" | "last7Days" | "older";
 
 export type SidebarProject = {
-    key: string;
-    label: string;
+    id: string;
+    name: string;
+    path: string | null;
     qualifier: string | null;
+    pinnedCount: number;
     latestActivity: number;
     threads: NovaThreadSummary[];
 };
@@ -16,12 +18,10 @@ export type SidebarGroups = {
     chats: Record<ChatDateBucket, NovaThreadSummary[]>;
 };
 
-function projectLabel(path: string): string {
-    const normalized = path.replace(/[\\/]+$/, "");
-    return normalized.split(/[\\/]/).at(-1) || normalized;
-}
-
-function parentLabel(path: string): string | null {
+function parentLabel(path: string | null): string | null {
+    if (!path) {
+        return null;
+    }
     const normalized = path.replace(/[\\/]+$/, "");
     const pieces = normalized.split(/[\\/]/).filter(Boolean);
     return pieces.length > 1 ? pieces.at(-2) ?? null : null;
@@ -46,51 +46,69 @@ export function dateBucket(
 
 export function groupThreads(
     threads: readonly NovaThreadSummary[],
+    projects: readonly NovaProject[],
     now = new Date(),
 ): SidebarGroups {
     const pinned = threads.filter((thread) => thread.pinned);
-    const projectMap = new Map<string, NovaThreadSummary[]>();
     const chats: SidebarGroups["chats"] = {
         today: [],
         yesterday: [],
         last7Days: [],
         older: [],
     };
+    const knownIds = new Set(projects.map((project) => project.id));
+    const threadsByProject = new Map<string, NovaThreadSummary[]>(
+        projects.map((project) => [project.id, []]),
+    );
+    const pinnedByProject = new Map<string, number>();
 
     for (const thread of threads) {
-        // Project membership ignores pinning so an all-pinned project still shows up.
-        if (thread.workspace_dir) {
-            const items = projectMap.get(thread.workspace_dir) ?? [];
-            items.push(thread);
-            projectMap.set(thread.workspace_dir, items);
+        // Pinned chats are exclusive: they live in the Pinned section only, and
+        // the project just remembers how many of its chats were pinned away.
+        if (thread.pinned) {
+            if (thread.project_id && knownIds.has(thread.project_id)) {
+                pinnedByProject.set(
+                    thread.project_id,
+                    (pinnedByProject.get(thread.project_id) ?? 0) + 1,
+                );
+            }
             continue;
         }
-        if (thread.pinned) continue;
+        if (thread.project_id && knownIds.has(thread.project_id)) {
+            threadsByProject.get(thread.project_id)?.push(thread);
+            continue;
+        }
         chats[dateBucket(thread.updated_at, now)].push(thread);
     }
 
-    const duplicateLabels = new Set<string>();
-    const labels = new Map<string, number>();
-    for (const key of projectMap.keys()) {
-        const label = projectLabel(key);
-        const count = (labels.get(label) ?? 0) + 1;
-        labels.set(label, count);
-        if (count > 1) duplicateLabels.add(label);
+    const nameCounts = new Map<string, number>();
+    for (const project of projects) {
+        nameCounts.set(project.name, (nameCounts.get(project.name) ?? 0) + 1);
     }
 
-    const projects = [...projectMap.entries()]
-        .map(([key, items]) => ({
-            key,
-            label: projectLabel(key),
-            qualifier: duplicateLabels.has(projectLabel(key))
-                ? parentLabel(key)
-                : null,
-            latestActivity: Math.max(...items.map((item) => item.updated_at)),
-            threads: items,
-        }))
+    // Every project is listed, including ones without sessions yet - that row is
+    // where a new session gets created.
+    const grouped = projects
+        .map((project) => {
+            const items = threadsByProject.get(project.id) ?? [];
+            return {
+                id: project.id,
+                name: project.name,
+                path: project.path,
+                qualifier:
+                    (nameCounts.get(project.name) ?? 0) > 1
+                        ? parentLabel(project.path)
+                        : null,
+                pinnedCount: pinnedByProject.get(project.id) ?? 0,
+                latestActivity: items.length
+                    ? Math.max(...items.map((item) => item.updated_at))
+                    : project.updated_at,
+                threads: items,
+            };
+        })
         .sort((left, right) => right.latestActivity - left.latestActivity);
 
-    return { pinned, projects, chats };
+    return { pinned, projects: grouped, chats };
 }
 
 export const DATE_BUCKETS: ChatDateBucket[] = [

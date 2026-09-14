@@ -1,3 +1,5 @@
+"use client";
+
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -14,20 +16,18 @@ import { CornerLeftUpIcon, FolderIcon, HomeIcon, RotateCcwIcon } from "lucide-re
 import { type FC, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-type WorkspacePickerProps = {
+type ProjectPathPickerProps = {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     initialPath?: string | null;
     onSelect: (path: string | null) => void;
-    allowClear?: boolean;
 };
 
-export const WorkspacePicker: FC<WorkspacePickerProps> = ({
+export const ProjectPathPicker: FC<ProjectPathPickerProps> = ({
     open,
     onOpenChange,
     initialPath,
     onSelect,
-    allowClear = true,
 }) => {
     const { t } = useTranslation();
     const [listing, setListing] = useState<NovaDirectoryListing | null>(null);
@@ -75,9 +75,11 @@ export const WorkspacePicker: FC<WorkspacePickerProps> = ({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
-                    <DialogTitle>{t("workspace.pickerTitle")}</DialogTitle>
+                    <DialogTitle>
+                        {t("sidebar.projectPathPickerTitle")}
+                    </DialogTitle>
                     <DialogDescription>
-                        {t("workspace.pickerDescription")}
+                        {t("sidebar.projectPathPickerDescription")}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -86,7 +88,7 @@ export const WorkspacePicker: FC<WorkspacePickerProps> = ({
                         type="button"
                         variant="outline"
                         size="icon"
-                        aria-label={t("workspace.home")}
+                        aria-label={t("sidebar.projectPathHome")}
                         onClick={() => void load(null)}
                     >
                         <HomeIcon className="size-4" />
@@ -95,7 +97,7 @@ export const WorkspacePicker: FC<WorkspacePickerProps> = ({
                         type="button"
                         variant="outline"
                         size="icon"
-                        aria-label={t("workspace.parent")}
+                        aria-label={t("sidebar.projectPathUp")}
                         disabled={!listing?.parent}
                         onClick={() => void load(listing?.parent)}
                     >
@@ -119,7 +121,7 @@ export const WorkspacePicker: FC<WorkspacePickerProps> = ({
                     )}
                     {!loading && !error && listing?.entries.length === 0 && (
                         <p className="px-3 py-2 text-sm text-muted-foreground">
-                            {t("workspace.emptyDir")}
+                            {t("sidebar.projectPathEmpty")}
                         </p>
                     )}
                     {!loading &&
@@ -140,21 +142,17 @@ export const WorkspacePicker: FC<WorkspacePickerProps> = ({
                 </div>
 
                 <DialogFooter className="gap-2 sm:justify-between">
-                    {allowClear ? (
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            onClick={() => {
-                                onSelect(null);
-                                onOpenChange(false);
-                            }}
-                        >
-                            <RotateCcwIcon className="size-4" />
-                            {t("workspace.useDefault")}
-                        </Button>
-                    ) : (
-                        <span />
-                    )}
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                            onSelect(null);
+                            onOpenChange(false);
+                        }}
+                    >
+                        <RotateCcwIcon className="size-4" />
+                        {t("sidebar.projectPathClear")}
+                    </Button>
                     <div className="flex gap-2">
                         <DialogClose asChild>
                             <Button type="button" variant="outline">
@@ -171,7 +169,7 @@ export const WorkspacePicker: FC<WorkspacePickerProps> = ({
                                 }
                             }}
                         >
-                            {t("workspace.selectThisFolder")}
+                            {t("sidebar.projectPathSelect")}
                         </Button>
                     </div>
                 </DialogFooter>
