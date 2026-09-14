@@ -89,7 +89,6 @@ export function ThreadStickyComposer({
                         </div>
                         <div className="flex items-center gap-2">
                             <ModelSelector
-                                compact
                                 models={modelSelection.models}
                                 providers={modelSelection.providers}
                                 selectedModelId={modelSelection.selectedModelId}

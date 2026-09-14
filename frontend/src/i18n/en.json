@@ -36,7 +36,6 @@
     "modelSelector.configure": "Configure",
     "modelSelector.addProvider": "Add provider",
     "modelSelector.addModel": "Add model",
-    "modelSelector.description": "The selected provider/model pair is sent as a per-request override to Nova's backend.",
     "modelSelector.addProviderDialogTitle": "Add provider",
     "modelSelector.addProviderDialogDescription": "Save a new provider into Nova's config.json. Provider keys must be unique.",
     "modelSelector.providerKey": "Provider key",

@@ -36,7 +36,6 @@
     "modelSelector.configure": "配置",
     "modelSelector.addProvider": "添加提供商",
     "modelSelector.addModel": "添加模型",
-    "modelSelector.description": "所选提供商/模型将作为每次请求的覆盖参数发送到 Nova 后端。",
     "modelSelector.addProviderDialogTitle": "添加提供商",
     "modelSelector.addProviderDialogDescription": "将新的提供商保存到 Nova 的 config.json。提供商 key 必须唯一。",
     "modelSelector.providerKey": "提供商 Key",

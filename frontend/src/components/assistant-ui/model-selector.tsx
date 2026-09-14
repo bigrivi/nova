@@ -31,7 +31,6 @@ type ModelSelectorProps = {
     onModelsUpdated: (models: NovaModelRecord[]) => void;
     onProvidersRefresh: () => Promise<void>;
     onStatusChange: (message: string | null) => void;
-    compact?: boolean;
 };
 
 type ModelGroup = {
@@ -194,7 +193,6 @@ export function ModelSelector({
     onModelsUpdated,
     onProvidersRefresh,
     onStatusChange,
-    compact = false,
 }: ModelSelectorProps) {
     const { t } = useTranslation();
     const [isProviderDialogOpen, setIsProviderDialogOpen] = useState(false);
@@ -210,7 +208,7 @@ export function ModelSelector({
     const [modelError, setModelError] = useState<string | null>(null);
 
     const hasProviders = providers.length > 0;
-    const selectId = compact ? "nova-model-select-inline" : "nova-model-select";
+    const selectId = "nova-model-select";
     const groupedModels = useMemo(() => groupModels(models), [models]);
     const selectedModel = models.find((model) => model.id === selectedModelId);
     const selectedValue = selectedModel?.id;
@@ -321,21 +319,15 @@ export function ModelSelector({
                 title={
                     selectedModel?.label || t("modelSelector.noModelsAvailable")
                 }
-                className={
-                    compact
-                        ? "flex items-center h-8 overflow-hidden rounded-full border-border/60 bg-background/85 px-2.5 text-[11px] font-medium leading-none text-muted-foreground shadow-none hover:bg-muted/35 focus:bg-background focus:text-foreground focus-visible:ring-ring/15"
-                        : "h-10 w-full rounded-xl"
-                }
+                className="flex h-8 w-auto max-w-[240px] items-center gap-1 overflow-hidden rounded-full border-border/60 bg-background/85 px-2.5 text-[11px] font-medium leading-none text-muted-foreground shadow-none hover:bg-muted/35 focus:bg-background focus:text-foreground focus-visible:ring-ring/15"
             >
                 <SelectValue
                     placeholder={t("modelSelector.noModelsAvailable")}
                 >
-                    {selectedModel ? (
-                        <span className="truncate">{selectedModel.label}</span>
-                    ) : undefined}
+                    {selectedModel ? selectedModel.label : undefined}
                 </SelectValue>
             </SelectTrigger>
-            <SelectContent align={compact ? "end" : "center"}>
+            <SelectContent align="end">
                 {renderGroupedItems(groupedModels, t, hasProviders)}
             </SelectContent>
         </Select>
@@ -343,29 +335,12 @@ export function ModelSelector({
 
     return (
         <>
-            {compact ? (
-                <div className="flex items-center gap-2">
-                    <label className="sr-only" htmlFor={selectId}>
-                        {t("modelSelector.activeModel")}
-                    </label>
-                    {selector}
-                </div>
-            ) : (
-                <div className="space-y-3 rounded-2xl border bg-card p-4 shadow-sm">
-                    <div className="space-y-1">
-                        <label
-                            className="text-sm font-medium text-foreground"
-                            htmlFor={selectId}
-                        >
-                            {t("modelSelector.activeModel")}
-                        </label>
-                        <p className="text-xs leading-5 text-muted-foreground">
-                            {t("modelSelector.description")}
-                        </p>
-                    </div>
-                    <div className="flex flex-col gap-3">{selector}</div>
-                </div>
-            )}
+            <div className="flex items-center gap-2">
+                <label className="sr-only" htmlFor={selectId}>
+                    {t("modelSelector.activeModel")}
+                </label>
+                {selector}
+            </div>
 
             <Dialog
                 open={isProviderDialogOpen}
