@@ -9,6 +9,7 @@ from nova.db.config import DatabaseConfig
 from nova.db.in_memory_repository import InMemoryRepository
 from nova.db.sqlite_repository import SqliteRepository
 from nova.memory.models import MemoryRecord, MemorySearchFilters
+from nova.project.models import Project
 from nova.session.models import MessageFilter, Session
 
 
@@ -65,6 +66,58 @@ async def test_session_pinned_round_trips_and_updates(repository):
     assert missing is False
     assert stored is not None
     assert bool(stored["pinned"]) is False
+
+
+@pytest.mark.asyncio
+async def test_projects_round_trip_and_detach_sessions(repository):
+    await repository.save_project(Project(id="project-1", name="paoku", path="/tmp/paoku"))
+    await repository.save_project(Project(id="project-2", name="paoku-copy", path="/tmp/paoku"))
+    await repository.save_session(
+        Session(id="session-1", project_id="project-1", workspace_dir="/tmp/paoku")
+    )
+
+    stored = await repository.get_project("project-1")
+    assert stored is not None
+    assert stored["name"] == "paoku"
+    assert stored["path"] == "/tmp/paoku"
+
+    projects = await repository.list_projects()
+    assert {project["id"] for project in projects} == {"project-1", "project-2"}
+
+    # Two projects may share one path, and a miss returns nothing.
+    assert len(await repository.find_projects_by_path("/tmp/paoku")) == 2
+    assert await repository.find_projects_by_path("/tmp/other") == []
+
+    session = await repository.get_session("session-1")
+    assert session is not None
+    assert session["project_id"] == "project-1"
+    listed = [item for item in await repository.get_all_sessions() if item["id"] == "session-1"]
+    assert listed[0]["project_id"] == "project-1"
+
+    assert await repository.delete_project("project-1") is True
+    assert await repository.get_project("project-1") is None
+    assert await repository.delete_project("project-1") is False
+    detached = await repository.get_session("session-1")
+    assert detached is not None
+    assert detached["project_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_set_session_project_moves_and_clears(repository):
+    await repository.save_project(Project(id="project-1", name="one"))
+    await repository.save_project(Project(id="project-2", name="two"))
+    await repository.save_session(Session(id="session-1"))
+
+    assert await repository.set_session_project("session-1", "project-1") is True
+    assert (await repository.get_session("session-1"))["project_id"] == "project-1"
+
+    assert await repository.set_session_project("session-1", "project-2") is True
+    assert (await repository.get_session("session-1"))["project_id"] == "project-2"
+
+    assert await repository.set_session_project("session-1", None) is True
+    assert (await repository.get_session("session-1"))["project_id"] is None
+
+    assert await repository.set_session_project("missing", "project-1") is False
 
 
 @pytest.mark.asyncio

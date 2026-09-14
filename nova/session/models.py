@@ -55,6 +55,7 @@ class Session:
     message_count: int = 0
     turn_count: int = 0
     metadata: Optional[dict] = None
+    project_id: Optional[str] = None
 
 
 @dataclass

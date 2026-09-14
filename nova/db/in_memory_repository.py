@@ -12,6 +12,7 @@ from nova.session.models import Message, MessageFilter
 class InMemoryRepository(NovaRepository):
     def __init__(self) -> None:
         self._sessions: dict[str, dict[str, Any]] = {}
+        self._projects: dict[str, dict[str, Any]] = {}
         self._messages: dict[str, Message] = {}
         self._agents: dict[str, dict[str, Any]] = {
             "main": {
@@ -45,6 +46,7 @@ class InMemoryRepository(NovaRepository):
             "title": getattr(session, "title", None),
             "parent_id": getattr(session, "parent_id", None),
             "workspace_dir": getattr(session, "workspace_dir", None),
+            "project_id": getattr(session, "project_id", None),
             "pinned": bool(getattr(session, "pinned", False)),
             "summary_goal": getattr(session, "summary_goal", None),
             "summary_accomplished": getattr(session, "summary_accomplished", None),
@@ -80,6 +82,52 @@ class InMemoryRepository(NovaRepository):
         if session is None:
             return False
         session["pinned"] = pinned
+        return True
+
+    async def set_session_project(self, session_id: str, project_id: str | None) -> bool:
+        session = self._sessions.get(session_id)
+        if session is None:
+            return False
+        session["project_id"] = project_id
+        return True
+
+    async def save_project(self, project: Any) -> None:
+        now = int(time.time() * 1000)
+        self._projects[project.id] = {
+            "id": project.id,
+            "name": project.name,
+            "path": getattr(project, "path", None),
+            "created_at": self._milliseconds(getattr(project, "created_at", now)),
+            "updated_at": self._milliseconds(getattr(project, "updated_at", now)),
+        }
+
+    async def get_project(self, project_id: str) -> dict[str, Any] | None:
+        project = self._projects.get(project_id)
+        return dict(project) if project else None
+
+    async def list_projects(self) -> list[dict[str, Any]]:
+        projects = sorted(
+            self._projects.values(),
+            key=lambda item: item["updated_at"],
+            reverse=True,
+        )
+        return [dict(project) for project in projects]
+
+    async def find_projects_by_path(self, path: str) -> list[dict[str, Any]]:
+        projects = [
+            project for project in self._projects.values() if project["path"] == path
+        ]
+        projects.sort(key=lambda item: item["updated_at"], reverse=True)
+        return [dict(project) for project in projects]
+
+    async def delete_project(self, project_id: str) -> bool:
+        """Delete a project and detach its sessions. Sessions are kept."""
+        if project_id not in self._projects:
+            return False
+        del self._projects[project_id]
+        for session in self._sessions.values():
+            if session.get("project_id") == project_id:
+                session["project_id"] = None
         return True
 
     async def delete_session(self, session_id: str) -> bool:

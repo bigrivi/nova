@@ -419,6 +419,120 @@ async def test_sessions_endpoint_returns_saved_sessions(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_projects_endpoints_crud_and_resolve(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    project_dir = tmp_path / "paoku"
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    created = client.post("/api/projects", json={"path": f"{project_dir}/"})
+    assert created.status_code == 200
+    project = created.json()
+    assert project["name"] == "paoku"
+    assert project["path"] == str(project_dir)
+    project_id = project["id"]
+
+    listed = client.get("/api/projects")
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["items"]] == [project_id]
+
+    resolved = client.post("/api/projects/resolve", json={"path": str(project_dir)})
+    assert resolved.status_code == 200
+    assert resolved.json()["id"] == project_id
+
+    renamed = client.patch(f"/api/projects/{project_id}", json={"name": "跑酷"})
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "跑酷"
+    assert renamed.json()["path"] == str(project_dir)
+
+    cleared = client.patch(f"/api/projects/{project_id}", json={"path": None})
+    assert cleared.status_code == 200
+    assert cleared.json()["path"] is None
+
+    nameless = client.post("/api/projects", json={})
+    assert nameless.status_code == 400
+    missing = client.patch("/api/projects/does-not-exist", json={"name": "x"})
+    assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_session_project_link_keeps_custom_workspace_and_detaches(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    db = await init_db(DatabaseConfig(path=str(settings.database_path)))
+    await db.save_session(Session(id="sess-1", title="Link Test"))
+
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    project_dir = tmp_path / "paoku"
+    first = client.post("/api/projects", json={"path": str(project_dir)}).json()
+    second_dir = tmp_path / "other"
+    second = client.post("/api/projects", json={"path": str(second_dir)}).json()
+
+    linked = client.put("/api/sessions/sess-1/project", json={"project_id": first["id"]})
+    assert linked.status_code == 200
+    assert linked.json()["status"] == "project_updated"
+
+    summaries = client.get("/api/sessions").json()["items"]
+    assert summaries[0]["project_id"] == first["id"]
+    stored = await db.get_session("sess-1")
+    # An empty workspace follows the project's path.
+    assert stored["workspace_dir"] == str(project_dir)
+
+    # A hand-picked workspace is never overwritten by a later move.
+    custom_dir = tmp_path / "custom"
+    await db.set_session_workspace("sess-1", str(custom_dir))
+    moved = client.put("/api/sessions/sess-1/project", json={"project_id": second["id"]})
+    assert moved.status_code == 200
+    stored = await db.get_session("sess-1")
+    assert stored["project_id"] == second["id"]
+    assert stored["workspace_dir"] == str(custom_dir)
+
+    unknown = client.put("/api/sessions/sess-1/project", json={"project_id": "nope"})
+    assert unknown.status_code == 404
+    missing_session = client.put("/api/sessions/nope/project", json={"project_id": second["id"]})
+    assert missing_session.status_code == 404
+
+    deleted = client.delete(f"/api/projects/{second['id']}")
+    assert deleted.status_code == 200
+    assert deleted.json()["status"] == "deleted"
+    assert client.delete(f"/api/projects/{second['id']}").status_code == 404
+
+    detached = await db.get_session("sess-1")
+    assert detached is not None
+    assert detached["project_id"] is None
+    assert detached["workspace_dir"] == str(custom_dir)
+
+
+@pytest.mark.asyncio
+async def test_sessions_endpoint_filters_by_workspace_dir(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    project_dir = tmp_path / "paoku"
+    db = await init_db(DatabaseConfig(path=str(settings.database_path)))
+    await db.save_session(Session(id="sess-in", workspace_dir=str(project_dir)))
+    await db.save_session(Session(id="sess-in-legacy", workspace_dir=f"{project_dir}/"))
+    await db.save_session(Session(id="sess-other", workspace_dir=str(tmp_path / "other")))
+    await db.save_session(Session(id="sess-none"))
+
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    filtered = client.get("/api/sessions", params={"workspace_dir": str(project_dir)})
+    assert filtered.status_code == 200
+    assert {item["id"] for item in filtered.json()["items"]} == {
+        "sess-in",
+        "sess-in-legacy",
+    }
+
+    assert len(client.get("/api/sessions").json()["items"]) == 4
+
+
+@pytest.mark.asyncio
 async def test_delete_session_without_memories_keeps_memories(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     settings = Settings.load_config()

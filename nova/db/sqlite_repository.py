@@ -17,6 +17,7 @@ import aiosqlite
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db.config import DatabaseConfig
 from nova.db.repository import NovaRepository
+from nova.project.paths import normalize_project_path, project_label_from_path
 from nova.session.models import Message, MessageFilter, Session
 
 log = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     title TEXT,
     parent_id TEXT,
     workspace_dir TEXT,
+    project_id TEXT,
     pinned INTEGER DEFAULT 0,
     summary_goal TEXT,
     summary_accomplished TEXT,
@@ -113,6 +115,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_key_scope_session
 ON memories(key, scope, COALESCE(session_id, ''));
 
 CREATE INDEX IF NOT EXISTS idx_memories_updated_at ON memories(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    path TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_projects_path ON projects(path);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    name TEXT PRIMARY KEY,
+    applied_at INTEGER NOT NULL
+);
 """
 
 
@@ -214,7 +231,11 @@ class SqliteRepository(NovaRepository):
         # Table and column names are literals from the map below, never caller
         # input; SQLite cannot bind identifiers, so interpolation is the only option.
         required_columns: dict[str, dict[str, str]] = {
-            "sessions": {"workspace_dir": "TEXT", "pinned": "INTEGER DEFAULT 0"},
+            "sessions": {
+                "workspace_dir": "TEXT",
+                "pinned": "INTEGER DEFAULT 0",
+                "project_id": "TEXT",
+            },
             "messages": {"provider_meta": "TEXT"},
         }
         for table, columns_map in required_columns.items():
@@ -236,6 +257,96 @@ class SqliteRepository(NovaRepository):
                         "Could not add column %s.%s (%s); writes touching it will fail: %s",
                         table, column, column_type, exception,
                     )
+        await self._backfill_projects()
+        await self._normalize_session_workspaces()
+
+    async def _backfill_projects(self) -> None:
+        """One-shot: create a project per distinct session workspace path.
+
+        Tracked in schema_migrations so projects the user deletes later are not
+        resurrected, and so a database without session workspaces is scanned
+        only once.
+        """
+        marker = "projects_backfill"
+        try:
+            cursor = await self._conn.execute(
+                "SELECT 1 FROM schema_migrations WHERE name = ?", (marker,)
+            )
+            if await cursor.fetchone():
+                return
+            cursor = await self._conn.execute(
+                "SELECT DISTINCT workspace_dir FROM sessions "
+                "WHERE workspace_dir IS NOT NULL AND TRIM(workspace_dir) != ''"
+            )
+            rows = await cursor.fetchall()
+            now = int(time.time() * 1000)
+            project_id_by_path: dict[str, str] = {}
+            for row in rows:
+                raw_path = row[0]
+                project_path = normalize_project_path(raw_path)
+                if project_path is None:
+                    continue
+                project_id = project_id_by_path.get(project_path)
+                if project_id is None:
+                    project_id = str(uuid.uuid4())
+                    project_id_by_path[project_path] = project_id
+                    await self._conn.execute(
+                        """INSERT INTO projects (id, name, path, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?)""",
+                        (
+                            project_id,
+                            project_label_from_path(project_path),
+                            project_path,
+                            now,
+                            now,
+                        ),
+                    )
+                await self._conn.execute(
+                    "UPDATE sessions SET project_id = ? WHERE workspace_dir = ?",
+                    (project_id, raw_path),
+                )
+            await self._conn.execute(
+                "INSERT OR REPLACE INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+                (marker, now),
+            )
+        except Exception as exception:
+            log.error("Could not backfill projects from session workspaces: %s", exception)
+
+    async def _normalize_session_workspaces(self) -> None:
+        """One-shot: rewrite stored workspaces into canonical form.
+
+        Rows written before normalization existed (or through a symlinked
+        prefix such as /tmp vs /private/tmp) would otherwise never match a
+        directory filter. Separate marker from the project backfill so it also
+        runs on databases that already backfilled.
+        """
+        marker = "workspace_dir_normalize"
+        try:
+            cursor = await self._conn.execute(
+                "SELECT 1 FROM schema_migrations WHERE name = ?", (marker,)
+            )
+            if await cursor.fetchone():
+                return
+            cursor = await self._conn.execute(
+                "SELECT id, workspace_dir FROM sessions "
+                "WHERE workspace_dir IS NOT NULL AND TRIM(workspace_dir) != ''"
+            )
+            rows = await cursor.fetchall()
+            now = int(time.time() * 1000)
+            for row in rows:
+                session_id, raw_path = row[0], row[1]
+                normalized = normalize_project_path(raw_path)
+                if normalized and normalized != raw_path:
+                    await self._conn.execute(
+                        "UPDATE sessions SET workspace_dir = ? WHERE id = ?",
+                        (normalized, session_id),
+                    )
+            await self._conn.execute(
+                "INSERT OR REPLACE INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+                (marker, now),
+            )
+        except Exception as exception:
+            log.error("Could not normalize stored session workspaces: %s", exception)
 
     async def close(self) -> None:
         if self._conn:
@@ -257,8 +368,8 @@ class SqliteRepository(NovaRepository):
         await self._conn.execute(
             """INSERT OR REPLACE INTO sessions
             (id, agent_key, title, parent_id, summary_goal, summary_accomplished, summary_remaining,
-            created_at, updated_at, compacted_at, message_count, turn_count, metadata, workspace_dir, pinned)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            created_at, updated_at, compacted_at, message_count, turn_count, metadata, workspace_dir, pinned, project_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session.id,
                 agent_key,
@@ -275,6 +386,7 @@ class SqliteRepository(NovaRepository):
                 json.dumps(session.metadata) if session.metadata else None,
                 getattr(session, "workspace_dir", None),
                 1 if getattr(session, "pinned", False) else 0,
+                getattr(session, "project_id", None),
             ),
         )
         await self._conn.commit()
@@ -313,6 +425,69 @@ class SqliteRepository(NovaRepository):
         cursor = await self._conn.execute(
             "UPDATE sessions SET pinned = ? WHERE id = ?",
             (1 if pinned else 0, session_id),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    async def set_session_project(self, session_id: str, project_id: str | None) -> bool:
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "UPDATE sessions SET project_id = ? WHERE id = ?",
+            (project_id, session_id),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    async def save_project(self, project: Any) -> None:
+        await self._ensure_connected()
+        await self._conn.execute(
+            """INSERT OR REPLACE INTO projects
+            (id, name, path, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)""",
+            (
+                project.id,
+                project.name,
+                getattr(project, "path", None),
+                _to_ms_timestamp(project.created_at),
+                _to_ms_timestamp(project.updated_at),
+            ),
+        )
+        await self._conn.commit()
+
+    async def get_project(self, project_id: str) -> Optional[dict]:
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "SELECT * FROM projects WHERE id = ?",
+            (project_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def list_projects(self) -> list[dict]:
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "SELECT * FROM projects ORDER BY updated_at DESC"
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def find_projects_by_path(self, path: str) -> list[dict]:
+        await self._ensure_connected()
+        cursor = await self._conn.execute(
+            "SELECT * FROM projects WHERE path = ? ORDER BY updated_at DESC",
+            (path,),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def delete_project(self, project_id: str) -> bool:
+        """Delete a project and detach its sessions. Sessions are kept."""
+        await self._ensure_connected()
+        await self._conn.execute(
+            "UPDATE sessions SET project_id = NULL WHERE project_id = ?",
+            (project_id,),
+        )
+        cursor = await self._conn.execute(
+            "DELETE FROM projects WHERE id = ?",
+            (project_id,),
         )
         await self._conn.commit()
         return cursor.rowcount > 0

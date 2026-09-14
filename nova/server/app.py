@@ -47,7 +47,14 @@ from nova.server.schemas import (
     SessionListResponse,
     UpdateSessionWorkspaceRequest,
     UpdateSessionPinnedRequest,
+    UpdateSessionProjectRequest,
     DirectoryListing,
+    ProjectActionResponse,
+    ProjectCreateRequest,
+    ProjectListResponse,
+    ProjectRecord,
+    ProjectUpdateRequest,
+    ResolveProjectRequest,
 )
 from nova.settings import Settings, get_settings, reload_settings
 
@@ -123,8 +130,14 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         }
 
     @app.get("/api/sessions", response_model=SessionListResponse)
-    async def sessions(agent_key: str | None = None) -> SessionListResponse:
-        response = await app.state.chat_service.list_sessions(agent_key=agent_key)
+    async def sessions(
+        agent_key: str | None = None,
+        workspace_dir: str | None = None,
+    ) -> SessionListResponse:
+        response = await app.state.chat_service.list_sessions(
+            agent_key=agent_key,
+            workspace_dir=workspace_dir,
+        )
         return response
 
     @app.get("/api/sessions/{session_id}/messages", response_model=MessageListResponse)
@@ -164,6 +177,79 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         if not updated:
             raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
         return SessionActionResponse(status="pinned_updated", session_id=session_id)
+
+    @app.get("/api/projects", response_model=ProjectListResponse)
+    async def projects() -> ProjectListResponse:
+        items = await app.state.chat_service.list_projects()
+        return ProjectListResponse(items=[ProjectRecord(**item) for item in items])
+
+    @app.post("/api/projects", response_model=ProjectRecord)
+    async def create_project(request: ProjectCreateRequest) -> ProjectRecord:
+        try:
+            project = await app.state.chat_service.create_project(
+                request.name, request.path
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return ProjectRecord(**project)
+
+    @app.post("/api/projects/resolve", response_model=ProjectRecord)
+    async def resolve_project(request: ResolveProjectRequest) -> ProjectRecord:
+        try:
+            project = await app.state.chat_service.resolve_project_for_path(
+                request.path, request.name
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return ProjectRecord(**project)
+
+    @app.patch("/api/projects/{project_id}", response_model=ProjectRecord)
+    async def update_project(
+        project_id: str, request: ProjectUpdateRequest
+    ) -> ProjectRecord:
+        fields: dict[str, object] = {}
+        if "name" in request.model_fields_set:
+            fields["name"] = request.name
+        if "path" in request.model_fields_set:
+            fields["path"] = request.path
+        try:
+            project = await app.state.chat_service.update_project(
+                project_id, **fields
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if project is None:
+            raise HTTPException(
+                status_code=404, detail=f"Project '{project_id}' not found"
+            )
+        return ProjectRecord(**project)
+
+    @app.delete("/api/projects/{project_id}", response_model=ProjectActionResponse)
+    async def delete_project(project_id: str) -> ProjectActionResponse:
+        deleted = await app.state.chat_service.delete_project(project_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=404, detail=f"Project '{project_id}' not found"
+            )
+        return ProjectActionResponse(status="deleted", project_id=project_id)
+
+    @app.put("/api/sessions/{session_id}/project", response_model=SessionActionResponse)
+    async def set_session_project(
+        session_id: str, request: UpdateSessionProjectRequest
+    ) -> SessionActionResponse:
+        try:
+            updated = await app.state.chat_service.set_session_project(
+                session_id, request.project_id
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        if not updated:
+            raise HTTPException(
+                status_code=404, detail=f"Session '{session_id}' not found"
+            )
+        return SessionActionResponse(
+            status="project_updated", session_id=session_id
+        )
 
     @app.get("/api/fs/list", response_model=DirectoryListing)
     async def fs_list(path: str | None = None) -> DirectoryListing:

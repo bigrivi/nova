@@ -389,6 +389,7 @@ class Agent:
         session_id: Optional[str],
         user_input: str,
         workspace_dir: Optional[str],
+        project_id: Optional[str] = None,
     ) -> Any:
         """Load the requested session, creating one when it is absent."""
         if session_id and await self.session.load_session(session_id):
@@ -399,6 +400,7 @@ class Agent:
             persist=True,
             first_message=user_input,
             workspace_dir=workspace_dir,
+            project_id=project_id,
         )
         current = self.session.get_current_session()
         log.info("[Session %s] Created", current.id if current else "?")
@@ -419,11 +421,12 @@ class Agent:
         session_id: str | None = None,
         attachments: list[dict] | None = None,
         workspace_dir: str | None = None,
+        project_id: str | None = None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         self._abort_event.clear()
 
         current_session = await self._resolve_session(
-            session_id, user_input, workspace_dir)
+            session_id, user_input, workspace_dir, project_id)
         session_id = current_session.id if current_session else ""
         self._apply_active_workspace(current_session)
 

@@ -22,6 +22,7 @@ class ChatRequest(BaseModel):
     model: str | None = None
     agent_key: str = Field(default="main")
     workspace_dir: str | None = None
+    project_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     attachments: list[AttachmentData] = Field(default_factory=list)
 
@@ -39,6 +40,7 @@ class SessionSummary(BaseModel):
     agent_key: str = Field(default="main")
     workspace_dir: str | None = None
     pinned: bool = False
+    project_id: str | None = None
 
 
 class SessionListResponse(BaseModel):
@@ -71,6 +73,42 @@ class DirectoryListing(BaseModel):
 class SessionActionResponse(BaseModel):
     status: str
     session_id: str
+
+
+class ProjectRecord(BaseModel):
+    id: str
+    name: str
+    path: str | None = None
+    created_at: int
+    updated_at: int
+
+
+class ProjectListResponse(BaseModel):
+    items: list[ProjectRecord]
+
+
+class ProjectCreateRequest(BaseModel):
+    name: str | None = None
+    path: str | None = None
+
+
+class ProjectUpdateRequest(BaseModel):
+    name: str | None = None
+    path: str | None = None
+
+
+class ResolveProjectRequest(BaseModel):
+    path: str
+    name: str | None = None
+
+
+class ProjectActionResponse(BaseModel):
+    status: str
+    project_id: str
+
+
+class UpdateSessionProjectRequest(BaseModel):
+    project_id: str | None = None
 
 
 class MemoryRecordSchema(BaseModel):

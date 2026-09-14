@@ -10,6 +10,7 @@ from nova.agent import AgentEvent
 from nova.app import build_agent
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
+from nova.project.service import ProjectService
 from nova.server.ai_sdk_stream import AISDKStreamAdapter
 from nova.server.request_registry import RequestRegistry
 from nova.server.schemas import (
@@ -70,9 +71,23 @@ class ChatService:
             self._data_source = await get_default_data_source()
         return self._data_source
 
-    async def list_sessions(self, agent_key: str | None = None) -> SessionListResponse:
+    async def list_sessions(
+        self,
+        agent_key: str | None = None,
+        workspace_dir: str | None = None,
+    ) -> SessionListResponse:
         data_source = await self._get_data_source()
         sessions = await data_source.get_all_sessions(agent_key=agent_key)
+        normalized_workspace = _normalize_workspace_dir(workspace_dir)
+        if normalized_workspace is not None:
+            # Normalize rows too: /tmp vs /private/tmp and trailing separators
+            # would otherwise silently drop sessions of the same directory.
+            sessions = [
+                session
+                for session in sessions
+                if _normalize_workspace_dir(session.get("workspace_dir"))
+                == normalized_workspace
+            ]
         items = [
             SessionSummary(
                 id=session["id"],
@@ -81,6 +96,7 @@ class ChatService:
                 agent_key=session.get("agent_key", DEFAULT_AGENT_KEY),
                 workspace_dir=session.get("workspace_dir"),
                 pinned=bool(session.get("pinned", 0)),
+                project_id=session.get("project_id"),
             )
             for session in sessions
         ]
@@ -98,6 +114,34 @@ class ChatService:
     async def set_session_pinned(self, session_id: str, pinned: bool) -> bool:
         data_source = await self._get_data_source()
         return await data_source.set_session_pinned(session_id, pinned)
+
+    async def set_session_project(
+        self, session_id: str, project_id: str | None
+    ) -> bool:
+        return await ProjectService(self._data_source).set_session_project(
+            session_id, project_id
+        )
+
+    async def list_projects(self) -> list[dict]:
+        return await ProjectService(self._data_source).list_projects()
+
+    async def create_project(self, name: str | None, path: str | None) -> dict:
+        return await ProjectService(self._data_source).create_project(name, path)
+
+    async def update_project(
+        self, project_id: str, **fields: object
+    ) -> dict | None:
+        return await ProjectService(self._data_source).update_project(
+            project_id, **fields
+        )
+
+    async def delete_project(self, project_id: str) -> bool:
+        return await ProjectService(self._data_source).delete_project(project_id)
+
+    async def resolve_project_for_path(
+        self, path: str, name: str | None = None
+    ) -> dict:
+        return await ProjectService(self._data_source).resolve_for_path(path, name)
 
     async def delete_session(self, session_id: str, delete_memories: bool = False) -> bool:
         data_source = await self._get_data_source()
@@ -262,12 +306,19 @@ class ChatService:
         if register_key:
             await self._request_registry.register(register_key, agent)
         attachment_dicts = [att.model_dump() for att in request.attachments]
+        workspace_dir = _normalize_workspace_dir(request.workspace_dir)
+        project_id = request.project_id
+        if project_id and not workspace_dir:
+            project = await ProjectService(self._data_source).get_project(project_id)
+            if project and project.get("path"):
+                workspace_dir = project["path"]
         try:
             async for event, data in agent.chat_stream(
                 request.message,
                 session_id=request.session_id,
                 attachments=attachment_dicts,
-                workspace_dir=_normalize_workspace_dir(request.workspace_dir),
+                workspace_dir=workspace_dir,
+                project_id=project_id,
             ):
                 if event == AgentEvent.SESSION and data and not register_key:
                     register_key = data

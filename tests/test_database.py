@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 import pytest
 import pytest_asyncio
 
@@ -82,6 +83,75 @@ async def test_connect_migrates_legacy_sessions_with_pinned_column(tmp_path):
         stored = await repository.get_session("legacy")
         assert stored is not None
         assert stored["pinned"] == 1
+    finally:
+        await repository.close()
+
+
+@pytest.mark.asyncio
+async def test_connect_backfills_one_project_per_normalized_workspace(tmp_path):
+    project_dir = tmp_path / "paoku"
+    path = tmp_path / "legacy-projects.db"
+    async with aiosqlite.connect(path) as connection:
+        await connection.execute(
+            """CREATE TABLE sessions (
+            id TEXT PRIMARY KEY,
+            agent_key TEXT NOT NULL DEFAULT 'main',
+            title TEXT,
+            parent_id TEXT,
+            workspace_dir TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+            )"""
+        )
+        for session_id, workspace in (
+            ("session-1", str(project_dir)),
+            ("session-2", f"{project_dir}/"),
+            ("session-3", "~/Documents/ai/nova"),
+            ("session-4", None),
+        ):
+            await connection.execute(
+                "INSERT INTO sessions (id, workspace_dir, created_at, updated_at) VALUES (?, ?, 1, 1)",
+                (session_id, workspace),
+            )
+        await connection.commit()
+
+    repository = SqliteRepository(DatabaseConfig(path=str(path)))
+    await repository.connect()
+    try:
+        projects = await repository.list_projects()
+        assert len(projects) == 2
+        paoku = next(project for project in projects if project["name"] == "paoku")
+        assert paoku["path"] == str(project_dir)
+        # Both raw spellings of one directory landed in the same project.
+        assert (await repository.get_session("session-1"))["project_id"] == paoku["id"]
+        assert (await repository.get_session("session-2"))["project_id"] == paoku["id"]
+        home_project = next(project for project in projects if project["name"] == "nova")
+        assert home_project["path"].startswith(str(Path.home()))
+        assert (await repository.get_session("session-3"))["project_id"] == home_project["id"]
+        assert (await repository.get_session("session-4"))["project_id"] is None
+
+        # Stored workspace spellings were normalized in place, so a directory
+        # filter matches every session of that folder.
+        assert (await repository.get_session("session-2"))["workspace_dir"] == str(project_dir)
+        home_workspace = (await repository.get_session("session-3"))["workspace_dir"]
+        assert home_workspace.startswith(str(Path.home()))
+        assert not home_workspace.startswith("~")
+    finally:
+        await repository.close()
+
+    # Reconnecting neither duplicates projects nor resurrects deleted ones.
+    repository = SqliteRepository(DatabaseConfig(path=str(path)))
+    await repository.connect()
+    try:
+        assert len(await repository.list_projects()) == 2
+        for project in await repository.list_projects():
+            assert await repository.delete_project(project["id"]) is True
+    finally:
+        await repository.close()
+    repository = SqliteRepository(DatabaseConfig(path=str(path)))
+    await repository.connect()
+    try:
+        assert await repository.list_projects() == []
     finally:
         await repository.close()
 
