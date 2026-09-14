@@ -55,7 +55,7 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
             className="aui-root aui-thread-root @container relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background"
             style={{
                 ["--thread-max-width" as string]: "50rem",
-                ["--composer-radius" as string]: "24px",
+                ["--composer-radius" as string]: "20px",
                 ["--composer-padding" as string]: "10px",
             }}
         >
