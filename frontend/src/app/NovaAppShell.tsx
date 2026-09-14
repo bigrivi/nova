@@ -371,12 +371,14 @@ export function NovaAppShell() {
 
         async function bootstrap() {
             try {
+                // allSettled: one failing endpoint (an older backend without
+                // /api/projects, a transient error) must not blank the shell.
                 const [
-                    availableModels,
-                    availableProviders,
-                    savedSessions,
-                    savedProjects,
-                ] = await Promise.all([
+                    modelsResult,
+                    providersResult,
+                    sessionsResult,
+                    projectsResult,
+                ] = await Promise.allSettled([
                     listModels(),
                     listProviders(),
                     listSessions(),
@@ -385,6 +387,31 @@ export function NovaAppShell() {
 
                 if (cancelled) {
                     return;
+                }
+
+                const availableModels =
+                    modelsResult.status === "fulfilled" ? modelsResult.value : [];
+                const availableProviders =
+                    providersResult.status === "fulfilled"
+                        ? providersResult.value
+                        : [];
+                const savedSessions =
+                    sessionsResult.status === "fulfilled"
+                        ? sessionsResult.value
+                        : [];
+                const savedProjects =
+                    projectsResult.status === "fulfilled"
+                        ? projectsResult.value
+                        : [];
+                for (const result of [
+                    modelsResult,
+                    providersResult,
+                    sessionsResult,
+                    projectsResult,
+                ]) {
+                    if (result.status === "rejected") {
+                        console.error("Bootstrap request failed:", result.reason);
+                    }
                 }
 
                 try {

@@ -329,7 +329,11 @@ export function ModelSelector({
             >
                 <SelectValue
                     placeholder={t("modelSelector.noModelsAvailable")}
-                />
+                >
+                    {selectedModel ? (
+                        <span className="truncate">{selectedModel.label}</span>
+                    ) : undefined}
+                </SelectValue>
             </SelectTrigger>
             <SelectContent align={compact ? "end" : "center"}>
                 {renderGroupedItems(groupedModels, t, hasProviders)}
