@@ -1,6 +1,7 @@
 import type { ThreadMessageLike } from "@assistant-ui/react";
 
 import type { NovaJsonObject, NovaMessageRecord } from "../types/nova";
+import { randomId } from "./utils";
 
 type AssistantPart = Exclude<ThreadMessageLike["content"], string>[number];
 
@@ -37,7 +38,7 @@ function parseToolCallLike(value: unknown): ToolCallLike | null {
     }
 
     return {
-        id: id || crypto.randomUUID(),
+        id: id || randomId(),
         name,
         arguments: argumentsText,
     };

@@ -21,6 +21,7 @@ import { ThreadSidebar } from "../components/sidebar/thread-sidebar";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { toThreadMessages } from "../lib/history-messages";
+import { randomId } from "../lib/utils";
 import {
     createProject,
     deleteProject,
@@ -62,7 +63,7 @@ function createTextMessage(
     id?: string,
 ): ThreadMessageLike {
     return {
-        id: id ?? crypto.randomUUID(),
+        id: id ?? randomId(),
         role,
         content: text,
         createdAt: new Date(),
@@ -89,7 +90,7 @@ function buildUserMessageParts(
 
 function createAssistantMessage(id?: string): ThreadMessageLike {
     return {
-        id: id ?? crypto.randomUUID(),
+        id: id ?? randomId(),
         role: "assistant",
         content: [],
         createdAt: new Date(),
@@ -691,8 +692,8 @@ export function NovaAppShell() {
         const selectedModel =
             models.find((item) => item.id === selectedModelId) || null;
         const originThreadId = currentThreadId;
-        const userMessageId = crypto.randomUUID();
-        const assistantMessageId = crypto.randomUUID();
+    const userMessageId = randomId();
+    const assistantMessageId = randomId();
         const userMessage = {
             ...createTextMessage("user", prompt, userMessageId),
             content: buildUserMessageParts(prompt, attachments),

@@ -164,6 +164,22 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
     );
 };
 
+function legacyCopy(value: string): boolean {
+    try {
+        const textarea = document.createElement("textarea");
+        textarea.value = value;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(textarea);
+        return ok;
+    } catch {
+        return false;
+    }
+}
+
 const useCopyToClipboard = ({
     copiedDuration = 3000,
 }: {
@@ -174,10 +190,24 @@ const useCopyToClipboard = ({
     const copyToClipboard = (value: string) => {
         if (!value) return;
 
-        navigator.clipboard.writeText(value).then(() => {
+        const markCopied = () => {
             setIsCopied(true);
             setTimeout(() => setIsCopied(false), copiedDuration);
-        });
+        };
+        if (
+            typeof navigator !== "undefined" &&
+            navigator.clipboard?.writeText
+        ) {
+            navigator.clipboard.writeText(value).then(markCopied, () => {
+                if (legacyCopy(value)) {
+                    markCopied();
+                }
+            });
+            return;
+        }
+        if (legacyCopy(value)) {
+            markCopied();
+        }
     };
 
     return { isCopied, copyToClipboard };
