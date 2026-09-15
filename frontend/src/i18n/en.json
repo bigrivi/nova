@@ -192,5 +192,11 @@
     "sidebar.pinnedToast": "Pinned",
     "sidebar.unpinnedToast": "Unpinned",
     "sidebar.movedToast": "Moved to “{{project}}”",
-    "sidebar.deletedToast": "Chat deleted"
+    "sidebar.deletedToast": "Chat deleted",
+    "auth.title": "Sign in required",
+    "auth.description": "This Nova server is exposed on the network. Enter the credentials configured on the server to continue.",
+    "auth.username": "Username",
+    "auth.password": "Password",
+    "auth.submit": "Sign in",
+    "auth.error": "Invalid credentials. Please try again."
 }

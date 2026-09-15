@@ -192,5 +192,11 @@
     "sidebar.pinnedToast": "已置顶",
     "sidebar.unpinnedToast": "已取消置顶",
     "sidebar.movedToast": "已移动到「{{project}}」",
-    "sidebar.deletedToast": "对话已删除"
+    "sidebar.deletedToast": "对话已删除",
+    "auth.title": "需要登录",
+    "auth.description": "此 Nova 服务已在网络上公开，请输入服务器上配置的凭据以继续。",
+    "auth.username": "用户名",
+    "auth.password": "密码",
+    "auth.submit": "登录",
+    "auth.error": "凭据无效，请重试。"
 }

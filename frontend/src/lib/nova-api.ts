@@ -13,6 +13,7 @@ import type {
     NovaSessionSummary,
     NovaStreamEvent,
 } from "../types/nova";
+import { getAuthHeader, notifyUnauthorized } from "./auth";
 
 type JsonResponse<T> = {
     items: T[];
@@ -36,6 +37,27 @@ const API_BASE = (import.meta.env.VITE_NOVA_API_BASE_URL || "").replace(
 
 function buildUrl(path: string) {
     return `${API_BASE}${path}`;
+}
+
+async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+    const authHeader = getAuthHeader();
+    let headers: HeadersInit | undefined = init?.headers;
+    if (Object.keys(authHeader).length > 0) {
+        if (!headers) {
+            headers = { ...authHeader };
+        } else if (headers instanceof Headers) {
+            headers.set("Authorization", authHeader["Authorization"] ?? "");
+        } else if (Array.isArray(headers)) {
+            headers = [...headers, ...Object.entries(authHeader)];
+        } else {
+            headers = { ...headers, ...authHeader };
+        }
+    }
+    const response = await fetch(buildUrl(path), { ...init, headers });
+    if (response.status === 401) {
+        notifyUnauthorized();
+    }
+    return response;
 }
 
 async function parseErrorMessage(response: Response): Promise<string> {
@@ -64,14 +86,20 @@ async function parseJson<T>(response: Response): Promise<T> {
 
 export async function listModels(): Promise<NovaModelRecord[]> {
     const payload = await parseJson<JsonResponse<NovaModelRecord>>(
-        await fetch(buildUrl("/api/models")),
+        await apiFetch("/api/models"),
     );
     return payload.items;
 }
 
+export async function probeAuth(): Promise<void> {
+    await parseJson<JsonResponse<NovaModelRecord>>(
+        await apiFetch("/api/models"),
+    );
+}
+
 export async function listProviders(): Promise<NovaProviderRecord[]> {
     const payload = await parseJson<JsonResponse<NovaProviderRecord>>(
-        await fetch(buildUrl("/api/providers")),
+        await apiFetch("/api/providers"),
     );
     return payload.items;
 }
@@ -80,7 +108,7 @@ export async function createProvider(
     payload: NovaProviderCreateRequest,
 ): Promise<NovaModelRecord[]> {
     const response = await parseJson<JsonResponse<NovaModelRecord>>(
-        await fetch(buildUrl("/api/config/providers"), {
+        await apiFetch("/api/config/providers", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -95,7 +123,7 @@ export async function createModel(
     payload: NovaModelCreateRequest,
 ): Promise<NovaModelRecord[]> {
     const response = await parseJson<JsonResponse<NovaModelRecord>>(
-        await fetch(buildUrl("/api/config/models"), {
+        await apiFetch("/api/config/models", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -111,7 +139,7 @@ export async function updateProvider(
     payload: NovaProviderUpdateRequest,
 ): Promise<NovaModelRecord[]> {
     const response = await parseJson<JsonResponse<NovaModelRecord>>(
-        await fetch(buildUrl("/api/config/providers/update"), {
+        await apiFetch("/api/config/providers/update", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -124,7 +152,7 @@ export async function updateProvider(
 
 export async function deleteProvider(key: string): Promise<NovaModelRecord[]> {
     const response = await parseJson<JsonResponse<NovaModelRecord>>(
-        await fetch(buildUrl("/api/config/providers/delete"), {
+        await apiFetch("/api/config/providers/delete", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -141,7 +169,7 @@ export async function updateModel(
     payload: NovaModelUpdateRequest,
 ): Promise<NovaModelRecord[]> {
     const response = await parseJson<JsonResponse<NovaModelRecord>>(
-        await fetch(buildUrl("/api/config/models/update"), {
+        await apiFetch("/api/config/models/update", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -157,7 +185,7 @@ export async function deleteModel(
     model: string,
 ): Promise<NovaModelRecord[]> {
     const response = await parseJson<JsonResponse<NovaModelRecord>>(
-        await fetch(buildUrl("/api/config/models/delete"), {
+        await apiFetch("/api/config/models/delete", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -172,7 +200,7 @@ export async function updateAgent(
     key: string,
     data: { model: string; provider: string },
 ): Promise<void> {
-    await fetch(buildUrl(`/api/agents/${encodeURIComponent(key)}`), {
+    await apiFetch(`/api/agents/${encodeURIComponent(key)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -182,14 +210,14 @@ export async function updateAgent(
 export async function getAgent(
     key: string,
 ): Promise<{ model: string; provider: string } | null> {
-    const res = await fetch(buildUrl(`/api/agents/${encodeURIComponent(key)}`));
+    const res = await apiFetch(`/api/agents/${encodeURIComponent(key)}`);
     if (!res.ok) return null;
     return res.json();
 }
 
 export async function listSessions(): Promise<NovaSessionSummary[]> {
     const payload = await parseJson<JsonResponse<NovaSessionSummary>>(
-        await fetch(buildUrl("/api/sessions")),
+        await apiFetch("/api/sessions"),
     );
     return payload.items;
 }
@@ -198,8 +226,8 @@ export async function renameSession(
     sessionId: string,
     title: string,
 ): Promise<void> {
-    const response = await fetch(
-        buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}`),
+    const response = await apiFetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}`,
         {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -215,8 +243,8 @@ export async function setSessionWorkspace(
     sessionId: string,
     workspaceDir: string | null,
 ): Promise<void> {
-    const response = await fetch(
-        buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/workspace`),
+    const response = await apiFetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}/workspace`,
         {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -232,8 +260,8 @@ export async function setSessionPinned(
     sessionId: string,
     pinned: boolean,
 ): Promise<void> {
-    const response = await fetch(
-        buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/pinned`),
+    const response = await apiFetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}/pinned`,
         {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -250,7 +278,7 @@ export async function listDirectory(
 ): Promise<NovaDirectoryListing> {
     const query = path ? `?path=${encodeURIComponent(path)}` : "";
     return parseJson<NovaDirectoryListing>(
-        await fetch(buildUrl(`/api/fs/list${query}`)),
+        await apiFetch(`/api/fs/list${query}`),
     );
 }
 
@@ -259,8 +287,8 @@ export async function deleteSession(
     deleteMemories = false,
 ): Promise<void> {
     const query = deleteMemories ? "?delete_memories=true" : "";
-    const response = await fetch(
-        buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}${query}`),
+    const response = await apiFetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}${query}`,
         { method: "DELETE" },
     );
     if (!response.ok) {
@@ -270,7 +298,7 @@ export async function deleteSession(
 
 export async function listMemories(): Promise<NovaMemoryRecord[]> {
     const payload = await parseJson<JsonResponse<NovaMemoryRecord>>(
-        await fetch(buildUrl("/api/memories")),
+        await apiFetch("/api/memories"),
     );
     return payload.items;
 }
@@ -279,18 +307,16 @@ export async function listMemoriesBySession(
     sessionId: string,
 ): Promise<NovaMemoryRecord[]> {
     const payload = await parseJson<JsonResponse<NovaMemoryRecord>>(
-        await fetch(
-            buildUrl(
-                `/api/memories?session_id=${encodeURIComponent(sessionId)}`,
-            ),
+        await apiFetch(
+            `/api/memories?session_id=${encodeURIComponent(sessionId)}`,
         ),
     );
     return payload.items;
 }
 
 export async function deleteMemory(memoryId: string): Promise<void> {
-    const response = await fetch(
-        buildUrl(`/api/memories/${encodeURIComponent(memoryId)}`),
+    const response = await apiFetch(
+        `/api/memories/${encodeURIComponent(memoryId)}`,
         { method: "DELETE" },
     );
     if (!response.ok) {
@@ -304,8 +330,8 @@ export async function approveCommand(options: {
     approved: boolean;
     remember?: boolean;
 }): Promise<void> {
-    await fetch(
-        buildUrl("/api/chat/approve") +
+    await apiFetch(
+        "/api/chat/approve" +
             `?session_id=${encodeURIComponent(options.sessionId)}`,
         {
             method: "POST",
@@ -321,7 +347,7 @@ export async function approveCommand(options: {
 
 export async function interruptChat(sessionId: string): Promise<void> {
     try {
-        await fetch(buildUrl("/api/chat/interrupt"), {
+        await apiFetch("/api/chat/interrupt", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ session_id: sessionId }),
@@ -335,8 +361,8 @@ export async function listMessages(
     sessionId: string,
 ): Promise<NovaMessageRecord[]> {
     const payload = await parseJson<JsonResponse<NovaMessageRecord>>(
-        await fetch(
-            buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/messages`),
+        await apiFetch(
+            `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
         ),
     );
     return payload.items;
@@ -357,7 +383,7 @@ function emitFrame(frame: string, onEvent: (event: NovaStreamEvent) => void) {
 }
 
 export async function streamChat(options: StreamChatOptions): Promise<void> {
-    const response = await fetch(buildUrl("/api/chat/stream"), {
+    const response = await apiFetch("/api/chat/stream", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -411,7 +437,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
 
 export async function listProjects(): Promise<NovaProject[]> {
     const payload = await parseJson<JsonResponse<NovaProject>>(
-        await fetch(buildUrl("/api/projects")),
+        await apiFetch("/api/projects"),
     );
     return payload.items;
 }
@@ -420,7 +446,7 @@ export async function createProject(
     name: string | null,
     path: string | null,
 ): Promise<NovaProject> {
-    const response = await fetch(buildUrl("/api/projects"), {
+    const response = await apiFetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, path }),
@@ -435,7 +461,7 @@ export async function resolveProject(
     path: string,
     name?: string | null,
 ): Promise<NovaProject> {
-    const response = await fetch(buildUrl("/api/projects/resolve"), {
+    const response = await apiFetch("/api/projects/resolve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path, name: name ?? null }),
@@ -450,8 +476,8 @@ export async function updateProject(
     projectId: string,
     fields: { name?: string; path?: string | null },
 ): Promise<NovaProject> {
-    const response = await fetch(
-        buildUrl(`/api/projects/${encodeURIComponent(projectId)}`),
+    const response = await apiFetch(
+        `/api/projects/${encodeURIComponent(projectId)}`,
         {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -465,8 +491,8 @@ export async function updateProject(
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
-    const response = await fetch(
-        buildUrl(`/api/projects/${encodeURIComponent(projectId)}`),
+    const response = await apiFetch(
+        `/api/projects/${encodeURIComponent(projectId)}`,
         { method: "DELETE" },
     );
     if (!response.ok) {
@@ -478,8 +504,8 @@ export async function setSessionProject(
     sessionId: string,
     projectId: string | null,
 ): Promise<void> {
-    const response = await fetch(
-        buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/project`),
+    const response = await apiFetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}/project`,
         {
             method: "PUT",
             headers: { "Content-Type": "application/json" },

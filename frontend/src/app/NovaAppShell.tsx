@@ -15,6 +15,7 @@ import i18n from "../i18n";
 
 import { MemoryManagerDialog } from "../components/assistant-ui/memory-manager-dialog";
 import { ModelsManagerDialog } from "../components/assistant-ui/models-manager-dialog";
+import { LoginDialog } from "../components/auth/login-dialog";
 import { Thread } from "../components/assistant-ui/thread";
 import { toolkit } from "../components/assistant-ui/toolkit";
 import { ThreadSidebar } from "../components/sidebar/thread-sidebar";
@@ -39,6 +40,7 @@ import {
     updateAgent,
     updateProject,
 } from "../lib/nova-api";
+import { subscribeToUnauthorized } from "../lib/auth";
 import { randomId } from "../lib/utils";
 import { useApprovalStore } from "../stores/approval-store";
 import { useAskUserStore } from "../stores/ask-user-store";
@@ -359,6 +361,7 @@ export function NovaAppShell() {
     );
     const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
     const [isModelsDialogOpen, setIsModelsDialogOpen] = useState(false);
+    const [authRequired, setAuthRequired] = useState(false);
     const [composerText, setComposerText] = useState("");
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -396,6 +399,8 @@ export function NovaAppShell() {
     )
         ? currentThreadId
         : undefined;
+
+    const bootstrapRef = useRef<() => void>(() => {});
 
     useEffect(() => {
         let cancelled = false;
@@ -468,12 +473,19 @@ export function NovaAppShell() {
             }
         }
 
+        bootstrapRef.current = () => {
+            cancelled = false;
+            void bootstrap();
+        };
         void bootstrap();
 
         return () => {
             cancelled = true;
+            bootstrapRef.current = () => {};
         };
     }, []);
+
+    useEffect(() => subscribeToUnauthorized(() => setAuthRequired(true)), []);
 
     async function loadThread(threadId: string) {
         try {
@@ -1220,6 +1232,13 @@ export function NovaAppShell() {
                     onModelsUpdated={handleConfigModelsUpdated}
                     onProvidersRefresh={refreshProviders}
                     onStatusChange={handleConfigStatus}
+                />
+                <LoginDialog
+                    open={authRequired}
+                    onAuthenticated={() => {
+                        setAuthRequired(false);
+                        bootstrapRef.current();
+                    }}
                 />
             </TooltipProvider>
         </AssistantRuntimeProvider>
