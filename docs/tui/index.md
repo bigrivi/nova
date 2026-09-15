@@ -41,8 +41,7 @@ Two reasons for the external list:
   React from `node_modules` at runtime, so inlining a second React copy into
   the bundle makes hooks fail with `resolveDispatcher() is null`.
 
-The backend port defaults to `8765` and can be overridden with
-`NOVA_BACKEND_PORT`.
+The server port defaults to `8765` and can be overridden with `NOVA_PORT`.
 
 ## In-Chat Commands
 

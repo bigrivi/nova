@@ -273,6 +273,5 @@ frontend, or by starting the backend with
 | `OPENAI_API_KEY` | Fallback API key |
 | `NOVA_LOG_LEVEL` | Log level (default: INFO) |
 | `NOVA_HOST` | Server bind host (default: 127.0.0.1) |
-| `NOVA_BACKEND_PORT` | Server port (default: 8765) |
-| `NOVA_UI_PORT` | Built-in static frontend port (default: 8501) |
+| `NOVA_PORT` | Server port (default: 8765) |
 | `NOVA_FRONTEND_DIST` | Override the directory of the built frontend the server serves |

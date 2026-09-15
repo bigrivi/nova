@@ -197,6 +197,16 @@ Add more providers by alias, each with a `type` of `ollama`, `openai-compatible`
 { "mcp_servers": { "my-tools": { "command": "npx", "args": ["-y", "my-mcp"] } } }
 ```
 
+### Exposing Nova on Your LAN
+
+By default Nova binds to `127.0.0.1`, so only your own machine can reach it. To use Nova from another machine on your network, set `NOVA_HOST=0.0.0.0` together with both `NOVA_AUTH_USER` and `NOVA_AUTH_PASSWORD`. Setting only one of the two leaves `/api` unprotected, so always set both. Local surfaces (desktop, `nova web`, TUI) stay exempt via loopback and are never prompted. Credentials travel as base64 over plain HTTP, so use this on a trusted network only.
+
+```bash
+NOVA_HOST=0.0.0.0 NOVA_AUTH_USER=alice NOVA_AUTH_PASSWORD=s3cret nova serve
+```
+
+See [Settings](docs/configuration/settings.md) for detail.
+
 See [Providers](docs/configuration/providers.md), [Settings](docs/configuration/settings.md), [MCP](docs/advanced/mcp.md), and [Compaction](docs/advanced/compaction.md).
 
 ## Documentation

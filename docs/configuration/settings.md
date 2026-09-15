@@ -48,10 +48,11 @@ All variables are read with `os.getenv` at startup. Empty or whitespace-only val
 |----------|---------|-------------------|--------------|
 | `NOVA_HOME` | `~/.nova` | `nova/settings.py:Settings.load_config` | Overrides the home directory. Also checked by the TUI backend for its log path. |
 | `NOVA_HOST` | `127.0.0.1` | `nova/settings.py:Settings.load_config` | Host the server binds to. |
-| `NOVA_BACKEND_PORT` | `8765` | `nova/settings.py:Settings.load_config` | Port the FastAPI server listens on. The TUI reads the same variable in `tui/src/backend.ts:backendPort()` to decide where to connect or spawn the backend. |
-| `NOVA_UI_PORT` | `8501` | `nova/settings.py:Settings.load_config` | UI port, reserved for future use. |
+| `NOVA_PORT` | `8765` | `nova/settings.py:Settings.load_config` | Port the Nova server listens on. The TUI reads the same variable in `tui/src/backend.ts:backendPort()` to decide where to connect or spawn the server. |
 | `NOVA_LOG_LEVEL` | `INFO` | `nova/settings.py:Settings.load_config` | Logging level passed to `configure_logging`. |
 | `NOVA_FRONTEND_DIST` | _(empty)_ | `nova/settings.py:Settings.load_config` and `nova/desktop/entry.py` | When set to an existing directory, FastAPI serves it at `GET /` via `app.frontend()` (with an `index.html` fallback for client-side routing). When empty or missing, `GET /` returns the JSON stub. `nova web` builds `frontend/dist` when needed and points this variable at it. |
+| `NOVA_AUTH_USER` | _(unset)_ | `nova/server/auth.py:get_configured_credentials` | Username required by HTTP Basic auth for `/api` routes when Nova is exposed beyond loopback. Auth activates only when `NOVA_AUTH_PASSWORD` is also set. |
+| `NOVA_AUTH_PASSWORD` | _(unset)_ | `nova/server/auth.py:get_configured_credentials` | Password for the same. Used verbatim, including surrounding whitespace. |
 | `NOVA_OLLAMA_BASE_URL` | `http://localhost:11434` | `nova/settings.py:_resolve_ollama_base_url` | Preferred override for the Ollama base URL. Falls back to `OLLAMA_BASE_URL` if not set. |
 | `OLLAMA_BASE_URL` | _(fallback)_ | `nova/settings.py:_resolve_ollama_base_url` | Fallback for Ollama base URL when `NOVA_OLLAMA_BASE_URL` is empty. |
 | `NOVA_OPENAI_BASE_URL` | `https://api.openai.com/v1` | `nova/settings.py:_resolve_openai_base_url` | Preferred override for the OpenAI-compatible base URL. |
@@ -93,6 +94,44 @@ That helper is not wired into provider dispatch. API keys are not taken from the
 ```
 
 The same applies to the `NOVA_OLLAMA_BASE_URL` / `NOVA_OPENAI_BASE_URL` helpers. The base URLs that actually reach the provider are the ones in `config.json`. The env-var helpers exist in the codebase but are not called from `Settings.load_config`, so setting them alone does not change provider behaviour. Prefer the config file values.
+
+## Network Exposure and Authentication
+
+`NOVA_HOST` defaults to `127.0.0.1`, so nothing is reachable from the network by default. To expose Nova on a LAN, set `NOVA_HOST=0.0.0.0` together with both `NOVA_AUTH_USER` and `NOVA_AUTH_PASSWORD`:
+
+```bash
+NOVA_HOST=0.0.0.0 NOVA_AUTH_USER=alice NOVA_AUTH_PASSWORD=s3cret nova serve
+```
+
+> Warning: setting `NOVA_HOST=0.0.0.0` without both credentials leaves every `/api` route open to anyone who can reach the port.
+
+Auth is active only when both variables are non-empty. `NOVA_AUTH_USER` is stripped of surrounding whitespace; `NOVA_AUTH_PASSWORD` is used verbatim, so leading/trailing spaces are significant. If only one of the two is set, `nova/server/auth.py:get_configured_credentials` returns `None` and auth is disabled entirely. Enforcement lives in `nova/server/auth.py:BasicAuthMiddleware`, registered by `nova/server/app.py:create_app` via `app.add_middleware(BasicAuthMiddleware)`. Credentials live only in the process environment: they are never written to `~/.nova/config.json` and are never returned by any API. Changing them requires restarting the server.
+
+What requires auth, and what does not:
+
+| Path | Auth required | Reason |
+|------|---------------|--------|
+| `/api/*` | Yes, for non-loopback clients | Protects sessions, chat, tools, and config |
+| Static frontend assets | No | The login dialog must load before the user authenticates |
+| `GET /` | No | Same reason as static assets |
+| `GET /health` | No | Liveness probe stays public |
+
+Loopback clients are exempt from auth: `127.0.0.1`, `::1`, and `::ffff:127.0.0.1`. This covers `nova desktop`, the local web UI (`nova web`, `nova serve`), and the TUI (`nova tui`, which talks to a backend on `127.0.0.1`), so local use never prompts for credentials.
+
+Proxy rule: if an `X-Forwarded-For` header is present, the request counts as loopback only when every entry in that header is a loopback address. A request arriving from loopback but carrying a non-loopback `X-Forwarded-For` entry requires credentials. The Vite dev server sets `xfwd: true` in `frontend/vite.config.ts` for exactly this reason, so a LAN browser hitting the dev server is still authenticated while `localhost` development stays exempt.
+
+Unauthorized requests get HTTP `401` with body `{"detail": "Authentication required"}`. The middleware deliberately sends no `WWW-Authenticate` header, so browsers do not open their native credential prompt instead of Nova's own dialog.
+
+HTTP Basic transmits base64-encoded credentials, which is not encryption. Treat this as trusted-local-network protection only. Anything beyond that needs TLS, for example a TLS-terminating reverse proxy in front of Nova.
+
+The frontend stores credentials in `localStorage` under the key `nova.auth` and shows the non-dismissible login dialog in `frontend/src/components/auth/login-dialog.tsx` on any `401`. The dialog probes `GET /api/models` to validate credentials before accepting them. Storage is per-origin and survives restarts, so a stored browser keeps its session across tabs and launches until a credential check fails. Because the value is readable by any script on the origin, keep it to trusted devices only. The dialog strings live under the `auth.*` keys in `frontend/src/i18n/en.json` and `frontend/src/i18n/zh-CN.json`.
+
+For LAN development, run the backend bound to all interfaces and the frontend dev server with host enabled:
+
+```bash
+NOVA_HOST=0.0.0.0 nova serve
+cd frontend && npm run dev -- --host
+```
 
 ## Config File Shape
 

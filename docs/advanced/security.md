@@ -68,3 +68,20 @@ Five threat categories are detected:
 Memories are stored in a local SQLite database. Threat patterns are scanned
 before saving any memory. Agent workspace files are loaded at startup and cached
 for the lifetime of the process.
+
+## Network Exposure
+
+Nova binds to `127.0.0.1` by default, so nothing leaves your machine unless
+you ask it to. Widening the bind with `NOVA_HOST=0.0.0.0` exposes every
+`/api` route to the local network, so it requires `NOVA_AUTH_USER` and
+`NOVA_AUTH_PASSWORD` to be set together:
+
+- Auth is active only when both variables are non-empty. Setting only one
+  leaves auth disabled entirely, so double-check both before exposing a port.
+- Loopback clients (`127.0.0.1`, `::1`, `::ffff:127.0.0.1`) are exempt, so
+  the desktop app, local web UI, and TUI never prompt for credentials.
+- Credentials travel as base64 over plain HTTP, which is not encryption.
+  Treat this as trusted-network protection only, and put a TLS-terminating
+  reverse proxy in front of Nova for anything beyond that.
+
+See [Settings](../configuration/settings.md) for the full variable reference.
