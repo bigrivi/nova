@@ -21,7 +21,6 @@ import { ThreadSidebar } from "../components/sidebar/thread-sidebar";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { toThreadMessages } from "../lib/history-messages";
-import { randomId } from "../lib/utils";
 import {
     createProject,
     deleteProject,
@@ -40,6 +39,7 @@ import {
     updateAgent,
     updateProject,
 } from "../lib/nova-api";
+import { randomId } from "../lib/utils";
 import { useApprovalStore } from "../stores/approval-store";
 import { useAskUserStore } from "../stores/ask-user-store";
 import { useReasoningStore } from "../stores/reasoning-store";
@@ -666,20 +666,6 @@ export function NovaAppShell() {
         textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
     }, [composerText]);
 
-    useEffect(() => {
-        if (isRunning) {
-            return;
-        }
-
-        const textarea = composerRef.current;
-        if (!textarea) {
-            return;
-        }
-
-        textarea.focus({ preventScroll: true });
-        const caret = textarea.value.length;
-        textarea.setSelectionRange(caret, caret);
-    }, [currentThreadId, isRunning]);
 
     async function submitPrompt(
         prompt: string,
@@ -705,6 +691,7 @@ export function NovaAppShell() {
 
         setIsRunning(true);
         setComposerText("");
+        composerRef.current?.focus({ preventScroll: true });
         useTodoStore.getState().clear();
 
         setThreadMessages(activeThreadId, (previous) => [

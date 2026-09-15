@@ -105,6 +105,9 @@ export function ThreadStickyComposer({
                                     size="icon"
                                     className="rounded-full transition-colors hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
                                     disabled={composer.text.trim().length === 0}
+                                    onMouseDown={(event) =>
+                                        event.preventDefault()
+                                    }
                                     onClick={composer.onSubmit}
                                 >
                                     <ArrowUpIcon className="size-4" />
