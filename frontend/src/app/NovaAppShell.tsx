@@ -54,6 +54,7 @@ import type {
 } from "../types/nova";
 
 const DRAFT_THREAD_ID = "__draft__";
+const NARROW_VIEWPORT_QUERY = "(max-width: 768px)";
 
 function createTextMessage(
     role: "user" | "assistant",
@@ -349,13 +350,40 @@ export function NovaAppShell() {
     const [providers, setProviders] = useState<NovaProviderRecord[]>([]);
     const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
     const [isRunning, setIsRunning] = useState(false);
-    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
+        () => window.matchMedia(NARROW_VIEWPORT_QUERY).matches,
+    );
+    const [isNarrowViewport, setIsNarrowViewport] = useState(
+        () => window.matchMedia(NARROW_VIEWPORT_QUERY).matches,
+    );
     const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
     const [isModelsDialogOpen, setIsModelsDialogOpen] = useState(false);
     const [composerText, setComposerText] = useState("");
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
     const sessionIdRef = useRef(DRAFT_THREAD_ID);
+    const wasNarrowViewportRef = useRef(isNarrowViewport);
+
+    useEffect(() => {
+        const query = window.matchMedia(NARROW_VIEWPORT_QUERY);
+        const update = () => setIsNarrowViewport(query.matches);
+        update();
+        query.addEventListener("change", update);
+        return () => query.removeEventListener("change", update);
+    }, []);
+
+    useEffect(() => {
+        if (isNarrowViewport && !wasNarrowViewportRef.current) {
+            setIsSidebarCollapsed(true);
+        }
+        wasNarrowViewportRef.current = isNarrowViewport;
+    }, [isNarrowViewport]);
+
+    function collapseSidebarOnNarrowViewport() {
+        if (isNarrowViewport) {
+            setIsSidebarCollapsed(true);
+        }
+    }
 
     useEffect(() => {
         sessionIdRef.current = currentThreadId;
@@ -1096,7 +1124,14 @@ export function NovaAppShell() {
             <TooltipProvider>
                 <div className="flex h-screen overflow-hidden bg-background text-foreground">
                     {!isSidebarCollapsed ? (
-                        <ThreadSidebar
+                        <>
+                            <div
+                                className="fixed inset-0 z-40 bg-black/30 md:hidden"
+                                onClick={() => setIsSidebarCollapsed(true)}
+                                aria-hidden="true"
+                            />
+                            <div className="fixed top-0 left-0 z-40 h-full shadow-2xl md:contents md:shadow-none">
+                                <ThreadSidebar
                             threads={threads}
                             projects={projects}
                             activeThreadId={activeThreadListId}
@@ -1105,8 +1140,14 @@ export function NovaAppShell() {
                             }
                             disabled={isRunning}
                             onCollapse={() => setIsSidebarCollapsed(true)}
-                            onNewThread={switchToDraftThread}
-                            onNewThreadInProject={handleNewThreadInProject}
+                            onNewThread={() => {
+                                switchToDraftThread();
+                                collapseSidebarOnNarrowViewport();
+                            }}
+                            onNewThreadInProject={(projectId) => {
+                                handleNewThreadInProject(projectId);
+                                collapseSidebarOnNarrowViewport();
+                            }}
                             onCreateProject={handleCreateProject}
                             onRenameProject={handleRenameProject}
                             onDeleteProject={handleDeleteProject}
@@ -1114,6 +1155,7 @@ export function NovaAppShell() {
                                 if (isRunning || threadId === currentThreadId) return;
                                 setCurrentThreadId(threadId);
                                 void loadThread(threadId);
+                                collapseSidebarOnNarrowViewport();
                             }}
                             onRenameThread={handleRenameThread}
                             onPinThread={handlePinThread}
@@ -1121,7 +1163,9 @@ export function NovaAppShell() {
                             onDeleteThread={handleDeleteThread}
                             onOpenMemory={() => setIsMemoryDialogOpen(true)}
                             onOpenModels={() => setIsModelsDialogOpen(true)}
-                        />
+                                />
+                            </div>
+                        </>
                     ) : null}
 
                     <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
