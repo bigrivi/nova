@@ -86,14 +86,14 @@ async def reset_state():
 def test_create_app_returns_fastapi_app(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server")
     monkeypatch.setenv("NOVA_HOST", "0.0.0.0")
-    monkeypatch.setenv("NOVA_BACKEND_PORT", "9000")
+    monkeypatch.setenv("NOVA_PORT", "9000")
     settings = Settings.load_config()
 
     app = create_app(settings=settings)
 
     assert isinstance(app, FastAPI)
     assert app.state.settings.host == "0.0.0.0"
-    assert app.state.settings.backend_port == 9000
+    assert app.state.settings.port == 9000
 
 
 def test_health_endpoint(monkeypatch):
@@ -913,7 +913,7 @@ async def test_run_server_starts_uvicorn(monkeypatch):
 
     assert isinstance(captured["app"], FastAPI)
     assert captured["host"] == settings.host
-    assert captured["port"] == settings.backend_port
+    assert captured["port"] == settings.port
     assert captured["log_level"] == settings.log_level.lower()
     assert captured["served"] is True
 

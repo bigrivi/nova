@@ -88,15 +88,13 @@ def test_app_settings_from_config_and_env(monkeypatch, tmp_path):
     )
     monkeypatch.setenv("NOVA_HOME", str(home))
     monkeypatch.setenv("NOVA_HOST", "0.0.0.0")
-    monkeypatch.setenv("NOVA_BACKEND_PORT", "9001")
-    monkeypatch.setenv("NOVA_UI_PORT", "9010")
+    monkeypatch.setenv("NOVA_PORT", "9001")
     monkeypatch.setenv("NOVA_LOG_LEVEL", "debug")
     settings = Settings.load_config()
 
     assert settings.home == home
     assert settings.host == "0.0.0.0"
-    assert settings.backend_port == 9001
-    assert settings.ui_port == 9010
+    assert settings.port == 9001
     assert settings.log_level == "DEBUG"
     assert settings.workspace_dir == home / "workspace"
     assert settings.logs_dir == home / "logs"
@@ -112,7 +110,7 @@ def test_app_settings_from_config_and_env(monkeypatch, tmp_path):
     assert settings.paths.database_path == home / "nova.db"
     assert settings.paths.skills_dir == home / "skills"
     assert settings.server.host == "0.0.0.0"
-    assert settings.server.backend_port == 9001
+    assert settings.server.port == 9001
 
 
 def test_settings_compaction_defaults(monkeypatch, tmp_path):

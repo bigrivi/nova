@@ -146,7 +146,7 @@ def main():
             project_root = Path(__file__).resolve().parent.parent
             settings = _web_settings(settings, project_root)
             if not args.no_open:
-                url = f"http://{settings.host}:{settings.backend_port}"
+                url = f"http://{settings.host}:{settings.port}"
                 print(f"Nova web: opening {url}", file=sys.stderr)
                 _open_browser_when_ready(url)
 

@@ -18,7 +18,7 @@ class ServerThread:
         self.settings = settings
         self.server: Optional[Server] = None
         self.thread: Optional[threading.Thread] = None
-        self.port: int = settings.backend_port
+        self.port: int = settings.port
         self.host: str = settings.host
 
     def _run(self) -> None:

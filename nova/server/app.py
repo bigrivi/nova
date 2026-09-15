@@ -571,7 +571,7 @@ async def run_server(settings: Optional[Settings] = None) -> None:
     config = uvicorn.Config(
         app,
         host=server_settings.host,
-        port=server_settings.backend_port,
+        port=server_settings.port,
         log_level=settings.log_level.lower(),
     )
     server = uvicorn.Server(config)

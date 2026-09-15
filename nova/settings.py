@@ -26,8 +26,7 @@ class RuntimePaths:
 @dataclass(frozen=True)
 class ServerSettings:
     host: str
-    backend_port: int
-    ui_port: int
+    port: int
 
 
 @dataclass(frozen=True)
@@ -216,8 +215,7 @@ class Settings:
 
     # Server-side network bindings.
     host: str
-    backend_port: int
-    ui_port: int
+    port: int
 
     # Process-level operational defaults.
     log_level: str
@@ -254,8 +252,7 @@ class Settings:
         return cls(
             home=home,
             host=os.getenv("NOVA_HOST", "127.0.0.1").strip() or "127.0.0.1",
-            backend_port=_env_int("NOVA_BACKEND_PORT", 8765),
-            ui_port=_env_int("NOVA_UI_PORT", 8501),
+            port=_env_int("NOVA_PORT", 8765),
             log_level=(os.getenv("NOVA_LOG_LEVEL",
                        "INFO").strip().upper() or "INFO"),
             workspace_dir=home / "workspace",
@@ -295,8 +292,7 @@ class Settings:
     def server(self) -> ServerSettings:
         return ServerSettings(
             host=self.host,
-            backend_port=self.backend_port,
-            ui_port=self.ui_port,
+            port=self.port,
         )
 
     @property

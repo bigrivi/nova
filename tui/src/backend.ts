@@ -22,7 +22,7 @@ let child: ChildProcess | null = null;
 
 export function backendPort(): number {
     return Number(
-        process.env.NOVA_BACKEND_PORT ?? new URL(DEFAULT_API_BASE).port,
+        process.env.NOVA_PORT ?? new URL(DEFAULT_API_BASE).port,
     );
 }
 
@@ -99,7 +99,7 @@ export async function startBackend(): Promise<void> {
         stdio: ["ignore", logFd, logFd],
         env: {
             ...process.env,
-            NOVA_BACKEND_PORT: String(port),
+            NOVA_PORT: String(port),
             NOVA_WORKSPACE_DIR:
                 process.env.NOVA_WORKSPACE_DIR || process.cwd(),
         },
