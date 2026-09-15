@@ -3,7 +3,7 @@ import { AskUserTool } from "@/components/assistant-ui/ask-user-tool";
 import { useZoom } from "@/lib/use-zoom";
 import { useApprovalStore } from "@/stores/approval-store";
 import { useAskUserStore } from "@/stores/ask-user-store";
-import type { NovaModelRecord, NovaProviderRecord } from "@/types/nova";
+import type { NovaModelRecord } from "@/types/nova";
 import { AuiIf, ThreadPrimitive } from "@assistant-ui/react";
 import type { KeyboardEvent, RefObject } from "react";
 import { type FC } from "react";
@@ -26,12 +26,8 @@ type ThreadProps = {
     };
     modelSelection: {
         models: NovaModelRecord[];
-        providers: NovaProviderRecord[];
         selectedModelId: string | null;
         onSelect: (modelId: string) => void;
-        onModelsUpdated: (models: NovaModelRecord[]) => void;
-        onProvidersRefresh: () => Promise<void>;
-        onStatusChange: (message: string | null) => void;
     };
 };
 

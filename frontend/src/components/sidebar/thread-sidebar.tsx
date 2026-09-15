@@ -3,6 +3,7 @@
 import {
     CheckIcon,
     ChevronRightIcon,
+    CpuIcon,
     DatabaseIcon,
     FolderIcon,
     LanguagesIcon,
@@ -79,6 +80,7 @@ type ThreadSidebarProps = {
         nextThreadId: string | null,
     ) => Promise<void> | void;
     onOpenMemory: () => void;
+    onOpenModels: () => void;
 };
 
 const OPEN_PROJECTS_KEY = "nova.sidebar.open-projects.v2";
@@ -757,6 +759,7 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
                     <DropdownMenuTrigger asChild><button type="button" className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13.5px] text-[#6E6A60] hover:bg-[#F0EEE7] hover:text-[#201F1C]"><SettingsIcon className="size-4" />{t("sidebar.settings")}</button></DropdownMenuTrigger>
                     <DropdownMenuContent side="top" align="start" collisionPadding={12} className="w-64 border-[#E4E1D9] bg-white">
                         <DropdownMenuItem onSelect={props.onOpenMemory}><DatabaseIcon className="size-4" />{t("memory.manage")}</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={props.onOpenModels}><CpuIcon className="size-4" />{t("modelSelector.manageModels")}</DropdownMenuItem>
                         <DropdownMenuSub>
                             <DropdownMenuSubTrigger>
                                 <LanguagesIcon className="size-4" />

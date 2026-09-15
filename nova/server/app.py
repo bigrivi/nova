@@ -36,12 +36,16 @@ from nova.server.schemas import (
     MemoryListResponse,
     MemoryRecordSchema,
     ModelCreateRequest,
+    ModelDeleteRequest,
     ModelListResponse,
     ModelRecord,
+    ModelUpdateRequest,
     MessageListResponse,
     ProviderListResponse,
     ProviderRecord,
     ProviderCreateRequest,
+    ProviderDeleteRequest,
+    ProviderUpdateRequest,
     RenameSessionRequest,
     SessionActionResponse,
     SessionListResponse,
@@ -92,6 +96,12 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         for provider_key, provider_config in settings.providers.items():
             for model_key, model_config in provider_config.models.items():
                 configured_name = str(model_config.get("name", "")).strip() or model_key
+                if "tools" in model_config:
+                    tools_enabled = bool(model_config["tools"])
+                elif "toolCalling" in model_config:
+                    tools_enabled = bool(model_config["toolCalling"])
+                else:
+                    tools_enabled = True
                 items.append(
                     ModelRecord(
                         id=f"{provider_key}:{model_key}",
@@ -99,7 +109,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                         provider_name=provider_config.name,
                         model=model_key,
                         label=configured_name,
-                        tools=bool(model_config.get("tools") or model_config.get("toolCalling")),
+                        tools=tools_enabled,
                     )
                 )
         return ModelListResponse(items=items)
@@ -110,6 +120,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 key=provider_key,
                 name=provider_config.name,
                 type=provider_config.type,
+                base_url=str(provider_config.options.get("base_url", "") or ""),
+                has_api_key=bool(provider_config.options.get("api_key")),
             )
             for provider_key, provider_config in settings.providers.items()
         ]
@@ -314,6 +326,73 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             )
         except ConfigValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        refreshed_settings = refresh_settings()
+        return build_model_list_response(refreshed_settings)
+
+    @app.post("/api/config/providers/update", response_model=ModelListResponse)
+    async def update_provider(request: ProviderUpdateRequest) -> ModelListResponse:
+        service = ConfigService(app.state.settings)
+        try:
+            service.update_provider(
+                request.key,
+                name=request.name,
+                provider_type=request.type,
+                base_url=request.base_url,
+                api_key=request.api_key,
+            )
+        except ConfigValidationError as exc:
+            message = str(exc)
+            if "does not exist" in message:
+                raise HTTPException(status_code=404, detail=message) from exc
+            raise HTTPException(status_code=400, detail=message) from exc
+
+        refreshed_settings = refresh_settings()
+        return build_model_list_response(refreshed_settings)
+
+    @app.post("/api/config/providers/delete", response_model=ModelListResponse)
+    async def delete_provider(request: ProviderDeleteRequest) -> ModelListResponse:
+        service = ConfigService(app.state.settings)
+        try:
+            service.delete_provider(request.key)
+        except ConfigValidationError as exc:
+            message = str(exc)
+            if "does not exist" in message:
+                raise HTTPException(status_code=404, detail=message) from exc
+            raise HTTPException(status_code=400, detail=message) from exc
+
+        refreshed_settings = refresh_settings()
+        return build_model_list_response(refreshed_settings)
+
+    @app.post("/api/config/models/update", response_model=ModelListResponse)
+    async def update_model(request: ModelUpdateRequest) -> ModelListResponse:
+        service = ConfigService(app.state.settings)
+        try:
+            service.update_model(
+                request.provider,
+                request.model,
+                label=request.label,
+                tools=request.tools,
+            )
+        except ConfigValidationError as exc:
+            message = str(exc)
+            if "does not exist" in message:
+                raise HTTPException(status_code=404, detail=message) from exc
+            raise HTTPException(status_code=400, detail=message) from exc
+
+        refreshed_settings = refresh_settings()
+        return build_model_list_response(refreshed_settings)
+
+    @app.post("/api/config/models/delete", response_model=ModelListResponse)
+    async def delete_model(request: ModelDeleteRequest) -> ModelListResponse:
+        service = ConfigService(app.state.settings)
+        try:
+            service.delete_model(request.provider, request.model)
+        except ConfigValidationError as exc:
+            message = str(exc)
+            if "does not exist" in message:
+                raise HTTPException(status_code=404, detail=message) from exc
+            raise HTTPException(status_code=400, detail=message) from exc
 
         refreshed_settings = refresh_settings()
         return build_model_list_response(refreshed_settings)

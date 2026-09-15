@@ -204,3 +204,144 @@ class ConfigService:
         }
         _write_json(self._config_path, payload)
         return payload
+
+    def update_provider(
+        self,
+        key: str,
+        name: str | None = None,
+        provider_type: str | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+    ) -> dict[str, Any]:
+        payload = _load_config_payload(self._config_path)
+        providers = payload.setdefault("providers", {})
+        if not isinstance(providers, dict):
+            raise ConfigValidationError("Invalid Nova config: 'providers' must be an object.")
+
+        provider_key = (key or "").strip()
+        provider_payload = providers.get(provider_key)
+        if not isinstance(provider_payload, dict):
+            raise ConfigValidationError(f"Provider '{provider_key}' does not exist.")
+
+        if name is not None:
+            stripped_name = name.strip()
+            if not stripped_name:
+                raise ConfigValidationError("Provider name must not be empty.")
+            provider_payload["name"] = stripped_name
+
+        if provider_type is not None:
+            stripped_type = provider_type.strip()
+            if stripped_type not in _SUPPORTED_PROVIDER_TYPES:
+                raise ConfigValidationError(
+                    f"Provider type must be one of: {', '.join(sorted(_SUPPORTED_PROVIDER_TYPES))}."
+                )
+            provider_payload["type"] = stripped_type
+
+        effective_type = str(provider_payload.get("type", "")).strip()
+        options = provider_payload.get("options")
+        if not isinstance(options, dict):
+            options = {}
+            provider_payload["options"] = options
+
+        if base_url is not None:
+            options["base_url"] = base_url.strip()
+
+        if api_key is not None:
+            if api_key == "":
+                options.pop("api_key", None)
+            else:
+                stripped_key = api_key.strip()
+                if stripped_key:
+                    options["api_key"] = stripped_key
+
+        if effective_type in {"openai-compatible", "openai-response"}:
+            if not str(options.get("base_url", "")).strip():
+                raise ConfigValidationError(
+                    f"Base URL is required for {effective_type} providers."
+                )
+
+        _write_json(self._config_path, payload)
+        return payload
+
+    def delete_provider(self, key: str) -> dict[str, Any]:
+        payload = _load_config_payload(self._config_path)
+        providers = payload.setdefault("providers", {})
+        if not isinstance(providers, dict):
+            raise ConfigValidationError("Invalid Nova config: 'providers' must be an object.")
+
+        provider_key = (key or "").strip()
+        if provider_key not in providers:
+            raise ConfigValidationError(f"Provider '{provider_key}' does not exist.")
+
+        del providers[provider_key]
+        _write_json(self._config_path, payload)
+        return payload
+
+    def update_model(
+        self,
+        provider: str,
+        model: str,
+        label: str | None = None,
+        tools: bool | None = None,
+    ) -> dict[str, Any]:
+        payload = _load_config_payload(self._config_path)
+        providers = payload.setdefault("providers", {})
+        if not isinstance(providers, dict):
+            raise ConfigValidationError("Invalid Nova config: 'providers' must be an object.")
+
+        provider_key = (provider or "").strip()
+        provider_payload = providers.get(provider_key)
+        if not isinstance(provider_payload, dict):
+            raise ConfigValidationError(f"Provider '{provider_key}' does not exist.")
+
+        models = provider_payload.setdefault("models", {})
+        if not isinstance(models, dict):
+            raise ConfigValidationError(
+                f"Invalid Nova config: provider '{provider_key}' models must be an object."
+            )
+
+        model_key = (model or "").strip()
+        model_payload = models.get(model_key)
+        if not isinstance(model_payload, dict):
+            raise ConfigValidationError(
+                f"Model '{model_key}' does not exist under provider '{provider_key}'."
+            )
+
+        if label is not None:
+            stripped_label = label.strip()
+            if not stripped_label:
+                raise ConfigValidationError("Model label must not be empty.")
+            model_payload["name"] = stripped_label
+
+        if tools is not None:
+            model_payload["tools"] = tools
+
+        _write_json(self._config_path, payload)
+        return payload
+
+    def delete_model(self, provider: str, model: str) -> dict[str, Any]:
+        payload = _load_config_payload(self._config_path)
+        providers = payload.setdefault("providers", {})
+        if not isinstance(providers, dict):
+            raise ConfigValidationError("Invalid Nova config: 'providers' must be an object.")
+
+        provider_key = (provider or "").strip()
+        provider_payload = providers.get(provider_key)
+        if not isinstance(provider_payload, dict):
+            raise ConfigValidationError(f"Provider '{provider_key}' does not exist.")
+
+        models = provider_payload.setdefault("models", {})
+        if not isinstance(models, dict):
+            raise ConfigValidationError(
+                f"Invalid Nova config: provider '{provider_key}' models must be an object."
+            )
+
+        model_key = (model or "").strip()
+        if model_key not in models:
+            raise ConfigValidationError(
+                f"Model '{model_key}' does not exist under provider '{provider_key}'."
+            )
+
+        del models[model_key]
+        _write_json(self._config_path, payload)
+        return payload

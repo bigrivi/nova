@@ -2,16 +2,7 @@
 
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui/button";
-import {
-    Dialog,
-    DialogClose,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export function DeleteThreadDialog({
     open,
@@ -25,32 +16,13 @@ export function DeleteThreadDialog({
     const { t } = useTranslation();
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent showCloseButton={false} className="sm:max-w-md">
-                <DialogHeader>
-                    <DialogTitle>{t("sidebar.deleteTitle")}</DialogTitle>
-                    <DialogDescription>
-                        {t("sidebar.deleteDescription")}
-                    </DialogDescription>
-                </DialogHeader>
-                <DialogFooter className="-mx-0 -mb-0 mt-2 border-t-0 bg-transparent p-0">
-                    <DialogClose asChild>
-                        <Button type="button" variant="outline">
-                            {t("common.cancel")}
-                        </Button>
-                    </DialogClose>
-                    <Button
-                        type="button"
-                        variant="destructive"
-                        onClick={() => {
-                            onConfirm();
-                            onOpenChange(false);
-                        }}
-                    >
-                        {t("threadList.delete")}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+        <ConfirmDialog
+            open={open}
+            onOpenChange={onOpenChange}
+            title={t("sidebar.deleteTitle")}
+            description={t("sidebar.deleteDescription")}
+            confirmLabel={t("threadList.delete")}
+            onConfirm={onConfirm}
+        />
     );
 }

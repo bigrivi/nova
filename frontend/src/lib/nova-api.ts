@@ -5,9 +5,11 @@ import type {
     NovaMessageRecord,
     NovaModelCreateRequest,
     NovaModelRecord,
+    NovaModelUpdateRequest,
     NovaProject,
     NovaProviderCreateRequest,
     NovaProviderRecord,
+    NovaProviderUpdateRequest,
     NovaSessionSummary,
     NovaStreamEvent,
 } from "../types/nova";
@@ -99,6 +101,68 @@ export async function createModel(
                 "Content-Type": "application/json",
             },
             body: JSON.stringify(payload),
+        }),
+    );
+    return response.items;
+}
+
+export async function updateProvider(
+    key: string,
+    payload: NovaProviderUpdateRequest,
+): Promise<NovaModelRecord[]> {
+    const response = await parseJson<JsonResponse<NovaModelRecord>>(
+        await fetch(buildUrl("/api/config/providers/update"), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ key, ...payload }),
+        }),
+    );
+    return response.items;
+}
+
+export async function deleteProvider(key: string): Promise<NovaModelRecord[]> {
+    const response = await parseJson<JsonResponse<NovaModelRecord>>(
+        await fetch(buildUrl("/api/config/providers/delete"), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ key }),
+        }),
+    );
+    return response.items;
+}
+
+export async function updateModel(
+    provider: string,
+    model: string,
+    payload: NovaModelUpdateRequest,
+): Promise<NovaModelRecord[]> {
+    const response = await parseJson<JsonResponse<NovaModelRecord>>(
+        await fetch(buildUrl("/api/config/models/update"), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ provider, model, ...payload }),
+        }),
+    );
+    return response.items;
+}
+
+export async function deleteModel(
+    provider: string,
+    model: string,
+): Promise<NovaModelRecord[]> {
+    const response = await parseJson<JsonResponse<NovaModelRecord>>(
+        await fetch(buildUrl("/api/config/models/delete"), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ provider, model }),
         }),
     );
     return response.items;

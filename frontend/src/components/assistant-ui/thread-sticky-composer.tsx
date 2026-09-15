@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { useAui } from "@assistant-ui/react";
 
-import type { NovaModelRecord, NovaProviderRecord } from "../../types/nova";
+import type { NovaModelRecord } from "../../types/nova";
 import { Button } from "../ui/button";
 import { ComposerAddAttachment, ComposerAttachments } from "./attachment";
 import { ModelSelector } from "./model-selector";
@@ -26,12 +26,8 @@ type ThreadStickyComposerProps = {
     };
     modelSelection: {
         models: NovaModelRecord[];
-        providers: NovaProviderRecord[];
         selectedModelId: string | null;
         onSelect: (modelId: string) => void;
-        onModelsUpdated: (models: NovaModelRecord[]) => void;
-        onProvidersRefresh: () => Promise<void>;
-        onStatusChange: (message: string | null) => void;
     };
 };
 
@@ -90,14 +86,8 @@ export function ThreadStickyComposer({
                         <div className="flex items-center gap-2">
                             <ModelSelector
                                 models={modelSelection.models}
-                                providers={modelSelection.providers}
                                 selectedModelId={modelSelection.selectedModelId}
                                 onSelect={modelSelection.onSelect}
-                                onModelsUpdated={modelSelection.onModelsUpdated}
-                                onProvidersRefresh={
-                                    modelSelection.onProvidersRefresh
-                                }
-                                onStatusChange={modelSelection.onStatusChange}
                             />
 
                             {composer.isRunning ? (

@@ -14,9 +14,10 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 
 import { MemoryManagerDialog } from "../components/assistant-ui/memory-manager-dialog";
+import { ModelsManagerDialog } from "../components/assistant-ui/models-manager-dialog";
 import { Thread } from "../components/assistant-ui/thread";
-import { ThreadSidebar } from "../components/sidebar/thread-sidebar";
 import { toolkit } from "../components/assistant-ui/toolkit";
+import { ThreadSidebar } from "../components/sidebar/thread-sidebar";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { toThreadMessages } from "../lib/history-messages";
@@ -350,6 +351,7 @@ export function NovaAppShell() {
     const [isRunning, setIsRunning] = useState(false);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
+    const [isModelsDialogOpen, setIsModelsDialogOpen] = useState(false);
     const [composerText, setComposerText] = useState("");
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1015,15 +1017,20 @@ export function NovaAppShell() {
     function handleConfigModelsUpdated(nextModels: NovaModelRecord[]) {
         startTransition(() => {
             setModels(nextModels);
-            setSelectedModelId((current) => {
-                if (
-                    current &&
-                    nextModels.some((model) => model.id === current)
-                ) {
-                    return current;
-                }
-                return nextModels[0]?.id ?? null;
-            });
+            if (
+                selectedModelId &&
+                nextModels.some((model) => model.id === selectedModelId)
+            ) {
+                return;
+            }
+            const fallback = nextModels[0] ?? null;
+            setSelectedModelId(fallback?.id ?? null);
+            if (fallback?.provider && fallback?.model) {
+                updateAgent("main", {
+                    provider: fallback.provider,
+                    model: fallback.model,
+                }).catch(() => {});
+            }
         });
     }
 
@@ -1113,6 +1120,7 @@ export function NovaAppShell() {
                             onMoveThread={handleMoveThread}
                             onDeleteThread={handleDeleteThread}
                             onOpenMemory={() => setIsMemoryDialogOpen(true)}
+                            onOpenModels={() => setIsModelsDialogOpen(true)}
                         />
                     ) : null}
 
@@ -1151,7 +1159,6 @@ export function NovaAppShell() {
                                 }}
                                 modelSelection={{
                                     models,
-                                    providers,
                                     selectedModelId,
                                     onSelect: (value) => {
                                         setSelectedModelId(value);
@@ -1164,9 +1171,6 @@ export function NovaAppShell() {
                                             }).catch(() => {});
                                         }
                                     },
-                                    onModelsUpdated: handleConfigModelsUpdated,
-                                    onProvidersRefresh: refreshProviders,
-                                    onStatusChange: handleConfigStatus,
                                 }}
                             />
                         </div>
@@ -1175,6 +1179,15 @@ export function NovaAppShell() {
                 <MemoryManagerDialog
                     open={isMemoryDialogOpen}
                     onOpenChange={setIsMemoryDialogOpen}
+                />
+                <ModelsManagerDialog
+                    open={isModelsDialogOpen}
+                    onOpenChange={setIsModelsDialogOpen}
+                    providers={providers}
+                    models={models}
+                    onModelsUpdated={handleConfigModelsUpdated}
+                    onProvidersRefresh={refreshProviders}
+                    onStatusChange={handleConfigStatus}
                 />
             </TooltipProvider>
         </AssistantRuntimeProvider>

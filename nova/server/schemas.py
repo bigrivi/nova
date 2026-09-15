@@ -169,6 +169,8 @@ class ProviderRecord(BaseModel):
     key: str
     name: str
     type: str
+    base_url: str = ""
+    has_api_key: bool = False
 
 
 class ProviderListResponse(BaseModel):
@@ -199,6 +201,30 @@ class ModelCreateRequest(BaseModel):
     model: str
     label: str = ""
     tools: bool = True
+
+
+class ProviderUpdateRequest(BaseModel):
+    key: str
+    name: str | None = None
+    type: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+
+
+class ProviderDeleteRequest(BaseModel):
+    key: str
+
+
+class ModelUpdateRequest(BaseModel):
+    provider: str
+    model: str
+    label: str | None = None
+    tools: bool | None = None
+
+
+class ModelDeleteRequest(BaseModel):
+    provider: str
+    model: str
 
 
 class InterruptRequest(BaseModel):

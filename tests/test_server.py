@@ -985,3 +985,234 @@ async def test_registry_try_register_and_guarded_unregister():
     assert await registry.get("s") is first
     assert await registry.unregister_if_current("s", first) is True
     assert await registry.get("s") is None
+
+
+def _write_provider_config(home, providers):
+    (home / "config.json").write_text(
+        json.dumps(
+            {
+                "model": "gpt-5.4",
+                "model_provider": "openai",
+                "providers": providers,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _openai_providers(api_key="sk-test"):
+    options = {"base_url": "https://api.openai.com/v1"}
+    if api_key:
+        options["api_key"] = api_key
+    return {
+        "openai": {
+            "type": "openai-compatible",
+            "name": "OpenAI Compatible",
+            "options": options,
+            "models": {
+                "gpt-5.4": {"name": "gpt-5.4", "tools": True},
+            },
+        }
+    }
+
+
+def test_update_provider_name_and_base_url_persists(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-update-provider"
+    home.mkdir(parents=True, exist_ok=True)
+    _write_provider_config(home, _openai_providers())
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/providers/update",
+        json={
+            "key": "openai",
+            "name": "OpenAI Renamed",
+            "base_url": "https://example.com/v1",
+        },
+    )
+
+    assert response.status_code == 200
+    config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
+    assert config_payload["providers"]["openai"]["name"] == "OpenAI Renamed"
+    assert config_payload["providers"]["openai"]["options"]["base_url"] == "https://example.com/v1"
+    assert config_payload["providers"]["openai"]["options"]["api_key"] == "sk-test"
+    assert app.state.settings.providers["openai"].name == "OpenAI Renamed"
+    providers_response = client.get("/api/providers")
+    item = next(i for i in providers_response.json()["items"] if i["key"] == "openai")
+    assert item["base_url"] == "https://example.com/v1"
+    assert item["has_api_key"] is True
+    assert "sk-test" not in json.dumps(providers_response.json())
+    assert all("api_key" not in item for item in providers_response.json()["items"])
+
+
+def test_update_provider_rejects_invalid_type(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-update-provider-bad-type"
+    home.mkdir(parents=True, exist_ok=True)
+    _write_provider_config(home, _openai_providers())
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/providers/update", json={"key": "openai", "type": "nope"}
+    )
+
+    assert response.status_code == 400
+    assert "Provider type must be one of" in response.json()["detail"]
+
+
+def test_update_provider_empty_api_key_removes_it(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-update-provider-api-key"
+    home.mkdir(parents=True, exist_ok=True)
+    _write_provider_config(home, _openai_providers(api_key="sk-test"))
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/providers/update", json={"key": "openai", "api_key": ""}
+    )
+
+    assert response.status_code == 200
+    config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
+    assert "api_key" not in config_payload["providers"]["openai"]["options"]
+    providers_response = client.get("/api/providers")
+    item = next(i for i in providers_response.json()["items"] if i["key"] == "openai")
+    assert item["has_api_key"] is False
+
+
+def test_delete_provider_removes_it_and_its_models(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-delete-provider"
+    home.mkdir(parents=True, exist_ok=True)
+    providers = _openai_providers()
+    providers["ollama"] = {
+        "type": "ollama",
+        "name": "Ollama (local)",
+        "options": {"base_url": "http://localhost:11434"},
+        "models": {"gemma4:26b": {"name": "gemma4:26b", "tools": True}},
+    }
+    _write_provider_config(home, providers)
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/providers/delete", json={"key": "openai"}
+    )
+
+    assert response.status_code == 200
+    assert all(item["provider"] != "openai" for item in response.json()["items"])
+    config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
+    assert "openai" not in config_payload["providers"]
+    assert "ollama" in config_payload["providers"]
+    assert "openai" not in app.state.settings.providers
+
+
+def test_update_model_label_and_tools(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-update-model"
+    home.mkdir(parents=True, exist_ok=True)
+    _write_provider_config(home, _openai_providers())
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/models/update",
+        json={
+            "provider": "openai",
+            "model": "gpt-5.4",
+            "label": "GPT Fresh",
+            "tools": False,
+        },
+    )
+
+    assert response.status_code == 200
+    config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
+    assert config_payload["providers"]["openai"]["models"]["gpt-5.4"]["name"] == "GPT Fresh"
+    assert config_payload["providers"]["openai"]["models"]["gpt-5.4"]["tools"] is False
+
+
+def test_update_model_with_slash_in_key(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-update-model-slash"
+    home.mkdir(parents=True, exist_ok=True)
+    providers = _openai_providers()
+    providers["openai"]["models"]["mlx-community/Qwen3.5-27B"] = {
+        "name": "mlx-community/Qwen3.5-27B",
+        "tools": True,
+    }
+    _write_provider_config(home, providers)
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/models/update",
+        json={
+            "provider": "openai",
+            "model": "mlx-community/Qwen3.5-27B",
+            "label": "Qwen Fresh",
+        },
+    )
+
+    assert response.status_code == 200
+    config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
+    assert (
+        config_payload["providers"]["openai"]["models"]["mlx-community/Qwen3.5-27B"]["name"]
+        == "Qwen Fresh"
+    )
+
+
+def test_delete_model_removes_it(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-delete-model"
+    home.mkdir(parents=True, exist_ok=True)
+    providers = _openai_providers()
+    providers["openai"]["models"]["gpt-5.4-mini"] = {"name": "gpt-5.4-mini", "tools": True}
+    _write_provider_config(home, providers)
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/models/delete",
+        json={"provider": "openai", "model": "gpt-5.4-mini"},
+    )
+
+    assert response.status_code == 200
+    config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
+    assert "gpt-5.4-mini" not in config_payload["providers"]["openai"]["models"]
+    assert "gpt-5.4" in config_payload["providers"]["openai"]["models"]
+
+
+def test_update_delete_missing_provider_and_model_return_404(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-config-404"
+    home.mkdir(parents=True, exist_ok=True)
+    _write_provider_config(home, _openai_providers())
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    assert client.post(
+        "/api/config/providers/update", json={"key": "missing", "name": "X"}
+    ).status_code == 404
+    assert client.post(
+        "/api/config/providers/delete", json={"key": "missing"}
+    ).status_code == 404
+    assert client.post(
+        "/api/config/models/update",
+        json={"provider": "missing", "model": "gpt-5.4", "label": "X"},
+    ).status_code == 404
+    assert client.post(
+        "/api/config/models/delete",
+        json={"provider": "missing", "model": "gpt-5.4"},
+    ).status_code == 404
+    assert client.post(
+        "/api/config/models/update",
+        json={"provider": "openai", "model": "missing", "label": "X"},
+    ).status_code == 404
+    assert client.post(
+        "/api/config/models/delete",
+        json={"provider": "openai", "model": "missing"},
+    ).status_code == 404

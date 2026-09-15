@@ -63,6 +63,8 @@ export type NovaProviderRecord = {
     key: string;
     name: string;
     type: string;
+    base_url: string;
+    has_api_key: boolean;
 };
 
 export type NovaProviderCreateRequest = {
@@ -78,6 +80,18 @@ export type NovaModelCreateRequest = {
     model: string;
     label: string;
     tools: boolean;
+};
+
+export type NovaProviderUpdateRequest = {
+    name?: string;
+    type?: string;
+    base_url?: string;
+    api_key?: string;
+};
+
+export type NovaModelUpdateRequest = {
+    label?: string;
+    tools?: boolean;
 };
 
 export type NovaThreadSummary = {
