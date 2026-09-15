@@ -16,10 +16,14 @@ export default defineConfig({
       '/api': {
         target: process.env.NOVA_FRONTEND_PROXY_TARGET || 'http://127.0.0.1:8765',
         changeOrigin: true,
+        // The backend exempts loopback clients from LAN auth; without the real
+        // client address a LAN browser would be proxied as 127.0.0.1 and skip it.
+        xfwd: true,
       },
       '/health': {
         target: process.env.NOVA_FRONTEND_PROXY_TARGET || 'http://127.0.0.1:8765',
         changeOrigin: true,
+        xfwd: true,
       },
     },
   },

@@ -24,6 +24,7 @@ from nova.config.service import (
 )
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.memory.service import MemoryService
+from nova.server.auth import BasicAuthMiddleware
 from nova.server.chat_service import ChatService
 from nova.tools.approval import get_approval_manager
 from nova.server.schemas import (
@@ -78,6 +79,8 @@ STREAM_RESPONSE_EXAMPLE = (
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(title="Nova API")
+    # Security: no-op unless NOVA_AUTH_USER/NOVA_AUTH_PASSWORD are set.
+    app.add_middleware(BasicAuthMiddleware)
     app.state.settings = settings
     app.state.data_source = None
     app.state.chat_service = ChatService(settings=settings)

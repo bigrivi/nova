@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
@@ -16,6 +18,7 @@ from nova.memory.service import MemoryService
 import nova.server.app as server_app
 import nova.server.chat_service as server_chat_service
 from nova.server import create_app, run_server
+from nova.server.auth import check_basic_auth, get_configured_credentials
 from nova.server.chat_service import ChatService
 from nova.server.request_registry import RequestRegistry
 from nova.server.schemas import ChatRequest
@@ -1216,3 +1219,139 @@ def test_update_delete_missing_provider_and_model_return_404(monkeypatch, tmp_pa
         "/api/config/models/delete",
         json={"provider": "openai", "model": "missing"},
     ).status_code == 404
+
+
+def _auth_client(app, client=("192.168.1.50", 40000)):
+    return TestClient(app, client=client)
+
+
+def test_auth_disabled_without_credentials(monkeypatch):
+    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-off")
+    monkeypatch.delenv("NOVA_AUTH_USER", raising=False)
+    monkeypatch.delenv("NOVA_AUTH_PASSWORD", raising=False)
+    app = create_app(settings=Settings.load_config())
+
+    response = _auth_client(app).get("/health")
+
+    assert response.status_code == 200
+
+
+def test_auth_requires_credentials_for_lan_client(monkeypatch):
+    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-on")
+    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
+    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
+    app = create_app(settings=Settings.load_config())
+    client = _auth_client(app)
+
+    response = client.get("/api/models")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Authentication required"}
+    assert "www-authenticate" not in response.headers
+
+
+def test_auth_accepts_valid_credentials(monkeypatch):
+    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-ok")
+    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
+    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
+    app = create_app(settings=Settings.load_config())
+    client = _auth_client(app)
+
+    response = client.get("/health", auth=("nova", "s3cret"))
+    api_response = client.get("/api/models", auth=("nova", "s3cret"))
+
+    assert response.status_code == 200
+    assert api_response.status_code == 200
+
+
+def test_auth_rejects_wrong_credentials(monkeypatch):
+    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-bad")
+    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
+    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
+    app = create_app(settings=Settings.load_config())
+    client = _auth_client(app)
+
+    assert client.get("/api/models", auth=("nova", "wrong")).status_code == 401
+    assert client.get("/api/models", auth=("other", "s3cret")).status_code == 401
+
+
+def test_auth_exempts_loopback_client(monkeypatch):
+    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-loopback")
+    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
+    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
+    app = create_app(settings=Settings.load_config())
+
+    response = _auth_client(app, client=("127.0.0.1", 40000)).get("/api/models")
+
+    assert response.status_code == 200
+
+
+def test_auth_leaves_non_api_paths_public(monkeypatch):
+    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-static")
+    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
+    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
+    app = create_app(settings=Settings.load_config())
+    client = _auth_client(app)
+
+    assert client.get("/").status_code == 200
+    assert client.get("/health").status_code == 200
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        None,
+        "",
+        "Bearer abc",
+        "Basic",
+        "Basic !!!not-base64!!!",
+        "Basic bm9jb2xvbg==",
+    ],
+)
+def test_check_basic_auth_rejects_malformed(header):
+    assert check_basic_auth(header, ("nova", "s3cret")) is False
+
+
+def test_check_basic_auth_accepts_non_ascii_credentials():
+    encoded = base64.b64encode("用户:密码".encode("utf-8")).decode("ascii")
+
+    assert check_basic_auth(f"Basic {encoded}", ("用户", "密码")) is True
+
+
+def test_configured_credentials_requires_both_values(monkeypatch):
+    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
+    monkeypatch.delenv("NOVA_AUTH_PASSWORD", raising=False)
+
+    assert get_configured_credentials() is None
+
+    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
+
+    assert get_configured_credentials() == ("nova", "s3cret")
+
+
+def test_auth_loopback_exempt_requires_loopback_forwarded_for(monkeypatch):
+    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-xff")
+    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
+    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
+    app = create_app(settings=Settings.load_config())
+    client = _auth_client(app, client=("127.0.0.1", 40000))
+
+    assert (
+        client.get(
+            "/api/models", headers={"X-Forwarded-For": "127.0.0.1"}
+        ).status_code
+        == 200
+    )
+    assert (
+        client.get(
+            "/api/models", headers={"X-Forwarded-For": "192.168.1.50"}
+        ).status_code
+        == 401
+    )
+    assert (
+        client.get(
+            "/api/models",
+            headers={"X-Forwarded-For": "192.168.1.50, 127.0.0.1"},
+        ).status_code
+        == 401
+    )
