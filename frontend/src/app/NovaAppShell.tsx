@@ -22,11 +22,24 @@ import { ThreadSidebar } from "../components/sidebar/thread-sidebar";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { toThreadMessages } from "../lib/history-messages";
+import { nextRunningMap } from "../lib/thread-running";
 import {
+    applyStreamEvent,
+    describeStreamSideEffects,
+    extractApprovalRequest,
+    extractSessionId,
+    mergeMessagesById,
+    setAssistantText,
+    throwStreamError,
+} from "../lib/thread-stream";
+import {
+    clearLastSequence,
     createProject,
     deleteProject,
     deleteSession,
     getAgent,
+    getLastSequence,
+    getStreamStatus,
     interruptChat,
     listMessages,
     listModels,
@@ -34,6 +47,7 @@ import {
     listProviders,
     listSessions,
     renameSession,
+    setLastSequence,
     setSessionPinned,
     setSessionProject,
     streamChat,
@@ -43,16 +57,16 @@ import {
 import { subscribeToUnauthorized } from "../lib/auth";
 import { randomId } from "../lib/utils";
 import { useApprovalStore } from "../stores/approval-store";
-import { useAskUserStore } from "../stores/ask-user-store";
+import { useAskUserStore, type ActiveAskUser } from "../stores/ask-user-store";
 import { useReasoningStore } from "../stores/reasoning-store";
 import { useTodoStore } from "../stores/todo-store";
 import type {
     NovaAttachmentData,
-    NovaJsonObject,
     NovaModelRecord,
     NovaProject,
     NovaProviderRecord,
     NovaSessionSummary,
+    NovaStreamEvent,
     NovaThreadSummary,
 } from "../types/nova";
 
@@ -99,8 +113,6 @@ function createAssistantMessage(id?: string): ThreadMessageLike {
     };
 }
 
-type AssistantPart = Exclude<ThreadMessageLike["content"], string>[number];
-
 function createOptimisticSessionTitle(userMessage: string): string {
     const title = userMessage.trim();
     if (!title) {
@@ -139,6 +151,32 @@ function upsertThread(
     return [nextThread, ...filtered];
 }
 
+type StreamFlags = {
+    requiresInput: boolean;
+    pendingAskUser: { input: unknown } | null;
+};
+
+type StreamHandlerEnv = {
+    originThreadId: string;
+    prompt: string;
+    draftProjectId: string | null;
+    assistantMessageId: string;
+    state: { activeThreadId: string };
+    flags: StreamFlags;
+};
+
+const STREAM_PATCH_TYPES = new Set([
+    "text-start",
+    "text-delta",
+    "reasoning-start",
+    "reasoning-delta",
+    "reasoning-end",
+    "tool-input-start",
+    "tool-input-available",
+    "tool-output-available",
+    "data-nova-tool-error",
+]);
+
 function buildDraftMessages(previous: ThreadMessageLike[]) {
     if (
         previous.length === 1 &&
@@ -148,194 +186,6 @@ function buildDraftMessages(previous: ThreadMessageLike[]) {
         return [];
     }
     return previous;
-}
-
-function setAssistantText(
-    messages: ThreadMessageLike[],
-    assistantMessageId: string,
-    updater: (text: string) => string,
-) {
-    return messages.map((message) => {
-        if (message.id !== assistantMessageId || message.role !== "assistant") {
-            return message;
-        }
-
-        const parts =
-            typeof message.content === "string"
-                ? message.content
-                    ? [{ type: "text" as const, text: message.content }]
-                    : []
-                : [...message.content];
-        const textPartIndex = parts.findLastIndex(
-            (part) => part.type === "text",
-        );
-        const currentText =
-            textPartIndex >= 0 && parts[textPartIndex]?.type === "text"
-                ? parts[textPartIndex].text
-                : "";
-        const nextText = updater(currentText);
-
-        if (textPartIndex >= 0) {
-            parts[textPartIndex] = { type: "text", text: nextText };
-        } else if (nextText) {
-            parts.push({ type: "text", text: nextText });
-        }
-
-        return {
-            ...message,
-            content: parts,
-        };
-    });
-}
-
-function setAssistantReasoning(
-    messages: ThreadMessageLike[],
-    assistantMessageId: string,
-    updater: (text: string) => string,
-) {
-    return messages.map((message) => {
-        if (message.id !== assistantMessageId || message.role !== "assistant") {
-            return message;
-        }
-
-        const parts =
-            typeof message.content === "string"
-                ? message.content
-                    ? [{ type: "text" as const, text: message.content }]
-                    : []
-                : [...message.content];
-
-        const reasoningIndex = parts.findLastIndex(
-            (part) => part.type === "reasoning",
-        );
-        const currentText =
-            reasoningIndex >= 0 && parts[reasoningIndex]?.type === "reasoning"
-                ? parts[reasoningIndex].text
-                : "";
-        const nextText = updater(currentText);
-
-        if (reasoningIndex >= 0) {
-            parts[reasoningIndex] = {
-                ...parts[reasoningIndex],
-                type: "reasoning",
-                text: nextText,
-            };
-        } else if (nextText) {
-            parts.push({ type: "reasoning", text: nextText });
-        }
-
-        return {
-            ...message,
-            content: parts,
-        };
-    });
-}
-
-function setAssistantReasoningElapsed(
-    messages: ThreadMessageLike[],
-    assistantMessageId: string,
-    elapsedMs: number,
-) {
-    return messages.map((message) => {
-        if (message.id !== assistantMessageId || message.role !== "assistant") {
-            return message;
-        }
-
-        const parts =
-            typeof message.content === "string"
-                ? message.content
-                    ? [{ type: "text" as const, text: message.content }]
-                    : []
-                : [...message.content];
-
-        const reasoningIndex = parts.findLastIndex(
-            (part) => part.type === "reasoning",
-        );
-        const reasoningPart = parts[reasoningIndex];
-        if (!reasoningPart || reasoningPart.type !== "reasoning") {
-            return message;
-        }
-
-        const nextReasoningPart: AssistantPart & { elapsedMs: number } = {
-            ...reasoningPart,
-            type: "reasoning",
-            text: reasoningPart.text,
-            elapsedMs,
-        };
-        parts[reasoningIndex] = nextReasoningPart;
-
-        return {
-            ...message,
-            content: parts,
-        };
-    });
-}
-
-function upsertAssistantToolCall(
-    messages: ThreadMessageLike[],
-    assistantMessageId: string,
-    payload: {
-        toolCallId: string;
-        toolName?: string;
-        input?: NovaJsonObject;
-        output?: unknown;
-        isError?: boolean;
-    },
-) {
-    return messages.map((message) => {
-        if (message.id !== assistantMessageId || message.role !== "assistant") {
-            return message;
-        }
-
-        const parts =
-            typeof message.content === "string"
-                ? message.content
-                    ? [{ type: "text" as const, text: message.content }]
-                    : []
-                : [...message.content];
-        const toolIndex = parts.findIndex(
-            (part) =>
-                part.type === "tool-call" &&
-                part.toolCallId === payload.toolCallId,
-        );
-
-        const current =
-            toolIndex >= 0 && parts[toolIndex]?.type === "tool-call"
-                ? parts[toolIndex]
-                : null;
-
-        const nextPart: AssistantPart = {
-            type: "tool-call",
-            toolCallId: payload.toolCallId,
-            toolName: payload.toolName || current?.toolName || "tool",
-            args: payload.input ?? current?.args ?? {},
-            argsText:
-                payload.input !== undefined
-                    ? JSON.stringify(payload.input)
-                    : (current?.argsText ?? ""),
-            ...(payload.output !== undefined
-                ? { result: payload.output }
-                : current?.result !== undefined
-                  ? { result: current.result }
-                  : {}),
-            ...(payload.isError !== undefined
-                ? { isError: payload.isError }
-                : current?.isError !== undefined
-                  ? { isError: current.isError }
-                  : {}),
-        };
-
-        if (toolIndex >= 0) {
-            parts[toolIndex] = nextPart;
-        } else {
-            parts.push(nextPart);
-        }
-
-        return {
-            ...message,
-            content: parts,
-        };
-    });
 }
 
 export function NovaAppShell() {
@@ -352,7 +202,10 @@ export function NovaAppShell() {
     const [models, setModels] = useState<NovaModelRecord[]>([]);
     const [providers, setProviders] = useState<NovaProviderRecord[]>([]);
     const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
-    const [isRunning, setIsRunning] = useState(false);
+    const [runningByThread, setRunningByThread] = useState<
+        Record<string, boolean>
+    >({});
+    const isRunning = !!runningByThread[currentThreadId];
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
         () => window.matchMedia(NARROW_VIEWPORT_QUERY).matches,
     );
@@ -366,7 +219,25 @@ export function NovaAppShell() {
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
     const sessionIdRef = useRef(DRAFT_THREAD_ID);
+    const currentThreadIdRef = useRef(DRAFT_THREAD_ID);
+    const abortControllersRef = useRef(new Map<string, AbortController>());
+    const seenSequencesRef = useRef(new Map<string, Set<number>>());
     const wasNarrowViewportRef = useRef(isNarrowViewport);
+
+    function setThreadRunning(threadId: string, running: boolean) {
+        setRunningByThread((previous) =>
+            nextRunningMap(previous, threadId, running),
+        );
+    }
+
+    function getSeenSequences(threadId: string): Set<number> {
+        let seen = seenSequencesRef.current.get(threadId);
+        if (!seen) {
+            seen = new Set<number>();
+            seenSequencesRef.current.set(threadId, seen);
+        }
+        return seen;
+    }
 
     useEffect(() => {
         const query = window.matchMedia(NARROW_VIEWPORT_QUERY);
@@ -391,6 +262,12 @@ export function NovaAppShell() {
 
     useEffect(() => {
         sessionIdRef.current = currentThreadId;
+        currentThreadIdRef.current = currentThreadId;
+    }, [currentThreadId]);
+
+    useEffect(() => {
+        useApprovalStore.getState().syncPendingToSession(currentThreadId);
+        useAskUserStore.getState().syncActiveToSession(currentThreadId);
     }, [currentThreadId]);
 
     const currentMessages = messagesByThreadId[currentThreadId] || [];
@@ -498,6 +375,29 @@ export function NovaAppShell() {
                     [threadId]: toThreadMessages(messages),
                 }));
             });
+            try {
+                const status = await getStreamStatus(threadId);
+                if (status.status === "done") {
+                    clearLastSequence(threadId);
+                } else if (
+                    status.status === "active" ||
+                    status.status === "detached"
+                ) {
+                    const storedCursor = getLastSequence(threadId);
+                    if (
+                        storedCursor !== null &&
+                        typeof status.last_seq === "number" &&
+                        status.last_seq < storedCursor
+                    ) {
+                        clearLastSequence(threadId);
+                    } else {
+                        void resumeThreadStream(threadId, storedCursor);
+                    }
+                }
+            } catch {
+                // Unknown session stream (404): history alone is the full story.
+                clearLastSequence(threadId);
+            }
         } catch (error) {
             console.error("Failed to load thread:", threadId, error);
         }
@@ -520,10 +420,6 @@ export function NovaAppShell() {
     }
 
     function switchToDraftThread(projectId: string | null = null) {
-        if (isRunning) {
-            return;
-        }
-
         useTodoStore.getState().clear();
 
         startTransition(() => {
@@ -640,10 +536,13 @@ export function NovaAppShell() {
         nextThreadId: string | null = null,
         deleteMemories = false,
     ) {
-        if (isRunning && threadId === currentThreadId) {
+        if (runningByThread[threadId]) {
             return;
         }
         try {
+            abortControllersRef.current.get(threadId)?.abort();
+            abortControllersRef.current.delete(threadId);
+            setThreadRunning(threadId, false);
             await deleteSession(threadId, deleteMemories);
             startTransition(() => {
                 setThreads((previous) =>
@@ -679,6 +578,253 @@ export function NovaAppShell() {
     }, [composerText]);
 
 
+    function handleStreamEvent(event: NovaStreamEvent, env: StreamHandlerEnv) {
+        const threadId = env.state.activeThreadId;
+        const sequence = event.sequence;
+        if (sequence != null) {
+            const seen = getSeenSequences(threadId);
+            if (seen.has(sequence)) {
+                return;
+            }
+            seen.add(sequence);
+        }
+
+        if (event.type === "data-nova-session") {
+            const sessionId = extractSessionId(event);
+            if (!sessionId || sessionId === env.state.activeThreadId) {
+                return;
+            }
+            const previousThreadId = env.state.activeThreadId;
+            env.state.activeThreadId = sessionId;
+            const controller = abortControllersRef.current.get(previousThreadId);
+            if (controller) {
+                abortControllersRef.current.delete(previousThreadId);
+                abortControllersRef.current.set(sessionId, controller);
+            }
+            const seen = seenSequencesRef.current.get(previousThreadId);
+            if (seen) {
+                seenSequencesRef.current.delete(previousThreadId);
+                seenSequencesRef.current.set(sessionId, seen);
+            }
+            setThreadRunning(previousThreadId, false);
+            setThreadRunning(sessionId, true);
+            const takeOver = sessionIdRef.current === previousThreadId;
+            startTransition(() => {
+                setMessagesByThreadId((previous) => {
+                    const sourceMessages = previous[previousThreadId] || [];
+                    const existing = previous[sessionId] || [];
+                    const next = {
+                        ...previous,
+                        [sessionId]: mergeMessagesById(
+                            existing,
+                            sourceMessages,
+                        ),
+                    };
+                    if (previousThreadId === DRAFT_THREAD_ID) {
+                        next[DRAFT_THREAD_ID] = [];
+                    }
+                    return next;
+                });
+                if (takeOver) {
+                    sessionIdRef.current = sessionId;
+                    setCurrentThreadId(sessionId);
+                }
+                setThreads((previous) => {
+                    const existing = previous.find(
+                        (thread) => thread.id === sessionId,
+                    );
+                    return upsertThread(
+                        previous,
+                        existing ?? {
+                            id: sessionId,
+                            title: createOptimisticSessionTitle(env.prompt),
+                            status: "regular",
+                            workspace_dir: null,
+                            project_id: env.draftProjectId,
+                            pinned: false,
+                            updated_at: Date.now(),
+                        },
+                    );
+                });
+            });
+            return;
+        }
+
+        if (event.type === "data-nova-compaction-start") {
+            useReasoningStore.getState().setCompacting(true);
+            return;
+        }
+
+        if (event.type === "data-nova-compaction-end") {
+            useReasoningStore.getState().setCompacting(false);
+            return;
+        }
+
+        if (event.type === "data-nova-heartbeat") {
+            return;
+        }
+
+        if (event.type === "data-nova-approval-required") {
+            const pending = {
+                sessionId: threadId,
+                ...extractApprovalRequest(event),
+            };
+            useApprovalStore.getState().setPendingForSession(threadId, pending);
+            if (threadId === currentThreadIdRef.current) {
+                useApprovalStore.getState().setPending(pending);
+            }
+            return;
+        }
+
+        if (event.type === "data-nova-input-required") {
+            env.flags.requiresInput = true;
+            return;
+        }
+
+        if (event.type === "error") {
+            throwStreamError(event);
+        }
+
+        if (event.type === "tool-input-available") {
+            for (const sideEffect of describeStreamSideEffects(event)) {
+                if (sideEffect.kind === "ask-user") {
+                    env.flags.pendingAskUser = { input: sideEffect.input };
+                } else {
+                    useTodoStore.getState().setActive(sideEffect.input);
+                }
+            }
+        }
+
+        if (STREAM_PATCH_TYPES.has(event.type)) {
+            const target = env.state.activeThreadId;
+            const assistantMessageId = env.assistantMessageId;
+            setThreadMessages(target, (previous) =>
+                applyStreamEvent(previous, event, { assistantMessageId }),
+            );
+        }
+    }
+
+    async function streamThread(args: {
+        originThreadId: string;
+        assistantMessageId: string;
+        prompt: string;
+        message: string;
+        sessionId: string | null;
+        projectId: string | null;
+        provider: string | null;
+        model: string | null;
+        attachments?: NovaAttachmentData[];
+        resumeFromSequence: number | null;
+    }) {
+        const env: StreamHandlerEnv = {
+            originThreadId: args.originThreadId,
+            prompt: args.prompt,
+            draftProjectId: args.projectId,
+            assistantMessageId: args.assistantMessageId,
+            state: { activeThreadId: args.originThreadId },
+            flags: { requiresInput: false, pendingAskUser: null },
+        };
+        if (args.resumeFromSequence == null) {
+            seenSequencesRef.current.set(args.originThreadId, new Set<number>());
+        }
+        const controller = new AbortController();
+        abortControllersRef.current.set(args.originThreadId, controller);
+        setThreadRunning(args.originThreadId, true);
+        try {
+            await streamChat({
+                message: args.message,
+                sessionId: args.sessionId,
+                provider: args.provider,
+                model: args.model,
+                projectId: args.projectId,
+                attachments: args.attachments,
+                signal: controller.signal,
+                resumeFromSequence: args.resumeFromSequence,
+                onSequence: (sequence) =>
+                    setLastSequence(env.state.activeThreadId, sequence),
+                onEvent: (event) => handleStreamEvent(event, env),
+            });
+            if (!env.flags.requiresInput) {
+                clearLastSequence(env.state.activeThreadId);
+            }
+        } catch (error) {
+            if (error instanceof Error && error.name === "AbortError") {
+                return;
+            }
+            const messageText =
+                error instanceof Error ? error.message : String(error);
+            const failedThreadId = env.state.activeThreadId;
+            const failedAssistantId = env.assistantMessageId;
+            setThreadMessages(failedThreadId, (previous) =>
+                setAssistantText(
+                    previous,
+                    failedAssistantId,
+                    () => `[error] ${messageText}`,
+                ),
+            );
+        } finally {
+            abortControllersRef.current.delete(args.originThreadId);
+            abortControllersRef.current.delete(env.state.activeThreadId);
+            setThreadRunning(args.originThreadId, false);
+            setThreadRunning(env.state.activeThreadId, false);
+
+            if (env.flags.requiresInput && env.flags.pendingAskUser) {
+                const askUser = env.flags.pendingAskUser as {
+                    input: unknown;
+                };
+                const resumedThreadId = env.state.activeThreadId;
+                const activeCall: ActiveAskUser = {
+                    args: askUser.input,
+                    argsText: JSON.stringify(askUser.input),
+                    resume: (text: unknown) => {
+                        submitPrompt(String(text));
+                        useAskUserStore
+                            .getState()
+                            .clearActiveForSession(resumedThreadId);
+                        if (
+                            resumedThreadId === currentThreadIdRef.current
+                        ) {
+                            useAskUserStore.getState().setActive(null);
+                        }
+                    },
+                    result: null,
+                    status: { type: "running" } as const,
+                };
+                useAskUserStore
+                    .getState()
+                    .setActiveForSession(resumedThreadId, activeCall);
+                if (resumedThreadId === currentThreadIdRef.current) {
+                    useAskUserStore.getState().setActive(activeCall);
+                }
+            }
+        }
+    }
+
+    async function resumeThreadStream(threadId: string, fromSequence: number | null) {
+        if (
+            runningByThread[threadId] ||
+            abortControllersRef.current.has(threadId)
+        ) {
+            return;
+        }
+        const assistantMessageId = randomId();
+        setThreadMessages(threadId, (previous) => [
+            ...previous,
+            createAssistantMessage(assistantMessageId),
+        ]);
+        await streamThread({
+            originThreadId: threadId,
+            assistantMessageId,
+            prompt: "",
+            message: "",
+            sessionId: threadId,
+            projectId: null,
+            provider: null,
+            model: null,
+            resumeFromSequence: fromSequence ?? 0,
+        });
+    }
+
     async function submitPrompt(
         prompt: string,
         attachments?: NovaAttachmentData[],
@@ -686,331 +832,53 @@ export function NovaAppShell() {
         if (!prompt) {
             return;
         }
+        const originThreadId = currentThreadId;
+        if (
+            runningByThread[originThreadId] ||
+            abortControllersRef.current.has(originThreadId)
+        ) {
+            return;
+        }
 
         const selectedModel =
             models.find((item) => item.id === selectedModelId) || null;
-        const originThreadId = currentThreadId;
-    const userMessageId = randomId();
-    const assistantMessageId = randomId();
+        const userMessageId = randomId();
+        const assistantMessageId = randomId();
         const userMessage = {
             ...createTextMessage("user", prompt, userMessageId),
             content: buildUserMessageParts(prompt, attachments),
         };
         const assistantMessage = createAssistantMessage(assistantMessageId);
-        let activeThreadId = sessionIdRef.current;
-        let requiresInput = false;
-        let pendingAskUser: { input: unknown } | null = null;
+        const submitSessionId =
+            sessionIdRef.current === DRAFT_THREAD_ID
+                ? null
+                : sessionIdRef.current;
+        const submitProjectId =
+            sessionIdRef.current === DRAFT_THREAD_ID ? draftProjectId : null;
 
-        setIsRunning(true);
         setComposerText("");
         composerRef.current?.focus({ preventScroll: true });
         useTodoStore.getState().clear();
+        clearLastSequence(originThreadId);
 
-        setThreadMessages(activeThreadId, (previous) => [
+        setThreadMessages(originThreadId, (previous) => [
             ...buildDraftMessages(previous),
             userMessage,
             assistantMessage,
         ]);
 
-        try {
-            await streamChat({
-                message: prompt,
-                sessionId:
-                    sessionIdRef.current === DRAFT_THREAD_ID
-                        ? null
-                        : sessionIdRef.current,
-                provider: selectedModel?.provider || null,
-                model: selectedModel?.model || null,
-                projectId:
-                    sessionIdRef.current === DRAFT_THREAD_ID
-                        ? draftProjectId
-                        : null,
-                attachments,
-                onEvent: (event) => {
-                    if (event.type === "data-nova-session") {
-                        const sessionId = String(event.data?.sessionId || "");
-                        if (!sessionId) {
-                            return;
-                        }
-                        if (sessionId === sessionIdRef.current) return;
-
-                        sessionIdRef.current = sessionId;
-                        activeThreadId = sessionId;
-                        startTransition(() => {
-                            setMessagesByThreadId((previous) => {
-                                const sourceMessages =
-                                    previous[originThreadId] || [];
-                                return {
-                                    ...previous,
-                                    [sessionId]: sourceMessages,
-                                    [DRAFT_THREAD_ID]: [],
-                                };
-                            });
-                            setCurrentThreadId(sessionId);
-                            setThreads((previous) => {
-                                const existing = previous.find(
-                                    (thread) => thread.id === sessionId,
-                                );
-                                return upsertThread(
-                                    previous,
-                                    existing ?? {
-                                        id: sessionId,
-                                        title: createOptimisticSessionTitle(
-                                            prompt,
-                                        ),
-                                        status: "regular",
-                                        workspace_dir: null,
-                                        project_id: draftProjectId,
-                                        pinned: false,
-                                        updated_at: Date.now(),
-                                    },
-                                );
-                            });
-                        });
-                        return;
-                    }
-
-                    if (event.type === "data-nova-compaction-start") {
-                        useReasoningStore.getState().setCompacting(true);
-                        return;
-                    }
-
-                    if (event.type === "data-nova-compaction-end") {
-                        useReasoningStore.getState().setCompacting(false);
-                        return;
-                    }
-
-                    if (event.type === "text-start") {
-                        setThreadMessages(activeThreadId, (previous) =>
-                            previous.map((msg) => {
-                                if (
-                                    msg.id !== assistantMessageId ||
-                                    msg.role !== "assistant"
-                                )
-                                    return msg;
-                                const parts =
-                                    typeof msg.content === "string"
-                                        ? msg.content
-                                            ? [
-                                                  {
-                                                      type: "text" as const,
-                                                      text: msg.content,
-                                                  },
-                                              ]
-                                            : []
-                                        : [...msg.content];
-                                parts.push({ type: "text" as const, text: "" });
-                                return { ...msg, content: parts };
-                            }),
-                        );
-                        return;
-                    }
-
-                    if (event.type === "text-delta") {
-                        setThreadMessages(activeThreadId, (previous) =>
-                            setAssistantText(
-                                previous,
-                                assistantMessageId,
-                                (text) => text + (event.delta || ""),
-                            ),
-                        );
-                        return;
-                    }
-
-                    if (event.type === "reasoning-start") {
-                        setThreadMessages(activeThreadId, (previous) =>
-                            previous.map((msg) => {
-                                if (
-                                    msg.id !== assistantMessageId ||
-                                    msg.role !== "assistant"
-                                )
-                                    return msg;
-                                const parts =
-                                    typeof msg.content === "string"
-                                        ? msg.content
-                                            ? [
-                                                  {
-                                                      type: "text" as const,
-                                                      text: msg.content,
-                                                  },
-                                              ]
-                                            : []
-                                        : [...msg.content];
-                                parts.push({
-                                    type: "reasoning" as const,
-                                    text: "",
-                                });
-                                return { ...msg, content: parts };
-                            }),
-                        );
-                        return;
-                    }
-
-                    if (event.type === "reasoning-delta") {
-                        setThreadMessages(activeThreadId, (previous) =>
-                            setAssistantReasoning(
-                                previous,
-                                assistantMessageId,
-                                (text) => text + (event.delta || ""),
-                            ),
-                        );
-                        return;
-                    }
-
-                    if (event.type === "reasoning-end") {
-                        const elapsedMs = event.elapsedMs ?? null;
-                        if (elapsedMs == null) {
-                            return;
-                        }
-                        setThreadMessages(activeThreadId, (previous) =>
-                            setAssistantReasoningElapsed(
-                                previous,
-                                assistantMessageId,
-                                elapsedMs,
-                            ),
-                        );
-                        return;
-                    }
-
-                    if (event.type === "tool-input-start") {
-                        if (!event.toolCallId) {
-                            return;
-                        }
-                        const toolCallId = event.toolCallId;
-
-                        setThreadMessages(activeThreadId, (previous) =>
-                            upsertAssistantToolCall(
-                                previous,
-                                assistantMessageId,
-                                {
-                                    toolCallId,
-                                    toolName: event.toolName,
-                                },
-                            ),
-                        );
-                        return;
-                    }
-
-                    if (event.type === "tool-input-available") {
-                        if (!event.toolCallId) {
-                            return;
-                        }
-                        const toolCallId = event.toolCallId;
-
-                        if (event.toolName === "ask_user") {
-                            pendingAskUser = { input: event.input };
-                        }
-
-                        if (event.toolName === "todo_write") {
-                            useTodoStore.getState().setActive(event.input);
-                        }
-
-                        setThreadMessages(activeThreadId, (previous) =>
-                            upsertAssistantToolCall(
-                                previous,
-                                assistantMessageId,
-                                {
-                                    toolCallId,
-                                    toolName: event.toolName,
-                                    input: event.input,
-                                },
-                            ),
-                        );
-                        return;
-                    }
-
-                    if (event.type === "tool-output-available") {
-                        if (!event.toolCallId) {
-                            return;
-                        }
-                        const toolCallId = event.toolCallId;
-
-                        setThreadMessages(activeThreadId, (previous) =>
-                            upsertAssistantToolCall(
-                                previous,
-                                assistantMessageId,
-                                {
-                                    toolCallId,
-                                    output: event.output,
-                                },
-                            ),
-                        );
-                        return;
-                    }
-
-                    if (event.type === "data-nova-tool-error") {
-                        const toolCallId = String(
-                            event.data?.toolCallId ?? "",
-                        );
-                        if (!toolCallId) {
-                            return;
-                        }
-
-                        setThreadMessages(activeThreadId, (previous) =>
-                            upsertAssistantToolCall(
-                                previous,
-                                assistantMessageId,
-                                { toolCallId, isError: true },
-                            ),
-                        );
-                        return;
-                    }
-
-                    if (event.type === "data-nova-heartbeat") {
-                        return;
-                    }
-
-                    if (event.type === "data-nova-approval-required") {
-                        useApprovalStore.getState().setPending({
-                            sessionId: activeThreadId,
-                            requestId: String(event.data?.requestId || ""),
-                            command: String(event.data?.command || ""),
-                            description: String(event.data?.description || ""),
-                        });
-                        return;
-                    }
-
-                    if (event.type === "data-nova-input-required") {
-                        requiresInput = true;
-                        return;
-                    }
-
-                    if (event.type === "error") {
-                        throw new Error(event.errorText || "Unknown error");
-                    }
-                },
-            });
-
-            if (requiresInput) {
-                return;
-            }
-        } catch (error) {
-            const messageText =
-                error instanceof Error ? error.message : String(error);
-            setThreadMessages(activeThreadId, (previous) =>
-                setAssistantText(
-                    previous,
-                    assistantMessageId,
-                    () => `[error] ${messageText}`,
-                ),
-            );
-        } finally {
-            setIsRunning(false);
-
-            if (requiresInput && pendingAskUser) {
-                const askUser = pendingAskUser as { input: unknown };
-                useAskUserStore.getState().setActive({
-                    args: askUser.input,
-                    argsText: JSON.stringify(askUser.input),
-                    resume: (text: unknown) => {
-                        submitPrompt(String(text));
-                        useAskUserStore.getState().setActive(null);
-                    },
-                    result: null,
-                    status: { type: "running" } as const,
-                });
-            }
-        }
+        await streamThread({
+            originThreadId,
+            assistantMessageId,
+            prompt,
+            message: prompt,
+            sessionId: submitSessionId,
+            projectId: submitProjectId,
+            provider: selectedModel?.provider || null,
+            model: selectedModel?.model || null,
+            attachments,
+            resumeFromSequence: null,
+        });
     }
 
     async function handleComposerSubmit() {
@@ -1073,11 +941,15 @@ export function NovaAppShell() {
         console.debug(message);
     }
 
-    const handleCancel = async () => {
-        useAskUserStore.getState().setActive(null);
-        const sid = sessionIdRef.current;
-        if (sid !== DRAFT_THREAD_ID) {
-            await interruptChat(sid);
+    const handleCancel = async (threadId?: string) => {
+        const target = threadId ?? currentThreadIdRef.current;
+        useAskUserStore.getState().clearActiveForSession(target);
+        if (target === currentThreadIdRef.current) {
+            useAskUserStore.getState().setActive(null);
+        }
+        abortControllersRef.current.get(target)?.abort();
+        if (target !== DRAFT_THREAD_ID) {
+            await interruptChat(target);
         }
     };
 
@@ -1085,7 +957,7 @@ export function NovaAppShell() {
         messages: currentMessages,
         isRunning,
         onNew: async () => {},
-        onCancel: handleCancel,
+        onCancel: () => handleCancel(),
         convertMessage: (message) => message,
         setMessages: (messages) => {
             setThreadMessages(currentThreadId, [...messages]);
@@ -1104,7 +976,7 @@ export function NovaAppShell() {
                 archivedThreads: [],
                 onSwitchToNewThread: switchToDraftThread,
                 onSwitchToThread: (threadId) => {
-                    if (isRunning || threadId === currentThreadId) {
+                    if (threadId === currentThreadId) {
                         return;
                     }
                     setCurrentThreadId(threadId);
@@ -1138,7 +1010,7 @@ export function NovaAppShell() {
                             runningThreadId={
                                 isRunning ? activeThreadListId : undefined
                             }
-                            disabled={isRunning}
+                            disabled={false}
                             onCollapse={() => setIsSidebarCollapsed(true)}
                             onNewThread={() => {
                                 switchToDraftThread();
@@ -1152,7 +1024,7 @@ export function NovaAppShell() {
                             onRenameProject={handleRenameProject}
                             onDeleteProject={handleDeleteProject}
                             onSelectThread={(threadId) => {
-                                if (isRunning || threadId === currentThreadId) return;
+                                if (threadId === currentThreadId) return;
                                 setCurrentThreadId(threadId);
                                 void loadThread(threadId);
                                 collapseSidebarOnNarrowViewport();
@@ -1190,7 +1062,9 @@ export function NovaAppShell() {
                                     onSubmit: () => {
                                         void handleComposerSubmit();
                                     },
-                                    onCancel: handleCancel,
+                                    onCancel: () => {
+                                        void handleCancel();
+                                    },
                                     onKeyDown: (event) => {
                                         if (
                                             event.key === "Enter" &&
