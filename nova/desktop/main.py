@@ -9,6 +9,15 @@ from nova.desktop.server_thread import ServerThread
 from nova.settings import Settings
 
 
+def _window_url(host: str, port: int) -> str:
+    # A wildcard bind is not a loadable address: WebKit refuses to navigate
+    # to 0.0.0.0/:: and shows a blank window, so point the embedded view at
+    # loopback. LAN browsers keep using the real address.
+    if host in ("0.0.0.0", "::"):
+        return f"http://127.0.0.1:{port}"
+    return f"http://{host}:{port}"
+
+
 def run_desktop(settings: Optional[Settings] = None, dev: bool = False) -> None:
     settings = settings or Settings.load_config()
 
@@ -23,7 +32,7 @@ def run_desktop(settings: Optional[Settings] = None, dev: bool = False) -> None:
         url = "http://localhost:5173"
         print(f"[desktop] Dev mode: frontend at {url}, backend at {server.host}:{server.port}")
     else:
-        url = f"http://{server.host}:{server.port}"
+        url = _window_url(server.host, server.port)
         print(f"[desktop] Backend ready at {url}")
 
     window = webview.create_window("Nova", url=url, width=1200, height=800, min_size=(800, 600), resizable=True, text_select=True)

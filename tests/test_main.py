@@ -2,6 +2,7 @@ import json
 import sys
 
 import nova.__main__ as nova_main
+from nova.desktop import main as desktop_main
 
 
 def _write_config(home, payload):
@@ -149,3 +150,15 @@ def test_main_desktop_dispatch(monkeypatch, tmp_path):
 
     assert called.get("settings") is not None
     assert called.get("dev") is False
+
+
+def test_desktop_window_url_maps_wildcard_host_to_loopback():
+    assert desktop_main._window_url("0.0.0.0", 8765) == "http://127.0.0.1:8765"
+    assert desktop_main._window_url("::", 8765) == "http://127.0.0.1:8765"
+    assert (
+        desktop_main._window_url("127.0.0.1", 8765) == "http://127.0.0.1:8765"
+    )
+    assert (
+        desktop_main._window_url("192.168.1.28", 8765)
+        == "http://192.168.1.28:8765"
+    )
