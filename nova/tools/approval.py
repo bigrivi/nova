@@ -83,6 +83,19 @@ class ApprovalManager:
             self._pending.pop(req_id, None)
             self._events.pop(req_id, None)
 
+    def get_session_id_for_request(self, request_id: str) -> str | None:
+        """Return the owning session_id for a pending approval request.
+
+        Returns None when the request_id is unknown or already consumed.
+        Used by POST /api/chat/approve to enforce session binding:
+        a request_id may only be resolved from its owning session_id,
+        otherwise the endpoint answers 404.
+        """
+        approval_request = self._pending.get(request_id)
+        if approval_request is None:
+            return None
+        return approval_request.session_id
+
     def resolve(self, req_id: str, approved: bool, remember: bool = False) -> bool:
         req = self._pending.get(req_id)
         if req is None:

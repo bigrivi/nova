@@ -5,12 +5,14 @@ FastAPI server app for frontend and desktop integration.
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi.responses import StreamingResponse
 
 log = logging.getLogger(__name__)
@@ -26,6 +28,7 @@ from nova.db import DataSourceProtocol, get_default_data_source
 from nova.memory.service import MemoryService
 from nova.server.auth import BasicAuthMiddleware
 from nova.server.chat_service import ChatService
+from nova.server.stream_buffer import StreamBuffer
 from nova.tools.approval import get_approval_manager
 from nova.server.schemas import (
     ApproveRequest,
@@ -64,26 +67,49 @@ from nova.server.schemas import (
 from nova.settings import Settings, get_settings, reload_settings
 
 
-STREAM_RESPONSE_EXAMPLE = (
-    'data: {"type":"start","messageId":"msg_xxx"}\n\n'
-    'data: {"type":"start-step"}\n\n'
-    'data: {"type":"text-start","id":"text_xxx"}\n\n'
-    'data: {"type":"text-delta","id":"text_xxx","delta":"hello"}\n\n'
-    'data: {"type":"text-end","id":"text_xxx"}\n\n'
-    'data: {"type":"finish-step"}\n\n'
-    'data: {"type":"finish"}\n\n'
-    "data: [DONE]\n\n"
+from nova.server.chat_stream import (
+    CHAT_STREAM_SSE_RESPONSE_EXAMPLE,
+    STREAM_HEARTBEAT_INTERVAL_SECONDS,
+    STREAM_RESUME_TAIL_TIMEOUT_SECONDS,
+    STREAM_SSE_PING_BYTES,
+    ChatStreamOrchestrator,
+    extract_session_id_from_chunk,
+    normalize_session_chunk_for_session,
+    park_detached_stream_session,
+    split_sequence_id_prefix,
 )
+
+STREAM_RESPONSE_EXAMPLE = CHAT_STREAM_SSE_RESPONSE_EXAMPLE
+_RESUME_TAIL_TIMEOUT = STREAM_RESUME_TAIL_TIMEOUT_SECONDS
+_HEARTBEAT_INTERVAL = STREAM_HEARTBEAT_INTERVAL_SECONDS
+_SSE_PING = STREAM_SSE_PING_BYTES
+_split_id_prefix = split_sequence_id_prefix
+_extract_session_id = extract_session_id_from_chunk
+_normalize_session_chunk = normalize_session_chunk_for_session
+_park_stream = park_detached_stream_session
 
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or get_settings()
-    app = FastAPI(title="Nova API")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        registry = getattr(app.state.chat_service, "_request_registry", None)
+        if registry is not None:
+            registry.start_reaper()
+        try:
+            yield
+        finally:
+            if registry is not None:
+                await registry.stop_reaper()
+
+    app = FastAPI(title="Nova API", lifespan=lifespan)
     # Security: no-op unless the config file server block sets auth credentials.
     app.add_middleware(BasicAuthMiddleware)
     app.state.settings = settings
     app.state.data_source = None
     app.state.chat_service = ChatService(settings=settings)
+    app.state.stream_buffer = StreamBuffer()
 
     async def initialize_data_source() -> None:
         app.state.data_source = await get_default_data_source()
@@ -412,36 +438,18 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 "description": "AI SDK UI compatible SSE stream.",
                 "content": {
                     "text/event-stream": {
-                        "example": STREAM_RESPONSE_EXAMPLE,
+                        "example": CHAT_STREAM_SSE_RESPONSE_EXAMPLE,
                     }
                 },
             }
         },
     )
-    async def chat_stream(chat_request: ChatRequest):
-        registry = getattr(app.state.chat_service, "_request_registry", None)
-        if chat_request.session_id and registry is not None:
-            from nova.server.request_registry import _RESERVED
+    async def chat_stream(chat_request: ChatRequest, http_request: Request) -> StreamingResponse:
+        return await ChatStreamOrchestrator(http_request).handle_chat_stream(chat_request)
 
-            if not await registry.try_register(chat_request.session_id, _RESERVED):
-                raise HTTPException(
-                    status_code=409,
-                    detail="Session is busy: another request is already running for this session. Wait for it to finish before sending another message.",
-                )
-
-        async def event_stream():
-            async for chunk in app.state.chat_service.chat_stream_ai_sdk(chat_request):
-                yield chunk
-
-        return StreamingResponse(
-            event_stream(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "x-vercel-ai-ui-message-stream": "v1",
-            },
-        )
+    @app.get("/api/chat/stream/status")
+    async def chat_stream_status(session_id: str, http_request: Request):
+        return await ChatStreamOrchestrator(http_request).handle_chat_stream_status(session_id)
 
     @app.post("/api/chat/interrupt", response_model=InterruptResponse)
     async def interrupt(request: InterruptRequest) -> InterruptResponse:
@@ -453,7 +461,17 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
     @app.post("/api/chat/approve")
     async def approve(request: ApproveRequest, session_id: str | None = None):
-        resolved = get_approval_manager().resolve(
+        approval_manager = get_approval_manager()
+        if session_id is not None:
+            owning_session_id = approval_manager.get_session_id_for_request(request.request_id)
+            if owning_session_id is None or owning_session_id != session_id:
+                log.warning(
+                    "approve: request %s not owned by session %s",
+                    request.request_id,
+                    session_id,
+                )
+                raise HTTPException(status_code=404, detail="Approval request not found")
+        resolved = approval_manager.resolve(
             request.request_id, request.approved, request.remember
         )
         if not resolved:
