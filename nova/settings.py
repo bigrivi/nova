@@ -1,5 +1,9 @@
 """
-Application settings loaded from config files and environment fallbacks.
+Application settings loaded from the config file.
+
+The config file is the single source of truth for server bindings and
+credentials. Only ``NOVA_HOME`` (where the config file lives) and
+``NOVA_FRONTEND_DIST`` (a build artifact pointer) come from the environment.
 """
 
 from __future__ import annotations
@@ -63,13 +67,6 @@ class CompactionSettings:
     default_context_window: int = 128000  # assumed window when a model is unknown
 
 
-def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return int(raw.strip())
-
-
 def _default_model_for_provider_type(provider_type: str) -> str:
     if provider_type == "ollama":
         return "gemma4:26b"
@@ -105,6 +102,7 @@ def _resolve_openai_base_url() -> str:
 def _build_default_config_payload() -> dict[str, Any]:
     return {
         "providers": {},
+        "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"},
     }
 
 
@@ -112,6 +110,11 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2,
                     ensure_ascii=False) + "\n", encoding="utf-8")
+    try:
+        # The config file holds provider API keys and the LAN auth password.
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
 
 
 def _ensure_config_file(home: Path) -> Path:
@@ -205,6 +208,35 @@ def _parse_compaction_config(raw: Any) -> CompactionSettings:
     )
 
 
+def _parse_server_config(raw: Any) -> tuple[str, int, str, str, str]:
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid Nova config: 'server' must be an object")
+    host = str(raw.get("host", "127.0.0.1")).strip() or "127.0.0.1"
+    raw_port = raw.get("port", 8765)
+    try:
+        port = int(str(raw_port).strip() if isinstance(raw_port, str) else raw_port)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid Nova config: 'server.port' must be an integer, got {raw_port!r}"
+        ) from exc
+    if not 1 <= port <= 65535:
+        raise ValueError(
+            f"Invalid Nova config: 'server.port' must be 1-65535, got {port}"
+        )
+    log_level = str(raw.get("log_level", "INFO")).strip().upper() or "INFO"
+    auth_user = str(raw.get("auth_user", "")).strip()
+    raw_password = raw.get("auth_password", "")
+    auth_password = raw_password if isinstance(raw_password, str) else str(raw_password)
+    if bool(auth_user) != bool(auth_password):
+        logging.getLogger(__name__).warning(
+            "Nova config 'server' sets only one of auth_user/auth_password; "
+            "LAN auth stays disabled until both are set."
+        )
+    return host, port, log_level, auth_user, auth_password
+
+
 @dataclass(frozen=True)
 class Settings:
     # Filesystem/runtime paths shared across TUI and server modes.
@@ -235,6 +267,10 @@ class Settings:
     # Frontend static files directory (for desktop mode / self-contained build).
     frontend_dist_path: Path | None = None
 
+    # LAN auth credentials from the config file ``server`` block.
+    auth_user: str = ""
+    auth_password: str = field(default="", repr=False)
+
     def __post_init__(self) -> None:
         self.ensure_directories()
 
@@ -247,14 +283,16 @@ class Settings:
         raw_mcp = config_payload.get("mcp_servers")
         mcp_servers = dict(raw_mcp) if isinstance(raw_mcp, dict) else {}
         compaction = _parse_compaction_config(config_payload.get("compaction"))
+        host, port, log_level, auth_user, auth_password = _parse_server_config(
+            config_payload.get("server")
+        )
         raw_frontend_dist = os.getenv("NOVA_FRONTEND_DIST", "").strip()
         frontend_dist_path = Path(raw_frontend_dist) if raw_frontend_dist else None
         return cls(
             home=home,
-            host=os.getenv("NOVA_HOST", "127.0.0.1").strip() or "127.0.0.1",
-            port=_env_int("NOVA_PORT", 8765),
-            log_level=(os.getenv("NOVA_LOG_LEVEL",
-                       "INFO").strip().upper() or "INFO"),
+            host=host,
+            port=port,
+            log_level=log_level,
             workspace_dir=home / "workspace",
             logs_dir=home / "logs",
             database_path=home / "nova.db",
@@ -263,6 +301,8 @@ class Settings:
             providers=providers,
             mcp_servers=mcp_servers,
             compaction=compaction,
+            auth_user=auth_user,
+            auth_password=auth_password,
         )
 
     def ensure_directories(self) -> None:

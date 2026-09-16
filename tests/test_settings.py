@@ -34,13 +34,20 @@ def test_settings_defaults_create_config_file(monkeypatch, tmp_path):
     assert "providers" in payload
 
 
-def test_app_settings_from_config_and_env(monkeypatch, tmp_path):
+def test_app_settings_from_config_file(monkeypatch, tmp_path):
     home = tmp_path / "nova-home"
     _write_config(
         home,
         {
             "model": "gpt-test",
             "model_provider": "wbz",
+            "server": {
+                "host": "0.0.0.0",
+                "port": 9001,
+                "log_level": "debug",
+                "auth_user": "nova",
+                "auth_password": "s3cret",
+            },
             "providers": {
                 "wbz": {
                     "type": "openai-compatible",
@@ -87,15 +94,14 @@ def test_app_settings_from_config_and_env(monkeypatch, tmp_path):
         },
     )
     monkeypatch.setenv("NOVA_HOME", str(home))
-    monkeypatch.setenv("NOVA_HOST", "0.0.0.0")
-    monkeypatch.setenv("NOVA_PORT", "9001")
-    monkeypatch.setenv("NOVA_LOG_LEVEL", "debug")
     settings = Settings.load_config()
 
     assert settings.home == home
     assert settings.host == "0.0.0.0"
     assert settings.port == 9001
     assert settings.log_level == "DEBUG"
+    assert settings.auth_user == "nova"
+    assert settings.auth_password == "s3cret"
     assert settings.workspace_dir == home / "workspace"
     assert settings.logs_dir == home / "logs"
     assert settings.database_path == home / "nova.db"
@@ -111,6 +117,63 @@ def test_app_settings_from_config_and_env(monkeypatch, tmp_path):
     assert settings.paths.skills_dir == home / "skills"
     assert settings.server.host == "0.0.0.0"
     assert settings.server.port == 9001
+
+
+def test_settings_server_defaults_without_block(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-default-home"
+    _write_config(home, {"providers": {}})
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    settings = Settings.load_config()
+
+    assert settings.host == "127.0.0.1"
+    assert settings.port == 8765
+    assert settings.log_level == "INFO"
+    assert settings.auth_user == ""
+    assert settings.auth_password == ""
+
+
+def test_settings_ignores_server_env_vars(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-env-ignored-home"
+    _write_config(
+        home,
+        {
+            "providers": {},
+            "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"},
+        },
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    monkeypatch.setenv("NOVA_HOST", "0.0.0.0")
+    monkeypatch.setenv("NOVA_PORT", "9001")
+    monkeypatch.setenv("NOVA_LOG_LEVEL", "debug")
+    monkeypatch.setenv("NOVA_AUTH_USER", "env-user")
+    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "env-pass")
+
+    settings = Settings.load_config()
+
+    assert settings.host == "127.0.0.1"
+    assert settings.port == 8765
+    assert settings.log_level == "INFO"
+    assert settings.auth_user == ""
+    assert settings.auth_password == ""
+
+
+@pytest.mark.parametrize(
+    "server",
+    [
+        ["not-an-object"],
+        {"port": "not-a-port"},
+        {"port": 0},
+        {"port": 99999},
+    ],
+)
+def test_settings_rejects_invalid_server_block(monkeypatch, tmp_path, server):
+    home = tmp_path / "nova-server-invalid-home"
+    _write_config(home, {"providers": {}, "server": server})
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    with pytest.raises(ValueError):
+        Settings.load_config()
 
 
 def test_settings_compaction_defaults(monkeypatch, tmp_path):
