@@ -132,6 +132,10 @@ export type NovaAttachmentData = {
 
 export type NovaStreamEvent = {
     type: string;
+    /** SSE `id:` sequence assigned by the backend stream buffer. Absent when
+     * the backend did not frame the chunk (e.g. older servers). Used for
+     * refresh-resume (`resume_from_seq`) and replay dedup. */
+    sequence?: number;
     data?: NovaJsonObject;
     delta?: string;
     errorText?: string;
