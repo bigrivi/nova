@@ -21,11 +21,12 @@ On startup, `Settings.ensure_directories()` creates `home`, `workspace`, `logs`,
 
 ```json
 {
-  "providers": {}
+  "providers": {},
+  "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"}
 }
 ```
 
-Invalid JSON or a non-object top-level value raises a `ValueError` with the config path in the message.
+Invalid JSON or a non-object top-level value raises a `ValueError` with the config path in the message. Files written by Nova are chmodded to `0600`, since the config holds provider API keys and the LAN auth password.
 
 ## Logging
 
@@ -36,23 +37,18 @@ Logging is file-only by default. `nova/settings.py:configure_logging` attaches a
 * Retention: 30 days (`backupCount=30`), older files are removed.
 * Encoding: `utf-8`.
 * Format: `%(asctime)s - %(levelname)s - %(name)s - %(message)s`.
-* Level: from `NOVA_LOG_LEVEL`, default `INFO` (case-insensitive, uppercased before use).
+* Level: from the `server.log_level` key in `config.json`, default `INFO` (case-insensitive, uppercased before use).
 
 No console handler is added. If you need stdout logs, configure them separately.
 
 ## Environment Variables
 
-All variables are read with `os.getenv` at startup. Empty or whitespace-only values fall back to the defaults shown.
+Only two variables are read from the environment. Everything else lives in `~/.nova/config.json` (see `server` below) and environment overrides are not supported.
 
 | Variable | Default | Where it is read | What it does |
 |----------|---------|-------------------|--------------|
-| `NOVA_HOME` | `~/.nova` | `nova/settings.py:Settings.load_config` | Overrides the home directory. Also checked by the TUI backend for its log path. |
-| `NOVA_HOST` | `127.0.0.1` | `nova/settings.py:Settings.load_config` | Host the server binds to. |
-| `NOVA_PORT` | `8765` | `nova/settings.py:Settings.load_config` | Port the Nova server listens on. The TUI reads the same variable in `tui/src/backend.ts:backendPort()` to decide where to connect or spawn the server. |
-| `NOVA_LOG_LEVEL` | `INFO` | `nova/settings.py:Settings.load_config` | Logging level passed to `configure_logging`. |
+| `NOVA_HOME` | `~/.nova` | `nova/settings.py:Settings.load_config` | Overrides the home directory. Also checked by the TUI backend for its log path and for reading the server port. |
 | `NOVA_FRONTEND_DIST` | _(empty)_ | `nova/settings.py:Settings.load_config` and `nova/desktop/entry.py` | When set to an existing directory, FastAPI serves it at `GET /` via `app.frontend()` (with an `index.html` fallback for client-side routing). When empty or missing, `GET /` returns the JSON stub. `nova web` builds `frontend/dist` when needed and points this variable at it. |
-| `NOVA_AUTH_USER` | _(unset)_ | `nova/server/auth.py:get_configured_credentials` | Username required by HTTP Basic auth for `/api` routes when Nova is exposed beyond loopback. Auth activates only when `NOVA_AUTH_PASSWORD` is also set. |
-| `NOVA_AUTH_PASSWORD` | _(unset)_ | `nova/server/auth.py:get_configured_credentials` | Password for the same. Used verbatim, including surrounding whitespace. |
 | `NOVA_OLLAMA_BASE_URL` | `http://localhost:11434` | `nova/settings.py:_resolve_ollama_base_url` | Preferred override for the Ollama base URL. Falls back to `OLLAMA_BASE_URL` if not set. |
 | `OLLAMA_BASE_URL` | _(fallback)_ | `nova/settings.py:_resolve_ollama_base_url` | Fallback for Ollama base URL when `NOVA_OLLAMA_BASE_URL` is empty. |
 | `NOVA_OPENAI_BASE_URL` | `https://api.openai.com/v1` | `nova/settings.py:_resolve_openai_base_url` | Preferred override for the OpenAI-compatible base URL. |
@@ -97,15 +93,22 @@ The same applies to the `NOVA_OLLAMA_BASE_URL` / `NOVA_OPENAI_BASE_URL` helpers.
 
 ## Network Exposure and Authentication
 
-`NOVA_HOST` defaults to `127.0.0.1`, so nothing is reachable from the network by default. To expose Nova on a LAN, set `NOVA_HOST=0.0.0.0` together with both `NOVA_AUTH_USER` and `NOVA_AUTH_PASSWORD`:
+The `server` block in `~/.nova/config.json` controls the bind address and LAN auth. It defaults to loopback with no credentials, so nothing is reachable from the network by default. To expose Nova on a LAN, set `host` to `0.0.0.0` together with both `auth_user` and `auth_password`:
 
-```bash
-NOVA_HOST=0.0.0.0 NOVA_AUTH_USER=alice NOVA_AUTH_PASSWORD=s3cret nova serve
+```json
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8765,
+    "auth_user": "alice",
+    "auth_password": "s3cret"
+  }
+}
 ```
 
-> Warning: setting `NOVA_HOST=0.0.0.0` without both credentials leaves every `/api` route open to anyone who can reach the port.
+> Warning: setting `host` to `0.0.0.0` without both credentials leaves every `/api` route open to anyone who can reach the port.
 
-Auth is active only when both variables are non-empty. `NOVA_AUTH_USER` is stripped of surrounding whitespace; `NOVA_AUTH_PASSWORD` is used verbatim, so leading/trailing spaces are significant. If only one of the two is set, `nova/server/auth.py:get_configured_credentials` returns `None` and auth is disabled entirely. Enforcement lives in `nova/server/auth.py:BasicAuthMiddleware`, registered by `nova/server/app.py:create_app` via `app.add_middleware(BasicAuthMiddleware)`. Credentials live only in the process environment: they are never written to `~/.nova/config.json` and are never returned by any API. Changing them requires restarting the server.
+Auth is active only when both credentials are non-empty. `auth_user` is stripped of surrounding whitespace; `auth_password` is used verbatim, so leading/trailing spaces are significant. If only one of the two is set, `nova/server/auth.py:get_configured_credentials` returns `None`, auth stays disabled, and startup logs a warning. Enforcement lives in `nova/server/auth.py:BasicAuthMiddleware`, registered by `nova/server/app.py:create_app` via `app.add_middleware(BasicAuthMiddleware)`. The middleware reads credentials from the loaded settings on each request. A hand edit of the file needs a restart to take effect (a `/api/config/*` write also reloads settings via `refresh_settings()`). Credentials are never returned by any API.
 
 What requires auth, and what does not:
 
@@ -116,7 +119,7 @@ What requires auth, and what does not:
 | `GET /` | No | Same reason as static assets |
 | `GET /health` | No | Liveness probe stays public |
 
-Loopback clients are exempt from auth: `127.0.0.1`, `::1`, and `::ffff:127.0.0.1`. This covers `nova desktop`, the local web UI (`nova web`, `nova serve`), and the TUI (`nova tui`, which talks to a backend on `127.0.0.1`), so local use never prompts for credentials.
+Loopback clients are exempt from auth: `127.0.0.1`, `::1`, and `::ffff:127.0.0.1`. This covers `nova desktop`, the local web UI (`nova web`, `nova serve`), and the TUI (`nova tui`, which talks to a backend on `127.0.0.1`), so local use never prompts for credentials. The desktop window itself always loads over loopback even when the server is bound to a wildcard address, because `0.0.0.0` is not a loadable URL for the embedded view.
 
 Proxy rule: if an `X-Forwarded-For` header is present, the request counts as loopback only when every entry in that header is a loopback address. A request arriving from loopback but carrying a non-loopback `X-Forwarded-For` entry requires credentials. The Vite dev server sets `xfwd: true` in `frontend/vite.config.ts` for exactly this reason, so a LAN browser hitting the dev server is still authenticated while `localhost` development stays exempt.
 
@@ -126,28 +129,30 @@ HTTP Basic transmits base64-encoded credentials, which is not encryption. Treat 
 
 The frontend stores credentials in `localStorage` under the key `nova.auth` and shows the non-dismissible login dialog in `frontend/src/components/auth/login-dialog.tsx` on any `401`. The dialog probes `GET /api/models` to validate credentials before accepting them. Storage is per-origin and survives restarts, so a stored browser keeps its session across tabs and launches until a credential check fails. Because the value is readable by any script on the origin, keep it to trusted devices only. The dialog strings live under the `auth.*` keys in `frontend/src/i18n/en.json` and `frontend/src/i18n/zh-CN.json`.
 
-For LAN development, run the backend bound to all interfaces and the frontend dev server with host enabled:
+For LAN development, set `server.host` to `0.0.0.0` in the config file, run the backend, and start the frontend dev server with host enabled:
 
 ```bash
-NOVA_HOST=0.0.0.0 nova serve
+nova serve
 cd frontend && npm run dev -- --host
 ```
 
 ## Config File Shape
 
-`~/.nova/config.json` is the only file `Settings.load_config` reads. The loader understands exactly three top-level keys:
+`~/.nova/config.json` is the only file `Settings.load_config` reads. The loader understands exactly four top-level keys:
 
 ```json
 {
   "providers": {},
   "mcp_servers": {},
-  "compaction": {}
+  "compaction": {},
+  "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"}
 }
 ```
 
 * `providers`: object mapping alias to provider config. Missing, `null`, or absent defaults to `{}`. Each entry must be an object with a `type` string. Optional fields: `name` (defaults to the alias), `options` (object, defaults to `{}`), `models` (object, defaults to `{}`). Model values that are not objects are normalized to `{"name": value}`.
 * `mcp_servers`: object mapping name to server config. Non-object values are ignored and replaced with `{}`. See `docs/advanced/mcp.md` for the stdio and HTTP shapes.
 * `compaction`: object with tuning keys. See `docs/advanced/compaction.md` for the real keys and defaults.
+* `server`: object with `host` (default `127.0.0.1`), `port` (default `8765`, must be 1-65535), `log_level` (default `INFO`), and optional `auth_user` / `auth_password` for LAN auth (see above). A non-object `server` or an invalid port raises `ValueError` at startup. `port` also accepts a numeric string.
 
 All other top-level keys are ignored.
 

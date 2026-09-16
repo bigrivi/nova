@@ -41,7 +41,7 @@ Two reasons for the external list:
   React from `node_modules` at runtime, so inlining a second React copy into
   the bundle makes hooks fail with `resolveDispatcher() is null`.
 
-The server port defaults to `8765` and can be overridden with `NOVA_PORT`.
+The server port defaults to `8765` and can be set with `server.port` in `~/.nova/config.json`. The TUI reads the same file, so both sides always agree.
 
 ## In-Chat Commands
 

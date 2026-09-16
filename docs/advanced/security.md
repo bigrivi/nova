@@ -72,16 +72,18 @@ for the lifetime of the process.
 ## Network Exposure
 
 Nova binds to `127.0.0.1` by default, so nothing leaves your machine unless
-you ask it to. Widening the bind with `NOVA_HOST=0.0.0.0` exposes every
-`/api` route to the local network, so it requires `NOVA_AUTH_USER` and
-`NOVA_AUTH_PASSWORD` to be set together:
+you ask it to. Widening the bind with `"host": "0.0.0.0"` in the config file
+`server` block exposes every `/api` route to the local network, so it
+requires `auth_user` and `auth_password` to be set together in the same
+block:
 
-- Auth is active only when both variables are non-empty. Setting only one
-  leaves auth disabled entirely, so double-check both before exposing a port.
+- Auth is active only when both values are non-empty. Setting only one
+  leaves auth disabled entirely (and startup logs a warning), so
+  double-check both before exposing a port.
 - Loopback clients (`127.0.0.1`, `::1`, `::ffff:127.0.0.1`) are exempt, so
   the desktop app, local web UI, and TUI never prompt for credentials.
 - Credentials travel as base64 over plain HTTP, which is not encryption.
   Treat this as trusted-network protection only, and put a TLS-terminating
   reverse proxy in front of Nova for anything beyond that.
 
-See [Settings](../configuration/settings.md) for the full variable reference.
+See [Settings](../configuration/settings.md) for the full `server` block reference.

@@ -271,7 +271,7 @@ frontend, or by starting the backend with
 | `NOVA_OPENAI_BASE_URL` | Override OpenAI-compatible base URL |
 | `NOVA_OPENAI_API_KEY` | Override API key |
 | `OPENAI_API_KEY` | Fallback API key |
-| `NOVA_LOG_LEVEL` | Log level (default: INFO) |
-| `NOVA_HOST` | Server bind host (default: 127.0.0.1) |
-| `NOVA_PORT` | Server port (default: 8765) |
 | `NOVA_FRONTEND_DIST` | Override the directory of the built frontend the server serves |
+
+Server bind host, port, log level, and LAN auth live in the config file
+`server` block, not in the environment. See [Settings](settings.md).

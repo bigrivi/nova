@@ -199,10 +199,16 @@ Add more providers by alias, each with a `type` of `ollama`, `openai-compatible`
 
 ### Exposing Nova on Your LAN
 
-By default Nova binds to `127.0.0.1`, so only your own machine can reach it. To use Nova from another machine on your network, set `NOVA_HOST=0.0.0.0` together with both `NOVA_AUTH_USER` and `NOVA_AUTH_PASSWORD`. Setting only one of the two leaves `/api` unprotected, so always set both. Local surfaces (desktop, `nova web`, TUI) stay exempt via loopback and are never prompted. Credentials travel as base64 over plain HTTP, so use this on a trusted network only.
+By default Nova binds to `127.0.0.1`, so only your own machine can reach it. To use Nova from another machine on your network, set `host` to `0.0.0.0` in the `server` block of `~/.nova/config.json`, together with both `auth_user` and `auth_password`. Setting only one of the two leaves `/api` unprotected, so always set both. Local surfaces (desktop, `nova web`, TUI) stay exempt via loopback and are never prompted. Credentials travel as base64 over plain HTTP, so use this on a trusted network only.
 
-```bash
-NOVA_HOST=0.0.0.0 NOVA_AUTH_USER=alice NOVA_AUTH_PASSWORD=s3cret nova serve
+```json
+{
+  "server": {
+    "host": "0.0.0.0",
+    "auth_user": "alice",
+    "auth_password": "s3cret"
+  }
+}
 ```
 
 See [Settings](docs/configuration/settings.md) for detail.
