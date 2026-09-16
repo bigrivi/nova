@@ -156,6 +156,8 @@ The server normalizes the path (expands `~`, resolves symlinks). Response:
 
 Delete a session. Optional query parameter `delete_memories` (boolean, default `false`) also removes memories linked to that session.
 
+The delete path also cancels any in-flight or detached run for the session: it calls `terminate()` on the registered agent when present, unregisters the request-registry slot, and discards the per-session SSE replay buffer. The `delete_memories` flag only controls memory cleanup and is otherwise preserved.
+
 Response:
 
 ```json
@@ -371,7 +373,7 @@ The frontend and TUI consume this stream directly. If you build a custom client,
 
 ### `POST /api/chat/interrupt`
 
-Interrupt the active run for a session.
+Interrupt the active run for a session. Works on both `active` and `detached` (client-disconnected, still-running) slots.
 
 Request (`InterruptRequest`):
 
@@ -390,13 +392,13 @@ Response (`InterruptResponse`):
 }
 ```
 
-`interrupted` is `false` if no active run was found for that session.
+`interrupted` is `false` if no active run was found for that session. On success the slot is unregistered (a later `POST /api/chat/stream` on the session starts a new turn instead of `409`), an `abort` frame is appended to the replay buffer, and the buffer is marked done.
 
 ### `POST /api/chat/approve`
 
 Resolve a pending shell approval. This endpoint is currently undocumented elsewhere in the API surface and is the counterpart to the `data-nova-approval-required` SSE event.
 
-* Query parameter: `session_id` (required, string).
+* Query parameter: `session_id` (string, session that owns the approval).
 * Body (`ApproveRequest`):
 
 ```json
@@ -411,6 +413,8 @@ Resolve a pending shell approval. This endpoint is currently undocumented elsewh
 * `approved`: whether the command may run.
 * `remember`: when `true`, the decision is kept for the session so identical commands do not prompt again.
 
+Approval requests are session-bound: the server records the owning `session_id` on every approval (`ApprovalManager.pre_request(..., session_id=...)`, readable via `ApprovalManager.get_session_id_for_request(request_id)`) and `POST /api/chat/approve` only resolves when `request_id` belongs to the `session_id` query value. A cross-session resolve (or an unknown / already-consumed `request_id`) answers `404`.
+
 Responses:
 
 ```json
@@ -420,7 +424,7 @@ Responses:
 }
 ```
 
-Errors: `400` if `session_id` is missing, `404` if no active agent is found for the session or the approval request id is unknown.
+Errors: `404` if the approval request id is unknown, already consumed, or belongs to a different session.
 
 Flow:
 
@@ -430,6 +434,48 @@ server -> data: {"type":"data-nova-approval-required","data":{"requestId":"apr_.
 client -> POST /api/chat/approve?session_id=01H...  {"request_id":"apr_...","approved":true}
 server -> resumes tool execution, stream continues with tool-output-available / text-delta / finish
 ```
+
+### Parallel sessions + SSE resume contract
+
+Different sessions stream concurrently; the same session never runs two turns at once.
+
+* D1 — per-session mutual exclusion (`409`): `POST /api/chat/stream` reserves one slot per `session_id`. A second `POST` for the same session while its slot is `active` or `detached` is refused with `409 {"detail": "Session is busy: ..."}`. Different sessions are independent and never block each other.
+* D2 — in-flight replay scope: each session keeps its in-flight frames in a per-session deque (bound: 500 frames). Reconnecting with a cursor inside the retained window replays exactly the frames after it (`resync=false`, gapless). An unknown cursor (future sequence, evicted sequence, negative) replays the full in-flight buffer with `resync=true` (signalled via the `x-nova-stream-resync: true` response header) so the client resets to the replayed prefix instead of assuming continuity.
+* D3 — resume keys (`resume_from_seq` / `id:` / `last_seq`): the `ChatRequest` field `resume_from_seq` is the replay cursor (frame sequence to resume after; `null` starts a new turn). Every buffered SSE frame is prefixed with an `id: <sequence>` line; the JSON payload is byte-identical. `GET /api/chat/stream/status?session_id=...` reports `{"status": "active | detached | done", "last_seq": <int>}` (`404` for an unknown session stream), where `last_seq` is the latest buffered sequence for the session.
+* D4 — detach-and-continue: when the HTTP client disconnects mid-stream, the server parks the slot as `detached` and the run keeps going. Reconnecting with `POST /api/chat/stream {"session_id": "...", "resume_from_seq": <last seen>}` replays missed frames and then live-tails while the run is in flight. `POST /api/chat/interrupt` aborts both `active` and `detached` runs; `DELETE /api/sessions/{session_id}` terminates the run, unregisters the slot, and discards the replay buffer.
+
+Bounds (all fixed, no tuning knobs on the API):
+
+| Resource | Bound |
+|----------|-------|
+| Per-session replay deque | 500 frames (`StreamBuffer.MAX_FRAMES`) |
+| Per-connection live-tail subscriber queue | 100 frames (`CONNECTION_QUEUE_MAXSIZE`), overflow drops, never blocks the producer |
+| Slot idle TTL | 30 min (`RequestRegistry.IDLE_TTL`); stream-buffer idle TTL is also 30 min |
+| Terminal (`done`) slot TTL | 10 min (`RequestRegistry.TERMINAL_TTL`) |
+| Reaper tick | 60 s (`RequestRegistry.REAP_INTERVAL`, started/stopped by the app lifespan) |
+| Global slot cap | 1000 sessions (`RequestRegistry.MAX_SLOTS`), LRU eviction, terminal slots first |
+
+### `GET /api/chat/stream/status`
+
+Poll the stream state for a session without opening the SSE connection.
+
+```text
+GET /api/chat/stream/status?session_id=01H...
+```
+
+Response:
+
+```json
+{
+  "status": "active",
+  "last_seq": 42
+}
+```
+
+* `status`: `active`, `detached`, or `done`.
+* `last_seq`: latest buffered SSE sequence for the session (`id:` cursor to pass back as `resume_from_seq`).
+
+`404` for an unknown session stream (no slot and no buffered frames).
 
 ## Agents
 
