@@ -105,23 +105,20 @@ function getParamSummary(argsText?: string): string | null {
             for (const k of candidates) {
             const v = (parsed as Record<string, unknown>)[k];
                 if (typeof v === "string" && v.trim()) {
-                    const s = v.trim();
-                    return s.length > 48 ? `${s.slice(0, 47)}…` : s;
+                    return v.trim();
                 }
             }
             for (const v of Object.values(parsed)) {
                 if (typeof v === "string" && v.trim()) {
-                    const s = v.trim();
-                    return s.length > 48 ? `${s.slice(0, 47)}…` : s;
+                    return v.trim();
                 }
             }
-            const json = trimmed;
-            return json.length > 64 ? `${json.slice(0, 63)}…` : json;
+            return trimmed;
         }
     } catch {
-        return trimmed.length > 64 ? `${trimmed.slice(0, 63)}…` : trimmed;
+        return trimmed;
     }
-    return trimmed.length > 64 ? `${trimmed.slice(0, 63)}…` : trimmed;
+    return trimmed;
 }
 
 function ToolFallbackTrigger({
@@ -190,7 +187,10 @@ function ToolFallbackTrigger({
                     {toolName}
                 </span>
                 {paramSummary ? (
-                    <span className="truncate font-mono text-[12px] font-normal text-[#9C978A]">
+                    <span
+                        title={paramSummary}
+                        className="truncate font-mono text-[12px] font-normal text-[#9C978A]"
+                    >
                         {paramSummary}
                     </span>
                 ) : null}
