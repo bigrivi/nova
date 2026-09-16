@@ -79,7 +79,7 @@ STREAM_RESPONSE_EXAMPLE = (
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(title="Nova API")
-    # Security: no-op unless NOVA_AUTH_USER/NOVA_AUTH_PASSWORD are set.
+    # Security: no-op unless the config file server block sets auth credentials.
     app.add_middleware(BasicAuthMiddleware)
     app.state.settings = settings
     app.state.data_source = None

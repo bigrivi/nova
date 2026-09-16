@@ -83,11 +83,29 @@ async def reset_state():
     await close_db()
 
 
-def test_create_app_returns_fastapi_app(monkeypatch):
-    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server")
-    monkeypatch.setenv("NOVA_HOST", "0.0.0.0")
-    monkeypatch.setenv("NOVA_PORT", "9000")
-    settings = Settings.load_config()
+def _write_home_config(monkeypatch, tmp_path, name, payload):
+    home = tmp_path / name
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.json").write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    return home
+
+
+def _settings_with_server(monkeypatch, tmp_path, name, server):
+    payload: dict = {"providers": {}}
+    if server is not None:
+        payload["server"] = server
+    _write_home_config(monkeypatch, tmp_path, name, payload)
+    return Settings.load_config()
+
+
+_AUTH_SERVER = {"auth_user": "nova", "auth_password": "s3cret"}
+
+
+def test_create_app_returns_fastapi_app(monkeypatch, tmp_path):
+    settings = _settings_with_server(
+        monkeypatch, tmp_path, "nova-server", {"host": "0.0.0.0", "port": 9000}
+    )
 
     app = create_app(settings=settings)
 
@@ -1225,22 +1243,22 @@ def _auth_client(app, client=("192.168.1.50", 40000)):
     return TestClient(app, client=client)
 
 
-def test_auth_disabled_without_credentials(monkeypatch):
-    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-off")
-    monkeypatch.delenv("NOVA_AUTH_USER", raising=False)
-    monkeypatch.delenv("NOVA_AUTH_PASSWORD", raising=False)
-    app = create_app(settings=Settings.load_config())
+def test_auth_disabled_without_credentials(monkeypatch, tmp_path):
+    app = create_app(
+        settings=_settings_with_server(monkeypatch, tmp_path, "nova-auth-off", None)
+    )
 
     response = _auth_client(app).get("/health")
 
     assert response.status_code == 200
 
 
-def test_auth_requires_credentials_for_lan_client(monkeypatch):
-    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-on")
-    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
-    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
-    app = create_app(settings=Settings.load_config())
+def test_auth_requires_credentials_for_lan_client(monkeypatch, tmp_path):
+    app = create_app(
+        settings=_settings_with_server(
+            monkeypatch, tmp_path, "nova-auth-on", _AUTH_SERVER
+        )
+    )
     client = _auth_client(app)
 
     response = client.get("/api/models")
@@ -1250,11 +1268,12 @@ def test_auth_requires_credentials_for_lan_client(monkeypatch):
     assert "www-authenticate" not in response.headers
 
 
-def test_auth_accepts_valid_credentials(monkeypatch):
-    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-ok")
-    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
-    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
-    app = create_app(settings=Settings.load_config())
+def test_auth_accepts_valid_credentials(monkeypatch, tmp_path):
+    app = create_app(
+        settings=_settings_with_server(
+            monkeypatch, tmp_path, "nova-auth-ok", _AUTH_SERVER
+        )
+    )
     client = _auth_client(app)
 
     response = client.get("/health", auth=("nova", "s3cret"))
@@ -1264,33 +1283,36 @@ def test_auth_accepts_valid_credentials(monkeypatch):
     assert api_response.status_code == 200
 
 
-def test_auth_rejects_wrong_credentials(monkeypatch):
-    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-bad")
-    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
-    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
-    app = create_app(settings=Settings.load_config())
+def test_auth_rejects_wrong_credentials(monkeypatch, tmp_path):
+    app = create_app(
+        settings=_settings_with_server(
+            monkeypatch, tmp_path, "nova-auth-bad", _AUTH_SERVER
+        )
+    )
     client = _auth_client(app)
 
     assert client.get("/api/models", auth=("nova", "wrong")).status_code == 401
     assert client.get("/api/models", auth=("other", "s3cret")).status_code == 401
 
 
-def test_auth_exempts_loopback_client(monkeypatch):
-    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-loopback")
-    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
-    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
-    app = create_app(settings=Settings.load_config())
+def test_auth_exempts_loopback_client(monkeypatch, tmp_path):
+    app = create_app(
+        settings=_settings_with_server(
+            monkeypatch, tmp_path, "nova-auth-loopback", _AUTH_SERVER
+        )
+    )
 
     response = _auth_client(app, client=("127.0.0.1", 40000)).get("/api/models")
 
     assert response.status_code == 200
 
 
-def test_auth_leaves_non_api_paths_public(monkeypatch):
-    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-static")
-    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
-    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
-    app = create_app(settings=Settings.load_config())
+def test_auth_leaves_non_api_paths_public(monkeypatch, tmp_path):
+    app = create_app(
+        settings=_settings_with_server(
+            monkeypatch, tmp_path, "nova-auth-static", _AUTH_SERVER
+        )
+    )
     client = _auth_client(app)
 
     assert client.get("/").status_code == 200
@@ -1318,22 +1340,38 @@ def test_check_basic_auth_accepts_non_ascii_credentials():
     assert check_basic_auth(f"Basic {encoded}", ("用户", "密码")) is True
 
 
-def test_configured_credentials_requires_both_values(monkeypatch):
-    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
-    monkeypatch.delenv("NOVA_AUTH_PASSWORD", raising=False)
+def test_configured_credentials_requires_both_values(monkeypatch, tmp_path):
+    only_user = _settings_with_server(
+        monkeypatch, tmp_path, "nova-auth-half", {"auth_user": "nova"}
+    )
 
-    assert get_configured_credentials() is None
+    assert get_configured_credentials(only_user) is None
 
-    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
+    both = _settings_with_server(
+        monkeypatch, tmp_path, "nova-auth-both", _AUTH_SERVER
+    )
 
-    assert get_configured_credentials() == ("nova", "s3cret")
+    assert get_configured_credentials(both) == ("nova", "s3cret")
 
 
-def test_auth_loopback_exempt_requires_loopback_forwarded_for(monkeypatch):
-    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-auth-xff")
-    monkeypatch.setenv("NOVA_AUTH_USER", "nova")
-    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "s3cret")
-    app = create_app(settings=Settings.load_config())
+def test_configured_credentials_ignores_env_vars(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_AUTH_USER", "env-user")
+    monkeypatch.setenv("NOVA_AUTH_PASSWORD", "env-pass")
+    settings = _settings_with_server(
+        monkeypatch, tmp_path, "nova-auth-env-ignored", None
+    )
+
+    assert get_configured_credentials(settings) is None
+
+
+def test_auth_loopback_exempt_requires_loopback_forwarded_for(
+    monkeypatch, tmp_path
+):
+    app = create_app(
+        settings=_settings_with_server(
+            monkeypatch, tmp_path, "nova-auth-xff", _AUTH_SERVER
+        )
+    )
     client = _auth_client(app, client=("127.0.0.1", 40000))
 
     assert (
