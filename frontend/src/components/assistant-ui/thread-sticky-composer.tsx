@@ -29,11 +29,13 @@ type ThreadStickyComposerProps = {
         selectedModelId: string | null;
         onSelect: (modelId: string) => void;
     };
+    showDisclaimer?: boolean;
 };
 
 export function ThreadStickyComposer({
     composer,
     modelSelection,
+    showDisclaimer = false,
 }: ThreadStickyComposerProps) {
     const { t } = useTranslation();
     const aui = useAui();
@@ -57,7 +59,7 @@ export function ThreadStickyComposer({
     };
 
     return (
-        <div className="pointer-events-none relative overflow-x-clip pb-4 pt-3">
+        <div className="pointer-events-none relative overflow-x-clip pb-2 pt-3">
             <div className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-t from-background via-background to-transparent" />
             <div className="relative z-10 w-full">
                 <TodoProgressPanel />
@@ -116,6 +118,11 @@ export function ThreadStickyComposer({
                         </div>
                     </div>
                 </div>
+                {showDisclaimer ? (
+                    <p className="mt-2 text-center text-[11px] leading-normal text-muted-foreground">
+                        {t("composer.aiDisclaimer")}
+                    </p>
+                ) : null}
             </div>
         </div>
     );

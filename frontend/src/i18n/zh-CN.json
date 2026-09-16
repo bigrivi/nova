@@ -28,6 +28,7 @@
     "threadList.newChat": "新对话",
     "composer.sendMessage": "发送消息...",
     "composer.messageInput": "消息输入",
+    "composer.aiDisclaimer": "Nova 是 AI 智能体，可能会出错，使用前请仔细核对。",
     "modelSelector.ollama": "Ollama",
     "modelSelector.openaiCompatible": "OpenAI 兼容",
     "modelSelector.anthropic": "Anthropic",

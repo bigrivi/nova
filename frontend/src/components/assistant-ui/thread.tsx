@@ -45,6 +45,13 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
             modelSelection={modelSelection}
         />
     );
+    const composerNodeWithDisclaimer = (
+        <ThreadStickyComposer
+            composer={composer}
+            modelSelection={modelSelection}
+            showDisclaimer
+        />
+    );
 
     return (
         <ThreadPrimitive.Root
@@ -103,7 +110,7 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
                                     </div>
                                 </div>
                             ) : (
-                                composerNode
+                                composerNodeWithDisclaimer
                             )}
                         </ThreadPrimitive.ViewportFooter>
                     </div>

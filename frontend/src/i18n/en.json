@@ -28,6 +28,7 @@
     "threadList.newChat": "New Chat",
     "composer.sendMessage": "Send a message...",
     "composer.messageInput": "Message input",
+    "composer.aiDisclaimer": "Nova is an AI Agent and can make mistakes. Please double-check before use.",
     "modelSelector.ollama": "Ollama",
     "modelSelector.openaiCompatible": "OpenAI Compatible",
     "modelSelector.anthropic": "Anthropic",
