@@ -1,6 +1,6 @@
 /** Python backend process lifecycle management: spawn `python -m nova serve`, health check, exit cleanup */
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, openSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -21,9 +21,18 @@ const STOP_GRACE_MS = 2_000;
 let child: ChildProcess | null = null;
 
 export function backendPort(): number {
-    return Number(
-        process.env.NOVA_PORT ?? new URL(DEFAULT_API_BASE).port,
-    );
+    try {
+        const home = process.env.NOVA_HOME || join(homedir(), ".nova");
+        const raw = readFileSync(join(home, "config.json"), "utf-8");
+        const port = (JSON.parse(raw) as { server?: { port?: unknown } })?.server?.port;
+        const n = typeof port === "string" ? Number(port.trim()) : Number(port);
+        if (Number.isInteger(n) && n >= 1 && n <= 65535) {
+            return n;
+        }
+    } catch {
+        // fall through to the default below
+    }
+    return Number(new URL(DEFAULT_API_BASE).port);
 }
 
 function pickPython(): string {
@@ -99,7 +108,6 @@ export async function startBackend(): Promise<void> {
         stdio: ["ignore", logFd, logFd],
         env: {
             ...process.env,
-            NOVA_PORT: String(port),
             NOVA_WORKSPACE_DIR:
                 process.env.NOVA_WORKSPACE_DIR || process.cwd(),
         },
