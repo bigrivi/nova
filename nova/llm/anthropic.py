@@ -10,6 +10,7 @@ from typing import AsyncGenerator, Optional
 import aiohttp
 
 from nova.llm.provider import ChatStreamEvent, LLMProvider, TextDelta, ReasoningDelta, ToolCall, Done, Error
+from nova.llm.request_hook import run_request_hook, run_session_hook
 from nova.llm.tokenizer import normalise_model_id
 
 log = logging.getLogger(__name__)
@@ -142,7 +143,8 @@ class AnthropicProvider(LLMProvider):
         betas: Optional[list[str]] = None,
         max_tokens: Optional[int] = None,
         extra_headers: Optional[dict] = None,
-        session_header: Optional[str] = None,
+        request_hook: Optional[str] = None,
+        request_session_hook: Optional[str] = None,
     ):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
@@ -153,7 +155,8 @@ class AnthropicProvider(LLMProvider):
         self._betas = list(betas) if betas else None
         self._max_tokens_override = max_tokens
         self._extra_headers = dict(extra_headers or {})
-        self._session_header = session_header
+        self._request_hook = request_hook
+        self._request_session_hook = request_session_hook
 
     def _endpoint(self) -> str:
         resolved_base_url = self.base_url or "https://api.anthropic.com"
@@ -186,8 +189,10 @@ class AnthropicProvider(LLMProvider):
             headers["anthropic-beta"] = ",".join(self._betas)
         if self._extra_headers:
             headers.update(self._extra_headers)
-        if self._session_header and session_id:
-            headers[self._session_header] = session_id
+        if self._request_session_hook:
+            headers.update(run_session_hook(self._request_session_hook, session_id))
+        if self._request_hook:
+            headers.update(run_request_hook(self._request_hook, session_id))
         return headers
 
     def _format_tools(self, tools: list[dict] | None) -> list[dict]:

@@ -124,10 +124,11 @@ def _optional_int(value) -> int | None:
 
 
 def _header_options(options: dict) -> dict:
-    """Extract provider header config: static ``headers`` plus a session header name.
+    """Extract provider header config: static ``headers`` plus request hooks.
 
-    ``session_header`` names a header (e.g. ``x-opencode-session``) that is
-    filled per request with the active conversation id.
+    ``request_hook`` runs before every request; ``request_session_hook`` runs
+    once per session (cached). Both name user scripts, see
+    nova.llm.request_hook.
     """
     raw_headers = options.get("headers")
     extra_headers = (
@@ -135,11 +136,15 @@ def _header_options(options: dict) -> dict:
         if isinstance(raw_headers, dict)
         else {}
     )
-    raw_session_header = options.get("session_header")
-    session_header = (
-        str(raw_session_header).strip() if raw_session_header else None
-    )
-    return {"extra_headers": extra_headers, "session_header": session_header}
+    raw_hook = options.get("request_hook")
+    request_hook = str(raw_hook).strip() if raw_hook else None
+    raw_session_hook = options.get("request_session_hook")
+    request_session_hook = str(raw_session_hook).strip() if raw_session_hook else None
+    return {
+        "extra_headers": extra_headers,
+        "request_hook": request_hook,
+        "request_session_hook": request_session_hook,
+    }
 
 
 async def _agent_dir(agent_key: str) -> Path:

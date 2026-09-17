@@ -10,6 +10,7 @@ from typing import AsyncGenerator, Optional
 import aiohttp
 
 from nova.llm.provider import ChatStreamEvent, LLMProvider, TextDelta, ReasoningDelta, ToolCall, Done, Error
+from nova.llm.request_hook import run_request_hook, run_session_hook
 
 log = logging.getLogger(__name__)
 
@@ -39,7 +40,8 @@ class OpenAIProvider(LLMProvider):
         reasoning_field: str = "reasoning_content",
         user_agent: Optional[str] = None,
         extra_headers: Optional[dict] = None,
-        session_header: Optional[str] = None,
+        request_hook: Optional[str] = None,
+        request_session_hook: Optional[str] = None,
     ):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
@@ -48,7 +50,8 @@ class OpenAIProvider(LLMProvider):
         self._reasoning_field = reasoning_field
         self._user_agent = user_agent
         self._extra_headers = dict(extra_headers or {})
-        self._session_header = session_header
+        self._request_hook = request_hook
+        self._request_session_hook = request_session_hook
         self._max_tokens = {
             "gpt-4o": 128000,
             "gpt-4o-mini": 128000,
@@ -79,8 +82,10 @@ class OpenAIProvider(LLMProvider):
             headers["Authorization"] = f"Bearer {self.api_key}"
         if self._extra_headers:
             headers.update(self._extra_headers)
-        if self._session_header and session_id:
-            headers[self._session_header] = session_id
+        if self._request_session_hook:
+            headers.update(run_session_hook(self._request_session_hook, session_id))
+        if self._request_hook:
+            headers.update(run_request_hook(self._request_hook, session_id))
         return headers
 
     def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] = None) -> dict:
