@@ -22,7 +22,7 @@ import { ThreadSidebar } from "../components/sidebar/thread-sidebar";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { toThreadMessages } from "../lib/history-messages";
-import { nextRunningMap } from "../lib/thread-running";
+import { nextRunningMap, reconcileRunningMap } from "../lib/thread-running";
 import {
     applyStreamEvent,
     describeStreamSideEffects,
@@ -222,6 +222,7 @@ export function NovaAppShell() {
     const sessionIdRef = useRef(DRAFT_THREAD_ID);
     const currentThreadIdRef = useRef(DRAFT_THREAD_ID);
     const abortControllersRef = useRef(new Map<string, AbortController>());
+    const prevActiveSnapshotRef = useRef(new Set<string>());
     const seenSequencesRef = useRef(new Map<string, Set<number>>());
     const wasNarrowViewportRef = useRef(isNarrowViewport);
 
@@ -378,22 +379,26 @@ export function NovaAppShell() {
                 if (cancelled) {
                     return;
                 }
-                // Merge-only lighting: the server can turn indicators on
-                // (page reloaded while a task runs elsewhere), only a local
-                // stream end turns them off. This avoids flicker when the
-                // slot is not registered yet right after submit.
-                setRunningByThread((previous) => {
-                    let next = previous;
-                    for (const stream of streams) {
-                        if (!next[stream.session_id]) {
-                            if (next === previous) {
-                                next = { ...previous };
-                            }
-                            next[stream.session_id] = true;
-                        }
-                    }
-                    return next;
-                });
+                // Reconciled lighting: the server turns indicators on (page
+                // reloaded while a task runs elsewhere), and a thread that
+                // disappears between two snapshots with no local stream is
+                // turned off (server finished while we only watched). Local
+                // streams still turn their own light off on end. A
+                // just-submitted session never appeared in a snapshot, so it
+                // can never be flickered off while its slot registers.
+                const seenNow = new Set(
+                    streams.map((stream) => stream.session_id),
+                );
+                const seenBefore = prevActiveSnapshotRef.current;
+                prevActiveSnapshotRef.current = seenNow;
+                setRunningByThread((previous) =>
+                    reconcileRunningMap(
+                        previous,
+                        seenNow,
+                        seenBefore,
+                        (threadId) => abortControllersRef.current.has(threadId),
+                    ),
+                );
             } catch {
                 // Poll failure is non-fatal; retry on the next tick.
             }

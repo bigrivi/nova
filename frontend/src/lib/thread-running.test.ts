@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
     isThreadRunning,
     nextRunningMap,
+    reconcileRunningMap,
     runningThreadIds,
 } from "./thread-running";
 
@@ -22,6 +23,58 @@ describe("nextRunningMap", () => {
         const previous = { a: true };
         expect(nextRunningMap(previous, "a", true)).toBe(previous);
         expect(nextRunningMap(previous, "b", false)).toBe(previous);
+    });
+});
+
+describe("reconcileRunningMap", () => {
+    const noLocal = () => false;
+
+    it("lights server-reported sessions without touching the others", () => {
+        const next = reconcileRunningMap(
+            { a: true },
+            new Set(["a", "b"]),
+            new Set(["a"]),
+            noLocal,
+        );
+        expect(next).toEqual({ a: true, b: true });
+    });
+
+    it("turns off a watched session that disappears with no local stream", () => {
+        const next = reconcileRunningMap(
+            { a: true, b: true },
+            new Set(["a"]),
+            new Set(["a", "b"]),
+            noLocal,
+        );
+        expect(next).toEqual({ a: true });
+        expect("b" in next).toBe(false);
+    });
+
+    it("never flickers off a just-submitted session absent from snapshots", () => {
+        const next = reconcileRunningMap(
+            { fresh: true },
+            new Set(),
+            new Set(),
+            noLocal,
+        );
+        expect(next).toEqual({ fresh: true });
+    });
+
+    it("keeps a disappeared session that still has a local stream", () => {
+        const next = reconcileRunningMap(
+            { a: true },
+            new Set(),
+            new Set(["a"]),
+            (threadId) => threadId === "a",
+        );
+        expect(next).toEqual({ a: true });
+    });
+
+    it("returns the same reference when nothing changes", () => {
+        const previous = { a: true };
+        expect(
+            reconcileRunningMap(previous, new Set(["a"]), new Set(["a"]), noLocal),
+        ).toBe(previous);
     });
 });
 
