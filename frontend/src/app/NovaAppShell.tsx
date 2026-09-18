@@ -37,6 +37,7 @@ import {
     createProject,
     deleteProject,
     deleteSession,
+    getActiveStreams,
     getAgent,
     getLastSequence,
     getStreamStatus,
@@ -363,6 +364,55 @@ export function NovaAppShell() {
     }, []);
 
     useEffect(() => subscribeToUnauthorized(() => setAuthRequired(true)), []);
+
+    useEffect(() => {
+        let cancelled = false;
+        let timer: ReturnType<typeof setInterval> | undefined;
+
+        async function pollActiveStreams() {
+            if (cancelled || document.visibilityState !== "visible") {
+                return;
+            }
+            try {
+                const streams = await getActiveStreams();
+                if (cancelled) {
+                    return;
+                }
+                // Merge-only lighting: the server can turn indicators on
+                // (page reloaded while a task runs elsewhere), only a local
+                // stream end turns them off. This avoids flicker when the
+                // slot is not registered yet right after submit.
+                setRunningByThread((previous) => {
+                    let next = previous;
+                    for (const stream of streams) {
+                        if (!next[stream.session_id]) {
+                            if (next === previous) {
+                                next = { ...previous };
+                            }
+                            next[stream.session_id] = true;
+                        }
+                    }
+                    return next;
+                });
+            } catch {
+                // Poll failure is non-fatal; retry on the next tick.
+            }
+        }
+
+        void pollActiveStreams();
+        timer = setInterval(pollActiveStreams, 5000);
+        const onFocus = () => {
+            void pollActiveStreams();
+        };
+        window.addEventListener("focus", onFocus);
+        return () => {
+            cancelled = true;
+            if (timer !== undefined) {
+                clearInterval(timer);
+            }
+            window.removeEventListener("focus", onFocus);
+        };
+    }, []);
 
     async function loadThread(threadId: string) {
         try {

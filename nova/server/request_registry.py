@@ -61,26 +61,13 @@ class _Slot:
 class RequestRegistry:
     def __init__(self) -> None:
         self._map_lock = asyncio.Lock()
-        # Kept as `_lock` alias: legacy tests poke at internals minimally;
-        # both names refer to the same short-held global map lock.
-        self._lock = self._map_lock
         self._slots: dict[str, _Slot] = {}
-        # Back-compat alias for the pre-hardening map (owner per session).
-        self._active_agents: dict[str, Any] = {}
         self._session_locks: dict[str, asyncio.Lock] = {}
         self._reaper_task: asyncio.Task[None] | None = None
         self._reaper_interval = REAP_INTERVAL
         self._stream_buffer: Any = None
 
     # ── internal helpers (map ops only, short-held global lock) ──
-
-    def _sync_alias(self, session_id: str) -> None:
-        """Mirror slot owner into the legacy _active_agents dict (no lock)."""
-        slot = self._slots.get(session_id)
-        if slot is None or slot.owner is None:
-            self._active_agents.pop(session_id, None)
-        else:
-            self._active_agents[session_id] = slot.owner
 
     async def _session_lock(self, session_id: str) -> asyncio.Lock:
         async with self._map_lock:
@@ -110,7 +97,6 @@ class RequestRegistry:
                     state=ACTIVE,
                     last_access=time.monotonic(),
                 )
-                self._sync_alias(session_id)
                 self._enforce_cap_locked()
 
     async def try_register(self, session_id: str, agent: Any) -> bool:
@@ -134,7 +120,6 @@ class RequestRegistry:
                     state=ACTIVE,
                     last_access=time.monotonic(),
                 )
-                self._sync_alias(session_id)
                 self._enforce_cap_locked()
                 return True
 
@@ -150,7 +135,6 @@ class RequestRegistry:
                 slot = self._slots.get(session_id)
                 if slot is not None and slot.owner is agent:
                     del self._slots[session_id]
-                    self._sync_alias(session_id)
                     return True
                 return False
 
@@ -159,7 +143,6 @@ class RequestRegistry:
         async with lock:
             async with self._map_lock:
                 self._slots.pop(session_id, None)
-                self._sync_alias(session_id)
 
     async def get(self, session_id: str) -> Any:
         """Return the slot owner (Agent or _RESERVED), touching the slot."""
@@ -199,7 +182,6 @@ class RequestRegistry:
                 current = self._slots.get(session_id)
                 if current is not None and current.owner is owner:
                     del self._slots[session_id]
-                    self._sync_alias(session_id)
             return True
 
     # ── detach / reattach / touch ──
@@ -231,7 +213,6 @@ class RequestRegistry:
                 slot.state = ACTIVE
                 slot.stream_sequence += 1
                 slot.last_access = time.monotonic()
-                self._sync_alias(session_id)
                 return True
 
     async def touch(self, session_id: str) -> bool:
@@ -272,19 +253,29 @@ class RequestRegistry:
 
     # ── TTL eviction + reaper ──
 
-    def _enforce_cap_locked(self) -> None:
+    def _enforce_cap_locked(self) -> list[str]:
         """Drop LRU slots while over MAX_SLOTS (call with map lock held)."""
         overflow = len(self._slots) - MAX_SLOTS
         if overflow <= 0:
-            return
+            return []
         # Terminal slots first, then oldest last_access.
         ordered = sorted(
             self._slots.items(),
             key=lambda kv: (0 if kv[1].state == DONE else 1, kv[1].last_access),
         )
-        for session_id, _ in ordered[:overflow]:
+        evicted = [session_id for session_id, _ in ordered[:overflow]]
+        for session_id in evicted:
             self._slots.pop(session_id, None)
-            self._sync_alias(session_id)
+        buffer = self._stream_buffer
+        if buffer is not None:
+            discard = getattr(buffer, "discard", None)
+            if discard is not None:
+                for session_id in evicted:
+                    try:
+                        discard(session_id)
+                    except Exception:
+                        log.exception("cap-eviction buffer discard failed for %s", session_id)
+        return evicted
 
     async def evict_idle(self, now: float | None = None) -> list[str]:
         """Evict idle>30min + terminal>10min slots; enforce LRU cap.
@@ -298,6 +289,7 @@ class RequestRegistry:
         # the global lock short-held.
         async with self._map_lock:
             candidates = list(self._slots.items())
+        buffer = self._stream_buffer
         for session_id, slot in candidates:
             stale_idle = (current - slot.last_access) > IDLE_TTL
             stale_done = slot.state == DONE and (current - slot.last_access) > TERMINAL_TTL
@@ -305,6 +297,7 @@ class RequestRegistry:
                 continue
             lock = await self._session_lock(session_id)
             async with lock:
+                discarded = False
                 async with self._map_lock:
                     live = self._slots.get(session_id)
                     if live is None:
@@ -314,17 +307,26 @@ class RequestRegistry:
                         and (current - live.last_access) > TERMINAL_TTL
                     ):
                         del self._slots[session_id]
-                        self._sync_alias(session_id)
                         evicted.append(session_id)
-        buffer = self._stream_buffer
+                        discarded = True
+                # P1: discard the buffer while still holding the per-session
+                # lock. A concurrent try_register for the same session blocks
+                # on this lock, so its fresh frames can no longer slip in
+                # between the slot delete and a deferred post-loop discard.
+                if discarded and buffer is not None:
+                    discard = getattr(buffer, "discard", None)
+                    if discard is not None:
+                        try:
+                            discard(session_id)
+                        except Exception:
+                            log.exception("eviction buffer discard failed for %s", session_id)
         if buffer is not None:
-            for session_id in evicted:
-                discard = getattr(buffer, "discard", None)
-                if discard is not None:
-                    discard(session_id)
             sweep = getattr(buffer, "evict_idle", None)
             if sweep is not None:
-                sweep(now=current)
+                try:
+                    sweep(now=current)
+                except Exception:
+                    log.exception("stream-buffer sweep failed")
         async with self._map_lock:
             self._enforce_cap_locked()
         return evicted
@@ -373,6 +375,20 @@ class RequestRegistry:
         async with self._map_lock:
             slot = self._slots.get(session_id)
             return slot.state if slot is not None else None
+
+    async def active_stream_states(self) -> dict[str, str]:
+        """Snapshot session_id -> state for in-flight streams.
+
+        Only ``active``/``detached`` slots are reported; ``done`` slots and
+        unknown sessions are omitted. The sidebar polls this to mark running
+        threads after a reload.
+        """
+        async with self._map_lock:
+            return {
+                session_id: slot.state
+                for session_id, slot in self._slots.items()
+                if slot.state in (ACTIVE, DETACHED)
+            }
 
     async def size(self) -> int:
         async with self._map_lock:

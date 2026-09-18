@@ -19,6 +19,7 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 
+from nova.server.request_registry import _RESERVED
 from nova.server.schemas import ChatRequest
 from nova.server.stream_buffer import CONNECTION_QUEUE_MAXSIZE
 
@@ -52,6 +53,22 @@ def split_sequence_id_prefix(chunk: bytes) -> tuple[bytes, bytes]:
         if sep:
             return line + b"\n", rest
     return b"", chunk
+
+
+def parse_sequence(chunk: bytes) -> int | None:
+    """Parse the ``id: <sequence>`` prefix of a framed chunk.
+
+    Returns the integer sequence, or ``None`` when the chunk carries no
+    parseable prefix (unframed ``data:`` chunks, ``:ping`` heartbeats).
+    Used by the resume path to drop live-tail duplicates of replayed frames.
+    """
+    prefix, _ = split_sequence_id_prefix(chunk)
+    if not prefix:
+        return None
+    try:
+        return int(prefix.split(b":", 1)[1].strip())
+    except (ValueError, IndexError):
+        return None
 
 
 def extract_session_id_from_chunk(chunk: bytes) -> str | None:
@@ -97,6 +114,7 @@ def normalize_session_chunk_for_session(chunk: bytes, session_id: str | None) ->
 
 
 _split_id_prefix = split_sequence_id_prefix
+_parse_sequence = parse_sequence
 _extract_session_id = extract_session_id_from_chunk
 _normalize_session_chunk = normalize_session_chunk_for_session
 
@@ -105,8 +123,6 @@ async def park_detached_stream_session(registry: Any, session_id: str | None) ->
     if registry is None or not session_id:
         return
     try:
-        from nova.server.request_registry import _RESERVED
-
         owner = await registry.get(session_id)
         if owner is None:
             return
@@ -123,8 +139,15 @@ _park_stream = park_detached_stream_session
 
 def resolve_stream_dependencies(http_request: Request) -> tuple[Any, Any, Any]:
     chat_service = http_request.app.state.chat_service
-    request_registry = getattr(chat_service, "_request_registry", None)
-    service_stream_buffer = getattr(chat_service, "_stream_buffer", None)
+    # Prefer the public ChatService interface (2.1); fall back to the legacy
+    # private attributes so lightweight test stubs without the properties
+    # keep working.
+    request_registry = getattr(chat_service, "request_registry", None)
+    if request_registry is None:
+        request_registry = getattr(chat_service, "_request_registry", None)
+    service_stream_buffer = getattr(chat_service, "stream_buffer", None)
+    if service_stream_buffer is None:
+        service_stream_buffer = getattr(chat_service, "_stream_buffer", None)
     if service_stream_buffer is not None:
         stream_buffer = service_stream_buffer
     else:
@@ -141,18 +164,30 @@ class ChatStreamOrchestrator:
 
         http_request = self.http_request
         chat_service, registry, buffer = resolve_stream_dependencies(http_request)
-        service_stream_buffer = getattr(chat_service, "_stream_buffer", None)
+        service_stream_buffer = getattr(chat_service, "stream_buffer", None)
+        if service_stream_buffer is None:
+            service_stream_buffer = getattr(chat_service, "_stream_buffer", None)
         session_id = chat_request.session_id
         resume_cursor = chat_request.resume_from_seq
 
         if resume_cursor is not None and session_id is not None and buffer is not None:
+            # P0: subscribe BEFORE replay. StreamBuffer methods are synchronous,
+            # so these back-to-back calls have no observable yield point: frames
+            # appended between them land in the subscriber queue, and replay
+            # duplicates are dropped below via max_replayed_seq.
+            subscriber_queue = buffer.subscribe(session_id)
             frames, _, resync = buffer.replay_since(session_id, resume_cursor)
+            max_replayed_seq: int | None = None
+            for replayed_frame in frames:
+                replayed_seq = parse_sequence(replayed_frame)
+                if replayed_seq is not None and (
+                    max_replayed_seq is None or replayed_seq > max_replayed_seq
+                ):
+                    max_replayed_seq = replayed_seq
             follow = False
             if registry is not None:
                 if await registry.slot_state(session_id) == "detached":
                     try:
-                        from nova.server.request_registry import _RESERVED
-
                         owner = await registry.get(session_id)
                         if owner is not None and owner is not _RESERVED:
                             await registry.reattach(session_id, owner)
@@ -163,16 +198,15 @@ class ChatStreamOrchestrator:
                 follow = await registry.slot_state(session_id) in ("active", "detached")
 
             async def resume_stream():
-                for event_frame in frames:
-                    if await http_request.is_disconnected():
-                        return
-                    yield normalize_session_chunk_for_session(event_frame, session_id)
-                if not follow:
-                    return
-                subscriber_queue = buffer.subscribe(session_id)
                 try:
+                    for event_frame in frames:
+                        if await http_request.is_disconnected():
+                            return
+                        yield normalize_session_chunk_for_session(event_frame, session_id)
+                    if not follow:
+                        return
                     loop = asyncio.get_running_loop()
-                    start = loop.time()
+                    idle_since = loop.time()
                     last_send = loop.time()
                     while True:
                         try:
@@ -181,7 +215,7 @@ class ChatStreamOrchestrator:
                             if buffer.is_done(session_id):
                                 return
                             now = loop.time()
-                            if now - start > stream_module.STREAM_RESUME_TAIL_TIMEOUT_SECONDS:
+                            if now - idle_since > stream_module.STREAM_RESUME_TAIL_TIMEOUT_SECONDS:
                                 return
                             if await http_request.is_disconnected():
                                 return
@@ -191,10 +225,18 @@ class ChatStreamOrchestrator:
                             else:
                                 await asyncio.sleep(0.05)
                             continue
+                        chunk_seq = parse_sequence(chunk)
+                        if (
+                            max_replayed_seq is not None
+                            and chunk_seq is not None
+                            and chunk_seq <= max_replayed_seq
+                        ):
+                            continue
                         if await http_request.is_disconnected():
                             return
                         yield normalize_session_chunk_for_session(chunk, session_id)
                         last_send = loop.time()
+                        idle_since = loop.time()
                         if b"[DONE]" in chunk:
                             return
                 finally:
@@ -212,8 +254,6 @@ class ChatStreamOrchestrator:
             )
 
         if chat_request.session_id and registry is not None:
-            from nova.server.request_registry import _RESERVED
-
             if not await registry.try_register(chat_request.session_id, _RESERVED):
                 raise HTTPException(
                     status_code=409,
@@ -255,7 +295,7 @@ class ChatStreamOrchestrator:
             task = asyncio.create_task(producer())
             try:
                 loop = asyncio.get_running_loop()
-                start = loop.time()
+                idle_since = loop.time()
                 while True:
                     try:
                         item = await asyncio.wait_for(
@@ -266,7 +306,7 @@ class ChatStreamOrchestrator:
                         if await http_request.is_disconnected():
                             await park_detached_stream_session(registry, stream_session_id)
                             break
-                        if loop.time() - start > stream_module.STREAM_RESUME_TAIL_TIMEOUT_SECONDS:
+                        if loop.time() - idle_since > stream_module.STREAM_RESUME_TAIL_TIMEOUT_SECONDS:
                             await park_detached_stream_session(registry, stream_session_id)
                             break
                         yield stream_module.STREAM_SSE_PING_BYTES
@@ -277,6 +317,7 @@ class ChatStreamOrchestrator:
                         await park_detached_stream_session(registry, stream_session_id)
                         break
                     yield item
+                    idle_since = loop.time()
                     if b"[DONE]" in item:
                         break
             except GeneratorExit:
@@ -293,8 +334,6 @@ class ChatStreamOrchestrator:
                     except Exception:
                         log.exception("chat stream producer failed")
                     if session_id and registry is not None:
-                        from nova.server.request_registry import _RESERVED
-
                         await registry.unregister_if_current(session_id, _RESERVED)
 
         return StreamingResponse(

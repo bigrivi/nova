@@ -99,6 +99,20 @@ export async function getStreamStatus(
     return (await response.json()) as StreamStatus;
 }
 
+export type ActiveStream = {
+    session_id: string;
+    status: string;
+};
+
+export async function getActiveStreams(): Promise<ActiveStream[]> {
+    const response = await apiFetch(`/api/chat/stream/active`);
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+    const body = (await response.json()) as { streams?: ActiveStream[] };
+    return Array.isArray(body.streams) ? body.streams : [];
+}
+
 const STREAM_MAX_ATTEMPTS = 6;
 const STREAM_BACKOFF_BASE_MS = 1000;
 const STREAM_BACKOFF_MAX_MS = 30000;
