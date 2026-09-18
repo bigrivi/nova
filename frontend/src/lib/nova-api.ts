@@ -14,7 +14,7 @@ import type {
     NovaStreamEvent,
 } from "../types/nova";
 import { getAuthHeader, notifyUnauthorized } from "./auth";
-import { parseSseFrame } from "./thread-stream";
+import { extractSessionId, parseSseFrame } from "./thread-stream";
 
 type JsonResponse<T> = {
     items: T[];
@@ -515,6 +515,8 @@ async function runStreamOnce(
     options: StreamChatOptions,
     resumeFromSequence: number | null,
     trackSequence: (sequence: number) => void,
+    onEvent: (event: NovaStreamEvent) => void,
+    sessionId: string | null,
 ): Promise<void> {
     const response = await apiFetch("/api/chat/stream", {
         method: "POST",
@@ -523,7 +525,7 @@ async function runStreamOnce(
         },
         body: JSON.stringify({
             message: options.message,
-            session_id: options.sessionId || undefined,
+            session_id: sessionId || undefined,
             provider: options.provider || undefined,
             model: options.model || undefined,
             workspace_dir: options.workspaceDir || undefined,
@@ -561,7 +563,7 @@ async function runStreamOnce(
             const frame = buffer.slice(0, boundary).trim();
             buffer = buffer.slice(boundary + 2);
             if (frame) {
-                emitFrame(frame, options.onEvent, trackSequence);
+                emitFrame(frame, onEvent, trackSequence);
             }
             boundary = buffer.indexOf("\n\n");
         }
@@ -569,7 +571,7 @@ async function runStreamOnce(
         if (done) {
             const finalFrame = buffer.trim();
             if (finalFrame) {
-                emitFrame(finalFrame, options.onEvent, trackSequence);
+                emitFrame(finalFrame, onEvent, trackSequence);
             }
             return;
         }
@@ -583,21 +585,38 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
 
     let cursor = options.resumeFromSequence ?? null;
     let lastSeen: number | null = cursor;
+    // The server keys turns by session id. A fresh submit starts without one
+    // and learns it from the session announcement mid-stream; retries must
+    // carry the learned id, otherwise the server starts a second turn.
+    let liveSessionId = options.sessionId ?? null;
     const trackSequence = (sequence: number) => {
         lastSeen = sequence;
         options.onSequence?.(sequence);
-        if (options.sessionId) {
-            setLastSequence(options.sessionId, sequence);
+        if (liveSessionId) {
+            setLastSequence(liveSessionId, sequence);
         }
+    };
+    const onStreamEvent = (event: NovaStreamEvent) => {
+        const announced = extractSessionId(event);
+        if (announced) {
+            liveSessionId = announced;
+        }
+        options.onEvent(event);
     };
 
     let attempt = 0;
     for (;;) {
         try {
-            await runStreamOnce(options, cursor, trackSequence);
+            await runStreamOnce(options, cursor, trackSequence, onStreamEvent, liveSessionId);
             return;
         } catch (error) {
             if (isAbortError(error) || options.signal?.aborted) {
+                throw error;
+            }
+            // No session announced and no frame seen: the turn may still be
+            // alive server-side without an id we could resume. Re-posting
+            // would silently clone it into a second session, so fail loudly.
+            if (liveSessionId == null && lastSeen == null) {
                 throw error;
             }
             const nonRetryable =

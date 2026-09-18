@@ -1642,3 +1642,15 @@ def test_fs_list_returns_403_on_permission_error(monkeypatch, tmp_path):
     response = client.get("/api/fs/list", params={"path": str(tmp_path)})
 
     assert response.status_code == 403
+
+
+def test_chat_stream_rejects_resume_without_session(monkeypatch, tmp_path):
+    # A resume cursor without a session id can never attach to a turn; the
+    # server must fail loudly instead of starting a second turn (clone).
+    _, client = _agents_client(monkeypatch, tmp_path, "home")
+
+    response = client.post(
+        "/api/chat/stream", json={"message": "hello", "resume_from_seq": 5}
+    )
+
+    assert response.status_code == 400

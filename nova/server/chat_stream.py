@@ -170,6 +170,12 @@ class ChatStreamOrchestrator:
         session_id = chat_request.session_id
         resume_cursor = chat_request.resume_from_seq
 
+        if resume_cursor is not None and session_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot resume a stream without session_id.",
+            )
+
         if resume_cursor is not None and session_id is not None and buffer is not None:
             # P0: subscribe BEFORE replay. StreamBuffer methods are synchronous,
             # so these back-to-back calls have no observable yield point: frames
