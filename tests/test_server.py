@@ -272,6 +272,70 @@ def test_add_provider_endpoint_updates_config_and_models(monkeypatch, tmp_path):
     assert app.state.settings.providers["openrouter"].name == "OpenRouter"
 
 
+@pytest.mark.asyncio
+async def test_config_refresh_preserves_inflight_session_state(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-config-refresh-preserves"
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.json").write_text(
+        """
+{
+  "model": "gemma4:26b",
+  "model_provider": "ollama",
+  "providers": {
+    "ollama": {
+      "type": "ollama",
+      "name": "Ollama (local)",
+      "options": {
+        "base_url": "http://localhost:11434"
+      },
+      "models": {
+        "gemma4:26b": {
+          "name": "gemma4:26b",
+          "tools": true
+        }
+      }
+    }
+  }
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+
+    chat_service_before = app.state.chat_service
+    registry_before = chat_service_before.request_registry
+    buffer_before = chat_service_before.stream_buffer
+
+    assert app.state.request_registry is registry_before
+    assert app.state.stream_buffer is buffer_before
+
+    await registry_before.try_register("session-inflight", object())
+    buffer_before.append("session-inflight", b"data: {}\n\n")
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/config/providers",
+        json={
+            "key": "openrouter",
+            "type": "openai-compatible",
+            "name": "OpenRouter",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "sk-test",
+        },
+    )
+    assert response.status_code == 200
+
+    assert app.state.chat_service is chat_service_before
+    assert app.state.chat_service.request_registry is registry_before
+    assert app.state.chat_service.stream_buffer is buffer_before
+    assert await registry_before.slot_state("session-inflight") == "active"
+    assert buffer_before.last_sequence("session-inflight") == 1
+    assert app.state.settings.providers["openrouter"].name == "OpenRouter"
+    assert app.state.chat_service.settings.providers["openrouter"].name == "OpenRouter"
+
+
 def test_add_provider_endpoint_rejects_duplicate_key(monkeypatch, tmp_path):
     home = tmp_path / "nova-server-add-provider-duplicate"
     home.mkdir(parents=True, exist_ok=True)
@@ -1393,3 +1457,188 @@ def test_auth_loopback_exempt_requires_loopback_forwarded_for(
         ).status_code
         == 401
     )
+
+
+def _agents_client(monkeypatch, tmp_path, name):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / name))
+    settings = Settings.load_config()
+    app = create_app(settings=settings)
+    return settings, TestClient(app)
+
+
+@pytest.mark.asyncio
+async def test_agents_list_contains_seeded_main(monkeypatch, tmp_path):
+    # Fresh DBs seed the default "main" agent via DDL (sqlite_repository).
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    response = client.get("/api/agents")
+
+    assert response.status_code == 200
+    assert [item["key"] for item in response.json()["items"]] == ["main"]
+
+
+@pytest.mark.asyncio
+async def test_agents_create_and_get_roundtrip(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    created = client.post(
+        "/api/agents",
+        json={
+            "key": "tester",
+            "name": "Tester",
+            "description": "test agent",
+            "model": "m1",
+            "provider": "p1",
+        },
+    )
+
+    assert created.status_code == 200
+    assert created.json()["key"] == "tester"
+    assert created.json()["name"] == "Tester"
+    assert (settings.home / "agents" / "tester").is_dir()
+
+    fetched = client.get("/api/agents/tester")
+    assert fetched.status_code == 200
+    assert fetched.json()["key"] == "tester"
+
+    listed = client.get("/api/agents")
+    assert listed.status_code == 200
+    assert "tester" in [item["key"] for item in listed.json()["items"]]
+
+
+def test_agents_create_rejects_bad_key(monkeypatch, tmp_path):
+    _, client = _agents_client(monkeypatch, tmp_path, "home")
+
+    for bad_key in ("AB", "Bad Key!", "a" * 33):
+        response = client.post(
+            "/api/agents",
+            json={"key": bad_key, "name": "Bad", "model": "m", "provider": "p"},
+        )
+        assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_agents_create_rejects_duplicate_key(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+    app = create_app(settings=settings)
+    client = TestClient(app)
+    payload = {"key": "dupe", "name": "Dupe", "model": "m", "provider": "p"}
+
+    assert client.post("/api/agents", json=payload).status_code == 200
+
+    response = client.post("/api/agents", json=payload)
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_agents_get_returns_404_for_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    assert client.get("/api/agents/nope").status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_agents_delete_protects_default_and_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    assert client.delete("/api/agents/main").status_code == 400
+    assert client.delete("/api/agents/nope").status_code == 404
+
+    assert (
+        client.post(
+            "/api/agents",
+            json={"key": "gone", "name": "Gone", "model": "m", "provider": "p"},
+        ).status_code
+        == 200
+    )
+    deleted = client.delete("/api/agents/gone")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"status": "deleted", "key": "gone"}
+    assert client.get("/api/agents/gone").status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_agents_update_validates_and_404s(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    assert (
+        client.patch("/api/agents/nope", json={"model": "m"}).status_code == 400
+    )
+    assert (
+        client.patch(
+            "/api/agents/nope", json={"model": "m", "provider": "p"}
+        ).status_code
+        == 404
+    )
+
+    assert (
+        client.post(
+            "/api/agents",
+            json={"key": "upd", "name": "Upd", "model": "old", "provider": "p"},
+        ).status_code
+        == 200
+    )
+    updated = client.patch(
+        "/api/agents/upd", json={"model": "new", "provider": "p2"}
+    )
+    assert updated.status_code == 200
+    assert updated.json()["model"] == "new"
+    assert updated.json()["provider"] == "p2"
+
+
+def test_fs_list_returns_entries(monkeypatch, tmp_path):
+    # list_directory only returns subdirectories (workspace picker semantics).
+    _, client = _agents_client(monkeypatch, tmp_path, "home")
+    target = tmp_path / "browse"
+    (target / "project-a").mkdir(parents=True)
+    (target / "hello.txt").write_text("hi", encoding="utf-8")
+
+    response = client.get("/api/fs/list", params={"path": str(target)})
+
+    assert response.status_code == 200
+    names = [entry["name"] for entry in response.json()["entries"]]
+    assert "project-a" in names
+    assert "hello.txt" not in names
+
+
+def test_fs_list_returns_404_for_missing(monkeypatch, tmp_path):
+    _, client = _agents_client(monkeypatch, tmp_path, "home")
+
+    response = client.get("/api/fs/list", params={"path": str(tmp_path / "nope")})
+
+    assert response.status_code == 404
+
+
+def test_fs_list_returns_403_on_permission_error(monkeypatch, tmp_path):
+    _, client = _agents_client(monkeypatch, tmp_path, "home")
+
+    def _deny(_path):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("nova.server.routers.fs.list_directory", _deny)
+
+    response = client.get("/api/fs/list", params={"path": str(tmp_path)})
+
+    assert response.status_code == 403

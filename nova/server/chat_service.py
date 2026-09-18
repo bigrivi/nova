@@ -14,7 +14,7 @@ from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.project.service import ProjectService
 from nova.server.ai_sdk_stream import AISDKStreamAdapter
-from nova.server.request_registry import RequestRegistry
+from nova.server.request_registry import _RESERVED, RequestRegistry
 from nova.server.stream_buffer import StreamBuffer
 from nova.server.schemas import (
     ApprovalRequiredEvent,
@@ -66,12 +66,41 @@ def _normalize_workspace_dir(workspace_dir: str | None) -> str | None:
 
 
 class ChatService:
-    def __init__(self, settings: Settings, data_source: DataSourceProtocol | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        data_source: DataSourceProtocol | None = None,
+        request_registry: RequestRegistry | None = None,
+        stream_buffer: StreamBuffer | None = None,
+    ) -> None:
         self._settings = settings
-        self._request_registry = RequestRegistry()
-        self._stream_buffer = StreamBuffer()
+        self._request_registry = request_registry or RequestRegistry()
+        self._stream_buffer = stream_buffer or StreamBuffer()
         self._request_registry.attach_buffer(self._stream_buffer)
         self._data_source = data_source
+
+    @property
+    def settings(self) -> Settings:
+        return self._settings
+
+    def update_settings(self, settings: Settings) -> None:
+        """Swap in reloaded settings without discarding live streaming state.
+
+        Config edits (add/update/delete provider or model) reload settings at
+        runtime. Rebuilding the whole ChatService would drop the request
+        registry, stream buffer and reaper, orphaning every in-flight parallel
+        session (status/active/resume break, TTL eviction stops). Updating the
+        settings in place keeps that runtime state intact.
+        """
+        self._settings = settings
+
+    @property
+    def request_registry(self) -> RequestRegistry:
+        return self._request_registry
+
+    @property
+    def stream_buffer(self) -> StreamBuffer:
+        return self._stream_buffer
 
     async def _get_data_source(self) -> DataSourceProtocol:
         if self._data_source is None:
@@ -154,8 +183,6 @@ class ChatService:
         data_source = await self._get_data_source()
         owner = await self._request_registry.get(session_id)
         if owner is not None:
-            from nova.server.request_registry import _RESERVED
-
             if owner is not _RESERVED:
                 terminate_fn = getattr(owner, "terminate", None)
                 if callable(terminate_fn):
@@ -282,6 +309,12 @@ class ChatService:
         return response
 
     async def chat_stream(self, request: ChatRequest) -> AsyncGenerator[ServerStreamEvent, None]:
+        """Yield ServerStreamEvents via _map_agent_event.
+
+        Independent mapping path from chat_stream_ai_sdk (which uses
+        AISDKStreamAdapter): when adding a new AgentEvent type, update both
+        paths to avoid drift.
+        """
         session_id = request.session_id
         sequence = 0
 
@@ -320,6 +353,12 @@ class ChatService:
             yield await emit(ResponseErrorEvent, ResponseErrorEventData, message=str(exc))
 
     async def chat_stream_ai_sdk(self, request: ChatRequest) -> AsyncGenerator[bytes, None]:
+        """Yield framed AI-SDK byte chunks via AISDKStreamAdapter.
+
+        Independent mapping path from chat_stream (which uses
+        _map_agent_event): when adding a new AgentEvent type, update both
+        paths to avoid drift.
+        """
         adapter = AISDKStreamAdapter()
         resolved_session_id = request.session_id
         fallback_sequence = 0
