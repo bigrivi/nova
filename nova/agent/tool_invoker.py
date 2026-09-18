@@ -134,7 +134,8 @@ class ToolInvoker:
             result = await self.execute_with_abort(
                 tool_call, arguments, approval_request_id=approval_request_id)
             if result is None:
-                await self.persist_cancelled(tool_calls, group_id)
+                async for event in self.persist_cancelled(tool_calls, group_id):
+                    yield event
                 self.outcome = ToolOutcome.STOPPED
                 yield AgentEvent.DONE, done_payload("stopped", "Stopped by user")
                 return
@@ -189,7 +190,8 @@ class ToolInvoker:
         """
         stop_payload = await self._wait_if_aborted()
         if stop_payload:
-            await self.persist_cancelled(all_tool_calls, group_id)
+            async for event in self.persist_cancelled(all_tool_calls, group_id):
+                yield event
             self.outcome = ToolOutcome.STOPPED
             yield AgentEvent.DONE, stop_payload
             return
@@ -199,7 +201,8 @@ class ToolInvoker:
 
         stop_payload = await self._wait_if_aborted()
         if stop_payload:
-            await self.persist_cancelled(all_tool_calls, group_id)
+            async for event in self.persist_cancelled(all_tool_calls, group_id):
+                yield event
             self.outcome = ToolOutcome.STOPPED
             yield AgentEvent.DONE, stop_payload
 
@@ -288,11 +291,12 @@ class ToolInvoker:
         self,
         tool_calls: list,
         group_id: Optional[str],
-    ) -> None:
+    ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         """Write a cancelled result for every declared call that did not run.
 
         An unanswered tool call breaks the assistant->tool pairing the provider
         requires, and the UI has nothing to show for the call otherwise.
+        Each result is also yielded so the stream carries the terminal state.
         """
         for tool_call in tool_calls:
             tool_call_id = _id_of(tool_call)
@@ -307,11 +311,13 @@ class ToolInvoker:
                 group_id=group_id,
                 error=result.content,
             )
-            await self._emit(AgentEvent.TOOL_RESULT, {
+            payload = {
                 "tool": _name_of(tool_call),
                 "tool_call_id": tool_call_id,
                 "result": result,
-            })
+            }
+            await self._emit(AgentEvent.TOOL_RESULT, payload)
+            yield AgentEvent.TOOL_RESULT, payload
 
 
 def parse_tool_arguments(arguments_text: Any) -> dict:

@@ -1003,6 +1003,7 @@ export function NovaAppShell() {
             useAskUserStore.getState().setActive(null);
         }
         abortControllersRef.current.get(target)?.abort();
+        useTodoStore.getState().markOpenCancelled();
         if (target !== DRAFT_THREAD_ID) {
             await interruptChat(target);
         }

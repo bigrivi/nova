@@ -20,6 +20,7 @@ type TodoPanelData = {
 type TodoStore = {
     active: TodoPanelData | null;
     setActive: (input: unknown) => void;
+    markOpenCancelled: () => void;
     clear: () => void;
 };
 
@@ -49,5 +50,18 @@ export const useTodoStore = create<TodoStore>((set) => ({
     active: null,
     setActive: (input) =>
         set({ active: { todos: parseTodos(input), updatedAt: Date.now() } }),
+    markOpenCancelled: () =>
+        set((state) => ({
+            active: state.active
+                ? {
+                      todos: state.active.todos.map((item) =>
+                          item.status === "in_progress"
+                              ? { ...item, status: "cancelled" }
+                              : item,
+                      ),
+                      updatedAt: Date.now(),
+                  }
+                : null,
+        })),
     clear: () => set({ active: null }),
 }));
