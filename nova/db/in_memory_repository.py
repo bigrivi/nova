@@ -245,7 +245,8 @@ class InMemoryRepository(NovaRepository):
         self._agents[agent["key"]] = dict(agent)
 
     async def get_child_agents(self, parent_key: str) -> list[dict]:
-        return [agent for agent in await self.list_agents() if agent.get("parent_id") == parent_key]
+        child_keys = {child for child, parent in self._agent_parents if parent == parent_key}
+        return [agent for agent in await self.list_agents() if agent["key"] in child_keys]
 
     async def get_agent_parents(self, child_key: str) -> list[str]:
         return [parent for child, parent in self._agent_parents if child == child_key]

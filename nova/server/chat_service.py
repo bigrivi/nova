@@ -4,6 +4,8 @@ Chat service that maps internal agent events to stable backend events.
 
 from __future__ import annotations
 
+import inspect
+import logging
 from typing import Any, AsyncGenerator, Callable
 
 from nova.agent import AgentEvent
@@ -12,7 +14,8 @@ from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.project.service import ProjectService
 from nova.server.ai_sdk_stream import AISDKStreamAdapter
-from nova.server.request_registry import RequestRegistry
+from nova.server.request_registry import _RESERVED, RequestRegistry
+from nova.server.stream_buffer import StreamBuffer
 from nova.server.schemas import (
     ApprovalRequiredEvent,
     ApprovalRequiredEventData,
@@ -47,6 +50,8 @@ from nova.server.schemas import (
 from nova.session.history_projection import get_user_visible_history
 from nova.settings import Settings
 
+log = logging.getLogger(__name__)
+
 
 def _normalize_workspace_dir(workspace_dir: str | None) -> str | None:
     """Trim, expand ~, and resolve a workspace path; blank/None clears it."""
@@ -61,10 +66,41 @@ def _normalize_workspace_dir(workspace_dir: str | None) -> str | None:
 
 
 class ChatService:
-    def __init__(self, settings: Settings, data_source: DataSourceProtocol | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        data_source: DataSourceProtocol | None = None,
+        request_registry: RequestRegistry | None = None,
+        stream_buffer: StreamBuffer | None = None,
+    ) -> None:
         self._settings = settings
-        self._request_registry = RequestRegistry()
+        self._request_registry = request_registry or RequestRegistry()
+        self._stream_buffer = stream_buffer or StreamBuffer()
+        self._request_registry.attach_buffer(self._stream_buffer)
         self._data_source = data_source
+
+    @property
+    def settings(self) -> Settings:
+        return self._settings
+
+    def update_settings(self, settings: Settings) -> None:
+        """Swap in reloaded settings without discarding live streaming state.
+
+        Config edits (add/update/delete provider or model) reload settings at
+        runtime. Rebuilding the whole ChatService would drop the request
+        registry, stream buffer and reaper, orphaning every in-flight parallel
+        session (status/active/resume break, TTL eviction stops). Updating the
+        settings in place keeps that runtime state intact.
+        """
+        self._settings = settings
+
+    @property
+    def request_registry(self) -> RequestRegistry:
+        return self._request_registry
+
+    @property
+    def stream_buffer(self) -> StreamBuffer:
+        return self._stream_buffer
 
     async def _get_data_source(self) -> DataSourceProtocol:
         if self._data_source is None:
@@ -145,7 +181,24 @@ class ChatService:
 
     async def delete_session(self, session_id: str, delete_memories: bool = False) -> bool:
         data_source = await self._get_data_source()
-        await self._request_registry.unregister(session_id)
+        owner = await self._request_registry.get(session_id)
+        if owner is not None:
+            if owner is not _RESERVED:
+                terminate_fn = getattr(owner, "terminate", None)
+                if callable(terminate_fn):
+                    try:
+                        result = terminate_fn()
+                        if inspect.isawaitable(result):
+                            await result
+                    except Exception:
+                        log.exception("delete_session terminate failed for %s", session_id)
+                await self._request_registry.unregister(session_id)
+            else:
+                await self._request_registry.unregister(session_id)
+        try:
+            self._stream_buffer.discard(session_id)
+        except Exception:
+            log.exception("delete_session buffer discard failed for %s", session_id)
         deleted = await data_source.delete_session(session_id)
         if deleted and delete_memories:
             from nova.memory.service import MemoryService
@@ -170,6 +223,7 @@ class ChatService:
                 reasoning_elapsed_ms=message.reasoning_elapsed_ms,
                 group_id=message.group_id,
                 error=message.error,
+                variant=message.variant,
             )
             for message in messages
         ]
@@ -214,7 +268,14 @@ class ChatService:
         return {"used": used, "limit": limit, "percent": percent, "message_count": len(raw_messages)}
 
     async def interrupt(self, session_id: str) -> bool:
-        return await self._request_registry.interrupt(session_id)
+        interrupted = await self._request_registry.interrupt(session_id)
+        if interrupted:
+            try:
+                self._stream_buffer.append(session_id, b'data: {"type":"abort"}\n\n')
+            except Exception:
+                log.exception("interrupt buffer append failed for %s", session_id)
+            self._stream_buffer.mark_done(session_id)
+        return interrupted
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
         response: ChatResponse | None = None
@@ -249,6 +310,12 @@ class ChatService:
         return response
 
     async def chat_stream(self, request: ChatRequest) -> AsyncGenerator[ServerStreamEvent, None]:
+        """Yield ServerStreamEvents via _map_agent_event.
+
+        Independent mapping path from chat_stream_ai_sdk (which uses
+        AISDKStreamAdapter): when adding a new AgentEvent type, update both
+        paths to avoid drift.
+        """
         session_id = request.session_id
         sequence = 0
 
@@ -287,10 +354,31 @@ class ChatService:
             yield await emit(ResponseErrorEvent, ResponseErrorEventData, message=str(exc))
 
     async def chat_stream_ai_sdk(self, request: ChatRequest) -> AsyncGenerator[bytes, None]:
+        """Yield framed AI-SDK byte chunks via AISDKStreamAdapter.
+
+        Independent mapping path from chat_stream (which uses
+        _map_agent_event): when adding a new AgentEvent type, update both
+        paths to avoid drift.
+        """
         adapter = AISDKStreamAdapter()
+        resolved_session_id = request.session_id
+        fallback_sequence = 0
         async for event, data in self._agent_event_stream(request):
+            if event == AgentEvent.SESSION and data and not resolved_session_id:
+                resolved_session_id = data if isinstance(data, str) else resolved_session_id
             for chunk in adapter.feed(event, data):
-                yield chunk
+                if resolved_session_id:
+                    if fallback_sequence:
+                        self._stream_buffer.ensure_next(resolved_session_id, fallback_sequence)
+                        fallback_sequence = 0
+                    _, framed = self._stream_buffer.append(resolved_session_id, chunk)
+                    yield framed
+                else:
+                    fallback_sequence += 1
+                    yield b"id: " + str(fallback_sequence).encode("ascii") + b"\n" + chunk
+        if resolved_session_id:
+            self._stream_buffer.mark_done(resolved_session_id)
+            await self._request_registry.mark_done(resolved_session_id)
 
     async def _agent_event_stream(
         self,
@@ -312,6 +400,7 @@ class ChatService:
             project = await ProjectService(self._data_source).get_project(project_id)
             if project and project.get("path"):
                 workspace_dir = project["path"]
+        message_variant = "subagent" if request.metadata.get("from_subagent") else None
         try:
             async for event, data in agent.chat_stream(
                 request.message,
@@ -319,6 +408,7 @@ class ChatService:
                 attachments=attachment_dicts,
                 workspace_dir=workspace_dir,
                 project_id=project_id,
+                message_variant=message_variant,
             ):
                 if event == AgentEvent.SESSION and data and not register_key:
                     register_key = data
@@ -326,7 +416,7 @@ class ChatService:
                 yield event, data
         finally:
             if register_key:
-                await self._request_registry.unregister_if_current(register_key, agent)
+                await self._request_registry.mark_done(register_key)
 
     async def _map_agent_event(
         self,

@@ -22,6 +22,7 @@ class PromptConfig:
     user_content: str = ""
     memory_content: str = ""
     memory_index: str = ""
+    subagent_roster: str = ""
     workspace_dir: str = ""
 
     @classmethod
@@ -136,6 +137,17 @@ When calling a tool, output JSON only:
             platform=self._get_platform(),
             shell=get_shell_label(),
         ))
+
+        if self.config.subagent_roster:
+            parts.append(
+                "## Available Sub-Agents\n\n"
+                "You can delegate a self-contained task to any of these via "
+                "`delegate_to_agent(target=<key>, task=...)`. Each runs in the "
+                "background and reports its result back to you as a later message — "
+                "do not wait or poll. Pick the one whose role fits; do trivial work "
+                "yourself.\n\n"
+                f"{self.config.subagent_roster}"
+            )
 
         if self.config.soul_content:
             parts.append(f"## Soul\n\n{self.config.soul_content}")

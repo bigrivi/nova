@@ -111,8 +111,9 @@ class ShellToolBehavior(DefaultToolBehavior):
     3. Trigger pre-execution approval for dangerous commands.
     """
 
-    def __init__(self, approval_manager: Any) -> None:
+    def __init__(self, approval_manager: Any, is_sub_agent: bool = False) -> None:
         self._approval = approval_manager
+        self._is_sub_agent = is_sub_agent
 
     async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
         cmd = args.get("command", "")
@@ -127,6 +128,17 @@ class ShellToolBehavior(DefaultToolBehavior):
         # --- dangerous check → pre-approval ----------------------------
         dangerous, ddesc = is_dangerous(cmd)
         if dangerous:
+            # A background sub-agent has no client to surface an approval
+            # prompt to, so fail closed rather than hang or auto-run.
+            if self._is_sub_agent:
+                log.info("Dangerous command denied for sub-agent: %s", cmd)
+                return PreExecutionCheck(
+                    allowed=False,
+                    reject_reason=(
+                        "Dangerous command denied: a sub-agent runs in the background "
+                        "with no approval channel, so it cannot run commands that need approval."
+                    ),
+                )
             req_id = self._approval.pre_request(
                 cmd, desc, timeout=0, session_id=ctx.session_id)
             if req_id:

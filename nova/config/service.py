@@ -33,6 +33,8 @@ class AgentCreateRequest:
     tools: list[str] | None = None
     workspace_dir: str | None = None
     parent_ids: list[str] | None = None
+    posture: str = "full"
+    mode: str = "primary"
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,7 @@ class ConfigService:
     async def save_agent(self, request: AgentCreateRequest) -> dict:
         data_source = await self._get_data_source()
         now = int(time.time() * 1000)
+        mode = "subagent" if (request.mode == "subagent" or request.parent_ids) else "primary"
         agent = {
             "key": request.key,
             "name": request.name,
@@ -86,6 +89,8 @@ class ConfigService:
             "provider": request.provider,
             "tools": json.dumps(request.tools) if request.tools else None,
             "workspace_dir": request.workspace_dir,
+            "mode": mode,
+            "posture": request.posture,
             "created_at": now,
             "updated_at": now,
         }
@@ -100,6 +105,11 @@ class ConfigService:
         """Get all parent keys of an agent."""
         data_source = await self._get_data_source()
         return await data_source.get_agent_parents(child_key)
+
+    async def set_agent_parents(self, child_key: str, parent_keys: list[str]) -> None:
+        """Replace the parent set of an agent (many-to-many)."""
+        data_source = await self._get_data_source()
+        await data_source.set_agent_parents(child_key, parent_keys)
 
     async def update_agent_model(self, key: str, model: str, provider: str) -> dict | None:
         data_source = await self._get_data_source()

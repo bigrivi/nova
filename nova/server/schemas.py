@@ -25,6 +25,11 @@ class ChatRequest(BaseModel):
     project_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     attachments: list[AttachmentData] = Field(default_factory=list)
+    # SSE resume cursor: replay buffered frames after this sequence number, then
+    # live-tail while the stream is in flight. None = start a new turn.
+    # Unknown cursors replay the full in-flight buffer with resync
+    # (signalled via the x-nova-stream-resync header), never a skip.
+    resume_from_seq: int | None = None
 
 
 class ChatResponse(BaseModel):
@@ -146,6 +151,7 @@ class MessageRecord(BaseModel):
     reasoning_elapsed_ms: int | None = None
     group_id: str | None = None
     error: str | None = None
+    variant: str | None = None
 
 
 class MessageListResponse(BaseModel):

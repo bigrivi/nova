@@ -87,6 +87,8 @@ class Agent:
         agent_dir: Optional[Path] = None,
         parent_agent: Optional["Agent"] = None,
         is_sub_agent: bool = False,
+        depth: int = 0,
+        allowed_tools: Optional[frozenset[str]] = None,
         prompt_config: Optional[PromptConfig] = None,
         data_source: Optional[DataSourceProtocol] = None,
     ):
@@ -99,6 +101,8 @@ class Agent:
         self._events = EventBus()
         self.parent_agent = parent_agent
         self.is_sub_agent = is_sub_agent
+        self.depth = depth
+        self.allowed_tools = allowed_tools
         self._hierarchy = AgentHierarchy(
             agent_key=agent_key,
             data_source=data_source,
@@ -243,6 +247,7 @@ class Agent:
 
         if self._base_system_prompt is None:
             await self._refresh_memory_index()
+            await self._refresh_subagent_roster()
             self._base_system_prompt = self._build_system_prompt(session)
 
         if loaded_messages is None:
@@ -422,6 +427,7 @@ class Agent:
         attachments: list[dict] | None = None,
         workspace_dir: str | None = None,
         project_id: str | None = None,
+        message_variant: str | None = None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         self._abort_event.clear()
 
@@ -451,6 +457,7 @@ class Agent:
             role="user",
             content=message_text,
             images=image_data or None,
+            variant=message_variant,
         )
 
         tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else None
@@ -536,6 +543,7 @@ class Agent:
             skill_service=self._skill_service,
             approval=self._approval,
             is_sub_agent=self.is_sub_agent,
+            allowed_tools=self.allowed_tools,
         )
         await builder.build()
         self._skill_tools = builder.skill_tools
@@ -558,6 +566,32 @@ class Agent:
             )
         except Exception as error:
             log.warning("Failed to refresh memory index: %s", error)
+
+    async def _refresh_subagent_roster(self) -> None:
+        """List this agent's delegatable sub-agents for the system prompt.
+
+        Only a primary agent can delegate, so sub-agents get an empty roster.
+        The roster is the current agent's children (agent_parents M2M), each
+        rendered with its key, access level, and description so the model knows
+        exactly which `target` values `delegate_to_agent` accepts.
+        """
+        if self.is_sub_agent:
+            self._prompt_builder.config.subagent_roster = ""
+            return
+        try:
+            children = await self._hierarchy.child_agent_records()
+        except Exception as error:
+            log.warning("Failed to refresh sub-agent roster: %s", error)
+            children = []
+        lines = []
+        for child in children:
+            key = child.get("key")
+            if not key:
+                continue
+            access = "read-only" if child.get("posture") == "read_only" else "full access"
+            description = (child.get("description") or "").strip() or "(no description)"
+            lines.append(f"- `{key}` ({access}): {description}")
+        self._prompt_builder.config.subagent_roster = "\n".join(lines)
 
     async def _background_memory_review(self) -> None:
         await MemoryReviewer(

@@ -102,12 +102,20 @@ export function toThreadMessages(
             if (message.content) {
                 parts.push({ type: "text" as const, text: message.content });
             }
+            // Backend flags sub-agent completion turns with variant="subagent".
+            // Surface it on metadata.custom so the thread renderer can show a
+            // compact chip instead of a user bubble (content-prefix fallback
+            // covers live-streamed messages, which carry no variant).
+            const metadata = message.variant
+                ? { custom: { variant: message.variant } }
+                : undefined;
             if (parts.length === 1 && parts[0].type === "text") {
                 threadMessages.push({
                     id: message.id,
                     role: "user",
                     content: parts[0].text,
                     createdAt: new Date(message.time_created),
+                    ...(metadata ? { metadata } : {}),
                 });
             } else {
                 threadMessages.push({
@@ -115,6 +123,7 @@ export function toThreadMessages(
                     role: "user",
                     content: parts,
                     createdAt: new Date(message.time_created),
+                    ...(metadata ? { metadata } : {}),
                 });
             }
             continue;

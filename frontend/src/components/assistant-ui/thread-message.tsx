@@ -15,9 +15,18 @@ import {
     readPartElapsedMs,
 } from "@/lib/timeline-grouping";
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
-import { BotIcon, FileText } from "lucide-react";
-import { useMemo, type FC } from "react";
+import { BotIcon, ChevronDownIcon, FileText } from "lucide-react";
+import { useMemo, useState, type FC } from "react";
+import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/shallow";
+
+import { cn } from "@/lib/utils";
+
+import {
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 import { AssistantActionBar, BranchPicker } from "./thread-assistant-actions";
 import { MessageError } from "./thread-message-error";
@@ -32,6 +41,131 @@ function groupIndices(part: { type: string }): readonly number[] {
 
 const ATTACHMENT_RE =
     /^<attachment name=(.*?)>\n([\s\S]*?)\n<\/attachment>\n\n([\s\S]*)$/;
+
+const SUBAGENT_RE =
+    /^\[subagent:(.+?)\s+status=(done|error)\]\s*\n?([\s\S]*)$/;
+
+type SubagentStatus = "done" | "error";
+
+type ParsedSubagent = {
+    target: string;
+    status: SubagentStatus;
+    body: string;
+};
+
+function parseSubagentMessage(text: string): ParsedSubagent | null {
+    const match = text.match(SUBAGENT_RE);
+    if (!match) return null;
+    const target = match[1].trim();
+    if (!target) return null;
+    return {
+        target,
+        status: match[2] === "error" ? "error" : "done",
+        body: match[3].replace(/^\n+/, ""),
+    };
+}
+
+function readMessageVariant(message: unknown): string | null {
+    if (!message || typeof message !== "object") return null;
+    const custom = (message as { metadata?: { custom?: unknown } }).metadata
+        ?.custom;
+    if (!custom || typeof custom !== "object") return null;
+    const variant = (custom as { variant?: unknown }).variant;
+    return typeof variant === "string" ? variant : null;
+}
+
+function readUserText(message: unknown): string {
+    if (!message || typeof message !== "object") return "";
+    if ((message as { role?: unknown }).role !== "user") return "";
+    const content = (message as { content?: unknown }).content;
+    if (typeof content === "string") return content;
+    const parts = (message as { parts?: unknown }).parts;
+    if (!Array.isArray(parts)) return "";
+    return parts
+        .filter(
+            (part): part is { type: string; text?: unknown } =>
+                !!part &&
+                typeof part === "object" &&
+                (part as { type?: unknown }).type === "text",
+        )
+        .map((part) => String(part.text ?? ""))
+        .join("\n");
+}
+
+const SubagentChip: FC<ParsedSubagent> = ({ target, status, body }) => {
+    const { t } = useTranslation();
+    const [open, setOpen] = useState(false);
+    const isError = status === "error";
+    return (
+        <Collapsible
+            open={open}
+            onOpenChange={setOpen}
+            className={cn(
+                "max-w-full overflow-hidden rounded-xl border",
+                isError
+                    ? "border-rose-200/80 bg-rose-50/40"
+                    : "border-[#E4E3DF] bg-muted/40",
+            )}
+        >
+            <CollapsibleTrigger asChild>
+                <button
+                    type="button"
+                    className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-inset"
+                >
+                    <span aria-hidden="true">{"\u21A9"}</span>
+                    {target ? (
+                        <span className="truncate font-medium">
+                            {t("thread.subagentFrom", { target })}
+                        </span>
+                    ) : null}
+                    <span
+                        className={cn(
+                            "shrink-0 rounded-full px-2 py-0.5 font-medium",
+                            isError
+                                ? "bg-rose-100 text-rose-800"
+                                : "bg-emerald-100 text-emerald-800",
+                        )}
+                    >
+                        {isError
+                            ? t("thread.subagentError")
+                            : t("thread.subagentDone")}
+                    </span>
+                    <span className="ml-auto flex shrink-0 items-center gap-1">
+                        <span className="hidden sm:inline">
+                            {open
+                                ? t("thread.subagentHideDetails")
+                                : t("thread.subagentShowDetails")}
+                        </span>
+                        <ChevronDownIcon
+                            className={cn(
+                                "size-3.5 transition-transform duration-200 motion-reduce:transition-none",
+                                open && "rotate-180",
+                            )}
+                            aria-hidden="true"
+                        />
+                    </span>
+                </button>
+            </CollapsibleTrigger>
+            {body ? (
+                <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none">
+                    <div className="border-t border-[#E4E3DF] px-3 py-2.5">
+                        <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
+                            {body}
+                        </div>
+                    </div>
+                </CollapsibleContent>
+            ) : null}
+        </Collapsible>
+    );
+};
+
+const AssistantText: FC<{ text: string }> = ({ text }) => {
+    const parsed = parseSubagentMessage(text);
+    if (!parsed) {
+        return <MarkdownText />;
+    }
+    return <SubagentChip {...parsed} />;
+};
 
 function parseAttachment(text: string): { name: string; text: string } | null {
     const match = text.match(ATTACHMENT_RE);
@@ -192,7 +326,21 @@ const AssistantMessage: FC = () => {
                             case "group-blank":
                                 return null;
                             case "text":
-                                return <MarkdownText />;
+                                return (
+                                    <AssistantText
+                                        text={
+                                            "text" in part
+                                                ? String(
+                                                      (
+                                                          part as {
+                                                              text?: unknown;
+                                                          }
+                                                      ).text ?? "",
+                                                  )
+                                                : ""
+                                        }
+                                    />
+                                );
                             case "reasoning":
                                 return (
                                     <Reasoning
@@ -233,7 +381,28 @@ const AssistantMessage: FC = () => {
 
 export const ThreadMessage: FC = () => {
     const role = useAuiState((s) => s.message.role);
+    const variant = useAuiState((s) => readMessageVariant(s.message));
+    const userText = useAuiState((s) => readUserText(s.message));
 
-    if (role === "user") return <UserMessage />;
+    if (role === "user") {
+        const parsed = parseSubagentMessage(userText);
+        if (variant === "subagent" || parsed) {
+            return (
+                <div
+                    data-role="subagent"
+                    className="fade-in slide-in-from-bottom-1 animate-in duration-150"
+                >
+                    <SubagentChip
+                        {...(parsed ?? {
+                            target: "",
+                            status: "done" as const,
+                            body: userText,
+                        })}
+                    />
+                </div>
+            );
+        }
+        return <UserMessage />;
+    }
     return <AssistantMessage />;
 };

@@ -48,6 +48,7 @@ export type NovaMessageRecord = {
     reasoning_elapsed_ms?: number | null;
     group_id?: string | null;
     error?: string | null;
+    variant?: string | null;
 };
 
 export type NovaModelRecord = {
@@ -94,6 +95,42 @@ export type NovaModelUpdateRequest = {
     tools?: boolean;
 };
 
+export type NovaAgentKind = "main" | "sub";
+
+export type NovaAgentPosture = "read_only" | "full";
+
+export type NovaAgentMode = "primary" | "subagent";
+
+export type NovaAgent = {
+    key: string;
+    name: string;
+    description: string;
+    model: string;
+    provider: string;
+    tools?: string | string[] | null;
+    posture?: NovaAgentPosture;
+    parents: string[];
+    workspace_dir?: string | null;
+    created_at: number;
+    updated_at: number;
+    kind: NovaAgentKind;
+    mode: NovaAgentMode;
+    editable_fields: string[];
+};
+
+export type NovaAgentCreateRequest = {
+    key: string;
+    name: string;
+    description?: string;
+    model?: string;
+    provider?: string;
+    tools?: string[];
+    workspace_dir?: string;
+    posture?: string;
+    mode?: NovaAgentMode;
+    parent_ids?: string[];
+};
+
 export type NovaThreadSummary = {
     id: string;
     title: string;
@@ -102,6 +139,7 @@ export type NovaThreadSummary = {
     pinned: boolean;
     updated_at: number;
     project_id: string | null;
+    agent_key: string;
 };
 
 export type NovaMemoryRecord = {
@@ -132,6 +170,10 @@ export type NovaAttachmentData = {
 
 export type NovaStreamEvent = {
     type: string;
+    /** SSE `id:` sequence assigned by the backend stream buffer. Absent when
+     * the backend did not frame the chunk (e.g. older servers). Used for
+     * refresh-resume (`resume_from_seq`) and replay dedup. */
+    sequence?: number;
     data?: NovaJsonObject;
     delta?: string;
     errorText?: string;

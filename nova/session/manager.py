@@ -163,6 +163,7 @@ class SessionManager(SessionProtocol):
         tokens_output: Optional[int] = None,
         provider_meta: Optional[dict] = None,
         model: Optional[str] = None,
+        variant: Optional[str] = None,
     ) -> Message:
         session = self.get_current_session()
         if not session:
@@ -185,6 +186,7 @@ class SessionManager(SessionProtocol):
                 tokens_output=tokens_output,
                 provider_meta=provider_meta,
                 model=model,
+                variant=variant,
             )
             session.updated_at = int(time.time() * 1000)
             session.turn_count += 1
