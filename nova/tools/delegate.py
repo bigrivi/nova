@@ -24,7 +24,10 @@ log = logging.getLogger(__name__)
         "`task`. This returns immediately with a job handle; you will be notified "
         "with the result as a later message. Do NOT wait or poll - continue with "
         "other work or end your response. Delegate a self-contained unit of work; "
-        "do it yourself for a single lookup or a trivial edit."
+        "do it yourself for a single lookup or a trivial edit. Typical triggers: "
+        "user asks to analyze or survey a codebase/project (use `explore`), "
+        "an existing diff or PR needs review (use `reviewer`), an objective "
+        "needs a plan first (use `planner`)."
     ),
     parameters={
         "type": "object",

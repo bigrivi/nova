@@ -416,10 +416,19 @@ class SqliteRepository(NovaRepository):
         agent_key = getattr(session, "agent_key", DEFAULT_AGENT_KEY)
         async with self._lock:
             await self._conn.execute(
-                """INSERT OR REPLACE INTO sessions
+                """INSERT INTO sessions
                 (id, agent_key, title, parent_id, summary_goal, summary_accomplished, summary_remaining,
                 created_at, updated_at, compacted_at, message_count, turn_count, metadata, workspace_dir, pinned, project_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                agent_key=excluded.agent_key, title=excluded.title,
+                parent_id=excluded.parent_id, summary_goal=excluded.summary_goal,
+                summary_accomplished=excluded.summary_accomplished,
+                summary_remaining=excluded.summary_remaining,
+                updated_at=excluded.updated_at, compacted_at=excluded.compacted_at,
+                message_count=excluded.message_count, turn_count=excluded.turn_count,
+                metadata=excluded.metadata, workspace_dir=excluded.workspace_dir,
+                pinned=excluded.pinned, project_id=excluded.project_id""",
                 (
                     session.id,
                     agent_key,
@@ -817,9 +826,15 @@ class SqliteRepository(NovaRepository):
         await self._ensure_connected()
         async with self._lock:
             await self._conn.execute(
-                """INSERT OR REPLACE INTO agents
+                """INSERT INTO agents
                 (key, name, description, model, provider, tools, workspace_dir, mode, posture, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                name=excluded.name, description=excluded.description,
+                model=excluded.model, provider=excluded.provider,
+                tools=excluded.tools, workspace_dir=excluded.workspace_dir,
+                mode=excluded.mode, posture=excluded.posture,
+                updated_at=excluded.updated_at""",
                 (
                     agent["key"],
                     agent["name"],

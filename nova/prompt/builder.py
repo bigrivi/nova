@@ -144,8 +144,12 @@ When calling a tool, output JSON only:
                 "You can delegate a self-contained task to any of these via "
                 "`delegate_to_agent(target=<key>, task=...)`. Each runs in the "
                 "background and reports its result back to you as a later message — "
-                "do not wait or poll. Pick the one whose role fits; do trivial work "
-                "yourself.\n\n"
+                "do not wait or poll. Prefer delegating over doing it yourself when: "
+                "the user asks to analyze, survey, or understand a codebase or "
+                "project (delegate to `explore` instead of reading files yourself); "
+                "an existing change needs grading (delegate to `reviewer`); an "
+                "objective needs a plan before acting (delegate to `planner`). "
+                "Do trivial single-file work yourself.\n\n"
                 f"{self.config.subagent_roster}"
             )
 
