@@ -40,7 +40,7 @@ async def session_events(
             yield _frame({"type": "snapshot", "active": bus.snapshot()})
             while True:
                 try:
-                    session_id, state = await asyncio.wait_for(
+                    item = await asyncio.wait_for(
                         queue.get(), timeout=_PING_INTERVAL_SECONDS
                     )
                 except asyncio.TimeoutError:
@@ -48,6 +48,9 @@ async def session_events(
                         break
                     yield b": ping\n\n"
                     continue
+                if item is None:
+                    break
+                session_id, state = item
                 yield _frame(
                     {"type": "state", "session_id": session_id, "state": state}
                 )

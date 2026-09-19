@@ -22,7 +22,7 @@ CONNECTION_QUEUE_MAXSIZE = 256
 class SessionEventBus:
     def __init__(self) -> None:
         self._active: set[str] = set()
-        self._subscribers: list[asyncio.Queue[tuple[str, str]]] = []
+        self._subscribers: list[asyncio.Queue] = []
 
     def publish(self, session_id: str, state: str) -> None:
         """Record an active/idle transition and broadcast it to subscribers."""
@@ -46,12 +46,12 @@ class SessionEventBus:
 
     def subscribe(
         self, maxsize: int = CONNECTION_QUEUE_MAXSIZE
-    ) -> asyncio.Queue[tuple[str, str]]:
-        queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue(maxsize=maxsize)
+    ) -> asyncio.Queue:
+        queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
         self._subscribers.append(queue)
         return queue
 
-    def unsubscribe(self, queue: asyncio.Queue[tuple[str, str]]) -> None:
+    def unsubscribe(self, queue: asyncio.Queue) -> None:
         try:
             self._subscribers.remove(queue)
         except ValueError:
@@ -59,3 +59,17 @@ class SessionEventBus:
 
     def subscriber_count(self) -> int:
         return len(self._subscribers)
+
+    def close_all(self) -> None:
+        """Wake every subscriber with a close sentinel so SSE handlers exit.
+
+        Called on server shutdown: without this, permanently-open event streams
+        hold their HTTP connections and the server cannot finish graceful
+        shutdown (Ctrl+C appears to do nothing).
+        """
+        for queue in self._subscribers:
+            try:
+                queue.put_nowait(None)
+            except asyncio.QueueFull:
+                continue
+        self._subscribers.clear()

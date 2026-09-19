@@ -96,3 +96,23 @@ async def test_bus_reflects_registry_transitions_end_to_end() -> None:
         events.append(queue.get_nowait())
     assert ("s1", "active") in events
     assert ("s1", "idle") in events
+
+
+def test_close_all_wakes_subscribers_with_sentinel() -> None:
+    bus = SessionEventBus()
+    q1 = bus.subscribe()
+    q2 = bus.subscribe()
+    bus.publish("s1", "active")
+
+    bus.close_all()
+
+    assert q1.get_nowait() == ("s1", "active")
+    assert q1.get_nowait() is None
+    assert q2.get_nowait() == ("s1", "active")
+    assert q2.get_nowait() is None
+    assert bus.subscriber_count() == 0
+
+    # Bus stays usable after close (fresh subscribe for a restarted server).
+    q3 = bus.subscribe()
+    bus.publish("s2", "active")
+    assert q3.get_nowait() == ("s2", "active")

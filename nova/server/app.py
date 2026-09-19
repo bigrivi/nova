@@ -72,6 +72,9 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         try:
             yield
         finally:
+            bus = getattr(app.state, "session_event_bus", None)
+            if bus is not None:
+                bus.close_all()
             await registry.stop_reaper()
 
     app = FastAPI(title="Nova API", lifespan=lifespan)
