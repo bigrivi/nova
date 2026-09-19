@@ -31,6 +31,10 @@ def get_stream_buffer(request: Request) -> Any:
     return request.app.state.stream_buffer
 
 
+def get_session_event_bus(request: Request) -> Any:
+    return request.app.state.session_event_bus
+
+
 def refresh_settings(request: Request) -> Settings:
     """Reload settings and apply them without discarding streaming runtime.
 

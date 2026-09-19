@@ -71,6 +71,19 @@ class RequestRegistry:
         # auto-wake drain awaits this instead of polling slot_state, and the
         # set-on-free / clear-on-active ordering closes the lost-wakeup race.
         self._free_events: dict[str, asyncio.Event] = {}
+        self._state_listener: Any = None
+
+    def set_state_listener(self, listener: Any) -> None:
+        """Register a callback fired on active/idle transitions (push, not poll)."""
+        self._state_listener = listener
+
+    def _notify_state(self, session_id: str, state: str) -> None:
+        listener = self._state_listener
+        if listener is not None:
+            try:
+                listener(session_id, state)
+            except Exception:
+                log.exception("session state listener failed for %s", session_id)
 
     def _free_event_locked(self, session_id: str) -> asyncio.Event:
         event = self._free_events.get(session_id)
@@ -81,9 +94,11 @@ class RequestRegistry:
 
     def _mark_active_locked(self, session_id: str) -> None:
         self._free_event_locked(session_id).clear()
+        self._notify_state(session_id, "active")
 
     def _mark_free_locked(self, session_id: str) -> None:
         self._free_event_locked(session_id).set()
+        self._notify_state(session_id, "idle")
 
     def _is_free_locked(self, session_id: str) -> bool:
         slot = self._slots.get(session_id)
@@ -93,6 +108,7 @@ class RequestRegistry:
         event = self._free_events.pop(session_id, None)
         if event is not None:
             event.set()
+        self._notify_state(session_id, "idle")
 
     async def wait_free(self, session_id: str) -> None:
         """Resolve once *session_id* has no ACTIVE/DETACHED slot.

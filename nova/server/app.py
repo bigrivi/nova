@@ -14,11 +14,13 @@ from fastapi import FastAPI
 from nova.server.auth import BasicAuthMiddleware
 from nova.server.chat_service import ChatService
 from nova.server.request_registry import RequestRegistry
+from nova.server.session_event_bus import SessionEventBus
 from nova.server.stream_buffer import StreamBuffer
 from nova.server.routers import (
     agents,
     chat,
     config,
+    events,
     fs,
     health,
     memory,
@@ -81,9 +83,12 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     # so a settings reload never orphans in-flight parallel sessions.
     request_registry = RequestRegistry()
     stream_buffer = StreamBuffer()
+    session_event_bus = SessionEventBus()
     request_registry.attach_buffer(stream_buffer)
+    request_registry.set_state_listener(session_event_bus.publish)
     app.state.request_registry = request_registry
     app.state.stream_buffer = stream_buffer
+    app.state.session_event_bus = session_event_bus
     app.state.chat_service = ChatService(
         settings=settings,
         request_registry=request_registry,
@@ -99,6 +104,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         config,
         chat,
         agents,
+        events,
         memory,
     ):
         app.include_router(module.router)

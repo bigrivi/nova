@@ -165,6 +165,10 @@ function buildUrl(path: string) {
     return `${API_BASE}${path}`;
 }
 
+export function sessionEventsUrl(): string {
+    return buildUrl("/api/events");
+}
+
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const authHeader = getAuthHeader();
     let headers: HeadersInit | undefined = init?.headers;

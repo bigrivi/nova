@@ -38,7 +38,6 @@ import {
     createProject,
     deleteProject,
     deleteSession,
-    getActiveStreams,
     getAgent,
     getLastSequence,
     getStreamStatus,
@@ -53,6 +52,7 @@ import {
     setLastSequence,
     setSessionPinned,
     setSessionProject,
+    sessionEventsUrl,
     streamChat,
     updateAgent,
     updateProject,
@@ -449,57 +449,78 @@ export function NovaAppShell() {
     useEffect(() => subscribeToUnauthorized(() => setAuthRequired(true)), []);
 
     useEffect(() => {
-        let cancelled = false;
-        let timer: ReturnType<typeof setInterval> | undefined;
+        // Push, not poll: one SSE connection carries a snapshot of active
+        // sessions on connect plus live active/idle deltas as the registry
+        // reports them, so a sub-agent auto-wake lights its parent thread
+        // instantly instead of up to one poll interval late. EventSource
+        // auto-reconnects and re-sends the snapshot, keeping the map correct.
+        const source = new EventSource(sessionEventsUrl());
 
-        async function pollActiveStreams() {
-            if (cancelled || document.visibilityState !== "visible") {
-                return;
-            }
-            try {
-                const streams = await getActiveStreams();
-                if (cancelled) {
-                    return;
-                }
-                // Reconciled lighting: the server turns indicators on (page
-                // reloaded while a task runs elsewhere), and a thread that
-                // disappears between two snapshots with no local stream is
-                // turned off (server finished while we only watched). Local
-                // streams still turn their own light off on end. A
-                // just-submitted session never appeared in a snapshot, so it
-                // can never be flickered off while its slot registers.
-                const seenNow = new Set(
-                    streams.map((stream) => stream.session_id),
-                );
-                const seenBefore = prevActiveSnapshotRef.current;
-                prevActiveSnapshotRef.current = seenNow;
-                setRunningByThread((previous) =>
-                    reconcileRunningMap(
-                        previous,
-                        seenNow,
-                        seenBefore,
-                        (threadId) => abortControllersRef.current.has(threadId),
-                    ),
-                );
-            } catch {
-                // Poll failure is non-fatal; retry on the next tick.
-            }
+        function applySnapshot(active: string[]) {
+            const seenNow = new Set(active);
+            const seenBefore = prevActiveSnapshotRef.current;
+            prevActiveSnapshotRef.current = seenNow;
+            setRunningByThread((previous) =>
+                reconcileRunningMap(
+                    previous,
+                    seenNow,
+                    seenBefore,
+                    (threadId) => abortControllersRef.current.has(threadId),
+                ),
+            );
         }
 
-        void pollActiveStreams();
-        timer = setInterval(pollActiveStreams, 5000);
-        const onFocus = () => {
-            void pollActiveStreams();
-        };
-        window.addEventListener("focus", onFocus);
-        return () => {
-            cancelled = true;
-            if (timer !== undefined) {
-                clearInterval(timer);
+        function applyDelta(sessionId: string, state: string) {
+            const running = state === "active";
+            const snapshot = new Set(prevActiveSnapshotRef.current);
+            if (running) {
+                snapshot.add(sessionId);
+            } else {
+                snapshot.delete(sessionId);
             }
-            window.removeEventListener("focus", onFocus);
+            prevActiveSnapshotRef.current = snapshot;
+            if (!running && abortControllersRef.current.has(sessionId)) {
+                return;
+            }
+            setRunningByThread((previous) =>
+                nextRunningMap(previous, sessionId, running),
+            );
+        }
+
+        source.onmessage = (event) => {
+            try {
+                const payload = JSON.parse(event.data);
+                if (payload.type === "snapshot") {
+                    applySnapshot(payload.active ?? []);
+                } else if (payload.type === "state") {
+                    applyDelta(payload.session_id, payload.state);
+                }
+            } catch {
+                // Malformed frame is non-fatal; the next event corrects state.
+            }
+        };
+
+        return () => {
+            source.close();
         };
     }, []);
+
+    // Auto-tail the open thread when it goes active server-side without a local
+    // stream. A sub-agent completion wakes the parent with a fresh turn AFTER
+    // the original SSE closed, so the /active poll flips this thread's running
+    // light on; we open a resume stream to play those buffered frames live
+    // instead of waiting for the user to re-open the thread.
+    useEffect(() => {
+        const threadId = currentThreadId;
+        if (
+            threadId === DRAFT_THREAD_ID ||
+            !runningByThread[threadId] ||
+            abortControllersRef.current.has(threadId)
+        ) {
+            return;
+        }
+        void resumeThreadStream(threadId, getLastSequence(threadId));
+    }, [currentThreadId, runningByThread]);
 
     async function loadThread(threadId: string) {
         try {
@@ -943,10 +964,10 @@ export function NovaAppShell() {
     }
 
     async function resumeThreadStream(threadId: string, fromSequence: number | null) {
-        if (
-            runningByThread[threadId] ||
-            abortControllersRef.current.has(threadId)
-        ) {
+        // Only a local stream (this client already tailing) should block a
+        // resume. A thread marked running purely from the /active poll is a
+        // server-initiated turn we WANT to tail, so it must not short-circuit.
+        if (abortControllersRef.current.has(threadId)) {
             return;
         }
         const assistantMessageId = randomId();
