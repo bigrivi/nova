@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 
 import { MemoryManagerDialog } from "../components/assistant-ui/memory-manager-dialog";
+import { AgentsManagerDialog } from "../components/assistant-ui/agents-manager-dialog";
 import { ModelsManagerDialog } from "../components/assistant-ui/models-manager-dialog";
 import { LoginDialog } from "../components/auth/login-dialog";
 import { Thread } from "../components/assistant-ui/thread";
@@ -42,6 +43,7 @@ import {
     getLastSequence,
     getStreamStatus,
     interruptChat,
+    listAgents,
     listMessages,
     listModels,
     listProjects,
@@ -62,6 +64,7 @@ import { useAskUserStore, type ActiveAskUser } from "../stores/ask-user-store";
 import { useReasoningStore } from "../stores/reasoning-store";
 import { useTodoStore } from "../stores/todo-store";
 import type {
+    NovaAgent,
     NovaAttachmentData,
     NovaModelRecord,
     NovaProject,
@@ -73,6 +76,30 @@ import type {
 
 const DRAFT_THREAD_ID = "__draft__";
 const NARROW_VIEWPORT_QUERY = "(max-width: 768px)";
+const SELECTED_AGENT_KEY_STORAGE = "nova:selectedAgentKey";
+const DEFAULT_AGENT_KEY = "main";
+
+function readStoredAgentKey(): string {
+    try {
+        if (typeof localStorage === "undefined") {
+            return DEFAULT_AGENT_KEY;
+        }
+        return localStorage.getItem(SELECTED_AGENT_KEY_STORAGE) || DEFAULT_AGENT_KEY;
+    } catch {
+        return DEFAULT_AGENT_KEY;
+    }
+}
+
+function writeStoredAgentKey(agentKey: string): void {
+    try {
+        if (typeof localStorage === "undefined") {
+            return;
+        }
+        localStorage.setItem(SELECTED_AGENT_KEY_STORAGE, agentKey);
+    } catch {
+        // Storage may be unavailable; selection still works for the session.
+    }
+}
 
 function createTextMessage(
     role: "user" | "assistant",
@@ -141,6 +168,7 @@ function toThreadSummary(session: NovaSessionSummary): NovaThreadSummary {
         pinned: session.pinned ?? false,
         updated_at: session.updated_at,
         project_id: session.project_id ?? null,
+        agent_key: session.agent_key || DEFAULT_AGENT_KEY,
     };
 }
 
@@ -161,6 +189,7 @@ type StreamHandlerEnv = {
     originThreadId: string;
     prompt: string;
     draftProjectId: string | null;
+    agentKey: string | null;
     assistantMessageId: string;
     state: { activeThreadId: string };
     flags: StreamFlags;
@@ -203,6 +232,10 @@ export function NovaAppShell() {
     const [models, setModels] = useState<NovaModelRecord[]>([]);
     const [providers, setProviders] = useState<NovaProviderRecord[]>([]);
     const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+    const [agents, setAgents] = useState<NovaAgent[]>([]);
+    const [selectedAgentKey, setSelectedAgentKey] = useState<string>(
+        () => readStoredAgentKey(),
+    );
     const [runningByThread, setRunningByThread] = useState<
         Record<string, boolean>
     >({});
@@ -215,12 +248,43 @@ export function NovaAppShell() {
     );
     const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
     const [isModelsDialogOpen, setIsModelsDialogOpen] = useState(false);
+    const [isAgentsDialogOpen, setIsAgentsDialogOpen] = useState(false);
     const [authRequired, setAuthRequired] = useState(false);
     const [composerText, setComposerText] = useState("");
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
     const sessionIdRef = useRef(DRAFT_THREAD_ID);
     const currentThreadIdRef = useRef(DRAFT_THREAD_ID);
+    const agentsRef = useRef<NovaAgent[]>([]);
+    const threadsRef = useRef<NovaThreadSummary[]>([]);
+
+    useEffect(() => {
+        agentsRef.current = agents;
+    }, [agents]);
+
+    useEffect(() => {
+        threadsRef.current = threads;
+    }, [threads]);
+
+    function selectAgent(agentKey: string) {
+        setSelectedAgentKey(agentKey);
+        writeStoredAgentKey(agentKey);
+    }
+
+    function syncAgentForThread(threadId: string) {
+        const thread = threadsRef.current.find(
+            (item) => item.id === threadId,
+        );
+        if (!thread?.agent_key) {
+            return;
+        }
+        const known = agentsRef.current.some(
+            (agent) => agent.key === thread.agent_key && agent.kind === "main",
+        );
+        if (known) {
+            selectAgent(thread.agent_key);
+        }
+    }
     const abortControllersRef = useRef(new Map<string, AbortController>());
     const prevActiveSnapshotRef = useRef(new Set<string>());
     const seenSequencesRef = useRef(new Map<string, Set<number>>());
@@ -293,11 +357,13 @@ export function NovaAppShell() {
                     providersResult,
                     sessionsResult,
                     projectsResult,
+                    agentsResult,
                 ] = await Promise.allSettled([
                     listModels(),
                     listProviders(),
                     listSessions(),
                     listProjects(),
+                    listAgents(),
                 ]);
 
                 if (cancelled) {
@@ -318,11 +384,16 @@ export function NovaAppShell() {
                     projectsResult.status === "fulfilled"
                         ? projectsResult.value
                         : [];
+                const savedAgents =
+                    agentsResult.status === "fulfilled"
+                        ? agentsResult.value
+                        : [];
                 for (const result of [
                     modelsResult,
                     providersResult,
                     sessionsResult,
                     projectsResult,
+                    agentsResult,
                 ]) {
                     if (result.status === "rejected") {
                         console.error("Bootstrap request failed:", result.reason);
@@ -339,11 +410,22 @@ export function NovaAppShell() {
                     }
                 } catch {}
 
+                const storedAgentKey = readStoredAgentKey();
+                const storedAgentKnown = savedAgents.some(
+                    (agent) =>
+                        agent.key === storedAgentKey &&
+                        agent.kind === "main",
+                );
+
                 startTransition(() => {
                     setModels(availableModels);
                     setProviders(availableProviders);
                     setThreads(savedSessions.map(toThreadSummary));
                     setProjects(savedProjects);
+                    setAgents(savedAgents);
+                    if (!storedAgentKnown) {
+                        setSelectedAgentKey(DEFAULT_AGENT_KEY);
+                    }
                 });
             } catch (error) {
                 if (!cancelled) {
@@ -612,6 +694,7 @@ export function NovaAppShell() {
             if (currentThreadId === threadId) {
                 if (nextThreadId) {
                     setCurrentThreadId(nextThreadId);
+                    syncAgentForThread(nextThreadId);
                     void loadThread(nextThreadId);
                 } else {
                     switchToDraftThread();
@@ -698,6 +781,7 @@ export function NovaAppShell() {
                             project_id: env.draftProjectId,
                             pinned: false,
                             updated_at: Date.now(),
+                            agent_key: env.agentKey ?? DEFAULT_AGENT_KEY,
                         },
                     );
                 });
@@ -768,6 +852,7 @@ export function NovaAppShell() {
         projectId: string | null;
         provider: string | null;
         model: string | null;
+        agentKey: string | null;
         attachments?: NovaAttachmentData[];
         resumeFromSequence: number | null;
     }) {
@@ -775,6 +860,7 @@ export function NovaAppShell() {
             originThreadId: args.originThreadId,
             prompt: args.prompt,
             draftProjectId: args.projectId,
+            agentKey: args.agentKey,
             assistantMessageId: args.assistantMessageId,
             state: { activeThreadId: args.originThreadId },
             flags: { requiresInput: false, pendingAskUser: null },
@@ -791,6 +877,7 @@ export function NovaAppShell() {
                 sessionId: args.sessionId,
                 provider: args.provider,
                 model: args.model,
+                agentKey: args.agentKey,
                 projectId: args.projectId,
                 attachments: args.attachments,
                 signal: controller.signal,
@@ -876,6 +963,7 @@ export function NovaAppShell() {
             projectId: null,
             provider: null,
             model: null,
+            agentKey: null,
             resumeFromSequence: fromSequence ?? 0,
         });
     }
@@ -931,6 +1019,7 @@ export function NovaAppShell() {
             projectId: submitProjectId,
             provider: selectedModel?.provider || null,
             model: selectedModel?.model || null,
+            agentKey: selectedAgentKey,
             attachments,
             resumeFromSequence: null,
         });
@@ -992,6 +1081,29 @@ export function NovaAppShell() {
         });
     }
 
+    function handleAgentsChanged(nextAgents: NovaAgent[]) {
+        startTransition(() => {
+            setAgents(nextAgents);
+            const selectedKnown = nextAgents.some(
+                (agent) =>
+                    agent.key === selectedAgentKey && agent.kind === "main",
+            );
+            if (!selectedKnown) {
+                setSelectedAgentKey(DEFAULT_AGENT_KEY);
+                writeStoredAgentKey(DEFAULT_AGENT_KEY);
+            }
+        });
+    }
+
+    function selectThread(threadId: string) {
+        if (threadId === currentThreadId) {
+            return;
+        }
+        setCurrentThreadId(threadId);
+        syncAgentForThread(threadId);
+        void loadThread(threadId);
+    }
+
     function handleConfigStatus(message: string | null) {
         console.debug(message);
     }
@@ -1032,11 +1144,7 @@ export function NovaAppShell() {
                 archivedThreads: [],
                 onSwitchToNewThread: switchToDraftThread,
                 onSwitchToThread: (threadId) => {
-                    if (threadId === currentThreadId) {
-                        return;
-                    }
-                    setCurrentThreadId(threadId);
-                    void loadThread(threadId);
+                    selectThread(threadId);
                 },
                 onRename: (threadId, newTitle) =>
                     handleRenameThread(threadId, newTitle),
@@ -1080,9 +1188,7 @@ export function NovaAppShell() {
                             onRenameProject={handleRenameProject}
                             onDeleteProject={handleDeleteProject}
                             onSelectThread={(threadId) => {
-                                if (threadId === currentThreadId) return;
-                                setCurrentThreadId(threadId);
-                                void loadThread(threadId);
+                                selectThread(threadId);
                                 collapseSidebarOnNarrowViewport();
                             }}
                             onRenameThread={handleRenameThread}
@@ -1091,6 +1197,7 @@ export function NovaAppShell() {
                             onDeleteThread={handleDeleteThread}
                             onOpenMemory={() => setIsMemoryDialogOpen(true)}
                             onOpenModels={() => setIsModelsDialogOpen(true)}
+                            onOpenAgents={() => setIsAgentsDialogOpen(true)}
                                 />
                             </div>
                         </>
@@ -1146,6 +1253,11 @@ export function NovaAppShell() {
                                         }
                                     },
                                 }}
+                                agentSelection={{
+                                    agents,
+                                    selectedAgentKey,
+                                    onSelect: selectAgent,
+                                }}
                             />
                         </div>
                     </main>
@@ -1153,6 +1265,13 @@ export function NovaAppShell() {
                 <MemoryManagerDialog
                     open={isMemoryDialogOpen}
                     onOpenChange={setIsMemoryDialogOpen}
+                />
+                <AgentsManagerDialog
+                    open={isAgentsDialogOpen}
+                    onOpenChange={setIsAgentsDialogOpen}
+                    agents={agents}
+                    models={models}
+                    onAgentsChanged={handleAgentsChanged}
                 />
                 <ModelsManagerDialog
                     open={isModelsDialogOpen}

@@ -3,7 +3,7 @@ import { AskUserTool } from "@/components/assistant-ui/ask-user-tool";
 import { useZoom } from "@/lib/use-zoom";
 import { useApprovalStore } from "@/stores/approval-store";
 import { useAskUserStore } from "@/stores/ask-user-store";
-import type { NovaModelRecord } from "@/types/nova";
+import type { NovaAgent, NovaModelRecord } from "@/types/nova";
 import { AuiIf, ThreadPrimitive } from "@assistant-ui/react";
 import type { KeyboardEvent, RefObject } from "react";
 import { type FC } from "react";
@@ -29,9 +29,18 @@ type ThreadProps = {
         selectedModelId: string | null;
         onSelect: (modelId: string) => void;
     };
+    agentSelection: {
+        agents: NovaAgent[];
+        selectedAgentKey: string | null;
+        onSelect: (agentKey: string) => void;
+    };
 };
 
-export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
+export const Thread: FC<ThreadProps> = ({
+    composer,
+    modelSelection,
+    agentSelection,
+}) => {
     const zoomTargetRef = useZoom();
     const activeCall = useAskUserStore((s) => s.active);
     const pendingApproval = useApprovalStore((s) => s.pending);
@@ -43,6 +52,7 @@ export const Thread: FC<ThreadProps> = ({ composer, modelSelection }) => {
         <ThreadStickyComposer
             composer={composer}
             modelSelection={modelSelection}
+            agentSelection={agentSelection}
         />
     );
 

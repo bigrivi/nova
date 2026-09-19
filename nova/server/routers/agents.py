@@ -16,11 +16,27 @@ router = APIRouter()
 _AGENT_KEY_PATTERN = re.compile(r"^[a-z0-9-]{3,32}$")
 
 
+def _annotate(agent: dict, parents: list[str] | None = None) -> dict:
+    mode = agent.get("mode") or "primary"
+    is_sub = mode == "subagent"
+    kind = "sub" if is_sub else "main"
+    editable_fields = ["name", "description", "provider", "model", "tools", "mode"]
+    if is_sub:
+        editable_fields += ["posture", "parents"]
+    result = {**agent, "mode": mode, "kind": kind, "editable_fields": editable_fields}
+    result["parents"] = parents if parents is not None else []
+    return result
+
+
 @router.get("/api/agents")
 async def list_agents(settings: Settings = Depends(get_settings)):
     service = ConfigService(settings)
     agents = await service.list_agents()
-    return {"items": agents}
+    items = [
+        _annotate(agent, await service.get_agent_parents(agent["key"]))
+        for agent in agents
+    ]
+    return {"items": items}
 
 
 @router.get("/api/agents/{key}")
@@ -29,7 +45,7 @@ async def get_agent(key: str, settings: Settings = Depends(get_settings)):
     agent = await service.get_agent(key)
     if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent '{key}' not found")
-    return agent
+    return _annotate(agent, await service.get_agent_parents(key))
 
 
 @router.post("/api/agents")
@@ -49,7 +65,23 @@ async def create_agent(
     agent_dir = settings.home / "agents" / body.key
     agent_dir.mkdir(parents=True, exist_ok=True)
     agent = await service.save_agent(body)
-    return agent
+    return _annotate(agent, await service.get_agent_parents(body.key))
+
+
+@router.put("/api/agents/{key}/parents")
+async def set_agent_parents(
+    key: str, body: dict, settings: Settings = Depends(get_settings)
+):
+    service = ConfigService(settings)
+    if await service.get_agent(key) is None:
+        raise HTTPException(status_code=404, detail=f"Agent '{key}' not found")
+    parents = body.get("parents")
+    if not isinstance(parents, list) or any(not isinstance(p, str) for p in parents):
+        raise HTTPException(status_code=400, detail="parents must be a list of agent keys")
+    if key in parents:
+        raise HTTPException(status_code=400, detail="An agent cannot be its own parent")
+    await service.set_agent_parents(key, parents)
+    return {"status": "ok", "key": key, "parents": parents}
 
 
 @router.delete("/api/agents/{key}")

@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS agents (
     provider TEXT NOT NULL,
     tools TEXT,
     workspace_dir TEXT,
-    parent_id TEXT,
+    mode TEXT DEFAULT 'primary',
+    posture TEXT DEFAULT 'full',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -189,6 +190,7 @@ def _row_to_message(row_dict: dict[str, Any]) -> Message:
         model=row_dict.get("model"),
         tokens_input=row_dict.get("tokens_input"),
         tokens_output=row_dict.get("tokens_output"),
+        variant=row_dict.get("variant"),
     )
 
 
@@ -241,6 +243,7 @@ class SqliteRepository(NovaRepository):
                 "project_id": "TEXT",
             },
             "messages": {"provider_meta": "TEXT"},
+            "agents": {"posture": "TEXT DEFAULT 'full'", "mode": "TEXT DEFAULT 'primary'"},
         }
         for table, columns_map in required_columns.items():
             try:
@@ -263,6 +266,7 @@ class SqliteRepository(NovaRepository):
                     )
         await self._backfill_projects()
         await self._normalize_session_workspaces()
+        await self._backfill_agent_modes()
 
     async def _backfill_projects(self) -> None:
         """One-shot: create a project per distinct session workspace path.
@@ -351,6 +355,47 @@ class SqliteRepository(NovaRepository):
             )
         except Exception as exception:
             log.error("Could not normalize stored session workspaces: %s", exception)
+
+    async def _backfill_agent_modes(self) -> None:
+        """One-shot: move legacy agents.parent_id links into agent_parents and set mode.
+
+        Relationships now live in the agent_parents M2M table and primary/subagent
+        is declared by agents.mode. Databases created before this migrate their
+        single parent_id into an edge (guarded so it is skipped once the column is
+        manually dropped), then any agent with an incoming parent edge is marked
+        subagent.
+        """
+        marker = "agent_mode_backfill"
+        try:
+            cursor = await self._conn.execute(
+                "SELECT 1 FROM schema_migrations WHERE name = ?", (marker,)
+            )
+            if await cursor.fetchone():
+                return
+            cursor = await self._conn.execute("PRAGMA table_info(agents)")
+            columns = {row[1] for row in await cursor.fetchall()}
+            now = int(time.time() * 1000)
+            if "parent_id" in columns:
+                cursor = await self._conn.execute(
+                    "SELECT key, parent_id FROM agents "
+                    "WHERE parent_id IS NOT NULL AND TRIM(parent_id) != ''"
+                )
+                for child_key, parent_key in await cursor.fetchall():
+                    await self._conn.execute(
+                        "INSERT OR IGNORE INTO agent_parents (child_key, parent_key, created_at) "
+                        "VALUES (?, ?, ?)",
+                        (child_key, parent_key, now),
+                    )
+            await self._conn.execute(
+                "UPDATE agents SET mode = 'subagent' "
+                "WHERE key IN (SELECT DISTINCT child_key FROM agent_parents)"
+            )
+            await self._conn.execute(
+                "INSERT OR REPLACE INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+                (marker, now),
+            )
+        except Exception as exception:
+            log.error("Could not backfill agent modes: %s", exception)
 
     async def close(self) -> None:
         if self._conn:
@@ -560,6 +605,7 @@ class SqliteRepository(NovaRepository):
         provider_meta: Optional[dict] = None,
         model: Optional[str] = None,
         error: Optional[str] = None,
+        variant: Optional[str] = None,
     ) -> Message:
         await self._ensure_connected()
         msg_id = str(uuid.uuid4())
@@ -571,8 +617,8 @@ class SqliteRepository(NovaRepository):
         async with self._lock:
             await self._conn.execute(
                 """INSERT INTO messages
-                (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output, provider_meta, model, error)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output, provider_meta, model, error, variant)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     msg_id,
                     session_id,
@@ -592,6 +638,7 @@ class SqliteRepository(NovaRepository):
                     provider_meta_json,
                     model,
                     error,
+                    variant,
                 ),
             )
             await self._conn.execute(
@@ -617,6 +664,7 @@ class SqliteRepository(NovaRepository):
             model=model,
             tokens_input=tokens_input,
             tokens_output=tokens_output,
+            variant=variant,
         )
 
     async def get_messages(
@@ -770,8 +818,8 @@ class SqliteRepository(NovaRepository):
         async with self._lock:
             await self._conn.execute(
                 """INSERT OR REPLACE INTO agents
-                (key, name, description, model, provider, tools, workspace_dir, parent_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (key, name, description, model, provider, tools, workspace_dir, mode, posture, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     agent["key"],
                     agent["name"],
@@ -780,7 +828,8 @@ class SqliteRepository(NovaRepository):
                     agent["provider"],
                     agent.get("tools"),
                     agent.get("workspace_dir"),
-                    agent.get("parent_id"),
+                    agent.get("mode", "primary"),
+                    agent.get("posture", "full"),
                     agent.get("created_at", int(time.time() * 1000)),
                     agent.get("updated_at", int(time.time() * 1000)),
                 ),
@@ -788,10 +837,12 @@ class SqliteRepository(NovaRepository):
             await self._conn.commit()
 
     async def get_child_agents(self, parent_key: str) -> list[dict]:
-        """Get all child agents of a parent agent."""
+        """Get all child agents of a parent agent (via the agent_parents M2M table)."""
         await self._ensure_connected()
         cursor = await self._conn.execute(
-            "SELECT * FROM agents WHERE parent_id = ? ORDER BY name ASC",
+            "SELECT a.* FROM agents a "
+            "JOIN agent_parents ap ON ap.child_key = a.key "
+            "WHERE ap.parent_key = ? ORDER BY a.name ASC",
             (parent_key,),
         )
         return [dict(row) for row in await cursor.fetchall()]

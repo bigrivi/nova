@@ -8,9 +8,10 @@ import { useTranslation } from "react-i18next";
 
 import { useAui } from "@assistant-ui/react";
 
-import type { NovaModelRecord } from "../../types/nova";
+import type { NovaAgent, NovaModelRecord } from "../../types/nova";
 import { Button } from "../ui/button";
 import { ComposerAddAttachment, ComposerAttachments } from "./attachment";
+import { AgentSelector } from "./agent-selector";
 import { ModelSelector } from "./model-selector";
 import { TodoProgressPanel } from "./todo-progress-panel";
 
@@ -29,11 +30,17 @@ type ThreadStickyComposerProps = {
         selectedModelId: string | null;
         onSelect: (modelId: string) => void;
     };
+    agentSelection: {
+        agents: NovaAgent[];
+        selectedAgentKey: string | null;
+        onSelect: (agentKey: string) => void;
+    };
 };
 
 export function ThreadStickyComposer({
     composer,
     modelSelection,
+    agentSelection,
 }: ThreadStickyComposerProps) {
     const { t } = useTranslation();
     const aui = useAui();
@@ -84,6 +91,13 @@ export function ThreadStickyComposer({
                             <ComposerAddAttachment />
                         </div>
                         <div className="flex items-center gap-2">
+                            <AgentSelector
+                                agents={agentSelection.agents}
+                                selectedAgentKey={
+                                    agentSelection.selectedAgentKey
+                                }
+                                onSelect={agentSelection.onSelect}
+                            />
                             <ModelSelector
                                 models={modelSelection.models}
                                 selectedModelId={modelSelection.selectedModelId}

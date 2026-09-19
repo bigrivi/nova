@@ -1,4 +1,6 @@
 import type {
+    NovaAgent,
+    NovaAgentCreateRequest,
     NovaAttachmentData,
     NovaDirectoryListing,
     NovaMemoryRecord,
@@ -25,6 +27,7 @@ type StreamChatOptions = {
     sessionId?: string | null;
     provider?: string | null;
     model?: string | null;
+    agentKey?: string | null;
     workspaceDir?: string | null;
     projectId?: string | null;
     attachments?: NovaAttachmentData[];
@@ -323,11 +326,65 @@ export async function updateAgent(
     key: string,
     data: { model: string; provider: string },
 ): Promise<void> {
-    await apiFetch(`/api/agents/${encodeURIComponent(key)}`, {
+    const response = await apiFetch(`/api/agents/${encodeURIComponent(key)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
     });
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+}
+
+export async function listAgents(): Promise<NovaAgent[]> {
+    const payload = await parseJson<JsonResponse<NovaAgent>>(
+        await apiFetch("/api/agents"),
+    );
+    return payload.items;
+}
+
+export async function createAgent(
+    payload: NovaAgentCreateRequest,
+): Promise<NovaAgent> {
+    const response = await apiFetch("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+    return (await response.json()) as NovaAgent;
+}
+
+export async function deleteAgent(key: string): Promise<void> {
+    const response = await apiFetch(`/api/agents/${encodeURIComponent(key)}`, {
+        method: "DELETE",
+    });
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+}
+
+export async function setAgentParents(
+    key: string,
+    parents: string[],
+): Promise<string[]> {
+    const response = await apiFetch(
+        `/api/agents/${encodeURIComponent(key)}/parents`,
+        {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ parents }),
+        },
+    );
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+    const payload = (await response.json()) as {
+        parents?: string[];
+    };
+    return Array.isArray(payload.parents) ? payload.parents : parents;
 }
 
 export async function getAgent(
@@ -528,6 +585,7 @@ async function runStreamOnce(
             session_id: sessionId || undefined,
             provider: options.provider || undefined,
             model: options.model || undefined,
+            agent_key: options.agentKey || undefined,
             workspace_dir: options.workspaceDir || undefined,
             project_id: options.projectId || undefined,
             attachments: options.attachments || [],

@@ -8,7 +8,7 @@ registry is populated, so it is kept out of the agent runtime.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from nova.mcp.manager import MCPManager
 from nova.tools.approval import ApprovalManager
@@ -18,7 +18,13 @@ log = logging.getLogger(__name__)
 
 
 class ToolsetBuilder:
-    """Fills a registry with everything one agent is allowed to call."""
+    """Fills a registry with everything one agent is allowed to call.
+
+    A read-only posture passes an ``allowed_tools`` allowlist: a tool outside it
+    is never registered, so it cannot be called and never appears in the schema
+    sent to the model. That is the registration-time half of posture
+    enforcement; the call-time half lives in the tool invoker.
+    """
 
     def __init__(
         self,
@@ -26,12 +32,17 @@ class ToolsetBuilder:
         skill_service: Any,
         approval: ApprovalManager,
         is_sub_agent: bool,
+        allowed_tools: Optional[frozenset[str]] = None,
     ) -> None:
         self._registry = registry
         self._skill_service = skill_service
         self._approval = approval
         self._is_sub_agent = is_sub_agent
+        self._allowed_tools = allowed_tools
         self.skill_tools: Any = None
+
+    def _allows(self, tool_name: str) -> bool:
+        return self._allowed_tools is None or tool_name in self._allowed_tools
 
     async def build(self) -> None:
         self._register_builtin_tools()
@@ -46,15 +57,20 @@ class ToolsetBuilder:
         for name in dir(tools_module):
             if name.startswith("_"):
                 continue
+            if not self._allows(name):
+                continue
             self._registry.register_by_metadata(name)
 
     def _register_skill_tools(self) -> None:
         from nova.skills.tools import SkillTools
         self.skill_tools = SkillTools(self._skill_service)
-        self._registry.register(self.skill_tools.list_skills, name="list_skills")
-        self._registry.register(self.skill_tools.load_skill, name="load_skill")
-        self._registry.register(
-            self.skill_tools.install_skill, name="install_skill")
+        if self._allows("list_skills"):
+            self._registry.register(self.skill_tools.list_skills, name="list_skills")
+        if self._allows("load_skill"):
+            self._registry.register(self.skill_tools.load_skill, name="load_skill")
+        if self._allows("install_skill"):
+            self._registry.register(
+                self.skill_tools.install_skill, name="install_skill")
 
     def _register_delegation(self) -> None:
         from nova.tools.delegate import delegate_to_agent
@@ -75,7 +91,8 @@ class ToolsetBuilder:
             ShellToolBehavior,
         )
 
-        self._registry.set_behavior("shell", ShellToolBehavior(self._approval))
+        self._registry.set_behavior(
+            "shell", ShellToolBehavior(self._approval, is_sub_agent=self._is_sub_agent))
         self._registry.set_behavior("read_image", ImageReturningToolBehavior())
         self._registry.set_behavior("browser_use", ImageReturningToolBehavior())
         self._registry.set_behavior("save_memory", MemoryMutatingToolBehavior())

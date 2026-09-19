@@ -1468,7 +1468,7 @@ def _agents_client(monkeypatch, tmp_path, name):
 
 @pytest.mark.asyncio
 async def test_agents_list_contains_seeded_main(monkeypatch, tmp_path):
-    # Fresh DBs seed the default "main" agent via DDL (sqlite_repository).
+    # Fresh DBs seed only the default "main" agent via DDL (sqlite_repository).
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     settings = Settings.load_config()
     await init_db(DatabaseConfig(path=str(settings.database_path)))
@@ -1478,7 +1478,9 @@ async def test_agents_list_contains_seeded_main(monkeypatch, tmp_path):
     response = client.get("/api/agents")
 
     assert response.status_code == 200
-    assert [item["key"] for item in response.json()["items"]] == ["main"]
+    items = {item["key"]: item for item in response.json()["items"]}
+    assert list(items) == ["main"]
+    assert items["main"]["kind"] == "main"
 
 
 @pytest.mark.asyncio
@@ -1508,10 +1510,51 @@ async def test_agents_create_and_get_roundtrip(monkeypatch, tmp_path):
     fetched = client.get("/api/agents/tester")
     assert fetched.status_code == 200
     assert fetched.json()["key"] == "tester"
+    assert fetched.json()["kind"] == "main"
 
     listed = client.get("/api/agents")
     assert listed.status_code == 200
     assert "tester" in [item["key"] for item in listed.json()["items"]]
+
+
+@pytest.mark.asyncio
+async def test_agents_subagent_mode_and_multi_parent(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    # A second primary to test multi-parent membership.
+    client.post("/api/agents", json={"key": "coach", "name": "Coach", "model": "m1", "provider": "p1"})
+
+    created = client.post(
+        "/api/agents",
+        json={
+            "key": "helper",
+            "name": "Helper",
+            "model": "m1",
+            "provider": "p1",
+            "mode": "subagent",
+            "parent_ids": ["main"],
+        },
+    )
+    assert created.status_code == 200
+    assert created.json()["mode"] == "subagent"
+    assert created.json()["kind"] == "sub"
+    assert created.json()["parents"] == ["main"]
+
+    # A sub-agent can belong to multiple parents.
+    updated = client.put("/api/agents/helper/parents", json={"parents": ["main", "coach"]})
+    assert updated.status_code == 200
+
+    fetched = client.get("/api/agents/helper")
+    assert fetched.json()["mode"] == "subagent"
+    assert sorted(fetched.json()["parents"]) == ["coach", "main"]
+
+    coach = client.get("/api/agents/coach")
+    assert coach.json()["mode"] == "primary"
+    assert coach.json()["kind"] == "main"
 
 
 def test_agents_create_rejects_bad_key(monkeypatch, tmp_path):

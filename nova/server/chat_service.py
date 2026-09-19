@@ -223,6 +223,7 @@ class ChatService:
                 reasoning_elapsed_ms=message.reasoning_elapsed_ms,
                 group_id=message.group_id,
                 error=message.error,
+                variant=message.variant,
             )
             for message in messages
         ]
@@ -399,6 +400,7 @@ class ChatService:
             project = await ProjectService(self._data_source).get_project(project_id)
             if project and project.get("path"):
                 workspace_dir = project["path"]
+        message_variant = "subagent" if request.metadata.get("from_subagent") else None
         try:
             async for event, data in agent.chat_stream(
                 request.message,
@@ -406,6 +408,7 @@ class ChatService:
                 attachments=attachment_dicts,
                 workspace_dir=workspace_dir,
                 project_id=project_id,
+                message_variant=message_variant,
             ):
                 if event == AgentEvent.SESSION and data and not register_key:
                     register_key = data

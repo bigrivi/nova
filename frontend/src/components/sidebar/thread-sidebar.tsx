@@ -17,6 +17,7 @@ import {
     SearchIcon,
     SettingsIcon,
     Trash2Icon,
+    UsersIcon,
 } from "lucide-react";
 import {
     Fragment,
@@ -81,6 +82,7 @@ type ThreadSidebarProps = {
     ) => Promise<void> | void;
     onOpenMemory: () => void;
     onOpenModels: () => void;
+    onOpenAgents: () => void;
 };
 
 const OPEN_PROJECTS_KEY = "nova.sidebar.open-projects.v2";
@@ -760,6 +762,7 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
                     <DropdownMenuContent side="top" align="start" collisionPadding={12} className="w-64 border-[#E4E1D9] bg-white">
                         <DropdownMenuItem onSelect={props.onOpenMemory}><DatabaseIcon className="size-4" />{t("memory.manage")}</DropdownMenuItem>
                         <DropdownMenuItem onSelect={props.onOpenModels}><CpuIcon className="size-4" />{t("modelSelector.manageModels")}</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={props.onOpenAgents}><UsersIcon className="size-4" />{t("agentManager.manageAgents")}</DropdownMenuItem>
                         <DropdownMenuSub>
                             <DropdownMenuSubTrigger>
                                 <LanguagesIcon className="size-4" />

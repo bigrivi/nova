@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from nova.agent import Agent, AgentConfig
+from nova.agent.posture import allowed_tools_for
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.llm import AnthropicProvider, FakerLLMProvider, LLMProvider, OllamaProvider, OpenAIProvider, OpenAIResponsesProvider
@@ -156,15 +157,26 @@ async def _agent_dir(agent_key: str) -> Path:
     return settings.home / "agents" / agent_key
 
 
+def _first_configured_route(settings) -> tuple[str | None, str | None]:
+    provider = next(iter(settings.providers.keys()), None)
+    if provider is None:
+        return None, None
+    model = next(iter(settings.providers[provider].models.keys()), None)
+    return provider, model
+
+
 async def build_agent(
     agent_key: str = DEFAULT_AGENT_KEY,
     llm: LLMProvider | None = None,
     provider: str | None = None,
     model: str | None = None,
     is_new_session: bool = False,
+    is_sub_agent: bool = False,
+    depth: int = 0,
     data_source: DataSourceProtocol | None = None,
 ) -> Agent:
     settings = get_settings()
+
     agent_dir = await _agent_dir(agent_key)
     agent_dir.mkdir(parents=True, exist_ok=True)
 
@@ -182,25 +194,35 @@ async def build_agent(
                 encoding="utf-8") if (agent_dir / "MEMORY.md").exists() else "",
             workspace_dir=str(agent_dir),
         )
+    prompt_config = _identity_cache[dir_key]
 
-    if provider is None or model is None:
-        try:
-            from nova.config.service import ConfigService
-            service = ConfigService(settings)
-            record = await service.get_agent(agent_key)
-            if record:
-                provider = provider or record.get("provider")
-                model = model or record.get("model")
-        except Exception:
-            pass
+    record = None
+    try:
+        from nova.config.service import ConfigService
+        record = await ConfigService(settings).get_agent(agent_key)
+    except Exception:
+        pass
 
-    resolved_provider = provider
-    resolved_model = model
+    if is_sub_agent:
+        # A sub-agent runs on its own configured route; empty inherits the
+        # caller, then falls back to the first configured route.
+        resolved_provider = ((record or {}).get("provider") or None) or provider
+        resolved_model = ((record or {}).get("model") or None) or model
+        if not resolved_provider or not resolved_model:
+            fallback_provider, fallback_model = _first_configured_route(settings)
+            resolved_provider = resolved_provider or fallback_provider
+            resolved_model = resolved_model or fallback_model
+    else:
+        resolved_provider = provider or ((record or {}).get("provider"))
+        resolved_model = model or ((record or {}).get("model"))
+
     if not resolved_provider or not resolved_model:
         raise ValueError(
             f"Agent '{agent_key}' has no configured provider/model. "
             "Set one via /create-agent or update the DB agents table."
         )
+
+    allowed_tools = allowed_tools_for((record or {}).get("posture")) if is_sub_agent else None
 
     # Cache 2: LLMProvider
     llm = llm or build_llm(provider=resolved_provider, model=resolved_model)
@@ -210,19 +232,25 @@ async def build_agent(
         llm_provider=llm,
         agent_key=agent_key,
         agent_dir=agent_dir,
-        prompt_config=_identity_cache[dir_key],
+        is_sub_agent=is_sub_agent,
+        depth=depth,
+        allowed_tools=allowed_tools,
+        prompt_config=prompt_config,
         data_source=data_source or await get_default_data_source(),
     )
 
-    # Cache 3: ToolRegistry (shallow copy + rebind skill tools)
-    reg_key = f"{agent_key}:{resolved_model}:{agent.is_sub_agent}"
+    # Cache 3: ToolRegistry (shallow copy + rebind skill tools). The posture
+    # marker is part of the key so a read-only sub-agent never reuses a fuller toolset.
+    posture_marker = "ro" if allowed_tools is not None else ""
+    reg_key = f"{agent_key}:{resolved_model}:{agent.is_sub_agent}:{posture_marker}"
     cached_registry = _registry_cache.get(reg_key)
     if cached_registry is not None:
         agent.tool_registry = ToolRegistry(source=cached_registry)
         agent._skill_tools = SkillTools(agent._skill_service)
-        agent.tool_registry.register(agent._skill_tools.list_skills, name="list_skills")
-        agent.tool_registry.register(agent._skill_tools.load_skill, name="load_skill")
-        agent.tool_registry.register(agent._skill_tools.install_skill, name="install_skill")
+        for skill_tool in ("list_skills", "load_skill", "install_skill"):
+            if allowed_tools is None or skill_tool in allowed_tools:
+                agent.tool_registry.register(
+                    getattr(agent._skill_tools, skill_tool), name=skill_tool)
     else:
         await agent.register_all_tools()
         _registry_cache[reg_key] = agent.tool_registry

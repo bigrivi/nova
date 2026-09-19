@@ -30,6 +30,36 @@ from nova.settings import Settings, get_settings
 log = logging.getLogger(__name__)
 
 
+def _wire_subagent_autowake(app: FastAPI) -> None:
+    """Connect the sub-agent job manager to the parent auto-wake path."""
+    from nova.agent.subagent_jobs import get_subagent_job_manager
+    from nova.server.headless_turn import start_headless_turn
+    from nova.server.wake_scheduler import WakeScheduler
+
+    chat_service = app.state.chat_service
+    registry = app.state.request_registry
+
+    async def _start_turn(parent_id: str, text: str, metadata: dict) -> bool:
+        return await start_headless_turn(chat_service, parent_id, text, metadata)
+
+    async def _wait_free(parent_id: str) -> None:
+        await registry.wait_free(parent_id)
+
+    scheduler = WakeScheduler(start_turn=_start_turn, wait_free=_wait_free)
+    app.state.wake_scheduler = scheduler
+
+    def _wrap(job) -> str:
+        status = "done" if job.status == "completed" else "error"
+        body = job.result if job.status == "completed" else (job.error or "")
+        return f"[subagent:{job.target} status={status}]\n{body}"
+
+    async def _on_complete(job) -> None:
+        if job.parent_session_id:
+            scheduler.enqueue(job.parent_session_id, job.job_id, _wrap(job))
+
+    get_subagent_job_manager().set_completion_callback(_on_complete)
+
+
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     settings = settings or get_settings()
 
@@ -59,6 +89,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         request_registry=request_registry,
         stream_buffer=stream_buffer,
     )
+    _wire_subagent_autowake(app)
 
     for module in (
         health,

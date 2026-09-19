@@ -66,6 +66,49 @@ class RequestRegistry:
         self._reaper_task: asyncio.Task[None] | None = None
         self._reaper_interval = REAP_INTERVAL
         self._stream_buffer: Any = None
+        # Per-session "slot is free for try_register" signal. Set when a slot
+        # becomes DONE or is removed; cleared when a slot goes ACTIVE. The
+        # auto-wake drain awaits this instead of polling slot_state, and the
+        # set-on-free / clear-on-active ordering closes the lost-wakeup race.
+        self._free_events: dict[str, asyncio.Event] = {}
+
+    def _free_event_locked(self, session_id: str) -> asyncio.Event:
+        event = self._free_events.get(session_id)
+        if event is None:
+            event = asyncio.Event()
+            self._free_events[session_id] = event
+        return event
+
+    def _mark_active_locked(self, session_id: str) -> None:
+        self._free_event_locked(session_id).clear()
+
+    def _mark_free_locked(self, session_id: str) -> None:
+        self._free_event_locked(session_id).set()
+
+    def _is_free_locked(self, session_id: str) -> bool:
+        slot = self._slots.get(session_id)
+        return slot is None or slot.state == DONE
+
+    def _evict_free_locked(self, session_id: str) -> None:
+        event = self._free_events.pop(session_id, None)
+        if event is not None:
+            event.set()
+
+    async def wait_free(self, session_id: str) -> None:
+        """Resolve once *session_id* has no ACTIVE/DETACHED slot.
+
+        Returns immediately if the slot is already free; otherwise awaits the
+        free signal set when the current turn reaches DONE or is removed.
+        """
+        async with self._map_lock:
+            if self._is_free_locked(session_id):
+                return
+            event = self._free_event_locked(session_id)
+        await event.wait()
+
+    async def is_free(self, session_id: str) -> bool:
+        async with self._map_lock:
+            return self._is_free_locked(session_id)
 
     # ── internal helpers (map ops only, short-held global lock) ──
 
@@ -97,6 +140,7 @@ class RequestRegistry:
                     state=ACTIVE,
                     last_access=time.monotonic(),
                 )
+                self._mark_active_locked(session_id)
                 self._enforce_cap_locked()
 
     async def try_register(self, session_id: str, agent: Any) -> bool:
@@ -120,6 +164,7 @@ class RequestRegistry:
                     state=ACTIVE,
                     last_access=time.monotonic(),
                 )
+                self._mark_active_locked(session_id)
                 self._enforce_cap_locked()
                 return True
 
@@ -135,6 +180,7 @@ class RequestRegistry:
                 slot = self._slots.get(session_id)
                 if slot is not None and slot.owner is agent:
                     del self._slots[session_id]
+                    self._mark_free_locked(session_id)
                     return True
                 return False
 
@@ -143,6 +189,7 @@ class RequestRegistry:
         async with lock:
             async with self._map_lock:
                 self._slots.pop(session_id, None)
+                self._mark_free_locked(session_id)
 
     async def get(self, session_id: str) -> Any:
         """Return the slot owner (Agent or _RESERVED), touching the slot."""
@@ -182,6 +229,7 @@ class RequestRegistry:
                 current = self._slots.get(session_id)
                 if current is not None and current.owner is owner:
                     del self._slots[session_id]
+                    self._mark_free_locked(session_id)
             return True
 
     # ── detach / reattach / touch ──
@@ -213,6 +261,7 @@ class RequestRegistry:
                 slot.state = ACTIVE
                 slot.stream_sequence += 1
                 slot.last_access = time.monotonic()
+                self._mark_active_locked(session_id)
                 return True
 
     async def touch(self, session_id: str) -> bool:
@@ -240,6 +289,7 @@ class RequestRegistry:
                     return False
                 slot.state = DONE
                 slot.last_access = time.monotonic()
+                self._mark_free_locked(session_id)
                 return True
 
     def attach_buffer(self, buffer: Any) -> None:
@@ -266,6 +316,7 @@ class RequestRegistry:
         evicted = [session_id for session_id, _ in ordered[:overflow]]
         for session_id in evicted:
             self._slots.pop(session_id, None)
+            self._evict_free_locked(session_id)
         buffer = self._stream_buffer
         if buffer is not None:
             discard = getattr(buffer, "discard", None)
@@ -307,6 +358,7 @@ class RequestRegistry:
                         and (current - live.last_access) > TERMINAL_TTL
                     ):
                         del self._slots[session_id]
+                        self._evict_free_locked(session_id)
                         evicted.append(session_id)
                         discarded = True
                 # P1: discard the buffer while still holding the per-session
