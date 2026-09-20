@@ -213,7 +213,7 @@
     "sidebar.date.yesterday": "昨天",
     "sidebar.date.last7Days": "过去 7 天",
     "sidebar.date.older": "更早",
-    "sidebar.showMoreOlder": "再显示 {{count}} 条",
+    "sidebar.showMore": "再显示 {{count}} 条",
     "sidebar.searchTitle": "搜索（⌘K / Ctrl+K）",
     "sidebar.searchPlaceholder": "搜索对话…",
     "sidebar.searchEmpty": "没有找到匹配的对话",

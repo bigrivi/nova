@@ -213,7 +213,7 @@
     "sidebar.date.yesterday": "Yesterday",
     "sidebar.date.last7Days": "Previous 7 days",
     "sidebar.date.older": "Older",
-    "sidebar.showMoreOlder": "Show {{count}} more",
+    "sidebar.showMore": "Show {{count}} more",
     "sidebar.searchTitle": "Search (⌘K / Ctrl+K)",
     "sidebar.searchPlaceholder": "Search chats…",
     "sidebar.searchEmpty": "No matching chats",
