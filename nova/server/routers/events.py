@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_PING_INTERVAL_SECONDS = 15.0
+_PING_INTERVAL_SECONDS = 2.0
 
 
 def _frame(payload: dict[str, Any]) -> bytes:

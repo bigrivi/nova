@@ -116,3 +116,9 @@ def test_close_all_wakes_subscribers_with_sentinel() -> None:
     q3 = bus.subscribe()
     bus.publish("s2", "active")
     assert q3.get_nowait() == ("s2", "active")
+
+
+def test_events_ping_interval_bounds_shutdown_latency() -> None:
+    from nova.server.routers import events as events_module
+
+    assert events_module._PING_INTERVAL_SECONDS <= 5
