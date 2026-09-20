@@ -133,8 +133,3 @@ class LLMProvider(ABC):
     async def count_tokens(self, text: str, model: str = None) -> int:
         """Estimate token usage."""
         pass
-
-    @abstractmethod
-    def get_max_tokens(self, model: str) -> int:
-        """Return the model's maximum token limit."""
-        pass

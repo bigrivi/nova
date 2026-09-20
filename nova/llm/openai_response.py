@@ -61,7 +61,6 @@ class OpenAIResponsesProvider(LLMProvider):
         self._extra_headers = dict(extra_headers or {})
         self._request_hook = request_hook
         self._request_session_hook = request_session_hook
-        self._max_tokens = 1_048_576
 
     def _make_connector(self) -> aiohttp.TCPConnector:
         return aiohttp.TCPConnector(limit=10, limit_per_host=5, ttl_dns_cache=300)
@@ -480,6 +479,3 @@ class OpenAIResponsesProvider(LLMProvider):
         chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
         other_chars = len(text) - chinese_chars
         return int(chinese_chars / 2 + other_chars / 4)
-
-    def get_max_tokens(self, model: str) -> int:
-        return self._max_tokens

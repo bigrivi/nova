@@ -57,7 +57,6 @@ def build_llm(
             continue_tool_probability=float(options.get("continue_tool_probability", 0.35)),
             max_tool_rounds=int(options.get("max_tool_rounds", 3)),
             max_tool_calls_per_turn=int(options.get("max_tool_calls_per_turn", 2)),
-            max_tokens=int(options.get("max_tokens", 128000)),
             stream_delay=float(options.get("stream_delay", 0.02)),
         )
     elif provider_type == "ollama":

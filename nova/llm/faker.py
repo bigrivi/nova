@@ -104,7 +104,6 @@ class FakerLLMProvider(LLMProvider):
         seed: int | None = None,
         reasoning_probability: float = 0.25,
         error_probability: float = 0.0,
-        max_tokens: int = 128000,
         tool_call_probability: float = 0.0,
         continue_tool_probability: float = 0.35,
         max_tool_rounds: int = 3,
@@ -114,7 +113,6 @@ class FakerLLMProvider(LLMProvider):
         self._seed = seed
         self._reasoning_probability = reasoning_probability
         self._error_probability = error_probability
-        self._max_tokens = max_tokens
         self._tool_call_probability = tool_call_probability
         self._continue_tool_probability = continue_tool_probability
         self._max_tool_rounds = max_tool_rounds
@@ -190,9 +188,6 @@ class FakerLLMProvider(LLMProvider):
 
     async def count_tokens(self, text: str, model: str | None = None) -> int:
         return max(1, len(text) // 4) if text else 0
-
-    def get_max_tokens(self, model: str) -> int:
-        return self._max_tokens
 
     def _response(self, messages: list, model: str, rng: random.Random) -> str | None:
         if rng.random() < self._error_probability:

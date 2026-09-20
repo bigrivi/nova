@@ -47,7 +47,6 @@ def test_build_llm_for_faker_provider_reads_options(monkeypatch, tmp_path):
     assert provider._reasoning_probability == 0.4
     assert provider._error_probability == 0.1
     assert provider._tool_call_probability == 0.8
-    assert provider.get_max_tokens("faker-default") == 4096
 
 
 def test_build_llm_for_faker_provider_reuses_cached_instance(monkeypatch, tmp_path):

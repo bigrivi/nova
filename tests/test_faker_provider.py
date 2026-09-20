@@ -129,11 +129,10 @@ async def test_faker_provider_can_return_error_event():
 
 @pytest.mark.asyncio
 async def test_faker_provider_exposes_token_contract():
-    provider = FakerLLMProvider(max_tokens=4096)
+    provider = FakerLLMProvider()
 
     assert await provider.count_tokens("12345678") == 2
     assert await provider.count_tokens("") == 0
-    assert provider.get_max_tokens("fake") == 4096
 
 
 @pytest.mark.asyncio

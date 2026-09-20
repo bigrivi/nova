@@ -27,7 +27,6 @@ class OllamaProvider(LLMProvider):
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
         self.timeout = timeout
-        self._max_tokens = 4096
 
     @staticmethod
     def _build_http_error_message(url: str, status: int, text: str) -> str:
@@ -340,6 +339,3 @@ class OllamaProvider(LLMProvider):
 
     async def count_tokens(self, text: str, model: str = None) -> int:
         return len(text) // 4
-
-    def get_max_tokens(self, model: str) -> int:
-        return self._max_tokens

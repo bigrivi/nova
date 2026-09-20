@@ -9,15 +9,23 @@ from typing import AsyncGenerator, Optional
 
 import aiohttp
 
-from nova.llm.provider import ChatStreamEvent, LLMProvider, TextDelta, ReasoningDelta, ToolCall, Done, Error
+from nova.llm.provider import (
+    ChatStreamEvent,
+    Done,
+    Error,
+    LLMProvider,
+    MAX_RETRIES,
+    RETRY_BASE_DELAY,
+    RETRY_STATUS_CODES,
+    ReasoningDelta,
+    TextDelta,
+    ToolCall,
+)
 from nova.llm.request_hook import run_request_hook, run_session_hook
 from nova.llm.tokenizer import normalise_model_id
 
 log = logging.getLogger(__name__)
 
-_RETRY_STATUS_CODES = {429, 500, 502, 503, 504, 529}
-_MAX_RETRIES = 3
-_RETRY_BASE_DELAY = 1.0
 # Guard against a model that streams deltas forever without finish_reason
 # (observed incident: Qwen3.8-27B-FP8 repetition loop grew RSS to 4-7 GB).
 # Exceeding the ceiling aborts the stream with Error (not Done) so the
@@ -141,7 +149,7 @@ class AnthropicProvider(LLMProvider):
         user_agent: Optional[str] = None,
         anthropic_version: str = "2023-06-01",
         betas: Optional[list[str]] = None,
-        max_tokens: Optional[int] = None,
+        max_output_tokens: Optional[int] = None,
         extra_headers: Optional[dict] = None,
         request_hook: Optional[str] = None,
         request_session_hook: Optional[str] = None,
@@ -153,7 +161,7 @@ class AnthropicProvider(LLMProvider):
         self._user_agent = user_agent
         self._anthropic_version = anthropic_version
         self._betas = list(betas) if betas else None
-        self._max_tokens_override = max_tokens
+        self._max_output_tokens_override = max_output_tokens
         self._extra_headers = dict(extra_headers or {})
         self._request_hook = request_hook
         self._request_session_hook = request_session_hook
@@ -472,14 +480,14 @@ class AnthropicProvider(LLMProvider):
 
         formatted_messages, system_text = self._format_messages(messages, include_thinking=include_thinking, model=model)
 
-        # Resolve max_tokens: request_options -> override -> default table
+        # Resolve max_output_tokens: request_options -> override -> default table
         if max_tokens_from_options is not None:
             try:
                 resolved_max_tokens = int(max_tokens_from_options)
             except Exception:
                 resolved_max_tokens = _default_max_output_tokens(model)
-        elif self._max_tokens_override is not None:
-            resolved_max_tokens = int(self._max_tokens_override)
+        elif self._max_output_tokens_override is not None:
+            resolved_max_tokens = int(self._max_output_tokens_override)
         else:
             resolved_max_tokens = _default_max_output_tokens(model)
 
@@ -906,9 +914,3 @@ class AnthropicProvider(LLMProvider):
         chinese_chars = sum(1 for character in text if '\u4e00' <= character <= '\u9fff')
         other_chars = len(text) - chinese_chars
         return int(chinese_chars / 2 + other_chars / 4)
-
-    def get_max_tokens(self, model: str) -> int:
-        model_id = (model or "").strip().lower()
-        if "[1m]" in model_id or model_id.endswith("-1m"):
-            return 1000000
-        return 200000

@@ -794,14 +794,6 @@ def test_provider_is_llm_provider():
     # instantiable with no args
 
 
-def test_get_max_tokens():
-    provider = AnthropicProvider()
-    assert provider.get_max_tokens("claude-sonnet-4-5") == 200000
-    assert provider.get_max_tokens("claude-sonnet-4-5-1m") == 1000000
-    assert provider.get_max_tokens("my-model[1m]") == 1000000
-    assert provider.get_max_tokens("claude-3-haiku-20240307") == 200000
-
-
 @pytest.mark.asyncio
 async def test_count_tokens_cjk_denser():
     provider = AnthropicProvider()
