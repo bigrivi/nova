@@ -19,6 +19,7 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 
+from nova.server.deps import is_server_stopping
 from nova.server.request_registry import _RESERVED
 from nova.server.schemas import ChatRequest
 from nova.server.stream_buffer import CONNECTION_QUEUE_MAXSIZE
@@ -215,6 +216,8 @@ class ChatStreamOrchestrator:
                     idle_since = loop.time()
                     last_send = loop.time()
                     while True:
+                        if is_server_stopping(http_request):
+                            return
                         try:
                             chunk = subscriber_queue.get_nowait()
                         except asyncio.QueueEmpty:
@@ -303,13 +306,15 @@ class ChatStreamOrchestrator:
                 loop = asyncio.get_running_loop()
                 idle_since = loop.time()
                 while True:
+                    if is_server_stopping(http_request):
+                        break
                     try:
                         item = await asyncio.wait_for(
                             stream_queue.get(),
                             timeout=stream_module.STREAM_HEARTBEAT_INTERVAL_SECONDS,
                         )
                     except asyncio.TimeoutError:
-                        if await http_request.is_disconnected():
+                        if is_server_stopping(http_request) or await http_request.is_disconnected():
                             await park_detached_stream_session(registry, stream_session_id)
                             break
                         if loop.time() - idle_since > stream_module.STREAM_RESUME_TAIL_TIMEOUT_SECONDS:

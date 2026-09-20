@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
-from nova.server.deps import get_session_event_bus
+from nova.server.deps import get_session_event_bus, is_server_stopping
 
 log = logging.getLogger(__name__)
 
@@ -35,22 +35,18 @@ async def session_events(
 ) -> StreamingResponse:
     queue = bus.subscribe()
 
-    def _server_stopping() -> bool:
-        server = getattr(http_request.app.state, "uvicorn_server", None)
-        return bool(server is not None and server.should_exit)
-
     async def event_stream():
         try:
             yield _frame({"type": "snapshot", "active": bus.snapshot()})
             while True:
-                if _server_stopping():
+                if is_server_stopping(http_request):
                     break
                 try:
                     item = await asyncio.wait_for(
                         queue.get(), timeout=_PING_INTERVAL_SECONDS
                     )
                 except asyncio.TimeoutError:
-                    if _server_stopping() or await http_request.is_disconnected():
+                    if is_server_stopping(http_request) or await http_request.is_disconnected():
                         break
                     yield b": ping\n\n"
                     continue

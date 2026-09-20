@@ -191,3 +191,83 @@ def test_build_uvicorn_config_carries_shutdown_timeout(
     app = create_app(settings=get_settings())
     config = build_uvicorn_config(app, get_settings())
     assert config.timeout_graceful_shutdown == GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS
+
+
+def test_is_server_stopping_without_server_ref() -> None:
+    from nova.server.deps import is_server_stopping
+
+    class _State:
+        pass
+
+    class _App:
+        state = _State()
+
+    class _Request:
+        app = _App()
+
+    assert is_server_stopping(_Request()) is False
+
+
+def test_inflight_chat_stream_exits_promptly_when_server_stopping(
+    monkeypatch, tmp_path
+) -> None:
+    """A chat SSE stream must not hold connection drain open at shutdown.
+
+    Same disease as /api/events had: the consumer loop only exited on
+    client disconnect. With should_exit set it must break immediately
+    instead of tailing up to the 120s resume timeout.
+    """
+    import asyncio
+    import threading
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from nova.server import create_app
+    from nova.settings import get_settings
+
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    app = create_app(settings=get_settings())
+
+    class _NeverEndingStreamService:
+        async def chat_stream_ai_sdk(self, request):
+            while True:
+                yield b'data: {"type":"text-delta","delta":"x"}\n\n'
+                await asyncio.sleep(0.05)
+
+    app.state.chat_service = _NeverEndingStreamService()
+
+    class _StoppingServer:
+        should_exit = False
+
+    stopping = _StoppingServer()
+    app.state.uvicorn_server = stopping
+
+    results: dict = {}
+
+    def _run() -> None:
+        try:
+            client = TestClient(app)
+            started = time.monotonic()
+            with client.stream(
+                "POST",
+                "/api/chat/stream",
+                json={"message": "hi", "session_id": "sess-shutdown"},
+            ) as response:
+                body = "".join(response.iter_text())
+            results["done"] = (response.status_code, len(body), time.monotonic() - started)
+        except Exception as error:
+            results["done"] = error
+
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+    time.sleep(1.5)
+    stopping.should_exit = True
+    thread.join(timeout=15)
+    assert not thread.is_alive(), "chat stream hung despite should_exit"
+    outcome = results["done"]
+    assert not isinstance(outcome, Exception), f"stream raised: {outcome!r}"
+    status, length, elapsed = outcome
+    assert status == 200
+    assert length > 0
+    assert elapsed < 15

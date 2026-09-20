@@ -31,6 +31,18 @@ def get_stream_buffer(request: Request) -> Any:
     return request.app.state.stream_buffer
 
 
+def is_server_stopping(request: Request) -> bool:
+    """True once the uvicorn server has begun shutdown.
+
+    Long-lived SSE handlers (chat streams, session events) only exit on
+    client disconnect by default; during shutdown the client socket may
+    stay open, so handlers must also watch this flag or graceful shutdown
+    stalls on connection drain until the force-close timeout.
+    """
+    server = getattr(request.app.state, "uvicorn_server", None)
+    return bool(server is not None and server.should_exit)
+
+
 def get_session_event_bus(request: Request) -> Any:
     return request.app.state.session_event_bus
 
