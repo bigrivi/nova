@@ -31,6 +31,19 @@ from nova.settings import Settings, get_settings
 
 log = logging.getLogger(__name__)
 
+GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS = 5.0
+
+
+def build_uvicorn_config(app: FastAPI, settings: Settings) -> uvicorn.Config:
+    server_settings = settings.server
+    return uvicorn.Config(
+        app,
+        host=server_settings.host,
+        port=server_settings.port,
+        log_level=settings.log_level.lower(),
+        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
+    )
+
 
 def _wire_subagent_autowake(app: FastAPI) -> None:
     """Connect the sub-agent job manager to the parent auto-wake path."""
@@ -133,12 +146,6 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 async def run_server(settings: Optional[Settings] = None) -> None:
     settings = settings or get_settings()
     app = create_app(settings=settings)
-    server_settings = settings.server
-    config = uvicorn.Config(
-        app,
-        host=server_settings.host,
-        port=server_settings.port,
-        log_level=settings.log_level.lower(),
-    )
-    server = uvicorn.Server(config)
+    server = uvicorn.Server(build_uvicorn_config(app, settings))
+    app.state.uvicorn_server = server
     await server.serve()

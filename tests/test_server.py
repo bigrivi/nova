@@ -974,11 +974,19 @@ async def test_run_server_starts_uvicorn(monkeypatch):
     captured = {}
 
     class FakeConfig:
-        def __init__(self, app: ASGIApp, host: str, port: int, log_level: str):
+        def __init__(
+            self,
+            app: ASGIApp,
+            host: str,
+            port: int,
+            log_level: str,
+            timeout_graceful_shutdown=None,
+        ):
             captured["app"] = app
             captured["host"] = host
             captured["port"] = port
             captured["log_level"] = log_level
+            captured["timeout_graceful_shutdown"] = timeout_graceful_shutdown
 
     class FakeServer:
         def __init__(self, config):
@@ -998,6 +1006,9 @@ async def test_run_server_starts_uvicorn(monkeypatch):
     assert captured["port"] == settings.port
     assert captured["log_level"] == settings.log_level.lower()
     assert captured["served"] is True
+    assert captured["timeout_graceful_shutdown"] == (
+        server_app.GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS
+    )
 
 
 def test_approve_resolves_pending_request(monkeypatch, tmp_path):

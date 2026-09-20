@@ -7,9 +7,9 @@ from typing import Optional
 
 import httpx
 import uvicorn
-from uvicorn import Config, Server
+from uvicorn import Server
 
-from nova.server.app import create_app
+from nova.server.app import build_uvicorn_config, create_app
 from nova.settings import Settings
 
 
@@ -25,13 +25,8 @@ class ServerThread:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         app = create_app(settings=self.settings)
-        config = Config(
-            app,
-            host=self.host,
-            port=self.port,
-            log_level=self.settings.log_level.lower(),
-        )
-        self.server = Server(config)
+        self.server = Server(build_uvicorn_config(app, self.settings))
+        app.state.uvicorn_server = self.server
         loop.run_until_complete(self.server.serve())
 
     def start(self) -> None:

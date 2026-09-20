@@ -207,7 +207,13 @@ export function useConversations(deps: ConversationDeps): Conversations {
             }
         };
 
+        // Close the stream when the page is hidden or torn down so the
+        // backend is not left holding an orphaned SSE connection.
+        const handlePageHide = () => source.close();
+        window.addEventListener("pagehide", handlePageHide);
+
         return () => {
+            window.removeEventListener("pagehide", handlePageHide);
             source.close();
         };
     }, []);

@@ -122,3 +122,72 @@ def test_events_ping_interval_bounds_shutdown_latency() -> None:
     from nova.server.routers import events as events_module
 
     assert events_module._PING_INTERVAL_SECONDS <= 5
+
+
+def test_events_stream_exits_promptly_when_server_stopping(
+    monkeypatch, tmp_path
+) -> None:
+    """Shutdown must not wait on the forever-open events SSE.
+
+    With uvicorn_server.should_exit set, GET /api/events terminates right
+    after the snapshot instead of holding the connection open — otherwise
+    graceful shutdown (desktop close, Ctrl+C) hangs on connection drain.
+    """
+    import threading
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from nova.server import create_app
+    from nova.server.app import (
+        GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
+        build_uvicorn_config,
+    )
+    from nova.settings import get_settings
+
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    app = create_app(settings=get_settings())
+
+    class _StoppingServer:
+        should_exit = True
+
+    app.state.uvicorn_server = _StoppingServer()
+
+    results: dict = {}
+
+    def _run() -> None:
+        try:
+            client = TestClient(app)
+            started = time.monotonic()
+            with client.stream("GET", "/api/events") as response:
+                body = "".join(response.iter_text())
+            results["done"] = (response.status_code, body, time.monotonic() - started)
+        except Exception as error:
+            results["done"] = error
+
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+    thread.join(timeout=15)
+    assert not thread.is_alive(), "events stream hung despite should_exit"
+    outcome = results["done"]
+    assert not isinstance(outcome, Exception), f"stream raised: {outcome!r}"
+    status, body, elapsed = outcome
+    assert status == 200
+    assert '"type": "snapshot"' in body
+    assert elapsed < 15
+
+
+def test_build_uvicorn_config_carries_shutdown_timeout(
+    monkeypatch, tmp_path
+) -> None:
+    from nova.server import create_app
+    from nova.server.app import (
+        GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
+        build_uvicorn_config,
+    )
+    from nova.settings import get_settings
+
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    app = create_app(settings=get_settings())
+    config = build_uvicorn_config(app, get_settings())
+    assert config.timeout_graceful_shutdown == GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS
