@@ -7,14 +7,22 @@ from typing import AsyncGenerator, Optional
 
 import aiohttp
 
-from nova.llm.provider import ChatStreamEvent, Done, Error, LLMProvider, ReasoningDelta, TextDelta, ToolCall
+from nova.llm.provider import (
+    ChatStreamEvent,
+    Done,
+    Error,
+    LLMProvider,
+    MAX_RETRIES,
+    RETRY_BASE_DELAY,
+    RETRY_STATUS_CODES,
+    ReasoningDelta,
+    TextDelta,
+    ToolCall,
+)
 from nova.llm.request_hook import run_request_hook, run_session_hook
 
 log = logging.getLogger(__name__)
 
-_RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
-_MAX_RETRIES = 3
-_RETRY_BASE_DELAY = 1.0
 # Guard against a model that streams deltas forever without finish_reason
 # (observed incident: Qwen3.8-27B-FP8 repetition loop grew RSS to 4-7 GB).
 # Exceeding the ceiling aborts the stream with Error (not Done) so the
@@ -176,8 +184,8 @@ class OpenAIResponsesProvider(LLMProvider):
         return body
 
     async def _post_with_retry(self, session, url, headers, body, abort_event, timeout=None):
-        delay = _RETRY_BASE_DELAY
-        for attempt in range(_MAX_RETRIES):
+        delay = RETRY_BASE_DELAY
+        for attempt in range(MAX_RETRIES):
             post_task = asyncio.create_task(
                 session.post(url, headers=headers, json=body, timeout=timeout if timeout is not None else aiohttp.ClientTimeout(total=self.timeout)),
                 name=f"responses_post_{attempt}",
@@ -201,20 +209,20 @@ class OpenAIResponsesProvider(LLMProvider):
             try:
                 resp = post_task.result()
             except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as e:
-                if attempt < _MAX_RETRIES - 1:
+                if attempt < MAX_RETRIES - 1:
                     await asyncio.sleep(delay)
                     delay *= 2
                     continue
                 raise
             except Exception:
                 raise
-            if resp.status in _RETRY_STATUS_CODES and attempt < _MAX_RETRIES - 1:
+            if resp.status in RETRY_STATUS_CODES and attempt < MAX_RETRIES - 1:
                 await resp.release()
                 await asyncio.sleep(delay)
                 delay *= 2
                 continue
             return resp
-        raise RuntimeError(f"Failed after {_MAX_RETRIES} attempts")
+        raise RuntimeError(f"Failed after {MAX_RETRIES} attempts")
 
     def _parse_output_to_done(self, data: dict) -> Done:
         output = data.get("output", []) if isinstance(data, dict) else []

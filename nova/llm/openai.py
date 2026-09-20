@@ -9,14 +9,22 @@ from typing import AsyncGenerator, Optional
 
 import aiohttp
 
-from nova.llm.provider import ChatStreamEvent, LLMProvider, TextDelta, ReasoningDelta, ToolCall, Done, Error
+from nova.llm.provider import (
+    ChatStreamEvent,
+    Done,
+    Error,
+    LLMProvider,
+    MAX_RETRIES,
+    RETRY_BASE_DELAY,
+    RETRY_STATUS_CODES,
+    ReasoningDelta,
+    TextDelta,
+    ToolCall,
+)
 from nova.llm.request_hook import run_request_hook, run_session_hook
 
 log = logging.getLogger(__name__)
 
-_RETRY_STATUS_CODES = {502, 503, 529}
-_MAX_RETRIES = 3
-_RETRY_BASE_DELAY = 1.0
 # Guard against a model that streams deltas forever without finish_reason
 # (observed incident: Qwen3.8-27B-FP8 repetition loop grew RSS to 4-7 GB).
 # Exceeding the ceiling aborts the stream with Error (not Done) so the
@@ -204,9 +212,9 @@ class OpenAIProvider(LLMProvider):
         abort_event: Optional[asyncio.Event],
         timeout: Optional[aiohttp.ClientTimeout] = None,
     ) -> Optional[aiohttp.ClientResponse]:
-        delay = _RETRY_BASE_DELAY
+        delay = RETRY_BASE_DELAY
 
-        for attempt in range(_MAX_RETRIES):
+        for attempt in range(MAX_RETRIES):
             post_task = asyncio.create_task(
                 session.post(
                     url,
@@ -246,30 +254,30 @@ class OpenAIProvider(LLMProvider):
             try:
                 resp = post_task.result()
             except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as e:
-                if attempt < _MAX_RETRIES - 1:
+                if attempt < MAX_RETRIES - 1:
                     log.warning("Connection error (attempt %d/%d): %s, retrying in %.1fs",
-                                attempt + 1, _MAX_RETRIES, e, delay)
+                                attempt + 1, MAX_RETRIES, e, delay)
                     await asyncio.sleep(delay)
                     delay *= 2
                     continue
                 log.error("Connection error after %d attempts: %s",
-                          _MAX_RETRIES, e)
+                          MAX_RETRIES, e)
                 raise
             except Exception as e:
                 log.error("Unexpected error in post_task: %s", e)
                 raise
 
-            if resp.status in _RETRY_STATUS_CODES and attempt < _MAX_RETRIES - 1:
+            if resp.status in RETRY_STATUS_CODES and attempt < MAX_RETRIES - 1:
                 await resp.release()
                 log.warning("Got %d (attempt %d/%d), retrying in %.1fs",
-                            resp.status, attempt + 1, _MAX_RETRIES, delay)
+                            resp.status, attempt + 1, MAX_RETRIES, delay)
                 await asyncio.sleep(delay)
                 delay *= 2
                 continue
 
             return resp
 
-        raise RuntimeError(f"Failed after {_MAX_RETRIES} attempts")
+        raise RuntimeError(f"Failed after {MAX_RETRIES} attempts")
 
     async def chat(
         self,

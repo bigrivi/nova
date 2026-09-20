@@ -8,6 +8,13 @@ from dataclasses import dataclass, field
 from typing import AsyncGenerator, Optional, Any, Union
 from enum import Enum
 
+# Shared HTTP retry policy for all providers. 429 is quota/throttle feedback,
+# not a transient fault: retrying it only burns quota faster, so it fails
+# fast and surfaces upstream detail to the caller instead.
+RETRY_STATUS_CODES = frozenset({500, 502, 503, 504, 529})
+MAX_RETRIES = 3
+RETRY_BASE_DELAY = 1.0
+
 
 @dataclass
 class Message:

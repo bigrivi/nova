@@ -521,8 +521,8 @@ class AnthropicProvider(LLMProvider):
         abort_event: Optional[asyncio.Event],
         timeout: Optional[aiohttp.ClientTimeout] = None,
     ) -> Optional[aiohttp.ClientResponse]:
-        delay = _RETRY_BASE_DELAY
-        for attempt in range(_MAX_RETRIES):
+        delay = RETRY_BASE_DELAY
+        for attempt in range(MAX_RETRIES):
             post_task = asyncio.create_task(
                 session.post(
                     url,
@@ -556,39 +556,39 @@ class AnthropicProvider(LLMProvider):
             try:
                 response = post_task.result()
             except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as exception:
-                if attempt < _MAX_RETRIES - 1:
-                    log.warning("Connection error (attempt %d/%d): %s, retrying in %.1fs", attempt + 1, _MAX_RETRIES, exception, delay)
+                if attempt < MAX_RETRIES - 1:
+                    log.warning("Connection error (attempt %d/%d): %s, retrying in %.1fs", attempt + 1, MAX_RETRIES, exception, delay)
                     await asyncio.sleep(delay)
                     delay *= 2
                     continue
-                log.error("Connection error after %d attempts: %s", _MAX_RETRIES, exception)
+                log.error("Connection error after %d attempts: %s", MAX_RETRIES, exception)
                 raise
             except Exception as exception:
                 log.error("Unexpected error in post_task: %s", exception)
                 raise
 
-            if response.status in _RETRY_STATUS_CODES and attempt < _MAX_RETRIES - 1:
+            if response.status in RETRY_STATUS_CODES and attempt < MAX_RETRIES - 1:
                 retry_after = response.headers.get("retry-after") or response.headers.get("Retry-After")
                 if retry_after is not None:
                     try:
                         retry_delay = float(retry_after)
                         retry_delay = min(max(retry_delay, 0), 60)
                         await response.release()
-                        log.warning("Got %d (attempt %d/%d), retrying in %.1fs (retry-after)", response.status, attempt + 1, _MAX_RETRIES, retry_delay)
+                        log.warning("Got %d (attempt %d/%d), retrying in %.1fs (retry-after)", response.status, attempt + 1, MAX_RETRIES, retry_delay)
                         await asyncio.sleep(retry_delay)
                         delay *= 2
                         continue
                     except Exception:
                         pass
                 await response.release()
-                log.warning("Got %d (attempt %d/%d), retrying in %.1fs", response.status, attempt + 1, _MAX_RETRIES, delay)
+                log.warning("Got %d (attempt %d/%d), retrying in %.1fs", response.status, attempt + 1, MAX_RETRIES, delay)
                 await asyncio.sleep(delay)
                 delay *= 2
                 continue
 
             return response
 
-        raise RuntimeError(f"Failed after {_MAX_RETRIES} attempts")
+        raise RuntimeError(f"Failed after {MAX_RETRIES} attempts")
 
     async def chat(
         self,
