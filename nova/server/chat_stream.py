@@ -366,5 +366,8 @@ class ChatStreamOrchestrator:
             if buffer is not None and (last_sequence > 0 or buffer.is_done(session_id)):
                 state = "done"
             else:
-                raise HTTPException(status_code=404, detail="Unknown session stream")
+                # No live stream and no buffered frames for this session in
+                # this process (e.g. after a restart, or a session that never
+                # streamed here). That is a normal idle state, not an error.
+                state = "idle"
         return {"status": state, "last_seq": last_sequence}

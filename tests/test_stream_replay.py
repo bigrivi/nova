@@ -268,11 +268,12 @@ def test_endpoint_idle_stream_emits_ping_heartbeat(monkeypatch, tmp_path):
     assert b"data: [DONE]" in response.content
 
 
-def test_endpoint_unknown_session_status_404(monkeypatch, tmp_path):
+def test_endpoint_unknown_session_status_idle(monkeypatch, tmp_path):
     app = _make_app(monkeypatch, tmp_path, "home-404")
     client = TestClient(app)
     response = client.get("/api/chat/stream/status", params={"session_id": "nope"})
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json() == {"status": "idle", "last_seq": 0}
 
 
 def test_slow_subscriber_drops_without_blocking():

@@ -240,7 +240,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
             });
             try {
                 const status = await getStreamStatus(threadId);
-                if (status.status === "done") {
+                if (status.status === "done" || status.status === "idle") {
                     clearLastSequence(threadId);
                 } else if (
                     status.status === "active" ||
@@ -258,7 +258,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
                     }
                 }
             } catch {
-                // Unknown session stream (404): history alone is the full story.
+                // Status fetch failed: history alone is the full story.
                 clearLastSequence(threadId);
             }
         } catch (error) {
