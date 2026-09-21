@@ -286,7 +286,12 @@ export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest 
 }
 
 export function throwStreamError(event: NovaStreamEvent): never {
-    throw new Error(event.errorText || "Unknown error");
+    // A server-sent error frame is terminal, not a transport hiccup. Mark it
+    // non-retryable so the stream retry loop rethrows instead of resuming past
+    // the error frame (which would replay only [DONE] and swallow the message).
+    const error = new Error(event.errorText || "Unknown error");
+    (error as Error & { retryable?: boolean }).retryable = false;
+    throw error;
 }
 
 export type StreamSideEffect =

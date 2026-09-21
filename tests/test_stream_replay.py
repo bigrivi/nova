@@ -372,3 +372,22 @@ def test_endpoint_resume_tails_live_stream(monkeypatch, tmp_path):
     frames_by_sequence = dict(full)
     for sequence, data_line in tailed:
         assert frames_by_sequence[sequence] == data_line
+
+
+def test_append_clears_done_flag_so_new_turn_reopens_stream() -> None:
+    """A new turn must un-done the session buffer.
+
+    Regression: turn 1 ends (mark_done) then an auto-wake turn appends new
+    frames, but the stale done flag made a resume tail end on its first
+    empty poll -- truncating the in-flight turn and leaving the client with
+    an empty assistant message.
+    """
+    buffer = StreamBuffer()
+    buffer.append("s1", b'data: {"t":1}\n\n')
+    buffer.mark_done("s1")
+    assert buffer.is_done("s1") is True
+
+    buffer.append("s1", b'data: {"t":2}\n\n')
+
+    assert buffer.is_done("s1") is False
+    assert buffer.last_sequence("s1") == 2

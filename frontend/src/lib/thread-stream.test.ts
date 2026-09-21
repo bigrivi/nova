@@ -311,6 +311,18 @@ describe("applyStreamEvent non-patch branches", () => {
             "Unknown error",
         );
     });
+
+    it("throwStreamError is non-retryable so the frame is shown, not resumed past", () => {
+        try {
+            throwStreamError({ type: "error", errorText: "HTTP 429" });
+            throw new Error("expected throwStreamError to throw");
+        } catch (error) {
+            expect((error as Error).message).toBe("HTTP 429");
+            expect(
+                (error as Error & { retryable?: boolean }).retryable,
+            ).toBe(false);
+        }
+    });
 });
 
 describe("event extractors", () => {

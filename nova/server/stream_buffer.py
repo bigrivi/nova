@@ -64,6 +64,10 @@ class StreamBuffer:
         sequence = self._next_sequence.get(session_id, 0) + 1
         self._next_sequence[session_id] = sequence
         framed = b"id: " + str(sequence).encode("ascii") + b"\n" + raw
+        # A new frame means the session is live again: clear any done flag left
+        # by a previous turn, or a resume tail would end on its first empty poll
+        # and truncate the in-flight turn (e.g. a sub-agent auto-wake).
+        self._done_sessions.discard(session_id)
         session_frames = self._session_frames.get(session_id)
         if session_frames is None:
             session_frames = self._session_frames[session_id] = deque(maxlen=self._maxlen)
