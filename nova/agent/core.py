@@ -121,7 +121,6 @@ class Agent:
         self._abort_event = asyncio.Event()
         self._base_system_prompt: Optional[str] = None
         self._active_workspace: Optional[str] = None
-        self._memory_modified_this_turn: bool = False
         self._last_user_input: str = ""
         self._skill_tools: Any = None
         self._compaction = CompactionController(
@@ -149,11 +148,7 @@ class Agent:
         """Resolve a pending approval request (called from server route)."""
         return self._approval.resolve(approval_request_id, approved, remember)
 
-    def _check_abort(self) -> bool:
-        """Check whether execution has been interrupted."""
-        return self._abort_event.is_set()
-
-    async def _wait_if_aborted(self) -> Optional[dict[str, Any]]:
+    async def _stop_if_aborted(self) -> Optional[dict[str, Any]]:
         """Return a done payload when execution should stop."""
         if self._abort_event.is_set():
             payload = _done_payload("stopped", "Stopped by user")
@@ -181,6 +176,11 @@ class Agent:
 
     def _apply_active_workspace(self, session_ctx: Any = None) -> None:
         from nova.tools.workspace_context import set_active_workspace
+        from nova.memory.agent_context import set_current_agent_key
+
+        # Only a primary agent owns structured memory; sub-agents get no agent
+        # identity so any (withheld) memory read stays global-only.
+        set_current_agent_key(None if self.is_sub_agent else self.agent_key)
 
         override = getattr(session_ctx, "workspace_dir", None) if session_ctx else None
         if override:
@@ -242,7 +242,7 @@ class Agent:
             converted_messages.append(llm_message)
         return converted_messages
 
-    async def _get_messages(self, loaded_messages: Optional[list] = None) -> list[LLMMessage]:
+    async def _build_messages(self, loaded_messages: Optional[list] = None) -> list[LLMMessage]:
         session = self.session.get_current_session()
 
         if self._base_system_prompt is None:
@@ -265,24 +265,24 @@ class Agent:
         group_id: Optional[str] = None,
         loaded_messages: Optional[list] = None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
-        stop_payload = await self._wait_if_aborted()
+        stop_payload = await self._stop_if_aborted()
         if stop_payload:
             yield AgentEvent.DONE, stop_payload
             return
 
         reader = TurnStreamReader(
             emit=self._emit,
-            wait_if_aborted=self._wait_if_aborted,
+            stop_if_aborted=self._stop_if_aborted,
             turn_count=turn_count,
         )
         async for event, data in reader.consume(
-            await self._open_completion(turn_count, tool_schemas, loaded_messages)
+            await self._start_completion_stream(turn_count, tool_schemas, loaded_messages)
         ):
             yield event, data
         if reader.outcome is not TurnOutcome.CONTINUE:
             return
 
-        stop_payload = await self._wait_if_aborted()
+        stop_payload = await self._stop_if_aborted()
         if stop_payload:
             yield AgentEvent.DONE, stop_payload
             return
@@ -301,7 +301,8 @@ class Agent:
             await self._emit(AgentEvent.DONE, payload)
             log.info(
                 f"[Turn {turn_count}] Completed tokens_in={reader.tokens_input} "
-                f"tokens_out={reader.tokens_output}"
+                f"tokens_out={reader.tokens_output} "
+                f"cache_read={reader.cache_read_tokens}"
             )
             yield AgentEvent.DONE, payload
             return
@@ -309,13 +310,13 @@ class Agent:
         async for event, data in self._invoke_tools(tool_calls, group_id, turn_count):
             yield event, data
 
-    async def _open_completion(
+    async def _start_completion_stream(
         self,
         turn_count: int,
         tool_schemas: Any,
         loaded_messages: Optional[list],
-    ) -> Any:
-        messages = await self._get_messages(loaded_messages=loaded_messages)
+    ) -> AsyncGenerator[Any, None]:
+        messages = await self._build_messages(loaded_messages=loaded_messages)
         reasoning_timeout = get_reasoning_timeout(self.config.model, default=120)
         current_session = self.session.get_current_session()
         session_id = current_session.id if current_session else None
@@ -381,13 +382,11 @@ class Agent:
             abort_event=self._abort_event,
             emit=self._emit,
             emit_approval=self._emit_approval,
-            wait_if_aborted=self._wait_if_aborted,
+            stop_if_aborted=self._stop_if_aborted,
             turn_count=turn_count,
         )
         async for event, data in invoker.run(tool_calls, group_id=group_id):
             yield event, data
-        if invoker.memory_modified:
-            self._memory_modified_this_turn = True
 
     async def _resolve_session(
         self,
@@ -418,7 +417,7 @@ class Agent:
         if self._turns_since_review < self.config.memory_review_interval:
             return
         self._turns_since_review = 0
-        asyncio.create_task(self._background_memory_review())
+        asyncio.create_task(self._run_memory_review())
 
     async def chat_stream(
         self,
@@ -511,10 +510,6 @@ class Agent:
             await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
             yield AgentEvent.TURN_END, {"turn": turn_count}
 
-            if self._memory_modified_this_turn:
-                self._base_system_prompt = None
-                self._memory_modified_this_turn = False
-
             if done_payload is not None:
                 reason = (
                     done_payload.get("reason", "")
@@ -551,11 +546,15 @@ class Agent:
     async def _refresh_memory_index(self) -> None:
         """Build the memory index from DB for system prompt inclusion.
 
-        Queries user-scoped memories and stores a compact listing in
-        PromptConfig.memory_index.  This is called once per session (when
-        _base_system_prompt is None) and again after save/delete memory
-        invalidates the cache.
+        Queries the memories visible to this agent and stores a compact
+        listing in PromptConfig.memory_index. Built once per session (when
+        _base_system_prompt is None) and then frozen: memory written mid-session
+        lands in the store but is not re-injected until the next session, so the
+        cached system prefix stays byte-stable for prompt caching.
         """
+        if self.is_sub_agent:
+            self._prompt_builder.config.memory_index = ""
+            return
         try:
             from nova.memory.context import build_memory_index_for_system
             from nova.memory.service import MemoryService
@@ -593,7 +592,7 @@ class Agent:
             lines.append(f"- `{key}` ({access}): {description}")
         self._prompt_builder.config.subagent_roster = "\n".join(lines)
 
-    async def _background_memory_review(self) -> None:
+    async def _run_memory_review(self) -> None:
         await MemoryReviewer(
             llm=self.llm,
             session=self.session,
@@ -609,18 +608,23 @@ class Agent:
         """Get all sub-agents of this agent."""
         return self._hierarchy.sub_agents()
 
-    def get_parent_agent(self) -> Optional["Agent"]:
-        """Get the parent agent (if this is a sub-agent)."""
+    def get_runtime_parent(self) -> Optional["Agent"]:
+        """Get the parent agent this instance is mounted under (in-memory, single)."""
         return self.parent_agent
 
-    async def get_child_agents(self) -> list[dict]:
-        """Get all child agents of this agent from database."""
+    async def get_sub_agent_records(self) -> list[dict]:
+        """Get child agent rows from the database (may differ from live sub-agents)."""
         return await self._hierarchy.child_agent_records()
 
-    async def get_parent_agents(self) -> list[dict]:
-        """Get all parent agents of this agent from database."""
+    async def get_parent_agent_records(self) -> list[dict]:
+        """Get all parent agent rows from the database (M2M; may be multiple)."""
         return await self._hierarchy.parent_agent_records()
 
-    async def get_parent_agent_config(self) -> Optional[dict]:
-        """Get the first parent agent configuration from database."""
+    async def get_primary_parent_record(self) -> Optional[dict]:
+        """Get the first parent agent row from the database.
+
+        This is the database's ordering, not necessarily the same parent
+        as get_runtime_parent() returns; the two models are not guaranteed
+        to agree.
+        """
         return await self._hierarchy.first_parent_agent_record()

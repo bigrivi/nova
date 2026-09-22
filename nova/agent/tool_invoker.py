@@ -48,7 +48,7 @@ class ToolInvoker:
         abort_event: asyncio.Event,
         emit: Callable[..., Awaitable[None]],
         emit_approval: Callable[[dict], Awaitable[None]],
-        wait_if_aborted: Callable[[], Awaitable[Optional[dict]]],
+        stop_if_aborted: Callable[[], Awaitable[Optional[dict]]],
         turn_count: int = 0,
     ) -> None:
         self._registry = registry
@@ -61,11 +61,10 @@ class ToolInvoker:
         self._abort_event = abort_event
         self._emit = emit
         self._emit_approval = emit_approval
-        self._wait_if_aborted = wait_if_aborted
+        self._stop_if_aborted = stop_if_aborted
         self._turn_count = turn_count
 
         self.outcome = ToolOutcome.COMPLETED
-        self.memory_modified = False
         self._executed_ids: set[str] = set()
 
     async def run(
@@ -173,8 +172,6 @@ class ToolInvoker:
                 return
 
             behavior.on_success(turn_context)
-            if turn_context.memory_modified:
-                self.memory_modified = True
 
     async def _announce(
         self,
@@ -188,7 +185,7 @@ class ToolInvoker:
         tool call that was announced but never answered would break the
         assistant->tool pairing the provider requires.
         """
-        stop_payload = await self._wait_if_aborted()
+        stop_payload = await self._stop_if_aborted()
         if stop_payload:
             async for event in self.persist_cancelled(all_tool_calls, group_id):
                 yield event
@@ -199,7 +196,7 @@ class ToolInvoker:
         await self._emit(AgentEvent.TOOL_CALL, tool_call)
         yield AgentEvent.TOOL_CALL, tool_call
 
-        stop_payload = await self._wait_if_aborted()
+        stop_payload = await self._stop_if_aborted()
         if stop_payload:
             async for event in self.persist_cancelled(all_tool_calls, group_id):
                 yield event

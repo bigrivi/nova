@@ -36,11 +36,11 @@ class TurnStreamReader:
     def __init__(
         self,
         emit: Callable[..., Awaitable[None]],
-        wait_if_aborted: Callable[[], Awaitable[Optional[dict]]],
+        stop_if_aborted: Callable[[], Awaitable[Optional[dict]]],
         turn_count: int = 0,
     ) -> None:
         self._emit = emit
-        self._wait_if_aborted = wait_if_aborted
+        self._stop_if_aborted = stop_if_aborted
         self._turn_count = turn_count
 
         self.content = ""
@@ -49,6 +49,7 @@ class TurnStreamReader:
         self.done_content = ""
         self.tokens_input: Optional[int] = None
         self.tokens_output: Optional[int] = None
+        self.cache_read_tokens: Optional[int] = None
         self.provider_meta: Optional[dict] = None
         self.reasoning_elapsed_ms: Optional[int] = None
         self.outcome = TurnOutcome.CONTINUE
@@ -64,7 +65,7 @@ class TurnStreamReader:
         closing = False
         try:
             async for chunk in chunks:
-                stop_payload = await self._wait_if_aborted()
+                stop_payload = await self._stop_if_aborted()
                 if stop_payload:
                     self.outcome = TurnOutcome.STOPPED
                     yield AgentEvent.DONE, stop_payload
@@ -152,6 +153,8 @@ class TurnStreamReader:
             chunk, "tokens_input", None) or self.tokens_input
         self.tokens_output = getattr(
             chunk, "tokens_output", None) or self.tokens_output
+        self.cache_read_tokens = getattr(
+            chunk, "cache_read_tokens", None) or self.cache_read_tokens
         self.provider_meta = getattr(chunk, "provider_meta", None) or self.provider_meta
 
     def _absorb_tool_call(self, chunk: Any) -> None:
