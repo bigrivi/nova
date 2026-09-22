@@ -27,6 +27,7 @@ function makeDeps(overrides: Partial<StreamEngineDeps> = {}): StreamEngineDeps {
     return {
         abortControllersRef: { current: new Map() },
         seenSequencesRef: { current: new Map() },
+        expectOwnActiveRef: { current: new Set<string>() },
         sessionIdRef: { current: "t-1" },
         currentThreadIdRef: { current: "t-1" },
         setThreadRunning: vi.fn(),
@@ -206,6 +207,28 @@ describe("handleStreamEvent session handoff", () => {
         expect(deps.setCurrentThreadId).toHaveBeenCalledWith("real-1");
         expect(deps.sessionIdRef.current).toBe("real-1");
         expect(deps.setThreads).toHaveBeenCalledTimes(1);
+    });
+
+    it("migrates the own-turn expectation onto the real session id", () => {
+        const deps = makeDeps({
+            abortControllersRef: {
+                current: new Map([[DRAFT_THREAD_ID, new AbortController()]]),
+            },
+            expectOwnActiveRef: { current: new Set([DRAFT_THREAD_ID]) },
+            sessionIdRef: { current: DRAFT_THREAD_ID },
+        });
+        const env = makeEnv({ state: { activeThreadId: DRAFT_THREAD_ID } });
+
+        handleStreamEvent(
+            { type: "data-nova-session", data: { sessionId: "real-1" } },
+            env,
+            deps,
+        );
+
+        expect(deps.expectOwnActiveRef.current.has("real-1")).toBe(true);
+        expect(deps.expectOwnActiveRef.current.has(DRAFT_THREAD_ID)).toBe(
+            false,
+        );
     });
 
     it("does not take over the view when the user moved to another thread", () => {

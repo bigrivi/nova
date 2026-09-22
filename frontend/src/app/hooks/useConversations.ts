@@ -27,6 +27,10 @@ import {
 } from "../../lib/thread-running";
 import { setAssistantText } from "../../lib/thread-stream";
 import {
+    consumeParkedTail,
+    decideTailOnActive,
+} from "../../lib/thread-tail";
+import {
     buildDraftMessages,
     buildUserMessageParts,
     createAssistantMessage,
@@ -115,6 +119,11 @@ export function useConversations(deps: ConversationDeps): Conversations {
     const abortControllersRef = useRef(new Map<string, AbortController>());
     const prevActiveSnapshotRef = useRef(new Set<string>());
     const seenSequencesRef = useRef(new Map<string, Set<number>>());
+    // Session ids of streams this client started itself (fresh submits and
+    // resume tails). Their registration active-event is lighting-only: acting
+    // on it would park our own turn and fire a spurious empty resume.
+    const expectOwnActiveRef = useRef(new Set<string>());
+    const pendingTailRef = useRef(new Set<string>());
 
     const isRunning = !!runningByThread[currentThreadId];
     const currentMessages = messagesByThreadId[currentThreadId] || [];
@@ -192,6 +201,27 @@ export function useConversations(deps: ConversationDeps): Conversations {
             setRunningByThread((previous) =>
                 nextRunningMap(previous, sessionId, running),
             );
+            // Edge-trigger the tail off the event itself, not off the
+            // running-map boolean: if the light is already on (e.g. the
+            // previous turn's local stream hasn't cleaned up yet), the map
+            // identity doesn't change and no effect would fire, so a
+            // server-initiated turn would never be tailed. Active events for
+            // streams this client started itself are consumed lighting-only.
+            const decision = decideTailOnActive({
+                active: running,
+                current: sessionId === currentThreadIdRef.current,
+                localStream: abortControllersRef.current.has(sessionId),
+                ownTurn: expectOwnActiveRef.current.delete(sessionId),
+            });
+            if (decision === "tail-now") {
+                void resumeThreadStream(sessionId, getLastSequence(sessionId));
+            } else if (decision === "park") {
+                // A local stream is still draining: park the tail request
+                // for the stream's cleanup to consume (see the streamThread
+                // finally block). Tailing now would race the open stream;
+                // doing nothing would miss the turn entirely.
+                pendingTailRef.current.add(sessionId);
+            }
         }
 
         source.onmessage = (event) => {
@@ -386,6 +416,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
         return {
             abortControllersRef,
             seenSequencesRef,
+            expectOwnActiveRef,
             sessionIdRef,
             currentThreadIdRef,
             setThreadRunning,
@@ -440,6 +471,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
         }
         const controller = new AbortController();
         abortControllersRef.current.set(args.originThreadId, controller);
+        expectOwnActiveRef.current.add(args.originThreadId);
         setThreadRunning(args.originThreadId, true);
         try {
             await streamChat({
@@ -477,8 +509,27 @@ export function useConversations(deps: ConversationDeps): Conversations {
         } finally {
             abortControllersRef.current.delete(args.originThreadId);
             abortControllersRef.current.delete(env.state.activeThreadId);
+            expectOwnActiveRef.current.delete(args.originThreadId);
+            expectOwnActiveRef.current.delete(env.state.activeThreadId);
             setThreadRunning(args.originThreadId, false);
             setThreadRunning(env.state.activeThreadId, false);
+
+            // Consume a parked tail request: a server-initiated turn went
+            // active while this local stream was still draining, so the
+            // direct tail had to skip. Tail it now that the stream is gone.
+            const finishedThreadId =
+                env.state.activeThreadId || args.originThreadId;
+            const tailThreadId = consumeParkedTail(
+                pendingTailRef.current,
+                finishedThreadId,
+                finishedThreadId === currentThreadIdRef.current,
+            );
+            if (tailThreadId !== null) {
+                void resumeThreadStream(
+                    tailThreadId,
+                    getLastSequence(tailThreadId),
+                );
+            }
 
             if (env.flags.requiresInput && env.flags.pendingAskUser) {
                 const askUser = env.flags.pendingAskUser as { input: unknown };
@@ -536,23 +587,6 @@ export function useConversations(deps: ConversationDeps): Conversations {
             resumeFromSequence: fromSequence ?? 0,
         });
     }
-
-    // Auto-tail the open thread when it goes active server-side without a local
-    // stream. A sub-agent completion wakes the parent with a fresh turn AFTER
-    // the original SSE closed, so the /active poll flips this thread's running
-    // light on; we open a resume stream to play those buffered frames live.
-    useEffect(() => {
-        const threadId = currentThreadId;
-        if (
-            threadId === DRAFT_THREAD_ID ||
-            !runningByThread[threadId] ||
-            abortControllersRef.current.has(threadId)
-        ) {
-            return;
-        }
-        void resumeThreadStream(threadId, getLastSequence(threadId));
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentThreadId, runningByThread]);
 
     async function submitPrompt(
         prompt: string,

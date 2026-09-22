@@ -66,6 +66,7 @@ type ThreadsUpdater = (
 export interface StreamEngineDeps {
     abortControllersRef: Ref<Map<string, AbortController>>;
     seenSequencesRef: Ref<Map<string, Set<number>>>;
+    expectOwnActiveRef: Ref<Set<string>>;
     sessionIdRef: Ref<string>;
     currentThreadIdRef: Ref<string>;
     setThreadRunning: (threadId: string, running: boolean) => void;
@@ -134,6 +135,9 @@ function handleSessionHandoff(
     if (controller) {
         deps.abortControllersRef.current.delete(previousThreadId);
         deps.abortControllersRef.current.set(sessionId, controller);
+    }
+    if (deps.expectOwnActiveRef.current.delete(previousThreadId)) {
+        deps.expectOwnActiveRef.current.add(sessionId);
     }
     const seen = deps.seenSequencesRef.current.get(previousThreadId);
     if (seen) {
