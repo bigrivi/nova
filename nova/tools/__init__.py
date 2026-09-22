@@ -12,6 +12,7 @@ from nova.tools.todo_write import TOOL as todo_write
 from nova.tools.ask_user import TOOL as ask_user
 from nova.tools.image import read_image
 from nova.tools.delegate import TOOL as delegate_to_agent
+from nova.tools.subagent_status import TOOL as subagent_status
 try:
     import playwright
     from nova.tools.browser_use import TOOL as browser_use
@@ -35,6 +36,7 @@ __all__ = [
     "browser_use",
     "read_image",
     "delegate_to_agent",
+    "subagent_status",
     "save_memory",
     "search_memory",
     "delete_memory",
