@@ -6,7 +6,7 @@ import json
 import aiohttp
 import pytest
 
-from nova.llm.anthropic import AnthropicProvider, _default_max_output_tokens
+from nova.llm.anthropic import AnthropicProvider, _default_max_output_tokens, _preserves_thinking
 from nova.llm.provider import Done, Error, LLMProvider, Message, ReasoningDelta, TextDelta, ToolCall
 
 # ---------------------------------------------------------------------------
@@ -191,7 +191,9 @@ def test_build_headers_betas_and_user_agent():
 
 
 def test_build_body_max_tokens_and_system_and_stream():
-    provider = AnthropicProvider()
+    # Caching disabled here to assert the raw system-derivation shape (a plain
+    # string); cache_control promotion to a block list is covered separately.
+    provider = AnthropicProvider(request_options={"prompt_caching": False})
     messages = [Message(role="system", content="sys"), Message(role="user", content="hi")]
     body = provider._build_body(messages=messages, model="claude-3-5-sonnet-20241022", stream=False)
     assert body["max_tokens"] == 8192
@@ -202,7 +204,7 @@ def test_build_body_max_tokens_and_system_and_stream():
 
 
 def test_build_body_system_joined_and_stream_true():
-    provider = AnthropicProvider()
+    provider = AnthropicProvider(request_options={"prompt_caching": False})
     messages = [
         Message(role="system", content="a"),
         Message(role="system", content="b"),
@@ -250,6 +252,93 @@ def test_format_tools_via_build_body():
     assert body["tools"][1]["input_schema"] == {"type": "object"}
     # second entry skipped
     assert all(tool["name"] for tool in body["tools"])
+
+
+def test_preserves_thinking_by_model():
+    # Opus/Sonnet 4.5+ retain prior-turn thinking.
+    assert _preserves_thinking("claude-opus-4-5") is True
+    assert _preserves_thinking("claude-opus-4-8") is True
+    assert _preserves_thinking("claude-sonnet-4-5") is True
+    assert _preserves_thinking("claude-sonnet-4-5-20250929") is True
+    assert _preserves_thinking("anthropic/claude-opus-4-6") is True
+    # Below 4.5, or the 3.x line, strips prior-turn thinking.
+    assert _preserves_thinking("claude-opus-4-1-20250805") is False
+    assert _preserves_thinking("claude-sonnet-4-20250514") is False
+    assert _preserves_thinking("claude-3-7-sonnet-20250219") is False
+    assert _preserves_thinking("claude-3-5-sonnet-20241022") is False
+    assert _preserves_thinking("claude-3-opus-20240229") is False
+    # Every Haiku strips through 4.5.
+    assert _preserves_thinking("claude-haiku-4-5") is False
+    # Missing / unknown models default to the safe strip behaviour.
+    assert _preserves_thinking(None) is False
+    assert _preserves_thinking("gpt-5") is False
+
+
+def test_build_body_cache_control_on_system_and_last_message():
+    provider = AnthropicProvider()
+    messages = [
+        Message(role="system", content="sys prompt"),
+        Message(role="user", content="hello"),
+    ]
+    body = provider._build_body(messages=messages, model="claude-opus-4-8")
+    # System string is promoted to a block list with a breakpoint on the last
+    # block; Nova defaults to a 1h TTL.
+    assert isinstance(body["system"], list)
+    assert body["system"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+    assert body["system"][-1]["text"] == "sys prompt"
+    # The last message's last content block also carries a breakpoint.
+    assert body["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+
+
+def test_build_body_cache_control_ttl_5m_omits_ttl_key():
+    # 5m is the API default, so it is implied by omitting the ttl field.
+    provider = AnthropicProvider(request_options={"cache_ttl": "5m"})
+    body = provider._build_body(
+        messages=[Message(role="system", content="s"), Message(role="user", content="hi")],
+        model="claude-opus-4-8",
+    )
+    assert body["system"][-1]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_build_body_cache_control_ttl_1h_included():
+    provider = AnthropicProvider(request_options={"cache_ttl": "1h"})
+    body = provider._build_body(
+        messages=[Message(role="system", content="s"), Message(role="user", content="hi")],
+        model="claude-opus-4-8",
+    )
+    assert body["system"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+    assert body["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+
+
+def test_build_body_cache_control_disabled():
+    provider = AnthropicProvider(request_options={"prompt_caching": False})
+    body = provider._build_body(
+        messages=[Message(role="system", content="s"), Message(role="user", content="hi")],
+        model="claude-opus-4-8",
+    )
+    # System stays a plain string and nothing carries cache_control.
+    assert body["system"] == "s"
+    assert all("cache_control" not in block for block in body["messages"][-1]["content"])
+
+
+def test_build_body_cache_control_not_leaked_into_body_params():
+    # prompt_caching / cache_ttl are consumed, never forwarded as API params.
+    provider = AnthropicProvider(request_options={"prompt_caching": True, "cache_ttl": "1h"})
+    body = provider._build_body(
+        messages=[Message(role="user", content="hi")], model="claude-opus-4-8",
+    )
+    assert "prompt_caching" not in body
+    assert "cache_ttl" not in body
+
+
+def test_build_body_cache_control_unknown_ttl_falls_back_to_default():
+    provider = AnthropicProvider(request_options={"cache_ttl": "bogus"})
+    body = provider._build_body(
+        messages=[Message(role="system", content="s"), Message(role="user", content="hi")],
+        model="claude-opus-4-8",
+    )
+    # Unknown value is not in the accepted set -> no ttl key (API 5m default).
+    assert body["system"][-1]["cache_control"] == {"type": "ephemeral"}
 
 
 def test_default_max_output_tokens_table():
@@ -925,7 +1014,29 @@ def test_format_messages_model_mismatch_no_block():
             assert block.get("type") not in ("thinking", "redacted_thinking")
 
 
-def test_format_messages_last_assistant_only_gets_thinking():
+def test_format_messages_last_assistant_only_gets_thinking_on_legacy_model():
+    # Pre-4.5 models strip prior-turn thinking server-side, so only the latest
+    # assistant turn is worth replaying.
+    provider = AnthropicProvider(request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}})
+    messages = [
+        Message(role="user", content="hi"),
+        Message(role="assistant", content="first", reasoning_content="r1", provider_meta={"thinking_signature": "SIG1"}, model="claude-3-7-sonnet-20250219", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}]),
+        Message(role="tool", tool_call_id="toolu_1", content="out1"),
+        Message(role="assistant", content="second", reasoning_content="r2", provider_meta={"thinking_signature": "SIG2"}, model="claude-3-7-sonnet-20250219", tool_calls=[{"id": "toolu_2", "name": "read", "arguments": "{}"}]),
+        Message(role="tool", tool_call_id="toolu_2", content="out2"),
+    ]
+    formatted, _ = provider._format_messages(messages, include_thinking=True, model="claude-3-7-sonnet-20250219")
+    assistant_messages = [message for message in formatted if message["role"] == "assistant"]
+    assert len(assistant_messages) == 2
+    first_assistant = assistant_messages[0]
+    second_assistant = assistant_messages[1]
+    assert all(block.get("type") not in ("thinking", "redacted_thinking") for block in first_assistant["content"])
+    assert second_assistant["content"][0] == {"type": "thinking", "thinking": "r2", "signature": "SIG2"}
+
+
+def test_format_messages_all_assistants_get_thinking_on_preserving_model():
+    # Opus/Sonnet 4.5+ retain prior-turn thinking, so every assistant turn's
+    # blocks must be replayed to keep the cached prefix byte-stable.
     provider = AnthropicProvider(request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}})
     messages = [
         Message(role="user", content="hi"),
@@ -937,10 +1048,8 @@ def test_format_messages_last_assistant_only_gets_thinking():
     formatted, _ = provider._format_messages(messages, include_thinking=True, model="claude-sonnet-4-5")
     assistant_messages = [message for message in formatted if message["role"] == "assistant"]
     assert len(assistant_messages) == 2
-    first_assistant = assistant_messages[0]
-    second_assistant = assistant_messages[1]
-    assert all(block.get("type") not in ("thinking", "redacted_thinking") for block in first_assistant["content"])
-    assert second_assistant["content"][0] == {"type": "thinking", "thinking": "r2", "signature": "SIG2"}
+    assert assistant_messages[0]["content"][0] == {"type": "thinking", "thinking": "r1", "signature": "SIG1"}
+    assert assistant_messages[1]["content"][0] == {"type": "thinking", "thinking": "r2", "signature": "SIG2"}
 
 
 def test_format_messages_no_user_contains_thinking_across_cases():
@@ -1044,3 +1153,70 @@ async def test_chat_non_streaming_provider_meta(monkeypatch):
     result2 = await provider.chat([Message(role="user", content="hi")], model="claude-sonnet-4-5")
     assert isinstance(result2, Done)
     assert result2.provider_meta is None
+
+
+@pytest.mark.asyncio
+async def test_chat_cache_read_tokens_parsed_non_stream(monkeypatch):
+    body = {
+        "id": "msg_1",
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "text", "text": "hi"}],
+        "stop_reason": "end_turn",
+        "usage": {
+            "input_tokens": 4,
+            "output_tokens": 2,
+            "cache_read_input_tokens": 9000,
+            "cache_creation_input_tokens": 100,
+        },
+    }
+    _install_fake(monkeypatch, _FakeResponse(status=200, json_data=body, text_data=json.dumps(body)))
+    provider = AnthropicProvider(api_key="k")
+    result = await provider.chat([Message(role="user", content="hi")], model="claude-opus-4-8")
+    assert isinstance(result, Done)
+    assert result.cache_read_tokens == 9000
+    assert result.tokens_input == 4 + 9000 + 100
+
+
+@pytest.mark.asyncio
+async def test_chat_cache_read_absent_is_none_non_stream(monkeypatch):
+    body = {
+        "id": "msg_1",
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "text", "text": "hi"}],
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 4, "output_tokens": 2},
+    }
+    _install_fake(monkeypatch, _FakeResponse(status=200, json_data=body, text_data=json.dumps(body)))
+    provider = AnthropicProvider(api_key="k")
+    result = await provider.chat([Message(role="user", content="hi")], model="claude-opus-4-8")
+    assert isinstance(result, Done)
+    assert result.cache_read_tokens is None
+    assert result.tokens_input == 4
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_cache_read_tokens_parsed(monkeypatch):
+    events = [
+        {"type": "message_start", "message": {"usage": {
+            "input_tokens": 5, "output_tokens": 0,
+            "cache_read_input_tokens": 1234, "cache_creation_input_tokens": 10}}},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}},
+        {"type": "content_block_stop", "index": 0},
+        {"type": "message_delta", "usage": {"output_tokens": 3}},
+        {"type": "message_stop"},
+    ]
+    _install_fake(monkeypatch, _FakeResponse(status=200, sse_lines=_sse_lines(events)))
+    provider = AnthropicProvider(api_key="k")
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-opus-4-8"
+        )
+    ]
+    done = collected[-1]
+    assert isinstance(done, Done)
+    assert done.cache_read_tokens == 1234
+    assert done.tokens_input == 5 + 1234 + 10

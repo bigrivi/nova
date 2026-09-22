@@ -150,10 +150,17 @@ class OpenAIResponsesProvider(LLMProvider):
         # If single user message, Zen also accepts string input; keep array for consistency
         return result
 
-    def _build_body(self, input_data: list | str, model: str, stream: bool = False, tools: list[dict] | None = None) -> dict:
+    def _build_body(self, input_data: list | str, model: str, stream: bool = False, tools: list[dict] | None = None, session_id: Optional[str] = None) -> dict:
         body: dict = {"model": model, "input": input_data}
         if stream:
             body["stream"] = True
+
+        # A stable per-session cache key routes each session's requests to the
+        # same backend so its shared prefix (instructions + tools) reuses the
+        # prompt cache. Sub-agents are independent sessions and partition
+        # naturally by their own id.
+        if session_id:
+            body["prompt_cache_key"] = session_id
 
         opts = dict(self.request_options)
         # Allow per-model overrides like temperature etc. (strip tools flag)
@@ -245,16 +252,19 @@ class OpenAIResponsesProvider(LLMProvider):
 
         content = "".join(text_parts)
         usage = data.get("usage", {}) if isinstance(data, dict) else {}
+        input_details = usage.get("input_tokens_details", {}) if isinstance(usage, dict) else {}
+        cached = input_details.get("cached_tokens") if isinstance(input_details, dict) else None
         return Done(
             content=content,
             tool_calls=tool_calls,
             tokens_input=usage.get("input_tokens"),
             tokens_output=usage.get("output_tokens"),
+            cache_read_tokens=int(cached) if cached is not None else None,
         )
 
     async def chat(self, messages: list, model: str, stream: bool = False, tools: list[dict] | None = None, abort_event=None, session_id: Optional[str] = None) -> Done | Error:
         input_data = self._format_input(messages)
-        body = self._build_body(input_data, model, stream=False, tools=tools)
+        body = self._build_body(input_data, model, stream=False, tools=tools, session_id=session_id)
         headers = self._build_headers(session_id=session_id)
         url = f"{self.base_url}/responses"
         connector = self._make_connector()
@@ -279,7 +289,7 @@ class OpenAIResponsesProvider(LLMProvider):
 
     async def chat_stream(self, messages: list, model: str, tools: list[dict] | None = None, abort_event=None, timeout=None, session_id: Optional[str] = None) -> AsyncGenerator[ChatStreamEvent, None]:
         input_data = self._format_input(messages)
-        body = self._build_body(input_data, model, stream=True, tools=tools)
+        body = self._build_body(input_data, model, stream=True, tools=tools, session_id=session_id)
         headers = self._build_headers(session_id=session_id)
         url = f"{self.base_url}/responses"
         headers["Accept"] = "text/event-stream"
@@ -301,6 +311,7 @@ class OpenAIResponsesProvider(LLMProvider):
                 accumulated_tool_calls: dict[int, dict] = {}
                 usage_input = None
                 usage_output = None
+                usage_cached = None
 
                 while True:
                     if abort_event and abort_event.is_set():
@@ -340,6 +351,10 @@ class OpenAIResponsesProvider(LLMProvider):
                         if isinstance(usage, dict):
                             usage_input = usage.get("input_tokens")
                             usage_output = usage.get("output_tokens")
+                            input_details = usage.get("input_tokens_details", {})
+                            cached = input_details.get("cached_tokens") if isinstance(input_details, dict) else None
+                            if cached is not None:
+                                usage_cached = int(cached)
                         # Fallback parse output for tool calls if not yet yielded
                         # (non-streaming completed already has full output)
                         continue
@@ -462,7 +477,7 @@ class OpenAIResponsesProvider(LLMProvider):
                         for k, v in sorted(accumulated_tool_calls.items())
                         if v.get("name")
                     ]
-                yield Done(content=accumulated_content, tool_calls=final_tool_calls, tokens_input=usage_input, tokens_output=usage_output)
+                yield Done(content=accumulated_content, tool_calls=final_tool_calls, tokens_input=usage_input, tokens_output=usage_output, cache_read_tokens=usage_cached)
 
         except asyncio.CancelledError:
             yield Done(content="", tool_calls=[], aborted=True)

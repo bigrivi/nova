@@ -5,6 +5,7 @@ Anthropic LLM Provider
 import asyncio
 import json
 import logging
+import re
 from typing import AsyncGenerator, Optional
 
 import aiohttp
@@ -56,6 +57,13 @@ _MODEL_MAX_OUTPUT_TOKENS = (
 )
 _DEFAULT_MAX_OUTPUT_TOKENS = 8192
 
+# Prompt-cache breakpoint lifetimes Anthropic accepts. 5m is the API default
+# (implied by omitting the ttl field); Nova defaults to 1h so conversations
+# survive longer pauses between turns without a fresh cache write.
+_API_DEFAULT_CACHE_TTL = "5m"
+_DEFAULT_CACHE_TTL = "1h"
+_CACHE_TTLS = ("5m", "1h")
+
 
 def _default_max_output_tokens(model: str) -> int:
     normalised = normalise_model_id(model)
@@ -63,6 +71,38 @@ def _default_max_output_tokens(model: str) -> int:
         if model_prefix in normalised:
             return max_output_tokens
     return _DEFAULT_MAX_OUTPUT_TOKENS
+
+
+# Families that gained "preserve prior-turn thinking blocks" behaviour, and the
+# (major, minor) version at which each gained it. Below this the model strips
+# older thinking blocks server-side, so only the latest turn is worth replaying.
+_THINKING_PRESERVED_FROM = {"opus": (4, 5), "sonnet": (4, 5)}
+_THINKING_MODEL_RE = re.compile(r"claude-(opus|sonnet|haiku)-(\d+)(?:-(\d{1,2})(?=-|$))?")
+
+
+def _preserves_thinking(model: Optional[str]) -> bool:
+    """Whether the model keeps prior-turn thinking blocks in context by default.
+
+    Claude Opus 4.5+ and Sonnet 4.5+ retain thinking blocks from earlier
+    assistant turns; every Haiku and the Claude 3.x line, plus Opus/Sonnet
+    before 4.5, strip them. On a retaining model the whole history's thinking
+    must be replayed each turn so the cached prefix stays byte-stable; on the
+    others replaying only the latest turn matches what the server keeps.
+
+    Args:
+        model: Model id, optionally provider-prefixed (e.g. ``anthropic/...``).
+
+    Returns:
+        True when the model preserves prior-turn thinking blocks.
+    """
+    if not model:
+        return False
+    match = _THINKING_MODEL_RE.search(str(model).rsplit("/", 1)[-1].lower())
+    if not match:
+        return False
+    family, major, minor = match.group(1), int(match.group(2)), int(match.group(3) or 0)
+    threshold = _THINKING_PRESERVED_FROM.get(family)
+    return threshold is not None and (major, minor) >= threshold
 
 
 def _tool_call_parts(tool_call: object) -> Optional[tuple[str, str, str]]:
@@ -291,6 +331,11 @@ class AnthropicProvider(LLMProvider):
             if get_attr(message, "role") == "assistant":
                 last_assistant_index = message_index
 
+        # Models that retain prior-turn thinking need every assistant turn's
+        # blocks replayed so the cached prefix stays byte-stable; the rest only
+        # need the latest turn, which is all the server keeps anyway.
+        replay_all_thinking = _preserves_thinking(model)
+
         system_parts: list[str] = []
         converted_messages: list[dict] = []
 
@@ -325,9 +370,13 @@ class AnthropicProvider(LLMProvider):
 
             if role == "assistant":
                 blocks = []
-                # Anthropic only requires the latest assistant turn's thinking blocks,
-                # and on models that retain earlier turns every extra one is billed as input.
-                if include_thinking and message_index == last_assistant_index:
+                # Replay thinking for every assistant turn on retaining models
+                # (Opus/Sonnet 4.5+) to keep the cached prefix stable; on older
+                # models replay only the latest turn, since the server strips
+                # the rest and sending them would just burn input tokens.
+                if include_thinking and (
+                    replay_all_thinking or message_index == last_assistant_index
+                ):
                     blocks.extend(self._replay_thinking_blocks(get_attr, message, model))
 
                 if content:
@@ -475,6 +524,11 @@ class AnthropicProvider(LLMProvider):
         # System in options is handled after formatting: message-derived wins when non-empty
         system_from_options = options.pop("system", None)
 
+        # Prompt caching: on by default. Disable via request_options for proxies
+        # that reject cache_control (e.g. OpenAI-compatibility layers).
+        prompt_caching = options.pop("prompt_caching", True)
+        cache_ttl = options.pop("cache_ttl", _DEFAULT_CACHE_TTL)
+
         # Thinking flag determines whether to replay persisted thinking blocks
         include_thinking = "thinking" in options
 
@@ -518,7 +572,46 @@ class AnthropicProvider(LLMProvider):
                 body["tools"] = formatted_tools
         # when tools_enabled is falsy, send NO tools at all
 
+        if prompt_caching:
+            self._apply_cache_control(body, cache_ttl)
+
         return body
+
+    def _apply_cache_control(self, body: dict, ttl: str) -> None:
+        """Mark the cacheable prefix breakpoints for Anthropic prompt caching.
+
+        Anthropic caches nothing unless a ``cache_control`` breakpoint is set.
+        Two ephemeral breakpoints are placed (well under the 4-breakpoint cap):
+        one on the final system block, which - because the render order is
+        tools -> system -> messages - caches the tool schema and the whole
+        session-frozen system prompt together; and one on the final message's
+        last content block, so the growing conversation history is reused turn
+        over turn.
+
+        Args:
+            body: Request body, mutated in place; a ``system`` string is
+                promoted to a text-block list so the breakpoint can attach.
+            ttl: Cache lifetime, ``5m`` (default, omitted from the marker) or
+                ``1h``; unrecognised values fall back to the 5-minute default.
+        """
+        # 5m is the API default (implied by omitting ttl); any other accepted
+        # value must be sent explicitly. Unknown values fall back to 5m.
+        cache_control: dict = {"type": "ephemeral"}
+        if ttl in _CACHE_TTLS and ttl != _API_DEFAULT_CACHE_TTL:
+            cache_control["ttl"] = ttl
+
+        system = body.get("system")
+        if isinstance(system, str) and system:
+            system = [{"type": "text", "text": system}]
+            body["system"] = system
+        if isinstance(system, list) and system:
+            system[-1] = {**system[-1], "cache_control": cache_control}
+
+        messages = body.get("messages")
+        if messages:
+            last_content = messages[-1].get("content")
+            if isinstance(last_content, list) and last_content:
+                last_content[-1] = {**last_content[-1], "cache_control": cache_control}
 
     async def _post_with_retry(
         self,
@@ -658,12 +751,14 @@ class AnthropicProvider(LLMProvider):
                 usage = data.get("usage") if isinstance(data, dict) else None
                 tokens_input: Optional[int] = None
                 tokens_output: Optional[int] = None
+                cache_read_tokens: Optional[int] = None
                 if isinstance(usage, dict):
                     # tokens_input is sum of the three input fields (true prompt cost)
                     prompt_tokens = int(usage.get("input_tokens", 0) or 0)
-                    cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
+                    raw_cache_read = usage.get("cache_read_input_tokens")
+                    cache_read_tokens = int(raw_cache_read) if raw_cache_read is not None else None
                     cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
-                    tokens_input = prompt_tokens + cache_read_tokens + cache_creation_tokens
+                    tokens_input = prompt_tokens + (cache_read_tokens or 0) + cache_creation_tokens
                     if usage.get("output_tokens") is not None:
                         tokens_output = int(usage["output_tokens"])
 
@@ -673,6 +768,7 @@ class AnthropicProvider(LLMProvider):
                     tokens_input=tokens_input,
                     tokens_output=tokens_output,
                     provider_meta=provider_meta,
+                    cache_read_tokens=cache_read_tokens,
                 )
         except Exception as exception:
             log.exception("Anthropic provider chat request raised an exception")
@@ -718,6 +814,7 @@ class AnthropicProvider(LLMProvider):
                 final_thinking_blocks: list[dict] = []
                 tokens_input: Optional[int] = None
                 tokens_output: Optional[int] = None
+                cache_read_tokens: Optional[int] = None
 
                 while True:
                     if abort_event and abort_event.is_set():
@@ -757,9 +854,10 @@ class AnthropicProvider(LLMProvider):
                         usage = start_message.get("usage", {}) if isinstance(start_message, dict) else {}
                         if isinstance(usage, dict):
                             prompt_tokens = int(usage.get("input_tokens", 0) or 0)
-                            cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
+                            raw_cache_read = usage.get("cache_read_input_tokens")
+                            cache_read_tokens = int(raw_cache_read) if raw_cache_read is not None else None
                             cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
-                            tokens_input = prompt_tokens + cache_read_tokens + cache_creation_tokens
+                            tokens_input = prompt_tokens + (cache_read_tokens or 0) + cache_creation_tokens
                             if usage.get("output_tokens") is not None:
                                 try:
                                     tokens_output = int(usage["output_tokens"])
@@ -897,7 +995,7 @@ class AnthropicProvider(LLMProvider):
                     for _index, tool_call_state in sorted(accumulated_tool_calls.items())
                     if tool_call_state.get("name")
                 ]
-                yield Done(content=accumulated_content, tool_calls=final_tool_calls, tokens_input=tokens_input, tokens_output=tokens_output, provider_meta=provider_meta)
+                yield Done(content=accumulated_content, tool_calls=final_tool_calls, tokens_input=tokens_input, tokens_output=tokens_output, provider_meta=provider_meta, cache_read_tokens=cache_read_tokens)
 
         except asyncio.CancelledError:
             yield Done(content="", tool_calls=[], aborted=True)

@@ -38,6 +38,21 @@ _STREAM_SOCK_READ_TIMEOUT = 180
 _MAX_TOOL_CALLS = 64
 
 
+def _cached_tokens_from_usage(usage: object) -> Optional[int]:
+    """Extract prompt-cache hits from a Chat Completions usage payload.
+
+    Official API reports them as ``usage.prompt_tokens_details.cached_tokens``;
+    gateways that stay silent yield None (unknown, not zero).
+    """
+    if not isinstance(usage, dict):
+        return None
+    details = usage.get("prompt_tokens_details")
+    if not isinstance(details, dict):
+        return None
+    cached = details.get("cached_tokens")
+    return int(cached) if cached is not None else None
+
+
 class OpenAIProvider(LLMProvider):
     def __init__(
         self,
@@ -89,7 +104,7 @@ class OpenAIProvider(LLMProvider):
             headers.update(run_request_hook(self._request_hook, session_id))
         return headers
 
-    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] = None) -> dict:
+    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] = None, session_id: Optional[str] = None) -> dict:
         body = {"messages": messages}
         if model:
             body["model"] = model
@@ -98,6 +113,10 @@ class OpenAIProvider(LLMProvider):
 
         opts = dict(self.request_options)
         config_tools = opts.pop("tools", True)
+        # Prompt caching on by default. Disable via request_options for gateways
+        # that reject the unknown prompt_cache_key field (many OpenAI-compatible
+        # proxies do); the official OpenAI Chat Completions API honours it.
+        prompt_caching = opts.pop("prompt_caching", True)
         body.update(opts)
 
         if config_tools:
@@ -105,6 +124,13 @@ class OpenAIProvider(LLMProvider):
                 body["tools"] = tools
         else:
             body["tools"] = []
+
+        # A stable per-session cache key routes each session's requests so its
+        # shared prefix (system + tools) reuses the prompt cache. Sub-agents are
+        # independent sessions and partition naturally by their own id. Set last
+        # so request_options can never clobber it.
+        if prompt_caching and session_id:
+            body["prompt_cache_key"] = session_id
         return body
 
     @staticmethod
@@ -289,6 +315,7 @@ class OpenAIProvider(LLMProvider):
             model=model,
             stream=stream,
             tools=tools,
+            session_id=session_id,
         )
 
         url = f"{self.base_url}/chat/completions"
@@ -345,11 +372,13 @@ class OpenAIProvider(LLMProvider):
                         ))
 
                 usage = data.get("usage") if isinstance(data, dict) else None
+                cache_read_tokens = _cached_tokens_from_usage(usage)
                 return Done(
                     content=msg.get("content", ""),
                     tool_calls=tool_calls,
                     tokens_input=(usage or {}).get("prompt_tokens"),
                     tokens_output=(usage or {}).get("completion_tokens"),
+                    cache_read_tokens=cache_read_tokens,
                 )
         except Exception as e:
             log.exception("OpenAI provider chat request raised an exception")
@@ -375,6 +404,7 @@ class OpenAIProvider(LLMProvider):
             model=model,
             stream=True,
             tools=tools,
+            session_id=session_id,
         )
         url = f"{self.base_url}/chat/completions"
         connector = self._make_connector()
@@ -410,6 +440,7 @@ class OpenAIProvider(LLMProvider):
                 accumulated_tool_calls: dict[int, dict[str, str | bool]] = {}
                 usage_tokens_input: Optional[int] = None
                 usage_tokens_output: Optional[int] = None
+                usage_tokens_cached: Optional[int] = None
 
                 it = resp.content.__aiter__()
                 while True:
@@ -442,6 +473,9 @@ class OpenAIProvider(LLMProvider):
                             if usage.get("completion_tokens") is not None:
                                 usage_tokens_output = int(
                                     usage["completion_tokens"])
+                            cached = _cached_tokens_from_usage(usage)
+                            if cached is not None:
+                                usage_tokens_cached = cached
                         choices = data.get("choices")
                         if not isinstance(choices, list) or not choices:
                             log.debug(
@@ -530,6 +564,7 @@ class OpenAIProvider(LLMProvider):
                                 tool_calls=tool_calls,
                                 tokens_input=usage_tokens_input,
                                 tokens_output=usage_tokens_output,
+                                cache_read_tokens=usage_tokens_cached,
                             )
                             return
 
@@ -552,6 +587,7 @@ class OpenAIProvider(LLMProvider):
                     tool_calls=final_tool_calls,
                     tokens_input=usage_tokens_input,
                     tokens_output=usage_tokens_output,
+                    cache_read_tokens=usage_tokens_cached,
                 )
 
         except asyncio.CancelledError:

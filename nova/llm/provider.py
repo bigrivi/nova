@@ -79,6 +79,10 @@ class Done(ChatEvent):
     tokens_input: Optional[int] = None
     tokens_output: Optional[int] = None
     provider_meta: Optional[dict] = None
+    # Input tokens served from the prompt cache this turn, when the vendor
+    # reports it (Anthropic cache_read_input_tokens, OpenAI cached_tokens).
+    # None means unknown (vendor silent), not necessarily zero.
+    cache_read_tokens: Optional[int] = None
 
     def __post_init__(self):
         if self.tool_calls is None:

@@ -16,6 +16,13 @@ from nova.tools.registry import ToolRegistry
 
 log = logging.getLogger(__name__)
 
+# Structured memory is a primary-agent capability. Sub-agents run scoped,
+# throwaway tasks and never persist or recall structured memory, so these
+# tools are withheld from them entirely.
+_MEMORY_TOOL_NAMES = frozenset(
+    {"save_memory", "search_memory", "delete_memory", "list_memories"}
+)
+
 
 class ToolsetBuilder:
     """Fills a registry with everything one agent is allowed to call.
@@ -59,6 +66,8 @@ class ToolsetBuilder:
                 continue
             if not self._allows(name):
                 continue
+            if self._is_sub_agent and name in _MEMORY_TOOL_NAMES:
+                continue
             self._registry.register_by_metadata(name)
 
     def _register_skill_tools(self) -> None:
@@ -87,7 +96,6 @@ class ToolsetBuilder:
     def _register_behaviors(self) -> None:
         from nova.tools.behavior import (
             ImageReturningToolBehavior,
-            MemoryMutatingToolBehavior,
             ShellToolBehavior,
         )
 
@@ -95,5 +103,3 @@ class ToolsetBuilder:
             "shell", ShellToolBehavior(self._approval, is_sub_agent=self._is_sub_agent))
         self._registry.set_behavior("read_image", ImageReturningToolBehavior())
         self._registry.set_behavior("browser_use", ImageReturningToolBehavior())
-        self._registry.set_behavior("save_memory", MemoryMutatingToolBehavior())
-        self._registry.set_behavior("delete_memory", MemoryMutatingToolBehavior())

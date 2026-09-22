@@ -169,3 +169,84 @@ async def test_stream_ends_on_eof_without_trailing_newline(monkeypatch):
 
     assert isinstance(collected[-1], Done)
     assert collected[-1].content == "ok"
+
+
+def test_build_body_sets_prompt_cache_key_from_session():
+    provider = OpenAIResponsesProvider(api_key="k")
+    body = provider._build_body(
+        [{"role": "user", "content": "hi"}], model="gpt-5", session_id="ses_abc",
+    )
+    assert body["prompt_cache_key"] == "ses_abc"
+
+
+def test_build_body_omits_prompt_cache_key_without_session():
+    provider = OpenAIResponsesProvider(api_key="k")
+    body = provider._build_body([{"role": "user", "content": "hi"}], model="gpt-5")
+    assert "prompt_cache_key" not in body
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_sends_prompt_cache_key(monkeypatch):
+    lines = [_completed_line("ok", {"input_tokens": 1, "output_tokens": 1}), b"\n"]
+    session = _install_fake(monkeypatch, _FakeResponse(lines=lines))
+    provider = OpenAIResponsesProvider(api_key="k")
+
+    _ = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="gpt-5", session_id="ses_stream",
+        )
+    ]
+
+    assert session.calls[0]["json"]["prompt_cache_key"] == "ses_stream"
+
+
+def test_parse_output_to_done_reads_cached_tokens():
+    provider = OpenAIResponsesProvider(api_key="k")
+    done = provider._parse_output_to_done({
+        "output": [
+            {"type": "message", "content": [{"type": "output_text", "text": "hi"}]}
+        ],
+        "usage": {
+            "input_tokens": 100,
+            "output_tokens": 5,
+            "input_tokens_details": {"cached_tokens": 60},
+        },
+    })
+    assert isinstance(done, Done)
+    assert done.cache_read_tokens == 60
+
+
+def test_parse_output_to_done_cached_absent_is_none():
+    provider = OpenAIResponsesProvider(api_key="k")
+    done = provider._parse_output_to_done({
+        "output": [
+            {"type": "message", "content": [{"type": "output_text", "text": "hi"}]}
+        ],
+        "usage": {"input_tokens": 100, "output_tokens": 5},
+    })
+    assert isinstance(done, Done)
+    assert done.cache_read_tokens is None
+
+
+@pytest.mark.asyncio
+async def test_stream_reads_cached_tokens_from_completed(monkeypatch):
+    usage = {
+        "input_tokens": 100,
+        "output_tokens": 5,
+        "input_tokens_details": {"cached_tokens": 60},
+    }
+    lines = [_completed_line("ok", usage), b"\n"]
+    _install_fake(monkeypatch, _FakeResponse(lines=lines))
+    provider = OpenAIResponsesProvider(api_key="k")
+
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="gpt-5"
+        )
+    ]
+
+    done = collected[-1]
+    assert isinstance(done, Done)
+    assert done.cache_read_tokens == 60

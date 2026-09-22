@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS memories (
     key TEXT NOT NULL,
     scope TEXT NOT NULL,
     session_id TEXT,
+    owner_agent_key TEXT,
     memory_type TEXT NOT NULL,
     content TEXT NOT NULL,
     summary TEXT NOT NULL,
@@ -111,9 +112,6 @@ CREATE TABLE IF NOT EXISTS memories (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_key_scope_session
-ON memories(key, scope, COALESCE(session_id, ''));
 
 CREATE INDEX IF NOT EXISTS idx_memories_updated_at ON memories(updated_at DESC);
 
@@ -244,6 +242,7 @@ class SqliteRepository(NovaRepository):
             },
             "messages": {"provider_meta": "TEXT"},
             "agents": {"posture": "TEXT DEFAULT 'full'", "mode": "TEXT DEFAULT 'primary'"},
+            "memories": {"owner_agent_key": "TEXT"},
         }
         for table, columns_map in required_columns.items():
             try:
@@ -264,9 +263,28 @@ class SqliteRepository(NovaRepository):
                         "Could not add column %s.%s (%s); writes touching it will fail: %s",
                         table, column, column_type, exception,
                     )
+        await self._migrate_memory_owner_index()
         await self._backfill_projects()
         await self._normalize_session_workspaces()
         await self._backfill_agent_modes()
+
+    async def _migrate_memory_owner_index(self) -> None:
+        """Replace the legacy memory uniqueness index with the owner-aware one.
+
+        The old index keyed uniqueness on (key, scope, session_id), which would
+        forbid two agents from holding the same key under ``agent`` scope. The
+        new index adds owner_agent_key. IF NOT EXISTS cannot rebuild an index of
+        a different shape, so the old one is dropped explicitly on existing dbs.
+        """
+        try:
+            await self._conn.execute("DROP INDEX IF EXISTS idx_memories_key_scope_session")
+            await self._conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_key_scope_owner_session "
+                "ON memories(key, scope, COALESCE(owner_agent_key, ''), COALESCE(session_id, ''))"
+            )
+            await self._conn.commit()
+        except Exception as exception:
+            log.error("Could not migrate memory owner index: %s", exception)
 
     async def _backfill_projects(self) -> None:
         """One-shot: create a project per distinct session workspace path.
@@ -959,14 +977,15 @@ class SqliteRepository(NovaRepository):
             await self._conn.execute(
                 """
                 INSERT OR REPLACE INTO memories
-                (id, key, scope, session_id, memory_type, content, summary, tags, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, key, scope, session_id, owner_agent_key, memory_type, content, summary, tags, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.id,
                     record.key,
                     record.scope,
                     record.session_id,
+                    record.owner_agent_key,
                     record.memory_type,
                     record.content,
                     record.summary,
@@ -977,17 +996,26 @@ class SqliteRepository(NovaRepository):
             )
             await self._conn.commit()
 
-    async def get_memory_by_key(self, key: str, scope: str, session_id: Optional[str] = None) -> dict | None:
+    async def get_memory_by_key(
+        self,
+        key: str,
+        scope: str,
+        session_id: Optional[str] = None,
+        owner_agent_key: Optional[str] = None,
+    ) -> dict | None:
         await self._ensure_connected()
+        # owner_agent_key is matched exactly (including NULL) so one agent's
+        # upsert never resolves to a different owner's row of the same key.
         if scope == "session":
             cursor = await self._conn.execute(
-                "SELECT * FROM memories WHERE key = ? AND scope = ? AND session_id = ?",
-                (key, scope, session_id),
+                "SELECT * FROM memories WHERE key = ? AND scope = ? AND session_id = ? "
+                "AND owner_agent_key IS ?",
+                (key, scope, session_id, owner_agent_key),
             )
         else:
             cursor = await self._conn.execute(
-                "SELECT * FROM memories WHERE key = ? AND scope = ?",
-                (key, scope),
+                "SELECT * FROM memories WHERE key = ? AND scope = ? AND owner_agent_key IS ?",
+                (key, scope, owner_agent_key),
             )
         row = await cursor.fetchone()
         return dict(row) if row else None
@@ -1009,6 +1037,13 @@ class SqliteRepository(NovaRepository):
             elif filters.scope == "all":
                 sql += " AND (scope != 'session' OR session_id = ?)"
                 params.append(filters.session_id)
+        # Visibility: global rows (NULL owner) plus rows owned by the current
+        # agent. When no owner is in scope, only global rows are visible.
+        if getattr(filters, "owner_agent_key", None):
+            sql += " AND (owner_agent_key IS NULL OR owner_agent_key = ?)"
+            params.append(filters.owner_agent_key)
+        else:
+            sql += " AND owner_agent_key IS NULL"
         sql += " ORDER BY updated_at DESC LIMIT ?"
         params.append(filters.limit)
         cursor = await self._conn.execute(sql, tuple(params))
@@ -1036,18 +1071,25 @@ class SqliteRepository(NovaRepository):
         )
         return [dict(row) for row in await cursor.fetchall()]
 
-    async def delete_memory_by_key(self, key: str, scope: str, session_id: Optional[str] = None) -> int:
+    async def delete_memory_by_key(
+        self,
+        key: str,
+        scope: str,
+        session_id: Optional[str] = None,
+        owner_agent_key: Optional[str] = None,
+    ) -> int:
         await self._ensure_connected()
         async with self._lock:
             if scope == "session":
                 cursor = await self._conn.execute(
-                    "DELETE FROM memories WHERE key = ? AND scope = ? AND session_id = ?",
-                    (key, scope, session_id),
+                    "DELETE FROM memories WHERE key = ? AND scope = ? AND session_id = ? "
+                    "AND owner_agent_key IS ?",
+                    (key, scope, session_id, owner_agent_key),
                 )
             else:
                 cursor = await self._conn.execute(
-                    "DELETE FROM memories WHERE key = ? AND scope = ?",
-                    (key, scope),
+                    "DELETE FROM memories WHERE key = ? AND scope = ? AND owner_agent_key IS ?",
+                    (key, scope, owner_agent_key),
                 )
             await self._conn.commit()
             return cursor.rowcount or 0

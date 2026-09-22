@@ -38,13 +38,12 @@ class TurnContext:
 
     Created fresh per tool invocation in Agent._run_turn.
     Behaviours mutate this to communicate side-effects back to the
-    orchestrator (e.g. ``memory_modified``).
+    orchestrator.
     """
 
     approval_manager: Any = None
     event_emitter: Optional[Callable] = None
     session_id: str = ""
-    memory_modified: bool = False
 
 
 # ── Protocol & defaults ────────────────────────────────────────────
@@ -164,15 +163,3 @@ class ImageReturningToolBehavior(DefaultToolBehavior):
             return data.get("text", ""), data.get("images")
         except (json.JSONDecodeError, TypeError):
             return raw_content, None
-
-
-class MemoryMutatingToolBehavior(DefaultToolBehavior):
-    """Behaviour for tools that mutate stored memory (e.g. ``save_memory``,
-    ``delete_memory``).
-
-    After successful execution the orchestrator will invalidate the
-    system-prompt cache so the next turn picks up the changes.
-    """
-
-    def on_success(self, ctx: TurnContext) -> None:
-        ctx.memory_modified = True

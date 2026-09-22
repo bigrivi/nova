@@ -28,6 +28,7 @@ class MemoryRepository:
             key=record.key,
             scope=record.scope,
             session_id=record.session_id,
+            owner_agent_key=record.owner_agent_key,
         )
         if existing:
             record.id = existing.id
@@ -43,9 +44,10 @@ class MemoryRepository:
         key: str,
         scope: str,
         session_id: Optional[str] = None,
+        owner_agent_key: Optional[str] = None,
     ) -> Optional[MemoryRecord]:
         data_source = await self._get_data_source()
-        row = await data_source.get_memory_by_key(key, scope, session_id)
+        row = await data_source.get_memory_by_key(key, scope, session_id, owner_agent_key)
         return self._row_to_record(row) if row else None
 
     async def list_memories(self, filters: MemorySearchFilters) -> list[MemoryRecord]:
@@ -73,9 +75,10 @@ class MemoryRepository:
         key: str,
         scope: str,
         session_id: Optional[str] = None,
+        owner_agent_key: Optional[str] = None,
     ) -> int:
         data_source = await self._get_data_source()
-        return await data_source.delete_memory_by_key(key, scope, session_id)
+        return await data_source.delete_memory_by_key(key, scope, session_id, owner_agent_key)
 
     def _row_to_record(self, row) -> MemoryRecord:
         return MemoryRecord(
@@ -83,6 +86,7 @@ class MemoryRepository:
             key=row["key"],
             scope=row["scope"],
             session_id=row["session_id"],
+            owner_agent_key=row["owner_agent_key"] if "owner_agent_key" in row.keys() else None,
             memory_type=row["memory_type"],
             content=row["content"],
             summary=row["summary"],

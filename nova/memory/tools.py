@@ -60,14 +60,18 @@ def _format_memory(record) -> str:
             },
             "scope": {
                 "type": "string",
-                "enum": ["user", "project", "session"],
+                "enum": ["user", "project", "session", "agent"],
                 "description": (
-                    "Memory scope. user: stable cross-session facts/preferences "
-                    "about the user (identity, habits, long-term preferences). "
-                    "project: decisions or conventions tied to the current project "
-                    "or workspace. session: temporary turn-local context only — "
+                    "Memory scope. user: stable cross-session facts about the human "
+                    "user (their identity, name, habits, long-term preferences); shared "
+                    "across every assistant. agent: facts or behavior rules about "
+                    "YOU, this assistant (your own name, the persona or style you were "
+                    "told to keep); private to you and never shared with other "
+                    "assistants. project: decisions or conventions tied to the current "
+                    "project or workspace. session: temporary turn-local context only — "
                     "in-progress task state, ephemeral details for THIS conversation. "
-                    "Default to user when unsure."
+                    "Default to user when unsure; use agent only when the memory is about "
+                    "you rather than about the user."
                 ),
             },
             "memory_type": {
@@ -134,7 +138,7 @@ async def save_memory(
             },
             "scope": {
                 "type": "string",
-                "enum": ["user", "project", "session", "all"],
+                "enum": ["user", "project", "session", "agent", "all"],
                 "description": "Limit search to a specific scope or search across all scopes.",
             },
             "memory_type": {
@@ -206,7 +210,7 @@ async def search_memory(
             },
             "scope": {
                 "type": "string",
-                "enum": ["user", "project", "session"],
+                "enum": ["user", "project", "session", "agent"],
                 "description": "Scope used together with key.",
             },
             "session_id": {
@@ -249,7 +253,7 @@ async def delete_memory(
         "properties": {
             "scope": {
                 "type": "string",
-                "enum": ["user", "project", "session", "all"],
+                "enum": ["user", "project", "session", "agent", "all"],
                 "description": "Limit listing to one scope or include all scopes.",
             },
             "memory_type": {
