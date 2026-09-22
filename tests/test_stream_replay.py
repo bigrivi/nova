@@ -391,3 +391,81 @@ def test_append_clears_done_flag_so_new_turn_reopens_stream() -> None:
 
     assert buffer.is_done("s1") is False
     assert buffer.last_sequence("s1") == 2
+
+
+def test_replay_stale_cursor_returns_only_latest_turn() -> None:
+    """A finished turn must not ride back in on a stale cursor.
+
+    Regression: after a turn ended the client cleared its cursor; the
+    auto-wake turn's resume (cursor 0) then replayed the whole buffer --
+    the previous turn again, with a second [DONE].
+    """
+    buffer = StreamBuffer()
+    for _ in range(3):
+        buffer.append("s", b'data: {"turn":1}\n\n')
+    buffer.mark_done("s")
+    for _ in range(2):
+        buffer.append("s", b'data: {"turn":2}\n\n')
+
+    frames, last, resync = buffer.replay_since("s", 0)
+
+    assert last == 5
+    assert resync is True  # clamped: client must reset to this prefix
+    seqs = [int(f.split(b"id: ")[1].split(b"\n")[0]) for f in frames]
+    assert seqs == [4, 5], f"only the latest turn expected, got {seqs}"
+
+
+def test_replay_cursor_inside_latest_turn_is_gapless() -> None:
+    buffer = StreamBuffer()
+    for _ in range(3):
+        buffer.append("s", b'data: {"turn":1}\n\n')
+    buffer.mark_done("s")
+    for _ in range(4):
+        buffer.append("s", b'data: {"turn":2}\n\n')
+
+    frames, _, resync = buffer.replay_since("s", 5)
+
+    seqs = [int(f.split(b"id: ")[1].split(b"\n")[0]) for f in frames]
+    assert seqs == [6, 7]
+    assert resync is False
+
+
+def test_replay_cursor_spanning_turns_clamps_to_latest() -> None:
+    """Cursor from mid-turn-1 must not drag turn-1's tail into turn-2's resume."""
+    buffer = StreamBuffer()
+    for _ in range(4):
+        buffer.append("s", b'data: {"turn":1}\n\n')
+    buffer.mark_done("s")
+    for _ in range(2):
+        buffer.append("s", b'data: {"turn":2}\n\n')
+
+    frames, _, _ = buffer.replay_since("s", 2)
+
+    seqs = [int(f.split(b"id: ")[1].split(b"\n")[0]) for f in frames]
+    assert seqs == [5, 6]
+
+
+def test_replay_unknown_cursor_returns_only_latest_turn() -> None:
+    buffer = StreamBuffer()
+    buffer.append("s", b'data: {"turn":1}\n\n')
+    buffer.mark_done("s")
+    buffer.append("s", b'data: {"turn":2}\n\n')
+
+    frames, _, resync = buffer.replay_since("s", 9999)
+
+    seqs = [int(f.split(b"id: ")[1].split(b"\n")[0]) for f in frames]
+    assert seqs == [2]
+    assert resync is True
+
+
+def test_single_turn_resume_unaffected_by_boundary() -> None:
+    """Within one turn the boundary must not drop legitimate frames."""
+    buffer = StreamBuffer()
+    for _ in range(5):
+        buffer.append("s", b'data: {"turn":1}\n\n')
+
+    frames, _, resync = buffer.replay_since("s", 1)
+
+    seqs = [int(f.split(b"id: ")[1].split(b"\n")[0]) for f in frames]
+    assert seqs == [2, 3, 4, 5]
+    assert resync is False

@@ -50,6 +50,12 @@ class StreamBuffer:
         self._last_access: dict[str, float] = {}
         self._done_sessions: set[str] = set()
         self._subscribers: dict[str, list[asyncio.Queue[bytes]]] = {}
+        # First sequence number of the latest turn per session. A turn ends
+        # with mark_done; the next append therefore starts a new turn. Replay
+        # clamps stale cursors up to this boundary so one resume never
+        # returns frames from two different turns (e.g. an auto-wake resume
+        # with cursor 0 must not replay the already-finished previous turn).
+        self._turn_start: dict[str, int] = {}
 
     # ── write path ──
 
@@ -67,7 +73,10 @@ class StreamBuffer:
         # A new frame means the session is live again: clear any done flag left
         # by a previous turn, or a resume tail would end on its first empty poll
         # and truncate the in-flight turn (e.g. a sub-agent auto-wake).
+        was_done = session_id in self._done_sessions
         self._done_sessions.discard(session_id)
+        if sequence == 1 or was_done:
+            self._turn_start[session_id] = sequence
         session_frames = self._session_frames.get(session_id)
         if session_frames is None:
             session_frames = self._session_frames[session_id] = deque(maxlen=self._maxlen)
@@ -106,24 +115,33 @@ class StreamBuffer:
         """Replay frames after *since_sequence*; return ``(frames, last_sequence, resync)``.
 
         - ``since_sequence is None``: no replay (fresh stream), ``([], last, False)``.
-        - Cursor inside the retained window ``[first - 1, last]``: exactly
-          the frames with ``sequence > since_sequence``, ``resync=False`` (gapless).
-        - Unknown cursor (future, evicted, negative): the full in-flight
-          buffer with ``resync=True`` -- the client must reset to the
-          replayed prefix instead of assuming continuity.
+        - Cursor inside the retained window: exactly the frames with
+          ``sequence > since_sequence``, clamped up to the latest turn's first
+          sequence, ``resync=False`` (gapless). A stale cursor (e.g. 0 from a
+          client that finished the previous turn) must not pull that
+          already-finished turn back in -- one resume returns one turn.
+        - Unknown cursor (future, evicted, negative): the latest turn's frames
+          with ``resync=True`` -- the client resets to the replayed prefix
+          instead of assuming continuity.
         """
         last_sequence = self._next_sequence.get(session_id, 0)
         session_frames = self._session_frames.get(session_id)
         if since_sequence is None or not session_frames:
             return [], last_sequence, False
         first_sequence = session_frames[0][0]
-        if (first_sequence - 1) <= since_sequence <= last_sequence:
+        floor = max(first_sequence - 1, self._turn_start.get(session_id, 1) - 1)
+        if floor <= since_sequence <= last_sequence:
+            effective = max(since_sequence, floor)
             return (
-                [event_frame for sequence, event_frame in session_frames if sequence > since_sequence],
+                [event_frame for sequence, event_frame in session_frames if sequence > effective],
                 last_sequence,
                 False,
             )
-        return [event_frame for _, event_frame in session_frames], last_sequence, True
+        return (
+            [event_frame for sequence, event_frame in session_frames if sequence > floor],
+            last_sequence,
+            True,
+        )
 
     # ── live tail ──
 
@@ -156,6 +174,7 @@ class StreamBuffer:
         self._next_sequence.pop(session_id, None)
         self._last_access.pop(session_id, None)
         self._done_sessions.discard(session_id)
+        self._turn_start.pop(session_id, None)
         self._subscribers.pop(session_id, None)
 
     def evict_idle(self, now: float | None = None) -> list[str]:
