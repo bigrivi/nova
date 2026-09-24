@@ -185,9 +185,8 @@ async def build_agent(
     agent_dir.mkdir(parents=True, exist_ok=True)
 
     # Cache 1: identity files (SOUL/IDENTITY/USER/MEMORY)
-    dir_key = str(agent_dir)
-    if is_new_session or dir_key not in _identity_cache:
-        _identity_cache[dir_key] = PromptConfig(
+    if is_new_session or agent_key not in _identity_cache:
+        _identity_cache[agent_key] = PromptConfig(
             soul_content=(agent_dir / "SOUL.md").read_text(
                 encoding="utf-8") if (agent_dir / "SOUL.md").exists() else "",
             identity_content=(agent_dir / "IDENTITY.md").read_text(
@@ -198,7 +197,7 @@ async def build_agent(
                 encoding="utf-8") if (agent_dir / "MEMORY.md").exists() else "",
             workspace_dir=str(agent_dir),
         )
-    prompt_config = _identity_cache[dir_key]
+    prompt_config = _identity_cache[agent_key]
 
     record = None
     try:

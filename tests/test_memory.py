@@ -5,7 +5,13 @@ from nova import Agent, AgentConfig
 from nova.agent.core import AgentEvent
 from nova.memory.models import MemoryRecord, MemoryWriteRequest
 from nova.memory.service import MemoryService
-from nova.memory.tools import delete_memory, list_memories, save_memory, search_memory
+from nova.memory.tools import MemoryTools
+
+_memory_tools = MemoryTools(agent_key=None)
+save_memory = _memory_tools.save_memory
+search_memory = _memory_tools.search_memory
+delete_memory = _memory_tools.delete_memory
+list_memories = _memory_tools.list_memories
 from nova.db.sqlite_repository import SqliteRepository
 from nova.db.config import DatabaseConfig
 from nova.llm import ToolResult

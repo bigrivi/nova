@@ -3,25 +3,6 @@
 /* eslint-disable react-refresh/only-export-components */
 
 import {
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-    createContext,
-    useContext,
-    type ComponentPropsWithoutRef,
-    type ReactNode,
-} from "react";
-import { cva, type VariantProps } from "class-variance-authority";
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
-import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-} from "@/components/ui/popover";
-import {
     Command,
     CommandEmpty,
     CommandGroup,
@@ -30,7 +11,26 @@ import {
     CommandList,
     CommandSeparator,
 } from "@/components/ui/command";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { cva, type VariantProps } from "class-variance-authority";
+import { CheckIcon, ChevronDownIcon } from "lucide-react";
 import { RadioGroup as RadioGroupPrimitive } from "radix-ui";
+import {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    type ComponentPropsWithoutRef,
+    type ReactNode,
+} from "react";
 
 export type ModelSelectorEffortOption = {
     id: string;
@@ -587,7 +587,7 @@ function ModelSelectorItem({
             {children ?? (
                 <>
                     {model.icon && (
-                        <ModelIcon className="mt-[3px]">{model.icon}</ModelIcon>
+                        <ModelIcon className="mt-[3px] mr-2">{model.icon}</ModelIcon>
                     )}
                     <span className="flex min-w-0 flex-col">
                         <span className="truncate font-medium">{model.name}</span>
@@ -685,16 +685,7 @@ export type ModelSelectorProps = Omit<ModelSelectorRootProps, "children"> &
     };
 
 export {
-    ModelSelectorRoot,
-    ModelSelectorTrigger,
-    ModelSelectorValue,
-    ModelSelectorContent,
-    ModelSelectorSearch,
-    ModelSelectorFocusAnchor,
-    ModelSelectorList,
-    ModelSelectorEmpty,
-    ModelSelectorGroup,
-    ModelSelectorSeparator,
-    ModelSelectorItem,
-    ModelSelectorEffort,
+    ModelSelectorContent, ModelSelectorEffort, ModelSelectorEmpty, ModelSelectorFocusAnchor, ModelSelectorGroup, ModelSelectorItem, ModelSelectorList, ModelSelectorRoot, ModelSelectorSearch, ModelSelectorSeparator, ModelSelectorTrigger,
+    ModelSelectorValue
 };
+

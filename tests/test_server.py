@@ -1529,6 +1529,82 @@ async def test_agents_create_and_get_roundtrip(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_agents_import_from_markdown(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    content = (
+        "---\n"
+        "description: Expert UI designer.\n"
+        "mode: subagent\n"
+        "tools:\n"
+        "  write: true\n"
+        "  edit: true\n"
+        "  bash: true\n"
+        "temperature: 0.55\n"
+        "steps: 20\n"
+        "---\n\n"
+        "You are a senior UI designer.\n"
+    )
+    created = client.post(
+        "/api/agents/import", json={"content": content, "key": "designer"}
+    )
+
+    assert created.status_code == 200
+    payload = created.json()
+    assert payload["agent"]["key"] == "designer"
+    assert payload["agent"]["name"] == "designer"  # no doc name -> key as name
+    assert payload["agent"]["kind"] == "sub"
+    assert payload["agent"]["posture"] == "full"
+    assert any("temperature" in warning for warning in payload["warnings"])
+
+    identity = settings.home / "agents" / "designer" / "IDENTITY.md"
+    assert identity.is_file()
+    assert "senior UI designer" in identity.read_text(encoding="utf-8")
+
+    listed = client.get("/api/agents")
+    assert "designer" in [item["key"] for item in listed.json()["items"]]
+
+    conflict = client.post(
+        "/api/agents/import", json={"content": content, "key": "designer"}
+    )
+    assert conflict.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_agents_import_uses_doc_name_with_filename_key(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    await init_db(DatabaseConfig(path=str(settings.database_path)))
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    # Doc carries a display name; the key comes from the (filename-derived) key.
+    with_name = client.post(
+        "/api/agents/import",
+        json={
+            "content": "---\nname: Pixel Pro\nmode: primary\n---\nYou are Pixel Pro.\n",
+            "key": "pixel-designer",
+        },
+    )
+    assert with_name.status_code == 200
+    assert with_name.json()["agent"]["key"] == "pixel-designer"
+    assert with_name.json()["agent"]["name"] == "Pixel Pro"
+
+    # No name in the doc -> name falls back to the key.
+    without_name = client.post(
+        "/api/agents/import",
+        json={"content": "---\nmode: primary\n---\nBody.\n", "key": "helper-bot"},
+    )
+    assert without_name.status_code == 200
+    assert without_name.json()["agent"]["key"] == "helper-bot"
+    assert without_name.json()["agent"]["name"] == "helper-bot"
+
+
+@pytest.mark.asyncio
 async def test_agents_subagent_mode_and_multi_parent(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     settings = Settings.load_config()

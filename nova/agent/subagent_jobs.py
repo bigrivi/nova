@@ -23,6 +23,12 @@ log = logging.getLogger(__name__)
 
 MAX_CONCURRENT_SUBAGENTS = 4
 
+# In-memory job tracking is otherwise unbounded. Finished jobs stay queryable
+# (subagent_status) within the retention window, then are evicted; the hard cap
+# bounds a burst of delegations. Running jobs are never evicted.
+JOB_RETENTION_MS = 30 * 60 * 1000
+MAX_RETAINED_JOBS = 256
+
 RUNNING = "running"
 COMPLETED = "completed"
 ERROR = "error"
@@ -104,6 +110,28 @@ class SubAgentJobManager:
             if job.parent_session_id == parent_session_id
         ]
 
+    def _evict_stale_jobs(self) -> None:
+        """Bound in-memory job tracking. Drop finished jobs past the retention
+        window, then enforce a hard cap by dropping the oldest finished jobs.
+        Running jobs are never evicted."""
+        now = int(time.time() * 1000)
+        stale = [
+            job_id
+            for job_id, job in self._jobs.items()
+            if job.finished_at is not None
+            and now - job.finished_at > JOB_RETENTION_MS
+        ]
+        for job_id in stale:
+            del self._jobs[job_id]
+        if len(self._jobs) <= MAX_RETAINED_JOBS:
+            return
+        finished = sorted(
+            (job for job in self._jobs.values() if job.finished_at is not None),
+            key=lambda job: job.finished_at or 0,
+        )
+        for job in finished[: len(self._jobs) - MAX_RETAINED_JOBS]:
+            self._jobs.pop(job.job_id, None)
+
     def start(
         self,
         *,
@@ -114,6 +142,7 @@ class SubAgentJobManager:
         parent_workspace: Optional[str],
         child_depth: int,
     ) -> SubAgentJob:
+        self._evict_stale_jobs()
         job = SubAgentJob(
             job_id=uuid.uuid4().hex,
             parent_session_id=parent_session_id,

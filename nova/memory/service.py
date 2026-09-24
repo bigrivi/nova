@@ -19,7 +19,6 @@ from nova.memory.models import (
     VALID_MEMORY_TYPES,
 )
 from nova.memory.repository import MemoryRepository
-from nova.memory.agent_context import get_current_agent_key
 from nova.db.repository import NovaRepository
 from nova.settings import get_settings
 
@@ -67,6 +66,7 @@ class MemoryService:
         limit: int = 5,
         use_ai: bool = False,
         ai_selector: Optional[MemoryAISelector] = None,
+        agent_key: Optional[str] = None,
     ) -> list[MemoryRecord]:
         normalized_scope = self._normalize_search_scope(scope)
         normalized_type = self._normalize_optional_memory_type(memory_type)
@@ -77,7 +77,7 @@ class MemoryService:
             scope=normalized_scope,
             memory_type=normalized_type,
             session_id=normalized_session_id,
-            owner_agent_key=get_current_agent_key(),
+            owner_agent_key=agent_key,
             limit=max(self._normalize_limit(limit) * 10, 50),
         )
         self._validate_scope_session_pair(filters.scope, filters.session_id)
@@ -99,6 +99,7 @@ class MemoryService:
         memory_type: Optional[str] = None,
         session_id: Optional[str] = None,
         limit: int = 20,
+        agent_key: Optional[str] = None,
     ) -> list[MemoryRecord]:
         normalized_scope = self._normalize_search_scope(scope)
         normalized_type = self._normalize_optional_memory_type(memory_type)
@@ -107,7 +108,7 @@ class MemoryService:
             scope=normalized_scope,
             memory_type=normalized_type,
             session_id=normalized_session_id,
-            owner_agent_key=get_current_agent_key(),
+            owner_agent_key=agent_key,
             limit=self._normalize_limit(limit),
         )
         self._validate_scope_session_pair(filters.scope, filters.session_id)
@@ -119,6 +120,7 @@ class MemoryService:
         key: Optional[str] = None,
         scope: Optional[str] = None,
         session_id: Optional[str] = None,
+        agent_key: Optional[str] = None,
     ) -> int:
         normalized_memory_id = self._normalize_optional_text(memory_id)
         if normalized_memory_id:
@@ -131,7 +133,7 @@ class MemoryService:
 
         final_scope = self._normalize_scope(normalized_scope)
         final_session_id = self._normalize_session_id(final_scope, session_id)
-        final_owner = self._resolve_owner_agent_key(final_scope, None)
+        final_owner = self._resolve_owner_agent_key(final_scope, agent_key)
         return await self.repository.delete_by_key(
             key=normalized_key,
             scope=final_scope,
@@ -192,14 +194,14 @@ class MemoryService:
     def _resolve_owner_agent_key(self, scope: str, explicit: Optional[str]) -> Optional[str]:
         """Owner key for a memory: bound only when the scope is ``agent``.
 
-        ``agent`` memories are private to the writing agent, so an active agent
-        identity (carried by the request or the turn ContextVar) is required;
-        writing an unowned agent memory is refused rather than silently made
-        global. Every other scope is global and owns no agent key.
+        ``agent`` memories are private to the writing agent, so an explicit owner
+        key (passed in by the caller) is required; writing an unowned agent memory
+        is refused rather than silently made global. Every other scope is global
+        and owns no agent key.
         """
         if scope != "agent":
             return None
-        owner = self._normalize_optional_text(explicit) or get_current_agent_key()
+        owner = self._normalize_optional_text(explicit)
         if not owner:
             raise ValueError(
                 "agent-scoped memory requires an active agent; none was found in context"

@@ -26,8 +26,11 @@ No AI-SDK JSON shape changes, no DB changes, no new dependencies.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections import deque
+
+log = logging.getLogger(__name__)
 
 # Replay depth per session (frames).
 MAX_FRAMES = 500
@@ -50,12 +53,21 @@ class StreamBuffer:
         self._last_access: dict[str, float] = {}
         self._done_sessions: set[str] = set()
         self._subscribers: dict[str, list[asyncio.Queue[bytes]]] = {}
-        # First sequence number of the latest turn per session. A turn ends
-        # with mark_done; the next append therefore starts a new turn. Replay
-        # clamps stale cursors up to this boundary so one resume never
-        # returns frames from two different turns (e.g. an auto-wake resume
-        # with cursor 0 must not replay the already-finished previous turn).
+        # First sequence number of the latest turn per session. Replay clamps
+        # stale cursors up to this boundary so one resume never returns frames
+        # from two different turns (e.g. an auto-wake resume with cursor 0 must
+        # not replay the already-finished previous turn). The boundary is owned
+        # by the turn that starts (see begin_turn) so it is correct even when
+        # the previous turn never marked done -- an errored or cancelled turn
+        # skips mark_done, and inferring the boundary from the done flag alone
+        # would then let that turn ride back in on the next turn's resume.
         self._turn_start: dict[str, int] = {}
+        # Sessions whose next append opens a new turn (armed by begin_turn).
+        # While armed-but-not-yet-appended, every buffered frame belongs to a
+        # prior turn, so replay_since returns nothing and the resume follows the
+        # imminent turn live -- this is the arm->first-append window a sub-agent
+        # auto-wake resume raced into, replaying the finished previous turn.
+        self._pending_turn_start: set[str] = set()
 
     # ── write path ──
 
@@ -75,8 +87,23 @@ class StreamBuffer:
         # and truncate the in-flight turn (e.g. a sub-agent auto-wake).
         was_done = session_id in self._done_sessions
         self._done_sessions.discard(session_id)
-        if sequence == 1 or was_done:
+        # Open a new turn boundary when this turn armed one (begin_turn), or as
+        # a fallback for the first frame / a frame right after mark_done on
+        # paths that do not call begin_turn.
+        pending = session_id in self._pending_turn_start
+        if pending or was_done or sequence == 1:
             self._turn_start[session_id] = sequence
+            log.info(
+                "[RESUME-DBG] turn_start OPEN session=%s seq=%s pending=%s was_done=%s first=%s",
+                session_id,
+                sequence,
+                pending,
+                was_done,
+                sequence == 1,
+            )
+        self._pending_turn_start.discard(session_id)
+        if b"[DONE]" in raw:
+            log.info("[RESUME-DBG] append DONE session=%s seq=%s", session_id, sequence)
         session_frames = self._session_frames.get(session_id)
         if session_frames is None:
             session_frames = self._session_frames[session_id] = deque(maxlen=self._maxlen)
@@ -97,9 +124,53 @@ class StreamBuffer:
             return minimum
         return current
 
+    def begin_turn(self, session_id: str) -> None:
+        """Arm a new turn boundary: the next append starts a fresh turn.
+
+        Called at the start of every turn (one per ``chat_stream_ai_sdk``
+        invocation) so the boundary is owned by the turn that starts, rather
+        than inferred from the previous turn's ``mark_done``. That inference
+        breaks when the previous turn never marks done (an agent error or a
+        cancellation skips it), which would otherwise let the previous turn
+        ride back in on this turn's cursor-0 resume.
+        """
+        was_done = session_id in self._done_sessions
+        self._pending_turn_start.add(session_id)
+        # A newly armed turn means the session is live again: clear the prior
+        # turn's done flag now (not only at the first append) so a resume that
+        # lands in the arm -> first-append window does not observe the previous
+        # turn's done state and end its live tail before this turn emits a frame.
+        self._done_sessions.discard(session_id)
+        log.info(
+            "[RESUME-DBG] begin_turn session=%s next_seq=%s was_done=%s turn_start=%s",
+            session_id,
+            self._next_sequence.get(session_id, 0),
+            was_done,
+            self._turn_start.get(session_id),
+        )
+
     def mark_done(self, session_id: str) -> None:
         self._done_sessions.add(session_id)
         self._last_access[session_id] = time.monotonic()
+        log.info(
+            "[RESUME-DBG] mark_done session=%s last_seq=%s turn_start=%s",
+            session_id,
+            self._next_sequence.get(session_id, 0),
+            self._turn_start.get(session_id),
+        )
+
+    def has_pending_turn(self, session_id: str) -> bool:
+        """Return True when a new turn is armed but has not appended yet."""
+        return session_id in self._pending_turn_start
+
+    def abort_turn(self, session_id: str) -> None:
+        """Clean up a turn that failed: disarm its pending boundary (when its
+        first append never happened) and mark the session done so a resume
+        returns promptly instead of tailing until timeout."""
+        self._pending_turn_start.discard(session_id)
+        self._done_sessions.add(session_id)
+        self._last_access[session_id] = time.monotonic()
+        log.info("[RESUME-DBG] abort_turn session=%s", session_id)
 
     # ── read path ──
 
@@ -127,21 +198,55 @@ class StreamBuffer:
         last_sequence = self._next_sequence.get(session_id, 0)
         session_frames = self._session_frames.get(session_id)
         if since_sequence is None or not session_frames:
+            log.info(
+                "[RESUME-DBG] replay_since session=%s since=%s -> EMPTY (no cursor / no frames) last=%s",
+                session_id,
+                since_sequence,
+                last_sequence,
+            )
             return [], last_sequence, False
+        if session_id in self._pending_turn_start:
+            log.info(
+                "[RESUME-DBG] replay_since session=%s since=%s -> EMPTY (new turn armed, "
+                "all buffered frames belong to prior turns) last=%s is_done=%s",
+                session_id,
+                since_sequence,
+                last_sequence,
+                session_id in self._done_sessions,
+            )
+            return [], last_sequence, True
         first_sequence = session_frames[0][0]
-        floor = max(first_sequence - 1, self._turn_start.get(session_id, 1) - 1)
+        turn_start = self._turn_start.get(session_id, 1)
+        floor = max(first_sequence - 1, turn_start - 1)
         if floor <= since_sequence <= last_sequence:
             effective = max(since_sequence, floor)
-            return (
-                [event_frame for sequence, event_frame in session_frames if sequence > effective],
-                last_sequence,
-                False,
-            )
-        return (
-            [event_frame for sequence, event_frame in session_frames if sequence > floor],
+            resync = False
+        else:
+            effective = floor
+            resync = True
+        result = [
+            event_frame for sequence, event_frame in session_frames if sequence > effective
+        ]
+        result_seqs = [
+            sequence for sequence, _ in session_frames if sequence > effective
+        ]
+        log.info(
+            "[RESUME-DBG] replay_since session=%s since=%s first=%s turn_start=%s floor=%s "
+            "last=%s is_done=%s -> frames=%d seq_range=(%s..%s) contains_done=%s resync=%s",
+            session_id,
+            since_sequence,
+            first_sequence,
+            turn_start,
+            floor,
             last_sequence,
-            True,
+            session_id in self._done_sessions,
+            len(result),
+            result_seqs[0] if result_seqs else None,
+            result_seqs[-1] if result_seqs else None,
+            any(b"[DONE]" in event_frame for event_frame in result),
+            resync,
         )
+        return result, last_sequence, resync
 
     # ── live tail ──
 
@@ -175,6 +280,7 @@ class StreamBuffer:
         self._last_access.pop(session_id, None)
         self._done_sessions.discard(session_id)
         self._turn_start.pop(session_id, None)
+        self._pending_turn_start.discard(session_id)
         self._subscribers.pop(session_id, None)
 
     def evict_idle(self, now: float | None = None) -> list[str]:

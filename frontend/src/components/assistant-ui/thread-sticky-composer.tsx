@@ -11,9 +11,17 @@ import { useAui } from "@assistant-ui/react";
 import type { NovaAgent, NovaModelRecord } from "../../types/nova";
 import { Button } from "../ui/button";
 import { ComposerAddAttachment, ComposerAttachments } from "./attachment";
-import { AgentSelector } from "./agent-selector";
+import {
+    ComposerContextBar,
+    type ComposerContextBarProps,
+} from "./composer-context-bar";
 import { ModelSelector } from "./model-selector";
 import { TodoProgressPanel } from "./todo-progress-panel";
+
+export type ThreadComposerContextBarProps = Omit<
+    ComposerContextBarProps,
+    "agents" | "selectedAgentKey" | "onSelectAgent"
+>;
 
 type ThreadStickyComposerProps = {
     composer: {
@@ -35,6 +43,7 @@ type ThreadStickyComposerProps = {
         selectedAgentKey: string | null;
         onSelect: (agentKey: string) => void;
     };
+    contextBar: ThreadComposerContextBarProps;
     showDisclaimer?: boolean;
 };
 
@@ -42,6 +51,7 @@ export function ThreadStickyComposer({
     composer,
     modelSelection,
     agentSelection,
+    contextBar,
     showDisclaimer = false,
 }: ThreadStickyComposerProps) {
     const { t } = useTranslation();
@@ -71,6 +81,16 @@ export function ThreadStickyComposer({
             <div className="relative z-10 w-full">
                 <TodoProgressPanel />
                 <div className="pointer-events-auto relative rounded-(--composer-radius) border border-[#E4E3DF] bg-white p-3 shadow-[0_4px_24px_rgba(20,20,18,0.04)] transition-[box-shadow,border-color] focus-within:border-ring/75">
+                    <ComposerContextBar
+                        isNewChat={contextBar.isNewChat}
+                        agents={agentSelection.agents}
+                        selectedAgentKey={agentSelection.selectedAgentKey}
+                        onSelectAgent={agentSelection.onSelect}
+                        sessionAgentKey={contextBar.sessionAgentKey}
+                        draftProjectName={contextBar.draftProjectName}
+                        sessionProjectName={contextBar.sessionProjectName}
+                        onRemoveProject={contextBar.onRemoveProject}
+                    />
                     <textarea
                         ref={composer.ref}
                         value={composer.text}
@@ -93,13 +113,6 @@ export function ThreadStickyComposer({
                             <ComposerAddAttachment />
                         </div>
                         <div className="flex items-center gap-2">
-                            <AgentSelector
-                                agents={agentSelection.agents}
-                                selectedAgentKey={
-                                    agentSelection.selectedAgentKey
-                                }
-                                onSelect={agentSelection.onSelect}
-                            />
                             <ModelSelector
                                 models={modelSelection.models}
                                 selectedModelId={modelSelection.selectedModelId}

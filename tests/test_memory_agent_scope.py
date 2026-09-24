@@ -10,7 +10,6 @@ import pytest_asyncio
 
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite_repository import SqliteRepository
-from nova.memory.agent_context import set_current_agent_key
 from nova.memory.models import MemoryWriteRequest
 from nova.memory.service import MemoryService
 
@@ -23,46 +22,37 @@ async def service():
     await database.close()
 
 
-@pytest.fixture(autouse=True)
-def _reset_agent_context():
-    set_current_agent_key(None)
-    yield
-    set_current_agent_key(None)
-
-
-def _agent_request(key: str, content: str) -> MemoryWriteRequest:
+def _agent_request(key: str, content: str, owner: str | None) -> MemoryWriteRequest:
     return MemoryWriteRequest(
         key=key,
         content=content,
         summary=content,
         scope="agent",
         memory_type="fact",
+        owner_agent_key=owner,
     )
 
 
 @pytest.mark.asyncio
 async def test_agent_memory_is_private_to_its_owner(service):
-    set_current_agent_key("alice")
-    await service.save(_agent_request("name", "You are Alice."))
+    await service.save(_agent_request("name", "You are Alice.", "alice"))
+    await service.save(_agent_request("name", "You are Bob.", "bob"))
 
-    set_current_agent_key("bob")
-    await service.save(_agent_request("name", "You are Bob."))
-
-    bob_view = await service.list_memories(scope="agent")
+    bob_view = await service.list_memories(scope="agent", agent_key="bob")
     assert [record.content for record in bob_view] == ["You are Bob."]
 
-    set_current_agent_key("alice")
-    alice_view = await service.list_memories(scope="agent")
+    alice_view = await service.list_memories(scope="agent", agent_key="alice")
     assert [record.content for record in alice_view] == ["You are Alice."]
 
 
 @pytest.mark.asyncio
 async def test_same_key_under_agent_scope_does_not_collide(service):
-    set_current_agent_key("alice")
-    alice_record, alice_created = await service.save(_agent_request("name", "Alice"))
-
-    set_current_agent_key("bob")
-    bob_record, bob_created = await service.save(_agent_request("name", "Bob"))
+    alice_record, alice_created = await service.save(
+        _agent_request("name", "Alice", "alice")
+    )
+    bob_record, bob_created = await service.save(
+        _agent_request("name", "Bob", "bob")
+    )
 
     assert alice_created is True
     assert bob_created is True
@@ -71,7 +61,6 @@ async def test_same_key_under_agent_scope_does_not_collide(service):
 
 @pytest.mark.asyncio
 async def test_user_memory_is_shared_across_agents(service):
-    set_current_agent_key("alice")
     await service.save(
         MemoryWriteRequest(
             key="user_name",
@@ -82,14 +71,12 @@ async def test_user_memory_is_shared_across_agents(service):
         )
     )
 
-    set_current_agent_key("bob")
-    bob_view = await service.list_memories(scope="user")
+    bob_view = await service.list_memories(scope="user", agent_key="bob")
     assert [record.content for record in bob_view] == ["The user is Dana."]
 
 
 @pytest.mark.asyncio
 async def test_agent_view_includes_own_agent_and_global_user(service):
-    set_current_agent_key("alice")
     await service.save(
         MemoryWriteRequest(
             key="user_name",
@@ -99,36 +86,31 @@ async def test_agent_view_includes_own_agent_and_global_user(service):
             memory_type="fact",
         )
     )
-    await service.save(_agent_request("name", "You are Alice."))
+    await service.save(_agent_request("name", "You are Alice.", "alice"))
+    await service.save(_agent_request("name", "You are Bob.", "bob"))
 
-    set_current_agent_key("bob")
-    await service.save(_agent_request("name", "You are Bob."))
-
-    set_current_agent_key("alice")
-    contents = {record.content for record in await service.list_memories(scope="all")}
+    contents = {
+        record.content
+        for record in await service.list_memories(scope="all", agent_key="alice")
+    }
     assert contents == {"The user is Dana.", "You are Alice."}
 
 
 @pytest.mark.asyncio
-async def test_agent_scope_without_active_agent_is_refused(service):
-    set_current_agent_key(None)
+async def test_agent_scope_without_owner_is_refused(service):
     with pytest.raises(ValueError):
-        await service.save(_agent_request("name", "orphaned"))
+        await service.save(_agent_request("name", "orphaned", None))
 
 
 @pytest.mark.asyncio
 async def test_delete_agent_memory_targets_only_owner(service):
-    set_current_agent_key("alice")
-    await service.save(_agent_request("name", "Alice"))
-    set_current_agent_key("bob")
-    await service.save(_agent_request("name", "Bob"))
+    await service.save(_agent_request("name", "Alice", "alice"))
+    await service.save(_agent_request("name", "Bob", "bob"))
 
-    set_current_agent_key("alice")
-    deleted = await service.delete(key="name", scope="agent")
+    deleted = await service.delete(key="name", scope="agent", agent_key="alice")
     assert deleted == 1
 
-    set_current_agent_key("bob")
-    bob_view = await service.list_memories(scope="agent")
+    bob_view = await service.list_memories(scope="agent", agent_key="bob")
     assert [record.content for record in bob_view] == ["Bob"]
 
 
@@ -146,8 +128,10 @@ def test_sub_agent_does_not_register_memory_tools():
         skill_service=_StubSkillService(),
         approval=None,
         is_sub_agent=True,
+        agent_key="child",
     )
     builder._register_builtin_tools()
+    builder._register_memory_tools()
 
     registered = set(registry.tools.keys())
     assert registered.isdisjoint(_MEMORY_TOOL_NAMES)

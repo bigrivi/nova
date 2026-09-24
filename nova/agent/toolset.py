@@ -40,24 +40,44 @@ class ToolsetBuilder:
         approval: ApprovalManager,
         is_sub_agent: bool,
         allowed_tools: Optional[frozenset[str]] = None,
+        agent_key: Optional[str] = None,
     ) -> None:
         self._registry = registry
         self._skill_service = skill_service
         self._approval = approval
         self._is_sub_agent = is_sub_agent
         self._allowed_tools = allowed_tools
+        self._agent_key = agent_key
         self.skill_tools: Any = None
+        self.memory_tools: Any = None
 
     def _allows(self, tool_name: str) -> bool:
         return self._allowed_tools is None or tool_name in self._allowed_tools
 
     async def build(self) -> None:
         self._register_builtin_tools()
+        self._register_memory_tools()
         self._register_skill_tools()
         if not self._is_sub_agent:
             self._register_delegation()
             await self._register_mcp_tools()
         self._register_behaviors()
+
+    def _register_memory_tools(self) -> None:
+        """Register memory tools bound to this agent's key.
+
+        Structured memory is a primary-agent capability: sub-agents get nothing
+        (any withheld read stays global-only), and the owner key is baked into
+        the bound methods rather than read from ambient context.
+        """
+        if self._is_sub_agent:
+            return
+        from nova.memory.tools import MemoryTools
+
+        self.memory_tools = MemoryTools(agent_key=self._agent_key)
+        for name in sorted(_MEMORY_TOOL_NAMES):
+            if self._allows(name):
+                self._registry.register(getattr(self.memory_tools, name), name=name)
 
     def _register_builtin_tools(self) -> None:
         from nova import tools as tools_module

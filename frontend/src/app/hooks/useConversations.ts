@@ -83,6 +83,9 @@ export interface Conversations {
     ) => void;
     switchToDraftThread: (projectId?: string | null) => void;
     handleNewThreadInProject: (projectId: string) => void;
+    draftProjectId: string | null;
+    clearDraftProject: () => void;
+    isDraftThread: boolean;
     selectThread: (threadId: string) => void;
     handlePinThread: (threadId: string, pinned: boolean) => Promise<void>;
     handleRenameThread: (threadId: string, newTitle: string) => Promise<void>;
@@ -688,6 +691,9 @@ export function useConversations(deps: ConversationDeps): Conversations {
         setThreads,
         currentThreadId,
         activeThreadListId,
+        isDraftThread: currentThreadId === DRAFT_THREAD_ID,
+        draftProjectId,
+        clearDraftProject: () => setDraftProjectId(null),
         currentMessages,
         isRunning,
         runningByThread,

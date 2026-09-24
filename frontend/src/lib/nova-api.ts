@@ -361,6 +361,29 @@ export async function createAgent(
     return (await response.json()) as NovaAgent;
 }
 
+export async function importAgent(
+    content: string,
+    options?: { key?: string; parentIds?: string[] },
+): Promise<{ agent: NovaAgent; warnings: string[] }> {
+    const response = await apiFetch("/api/agents/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            content,
+            key: options?.key,
+            parent_ids: options?.parentIds,
+        }),
+    });
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+    const payload = (await response.json()) as {
+        agent: NovaAgent;
+        warnings?: string[];
+    };
+    return { agent: payload.agent, warnings: payload.warnings ?? [] };
+}
+
 export async function deleteAgent(key: string): Promise<void> {
     const response = await apiFetch(`/api/agents/${encodeURIComponent(key)}`, {
         method: "DELETE",

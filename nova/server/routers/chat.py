@@ -48,13 +48,13 @@ async def chat(
         }
     },
 )
-async def chat_stream(chat_request: ChatRequest, http_request: Request) -> StreamingResponse:
-    return await ChatStreamOrchestrator(http_request).handle_chat_stream(chat_request)
+async def chat_stream(chat_request: ChatRequest, request: Request) -> StreamingResponse:
+    return await ChatStreamOrchestrator(request).handle_chat_stream(chat_request)
 
 
 @router.get("/api/chat/stream/status")
-async def chat_stream_status(session_id: str, http_request: Request):
-    return await ChatStreamOrchestrator(http_request).handle_chat_stream_status(session_id)
+async def chat_stream_status(session_id: str, request: Request):
+    return await ChatStreamOrchestrator(request).handle_chat_stream_status(session_id)
 
 
 @router.get("/api/chat/stream/active")

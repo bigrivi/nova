@@ -363,19 +363,34 @@ class ChatService:
         adapter = AISDKStreamAdapter()
         resolved_session_id = request.session_id
         fallback_sequence = 0
-        async for event, data in self._agent_event_stream(request):
-            if event == AgentEvent.SESSION and data and not resolved_session_id:
-                resolved_session_id = data if isinstance(data, str) else resolved_session_id
-            for chunk in adapter.feed(event, data):
-                if resolved_session_id:
-                    if fallback_sequence:
-                        self._stream_buffer.ensure_next(resolved_session_id, fallback_sequence)
-                        fallback_sequence = 0
-                    _, framed = self._stream_buffer.append(resolved_session_id, chunk)
-                    yield framed
-                else:
-                    fallback_sequence += 1
-                    yield b"id: " + str(fallback_sequence).encode("ascii") + b"\n" + chunk
+        # Arm this turn's boundary up front so a stale cursor-0 resume returns
+        # only this turn even if the previous turn never marked done (e.g. it
+        # errored or was cancelled, both of which skip mark_done below).
+        turn_armed = False
+        if resolved_session_id:
+            self._stream_buffer.begin_turn(resolved_session_id)
+            turn_armed = True
+        try:
+            async for event, data in self._agent_event_stream(request):
+                if event == AgentEvent.SESSION and data and not resolved_session_id:
+                    resolved_session_id = data if isinstance(data, str) else resolved_session_id
+                    if resolved_session_id and not turn_armed:
+                        self._stream_buffer.begin_turn(resolved_session_id)
+                        turn_armed = True
+                for chunk in adapter.feed(event, data):
+                    if resolved_session_id:
+                        if fallback_sequence:
+                            self._stream_buffer.ensure_next(resolved_session_id, fallback_sequence)
+                            fallback_sequence = 0
+                        _, framed = self._stream_buffer.append(resolved_session_id, chunk)
+                        yield framed
+                    else:
+                        fallback_sequence += 1
+                        yield b"id: " + str(fallback_sequence).encode("ascii") + b"\n" + chunk
+        except Exception:
+            if turn_armed and resolved_session_id:
+                self._stream_buffer.abort_turn(resolved_session_id)
+            raise
         if resolved_session_id:
             self._stream_buffer.mark_done(resolved_session_id)
             await self._request_registry.mark_done(resolved_session_id)

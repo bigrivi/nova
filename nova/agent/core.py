@@ -8,6 +8,7 @@ from typing import Any, AsyncGenerator, Callable, Optional
 
 from nova.llm import LLMProvider, Message as LLMMessage
 from nova.session import get_session_manager
+from nova.session.manager import SessionContext
 from nova.session.protocol import SessionProtocol
 from nova.tools.registry import ToolRegistry, tool
 from nova.prompt import PromptBuilder, PromptConfig
@@ -165,7 +166,7 @@ class Agent:
     async def _emit(self, event: AgentEvent, data: Any = None) -> None:
         await self._events.emit(event, data)
 
-    def _build_system_prompt(self, session_ctx: Any = None) -> str:
+    def _build_system_prompt(self, session_ctx: SessionContext = None) -> str:
         tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else []
         available_skills = self._skill_service.list_skills()
         return self._prompt_builder.build(
@@ -174,13 +175,8 @@ class Agent:
             workspace_override=self._active_workspace,
         )
 
-    def _apply_active_workspace(self, session_ctx: Any = None) -> None:
+    def _apply_active_workspace(self, session_ctx: SessionContext = None) -> None:
         from nova.tools.workspace_context import set_active_workspace
-        from nova.memory.agent_context import set_current_agent_key
-
-        # Only a primary agent owns structured memory; sub-agents get no agent
-        # identity so any (withheld) memory read stays global-only.
-        set_current_agent_key(None if self.is_sub_agent else self.agent_key)
 
         override = getattr(session_ctx, "workspace_dir", None) if session_ctx else None
         if override:
@@ -394,7 +390,7 @@ class Agent:
         user_input: str,
         workspace_dir: Optional[str],
         project_id: Optional[str] = None,
-    ) -> Any:
+    ) -> SessionContext:
         """Load the requested session, creating one when it is absent."""
         if session_id and await self.session.load_session(session_id):
             current = self.session.get_current_session()
@@ -403,6 +399,7 @@ class Agent:
         await self.session.create_session(
             persist=True,
             first_message=user_input,
+            agent_key=self.agent_key,
             workspace_dir=workspace_dir,
             project_id=project_id,
         )
@@ -539,6 +536,7 @@ class Agent:
             approval=self._approval,
             is_sub_agent=self.is_sub_agent,
             allowed_tools=self.allowed_tools,
+            agent_key=self.agent_key,
         )
         await builder.build()
         self._skill_tools = builder.skill_tools
@@ -560,7 +558,8 @@ class Agent:
             from nova.memory.service import MemoryService
             self._prompt_builder.config.memory_index = (
                 await build_memory_index_for_system(
-                    service=MemoryService(data_source=self._data_source)
+                    service=MemoryService(data_source=self._data_source),
+                    agent_key=self.agent_key,
                 )
             )
         except Exception as error:

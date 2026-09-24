@@ -52,6 +52,24 @@ export function NovaAppShell() {
         handleDeleteThread: conversations.handleDeleteThread,
     });
 
+    const isNewChat = conversations.isDraftThread;
+    const activeThread = conversations.threads.find(
+        (thread) => thread.id === conversations.currentThreadId,
+    );
+    const draftProjectName = isNewChat
+        ? (projects.projects.find(
+              (project) => project.id === conversations.draftProjectId,
+          )?.name ?? null)
+        : null;
+    const sessionAgentKey = isNewChat
+        ? null
+        : (activeThread?.agent_key ?? null);
+    const sessionProjectName = isNewChat
+        ? null
+        : (projects.projects.find(
+              (project) => project.id === activeThread?.project_id,
+          )?.name ?? null);
+
     return (
         <AssistantRuntimeProvider aui={aui} runtime={runtime}>
             <TooltipProvider>
@@ -114,6 +132,11 @@ export function NovaAppShell() {
                         agents={agentSelection.agents}
                         selectedAgentKey={agentSelection.selectedAgentKey}
                         onSelectAgent={agentSelection.selectAgent}
+                        isNewChat={isNewChat}
+                        draftProjectName={draftProjectName}
+                        onRemoveProject={conversations.clearDraftProject}
+                        sessionAgentKey={sessionAgentKey}
+                        sessionProjectName={sessionProjectName}
                     />
                 </div>
 

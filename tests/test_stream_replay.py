@@ -415,6 +415,50 @@ def test_replay_stale_cursor_returns_only_latest_turn() -> None:
     assert seqs == [4, 5], f"only the latest turn expected, got {seqs}"
 
 
+def test_replay_in_arm_window_returns_empty() -> None:
+    """Resume landing between begin_turn and the new turn's first append must
+    not replay the finished previous turn: every buffered frame belongs to a
+    prior turn, so replay is empty and the resume follows the imminent turn
+    live. This is the exact production race (19ms window in the capture)."""
+    buffer = StreamBuffer()
+    for _ in range(3):
+        buffer.append("s", b'data: {"turn":1}\n\n')
+    buffer.append("s", b"data: [DONE]\n\n")
+    buffer.mark_done("s")
+
+    buffer.begin_turn("s")
+    assert buffer.has_pending_turn("s")
+    assert not buffer.is_done("s")
+
+    frames, last, resync = buffer.replay_since("s", 0)
+
+    assert frames == []
+    assert last == 4
+    assert resync is True
+
+    # The new turn's first append opens the boundary and clears pending.
+    buffer.append("s", b'data: {"turn":2}\n\n')
+    assert not buffer.has_pending_turn("s")
+    frames, _, _ = buffer.replay_since("s", 0)
+    seqs = [int(f.split(b"id: ")[1].split(b"\n")[0]) for f in frames]
+    assert seqs == [5]
+
+
+def test_abort_turn_restores_done_and_disarms() -> None:
+    """A turn that fails before its first append must not leave the session
+    hanging: pending is disarmed and done restored so a resume returns
+    promptly instead of tailing until timeout."""
+    buffer = StreamBuffer()
+    buffer.append("s", b'data: {"turn":1}\n\n')
+    buffer.mark_done("s")
+
+    buffer.begin_turn("s")
+    buffer.abort_turn("s")
+
+    assert not buffer.has_pending_turn("s")
+    assert buffer.is_done("s")
+
+
 def test_replay_cursor_inside_latest_turn_is_gapless() -> None:
     buffer = StreamBuffer()
     for _ in range(3):
@@ -469,3 +513,52 @@ def test_single_turn_resume_unaffected_by_boundary() -> None:
     seqs = [int(f.split(b"id: ")[1].split(b"\n")[0]) for f in frames]
     assert seqs == [2, 3, 4, 5]
     assert resync is False
+
+
+def test_resume_after_completed_turn_returns_single_done(monkeypatch, tmp_path):
+    """Route-level repro of the reported capture: two turns buffered, the
+    auto-wake resume (cursor 0) must return only the latest turn's frames
+    with a single [DONE] -- never the previous turn again."""
+    from fastapi.testclient import TestClient
+
+    from nova.server import create_app
+    from nova.settings import get_settings
+
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-twoturns"))
+    app = create_app(settings=get_settings())
+    buf = app.state.stream_buffer
+    sid = "sess-twoturns"
+
+    def frame(text):
+        return text.encode("utf-8")
+
+    # Turn 1: a full completed turn, exactly like the subagent_status turn
+    # in the capture (session/context/start/text/tool/finish/[DONE]).
+    for payload in [
+        b'data: {"type":"start","messageId":"m1"}\n\n',
+        b'data: {"type":"text-delta","id":"t-old","delta":"old answer"}\n\n',
+        b'data: {"type":"finish"}\n\n',
+        b"data: [DONE]\n\n",
+    ]:
+        buf.append(sid, payload)
+    buf.mark_done(sid)
+    # Turn 2: the auto-wake turn.
+    for payload in [
+        b'data: {"type":"start","messageId":"m2"}\n\n',
+        b'data: {"type":"text-delta","id":"t-new","delta":"new answer"}\n\n',
+        b'data: {"type":"finish"}\n\n',
+        b"data: [DONE]\n\n",
+    ]:
+        buf.append(sid, payload)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat/stream",
+        json={"message": "", "session_id": sid, "resume_from_seq": 0},
+    )
+
+    assert response.status_code == 200
+    body = response.content.decode("utf-8")
+    assert "new answer" in body
+    assert "old answer" not in body
+    assert body.count("[DONE]") == 1

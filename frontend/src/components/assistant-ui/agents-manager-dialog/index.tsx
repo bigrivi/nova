@@ -1,8 +1,8 @@
-import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { PencilIcon, PlusIcon, Trash2Icon, UploadIcon } from "lucide-react";
+import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { deleteAgent, listAgents } from "../../../lib/nova-api";
+import { deleteAgent, importAgent, listAgents } from "../../../lib/nova-api";
 import type {
     NovaAgent,
     NovaAgentMode,
@@ -172,6 +172,40 @@ export function AgentsManagerDialog({
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
+    const [importing, setImporting] = useState(false);
+    const [importNotice, setImportNotice] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) {
+            return;
+        }
+        setImporting(true);
+        setActionError(null);
+        setImportNotice(null);
+        try {
+            const baseName = file.name.replace(/\.(md|markdown)$/i, "");
+            const { warnings } = await importAgent(await file.text(), {
+                key: baseName || undefined,
+            });
+            onAgentsChanged(await listAgents());
+            setImportNotice(
+                warnings.length > 0
+                    ? t("agentManager.importedWithWarnings", {
+                          warnings: warnings.join(" "),
+                      })
+                    : t("agentManager.imported"),
+            );
+        } catch (error) {
+            setActionError(
+                error instanceof Error ? error.message : String(error),
+            );
+        } finally {
+            setImporting(false);
+        }
+    }
 
     async function handleConfirmDelete() {
         if (!agentToDelete) {
@@ -252,8 +286,36 @@ export function AgentsManagerDialog({
                                 {actionError}
                             </p>
                         ) : null}
+                        {importNotice ? (
+                            <p className="mt-2 text-xs text-muted-foreground">
+                                {importNotice}
+                            </p>
+                        ) : null}
                     </div>
                     <DialogFooter>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".md,.markdown,text/markdown"
+                            className="hidden"
+                            onChange={handleImportFile}
+                        />
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={importing}
+                            onClick={() => {
+                                setActionError(null);
+                                setImportNotice(null);
+                                fileInputRef.current?.click();
+                            }}
+                        >
+                            <UploadIcon className="size-4" />
+                            {importing
+                                ? t("agentManager.importing")
+                                : t("agentManager.importAgent")}
+                        </Button>
                         <Button
                             type="button"
                             size="sm"

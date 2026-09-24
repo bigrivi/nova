@@ -20,6 +20,11 @@ export interface NovaMainPanelProps {
     agents: NovaAgent[];
     selectedAgentKey: string;
     onSelectAgent: (agentKey: string) => void;
+    isNewChat: boolean;
+    draftProjectName: string | null;
+    onRemoveProject: () => void;
+    sessionAgentKey: string | null;
+    sessionProjectName: string | null;
 }
 
 /**
@@ -41,6 +46,11 @@ export function NovaMainPanel({
     agents,
     selectedAgentKey,
     onSelectAgent,
+    isNewChat,
+    draftProjectName,
+    onRemoveProject,
+    sessionAgentKey,
+    sessionProjectName,
 }: NovaMainPanelProps) {
     const { t } = useTranslation();
 
@@ -84,6 +94,13 @@ export function NovaMainPanel({
                         agents,
                         selectedAgentKey,
                         onSelect: onSelectAgent,
+                    }}
+                    contextBar={{
+                        isNewChat,
+                        draftProjectName,
+                        onRemoveProject,
+                        sessionAgentKey,
+                        sessionProjectName,
                     }}
                 />
             </div>

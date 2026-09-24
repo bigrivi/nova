@@ -13,6 +13,7 @@ import { EmptyState } from "./thread-empty-state";
 import { ThreadMessage } from "./thread-message";
 import { ThreadScrollToBottom } from "./thread-scroll-to-bottom";
 import { ThreadStickyComposer } from "./thread-sticky-composer";
+import type { ThreadComposerContextBarProps } from "./thread-sticky-composer";
 
 type ThreadProps = {
     composer: {
@@ -34,12 +35,14 @@ type ThreadProps = {
         selectedAgentKey: string | null;
         onSelect: (agentKey: string) => void;
     };
+    contextBar: ThreadComposerContextBarProps;
 };
 
 export const Thread: FC<ThreadProps> = ({
     composer,
     modelSelection,
     agentSelection,
+    contextBar,
 }) => {
     const zoomTargetRef = useZoom();
     const activeCall = useAskUserStore((s) => s.active);
@@ -53,6 +56,7 @@ export const Thread: FC<ThreadProps> = ({
             composer={composer}
             modelSelection={modelSelection}
             agentSelection={agentSelection}
+            contextBar={contextBar}
         />
     );
     const composerNodeWithDisclaimer = (
@@ -60,6 +64,7 @@ export const Thread: FC<ThreadProps> = ({
             composer={composer}
             modelSelection={modelSelection}
             agentSelection={agentSelection}
+            contextBar={contextBar}
             showDisclaimer
         />
     );

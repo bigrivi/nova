@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nova Composer · 顶部 Agent 选择条 — 结果图</title>
+<style>
+  :root{
+    --canvas:#FBFAF7;
+    --box:#FFFFFF;
+    --border:#E4E3DF;
+    --accent:#1D5FA8;
+    --selected:#EAF1F9;
+    --hover:#F0EEE7;
+    --text:#201F1C;
+    --muted:#6E6A60;
+    --faint:#9C978A;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--canvas);
+    color:var(--text);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,sans-serif;
+    font-size:14px;line-height:1.6;
+    min-height:100vh;
+    display:flex;flex-direction:column;align-items:center;
+    padding:28px 20px 80px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{width:100%;max-width:760px}
+  .tag{
+    display:inline-flex;align-items:center;gap:6px;
+    font-size:12px;color:var(--muted);
+    border:1px solid var(--border);background:#fff;border-radius:999px;
+    padding:3px 12px;margin-bottom:22px;
+  }
+  .tag i{width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block}
+  h1{
+    font-family:"Songti SC","Noto Serif SC","STSong",serif;
+    font-weight:600;font-size:34px;letter-spacing:.02em;
+    text-align:center;margin:26px 0 8px;
+  }
+  .sub{text-align:center;color:var(--muted);font-size:13px;margin-bottom:30px}
+  .state-label{
+    font-size:12px;color:var(--faint);letter-spacing:.08em;
+    margin:30px 4px 10px;display:flex;align-items:center;gap:8px;
+  }
+  .state-label::after{content:"";flex:1;height:1px;background:var(--border)}
+
+  /* ---- Composer shell ---- */
+  .composer{
+    position:relative;
+    background:var(--box);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    box-shadow:0 4px 24px rgba(20,20,18,.04);
+    overflow:visible;
+    transition:border-color .15s ease, box-shadow .15s ease;
+  }
+  .composer:focus-within{
+    border-color:rgba(29,95,168,.45);
+    box-shadow:0 4px 24px rgba(20,20,18,.04), 0 0 0 3px rgba(29,95,168,.12);
+  }
+  /* Quiet inline mention: small label tucked at the top-left of the input, no band */
+  .agent-bar{
+    display:flex;align-items:center;
+    padding:9px 12px 0;
+    background:transparent;
+    border:0;
+    user-select:none;
+  }
+  .agent-bar .trigger{
+    display:inline-flex;align-items:center;gap:6px;
+    border:0;background:transparent;cursor:pointer;
+    color:var(--muted);font-size:12.5px;font-weight:500;
+    padding:2px 7px;margin-left:-7px;border-radius:6px;
+    font-family:inherit;letter-spacing:.01em;
+    transition:color .15s ease, background .15s ease;
+    flex:none;
+  }
+  .agent-bar .trigger:hover{color:var(--accent);background:var(--hover)}
+  .agent-bar.open .trigger{color:var(--accent);background:var(--selected)}
+  /* Read-only session label: same quiet size/placement, but clearly not a button */
+  .agent-readonly{
+    display:inline-flex;align-items:center;gap:6px;
+    border:0;background:transparent;cursor:default;
+    color:var(--muted);font-size:12.5px;font-weight:500;
+    padding:2px 7px;margin-left:-7px;border-radius:6px;
+    font-family:inherit;letter-spacing:.01em;
+    user-select:none;opacity:.8;
+  }
+  /* Small agent avatar: colored rounded-square glyph, mirrors the dropdown rows.
+     Folder stays an outline icon, so agent vs project read as different families. */
+  .mini-avatar{
+    width:18px;height:18px;border-radius:5.5px;flex:none;
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:11px;font-weight:700;line-height:1;
+    color:#fff;background:var(--accent);border:1px solid var(--accent);
+  }
+  .agent-bar .trigger svg{transition:transform .18s ease;opacity:.7}
+  .agent-bar.open .trigger svg{transform:rotate(180deg);opacity:1}
+
+  /* Quiet divider between "who" and "where" */
+  .vdiv{width:1px;height:14px;background:var(--border);margin:0 7px 0 5px;flex:none}
+  .vdiv[hidden]{display:none}
+
+  /* Project context tag: folder + name + remove — same quiet row, different affordance */
+  .proj{
+    display:inline-flex;align-items:center;gap:5px;
+    padding:2px 3px 2px 7px;margin-left:-2px;border-radius:6px;
+    color:var(--muted);font-size:12.5px;font-weight:400;letter-spacing:.01em;
+    background:transparent;border:0;
+    transition:opacity .18s ease, transform .18s ease, background .15s ease, color .15s ease;
+    max-width:100%;
+  }
+  .proj:hover{background:var(--hover);color:var(--text)}
+  .proj[hidden]{display:none}
+  .proj.leaving{opacity:0;transform:translateX(-3px) scale(.97)}
+  /* Read-only project breadcrumb (existing session): same row, zero affordance */
+  .proj-ro{
+    display:inline-flex;align-items:center;gap:5px;
+    padding:2px 7px;margin-left:-2px;border-radius:6px;
+    color:var(--muted);font-size:12.5px;font-weight:400;letter-spacing:.01em;
+    background:transparent;border:0;cursor:default;user-select:none;opacity:.8;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;
+  }
+  .proj-ro .folder{opacity:.6;flex:none;display:block}
+  .proj .folder{opacity:.6;flex:none;display:block}
+  .proj:hover .folder{opacity:.9}
+  .proj-name{
+    border:0;background:transparent;cursor:pointer;font:inherit;color:inherit;
+    padding:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;
+  }
+  .proj-name:hover{color:var(--accent)}
+  .proj-x{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:18px;height:18px;border-radius:50%;flex:none;
+    border:0;background:transparent;color:var(--faint);cursor:pointer;
+    transition:color .15s ease, background .15s ease;
+  }
+  .proj-x:hover{color:var(--accent);background:rgba(29,95,168,.13)}
+  .proj-x svg{display:block}
+  .demo-link{
+    margin-left:auto;flex:none;
+    border:0;background:transparent;cursor:pointer;font-family:inherit;
+    font-size:11.5px;color:var(--faint);
+    padding:2px 6px;border-radius:6px;letter-spacing:.02em;
+  }
+  .demo-link:hover{color:var(--accent);background:var(--hover)}
+
+  .body{padding:1px 12px 10px}
+  textarea{
+    width:100%;border:0;outline:0;resize:none;background:transparent;
+    font-family:inherit;font-size:14px;color:var(--text);
+    min-height:44px;padding:4px 4px 0;line-height:1.7;
+  }
+  textarea::placeholder{color:var(--faint)}
+  .controls{
+    margin-top:12px;display:flex;align-items:center;justify-content:space-between;
+  }
+  .icon-btn{
+    width:30px;height:30px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;
+    border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;
+    transition:background .15s ease;
+  }
+  .icon-btn:hover{background:var(--hover);color:var(--text)}
+  .right{display:flex;align-items:center;gap:8px}
+  .model-pill{
+    display:inline-flex;align-items:center;gap:5px;
+    border:1px solid var(--border);background:#fff;border-radius:9px;
+    font-size:12.5px;color:var(--muted);padding:5px 10px;cursor:pointer;font-family:inherit;
+  }
+  .model-pill:hover{background:var(--hover)}
+  .send{
+    width:32px;height:32px;border-radius:50%;border:0;cursor:pointer;
+    background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center;
+    transition:transform .12s ease, opacity .12s ease;
+  }
+  .send:hover{transform:translateY(-1px)}
+  .send:disabled{background:#E7E5DE;color:#B9B4A6;cursor:default;transform:none}
+  .disclaimer{margin-top:10px;text-align:center;font-size:11px;color:var(--faint)}
+
+  /* ---- Dropdown ---- */
+  .pop-wrap{position:relative}
+  .popover{
+    position:absolute;top:calc(100% + 6px);left:12px;z-index:30;
+    width:300px;background:#fff;border:1px solid var(--border);border-radius:12px;
+    box-shadow:0 12px 40px rgba(20,20,18,.12), 0 2px 8px rgba(20,20,18,.06);
+    padding:6px;
+    opacity:0;transform:translateY(-6px) scale(.99);pointer-events:none;
+    transition:opacity .16s ease, transform .16s ease;
+  }
+  .agent-bar.open ~ .pop-wrap .popover,
+  .composer.open .popover{opacity:1;transform:none;pointer-events:auto}
+  .pop-title{font-size:11.5px;color:var(--faint);padding:7px 10px 4px;letter-spacing:.04em}
+  .agent-item{
+    display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;
+    border:0;background:transparent;border-radius:9px;padding:8px 10px;cursor:pointer;font-family:inherit;
+  }
+  .agent-item:hover{background:var(--hover)}
+  .agent-item.selected{background:var(--selected)}
+  .avatar{
+    width:28px;height:28px;border-radius:9px;flex:none;
+    display:flex;align-items:center;justify-content:center;
+    font-size:13px;font-weight:700;color:var(--accent);
+    background:#fff;border:1px solid var(--border);
+  }
+  .agent-item.selected .avatar{background:var(--accent);border-color:var(--accent);color:#fff}
+  .a-name{font-size:13.5px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px}
+  .a-desc{font-size:12px;color:var(--muted);margin-top:1px}
+  .check{margin-left:auto;flex:none;color:var(--accent);padding-top:3px;visibility:hidden}
+  .agent-item.selected .check{visibility:visible}
+  .note{margin-top:26px;background:#fff;border:1px dashed var(--border);border-radius:12px;padding:14px 16px;font-size:12.5px;color:var(--muted)}
+  .note b{color:var(--text)}
+  @media(max-width:560px){h1{font-size:26px}.popover{width:calc(100vw - 90px)}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div style="display:flex;justify-content:center"><span class="tag"><i></i>结果图 · 设计预览，非真实功能 · 浅色主题</span></div>
+  <h1>晚上好，大圣</h1>
+  <p class="sub">开始新的对话 — 先在输入框顶部选择本次的主智能体</p>
+
+  <!-- State A : collapsed -->
+  <div class="state-label">A · 收起状态（默认，新聊天：智能体 + 项目）<button class="demo-link" id="resetA" title="把项目标签加回来">恢复项目标签</button></div>
+  <div class="composer" id="composerA">
+    <div class="agent-bar" id="barA">
+      <button class="trigger" id="triggerA" aria-haspopup="listbox" aria-expanded="false">
+        <span class="mini-avatar" id="avatarA">N</span><span id="labelA">@Nova</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <span class="vdiv" id="divA" aria-hidden="true"></span>
+      <span class="proj" id="projA" title="这条新聊天将归入该项目">
+        <svg class="folder" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+        <button class="proj-name" id="projNameA" title="切换项目">Nova 前端</button>
+        <button class="proj-x" id="projXA" title="不归入项目" aria-label="不归入项目">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </span>
+    </div>
+    <div class="pop-wrap">
+      <div class="popover" id="popA" role="listbox"></div>
+    </div>
+    <div class="body">
+      <textarea id="taA" placeholder="发送消息…" rows="2"></textarea>
+      <div class="controls">
+        <button class="icon-btn" title="添加附件">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <div class="right">
+          <button class="model-pill">Fast
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <button class="send" id="sendA" disabled title="发送">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7M12 19V5"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- State B : open -->
+  <div class="state-label">B · 展开状态（点击顶部 @ 名称后，项目标签仍在）</div>
+  <div class="composer open" id="composerB">
+    <div class="agent-bar open" id="barB">
+      <button class="trigger" id="triggerB" aria-haspopup="listbox" aria-expanded="true">
+        <span class="mini-avatar" id="avatarB">N</span><span id="labelB">@Nova</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <span class="vdiv" id="divB" aria-hidden="true"></span>
+      <span class="proj" id="projB" title="这条新聊天将归入该项目">
+        <svg class="folder" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+        <button class="proj-name" id="projNameB" title="切换项目">Nova 前端</button>
+        <button class="proj-x" id="projXB" title="不归入项目" aria-label="不归入项目">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </span>
+    </div>
+    <div class="pop-wrap">
+      <div class="popover" id="popB" role="listbox"></div>
+    </div>
+    <div class="body">
+      <textarea placeholder="发送消息…" rows="2"></textarea>
+      <div class="controls">
+        <button class="icon-btn" title="添加附件">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <div class="right">
+          <button class="model-pill">Fast
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <button class="send" disabled title="发送">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7M12 19V5"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="disclaimer">Nova 是 AI 智能体，可能会出错，使用前请仔细核对。</p>
+
+  <!-- State C : existing session, read-only -->
+  <div class="state-label">C · 已有会话（只读：该会话的智能体 + 所属项目，均不可点）</div>
+  <div class="composer" id="composerC">
+    <div class="agent-bar">
+      <span class="agent-readonly" title="会话开始后智能体已固定，如需更换请新开对话"><span class="mini-avatar">代</span><span>@代码助手</span></span>
+      <span class="vdiv" aria-hidden="true"></span>
+      <span class="proj-ro" title="该会话归属的项目">
+        <svg class="folder" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+        <span>Nova 前端</span>
+      </span>
+    </div>
+    <div class="body">
+      <textarea id="taC" placeholder="继续对话…" rows="2"></textarea>
+      <div class="controls">
+        <button class="icon-btn" title="添加附件">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <div class="right">
+          <button class="model-pill">Fast
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <button class="send" id="sendC" disabled title="发送">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7M12 19V5"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="disclaimer">已有会话沿用原来的智能体，项目在别处管理，这里不再切换。</p>
+
+  <div class="note">
+    <b>设计说明：</b>新聊天顶部是同一行两个安静小元素，中间用 1px 浅竖线隔开。左边是智能体选择器：彩色小头像 + <b>@名称 ⌄</b>（mention 样式，点开换人，头像字形跟下拉行一致）；右边是项目标签（文件夹线框图标 + 项目名 + 小 ×，名字体轻一档、可点切换，× 悬停才变蓝）。头像（实心圆角）与文件夹（线框）是两套图标，一眼可分。点 × 后项目标签淡出，只剩智能体。已有会话（C）顶部是只读的智能体 + 所属项目面包屑，都不可点、无悬停；只读智能体悬停有提示，说明固定后需新开对话更换。
+  </div>
+</div>
+
+<script>
+var AGENTS = [
+  { key:"nova",     name:"Nova",   glyph:"N", desc:"通用助手，什么都能聊" },
+  { key:"code",     name:"代码助手", glyph:"代", desc:"写代码、查错、讲思路" },
+  { key:"writing",  name:"写作助手", glyph:"写", desc:"润色改写、起草文案" },
+  { key:"data",     name:"数据分析师", glyph:"数", desc:"整理数据、解读表格" },
+  { key:"study",    name:"学习伙伴", glyph:"学", desc:"陪你背书、讲题练测" }
+];
+function mount(composerId, barId, triggerId, popId, labelId, startOpen, startKey){
+  var composer = document.getElementById(composerId);
+  var bar = document.getElementById(barId);
+  var trigger = document.getElementById(triggerId);
+  var pop = document.getElementById(popId);
+  var label = document.getElementById(labelId);
+  var current = startKey || "nova";
+
+  function render(){
+    var html = '<div class="pop-title">选择主智能体</div>';
+    AGENTS.forEach(function(a){
+      var sel = a.key === current ? " selected" : "";
+      html += '<button class="agent-item' + sel + '" data-key="' + a.key + '" role="option" aria-selected="' + (a.key===current) + '">'
+        + '<span class="avatar">' + a.glyph + '</span>'
+        + '<span><span class="a-name">' + a.name + '</span><span class="a-desc" style="display:block">' + a.desc + '</span></span>'
+        + '<span class="check"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>'
+        + '</button>';
+    });
+    pop.innerHTML = html;
+    var cur = AGENTS.filter(function(a){return a.key===current})[0];
+    label.textContent = "@" + cur.name;
+    var mini = trigger.querySelector(".mini-avatar");
+    if(mini) mini.textContent = cur.glyph;
+    var items = pop.querySelectorAll(".agent-item");
+    items.forEach(function(btn){
+      btn.addEventListener("click", function(e){
+        e.stopPropagation();
+        current = btn.getAttribute("data-key");
+        render();
+        setOpen(false);
+        syncPeer(btn.getAttribute("data-key"));
+      });
+    });
+  }
+  function setOpen(open){
+    composer.classList.toggle("open", open);
+    bar.classList.toggle("open", open);
+    trigger.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  function isOpen(){ return composer.classList.contains("open"); }
+  trigger.addEventListener("click", function(e){ e.stopPropagation(); setOpen(!isOpen()); });
+  document.addEventListener("click", function(e){
+    if(!composer.contains(e.target)) setOpen(false);
+  });
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape") setOpen(false);
+  });
+  render();
+  setOpen(!!startOpen);
+  return { setAgent:function(k){ current=k; render(); }, getAgent:function(){return current;} };
+}
+var peerB;
+var peerA = mount("composerA","barA","triggerA","popA","labelA", false, "nova");
+peerB = mount("composerB","barB","triggerB","popB","labelB", true, "nova");
+function syncPeer(key){
+  try{
+    var other = (document.activeElement && document.getElementById("composerB").contains(document.activeElement)) ? peerA : peerB;
+    if(other) other.setAgent(key);
+  }catch(e){}
+}
+var taA = document.getElementById("taA");
+var sendA = document.getElementById("sendA");
+taA.addEventListener("input", function(){ sendA.disabled = taA.value.trim().length === 0; });
+var taC = document.getElementById("taC");
+var sendC = document.getElementById("sendC");
+taC.addEventListener("input", function(){ sendC.disabled = taC.value.trim().length === 0; });
+
+/* ---- Project context tag: removable, demo cycling ---- */
+var PROJECTS = ["Nova 前端", "个人笔记"];
+function attachProj(projId, divId, xId, nameId){
+  var proj = document.getElementById(projId);
+  var div = document.getElementById(divId);
+  var x = document.getElementById(xId);
+  var nameBtn = document.getElementById(nameId);
+  var idx = 0;
+  x.addEventListener("click", function(e){
+    e.stopPropagation();
+    if(proj.hidden) return;
+    proj.classList.add("leaving");
+    setTimeout(function(){
+      proj.hidden = true;
+      div.hidden = true;
+      proj.classList.remove("leaving");
+    }, 180);
+  });
+  nameBtn.addEventListener("click", function(e){
+    e.stopPropagation();
+    idx = (idx + 1) % PROJECTS.length;
+    nameBtn.textContent = PROJECTS[idx];
+  });
+  return { restore:function(){ proj.hidden = false; div.hidden = false; } };
+}
+var projCtlA = attachProj("projA","divA","projXA","projNameA");
+var projCtlB = attachProj("projB","divB","projXB","projNameB");
+document.getElementById("resetA").addEventListener("click", function(){
+  projCtlA.restore();
+  projCtlB.restore();
+});
+</script>
+</body>
+</html>

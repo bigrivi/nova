@@ -13,6 +13,7 @@ async def build_memory_index_for_system(
     session_id: Optional[str] = None,
     limit: int = 30,
     service: Optional[MemoryService] = None,
+    agent_key: Optional[str] = None,
 ) -> str:
     """Build a lightweight memory index for injection into the system prompt.
 
@@ -27,7 +28,9 @@ async def build_memory_index_for_system(
     lines: list[str] = []
     for scope in ("user", "agent"):
         try:
-            records = await memory_service.list_memories(scope=scope, limit=limit)
+            records = await memory_service.list_memories(
+                scope=scope, limit=limit, agent_key=agent_key
+            )
         except Exception:
             continue
         for record in records:

@@ -19,10 +19,11 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 
+from nova.server.chat_service import ChatService
 from nova.server.deps import is_server_stopping
-from nova.server.request_registry import _RESERVED
+from nova.server.request_registry import _RESERVED, RequestRegistry
 from nova.server.schemas import ChatRequest
-from nova.server.stream_buffer import CONNECTION_QUEUE_MAXSIZE
+from nova.server.stream_buffer import CONNECTION_QUEUE_MAXSIZE, StreamBuffer
 
 log = logging.getLogger(__name__)
 
@@ -135,18 +136,16 @@ async def park_detached_stream_session(registry: Any, session_id: str | None) ->
         log.exception("park stream failed for %s", session_id)
 
 
-_park_stream = park_detached_stream_session
 
-
-def resolve_stream_dependencies(http_request: Request) -> tuple[Any, Any, Any]:
-    chat_service = http_request.app.state.chat_service
+def resolve_stream_dependencies(http_request: Request) -> tuple[ChatService, RequestRegistry, StreamBuffer]:
+    chat_service:ChatService = http_request.app.state.chat_service
     # Prefer the public ChatService interface (2.1); fall back to the legacy
     # private attributes so lightweight test stubs without the properties
     # keep working.
-    request_registry = getattr(chat_service, "request_registry", None)
+    request_registry:RequestRegistry = getattr(chat_service, "request_registry", None)
     if request_registry is None:
         request_registry = getattr(chat_service, "_request_registry", None)
-    service_stream_buffer = getattr(chat_service, "stream_buffer", None)
+    service_stream_buffer:StreamBuffer = getattr(chat_service, "stream_buffer", None)
     if service_stream_buffer is None:
         service_stream_buffer = getattr(chat_service, "_stream_buffer", None)
     if service_stream_buffer is not None:
@@ -170,6 +169,12 @@ class ChatStreamOrchestrator:
             service_stream_buffer = getattr(chat_service, "_stream_buffer", None)
         session_id = chat_request.session_id
         resume_cursor = chat_request.resume_from_seq
+        log.info(
+            "[RESUME-DBG] handle_chat_stream ENTER session=%s resume_cursor=%s msg_len=%d",
+            session_id,
+            resume_cursor,
+            len(chat_request.message or ""),
+        )
 
         if resume_cursor is not None and session_id is None:
             raise HTTPException(
@@ -192,6 +197,7 @@ class ChatStreamOrchestrator:
                 ):
                     max_replayed_seq = replayed_seq
             follow = False
+            slot_state_dbg = None
             if registry is not None:
                 if await registry.slot_state(session_id) == "detached":
                     try:
@@ -202,16 +208,55 @@ class ChatStreamOrchestrator:
                         log.exception("resume reattach failed for %s", session_id)
                 else:
                     await registry.touch(session_id)
-                follow = await registry.slot_state(session_id) in ("active", "detached")
+                slot_state_dbg = await registry.slot_state(session_id)
+                follow = slot_state_dbg in ("active", "detached")
+            if not follow and buffer.has_pending_turn(session_id):
+                # A new turn armed but not yet registered/appended (the
+                # begin_turn -> register -> first-append window): follow it live
+                # instead of returning an empty replay and missing the turn.
+                follow = True
+
+            log.info(
+                "[RESUME-DBG] resume ENTER session=%s cursor=%s replay_frames=%d "
+                "max_replayed_seq=%s follow=%s resync=%s slot_state=%s is_done=%s",
+                session_id,
+                resume_cursor,
+                len(frames),
+                max_replayed_seq,
+                follow,
+                resync,
+                slot_state_dbg,
+                buffer.is_done(session_id),
+            )
 
             async def resume_stream():
                 try:
+                    replay_done_count = 0
                     for event_frame in frames:
                         if await http_request.is_disconnected():
                             return
+                        if b"[DONE]" in event_frame:
+                            replay_done_count += 1
+                            log.info(
+                                "[RESUME-DBG] resume REPLAY-yield DONE seq=%s session=%s",
+                                parse_sequence(event_frame),
+                                session_id,
+                            )
                         yield normalize_session_chunk_for_session(event_frame, session_id)
                     if not follow:
+                        log.info(
+                            "[RESUME-DBG] resume RETURN after replay (not follow) "
+                            "session=%s replay_dones=%d",
+                            session_id,
+                            replay_done_count,
+                        )
                         return
+                    log.info(
+                        "[RESUME-DBG] resume -> LIVE-TAIL session=%s replay_dones=%d is_done=%s",
+                        session_id,
+                        replay_done_count,
+                        buffer.is_done(session_id),
+                    )
                     loop = asyncio.get_running_loop()
                     idle_since = loop.time()
                     last_send = loop.time()
@@ -222,6 +267,11 @@ class ChatStreamOrchestrator:
                             chunk = subscriber_queue.get_nowait()
                         except asyncio.QueueEmpty:
                             if buffer.is_done(session_id):
+                                log.info(
+                                    "[RESUME-DBG] resume LIVE-TAIL return: is_done "
+                                    "(queue empty) session=%s",
+                                    session_id,
+                                )
                                 return
                             now = loop.time()
                             if now - idle_since > stream_module.STREAM_RESUME_TAIL_TIMEOUT_SECONDS:
@@ -247,6 +297,11 @@ class ChatStreamOrchestrator:
                         last_send = loop.time()
                         idle_since = loop.time()
                         if b"[DONE]" in chunk:
+                            log.info(
+                                "[RESUME-DBG] resume LIVE-yield DONE seq=%s session=%s -> return",
+                                chunk_seq,
+                                session_id,
+                            )
                             return
                 finally:
                     buffer.unsubscribe(session_id, subscriber_queue)
