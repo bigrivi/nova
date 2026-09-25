@@ -5,18 +5,17 @@ Bash tool - run shell commands.
 import asyncio
 import os
 import re
-import subprocess
-import sys
 
 from nova.llm import ToolResult
-from nova.tools.registry import tool
-from nova.tools.workspace_context import get_active_workspace
-from nova.tools.shell_utils import (
-    build_shell_args,
-    detect_shell,
-    kill_process_tree,
-    normalize_path,
+from nova.tasks.manager import (
+    DEFAULT_FOREGROUND_WAIT_SECONDS,
+    TaskLimitError,
+    get_background_task_manager,
 )
+from nova.tools.registry import tool
+from nova.tools.shell_utils import normalize_path
+from nova.tools.task_results import background_task_result, completed_task_result
+from nova.tools.workspace_context import get_active_workspace
 
 # ── Command-position anchor ─────────────────────────────────────────
 # Matches positions where a new command begins, optionally preceded by
@@ -196,9 +195,17 @@ def is_dangerous(command: str) -> tuple[bool, str]:
 is_dangerous_bool = lambda cmd: is_hardline(cmd)[0] or is_dangerous(cmd)[0]
 
 
+MAX_TIMEOUT_SECONDS = 600
+
+
 @tool(
     name="shell",
-    description="Run a shell command.",
+    description=(
+        "Run a shell command. Keep short commands in the foreground. Set "
+        "run_in_background=true for long-running work, servers, or watchers; "
+        "foreground commands still return as background tasks after 10 seconds. "
+        "Use background_task_status/logs/cancel to manage them."
+    ),
     parameters={
         "type": "object",
         "properties": {
@@ -208,8 +215,13 @@ is_dangerous_bool = lambda cmd: is_hardline(cmd)[0] or is_dangerous(cmd)[0]
             },
             "timeout": {
                 "type": "integer",
-                "description": "Timeout in seconds (default: 120)",
+                "description": "Maximum runtime in seconds (default: 120, max: 600)",
                 "default": 120,
+            },
+            "run_in_background": {
+                "type": "boolean",
+                "description": "Start as a background task instead of waiting for output",
+                "default": False,
             },
             "description": {
                 "type": "string",
@@ -235,65 +247,49 @@ async def shell(
     command: str,
     timeout: int = 120,
     description: str = "",
+    run_in_background: bool = False,
+    session_id: str = "",
 ) -> ToolResult:
-    """Execute a shell command.
+    """Execute a shell command, retaining long work as a managed task.
 
-    Security checks (hardline/dangerous) are handled upstream by
-    ShellToolBehavior.before_execute — never call this function
-    directly without going through that path.
+    Security checks are performed by ShellToolBehavior before this function.
     """
-    shell_path, _ = detect_shell()
-    args = [shell_path] + build_shell_args(shell_path, command)
+    manager = get_background_task_manager()
     cwd = normalize_path(get_active_workspace() or os.getcwd())
-
-    kwargs: dict = {
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.STDOUT,
-        "text": True,
-        "cwd": cwd,
-    }
-    if sys.platform != "win32":
-        kwargs["start_new_session"] = True
-    else:
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-
+    normalized_timeout = max(1, min(timeout, MAX_TIMEOUT_SECONDS))
     try:
-        proc = subprocess.Popen(args, **kwargs)
-
+        task = manager.submit(
+            "shell",
+            {"command": command, "cwd": cwd},
+            session_id=session_id,
+            label=description or command[:80],
+            timeout_seconds=normalized_timeout,
+            background=run_in_background,
+        )
+        if run_in_background:
+            return background_task_result(task, "Shell command started in background.")
         try:
-            stdout, _ = await asyncio.to_thread(lambda: proc.communicate(timeout=timeout))
-        except subprocess.TimeoutExpired:
-            kill_process_tree(proc.pid)
-            proc.wait()
-            return ToolResult(
-                success=False,
-                content=f"Timed out after {timeout}s (process killed)",
+            completed = await manager.wait(
+                task.task_id,
+                session_id,
+                timeout=DEFAULT_FOREGROUND_WAIT_SECONDS,
             )
         except asyncio.CancelledError:
-            # Abort path: the worker thread's communicate() is still blocked;
-            # kill the process group so the OS process does not survive as orphan,
-            # then reap without blocking indefinitely and propagate cancellation
-            # so execute_with_abort can mark the tool call as cancelled.
-            kill_process_tree(proc.pid)
-            try:
-                proc.wait(timeout=1)
-            except subprocess.TimeoutExpired:
-                pass
-            except Exception:
-                pass
+            await manager.cancel(task.task_id, session_id)
             raise
-
-        success = proc.returncode == 0
-        content = stdout.strip() or "(no output)"
-        if not success:
-            content = "[stderr]\n" + content
-
-        return ToolResult(success=success, content=content)
-
+        if completed is None:
+            detached = manager.mark_background(task.task_id, session_id)
+            if detached is None:
+                return ToolResult(success=False, content="Background task could not be retained")
+            return background_task_result(
+                detached,
+                f"Command is still running after {DEFAULT_FOREGROUND_WAIT_SECONDS}s; it continues in the background.",
+            )
+        return completed_task_result(completed)
+    except (TaskLimitError, KeyError) as error:
+        return ToolResult(success=False, content=str(error))
     except asyncio.CancelledError:
         raise
-    except Exception as e:
-        return ToolResult(success=False, content=f"Error: {e}")
 
 
 TOOL = shell

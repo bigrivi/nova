@@ -2,6 +2,7 @@ import type {
     NovaAgent,
     NovaAgentCreateRequest,
     NovaAttachmentData,
+    NovaBackgroundTask,
     NovaDirectoryListing,
     NovaMemoryRecord,
     NovaMessageRecord,
@@ -114,6 +115,28 @@ export async function getActiveStreams(): Promise<ActiveStream[]> {
     }
     const body = (await response.json()) as { streams?: ActiveStream[] };
     return Array.isArray(body.streams) ? body.streams : [];
+}
+
+export async function listBackgroundTasks(
+    sessionId: string,
+): Promise<NovaBackgroundTask[]> {
+    const payload = await parseJson<{ items: NovaBackgroundTask[] }>(
+        await apiFetch(`/api/tasks?session_id=${encodeURIComponent(sessionId)}`),
+    );
+    return payload.items;
+}
+
+export async function cancelBackgroundTask(
+    taskId: string,
+    sessionId: string,
+): Promise<void> {
+    await parseJson<{ task_id: string; status: string }>(
+        await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: sessionId }),
+        }),
+    );
 }
 
 const STREAM_MAX_ATTEMPTS = 6;

@@ -242,6 +242,10 @@ class InterruptResponse(BaseModel):
     interrupted: bool
 
 
+class BackgroundTaskCancelRequest(BaseModel):
+    session_id: str
+
+
 class BaseStreamEventData(BaseModel):
     session_id: str | None = None
     sequence: int

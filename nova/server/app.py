@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI
@@ -14,8 +13,6 @@ from fastapi import FastAPI
 from nova.server.auth import BasicAuthMiddleware
 from nova.server.chat_service import ChatService
 from nova.server.request_registry import RequestRegistry
-from nova.server.session_event_bus import SessionEventBus
-from nova.server.stream_buffer import StreamBuffer
 from nova.server.routers import (
     agents,
     chat,
@@ -26,8 +23,15 @@ from nova.server.routers import (
     memory,
     projects,
     sessions,
+    tasks,
 )
+from nova.server.session_event_bus import SessionEventBus
+from nova.server.stream_buffer import StreamBuffer
 from nova.settings import Settings, get_settings
+from nova.tasks.manager import (
+    get_background_task_manager,
+    shutdown_background_task_manager,
+)
 
 log = logging.getLogger(__name__)
 
@@ -75,7 +79,7 @@ def _wire_subagent_autowake(app: FastAPI) -> None:
     get_subagent_job_manager().set_completion_callback(_on_complete)
 
 
-def create_app(settings: Optional[Settings] = None) -> FastAPI:
+def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
 
     @asynccontextmanager
@@ -85,6 +89,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         try:
             yield
         finally:
+            await shutdown_background_task_manager()
             bus = getattr(app.state, "session_event_bus", None)
             if bus is not None:
                 bus.close_all()
@@ -105,6 +110,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.state.request_registry = request_registry
     app.state.stream_buffer = stream_buffer
     app.state.session_event_bus = session_event_bus
+    app.state.background_task_manager = get_background_task_manager()
     app.state.chat_service = ChatService(
         settings=settings,
         request_registry=request_registry,
@@ -122,6 +128,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         agents,
         events,
         memory,
+        tasks,
     ):
         app.include_router(module.router)
 
@@ -143,7 +150,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     return app
 
 
-async def run_server(settings: Optional[Settings] = None) -> None:
+async def run_server(settings: Settings | None = None) -> None:
     settings = settings or get_settings()
     app = create_app(settings=settings)
     server = uvicorn.Server(build_uvicorn_config(app, settings))

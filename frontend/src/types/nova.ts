@@ -142,6 +142,38 @@ export type NovaThreadSummary = {
     agent_key: string;
 };
 
+export type NovaBackgroundTaskStatus =
+    | "queued"
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "cancelled"
+    | "timed_out"
+    | "interrupted";
+
+export type NovaBackgroundTask = {
+    task_id: string;
+    kind: string;
+    session_id: string;
+    label: string;
+    status: NovaBackgroundTaskStatus;
+    background: boolean;
+    created_at_ms: number;
+    started_at_ms: number | null;
+    finished_at_ms: number | null;
+    timeout_seconds: number;
+    exit_code: number | null;
+    output_bytes: number;
+    output_truncated: boolean;
+    output_preview?: string;
+    output_tail?: string;
+    result: string;
+    error: string | null;
+    progress: number | null;
+    progress_message: string | null;
+    last_activity_at_ms: number | null;
+};
+
 export type NovaMemoryRecord = {
     id: string;
     key: string;

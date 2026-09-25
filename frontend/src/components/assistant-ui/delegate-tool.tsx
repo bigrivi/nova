@@ -74,7 +74,16 @@ const DelegateToolImpl: ToolCallMessagePartComponent = ({
         readStringField(normalizedArgs, "task"),
     );
     const isRunning = status?.type === "running";
+    const isCancelled =
+        status?.type === "incomplete" && status.reason === "cancelled";
     const errored = isError === true;
+    const backgroundStatus = errored
+        ? t("tasks.status.failed")
+        : isRunning
+          ? t("tasks.status.running")
+          : isCancelled
+            ? t("tasks.status.cancelled")
+            : t("tasks.status.succeeded");
 
     const triggerLabel = target
         ? t("tools.delegatedTo", { target })
@@ -87,6 +96,8 @@ const DelegateToolImpl: ToolCallMessagePartComponent = ({
                 argsText={taskPreview ?? undefined}
                 status={status}
                 isError={isError}
+                backgroundTaskLabel={t("tools.backgroundTask")}
+                backgroundTaskStatus={backgroundStatus}
             />
             <ToolFallbackContent>
                 {taskPreview ? (

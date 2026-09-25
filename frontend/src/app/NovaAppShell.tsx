@@ -5,6 +5,7 @@ import { TooltipProvider } from "../components/ui/tooltip";
 import { NovaMainPanel } from "./components/NovaMainPanel";
 import { NovaSidebarPanel } from "./components/NovaSidebarPanel";
 import { useAgentSelection } from "./hooks/useAgentSelection";
+import { useBackgroundTasks } from "./hooks/useBackgroundTasks";
 import { useBootstrap } from "./hooks/useBootstrap";
 import { useConversations } from "./hooks/useConversations";
 import { useModelConfig } from "./hooks/useModelConfig";
@@ -23,6 +24,7 @@ export function NovaAppShell() {
         selectedAgentKey: agentSelection.selectedAgentKey,
         syncAgentForThread: agentSelection.syncAgentForThread,
     });
+    useBackgroundTasks(conversations.currentThreadId, conversations.isRunning);
 
     const projects = useProjects(conversations.setThreads);
 

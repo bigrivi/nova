@@ -3,21 +3,25 @@ Code Run tool - execute Python code.
 """
 
 import asyncio
-import os
-import subprocess
-import sys
-import tempfile
-from pathlib import Path
 
 from nova.llm import ToolResult
+from nova.tasks.manager import (
+    DEFAULT_FOREGROUND_WAIT_SECONDS,
+    TaskLimitError,
+    get_background_task_manager,
+)
 from nova.tools.registry import tool
-from nova.tools.shell_utils import kill_process_tree
-from nova.tools.workspace_context import get_active_workspace
+from nova.tools.task_results import background_task_result, completed_task_result
 
 
 @tool(
     name="code_run",
-    description="Execute inline Python code. For running .py script files, use bash tool with 'python script.py' instead.",
+    description=(
+        "Execute inline Python code. Keep short snippets in the foreground. "
+        "Set run_in_background=true for long-running code; foreground runs "
+        "still return as background tasks after 10 seconds. Use "
+        "background_task_status/logs/cancel to manage them."
+    ),
     parameters={
         "type": "object",
         "properties": {
@@ -36,6 +40,11 @@ from nova.tools.workspace_context import get_active_workspace
             "timeout_seconds": {
                 "type": "integer",
                 "description": "Timeout in seconds (default: 60, max: 300)",
+            },
+            "run_in_background": {
+                "type": "boolean",
+                "description": "Start as a background task instead of waiting for output",
+                "default": False,
             },
             "args": {
                 "type": "array",
@@ -60,101 +69,56 @@ async def code_run(
     script_path: str = "",
     cwd: str = "",
     timeout_seconds: int = 60,
-    args: list = None,
+    args: list[str] | None = None,
     description: str = "",
+    run_in_background: bool = False,
+    session_id: str = "",
 ) -> ToolResult:
+    """Run Python code in the foreground or as a managed background task."""
     timeout = max(1, min(timeout_seconds, 300))
-    safe_args = [str(item) for item in (args or [])]
-    
-    if script_path:
-        target = Path(script_path).resolve()
-        if not target.exists():
-            return ToolResult(success=False, content=f"Script not found: {target}")
-        if not target.is_file():
-            return ToolResult(success=False, content=f"Not a file: {target}")
-    elif code:
-        if not code.strip():
-            return ToolResult(success=False, content="Empty code provided")
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            suffix=".py",
-            prefix="code_run_",
-            delete=False,
-            encoding="utf-8",
-        ) as f:
-            f.write(code)
-            target = Path(f.name)
-    else:
-        return ToolResult(success=False, content="Either code or script_path must be provided")
-    
-    workdir = Path(cwd).resolve() if cwd else Path(get_active_workspace() or Path.cwd())
-    nova_site = Path.home() / ".nova" / "site-packages"
-
+    manager = get_background_task_manager()
+    task_arguments = {
+        "code": code,
+        "script_path": script_path,
+        "cwd": cwd,
+        "args": [str(item) for item in (args or [])],
+    }
     try:
-        if getattr(sys, "frozen", False):
-            cmd = [sys.executable, "--_run-code", str(target), *safe_args]
-        else:
-            cmd = [sys.executable, str(target), *safe_args]
-        spawn_kwargs: dict = {}
-        if sys.platform == "win32":
-            spawn_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-        else:
-            spawn_kwargs["start_new_session"] = True
-        env = os.environ.copy()
-        site_path = str(nova_site)
-        env["PYTHONPATH"] = f"{site_path}:{env['PYTHONPATH']}" if "PYTHONPATH" in env else site_path
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(workdir),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=env,
-            **spawn_kwargs,
+        task = manager.submit(
+            "code_run",
+            task_arguments,
+            session_id=session_id,
+            label=description or code[:80] or script_path,
+            timeout_seconds=timeout,
+            background=run_in_background,
         )
+        if run_in_background:
+            return background_task_result(task, "Python code started in background.")
         try:
-            stdout, stderr = await asyncio.to_thread(lambda: proc.communicate(timeout=timeout))
-        except subprocess.TimeoutExpired:
-            kill_process_tree(proc.pid)
-            try:
-                proc.wait(timeout=1)
-            except subprocess.TimeoutExpired:
-                pass
-            except Exception:
-                pass
-            return ToolResult(success=False, content=f"Timed out after {timeout}s")
+            completed = await manager.wait(
+                task.task_id,
+                session_id,
+                timeout=DEFAULT_FOREGROUND_WAIT_SECONDS,
+            )
         except asyncio.CancelledError:
-            # Abort path mirrors shell tool: worker thread's communicate() is still
-            # blocked, so kill the process group and propagate cancellation for
-            # execute_with_abort to mark the call cancelled.
-            kill_process_tree(proc.pid)
-            try:
-                proc.wait(timeout=1)
-            except subprocess.TimeoutExpired:
-                pass
-            except Exception:
-                pass
+            await manager.cancel(task.task_id, session_id)
             raise
-
-        output = ""
-        if stdout:
-            output += stdout
-        if stderr:
-            if output:
-                output += "\n"
-            output += "[stderr]\n" + stderr
-
-        return ToolResult(
-            success=(proc.returncode == 0),
-            content=output.strip() if output else "(no output)",
-        )
+        if completed is None:
+            detached = manager.mark_background(task.task_id, session_id)
+            if detached is None:
+                return ToolResult(
+                    success=False,
+                    content="Background task could not be retained",
+                )
+            return background_task_result(
+                detached,
+                f"Python code is still running after {DEFAULT_FOREGROUND_WAIT_SECONDS}s; it continues in the background.",
+            )
+        return completed_task_result(completed)
+    except (TaskLimitError, KeyError) as error:
+        return ToolResult(success=False, content=str(error))
     except asyncio.CancelledError:
         raise
-    except Exception as e:
-        return ToolResult(success=False, content=f"Error: {e}")
-    finally:
-        if script_path == "" and target.exists():
-            target.unlink(missing_ok=True)
 
 
 TOOL = code_run

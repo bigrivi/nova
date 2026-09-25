@@ -7,6 +7,11 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { errorTextFromResult } from "@/lib/tool-result";
+import {
+    readBackgroundTaskEnvelope,
+    readBackgroundTaskReference,
+} from "@/lib/background-task";
+import { useBackgroundTaskStore } from "@/stores/background-task-store";
 
 import {
     useScrollLock,
@@ -17,6 +22,7 @@ import {
     AlertCircleIcon,
     CheckIcon,
     ChevronDownIcon,
+    Clock3Icon,
     LoaderIcon,
     XCircleIcon,
 } from "lucide-react";
@@ -126,6 +132,8 @@ function ToolFallbackTrigger({
     argsText,
     status,
     isError,
+    backgroundTaskLabel,
+    backgroundTaskStatus,
     className,
     ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
@@ -133,6 +141,8 @@ function ToolFallbackTrigger({
     argsText?: string;
     status?: ToolCallMessagePartStatus;
     isError?: boolean;
+    backgroundTaskLabel?: string;
+    backgroundTaskStatus?: string | null;
 }) {
     const statusType = status?.type ?? "complete";
     const isRunning = statusType === "running";
@@ -195,6 +205,21 @@ function ToolFallbackTrigger({
                     </span>
                 ) : null}
             </span>
+            {backgroundTaskLabel ? (
+                <span
+                    data-slot="tool-fallback-background-task"
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-[#EAF2FA] px-2 py-1 font-sans text-[10px] font-medium text-[#1D5FA8]"
+                    title={backgroundTaskStatus ?? backgroundTaskLabel}
+                >
+                    <Clock3Icon className="size-3" aria-hidden="true" />
+                    <span>{backgroundTaskLabel}</span>
+                    {backgroundTaskStatus ? (
+                        <span className="hidden max-[520px]:hidden sm:inline">
+                            · {backgroundTaskStatus}
+                        </span>
+                    ) : null}
+                </span>
+            ) : null}
             <ChevronDownIcon
                 data-slot="tool-fallback-trigger-chevron"
                 className={cn(
@@ -268,6 +293,33 @@ function ToolFallbackResult({
 }) {
     const { t } = useTranslation();
     if (result === undefined) return null;
+    const backgroundTask = readBackgroundTaskEnvelope(result);
+    if (backgroundTask) {
+        return (
+            <div
+                data-slot="tool-fallback-result"
+                className={cn(
+                    "aui-tool-fallback-result border-t border-dashed border-[#E4E1D9] pt-2",
+                    className,
+                )}
+                {...props}
+            >
+                <p className="font-semibold text-[#1C1B18]">
+                    {t("tools.backgroundTask")}
+                </p>
+                {backgroundTask.message ? (
+                    <p className="mt-1 whitespace-pre-wrap break-words font-sans text-[#6E6A60]">
+                        {backgroundTask.message}
+                    </p>
+                ) : null}
+                {backgroundTask.taskId ? (
+                    <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+                        {t("tasks.taskId")}: {backgroundTask.taskId}
+                    </p>
+                ) : null}
+            </div>
+        );
+    }
 
     return (
         <div
@@ -329,12 +381,24 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
     status,
     isError,
 }) => {
+    const { t } = useTranslation();
     const isCancelled =
         status?.type === "incomplete" && status.reason === "cancelled";
     const errored =
         isError === true ||
         (status?.type === "incomplete" && !isCancelled && status.error != null);
     const errorMessage = errored ? errorTextFromResult(result) : null;
+    const backgroundTask = readBackgroundTaskReference(argsText, result);
+    const trackedTask = useBackgroundTaskStore((state) =>
+        backgroundTask?.taskId
+            ? state.tasksById[backgroundTask.taskId]
+            : undefined,
+    );
+    const backgroundStatus =
+        trackedTask?.status ?? backgroundTask?.status ?? null;
+    const backgroundStatusLabel = backgroundStatus
+        ? t(`tasks.status.${backgroundStatus}`)
+        : null;
 
     return (
         <ToolFallbackRoot className={cn(isCancelled && "opacity-80")}>
@@ -343,6 +407,10 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
                 argsText={argsText}
                 status={status}
                 isError={isError}
+                backgroundTaskLabel={
+                    backgroundTask ? t("tools.backgroundTask") : undefined
+                }
+                backgroundTaskStatus={backgroundStatusLabel}
             />
             <ToolFallbackContent>
                 <ToolFallbackError status={status} message={errorMessage} />

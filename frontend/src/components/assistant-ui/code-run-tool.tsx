@@ -2,10 +2,13 @@
 
 import { cn } from "@/lib/utils";
 import { errorTextFromResult } from "@/lib/tool-result";
+import { readBackgroundTaskReference } from "@/lib/background-task";
+import { useBackgroundTaskStore } from "@/stores/background-task-store";
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import Prism from "prismjs";
 import "prismjs/components/prism-python";
 import { memo, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
     ToolFallbackContent,
     ToolFallbackError,
@@ -20,6 +23,7 @@ const CodeRunToolImpl: ToolCallMessagePartComponent = ({
     status,
     isError,
 }) => {
+    const { t } = useTranslation();
     let code = "";
     let description = "";
     try {
@@ -40,6 +44,13 @@ const CodeRunToolImpl: ToolCallMessagePartComponent = ({
     const isCancelled =
         status?.type === "incomplete" && status.reason === "cancelled";
     const errored = isError === true;
+    const backgroundTask = readBackgroundTaskReference(argsText, result);
+    const trackedTask = useBackgroundTaskStore((state) =>
+        backgroundTask?.taskId
+            ? state.tasksById[backgroundTask.taskId]
+            : undefined,
+    );
+    const backgroundStatus = trackedTask?.status ?? backgroundTask?.status;
 
     return (
         <ToolFallbackRoot
@@ -50,6 +61,14 @@ const CodeRunToolImpl: ToolCallMessagePartComponent = ({
                 argsText={argsText}
                 status={status}
                 isError={isError}
+                backgroundTaskLabel={
+                    backgroundTask ? t("tools.backgroundTask") : undefined
+                }
+                backgroundTaskStatus={
+                    backgroundStatus
+                        ? t(`tasks.status.${backgroundStatus}`)
+                        : null
+                }
             />
             <ToolFallbackContent>
                 <ToolFallbackError

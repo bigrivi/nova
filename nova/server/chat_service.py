@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import inspect
 import logging
-from typing import Any, AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable
+from typing import Any
 
 from nova.agent import AgentEvent
 from nova.app import build_agent
@@ -15,7 +16,6 @@ from nova.db import DataSourceProtocol, get_default_data_source
 from nova.project.service import ProjectService
 from nova.server.ai_sdk_stream import AISDKStreamAdapter
 from nova.server.request_registry import _RESERVED, RequestRegistry
-from nova.server.stream_buffer import StreamBuffer
 from nova.server.schemas import (
     ApprovalRequiredEvent,
     ApprovalRequiredEventData,
@@ -47,6 +47,7 @@ from nova.server.schemas import (
     ToolResultEventData,
     stream_event_data_to_dict,
 )
+from nova.server.stream_buffer import StreamBuffer
 from nova.session.history_projection import get_user_visible_history
 from nova.settings import Settings
 
@@ -200,6 +201,10 @@ class ChatService:
         except Exception:
             log.exception("delete_session buffer discard failed for %s", session_id)
         deleted = await data_source.delete_session(session_id)
+        if deleted:
+            from nova.tasks.manager import get_background_task_manager
+
+            await get_background_task_manager().cancel_for_session(session_id)
         if deleted and delete_memories:
             from nova.memory.service import MemoryService
 
