@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS agents (
 );
 
 INSERT OR IGNORE INTO agents (key, name, model, provider, created_at, updated_at)
-VALUES ('main', 'Main', 'gpt-4o', 'openai', CAST(strftime('%s','now') AS INTEGER) * 1000, CAST(strftime('%s','now') AS INTEGER) * 1000);
+VALUES ('main', 'Nova', 'gpt-4o', 'openai', CAST(strftime('%s','now') AS INTEGER) * 1000, CAST(strftime('%s','now') AS INTEGER) * 1000);
 
 CREATE TABLE IF NOT EXISTS agent_parents (
     child_key TEXT NOT NULL,

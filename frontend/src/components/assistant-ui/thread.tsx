@@ -36,6 +36,8 @@ type ThreadProps = {
         onSelect: (agentKey: string) => void;
     };
     contextBar: ThreadComposerContextBarProps;
+    assistantName: string;
+    assistantAgentKey: string | null;
 };
 
 export const Thread: FC<ThreadProps> = ({
@@ -43,6 +45,8 @@ export const Thread: FC<ThreadProps> = ({
     modelSelection,
     agentSelection,
     contextBar,
+    assistantName,
+    assistantAgentKey,
 }) => {
     const zoomTargetRef = useZoom();
     const activeCall = useAskUserStore((s) => s.active);
@@ -99,7 +103,14 @@ export const Thread: FC<ThreadProps> = ({
                                 className="flex flex-col gap-y-2 empty:hidden"
                             >
                                 <ThreadPrimitive.Messages>
-                                    {() => <ThreadMessage />}
+                                    {() => (
+                                        <ThreadMessage
+                                            assistantName={assistantName}
+                                            assistantAgentKey={
+                                                assistantAgentKey
+                                            }
+                                        />
+                                    )}
                                 </ThreadPrimitive.Messages>
                             </div>
                         </div>

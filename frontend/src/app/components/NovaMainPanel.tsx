@@ -25,6 +25,8 @@ export interface NovaMainPanelProps {
     onRemoveProject: () => void;
     sessionAgentKey: string | null;
     sessionProjectName: string | null;
+    assistantName: string;
+    assistantAgentKey: string | null;
 }
 
 /**
@@ -51,6 +53,8 @@ export function NovaMainPanel({
     onRemoveProject,
     sessionAgentKey,
     sessionProjectName,
+    assistantName,
+    assistantAgentKey,
 }: NovaMainPanelProps) {
     const { t } = useTranslation();
 
@@ -102,6 +106,8 @@ export function NovaMainPanel({
                         sessionAgentKey,
                         sessionProjectName,
                     }}
+                    assistantName={assistantName}
+                    assistantAgentKey={assistantAgentKey}
                 />
             </div>
         </main>

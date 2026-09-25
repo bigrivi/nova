@@ -115,6 +115,15 @@ class ChatService:
     ) -> SessionListResponse:
         data_source = await self._get_data_source()
         sessions = await data_source.get_all_sessions(agent_key=agent_key)
+        # Sub-agents run internal child sessions; those are not user-facing
+        # conversations, so only primary-agent sessions belong in the list.
+        subagent_keys = await self._subagent_agent_keys(data_source)
+        if subagent_keys:
+            sessions = [
+                session
+                for session in sessions
+                if session.get("agent_key", DEFAULT_AGENT_KEY) not in subagent_keys
+            ]
         normalized_workspace = _normalize_workspace_dir(workspace_dir)
         if normalized_workspace is not None:
             # Normalize rows too: /tmp vs /private/tmp and trailing separators
@@ -138,6 +147,25 @@ class ChatService:
             for session in sessions
         ]
         return SessionListResponse(items=items)
+
+    async def _subagent_agent_keys(self, data_source: DataSourceProtocol) -> set[str]:
+        """Keys of agents whose mode is ``subagent``.
+
+        Sub-agent sessions are internal delegation children, not user-facing
+        conversations, so they are excluded from the session list. Returns an
+        empty set when the catalog cannot be loaded, so a transient failure
+        never hides legitimate sessions.
+        """
+        try:
+            agents = await data_source.list_agents()
+        except Exception:
+            log.exception("Failed to load agents while filtering sessions")
+            return set()
+        return {
+            agent["key"]
+            for agent in agents
+            if (agent.get("mode") or "primary") == "subagent"
+        }
 
     async def rename_session(self, session_id: str, title: str) -> bool:
         data_source = await self._get_data_source()

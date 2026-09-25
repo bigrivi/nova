@@ -2,6 +2,7 @@ import { AssistantRuntimeProvider } from "@assistant-ui/react";
 
 import { LoginDialog } from "../components/auth/login-dialog";
 import { TooltipProvider } from "../components/ui/tooltip";
+import { agentDisplayName } from "../lib/agent-display";
 import { NovaMainPanel } from "./components/NovaMainPanel";
 import { NovaSidebarPanel } from "./components/NovaSidebarPanel";
 import { useAgentSelection } from "./hooks/useAgentSelection";
@@ -71,6 +72,13 @@ export function NovaAppShell() {
         : (projects.projects.find(
               (project) => project.id === activeThread?.project_id,
           )?.name ?? null);
+    const assistantAgentKey = isNewChat
+        ? agentSelection.selectedAgentKey
+        : sessionAgentKey;
+    const assistantName = agentDisplayName(
+        agentSelection.agents,
+        assistantAgentKey,
+    );
 
     return (
         <AssistantRuntimeProvider aui={aui} runtime={runtime}>
@@ -139,6 +147,8 @@ export function NovaAppShell() {
                         onRemoveProject={conversations.clearDraftProject}
                         sessionAgentKey={sessionAgentKey}
                         sessionProjectName={sessionProjectName}
+                        assistantName={assistantName}
+                        assistantAgentKey={assistantAgentKey}
                     />
                 </div>
 

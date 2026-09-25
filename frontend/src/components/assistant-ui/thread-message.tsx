@@ -14,6 +14,7 @@ import {
     createTimelineGroupBy,
     readPartElapsedMs,
 } from "@/lib/timeline-grouping";
+import { DEFAULT_AGENT_KEY } from "@/lib/nova-constants";
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
 import { BotIcon, ChevronDownIcon, FileText } from "lucide-react";
 import { useMemo, useState, type FC } from "react";
@@ -28,10 +29,9 @@ import {
     CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 
+import { AgentAvatar } from "./agent-avatar";
 import { AssistantActionBar, BranchPicker } from "./thread-assistant-actions";
 import { MessageError } from "./thread-message-error";
-
-const ASSISTANT_NAME = "Nova";
 
 function groupIndices(part: { type: string }): readonly number[] {
     return "indices" in part
@@ -217,7 +217,13 @@ const UserMessage: FC = () => {
     );
 };
 
-const AssistantMessage: FC = () => {
+const AssistantMessage: FC<{ name: string; agentKey: string | null }> = ({
+    name,
+    agentKey,
+}) => {
+    // The default/main agent keeps the branded bot icon; a named primary agent
+    // shows its own identity avatar (same component as the composer's chip).
+    const isDefaultAgent = !agentKey || agentKey === DEFAULT_AGENT_KEY;
     const parts = useAuiState(useShallow((s) => s.message.parts));
     const toolUIs = useAuiState((s) => s.tools.toolUIs);
     const groupBy = useMemo(
@@ -263,16 +269,20 @@ const AssistantMessage: FC = () => {
             className="fade-in slide-in-from-bottom-1 flex animate-in flex-col gap-y-2 duration-150"
         >
             <div className="flex min-w-0 items-center gap-2 leading-none">
-                <Avatar
-                    size="sm"
-                    className="size-6 border border-emerald-200/80 bg-emerald-50 text-emerald-900 shadow-sm after:hidden"
-                >
-                    <AvatarFallback className="bg-transparent text-emerald-900">
-                        <BotIcon className="size-3" />
-                    </AvatarFallback>
-                </Avatar>
+                {isDefaultAgent ? (
+                    <Avatar
+                        size="sm"
+                        className="size-6 border border-emerald-200/80 bg-emerald-50 text-emerald-900 shadow-sm after:hidden"
+                    >
+                        <AvatarFallback className="bg-transparent text-emerald-900">
+                            <BotIcon className="size-3" />
+                        </AvatarFallback>
+                    </Avatar>
+                ) : (
+                    <AgentAvatar agentKey={agentKey} name={name} size="lg" />
+                )}
                 <span className="text-[12px] font-medium tracking-[0.01em] text-muted-foreground">
-                    {ASSISTANT_NAME}
+                    {name}
                 </span>
             </div>
 
@@ -379,7 +389,10 @@ const AssistantMessage: FC = () => {
     );
 };
 
-export const ThreadMessage: FC = () => {
+export const ThreadMessage: FC<{
+    assistantName?: string;
+    assistantAgentKey?: string | null;
+}> = ({ assistantName = "Nova", assistantAgentKey = null }) => {
     const role = useAuiState((s) => s.message.role);
     const variant = useAuiState((s) => readMessageVariant(s.message));
     const userText = useAuiState((s) => readUserText(s.message));
@@ -404,5 +417,7 @@ export const ThreadMessage: FC = () => {
         }
         return <UserMessage />;
     }
-    return <AssistantMessage />;
+    return (
+        <AssistantMessage name={assistantName} agentKey={assistantAgentKey} />
+    );
 };

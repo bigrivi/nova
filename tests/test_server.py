@@ -618,6 +618,42 @@ async def test_sessions_endpoint_filters_by_workspace_dir(monkeypatch, tmp_path)
 
 
 @pytest.mark.asyncio
+async def test_sessions_endpoint_hides_subagent_sessions(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    settings = Settings.load_config()
+    db = await init_db(DatabaseConfig(path=str(settings.database_path)))
+    app = create_app(settings=settings)
+    client = TestClient(app)
+
+    # Sub-agents own internal child sessions; only primary sessions are listed.
+    created = client.post(
+        "/api/agents",
+        json={
+            "key": "helper",
+            "name": "Helper",
+            "model": "m1",
+            "provider": "p1",
+            "mode": "subagent",
+            "parent_ids": ["main"],
+        },
+    )
+    assert created.status_code == 200
+    await db.save_session(Session(id="main-sess", title="Main", agent_key="main"))
+    await db.save_session(
+        Session(
+            id="child-sess",
+            title="Child",
+            agent_key="helper",
+            parent_id="main-sess",
+        )
+    )
+
+    items = client.get("/api/sessions").json()["items"]
+
+    assert {item["id"] for item in items} == {"main-sess"}
+
+
+@pytest.mark.asyncio
 async def test_delete_session_without_memories_keeps_memories(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     settings = Settings.load_config()

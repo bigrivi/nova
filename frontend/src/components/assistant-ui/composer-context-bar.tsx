@@ -1,9 +1,9 @@
-/* eslint-disable react-refresh/only-export-components */
 import { Folder, X } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { NovaAgent } from "../../types/nova";
+import { AgentAvatar } from "./agent-avatar";
 import {
     ModelSelectorContent,
     ModelSelectorEmpty,
@@ -14,51 +14,6 @@ import {
     ModelSelectorTrigger,
     type ModelOption,
 } from "./elements/model-selector";
-
-const AVATAR_PALETTE = [
-    "#1D5FA8",
-    "#6D4AA0",
-    "#0E7C6B",
-    "#B0562A",
-    "#A8325A",
-    "#4A6B2A",
-    "#8A6D1B",
-    "#3A6EA5",
-];
-
-export function agentAvatarColor(key: string): string {
-    let hash = 0;
-    for (let i = 0; i < key.length; i += 1) {
-        hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-    }
-    return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
-}
-
-export function AgentAvatar({
-    agentKey,
-    name,
-    size = "sm",
-}: {
-    agentKey: string;
-    name: string;
-    size?: "sm" | "md";
-}) {
-    const color = agentAvatarColor(agentKey || name || "?");
-    const initial = (name || agentKey || "?").trim().charAt(0) || "?";
-    const sizeClass =
-        size === "md"
-            ? "size-7 rounded-[9px] text-[13px]"
-            : "size-[18px] rounded-[5.5px] text-[11px]";
-    return (
-        <span
-            aria-hidden
-            className={`inline-flex shrink-0 items-center justify-center font-bold leading-none text-white ${sizeClass}`}
-            style={{ backgroundColor: color, borderColor: color }}
-        >
-            {initial}
-        </span>
-    );
-}
 
 function chattable(agents: NovaAgent[]): NovaAgent[] {
     return agents.filter((agent) =>

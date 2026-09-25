@@ -50,7 +50,17 @@ class MemoryTools:
         service: Optional[MemoryService] = None,
     ) -> None:
         self._agent_key = agent_key
-        self._service = service or MemoryService()
+        self._service = service
+
+    def _get_service(self) -> MemoryService:
+        """Resolve the memory service per call.
+
+        ``MemoryService`` caches the data source it resolves, so holding one for
+        the lifetime of this tool would pin whichever database was current when
+        it was built (breaks when the data source is swapped, e.g. in tests).
+        Building it per call keeps the tool bound only to its ``agent_key``.
+        """
+        return self._service or MemoryService()
 
     @tool(
         name="save_memory",
@@ -123,7 +133,7 @@ class MemoryTools:
         if has_threats(content):
             return ToolResult(success=False, content="Memory content rejected — flagged as potential injection.")
         try:
-            record, created = await self._service.save(
+            record, created = await self._get_service().save(
                 MemoryWriteRequest(
                     key=key,
                     content=content,
@@ -191,7 +201,7 @@ class MemoryTools:
         use_ai: bool = False,
     ) -> ToolResult:
         try:
-            results = await self._service.search(
+            results = await self._get_service().search(
                 query=query,
                 scope=scope,
                 memory_type=memory_type,
@@ -249,7 +259,7 @@ class MemoryTools:
         session_id: Optional[str] = None,
     ) -> ToolResult:
         try:
-            deleted = await self._service.delete(
+            deleted = await self._get_service().delete(
                 memory_id=id,
                 key=key,
                 scope=scope,
@@ -302,7 +312,7 @@ class MemoryTools:
         limit: int = 20,
     ) -> ToolResult:
         try:
-            results = await self._service.list_memories(
+            results = await self._get_service().list_memories(
                 scope=scope,
                 memory_type=memory_type,
                 session_id=session_id,
