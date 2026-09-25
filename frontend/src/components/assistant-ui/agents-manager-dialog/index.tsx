@@ -20,13 +20,11 @@ import {
 } from "../../ui/dialog";
 import { AgentDialog } from "./agent-dialog";
 
-export type AgentsManagerDialogProps = {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
+export interface AgentsManagerContentProps {
     agents: NovaAgent[];
     models: NovaModelRecord[];
     onAgentsChanged: (agents: NovaAgent[]) => void;
-};
+}
 
 const MODE_ORDER: NovaAgentMode[] = ["primary", "subagent"];
 
@@ -157,13 +155,11 @@ function AgentRow({
     );
 }
 
-export function AgentsManagerDialog({
-    open,
-    onOpenChange,
+export function AgentsManagerContent({
     agents,
     models,
     onAgentsChanged,
-}: AgentsManagerDialogProps) {
+}: AgentsManagerContentProps) {
     const { t } = useTranslation();
     const [dialogMode, setDialogMode] = useState<
         { type: "create" } | { type: "edit"; agent: NovaAgent } | null
@@ -228,17 +224,43 @@ export function AgentsManagerDialog({
 
     return (
         <>
-            <Dialog open={open} onOpenChange={onOpenChange}>
-                <DialogContent className="sm:max-w-lg">
-                    <DialogHeader>
-                        <DialogTitle>
-                            {t("agentManager.manageAgents")}
-                        </DialogTitle>
-                        <DialogDescription>
-                            {t("agentManager.manageDescription")}
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="max-h-[60vh] overflow-y-auto pr-1">
+            <div className="pr-1">
+                <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".md,.markdown,text/markdown"
+                        className="hidden"
+                        onChange={handleImportFile}
+                    />
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={importing}
+                        onClick={() => {
+                            setActionError(null);
+                            setImportNotice(null);
+                            fileInputRef.current?.click();
+                        }}
+                    >
+                        <UploadIcon className="size-4" />
+                        {importing
+                            ? t("agentManager.importing")
+                            : t("agentManager.importAgent")}
+                    </Button>
+                    <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                            setActionError(null);
+                            setDialogMode({ type: "create" });
+                        }}
+                    >
+                        <PlusIcon className="size-4" />
+                        {t("agentManager.createAgent")}
+                    </Button>
+                </div>
                         {agents.length === 0 ? (
                             <p className="py-6 text-center text-sm text-muted-foreground">
                                 {t("agentManager.empty")}
@@ -292,49 +314,6 @@ export function AgentsManagerDialog({
                             </p>
                         ) : null}
                     </div>
-                    <DialogFooter>
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept=".md,.markdown,text/markdown"
-                            className="hidden"
-                            onChange={handleImportFile}
-                        />
-                        <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={importing}
-                            onClick={() => {
-                                setActionError(null);
-                                setImportNotice(null);
-                                fileInputRef.current?.click();
-                            }}
-                        >
-                            <UploadIcon className="size-4" />
-                            {importing
-                                ? t("agentManager.importing")
-                                : t("agentManager.importAgent")}
-                        </Button>
-                        <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => {
-                                setActionError(null);
-                                setDialogMode({ type: "create" });
-                            }}
-                        >
-                            <PlusIcon className="size-4" />
-                            {t("agentManager.createAgent")}
-                        </Button>
-                        <DialogClose asChild>
-                            <Button type="button" variant="outline">
-                                {t("common.close")}
-                            </Button>
-                        </DialogClose>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
 
             {dialogMode ? (
                 <AgentDialog

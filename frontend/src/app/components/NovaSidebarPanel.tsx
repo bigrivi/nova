@@ -1,9 +1,8 @@
 import { useState } from "react";
 
-import { AgentsManagerDialog } from "../../components/assistant-ui/agents-manager-dialog";
-import { MemoryManagerDialog } from "../../components/assistant-ui/memory-manager-dialog";
-import { ModelsManagerDialog } from "../../components/assistant-ui/models-manager-dialog";
+import { SettingsDialog } from "../../components/settings-dialog";
 import { ThreadSidebar } from "../../components/sidebar/thread-sidebar";
+import { cn } from "../../lib/utils";
 import type {
     NovaAgent,
     NovaModelRecord,
@@ -42,9 +41,9 @@ export interface NovaSidebarPanelProps {
 }
 
 /**
- * The collapsible thread-list sidebar with its mobile scrim. Owns the three
- * manager dialogs opened from the sidebar (memory, agents, models), since it
- * is the component that triggers them. Renders nothing when collapsed.
+ * The collapsible thread-list sidebar with its mobile scrim. Owns the unified
+ * settings dialog opened from the sidebar, since it is the component that
+ * triggers it. Renders nothing when collapsed.
  */
 export function NovaSidebarPanel({
     collapsed,
@@ -71,22 +70,29 @@ export function NovaSidebarPanel({
     onProvidersRefresh,
     onConfigStatusChange,
 }: NovaSidebarPanelProps) {
-    const [isMemoryDialogOpen, setIsMemoryDialogOpen] = useState(false);
-    const [isModelsDialogOpen, setIsModelsDialogOpen] = useState(false);
-    const [isAgentsDialogOpen, setIsAgentsDialogOpen] = useState(false);
-
-    if (collapsed) {
-        return null;
-    }
+    const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
 
     return (
         <>
             <div
-                className="fixed inset-0 z-40 bg-black/30 md:hidden"
+                className={cn(
+                    "fixed inset-0 z-40 bg-black/30 md:hidden",
+                    collapsed && "hidden",
+                )}
                 onClick={onCollapse}
                 aria-hidden="true"
             />
-            <div className="fixed top-0 left-0 z-40 h-full shadow-2xl md:contents md:shadow-none">
+            {/* Below md the sidebar is a fixed drawer; from md up it drops the
+                wrapper box and joins the shell's flex row, so the breakpoint
+                alone decides between overlay and docked layout. */}
+            <div
+                className={cn(
+                    "top-0 left-0 z-40 h-full",
+                    collapsed
+                        ? "hidden"
+                        : "fixed shadow-2xl md:contents md:shadow-none",
+                )}
+            >
                 <ThreadSidebar
                     threads={threads}
                     projects={projects}
@@ -104,30 +110,19 @@ export function NovaSidebarPanel({
                     onPinThread={onPinThread}
                     onMoveThread={onMoveThread}
                     onDeleteThread={onDeleteThread}
-                    onOpenMemory={() => setIsMemoryDialogOpen(true)}
-                    onOpenModels={() => setIsModelsDialogOpen(true)}
-                    onOpenAgents={() => setIsAgentsDialogOpen(true)}
+                    onOpenSettings={() => setIsSettingsDialogOpen(true)}
                 />
             </div>
-            <MemoryManagerDialog
-                open={isMemoryDialogOpen}
-                onOpenChange={setIsMemoryDialogOpen}
-            />
-            <AgentsManagerDialog
-                open={isAgentsDialogOpen}
-                onOpenChange={setIsAgentsDialogOpen}
+            <SettingsDialog
+                open={isSettingsDialogOpen}
+                onOpenChange={setIsSettingsDialogOpen}
                 agents={agents}
                 models={models}
-                onAgentsChanged={onAgentsChanged}
-            />
-            <ModelsManagerDialog
-                open={isModelsDialogOpen}
-                onOpenChange={setIsModelsDialogOpen}
                 providers={providers}
-                models={models}
+                onAgentsChanged={onAgentsChanged}
                 onModelsUpdated={onModelsUpdated}
                 onProvidersRefresh={onProvidersRefresh}
-                onStatusChange={onConfigStatusChange}
+                onConfigStatusChange={onConfigStatusChange}
             />
         </>
     );

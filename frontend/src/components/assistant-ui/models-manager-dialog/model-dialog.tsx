@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { createModel } from "../../../lib/nova-api";
+import { createModel, updateModel } from "../../../lib/nova-api";
+import { cn } from "../../../lib/utils";
 import { Button } from "../../ui/button";
 import {
     Dialog,
@@ -18,6 +19,8 @@ type ModelDialogProps = {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     providerKey: string;
+    /** undefined = create mode, otherwise edit mode for this model. */
+    model?: NovaModelRecord;
     onMutated: (nextModels: NovaModelRecord[]) => Promise<void>;
     onStatusChange: (message: string | null) => void;
 };
@@ -26,13 +29,15 @@ export function ModelDialog({
     open,
     onOpenChange,
     providerKey,
+    model,
     onMutated,
     onStatusChange,
 }: ModelDialogProps) {
     const { t } = useTranslation();
-    const [modelKey, setModelKey] = useState("");
-    const [label, setLabel] = useState("");
-    const [tools, setTools] = useState(true);
+    const isEdit = model !== undefined;
+    const [modelKey, setModelKey] = useState(model?.model ?? "");
+    const [label, setLabel] = useState(model?.label ?? "");
+    const [tools, setTools] = useState(model?.tools ?? true);
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
@@ -59,15 +64,43 @@ export function ModelDialog({
         }
     }
 
+    async function handleUpdate() {
+        if (!model) {
+            return;
+        }
+        setError(null);
+        onStatusChange(null);
+        setSaving(true);
+        try {
+            const nextModels = await updateModel(model.provider, model.model, {
+                label,
+                tools,
+            });
+            await onMutated(nextModels);
+            onOpenChange(false);
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : String(error);
+            setError(message);
+            onStatusChange(message);
+        } finally {
+            setSaving(false);
+        }
+    }
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>
-                        {t("modelSelector.addModelDialogTitle")}
+                        {isEdit
+                            ? t("modelSelector.editModelDialogTitle")
+                            : t("modelSelector.addModelDialogTitle")}
                     </DialogTitle>
                     <DialogDescription>
-                        {t("modelSelector.addModelDialogDescription")}
+                        {isEdit
+                            ? t("modelSelector.editModelDialogDescription")
+                            : t("modelSelector.addModelDialogDescription")}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -77,11 +110,15 @@ export function ModelDialog({
                             {t("modelSelector.modelKey")}
                         </span>
                         <input
-                            value={modelKey}
+                            value={isEdit ? model.model : modelKey}
                             onChange={(event) =>
                                 setModelKey(event.target.value)
                             }
-                            className={inputClassName}
+                            disabled={isEdit}
+                            className={cn(
+                                inputClassName,
+                                isEdit && "opacity-60",
+                            )}
                             placeholder={t(
                                 "modelSelector.modelKeyPlaceholder",
                             )}
@@ -129,9 +166,13 @@ export function ModelDialog({
                         type="button"
                         size="sm"
                         disabled={saving}
-                        onClick={() => void handleCreate()}
+                        onClick={() =>
+                            void (isEdit ? handleUpdate() : handleCreate())
+                        }
                     >
-                        {t("modelSelector.saveModel")}
+                        {isEdit
+                            ? t("modelSelector.saveChanges")
+                            : t("modelSelector.saveModel")}
                     </Button>
                 </DialogFooter>
             </DialogContent>

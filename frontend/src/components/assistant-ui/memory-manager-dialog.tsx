@@ -11,13 +11,8 @@ import {
 import { deleteMemory, listMemories } from "@/lib/nova-api";
 import type { NovaMemoryRecord } from "@/types/nova";
 import { Trash2Icon } from "lucide-react";
-import { useEffect, useState, type FC } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-
-type MemoryManagerDialogProps = {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-};
 
 const SCOPE_ORDER: NovaMemoryRecord["scope"][] = ["user", "project", "session"];
 
@@ -34,10 +29,7 @@ const TYPE_LABEL_KEY: Record<NovaMemoryRecord["memory_type"], string> = {
     context: "memory.type.context",
 };
 
-export const MemoryManagerDialog: FC<MemoryManagerDialogProps> = ({
-    open,
-    onOpenChange,
-}) => {
+export function MemoryManagerContent() {
     const { t } = useTranslation();
     const [memories, setMemories] = useState<NovaMemoryRecord[]>([]);
     const [loading, setLoading] = useState(true);
@@ -48,9 +40,6 @@ export const MemoryManagerDialog: FC<MemoryManagerDialogProps> = ({
     const [deleteError, setDeleteError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!open) {
-            return;
-        }
         let cancelled = false;
         listMemories()
             .then((items) => {
@@ -76,7 +65,7 @@ export const MemoryManagerDialog: FC<MemoryManagerDialogProps> = ({
         return () => {
             cancelled = true;
         };
-    }, [open]);
+    }, []);
 
     const handleConfirmDelete = async () => {
         if (!memoryToDelete) {
@@ -104,127 +93,110 @@ export const MemoryManagerDialog: FC<MemoryManagerDialogProps> = ({
 
     return (
         <>
-            <Dialog open={open} onOpenChange={onOpenChange}>
-                <DialogContent className="sm:max-w-lg">
-                    <DialogHeader>
-                        <DialogTitle>{t("memory.manage")}</DialogTitle>
-                        <DialogDescription>
-                            {t("memory.manageDescription")}
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="max-h-[60vh] overflow-y-auto pr-1">
-                        {loading && (
-                            <p className="py-6 text-center text-sm text-muted-foreground">
-                                {t("threadList.loadingThreads")}
-                            </p>
-                        )}
-                        {!loading && loadError && (
-                            <p className="py-6 text-center text-sm text-destructive">
-                                {loadError}
-                            </p>
-                        )}
-                        {!loading && !loadError && memories.length === 0 && (
-                            <p className="py-6 text-center text-sm text-muted-foreground">
-                                {t("memory.empty")}
-                            </p>
-                        )}
-                        {!loading &&
-                            !loadError &&
-                            SCOPE_ORDER.map((scope) => {
-                                const group = memories.filter(
-                                    (memory) => memory.scope === scope,
-                                );
-                                if (group.length === 0) {
-                                    return null;
-                                }
-                                return (
-                                    <div key={scope} className="mb-4 last:mb-0">
-                                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                            {t(SCOPE_LABEL_KEY[scope])} (
-                                            {group.length})
-                                        </h3>
-                                        <div className="flex flex-col gap-2">
-                                            {group.map((memory) => (
-                                                <div
-                                                    key={memory.id}
-                                                    className="rounded-lg border bg-card p-3"
-                                                >
-                                                    <div className="flex items-start justify-between gap-2">
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="flex flex-wrap items-center gap-1.5">
-                                                                <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                                                                    {t(
-                                                                        TYPE_LABEL_KEY[
-                                                                            memory
-                                                                                .memory_type
-                                                                        ],
-                                                                    )}
-                                                                </span>
-                                                                <span className="truncate text-sm font-medium">
-                                                                    {memory.key}
-                                                                </span>
-                                                                {memory.tags.map(
-                                                                    (tag) => (
-                                                                        <span
-                                                                            key={
-                                                                                tag
-                                                                            }
-                                                                            className="rounded bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground"
-                                                                        >
-                                                                            {
-                                                                                tag
-                                                                            }
-                                                                        </span>
-                                                                    ),
-                                                                )}
-                                                            </div>
-                                                            <p className="mt-1 truncate text-sm font-semibold">
-                                                                {memory.summary}
-                                                            </p>
-                                                            <p className="mt-0.5 text-sm text-muted-foreground">
-                                                                {memory.content}
-                                                            </p>
-                                                            <p className="mt-0.5 text-xs text-muted-foreground/70">
-                                                                {formatTime(
-                                                                    memory.updated_at,
-                                                                )}
-                                                            </p>
-                                                        </div>
-                                                        <Button
-                                                            type="button"
-                                                            variant="ghost"
-                                                            size="icon-sm"
-                                                            aria-label={t(
-                                                                "memory.delete",
+            <div className="pr-1">
+                {loading && (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                        {t("threadList.loadingThreads")}
+                    </p>
+                )}
+                {!loading && loadError && (
+                    <p className="py-6 text-center text-sm text-destructive">
+                        {loadError}
+                    </p>
+                )}
+                {!loading && !loadError && memories.length === 0 && (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                        {t("memory.empty")}
+                    </p>
+                )}
+                {!loading &&
+                    !loadError &&
+                    SCOPE_ORDER.map((scope) => {
+                        const group = memories.filter(
+                            (memory) => memory.scope === scope,
+                        );
+                        if (group.length === 0) {
+                            return null;
+                        }
+                        return (
+                            <div key={scope} className="mb-4 last:mb-0">
+                                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                    {t(SCOPE_LABEL_KEY[scope])} (
+                                    {group.length})
+                                </h3>
+                                <div className="flex flex-col gap-2">
+                                    {group.map((memory) => (
+                                        <div
+                                            key={memory.id}
+                                            className="rounded-lg border bg-card p-3"
+                                        >
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex flex-wrap items-center gap-1.5">
+                                                        <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+                                                            {t(
+                                                                TYPE_LABEL_KEY[
+                                                                    memory
+                                                                        .memory_type
+                                                                ],
                                                             )}
-                                                            onClick={() => {
-                                                                setMemoryToDelete(
-                                                                    memory,
-                                                                );
-                                                                setDeleteError(
-                                                                    null,
-                                                                );
-                                                            }}
-                                                        >
-                                                            <Trash2Icon className="size-4" />
-                                                        </Button>
+                                                        </span>
+                                                        <span className="truncate text-sm font-medium">
+                                                            {memory.key}
+                                                        </span>
+                                                        {memory.tags.map(
+                                                            (tag) => (
+                                                                <span
+                                                                    key={
+                                                                        tag
+                                                                    }
+                                                                    className="rounded bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                                                                >
+                                                                    {
+                                                                        tag
+                                                                    }
+                                                                </span>
+                                                            ),
+                                                        )}
                                                     </div>
+                                                    <p className="mt-1 truncate text-sm font-semibold">
+                                                        {memory.summary}
+                                                    </p>
+                                                    <p className="mt-0.5 text-sm text-muted-foreground">
+                                                        {memory.content}
+                                                    </p>
+                                                    <p className="mt-0.5 text-xs text-muted-foreground/70">
+                                                        {formatTime(
+                                                            memory.updated_at,
+                                                        )}
+                                                    </p>
                                                 </div>
-                                            ))}
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon-sm"
+                                                    aria-label={t(
+                                                        "memory.delete",
+                                                    )}
+                                                    onClick={() => {
+                                                        setMemoryToDelete(
+                                                            memory,
+                                                        );
+                                                        setDeleteError(
+                                                            null,
+                                                        );
+                                                    }}
+                                                >
+                                                    <Trash2Icon className="size-4" />
+                                                </Button>
+                                            </div>
                                         </div>
-                                    </div>
-                                );
-                            })}
-                    </div>
-                    <DialogFooter>
-                        <DialogClose asChild>
-                            <Button type="button" variant="outline">
-                                {t("common.close")}
-                            </Button>
-                        </DialogClose>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })}
+            </div>
 
             <Dialog
                 open={memoryToDelete !== null}
@@ -284,4 +256,4 @@ export const MemoryManagerDialog: FC<MemoryManagerDialogProps> = ({
             </Dialog>
         </>
     );
-};
+}

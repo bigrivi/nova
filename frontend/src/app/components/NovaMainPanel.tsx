@@ -1,4 +1,4 @@
-import { ChevronRightIcon } from "lucide-react";
+import { MenuIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Thread } from "../../components/assistant-ui/thread";
@@ -65,7 +65,7 @@ export function NovaMainPanel({
                     aria-label={t("app.expandSidebar")}
                     onClick={onExpandSidebar}
                 >
-                    <ChevronRightIcon className="size-4" />
+                    <MenuIcon className="size-4" />
                 </Button>
             ) : null}
 

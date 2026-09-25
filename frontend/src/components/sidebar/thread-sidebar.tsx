@@ -1,12 +1,8 @@
 "use client";
 
 import {
-    CheckIcon,
     ChevronRightIcon,
-    CpuIcon,
-    DatabaseIcon,
     FolderIcon,
-    LanguagesIcon,
     Loader2Icon,
     MessageCircleIcon,
     MoreHorizontalIcon,
@@ -17,7 +13,6 @@ import {
     SearchIcon,
     SettingsIcon,
     Trash2Icon,
-    UsersIcon,
 } from "lucide-react";
 import {
     Fragment,
@@ -35,9 +30,6 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuSeparator,
-    DropdownMenuSub,
-    DropdownMenuSubContent,
-    DropdownMenuSubTrigger,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -80,9 +72,7 @@ type ThreadSidebarProps = {
         threadId: string,
         nextThreadId: string | null,
     ) => Promise<void> | void;
-    onOpenMemory: () => void;
-    onOpenModels: () => void;
-    onOpenAgents: () => void;
+    onOpenSettings: () => void;
 };
 
 const OPEN_PROJECTS_KEY = "nova.sidebar.open-projects.v2";
@@ -548,7 +538,7 @@ function ProjectRow({
 }
 
 export function ThreadSidebar(props: ThreadSidebarProps) {
-    const { t, i18n } = useTranslation();
+    const { t } = useTranslation();
     const groups = useMemo(
         () => groupThreads(props.threads, props.projects),
         [props.threads, props.projects],
@@ -761,32 +751,14 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
                 </Section>
             </div>
             <div className="border-t border-[#E4E1D9] p-2">
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild><button type="button" className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13.5px] text-[#6E6A60] hover:bg-[#F0EEE7] hover:text-[#201F1C]"><SettingsIcon className="size-4" />{t("sidebar.settings")}</button></DropdownMenuTrigger>
-                    <DropdownMenuContent side="top" align="start" collisionPadding={12} className="w-64 border-[#E4E1D9] bg-white">
-                        <DropdownMenuItem onSelect={props.onOpenMemory}><DatabaseIcon className="size-4" />{t("memory.manage")}</DropdownMenuItem>
-                        <DropdownMenuItem onSelect={props.onOpenModels}><CpuIcon className="size-4" />{t("modelSelector.manageModels")}</DropdownMenuItem>
-                        <DropdownMenuItem onSelect={props.onOpenAgents}><UsersIcon className="size-4" />{t("agentManager.manageAgents")}</DropdownMenuItem>
-                        <DropdownMenuSub>
-                            <DropdownMenuSubTrigger>
-                                <LanguagesIcon className="size-4" />
-                                {t("sidebar.language")}
-                                <span className="ml-auto text-xs text-[#9C978A]">{i18n.language === "zh-CN" ? "简体中文" : "English"}</span>
-                            </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent className="border-[#E4E1D9] bg-white">
-                                <DropdownMenuItem onSelect={() => void i18n.changeLanguage("zh-CN")}>
-                                    <CheckIcon className={cn("size-4", i18n.language !== "zh-CN" && "invisible")} />
-                                    简体中文
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => void i18n.changeLanguage("en")}>
-                                    <CheckIcon className={cn("size-4", i18n.language !== "en" && "invisible")} />
-                                    English
-                                </DropdownMenuItem>
-                            </DropdownMenuSubContent>
-                        </DropdownMenuSub>
-                        <DropdownMenuSeparator />
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                <button
+                    type="button"
+                    onClick={props.onOpenSettings}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13.5px] text-[#6E6A60] hover:bg-[#F0EEE7] hover:text-[#201F1C]"
+                >
+                    <SettingsIcon className="size-4" />
+                    {t("sidebar.settings")}
+                </button>
             </div>
             {searchOpen ? <div role="dialog" aria-modal="true" className="fixed inset-0 z-[70] flex items-start justify-center bg-[rgba(28,27,24,.32)] pt-[108px]" onMouseDown={(event) => event.target === event.currentTarget && setSearchOpen(false)}>
                 <div className="flex max-h-[60vh] w-[560px] max-w-[90vw] flex-col overflow-hidden rounded-[13px] bg-white shadow-[0_24px_60px_rgba(0,0,0,.22)]">

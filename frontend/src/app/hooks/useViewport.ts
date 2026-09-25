@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { NARROW_VIEWPORT_QUERY } from "../../lib/nova-constants";
 
@@ -10,44 +10,37 @@ export interface ViewportControls {
 }
 
 /**
- * Track the narrow-viewport media query and drive the sidebar collapse state:
- * auto-collapse when the layout first becomes narrow, and expose a helper to
- * collapse after navigation on narrow screens.
+ * Drive the sidebar from the viewport breakpoint until the user expresses a
+ * preference, then honour that preference for good.
+ *
+ * `preference` is null until the user collapses or expands the sidebar by hand
+ * (or taps a thread on a narrow screen). While null the sidebar follows the
+ * viewport: collapsed below the breakpoint, expanded above it. Once set, the
+ * breakpoint no longer has any say, so a manually closed sidebar stays closed
+ * at every window size until the user opens it again.
  */
 export function useViewport(): ViewportControls {
-    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
-        () => window.matchMedia(NARROW_VIEWPORT_QUERY).matches,
-    );
     const [isNarrowViewport, setIsNarrowViewport] = useState(
         () => window.matchMedia(NARROW_VIEWPORT_QUERY).matches,
     );
-    const wasNarrowViewportRef = useRef(isNarrowViewport);
+    const [preference, setPreference] = useState<boolean | null>(null);
 
     useEffect(() => {
         const query = window.matchMedia(NARROW_VIEWPORT_QUERY);
-        const update = () => setIsNarrowViewport(query.matches);
-        update();
+        const update = (event: MediaQueryListEvent) =>
+            setIsNarrowViewport(event.matches);
         query.addEventListener("change", update);
         return () => query.removeEventListener("change", update);
     }, []);
 
-    useEffect(() => {
-        if (isNarrowViewport && !wasNarrowViewportRef.current) {
-            setIsSidebarCollapsed(true);
-        }
-        wasNarrowViewportRef.current = isNarrowViewport;
-    }, [isNarrowViewport]);
-
-    function collapseSidebarOnNarrowViewport() {
-        if (isNarrowViewport) {
-            setIsSidebarCollapsed(true);
-        }
-    }
-
     return {
         isNarrowViewport,
-        isSidebarCollapsed,
-        setIsSidebarCollapsed,
-        collapseSidebarOnNarrowViewport,
+        isSidebarCollapsed: preference ?? isNarrowViewport,
+        setIsSidebarCollapsed: setPreference,
+        collapseSidebarOnNarrowViewport() {
+            if (isNarrowViewport) {
+                setPreference(true);
+            }
+        },
     };
 }
