@@ -78,20 +78,6 @@ class PromptBuilder:
 - If clarification is needed during execution, use `ask_user`.
 - If a tool call fails, use the error to adjust the next step. Do not blindly retry the same failing call.
 
-# Available Tools
-
-{tools}
-
-## Tool Call Format
-When calling a tool, output JSON only:
-{{
-  "name": "<tool_name>",
-  "arguments": {{
-    "param1": "value"
-  }}
-}}
-- MUST use key "name", NOT "tool"
-
 # Tool Usage
 - Prefer tool usage when the required runtime fact is not already present in the prompt.
 - Runtime path context is already provided below. Do not call bash `pwd` just to learn Nova's home or workspace.
@@ -128,22 +114,25 @@ When calling a tool, output JSON only:
 
     def build(
         self,
-        tools_schemas: list[dict] = None,
         available_skills: list[Any] | None = None,
         date: str | None = None,
         workspace_override: str | None = None,
     ) -> str:
+        """Render the system prompt.
+
+        Tool definitions are deliberately absent: they reach the model through the
+        provider's structured ``tools`` field, and repeating them here only charged
+        for them twice. For the same reason there is no "output JSON only"
+        instruction - tool calls arrive as structured events, never as text.
+        """
         parts = []
         settings = get_settings()
 
-        tools_section = self._build_tools_section(
-            tools_schemas) if tools_schemas else ""
         available_skills_section = self._build_available_skills_section(available_skills)
 
         identity = self.config.identity_content or DEFAULT_AGENT_IDENTITY
         parts.append(self.SYSTEM_PROMPT_TEMPLATE.format(
             identity=identity,
-            tools=tools_section,
             available_skills=available_skills_section,
             date=date or datetime.now().strftime("%Y-%m-%d %A"),
             home=settings.home,
@@ -195,35 +184,6 @@ When calling a tool, output JSON only:
         import platform
         return platform.system()
 
-    def _build_tools_section(self, tools_schemas: list[dict]) -> str:
-        if not tools_schemas:
-            return "No tools available."
-
-        lines = []
-        for tool in tools_schemas:
-            func = tool.get("function", tool)
-            name = func.get("name", "unknown")
-            desc = func.get("description", "No description available")
-            params = func.get("parameters", {})
-
-            lines.append(f"## {name}")
-            lines.append(f"{desc}")
-
-            props = params.get("properties", {})
-            required = params.get("required", [])
-
-            if props:
-                lines.append("**Parameters:**")
-                for param_name, param_info in props.items():
-                    param_type = param_info.get("type", "any")
-                    param_desc = param_info.get("description", "")
-                    required_mark = " (required)" if param_name in required else " (optional)"
-                    lines.append(
-                        f"- `{param_name}` ({param_type}){required_mark}: {param_desc}")
-            lines.append("")
-
-        return "\n".join(lines)
-
     def _build_available_skills_section(self, available_skills: list[Any] | None) -> str:
         if not available_skills:
             return "- No skills currently installed in the runtime catalog."
@@ -235,12 +195,3 @@ When calling a tool, output JSON only:
             lines.append(f"- {name}: {description}")
         lines.append("- If one of these matches the task, call `load_skill` with the exact skill name before using it.")
         return "\n".join(lines)
-
-def build_system_prompt(
-    tools_schemas: list[dict] = None,
-    config: PromptConfig = None,
-    available_skills: list[Any] | None = None,
-    date: str | None = None,
-) -> str:
-    builder = PromptBuilder(config)
-    return builder.build(tools_schemas, available_skills, date=date)

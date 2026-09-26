@@ -169,11 +169,8 @@ class Agent:
         await self._events.emit(event, data)
 
     def _build_system_prompt(self, session_ctx: SessionContext = None) -> str:
-        tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else []
-        available_skills = self._skill_service.list_skills()
         return self._prompt_builder.build(
-            tools_schemas=tool_schemas,
-            available_skills=available_skills,
+            available_skills=self._skill_service.list_skills(),
             workspace_override=self._active_workspace,
         )
 

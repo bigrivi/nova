@@ -9,7 +9,7 @@ def test_roster_rendered_when_present() -> None:
     config = PromptConfig(
         subagent_roster="- `researcher` (read-only): investigate\n- `coder` (full access): implement"
     )
-    prompt = PromptBuilder(config).build(tools_schemas=[])
+    prompt = PromptBuilder(config).build()
 
     assert "## Available Sub-Agents" in prompt
     assert "delegate_to_agent(target=<key>" in prompt
@@ -18,7 +18,7 @@ def test_roster_rendered_when_present() -> None:
 
 
 def test_no_roster_section_when_empty() -> None:
-    prompt = PromptBuilder(PromptConfig()).build(tools_schemas=[])
+    prompt = PromptBuilder(PromptConfig()).build()
     assert "## Available Sub-Agents" not in prompt
 
 
@@ -32,7 +32,7 @@ def test_roster_preamble_names_no_specific_agents() -> None:
     config = PromptConfig(
         subagent_roster="- `researcher` (read-only): investigate\n- `coder` (full access): implement"
     )
-    prompt = PromptBuilder(config).build(tools_schemas=[])
+    prompt = PromptBuilder(config).build()
 
     assert "`explore`" not in prompt
     assert "`reviewer`" not in prompt
@@ -43,7 +43,7 @@ def test_roster_preamble_treats_roster_as_source_of_truth() -> None:
     """The preamble must tell the model the roster below is the complete
     set of valid targets, so it never invents a delegation key."""
     config = PromptConfig(subagent_roster="- `coder` (full access): implement")
-    prompt = PromptBuilder(config).build(tools_schemas=[])
+    prompt = PromptBuilder(config).build()
 
     assert "complete set" in prompt
     assert "never" in prompt and "invent" in prompt
