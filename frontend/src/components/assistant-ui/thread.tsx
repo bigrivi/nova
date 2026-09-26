@@ -16,11 +16,9 @@ import { ThreadStickyComposer } from "./thread-sticky-composer";
 import type { ThreadComposerContextBarProps } from "./thread-sticky-composer";
 
 type ThreadProps = {
+    composerRef: RefObject<HTMLTextAreaElement | null>;
     composer: {
-        ref: RefObject<HTMLTextAreaElement | null>;
-        text: string;
         isRunning: boolean;
-        onChange: (value: string) => void;
         onSubmit: () => void;
         onCancel: () => void;
         onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -41,6 +39,7 @@ type ThreadProps = {
 };
 
 export const Thread: FC<ThreadProps> = ({
+    composerRef,
     composer,
     modelSelection,
     agentSelection,
@@ -53,10 +52,11 @@ export const Thread: FC<ThreadProps> = ({
     const pendingApproval = useApprovalStore((s) => s.pending);
 
     // One composer, mounted either centered in the empty state or inside the
-    // viewport footer. Only one branch is mounted at a time, so the draft and
-    // textarea ref (both owned by the shell) survive the switch.
+    // viewport footer. Only one branch is mounted at a time, so the draft (in
+    // the composer store) and the shell-owned textarea ref survive the switch.
     const composerNode = (
         <ThreadStickyComposer
+            composerRef={composerRef}
             composer={composer}
             modelSelection={modelSelection}
             agentSelection={agentSelection}
@@ -65,6 +65,7 @@ export const Thread: FC<ThreadProps> = ({
     );
     const composerNodeWithDisclaimer = (
         <ThreadStickyComposer
+            composerRef={composerRef}
             composer={composer}
             modelSelection={modelSelection}
             agentSelection={agentSelection}
@@ -96,7 +97,7 @@ export const Thread: FC<ThreadProps> = ({
                     {/* shrink-0 keeps min-h-full from collapsing this column to
                         the viewport height, which would make it a too-short
                         sticky containing block for the footer. */}
-                    <div className="mx-auto flex min-h-full w-full max-w-(--thread-max-width) shrink-0 flex-col px-5 pt-6">
+                    <div className="mx-auto flex min-h-full w-full max-w-(--thread-max-width) shrink-0 flex-col pt-6 px-9 max-md:px-6">
                         <div data-slot="aui_message-group" className="mb-5">
                             <div
                                 ref={zoomTargetRef}

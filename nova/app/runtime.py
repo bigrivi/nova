@@ -4,6 +4,7 @@ Shared runtime assembly helpers.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from nova.agent import Agent, AgentConfig
@@ -178,6 +179,7 @@ async def build_agent(
     is_sub_agent: bool = False,
     depth: int = 0,
     data_source: DataSourceProtocol | None = None,
+    on_title_updated: Callable[[str, str], None] | None = None,
 ) -> Agent:
     settings = get_settings()
 
@@ -240,6 +242,7 @@ async def build_agent(
         allowed_tools=allowed_tools,
         prompt_config=prompt_config,
         data_source=data_source or await get_default_data_source(),
+        on_title_updated=on_title_updated,
     )
 
     # Cache 3: ToolRegistry (shallow copy + rebind skill tools). The posture

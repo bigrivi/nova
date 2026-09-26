@@ -66,6 +66,9 @@ class ToolInvoker:
 
         self.outcome = ToolOutcome.COMPLETED
         self._executed_ids: set[str] = set()
+        # Computed once: tools that make their own model call forward this so
+        # the request is shaped like an agent turn.
+        self._tool_schemas = registry.get_schema() if registry.tools else None
 
     async def run(
         self,
@@ -278,7 +281,11 @@ class ToolInvoker:
         if 'turn_context' in tool_parameters:
             from nova.tools.context import ToolContext
             arguments['turn_context'] = ToolContext(
-                llm=self._llm, model=self._model, provider=self._provider)
+                llm=self._llm,
+                model=self._model,
+                provider=self._provider,
+                tool_schemas=self._tool_schemas,
+            )
         if 'session_id' in tool_parameters:
             current_session = self._session.get_current_session()
             if current_session is not None and current_session.id:

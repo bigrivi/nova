@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from nova.llm.provider import LLMProvider
@@ -19,3 +19,7 @@ class ToolContext:
     llm: LLMProvider
     model: str
     provider: str
+    # The agent's own tool schemas. Tools that make their own model call must
+    # forward these so the request is shaped like an agent turn; some gateways
+    # reject a tool-less one (see nova.llm.oneshot).
+    tool_schemas: Optional[list[dict]] = None

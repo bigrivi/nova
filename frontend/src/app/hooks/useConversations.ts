@@ -37,17 +37,20 @@ import {
     createOptimisticSessionTitle,
     createTextMessage,
 } from "../../lib/thread-messages";
-import { upsertThread } from "../../lib/thread-summary";
+import { renameThreadTitle, upsertThread } from "../../lib/thread-summary";
 import { randomId } from "../../lib/utils";
 import { useApprovalStore } from "../../stores/approval-store";
 import {
     useAskUserStore,
     type ActiveAskUser,
 } from "../../stores/ask-user-store";
+import { useBackgroundTaskStore } from "../../stores/background-task-store";
+import { useComposerStore } from "../../stores/composer-store";
 import { useReasoningStore } from "../../stores/reasoning-store";
 import { useTodoStore } from "../../stores/todo-store";
 import type {
     NovaAttachmentData,
+    NovaBackgroundTask,
     NovaModelRecord,
     NovaThreadSummary,
 } from "../../types/nova";
@@ -67,8 +70,6 @@ export interface Conversations {
     currentMessages: ThreadMessageLike[];
     isRunning: boolean;
     runningByThread: Record<string, boolean>;
-    composerText: string;
-    setComposerText: (text: string) => void;
     composerRef: React.RefObject<HTMLTextAreaElement | null>;
     submitPrompt: (
         prompt: string,
@@ -114,7 +115,6 @@ export function useConversations(deps: ConversationDeps): Conversations {
     const [runningByThread, setRunningByThread] = useState<
         Record<string, boolean>
     >({});
-    const [composerText, setComposerText] = useState("");
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
     const sessionIdRef = useRef(DRAFT_THREAD_ID);
@@ -166,6 +166,13 @@ export function useConversations(deps: ConversationDeps): Conversations {
     useEffect(() => {
         useApprovalStore.getState().syncPendingToSession(currentThreadId);
         useAskUserStore.getState().syncActiveToSession(currentThreadId);
+        // The task panel reads this; tasks themselves arrive over the events
+        // stream, so nothing here polls.
+        useBackgroundTaskStore
+            .getState()
+            .setActiveSession(
+                currentThreadId === DRAFT_THREAD_ID ? null : currentThreadId,
+            );
     }, [currentThreadId]);
 
     // Push, not poll: one SSE connection carries a snapshot of active sessions
@@ -175,7 +182,10 @@ export function useConversations(deps: ConversationDeps): Conversations {
     useEffect(() => {
         const source = new EventSource(sessionEventsUrl());
 
-        function applySnapshot(active: string[]) {
+        function applySnapshot(
+            active: string[],
+            tasks: NovaBackgroundTask[],
+        ) {
             const seenNow = new Set(active);
             const seenBefore = prevActiveSnapshotRef.current;
             prevActiveSnapshotRef.current = seenNow;
@@ -187,6 +197,9 @@ export function useConversations(deps: ConversationDeps): Conversations {
                     (threadId) => abortControllersRef.current.has(threadId),
                 ),
             );
+            // Tasks are pushed, not polled: this snapshot is the resync point
+            // and the "task" frames below keep it current from here on.
+            useBackgroundTaskStore.getState().replaceTasks(tasks);
         }
 
         function applyDelta(sessionId: string, state: string) {
@@ -231,9 +244,25 @@ export function useConversations(deps: ConversationDeps): Conversations {
             try {
                 const payload = JSON.parse(event.data);
                 if (payload.type === "snapshot") {
-                    applySnapshot(payload.active ?? []);
+                    applySnapshot(payload.active ?? [], payload.tasks ?? []);
                 } else if (payload.type === "state") {
                     applyDelta(payload.session_id, payload.state);
+                } else if (payload.type === "task") {
+                    // A background task was created or changed status. Pushed
+                    // over this stream, so no /api/tasks poll is needed.
+                    useBackgroundTaskStore.getState().updateTask(payload.task);
+                } else if (payload.type === "title") {
+                    // The background title job finished. Renaming in place
+                    // keeps the sidebar from reordering under the cursor;
+                    // if this client missed the frame the next load still
+                    // picks the title up from /api/sessions.
+                    setThreads((previous) =>
+                        renameThreadTitle(
+                            previous,
+                            payload.session_id,
+                            payload.title,
+                        ),
+                    );
                 }
             } catch {
                 // Malformed frame is non-fatal; the next event corrects state.
@@ -250,15 +279,6 @@ export function useConversations(deps: ConversationDeps): Conversations {
             source.close();
         };
     }, []);
-
-    useEffect(() => {
-        const textarea = composerRef.current;
-        if (!textarea) {
-            return;
-        }
-        textarea.style.height = "0px";
-        textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
-    }, [composerText]);
 
     async function loadThread(threadId: string) {
         try {
@@ -308,7 +328,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
                 [DRAFT_THREAD_ID]: previous[DRAFT_THREAD_ID] || [],
             }));
         });
-        setComposerText("");
+        useComposerStore.getState().clear();
         setDraftProjectId(projectId);
     }
 
@@ -431,6 +451,8 @@ export function useConversations(deps: ConversationDeps): Conversations {
             reasoning: {
                 setCompacting: (compacting) =>
                     useReasoningStore.getState().setCompacting(compacting),
+                appendCompactionDelta: (delta) =>
+                    useReasoningStore.getState().appendCompactionDelta(delta),
             },
             approval: {
                 setPendingForSession: (sessionId, pending) =>
@@ -623,7 +645,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
         const submitProjectId =
             sessionIdRef.current === DRAFT_THREAD_ID ? draftProjectId : null;
 
-        setComposerText("");
+        useComposerStore.getState().clear();
         composerRef.current?.focus({ preventScroll: true });
         useTodoStore.getState().clear();
         clearLastSequence(originThreadId);
@@ -697,8 +719,6 @@ export function useConversations(deps: ConversationDeps): Conversations {
         currentMessages,
         isRunning,
         runningByThread,
-        composerText,
-        setComposerText,
         composerRef,
         submitPrompt,
         handleCancel,

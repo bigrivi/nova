@@ -17,7 +17,7 @@ import {
 import { DEFAULT_AGENT_KEY } from "@/lib/nova-constants";
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
 import { BotIcon, ChevronDownIcon, FileText } from "lucide-react";
-import { useMemo, useState, type FC } from "react";
+import { memo, useMemo, useState, type FC } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/shallow";
 
@@ -389,10 +389,18 @@ const AssistantMessage: FC<{ name: string; agentKey: string | null }> = ({
     );
 };
 
-export const ThreadMessage: FC<{
+/**
+ * Memoised: the message list re-renders on every streamed token, and only the
+ * message being written into has new content. Without this, every earlier
+ * message in the thread re-renders per token.
+ */
+export const ThreadMessage = memo(function ThreadMessage({
+    assistantName = "Nova",
+    assistantAgentKey = null,
+}: {
     assistantName?: string;
     assistantAgentKey?: string | null;
-}> = ({ assistantName = "Nova", assistantAgentKey = null }) => {
+}) {
     const role = useAuiState((s) => s.message.role);
     const variant = useAuiState((s) => readMessageVariant(s.message));
     const userText = useAuiState((s) => readUserText(s.message));
@@ -420,4 +428,4 @@ export const ThreadMessage: FC<{
     return (
         <AssistantMessage name={assistantName} agentKey={assistantAgentKey} />
     );
-};
+});

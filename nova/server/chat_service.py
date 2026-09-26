@@ -73,12 +73,14 @@ class ChatService:
         data_source: DataSourceProtocol | None = None,
         request_registry: RequestRegistry | None = None,
         stream_buffer: StreamBuffer | None = None,
+        on_title_updated: Callable[[str, str], None] | None = None,
     ) -> None:
         self._settings = settings
         self._request_registry = request_registry or RequestRegistry()
         self._stream_buffer = stream_buffer or StreamBuffer()
         self._request_registry.attach_buffer(self._stream_buffer)
         self._data_source = data_source
+        self._on_title_updated = on_title_updated
 
     @property
     def settings(self) -> Settings:
@@ -271,21 +273,24 @@ class ChatService:
             raw_messages = await data_source.get_messages(session_id)
         except Exception:
             raw_messages = []
+        try:
+            session = await data_source.get_session(session_id)
+        except Exception:
+            session = None
         # Resolve provider/model: explicit query wins, else session's agent, else settings default
         if not provider or not model:
-            try:
-                session = await data_source.get_session(session_id)
-                agent_key = session.get("agent_key") if session else None
-                if agent_key:
-                    from nova.config.service import ConfigService
+            agent_key = session.get("agent_key") if session else None
+            if agent_key:
+                from nova.config.service import ConfigService
 
+                try:
                     service = ConfigService(self._settings)
                     agent = await service.get_agent(agent_key)
-                    if agent:
-                        provider = provider or agent.get("provider")
-                        model = model or agent.get("model")
-            except Exception:
-                pass
+                except Exception:
+                    agent = None
+                if agent:
+                    provider = provider or agent.get("provider")
+                    model = model or agent.get("model")
         if not provider or not model:
             # Fallback to first configured provider/model
             first_provider = next(iter(self._settings.providers.keys()), None)
@@ -295,7 +300,10 @@ class ChatService:
             else:
                 provider = provider or "ollama"
                 model = model or "gpt-4o"
-        used = estimate_context_tokens(raw_messages, model or "unknown")
+        used = estimate_context_tokens(
+            raw_messages, model or "unknown",
+            session.get("compacted_at") if session else None,
+        )
         limit = get_context_limit(model or "unknown", provider or "ollama")
         percent = int(used / limit * 100) if limit else 0
         return {"used": used, "limit": limit, "percent": percent, "message_count": len(raw_messages)}
@@ -437,6 +445,7 @@ class ChatService:
             provider=request.provider,
             model=request.model,
             is_new_session=not request.session_id,
+            on_title_updated=self._on_title_updated,
         )
         register_key = request.session_id
         if register_key:
@@ -495,6 +504,7 @@ class ChatService:
             AgentEvent.REASONING_START,
             AgentEvent.REASONING_END,
             AgentEvent.COMPACTION_START,
+            AgentEvent.COMPACTION_DELTA,
             AgentEvent.COMPACTION_END,
         ):
             return None

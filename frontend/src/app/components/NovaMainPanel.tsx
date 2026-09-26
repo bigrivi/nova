@@ -9,9 +9,7 @@ export interface NovaMainPanelProps {
     sidebarCollapsed: boolean;
     onExpandSidebar: () => void;
     composerRef: React.RefObject<HTMLTextAreaElement | null>;
-    composerText: string;
     isRunning: boolean;
-    onComposerChange: (text: string) => void;
     onComposerSubmit: () => void;
     onCancel: () => void;
     models: NovaModelRecord[];
@@ -37,9 +35,7 @@ export function NovaMainPanel({
     sidebarCollapsed,
     onExpandSidebar,
     composerRef,
-    composerText,
     isRunning,
-    onComposerChange,
     onComposerSubmit,
     onCancel,
     models,
@@ -75,11 +71,9 @@ export function NovaMainPanel({
 
             <div className="flex min-h-0 flex-1 flex-col">
                 <Thread
+                    composerRef={composerRef}
                     composer={{
-                        ref: composerRef,
-                        text: composerText,
                         isRunning,
-                        onChange: onComposerChange,
                         onSubmit: onComposerSubmit,
                         onCancel,
                         onKeyDown: (event) => {

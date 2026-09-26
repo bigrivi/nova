@@ -282,6 +282,18 @@ class AISDKStreamAdapter:
             )
             return chunks
 
+        if event == AgentEvent.COMPACTION_DELTA:
+            data_payload = data if isinstance(data, dict) else {}
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "data-nova-compaction-delta",
+                        "data": {"delta": data_payload.get("delta", "")},
+                    }
+                )
+            )
+            return chunks
+
         if event == AgentEvent.COMPACTION_END:
             chunks.append(
                 encode_ai_sdk_sse(

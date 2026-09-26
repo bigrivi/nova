@@ -2,12 +2,14 @@ import { ArrowUpIcon, Square } from "lucide-react";
 import {
     type ClipboardEvent,
     type KeyboardEvent,
+    useLayoutEffect,
     type RefObject,
 } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useAui } from "@assistant-ui/react";
 
+import { useComposerStore } from "../../stores/composer-store";
 import type { NovaAgent, NovaModelRecord } from "../../types/nova";
 import { Button } from "../ui/button";
 import { BackgroundTasksPanel } from "./background-tasks-panel";
@@ -25,11 +27,9 @@ export type ThreadComposerContextBarProps = Omit<
 >;
 
 type ThreadStickyComposerProps = {
+    composerRef: RefObject<HTMLTextAreaElement | null>;
     composer: {
-        ref: RefObject<HTMLTextAreaElement | null>;
-        text: string;
         isRunning: boolean;
-        onChange: (value: string) => void;
         onSubmit: () => void;
         onCancel: () => void;
         onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -49,6 +49,7 @@ type ThreadStickyComposerProps = {
 };
 
 export function ThreadStickyComposer({
+    composerRef,
     composer,
     modelSelection,
     agentSelection,
@@ -57,6 +58,19 @@ export function ThreadStickyComposer({
 }: ThreadStickyComposerProps) {
     const { t } = useTranslation();
     const aui = useAui();
+    const text = useComposerStore((state) => state.text);
+    const setText = useComposerStore((state) => state.setText);
+
+    // Auto-size reads the draft here, so a keystroke re-renders the composer
+    // alone instead of the whole shell.
+    useLayoutEffect(() => {
+        const textarea = composerRef.current;
+        if (!textarea) {
+            return;
+        }
+        textarea.style.height = "0px";
+        textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+    }, [composerRef, text]);
 
     const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
         const imageFiles = Array.from(event.clipboardData.items)
@@ -94,16 +108,14 @@ export function ThreadStickyComposer({
                         onRemoveProject={contextBar.onRemoveProject}
                     />
                     <textarea
-                        ref={composer.ref}
-                        value={composer.text}
+                        ref={composerRef}
+                        value={text}
                         rows={1}
                         readOnly={composer.isRunning}
                         placeholder={t("composer.sendMessage")}
                         aria-label={t("composer.messageInput")}
                         className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1 py-1 text-sm outline-none placeholder:text-muted-foreground/80 readOnly:cursor-default readOnly:opacity-60"
-                        onChange={(event) =>
-                            composer.onChange(event.target.value)
-                        }
+                        onChange={(event) => setText(event.target.value)}
                         onKeyDown={composer.onKeyDown}
                         onPaste={handlePaste}
                     />
@@ -135,7 +147,7 @@ export function ThreadStickyComposer({
                                     type="button"
                                     size="icon"
                                     className="rounded-full transition-colors hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
-                                    disabled={composer.text.trim().length === 0}
+                                    disabled={text.trim().length === 0}
                                     onMouseDown={(event) =>
                                         event.preventDefault()
                                     }

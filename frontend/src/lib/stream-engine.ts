@@ -78,7 +78,10 @@ export interface StreamEngineDeps {
     setCurrentThreadId: (threadId: string) => void;
     setThreads: (updater: ThreadsUpdater) => void;
     runTransition: (fn: () => void) => void;
-    reasoning: { setCompacting: (compacting: boolean) => void };
+    reasoning: {
+        setCompacting: (compacting: boolean) => void;
+        appendCompactionDelta: (delta: string) => void;
+    };
     approval: {
         setPendingForSession: (
             sessionId: string,
@@ -202,6 +205,8 @@ const TERMINAL_HANDLERS: Record<
     "data-nova-session": handleSessionHandoff,
     "data-nova-compaction-start": (_event, _env, deps) =>
         deps.reasoning.setCompacting(true),
+    "data-nova-compaction-delta": (event, _env, deps) =>
+        deps.reasoning.appendCompactionDelta(String(event.data?.delta || "")),
     "data-nova-compaction-end": (_event, _env, deps) =>
         deps.reasoning.setCompacting(false),
     "data-nova-heartbeat": () => {},

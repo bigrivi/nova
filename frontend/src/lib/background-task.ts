@@ -51,3 +51,18 @@ export function readBackgroundTaskEnvelope(
 ): BackgroundTaskReference | null {
     return readTaskEnvelope(result);
 }
+
+const LIVE_TASK_STATUSES = new Set(["queued", "running"]);
+
+/**
+ * Whether any task still needs watching.
+ *
+ * Only queued/running tasks qualify. Terminal tasks stay queryable for a while
+ * (retention), so counting them would keep a poller alive for no reason.
+ *
+ * @param tasks Task records as returned by ``GET /api/tasks``
+ * @returns True while at least one task has not finished
+ */
+export function hasLiveTasks(tasks: readonly { status: string }[]): boolean {
+    return tasks.some((task) => LIVE_TASK_STATUSES.has(task.status));
+}

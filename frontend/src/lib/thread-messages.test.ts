@@ -72,11 +72,9 @@ describe("createOptimisticSessionTitle", () => {
         );
     });
 
-    it("truncates long prompts to 47 chars plus ellipsis", () => {
+    it("keeps long prompts intact so hover can reveal them", () => {
         const long = "a".repeat(80);
-        const title = createOptimisticSessionTitle(long);
-        expect(title).toBe(`${"a".repeat(47)}...`);
-        expect(title).toHaveLength(50);
+        expect(createOptimisticSessionTitle(long)).toBe(long);
     });
 
     it("falls back to a non-empty default for blank prompts", () => {

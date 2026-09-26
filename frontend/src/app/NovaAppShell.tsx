@@ -6,7 +6,6 @@ import { agentDisplayName } from "../lib/agent-display";
 import { NovaMainPanel } from "./components/NovaMainPanel";
 import { NovaSidebarPanel } from "./components/NovaSidebarPanel";
 import { useAgentSelection } from "./hooks/useAgentSelection";
-import { useBackgroundTasks } from "./hooks/useBackgroundTasks";
 import { useBootstrap } from "./hooks/useBootstrap";
 import { useConversations } from "./hooks/useConversations";
 import { useModelConfig } from "./hooks/useModelConfig";
@@ -25,7 +24,6 @@ export function NovaAppShell() {
         selectedAgentKey: agentSelection.selectedAgentKey,
         syncAgentForThread: agentSelection.syncAgentForThread,
     });
-    useBackgroundTasks(conversations.currentThreadId, conversations.isRunning);
 
     const projects = useProjects(conversations.setThreads);
 
@@ -45,7 +43,6 @@ export function NovaAppShell() {
         currentThreadId: conversations.currentThreadId,
         threads: conversations.threads,
         activeThreadListId: conversations.activeThreadListId,
-        composerText: conversations.composerText,
         setThreadMessages: conversations.setThreadMessages,
         submitPrompt: conversations.submitPrompt,
         handleCancel: conversations.handleCancel,
@@ -100,8 +97,10 @@ export function NovaAppShell() {
                         }}
                         onNewThreadInProject={(projectId) => {
                             conversations.handleNewThreadInProject(projectId);
-                            viewport.collapseSidebarOnNarrowViewport();
                         }}
+                        onCollapseOnNarrowViewport={() =>
+                            viewport.collapseSidebarOnNarrowViewport()
+                        }
                         onCreateProject={projects.handleCreateProject}
                         onRenameProject={projects.handleRenameProject}
                         onDeleteProject={projects.handleDeleteProject}
@@ -127,9 +126,7 @@ export function NovaAppShell() {
                             viewport.setIsSidebarCollapsed(false)
                         }
                         composerRef={conversations.composerRef}
-                        composerText={conversations.composerText}
                         isRunning={conversations.isRunning}
-                        onComposerChange={conversations.setComposerText}
                         onComposerSubmit={() => {
                             void handleComposerSubmit();
                         }}

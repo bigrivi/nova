@@ -39,3 +39,24 @@ export function upsertThread(
     const filtered = threads.filter((thread) => thread.id !== nextThread.id);
     return [nextThread, ...filtered];
 }
+
+/**
+ * Replace a thread's title in place, leaving list order untouched. Used when
+ * the backend regenerates a title after the fact: reordering the sidebar for a
+ * label change would make the row jump under the user's cursor.
+ */
+export function renameThreadTitle(
+    threads: NovaThreadSummary[],
+    threadId: string,
+    title: string,
+): NovaThreadSummary[] {
+    let changed = false;
+    const next = threads.map((thread) => {
+        if (thread.id !== threadId || thread.title === title) {
+            return thread;
+        }
+        changed = true;
+        return { ...thread, title };
+    });
+    return changed ? next : threads;
+}

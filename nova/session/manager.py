@@ -13,6 +13,18 @@ from nova.llm import Message as LLMMessage
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.session.protocol import SessionProtocol
 
+def default_session_title(user_message: str | None = None) -> str:
+    """Derive a session's starting title from its first user message.
+
+    The title is written synchronously at creation so a session is always
+    named, even if the background rewrite never runs. It is never truncated:
+    the sidebar reveals the full text on hover instead of hiding it.
+    """
+    if user_message:
+        return user_message.strip()
+    return "New Session"
+
+
 @dataclass
 class SessionContext:
     id: str
@@ -101,12 +113,7 @@ class SessionManager(SessionProtocol):
 
     def _generate_title(self, user_message: str = None) -> str:
         """Generate a session title from the user's message."""
-        if user_message:
-            msg = user_message.strip()
-            if len(msg) > 50:
-                msg = msg[:47] + "..."
-            return msg
-        return "New Session"
+        return default_session_title(user_message)
 
     async def update_session_title(self, session_id: str, title: str) -> None:
         """Update the session title."""
@@ -114,6 +121,36 @@ class SessionManager(SessionProtocol):
         if session and session.id == session_id:
             session.title = title
             await self.save_session(session)
+
+    async def apply_generated_title(
+        self, session_id: str, title: str, expected_title: str
+    ) -> bool:
+        """Store a background-generated title unless the user renamed first.
+
+        Args:
+            session_id: Session the title belongs to.
+            title: The freshly generated title.
+            expected_title: The auto-derived title the session was created
+                with. The write only lands while the stored title still equals
+                it, so a user rename always wins.
+
+        Returns:
+            True when the title was written, False when the user had already
+            renamed the session or it no longer exists.
+        """
+        async with self._lock:
+            data_source = await self._get_data_source()
+            updated = await data_source.update_session_title_if_matches(
+                session_id, title, expected_title
+            )
+        if not updated:
+            return False
+        # Keep the cached context in step, otherwise a later save_session of
+        # this context would write the stale title back.
+        session = self.get_current_session()
+        if session and session.id == session_id:
+            session.title = title
+        return True
 
     async def save_session(self, session: SessionContext) -> None:
         async with self._lock:

@@ -5,9 +5,10 @@ Compaction Module Tests using pytest
 import pytest
 import asyncio
 import contextlib
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from nova.agent.compaction import (
+    estimate_context_tokens,
     estimate_tokens,
     snip_old_tool_results,
     find_split_point,
@@ -394,8 +395,14 @@ async def test_compact_orphaned_tool_response_is_also_compacted():
         # Force split at 2: compact [0,1], keep [2,3]
         # [1] = assistant with call_orphan is compacted → [2] should also be compacted
         with patch("nova.agent.compaction.find_split_point", return_value=2):
-            mock_llm = AsyncMock()
-            mock_llm.chat.return_value = MagicMock(content="Summary of conversation")
+
+            async def fake_chat_stream(**_kwargs):
+                from nova.llm.provider import Done
+
+                yield Done(content="Summary of conversation")
+
+            mock_llm = MagicMock()
+            mock_llm.chat_stream = fake_chat_stream
 
             await compact(session_id, db, mock_llm, "gpt-4o")
 
@@ -429,15 +436,18 @@ class StubSummaryProvider:
         self._fail = fail
         self.calls = 0
 
-    async def chat(self, messages, model="m", stream=False, tools=None, **kwargs):
+    async def chat_stream(self, messages, model="m", tools=None, **kwargs):
+        from nova.llm.provider import Done, TextDelta
+
         self.calls += 1
         if self._fail:
             raise RuntimeError("summarizer unavailable")
-        from nova.llm.provider import Done
-        return Done(content=self._summary)
-
-    async def chat_stream(self, messages, model="m", tools=None, **kwargs):
-        raise NotImplementedError
+        # Two chunks so the caller's accumulation is exercised, then the
+        # terminal event a real provider would send.
+        midpoint = len(self._summary) // 2
+        yield TextDelta(content=self._summary[:midpoint])
+        yield TextDelta(content=self._summary[midpoint:])
+        yield Done(content=self._summary)
 
     async def count_tokens(self, text: str, model: str = None) -> int:
         return len(text)
@@ -456,6 +466,155 @@ async def _seed_compactable_session(db, session_id: str):
     await db.add_message(session_id, "assistant", "first answer " + "y" * 4000)
     await db.add_message(session_id, "user", "second question")
     await db.add_message(session_id, "assistant", "second answer")
+
+
+@pytest.mark.asyncio
+async def test_summary_failure_never_poisons_the_context():
+    """A provider error aborts compaction; the error text must not be stored.
+
+    The provider's message is non-empty, so the caller's "empty summary" guard
+    only holds if generation returns "" rather than the error string — which is
+    what the old ``str(response)`` fallback used to leak into the session.
+    """
+    from nova.agent.compaction import compact
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.config import DatabaseConfig
+
+    class ErroringProvider(StubSummaryProvider):
+        async def chat_stream(self, messages, model="m", tools=None, **kwargs):
+            from nova.llm.provider import Error
+
+            yield Error(message="HTTP 403: request rejected by gateway")
+
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
+    await db.connect()
+    try:
+        session_id = "poison-check"
+        await _seed_compactable_session(db, session_id)
+        messages = await db.get_messages(session_id)
+
+        compacted = await compact(
+            session_id,
+            db,
+            ErroringProvider(),
+            "gpt-4o",
+            messages=messages,
+            split_index=2,
+        )
+
+        assert compacted is False
+        active = await db.get_messages(session_id)
+        assert not any(m.summary == 1 for m in active)
+        assert not any("403" in (m.content or "") for m in active)
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_summary_streams_to_the_caller():
+    """The summary is streamed so the UI can show it while it is written."""
+    from nova.agent.compaction import compact
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.config import DatabaseConfig
+
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
+    await db.connect()
+    chunks: list[str] = []
+    try:
+        session_id = "stream-check"
+        await _seed_compactable_session(db, session_id)
+        messages = await db.get_messages(session_id)
+
+        compacted = await compact(
+            session_id,
+            db,
+            StubSummaryProvider("folded history"),
+            "gpt-4o",
+            messages=messages,
+            split_index=2,
+            on_delta=chunks.append,
+        )
+
+        assert compacted is True
+        assert "".join(chunks) == "folded history"
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_summary_is_placed_at_the_compaction_boundary():
+    """The summary stands in for the history it replaces, so it leads.
+
+    Stamping it at insertion time put it after the kept messages, inverting the
+    prompt's chronology, and left it outside the next split so a second summary
+    piled up beside it. Session updated_at must still track insertion order.
+    """
+    from nova.agent.compaction import compact
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.config import DatabaseConfig
+
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
+    await db.connect()
+    try:
+        session_id = "boundary-check"
+        await _seed_compactable_session(db, session_id)
+        before = (await db.get_session(session_id))["updated_at"]
+
+        assert await compact(
+            session_id, db, StubSummaryProvider("folded"), "gpt-4o", split_index=2
+        ) is True
+
+        live = await db.get_messages(session_id)
+        summaries = [m for m in live if m.summary == 1]
+        assert len(summaries) == 1
+        assert live[0].summary == 1, "the summary must lead the loaded history"
+        assert live[0].time_created < live[1].time_created
+
+        after = (await db.get_session(session_id))["updated_at"]
+        assert after >= before, "the session must not move backwards in the sidebar"
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_second_compaction_folds_the_previous_summary():
+    """Exactly one summary survives, because the next split includes it."""
+    from nova.agent.compaction import compact
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.config import DatabaseConfig
+
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
+    await db.connect()
+    try:
+        session_id = "fold-check"
+        await _seed_compactable_session(db, session_id)
+        assert await compact(
+            session_id, db, StubSummaryProvider("first"), "gpt-4o", split_index=2
+        ) is True
+
+        await db.add_message(session_id, "user", "next question " + "z" * 4000)
+        await db.add_message(session_id, "assistant", "next answer " + "w" * 4000)
+
+        live = await db.get_messages(session_id)
+        split = find_split_point(live, keep_ratio=0.3)
+        assert split > 0
+        assert any(m.summary == 1 for m in live[:split]), (
+            "the previous summary must fall inside the portion being folded in")
+
+        assert await compact(
+            session_id,
+            db,
+            StubSummaryProvider("second"),
+            "gpt-4o",
+            messages=live,
+            split_index=split,
+        ) is True
+
+        final = await db.get_messages(session_id)
+        assert len([m for m in final if m.summary == 1]) == 1
+        assert final[0].summary == 1
+    finally:
+        await db.close()
 
 
 @pytest.mark.asyncio
@@ -482,6 +641,75 @@ async def test_compact_writes_summary_and_marks_old_messages():
 
         session = await db.get_session(session_id)
         assert session["compacted_at"] is not None
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_context_frames_drop_across_a_compaction(monkeypatch):
+    """The reported context must fall when compaction rewrites the history.
+
+    The stale-anchor bug made both frames report the same number: the
+    pre-compaction tokens_input was still accepted after the compaction, so the
+    post-compaction frame re-used it and the bar never moved.
+    """
+    from nova.agent.compaction import CompactionController
+    from nova.agent.events import AgentEvent
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.config import DatabaseConfig
+    from nova.session.manager import SessionContext
+
+    monkeypatch.setattr(
+        "nova.agent.compaction.get_context_limit", lambda model, provider: 4_000
+    )
+
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
+    await db.connect()
+    try:
+        session_id = "context-frames"
+        session = SessionContext.create()
+        session.id = session_id
+        await db.save_session(session)
+
+        # A bulky history whose assistant turn carries a pre-compaction
+        # tokens_input, i.e. a usage figure that counts messages that are about
+        # to be removed.
+        for turn in range(4):
+            await db.add_message(session_id, "user", f"q{turn} " + "x" * 8_000)
+            await db.add_message(
+                session_id,
+                "assistant",
+                f"a{turn} " + "y" * 8_000,
+                tokens_input=200_000,
+                tokens_output=50,
+            )
+
+        live_session = await db.get_session(session_id)
+        messages = await db.get_messages(session_id)
+        controller = CompactionController(model="gpt-4o", provider="openai")
+
+        frames: list[dict] = []
+
+        async def emit(event, payload):
+            if event == AgentEvent.CONTEXT_UPDATE:
+                frames.append(payload)
+
+        result = controller.run_with_events(
+            messages=messages,
+            session=live_session,
+            db=db,
+            llm=StubSummaryProvider("folded"),
+            emit=emit,
+        )
+        async for _ in result:
+            pass
+
+        assert controller.compacted is True
+        assert len(frames) == 2, "expected a frame before and after the compaction"
+        before, after = frames
+        assert after["used"] < before["used"], (
+            f"context did not shrink: {before['used']} -> {after['used']}"
+        )
     finally:
         await db.close()
 
@@ -553,10 +781,94 @@ async def test_prepare_and_run_compaction_with_real_llm():
 
 
 class MockTimedMessage(MockMessage):
-    def __init__(self, id, role, content, tool_calls=None, tool_call_id=None, time_created=0):
+    def __init__(
+        self,
+        id,
+        role,
+        content,
+        tool_calls=None,
+        tool_call_id=None,
+        time_created=0,
+        summary=0,
+        tokens_input=0,
+        tokens_output=0,
+    ):
         super().__init__(id, role, content, tool_calls)
         self.tool_call_id = tool_call_id
         self.time_created = time_created
+        self.summary = summary
+        self.tokens_input = tokens_input
+        self.tokens_output = tokens_output
+
+
+class TestContextEstimateAnchor:
+    def test_stale_anchor_from_before_compaction_is_ignored(self):
+        """A pre-compaction tokens_input counts messages that were removed.
+
+        Anchoring on it made the reported context (and therefore the
+        compaction decision) stay at the pre-compaction size forever.
+        """
+        messages = [
+            MockTimedMessage("1", "user", "old", time_created=100),
+            MockTimedMessage(
+                "2", "assistant", "old reply", time_created=200, tokens_input=250000
+            ),
+            MockTimedMessage("3", "assistant", "summary", time_created=300, summary=1),
+            MockTimedMessage("4", "user", "new", time_created=400),
+        ]
+        assert estimate_context_tokens(messages, compacted_at=300) == estimate_tokens(
+            messages
+        )
+
+    def test_surviving_messages_older_than_compaction_are_not_anchors(self):
+        """The summary sits before the messages it replaced, so order cannot help.
+
+        Ordering made every kept message look "newer than the summary", which
+        handed the pre-compaction anchor straight back and left the reported size
+        unchanged across a compaction.
+        """
+        messages = [
+            MockTimedMessage("1", "assistant", "summary", time_created=100, summary=1),
+            MockTimedMessage("2", "user", "kept", time_created=200),
+            MockTimedMessage(
+                "3",
+                "assistant",
+                "kept reply",
+                time_created=300,
+                tokens_input=25000,
+                tokens_output=10,
+            ),
+            MockTimedMessage("4", "user", "new", time_created=400),
+        ]
+        assert estimate_context_tokens(messages, compacted_at=350) == estimate_tokens(
+            messages
+        )
+
+    def test_anchor_recorded_after_compaction_is_used(self):
+        messages = [
+            MockTimedMessage("1", "assistant", "summary", time_created=100, summary=1),
+            MockTimedMessage("2", "user", "new", time_created=200),
+            MockTimedMessage(
+                "3",
+                "assistant",
+                "reply",
+                time_created=300,
+                tokens_input=9000,
+                tokens_output=10,
+            ),
+        ]
+        value = estimate_context_tokens(messages, compacted_at=150)
+        assert value >= 9000
+        assert value < 20000
+
+    def test_anchor_is_used_when_no_compaction_has_run(self):
+        messages = [
+            MockTimedMessage("1", "user", "hi", time_created=100),
+            MockTimedMessage(
+                "2", "assistant", "reply", time_created=200, tokens_input=5000
+            ),
+        ]
+        assert estimate_context_tokens(messages) >= 5000
 
 
 class TestTokensSinceCompact:
@@ -654,7 +966,13 @@ class TestSplitPointPairing:
         assert recent[0].role == "user"
         assert recent
 
-    def test_trailing_tool_messages_do_not_empty_the_recent_portion(self):
+    def test_single_user_turn_can_still_be_compacted(self):
+        """One prompt followed by an agentic run has no user boundary to use.
+
+        Requiring a user boundary left every such session uncompactable however
+        large its context grew, so the split falls back to the assistant
+        boundary instead.
+        """
         from nova.agent.compaction import _retreat_to_safe_split
 
         history = [
@@ -665,7 +983,10 @@ class TestSplitPointPairing:
         ]
         for candidate in (2, 3, 4):
             split = _retreat_to_safe_split(history, candidate)
-            assert split == 0, "an unsplittable history must report 0, not consume everything"
+            assert split == 1, f"candidate {candidate} should split after the prompt"
+            recent = history[split:]
+            assert recent, "the recent portion must not be empty"
+            assert recent[0].role != "tool", "a tool response must not start it"
 
     def test_zero_split_is_untouched(self):
         from nova.agent.compaction import _retreat_to_safe_split
@@ -682,7 +1003,31 @@ class TestSplitPointPairing:
             MockTimedMessage("5", "assistant", "w" * 40),
         ]
         split = find_split_point(history, keep_ratio=0.3)
-        assert split == 0 or _get_role(history[split]) == "user"
+        # Safe means "not a tool response": a user boundary is preferred, but a
+        # single-user-turn history has none and must still be compactable.
+        assert split == 0 or _get_role(history[split]) != "tool"
+
+    def test_find_split_point_compacts_a_dominant_first_message(self):
+        """A first message that alone outweighs keep_ratio must still split.
+
+        The backward walk could only reach the target at index 0 there, which
+        reported "unsplittable" for the history that most needed compacting.
+        """
+        history = [
+            MockTimedMessage("1", "user", "x" * 40000),
+            MockTimedMessage("2", "user", "short"),
+            MockTimedMessage("3", "assistant", "short"),
+        ]
+        assert find_split_point(history, keep_ratio=0.3) == 1
+
+    def test_find_split_point_refuses_to_fold_summary_into_summary(self):
+        """Compacting only summaries frees no context and would repeat forever."""
+        history = [
+            MockTimedMessage("1", "assistant", "earlier summary", summary=1),
+            MockTimedMessage("2", "assistant", "", tool_calls=[{"id": "a"}]),
+            MockTimedMessage("3", "tool", "r", tool_call_id="a"),
+        ]
+        assert find_split_point(history, keep_ratio=0.3) == 0
 
 
 @pytest.mark.asyncio
@@ -888,10 +1233,16 @@ class TestCompactionSummaryContract:
             def __init__(self):
                 super().__init__("second-generation summary")
                 self.prompt = ""
+                self.system = ""
 
-            async def chat(self, messages, model="m", stream=False, tools=None, **kwargs):
-                self.prompt = messages[0]["content"]
-                return await super().chat(messages, model, stream, tools, **kwargs)
+            async def chat_stream(self, messages, model="m", tools=None, **kwargs):
+                # messages[0] is the system prompt; the transcript is the user turn.
+                self.system = messages[0].content
+                self.prompt = messages[1].content
+                async for event in super().chat_stream(
+                    messages, model, tools, **kwargs
+                ):
+                    yield event
 
         db = SqliteRepository(DatabaseConfig(path=":memory:"))
         await db.connect()
@@ -912,7 +1263,9 @@ class TestCompactionSummaryContract:
                           messages=messages, split_index=summary_index + 1)
 
             assert PREVIOUS_SUMMARY_ANCHOR in llm.prompt
-            assert "Do not call any tool" in llm.prompt
+            # The "never call a tool" instruction lives in the system prompt now,
+            # which is what shapes the request as an agent turn.
+            assert "Do not call any tool" in llm.system
         finally:
             await db.close()
 
@@ -1036,6 +1389,18 @@ class TestInLoopCompaction:
                 return Done(content="mid-request summary")
 
             async def chat_stream(self, messages, model="m", tools=None, **kwargs):
+                # The same method serves both turn calls and the compaction
+                # summary call; the summary is identified by its system prompt.
+                from nova.agent.compaction import SUMMARY_SYSTEM_PROMPT
+                from nova.llm.provider import TextDelta
+
+                if any(
+                    getattr(message, "content", None) == SUMMARY_SYSTEM_PROMPT
+                    for message in messages
+                ):
+                    self.summary_calls += 1
+                    yield TextDelta(content="mid-request summary")
+                    return
                 script = self._scripts[min(self._index, len(self._scripts) - 1)]
                 self._index += 1
                 for item in script:

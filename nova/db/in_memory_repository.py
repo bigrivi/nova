@@ -70,6 +70,15 @@ class InMemoryRepository(NovaRepository):
         session["title"] = title
         return True
 
+    async def update_session_title_if_matches(
+        self, session_id: str, title: str, expected_title: str
+    ) -> bool:
+        session = self._sessions.get(session_id)
+        if session is None or session.get("title") != expected_title:
+            return False
+        session["title"] = title
+        return True
+
     async def set_session_workspace(self, session_id: str, workspace_dir: str | None) -> bool:
         session = self._sessions.get(session_id)
         if session is None:
@@ -153,6 +162,8 @@ class InMemoryRepository(NovaRepository):
         return [dict(session) for session in sessions[:limit]]
 
     async def add_message(self, session_id: str, role: str, content: str, **kwargs: Any) -> Message:
+        now = int(time.time() * 1000)
+        stamp = kwargs.get("time_created")
         message = Message(
             id=str(uuid.uuid4()),
             session_id=session_id,
@@ -170,11 +181,15 @@ class InMemoryRepository(NovaRepository):
             model=kwargs.get("model"),
             tokens_input=kwargs.get("tokens_input"),
             tokens_output=kwargs.get("tokens_output"),
+            # A caller may place a row at an earlier point in time (compaction
+            # summaries do); updated_at below still tracks insertion order so
+            # sidebar ordering is unaffected.
+            time_created=now if stamp is None else stamp,
         )
         self._messages[message.id] = message
         session = self._sessions.get(session_id)
         if session:
-            session["updated_at"] = message.time_created
+            session["updated_at"] = now
             session["message_count"] += 1
         return message
 

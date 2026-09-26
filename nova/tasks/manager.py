@@ -95,6 +95,35 @@ class BackgroundTaskManager:
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._completion_events: dict[str, asyncio.Event] = {}
         self._semaphore = asyncio.Semaphore(self._max_concurrent)
+        self._listener: Callable[[TaskRecord], None] | None = None
+
+    def set_listener(self, listener: Callable[[TaskRecord], None] | None) -> None:
+        """Register a callback fired with a snapshot after every state change.
+
+        Used to push task updates onto the session event bus so clients never
+        have to poll. A raising listener is logged, not propagated: task
+        execution must not depend on the observer.
+        """
+        self._listener = listener
+
+    def _notify(self, record: TaskRecord) -> None:
+        listener = self._listener
+        if listener is None:
+            return
+        try:
+            listener(self._snapshot(record))
+        except Exception:
+            log.exception("Background task listener failed for %s", record.task_id)
+
+    def list_all(self) -> list[TaskRecord]:
+        """Every retained task snapshot, oldest first, for a client resync."""
+        self._evict_stale()
+        return [
+            self._snapshot(record)
+            for record in sorted(
+                self._records.values(), key=lambda item: item.created_at_ms
+            )
+        ]
 
     def register_executor(self, kind: str, executor: TaskExecutor) -> None:
         """Register or replace the executor used for a task kind.
@@ -171,6 +200,7 @@ class BackgroundTaskManager:
             name=f"background_task_{kind}_{record.task_id}",
         )
         self._tasks[record.task_id] = task
+        self._notify(record)
         return self._snapshot(record)
 
     def mark_background(self, task_id: str, session_id: str) -> TaskRecord | None:
@@ -187,6 +217,7 @@ class BackgroundTaskManager:
         if record is None:
             return None
         record.background = True
+        self._notify(record)
         return self._snapshot(record)
 
     def get(self, task_id: str, session_id: str) -> TaskRecord | None:
@@ -287,6 +318,7 @@ class BackgroundTaskManager:
                 record.status = "running"
                 record.started_at_ms = int(time.time() * 1000)
                 record.last_activity_at_ms = record.started_at_ms
+                self._notify(record)
                 context = _ExecutionContext(record, self._max_output_chars)
                 try:
                     result = await asyncio.wait_for(
@@ -323,6 +355,7 @@ class BackgroundTaskManager:
         completion_event = self._completion_events.get(record.task_id)
         if completion_event is not None:
             completion_event.set()
+        self._notify(record)
         self._evict_stale()
 
     def _owned_record(self, task_id: str, session_id: str) -> TaskRecord | None:

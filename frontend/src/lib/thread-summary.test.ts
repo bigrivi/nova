@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { NovaSessionSummary, NovaThreadSummary } from "../types/nova";
-import { toThreadSummary, toThreadTitle, upsertThread } from "./thread-summary";
+import {
+    renameThreadTitle,
+    toThreadSummary,
+    toThreadTitle,
+    upsertThread,
+} from "./thread-summary";
 
 function session(overrides: Partial<NovaSessionSummary> = {}): NovaSessionSummary {
     return {
@@ -73,6 +78,22 @@ describe("toThreadSummary", () => {
         expect(summary.pinned).toBe(false);
         expect(summary.project_id).toBeNull();
         expect(summary.agent_key).toBe("main");
+    });
+});
+
+describe("renameThreadTitle", () => {
+    it("renames in place without reordering the list", () => {
+        const threads = [thread("a"), thread("b"), thread("c")];
+        const next = renameThreadTitle(threads, "b", "New name");
+        expect(next.map((t) => t.id)).toEqual(["a", "b", "c"]);
+        expect(next[1].title).toBe("New name");
+        expect(threads[1].title).toBe("b");
+    });
+
+    it("returns the same array when nothing changes", () => {
+        const threads = [thread("a")];
+        expect(renameThreadTitle(threads, "a", "a")).toBe(threads);
+        expect(renameThreadTitle(threads, "missing", "x")).toBe(threads);
     });
 });
 

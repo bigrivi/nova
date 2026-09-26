@@ -57,19 +57,15 @@ export function createAssistantMessage(id?: string): ThreadMessageLike {
 }
 
 /**
- * Derive an optimistic session title from the first user message, truncating
- * long prompts and falling back to a localized default when empty.
+ * Derive an optimistic session title from the first user message, falling back
+ * to a localized default when empty. Never truncated: the sidebar scrolls the
+ * full title on hover rather than hiding the tail.
  */
 export function createOptimisticSessionTitle(userMessage: string): string {
     const title = userMessage.trim();
     if (!title) {
         return i18n.t("app.newSession");
     }
-
-    if (title.length > 50) {
-        return `${title.slice(0, 47)}...`;
-    }
-
     return title;
 }
 

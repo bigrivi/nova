@@ -23,6 +23,10 @@ class SessionProtocol(Protocol):
 
     async def load_session(self, session_id: str) -> Optional[SessionContext]: ...
 
+    async def apply_generated_title(
+        self, session_id: str, title: str, expected_title: str
+    ) -> bool: ...
+
     async def get_messages(
         self,
         session_id: Optional[str] = None,

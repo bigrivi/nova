@@ -8,8 +8,9 @@ from typing import Any, AsyncGenerator, Callable, Optional
 
 from nova.llm import LLMProvider, Message as LLMMessage
 from nova.session import get_session_manager
-from nova.session.manager import SessionContext
+from nova.session.manager import SessionContext, default_session_title
 from nova.session.protocol import SessionProtocol
+from nova.agent.title_generator import generate_session_title
 from nova.tools.registry import ToolRegistry, tool
 from nova.prompt import PromptBuilder, PromptConfig
 from nova.agent.compaction import CompactionController
@@ -47,7 +48,6 @@ class AgentConfig:
     max_tokens: int = 8192
     temperature: float = 0.7
     tools: Optional[list] = None
-    compress_threshold: int = 50
     memory_review_interval: int = 10
 
 
@@ -92,12 +92,14 @@ class Agent:
         allowed_tools: Optional[frozenset[str]] = None,
         prompt_config: Optional[PromptConfig] = None,
         data_source: Optional[DataSourceProtocol] = None,
+        on_title_updated: Optional[Callable[[str, str], None]] = None,
     ):
         self.config = config or AgentConfig()
         self.agent_key = agent_key
         self.llm = llm_provider
         self.session = session_manager or get_session_manager()
         self._data_source = data_source
+        self._on_title_updated = on_title_updated
         self.tool_registry = ToolRegistry()
         self._events = EventBus()
         self.parent_agent = parent_agent
@@ -405,7 +407,59 @@ class Agent:
         )
         current = self.session.get_current_session()
         log.info("[Session %s] Created", current.id if current else "?")
+        self._maybe_schedule_title_generation(current, user_input)
         return current
+
+    def _maybe_schedule_title_generation(
+        self, session: SessionContext, first_message: str
+    ) -> None:
+        """Kick off the background title rewrite for a brand new session.
+
+        The auto-derived title is already persisted, so this only improves it.
+        Sub-agents keep the default: their sessions are never surfaced.
+        """
+        if self.is_sub_agent or self._on_title_updated is None:
+            return
+        asyncio.create_task(
+            self._generate_title_in_background(session, first_message)
+        )
+
+    async def _generate_title_in_background(
+        self, session: SessionContext, first_message: str
+    ) -> None:
+        session_id = session.id
+        try:
+            tool_schemas = (
+                self.tool_registry.get_schema() if self.tool_registry.tools else None
+            )
+            title = await generate_session_title(
+                self.llm,
+                first_message,
+                self.config.model,
+                session.id,
+                tool_schemas,
+            )
+            if title is None:
+                return
+            applied = await self.session.apply_generated_title(
+                session_id,
+                title,
+                default_session_title(first_message),
+            )
+            if not applied:
+                log.info(
+                    "[Session %s] Title left alone; the user renamed it", session_id
+                )
+                return
+            log.info("[Session %s] Title regenerated: %r", session_id, title)
+            self._on_title_updated(session_id, title)
+        except Exception as exception:
+            # Defence in depth: the generator swallows its own failures, so
+            # reaching here means something unexpected. The default title
+            # stays regardless.
+            log.warning(
+                "[Session %s] Title generation task failed: %s", session_id, exception
+            )
 
     def _maybe_schedule_memory_review(self) -> None:
         if self.config.memory_review_interval <= 0:
@@ -473,7 +527,12 @@ class Agent:
             # result can be arbitrarily large, so a request that started well
             # inside the window can overrun it halfway through.
             async for event, data in self._compaction.run_with_events(
-                session_messages, current_session, data_source, self.llm, self._emit
+                session_messages,
+                current_session,
+                data_source,
+                self.llm,
+                self._emit,
+                tools=tool_schemas,
             ):
                 yield event, data
             if self._compaction.compacted:
@@ -597,6 +656,9 @@ class Agent:
             session=self.session,
             model=self.config.model,
             data_source=self._data_source,
+            tools=(
+                self.tool_registry.get_schema() if self.tool_registry.tools else None
+            ),
         ).run()
 
     def add_sub_agent(self, sub_agent: "Agent") -> None:

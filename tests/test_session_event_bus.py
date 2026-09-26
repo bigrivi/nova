@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 
 import pytest
 
@@ -24,7 +25,10 @@ def test_bus_dedups_repeated_state_and_tracks_snapshot() -> None:
     events = []
     while not queue.empty():
         events.append(queue.get_nowait())
-    assert events == [("s1", "active"), ("s2", "active")]
+    assert events == [
+        {"type": "state", "session_id": "s1", "state": "active"},
+        {"type": "state", "session_id": "s2", "state": "active"},
+    ]
 
 
 def test_bus_idle_removes_and_broadcasts() -> None:
@@ -37,7 +41,48 @@ def test_bus_idle_removes_and_broadcasts() -> None:
     drained = []
     while not queue.empty():
         drained.append(queue.get_nowait())
-    assert drained == [("s1", "active"), ("s1", "idle")]
+    assert drained == [
+        {"type": "state", "session_id": "s1", "state": "active"},
+        {"type": "state", "session_id": "s1", "state": "idle"},
+    ]
+
+
+def test_bus_title_event_is_not_folded_into_state_dedupe() -> None:
+    bus = SessionEventBus()
+    queue = bus.subscribe()
+
+    # Idle session: the title must still be delivered, unlike a state event.
+    bus.publish("s1", "idle")
+    bus.publish_title("s1", "A tidy title")
+
+    events = []
+    while not queue.empty():
+        events.append(queue.get_nowait())
+    assert events == [
+        {"type": "title", "session_id": "s1", "title": "A tidy title"}
+    ]
+    # The one-shot title event leaves the active set untouched.
+    assert bus.snapshot() == []
+
+
+def test_bus_task_event_is_not_folded_into_state_dedupe() -> None:
+    bus = SessionEventBus()
+    queue = bus.subscribe()
+
+    # Idle session: task updates must still arrive, unlike a state event.
+    bus.publish("s1", "idle")
+    bus.publish_task({"task_id": "t1", "session_id": "s1", "status": "running"})
+
+    events = []
+    while not queue.empty():
+        events.append(queue.get_nowait())
+    assert events == [
+        {
+            "type": "task",
+            "task": {"task_id": "t1", "session_id": "s1", "status": "running"},
+        }
+    ]
+    assert bus.snapshot() == []
 
 
 def test_bus_fans_out_to_multiple_subscribers() -> None:
@@ -46,13 +91,13 @@ def test_bus_fans_out_to_multiple_subscribers() -> None:
     q2 = bus.subscribe()
     bus.publish("s1", "active")
 
-    assert q1.get_nowait() == ("s1", "active")
-    assert q2.get_nowait() == ("s1", "active")
+    assert q1.get_nowait() == {"type": "state", "session_id": "s1", "state": "active"}
+    assert q2.get_nowait() == {"type": "state", "session_id": "s1", "state": "active"}
 
     bus.unsubscribe(q1)
     bus.publish("s2", "active")
     assert q1.empty()
-    assert q2.get_nowait() == ("s2", "active")
+    assert q2.get_nowait() == {"type": "state", "session_id": "s2", "state": "active"}
 
 
 @pytest.mark.asyncio
@@ -94,8 +139,51 @@ async def test_bus_reflects_registry_transitions_end_to_end() -> None:
     events = []
     while not queue.empty():
         events.append(queue.get_nowait())
-    assert ("s1", "active") in events
-    assert ("s1", "idle") in events
+    assert {"type": "state", "session_id": "s1", "state": "active"} in events
+    assert {"type": "state", "session_id": "s1", "state": "idle"} in events
+
+
+@pytest.mark.asyncio
+async def test_bus_reflects_task_transitions_end_to_end() -> None:
+    """Task lifecycle reaches subscribers, so clients never poll /api/tasks."""
+    from nova.tasks.manager import (
+        BackgroundTaskManager,
+        TaskExecutionContext,
+        TaskExecutionResult,
+    )
+
+    manager = BackgroundTaskManager()
+    bus = SessionEventBus()
+    manager.set_listener(
+        lambda record: bus.publish_task(record.to_dict(include_output=False))
+    )
+    queue = bus.subscribe()
+
+    async def executor(
+        arguments: Mapping[str, object], context: TaskExecutionContext
+    ) -> TaskExecutionResult:
+        return TaskExecutionResult(success=True, result="ok", exit_code=0)
+
+    manager.register_executor("example", executor)
+    task = manager.submit(
+        "example",
+        {},
+        session_id="s1",
+        label="Example task",
+        timeout_seconds=5,
+        background=True,
+    )
+    await manager.wait(task.task_id, "s1", timeout=5)
+
+    events = []
+    while not queue.empty():
+        events.append(queue.get_nowait())
+    assert all(event["type"] == "task" for event in events)
+    assert all(event["task"]["task_id"] == task.task_id for event in events)
+    statuses = [event["task"]["status"] for event in events]
+    assert statuses[0] == "queued"
+    assert "running" in statuses
+    assert statuses[-1] == "succeeded"
 
 
 def test_close_all_wakes_subscribers_with_sentinel() -> None:
@@ -106,16 +194,58 @@ def test_close_all_wakes_subscribers_with_sentinel() -> None:
 
     bus.close_all()
 
-    assert q1.get_nowait() == ("s1", "active")
+    assert q1.get_nowait() == {"type": "state", "session_id": "s1", "state": "active"}
     assert q1.get_nowait() is None
-    assert q2.get_nowait() == ("s1", "active")
+    assert q2.get_nowait() == {"type": "state", "session_id": "s1", "state": "active"}
     assert q2.get_nowait() is None
     assert bus.subscriber_count() == 0
 
     # Bus stays usable after close (fresh subscribe for a restarted server).
     q3 = bus.subscribe()
     bus.publish("s2", "active")
-    assert q3.get_nowait() == ("s2", "active")
+    assert q3.get_nowait() == {"type": "state", "session_id": "s2", "state": "active"}
+
+
+@pytest.mark.asyncio
+async def test_create_app_pushes_task_updates_onto_the_event_bus(
+    monkeypatch, tmp_path
+) -> None:
+    """The app must wire task lifecycle to the bus, else clients would poll."""
+    from nova.server import create_app
+    from nova.settings import get_settings
+    from nova.tasks.manager import TaskExecutionContext, TaskExecutionResult
+
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    app = create_app(settings=get_settings())
+    manager = app.state.background_task_manager
+    queue = app.state.session_event_bus.subscribe()
+
+    async def executor(
+        arguments: Mapping[str, object], context: TaskExecutionContext
+    ) -> TaskExecutionResult:
+        return TaskExecutionResult(success=True, result="ok", exit_code=0)
+
+    manager.register_executor("wiring-check", executor)
+    task = manager.submit(
+        "wiring-check",
+        {},
+        session_id="wired-session",
+        label="Wiring check",
+        timeout_seconds=5,
+        background=True,
+    )
+    await manager.wait(task.task_id, "wired-session", timeout=5)
+
+    frames = []
+    while not queue.empty():
+        frames.append(queue.get_nowait())
+    mine = [frame for frame in frames if frame["task"]["task_id"] == task.task_id]
+    assert mine, "no task frame reached the event bus"
+    assert all(frame["type"] == "task" for frame in mine)
+    assert mine[-1]["task"]["status"] == "succeeded"
+    # The frame must not carry the bounded output tail: it is broadcast to
+    # every client, and the tail can be tens of kilobytes.
+    assert "output_tail" not in mine[-1]["task"]
 
 
 def test_events_ping_interval_bounds_shutdown_latency() -> None:

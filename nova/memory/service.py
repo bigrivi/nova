@@ -11,6 +11,7 @@ import json
 from typing import Awaitable, Callable, Optional
 
 from nova.llm import Message as LLMMessage
+from nova.llm.oneshot import stream_text_once
 from nova.memory.models import (
     MemoryRecord,
     MemorySearchFilters,
@@ -304,12 +305,15 @@ class MemoryService:
         if not messages:
             return []
 
-        result = await llm.chat(
+        text = await stream_text_once(
+            llm,
             messages=messages,
             model=model,
-            tools=[],
+            label="Memory selection",
         )
-        selected_indices = self._parse_ai_indices(result.content)
+        if text is None:
+            return []
+        selected_indices = self._parse_ai_indices(text)
         selected: list[MemoryRecord] = []
         for idx in selected_indices:
             if 0 <= idx < len(candidates):

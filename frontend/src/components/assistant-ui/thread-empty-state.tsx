@@ -10,6 +10,7 @@ const GREETING_KEYS = [
     "app.welcomeGreeting6",
     "app.welcomeGreeting7",
     "app.welcomeGreeting8",
+    "app.welcomeGreeting9",
 ] as const;
 
 const Welcome: FC = () => {
@@ -26,7 +27,7 @@ const Welcome: FC = () => {
 };
 
 export const EmptyState: FC<{ children: ReactNode }> = ({ children }) => (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 md:px-4">
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-9 max-md:px-6">
         <div className="flex w-full max-w-(--thread-max-width) flex-col items-stretch">
             <Welcome />
             {children}

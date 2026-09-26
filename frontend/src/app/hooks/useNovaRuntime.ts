@@ -9,6 +9,7 @@ import {
 } from "@assistant-ui/react";
 
 import { toolkit } from "../../components/assistant-ui/toolkit";
+import { useComposerStore } from "../../stores/composer-store";
 import type { NovaAttachmentData, NovaThreadSummary } from "../../types/nova";
 
 export interface NovaRuntimeDeps {
@@ -17,7 +18,6 @@ export interface NovaRuntimeDeps {
     currentThreadId: string;
     threads: NovaThreadSummary[];
     activeThreadListId: string | undefined;
-    composerText: string;
     setThreadMessages: (threadId: string, messages: ThreadMessageLike[]) => void;
     submitPrompt: (
         prompt: string,
@@ -71,7 +71,7 @@ export function useNovaRuntime(deps: NovaRuntimeDeps) {
     const aui = useAui({ tools: Tools({ toolkit }) });
 
     async function handleComposerSubmit() {
-        const prompt = deps.composerText.trim();
+        const prompt = useComposerStore.getState().text.trim();
         if (!prompt || deps.isRunning) {
             return;
         }

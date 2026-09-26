@@ -267,6 +267,7 @@ class SqliteRepository(NovaRepository):
         await self._backfill_projects()
         await self._normalize_session_workspaces()
         await self._backfill_agent_modes()
+        await self._backfill_summary_positions()
 
     async def _migrate_memory_owner_index(self) -> None:
         """Replace the legacy memory uniqueness index with the owner-aware one.
@@ -415,6 +416,65 @@ class SqliteRepository(NovaRepository):
         except Exception as exception:
             log.error("Could not backfill agent modes: %s", exception)
 
+    async def _backfill_summary_positions(self) -> None:
+        """One-shot: move compaction summaries to the position they describe.
+
+        Summaries used to be stamped at insertion time, which filed them behind
+        the messages they summarise. That inverted the prompt's chronology, and
+        left the next split short of the summary so it survived as a second,
+        overlapping summary instead of being folded into the new one. Summaries
+        are now stamped at the compaction boundary; rows written before that keep
+        the old stamp until this runs. Only the summary rows move - session
+        updated_at is untouched, so sidebar ordering does not shift.
+        """
+        marker = "summary_position_backfill"
+        try:
+            cursor = await self._conn.execute(
+                "SELECT 1 FROM schema_migrations WHERE name = ?", (marker,)
+            )
+            if await cursor.fetchone():
+                return
+            cursor = await self._conn.execute(
+                """SELECT session_id, id, time_created FROM messages
+                   WHERE COALESCE(summary, 0) = 1 AND COALESCE(compacted, 0) = 0
+                   ORDER BY time_created"""
+            )
+            summaries_by_session: dict[str, list[tuple[str, int]]] = {}
+            for session_id, message_id, time_created in await cursor.fetchall():
+                summaries_by_session.setdefault(session_id, []).append(
+                    (message_id, time_created)
+                )
+            for session_id, summaries in summaries_by_session.items():
+                # Several summaries can share a boundary after repeated
+                # compactions, so they are stepped apart to keep the order in
+                # which they were written.
+                trailing = len(summaries)
+                for message_id, time_created in summaries:
+                    cursor = await self._conn.execute(
+                        """SELECT MIN(time_created) FROM messages
+                           WHERE session_id = ? AND COALESCE(summary, 0) = 0
+                             AND COALESCE(compacted, 0) = 0 AND time_created < ?""",
+                        (session_id, time_created),
+                    )
+                    row = await cursor.fetchone()
+                    oldest_kept = row[0] if row else None
+                    trailing -= 1
+                    if oldest_kept is None:
+                        continue
+                    stamp = oldest_kept - 1 - trailing
+                    if stamp >= time_created:
+                        continue
+                    await self._conn.execute(
+                        "UPDATE messages SET time_created = ? WHERE id = ?",
+                        (stamp, message_id),
+                    )
+            await self._conn.execute(
+                "INSERT OR REPLACE INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+                (marker, int(time.time() * 1000)),
+            )
+        except Exception as exception:
+            log.error("Could not backfill summary positions: %s", exception)
+
     async def close(self) -> None:
         if self._conn:
             await self._conn.close()
@@ -484,6 +544,23 @@ class SqliteRepository(NovaRepository):
             cursor = await self._conn.execute(
                 "UPDATE sessions SET title = ? WHERE id = ?",
                 (title, session_id),
+            )
+            await self._conn.commit()
+            return cursor.rowcount > 0
+
+    async def update_session_title_if_matches(
+        self, session_id: str, title: str, expected_title: str
+    ) -> bool:
+        """Replace a session title only while it still equals expected_title.
+
+        The comparison lives in the UPDATE so a concurrent user rename can
+        never be clobbered by a background title rewrite.
+        """
+        await self._ensure_connected()
+        async with self._lock:
+            cursor = await self._conn.execute(
+                "UPDATE sessions SET title = ? WHERE id = ? AND title = ?",
+                (title, session_id, expected_title),
             )
             await self._conn.commit()
             return cursor.rowcount > 0
@@ -633,10 +710,18 @@ class SqliteRepository(NovaRepository):
         model: Optional[str] = None,
         error: Optional[str] = None,
         variant: Optional[str] = None,
+        time_created: Optional[int] = None,
     ) -> Message:
         await self._ensure_connected()
         msg_id = str(uuid.uuid4())
         now = int(time.time() * 1000)
+        # A summary row describes the history it replaces, so it is stamped at
+        # that position instead of at insertion time. That keeps the prompt in
+        # chronological order and lets the next compaction fold the summary in
+        # rather than keeping it alongside a freshly written one. The session's
+        # updated_at deliberately stays at `now`, so sidebar ordering does not
+        # move backwards.
+        stamp = now if time_created is None else time_created
 
         images_json = json.dumps(images) if images else None
         provider_meta_json = json.dumps(provider_meta, ensure_ascii=False) if provider_meta else None
@@ -654,7 +739,7 @@ class SqliteRepository(NovaRepository):
                     None,
                     _serialize_tool_calls(tool_calls),
                     tool_call_id,
-                    now,
+                    stamp,
                     1 if summary else 0,
                     images_json,
                     reasoning_content,
@@ -681,7 +766,7 @@ class SqliteRepository(NovaRepository):
             content=content,
             tool_calls=tool_calls,
             tool_call_id=tool_call_id,
-            time_created=now,
+            time_created=stamp,
             summary=1 if summary else 0,
             reasoning_content=reasoning_content,
             group_id=group_id,

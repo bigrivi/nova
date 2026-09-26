@@ -1,9 +1,27 @@
 import { describe, expect, it } from "vitest";
 
 import {
+    hasLiveTasks,
     readBackgroundTaskEnvelope,
     readBackgroundTaskReference,
 } from "./background-task";
+
+describe("hasLiveTasks", () => {
+    it("counts queued and running tasks as live", () => {
+        expect(hasLiveTasks([{ status: "queued" }])).toBe(true);
+        expect(hasLiveTasks([{ status: "running" }])).toBe(true);
+        expect(
+            hasLiveTasks([{ status: "completed" }, { status: "running" }]),
+        ).toBe(true);
+    });
+
+    it("does not count finished, failed or cancelled tasks", () => {
+        expect(hasLiveTasks([])).toBe(false);
+        expect(hasLiveTasks([{ status: "completed" }])).toBe(false);
+        expect(hasLiveTasks([{ status: "failed" }])).toBe(false);
+        expect(hasLiveTasks([{ status: "cancelled" }])).toBe(false);
+    });
+});
 
 describe("background task result parsing", () => {
     it("recognizes an explicit background tool argument before it returns", () => {

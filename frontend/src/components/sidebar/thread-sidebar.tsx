@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import {
     Fragment,
+    memo,
+    useCallback,
     useEffect,
     useMemo,
     useRef,
@@ -44,35 +46,49 @@ import {
     type SidebarProject,
 } from "./sidebar-model";
 import { HighlightedText } from "./highlight-text";
+import { HoverScrollText } from "./hover-scroll-text";
 import { DeleteThreadDialog } from "./delete-thread-dialog";
 import { DeleteProjectDialog } from "./delete-project-dialog";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { MoveToProjectFlyout } from "./move-to-project-flyout";
 
-type ThreadSidebarProps = {
+/**
+ * Everything the sidebar can ask the shell to do, in one identity-stable object.
+ * The shell rebuilds its handlers on every render (including once per streamed
+ * token), so passing them down as individual props would defeat the memoisation
+ * that keeps a re-render off the session list.
+ */
+export type SidebarDispatch = {
+    collapseSidebar: () => void;
+    collapseSidebarOnNarrowViewport: () => void;
+    newThread: () => void;
+    selectThread: (threadId: string) => void;
+    renameThread: (threadId: string, title: string) => Promise<void> | void;
+    pinThread: (threadId: string, pinned: boolean) => Promise<void> | void;
+    moveThread: (
+        threadId: string,
+        projectId: string | null,
+    ) => Promise<void> | void;
+    deleteThread: (
+        threadId: string,
+        nextThreadId: string | null,
+    ) => Promise<void> | void;
+    createProject: (
+        name: string,
+        path?: string | null,
+    ) => Promise<NovaProject | null>;
+    newThreadInProject: (projectId: string) => void;
+    renameProject: (projectId: string, name: string) => Promise<void> | void;
+    deleteProject: (projectId: string) => Promise<void> | void;
+    openSettings: () => void;
+};
+
+export type ThreadSidebarProps = {
     threads: NovaThreadSummary[];
     projects: NovaProject[];
     activeThreadId?: string;
     runningThreadId?: string;
-    disabled: boolean;
-    onCollapse: () => void;
-    onNewThread: () => void;
-    onNewThreadInProject: (projectId: string) => void;
-    onCreateProject: (name: string, path?: string | null) => Promise<NovaProject | null>;
-    onRenameProject: (projectId: string, name: string) => Promise<void> | void;
-    onDeleteProject: (projectId: string) => Promise<void> | void;
-    onSelectThread: (threadId: string) => void;
-    onRenameThread: (threadId: string, title: string) => Promise<void> | void;
-    onPinThread: (threadId: string, pinned: boolean) => Promise<void> | void;
-    onMoveThread: (
-        threadId: string,
-        projectId: string | null,
-    ) => Promise<void> | void;
-    onDeleteThread: (
-        threadId: string,
-        nextThreadId: string | null,
-    ) => Promise<void> | void;
-    onOpenSettings: () => void;
+    dispatch: SidebarDispatch;
 };
 
 const OPEN_PROJECTS_KEY = "nova.sidebar.open-projects.v2";
@@ -124,33 +140,32 @@ function defaultOpenProjects(projects: SidebarProject[]): Set<string> {
     return new Set(projects[0] ? [projects[0].id] : []);
 }
 
-function ThreadRow({
-    thread,
-    selected,
-    running,
-    projects,
-    disabled,
-    onSelect,
-    onRename,
-    onPin,
-    onMove,
-    onDelete,
-    onCreateProject,
-    showToast,
-}: {
+type ThreadRowProps = {
     thread: NovaThreadSummary;
     selected: boolean;
     running: boolean;
     projects: SidebarProject[];
     disabled: boolean;
-    onSelect: () => void;
-    onRename: (title: string) => Promise<void> | void;
-    onPin: (pinned: boolean) => Promise<void> | void;
-    onMove: (projectId: string | null) => Promise<void> | void;
-    onDelete: () => Promise<void> | void;
-    onCreateProject: (name: string, path?: string | null) => Promise<NovaProject | null>;
+    dispatch: SidebarDispatch;
     showToast: (message: string) => void;
-}) {
+    threadOrder: readonly NovaThreadSummary[];
+};
+
+/**
+ * One session row. Memoised because the list re-renders on every unrelated shell
+ * update (each streamed token, for one), while a row only depends on its own
+ * thread, the selection flags, and the stable `dispatch`.
+ */
+const ThreadRow = memo(function ThreadRow({
+    thread,
+    selected,
+    running,
+    projects,
+    disabled,
+    dispatch,
+    showToast,
+    threadOrder,
+}: ThreadRowProps) {
     const { t } = useTranslation();
     const [renaming, setRenaming] = useState(false);
     const [title, setTitle] = useState(thread.title);
@@ -176,7 +191,7 @@ function ThreadRow({
             setTitle(thread.title);
             return;
         }
-        void onRename(next);
+        void dispatch.renameThread(thread.id, next);
     };
 
     const Icon = thread.pinned ? PinIcon : MessageCircleIcon;
@@ -196,7 +211,7 @@ function ThreadRow({
             <button
                 type="button"
                 disabled={disabled}
-                onClick={onSelect}
+                onClick={() => dispatch.selectThread(thread.id)}
                 className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed"
                 title={thread.title}
             >
@@ -223,7 +238,7 @@ function ThreadRow({
                         className="min-w-0 flex-1 rounded-[5px] border border-[#1D5FA8] bg-white px-1.5 py-0.5 text-[13.5px] font-normal text-[#201F1C] outline-none"
                     />
                 ) : (
-                    <span className="truncate">{thread.title}</span>
+                    <HoverScrollText text={thread.title} />
                 )}
                 {running ? (
                     <Loader2Icon
@@ -290,7 +305,10 @@ function ThreadRow({
                         </DropdownMenuItem>
                         <DropdownMenuItem
                             onSelect={() => {
-                                void onPin(!thread.pinned);
+                                void dispatch.pinThread(
+                                    thread.id,
+                                    !thread.pinned,
+                                );
                                 showToast(t(thread.pinned ? "sidebar.unpinnedToast" : "sidebar.pinnedToast"));
                             }}
                         >
@@ -337,21 +355,23 @@ function ThreadRow({
                             projects={projects}
                             currentProjectId={thread.project_id}
                             onSelect={(projectId, name) => {
-                                void onMove(projectId);
+                                void dispatch.moveThread(thread.id, projectId);
                                 showToast(t("sidebar.movedToast", { project: name }));
                                 closeAll();
                             }}
                             onRemove={(name) => {
-                                void onMove(null);
+                                void dispatch.moveThread(thread.id, null);
                                 showToast(t("sidebar.removedToast", { project: name }));
                                 closeAll();
                             }}
                             onCreate={async (name) => {
-                                const project = await onCreateProject(name);
+                                const project = await dispatch.createProject(
+                                    name,
+                                );
                                 if (!project) {
                                     return;
                                 }
-                                void onMove(project.id);
+                                void dispatch.moveThread(thread.id, project.id);
                                 showToast(
                                     t("sidebar.movedToast", { project: project.name }),
                                 );
@@ -366,35 +386,36 @@ function ThreadRow({
                 open={confirmDeleteOpen}
                 onOpenChange={setConfirmDeleteOpen}
                 onConfirm={() => {
-                    void onDelete();
+                    void dispatch.deleteThread(
+                        thread.id,
+                        nextThreadAfterDelete(threadOrder, thread.id),
+                    );
                     showToast(t("sidebar.deletedToast"));
                 }}
             />
         </div>
     );
-}
+});
+
+type ProjectRowProps = {
+    project: SidebarProject;
+    open: boolean;
+    highlighted: boolean;
+    disabled: boolean;
+    dispatch: SidebarDispatch;
+    onToggle: (projectId: string) => void;
+    children?: ReactNode;
+};
 
 function ProjectRow({
     project,
     open,
     highlighted,
     disabled,
+    dispatch,
     onToggle,
-    onNewThread,
-    onRename,
-    onDelete,
     children,
-}: {
-    project: SidebarProject;
-    open: boolean;
-    highlighted: boolean;
-    disabled: boolean;
-    onToggle: () => void;
-    onNewThread: () => void;
-    onRename: (name: string) => Promise<void> | void;
-    onDelete: () => Promise<void> | void;
-    children?: ReactNode;
-}) {
+}: ProjectRowProps) {
     const { t } = useTranslation();
     const [renaming, setRenaming] = useState(false);
     const [name, setName] = useState(project.name);
@@ -408,7 +429,7 @@ function ProjectRow({
             setName(project.name);
             return;
         }
-        void onRename(next);
+        void dispatch.renameProject(project.id, next);
     };
 
     return (
@@ -424,7 +445,7 @@ function ProjectRow({
                 <button
                     type="button"
                     aria-expanded={open}
-                    onClick={onToggle}
+                    onClick={() => onToggle(project.id)}
                     className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                 >
                     <ChevronRightIcon
@@ -470,7 +491,9 @@ function ProjectRow({
                         <button
                             type="button"
                             disabled={disabled}
-                            onClick={onNewThread}
+                            onClick={() =>
+                                dispatch.newThreadInProject(project.id)
+                            }
                             title={t("sidebar.newChatInProject")}
                             aria-label={t("sidebar.newChatInProject")}
                             className="project-add flex size-[22px] shrink-0 items-center justify-center rounded-md text-[#9C978A] opacity-0 hover:bg-[#E5E2D9] hover:text-[#201F1C] focus-visible:opacity-100 group-hover/project:opacity-100 disabled:cursor-not-allowed"
@@ -531,13 +554,20 @@ function ProjectRow({
             <DeleteProjectDialog
                 open={confirmDeleteOpen}
                 onOpenChange={setConfirmDeleteOpen}
-                onConfirm={() => void onDelete()}
+                onConfirm={() => void dispatch.deleteProject(project.id)}
             />
         </div>
     );
 }
 
-export function ThreadSidebar(props: ThreadSidebarProps) {
+/**
+ * The session list. Memoised on its data props: the shell re-renders on every
+ * streamed token, and none of those renders change the list.
+ */
+export const ThreadSidebar = memo(function ThreadSidebar(
+    props: ThreadSidebarProps,
+) {
+    const { dispatch } = props;
     const { t } = useTranslation();
     const groups = useMemo(
         () => groupThreads(props.threads, props.projects),
@@ -583,10 +613,22 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
     };
     const toastTimer = useRef<number | null>(null);
 
-    const showToast = (message: string) => {
+    const showToast = useCallback((message: string) => {
         setToast(message);
         if (toastTimer.current) window.clearTimeout(toastTimer.current);
         toastTimer.current = window.setTimeout(() => setToast(null), 1600);
+    }, []);
+
+    const threadOrder = useMemo(() => orderedThreads(groups), [groups]);
+
+    const toggleProject = (projectId: string) => {
+        const next = new Set(openProjects);
+        if (next.has(projectId)) {
+            next.delete(projectId);
+        } else {
+            next.add(projectId);
+        }
+        setUserOpenProjects(next);
     };
 
     useEffect(() => {
@@ -611,18 +653,6 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
         writeStoredStringSet(COLLAPSED_SECTIONS_KEY, collapsedSections);
     }, [collapsedSections]);
 
-    const toggleProject = (key: string) => {
-        const next = new Set(openProjects);
-        if (next.has(key)) {
-            next.delete(key);
-        } else {
-            next.add(key);
-        }
-        setUserOpenProjects(next);
-    };
-
-    const threadOrder = useMemo(() => orderedThreads(groups), [groups]);
-
     const allRows = (items: NovaThreadSummary[]) => items.map((thread) => (
         <ThreadRow
             key={thread.id}
@@ -630,19 +660,10 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
             selected={thread.id === props.activeThreadId}
             running={thread.id === props.runningThreadId}
             projects={groups.projects}
-            disabled={props.disabled}
-            onSelect={() => props.onSelectThread(thread.id)}
-            onRename={(title) => props.onRenameThread(thread.id, title)}
-            onPin={(pinned) => props.onPinThread(thread.id, pinned)}
-            onMove={(projectId) => props.onMoveThread(thread.id, projectId)}
-            onDelete={() =>
-                props.onDeleteThread(
-                    thread.id,
-                    nextThreadAfterDelete(threadOrder, thread.id),
-                )
-            }
-            onCreateProject={props.onCreateProject}
+            disabled={false}
+            dispatch={dispatch}
             showToast={showToast}
+            threadOrder={threadOrder}
         />
     ));
 
@@ -687,11 +708,11 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
                 <span className="text-[15px] font-bold tracking-[-0.01em]">Nova</span>
                 <div className="flex gap-0.5">
                     <button type="button" title={t("sidebar.searchTitle")} onClick={() => setSearchOpen(true)} className="flex size-7 items-center justify-center rounded-[7px] text-[#6E6A60] hover:bg-[#EFEDE6] hover:text-[#201F1C]"><SearchIcon className="size-4" /></button>
-                    <button type="button" aria-label={t("app.collapseSidebar")} onClick={props.onCollapse} className="flex size-7 items-center justify-center rounded-[7px] text-[#6E6A60] hover:bg-[#EFEDE6] hover:text-[#201F1C]"><PanelLeftCloseIcon className="size-4" /></button>
+                    <button type="button" aria-label={t("app.collapseSidebar")} onClick={dispatch.collapseSidebar} className="flex size-7 items-center justify-center rounded-[7px] text-[#6E6A60] hover:bg-[#EFEDE6] hover:text-[#201F1C]"><PanelLeftCloseIcon className="size-4" /></button>
                 </div>
             </div>
             <div className="px-3 pb-2.5">
-                <button type="button" onClick={props.onNewThread} disabled={props.disabled} className="flex w-full items-center gap-2 rounded-[9px] border border-[#D6D2C7] bg-white px-3 py-2 text-[13.5px] font-medium hover:border-[#1D5FA8] hover:text-[#1D5FA8] disabled:opacity-50"><PlusIcon className="size-[15px]" />{t("threadList.newChat")}</button>
+                <button type="button" onClick={dispatch.newThread} disabled={false} className="flex w-full items-center gap-2 rounded-[9px] border border-[#D6D2C7] bg-white px-3 py-2 text-[13.5px] font-medium hover:border-[#1D5FA8] hover:text-[#1D5FA8] disabled:opacity-50"><PlusIcon className="size-[15px]" />{t("threadList.newChat")}</button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
                 <Section title={t("sidebar.pinned")} collapsed={collapsedSections.has("pinned")} onToggle={() => toggleSection("pinned")} empty={groups.pinned.length === 0 ? t("sidebar.noPinned") : null}>{allRows(groups.pinned)}</Section>
@@ -707,7 +728,7 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
                     actions={
                         <button
                             type="button"
-                            disabled={props.disabled}
+                            disabled={false}
                             onClick={() => setCreateProjectOpen(true)}
                             title={t("sidebar.newProject")}
                             aria-label={t("sidebar.newProject")}
@@ -723,15 +744,9 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
                             project={project}
                             open={openProjects.has(project.id)}
                             highlighted={project.id === pinnedActiveProjectId}
-                            disabled={props.disabled}
-                            onToggle={() => toggleProject(project.id)}
-                            onNewThread={() =>
-                                props.onNewThreadInProject(project.id)
-                            }
-                            onRename={(name) =>
-                                props.onRenameProject(project.id, name)
-                            }
-                            onDelete={() => props.onDeleteProject(project.id)}
+                            disabled={false}
+                            dispatch={dispatch}
+                            onToggle={toggleProject}
                         >
                             {allRows(project.threads)}
                         </ProjectRow>
@@ -753,7 +768,7 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
             <div className="border-t border-[#E4E1D9] p-2">
                 <button
                     type="button"
-                    onClick={props.onOpenSettings}
+                    onClick={dispatch.openSettings}
                     className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13.5px] text-[#6E6A60] hover:bg-[#F0EEE7] hover:text-[#201F1C]"
                 >
                     <SettingsIcon className="size-4" />
@@ -763,7 +778,10 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
             {searchOpen ? <div role="dialog" aria-modal="true" className="fixed inset-0 z-[70] flex items-start justify-center bg-[rgba(28,27,24,.32)] pt-[108px]" onMouseDown={(event) => event.target === event.currentTarget && setSearchOpen(false)}>
                 <div className="flex max-h-[60vh] w-[560px] max-w-[90vw] flex-col overflow-hidden rounded-[13px] bg-white shadow-[0_24px_60px_rgba(0,0,0,.22)]">
                     <div className="flex items-center gap-2.5 border-b border-[#E4E1D9] px-4 py-3.5"><SearchIcon className="size-[17px] text-[#9C978A]" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("sidebar.searchPlaceholder")} className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" /><kbd className="rounded border border-[#D6D2C7] px-1.5 py-0.5 font-mono text-[11px] text-[#9C978A]">Esc</kbd></div>
-                    <div className="overflow-y-auto p-1.5">{searchResults.length ? searchResults.map((thread) => <button key={thread.id} type="button" onClick={() => { props.onSelectThread(thread.id); setSearchOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13.5px] hover:bg-[#F0EEE7]"><MessageCircleIcon className="size-4 shrink-0 text-[#9C978A]" /><span className="min-w-0 flex-1 truncate"><HighlightedText text={thread.title} query={query.trim()} /></span><span className="shrink-0 text-[11px] text-[#9C978A]">{groupMeta(thread)}</span></button>) : <div className="px-4 py-6 text-center text-[13px] text-[#9C978A]">{t("sidebar.searchEmpty")}</div>}</div>
+                    <div className="overflow-y-auto p-1.5">{searchResults.length ? searchResults.map((thread) => <button key={thread.id} type="button" onClick={() => {
+                                    dispatch.selectThread(thread.id);
+                                    setSearchOpen(false);
+                                }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13.5px] hover:bg-[#F0EEE7]"><MessageCircleIcon className="size-4 shrink-0 text-[#9C978A]" /><span className="min-w-0 flex-1 truncate"><HighlightedText text={thread.title} query={query.trim()} /></span><span className="shrink-0 text-[11px] text-[#9C978A]">{groupMeta(thread)}</span></button>) : <div className="px-4 py-6 text-center text-[13px] text-[#9C978A]">{t("sidebar.searchEmpty")}</div>}</div>
                 </div>
             </div> : null}
             {toast ? <div className="fixed bottom-5 left-1/2 z-[80] -translate-x-1/2 rounded-full bg-[#201F1C] px-3.5 py-2 text-xs text-white">{toast}</div> : null}
@@ -771,12 +789,12 @@ export function ThreadSidebar(props: ThreadSidebarProps) {
                 open={createProjectOpen}
                 onOpenChange={setCreateProjectOpen}
                 onCreate={async (name, path) => {
-                    await props.onCreateProject(name, path);
+                    await dispatch.createProject(name, path);
                 }}
             />
         </aside>
     );
-}
+});
 
 function Section({
     title,

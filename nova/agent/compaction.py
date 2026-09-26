@@ -8,16 +8,19 @@ Two-layer compaction strategy:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from nova.agent.events import AgentEvent
-from nova.llm import LLMProvider
+from nova.llm import LLMProvider, Message
+from nova.llm.oneshot import stream_text_once
 from nova.settings import get_settings
 
 if TYPE_CHECKING:
@@ -51,7 +54,11 @@ def estimate_tokens(messages: list, model: str = "unknown") -> int:
     return estimate_messages_tokens(messages, model)
 
 
-def estimate_context_tokens(messages: list, model: str = "unknown") -> int:
+def estimate_context_tokens(
+    messages: list,
+    model: str = "unknown",
+    compacted_at: Optional[int] = None,
+) -> int:
     """Absolute context size of *messages*, anchored on the provider's accounting.
 
     ``tokens_input`` on an assistant message is the exact prompt size the API
@@ -59,12 +66,26 @@ def estimate_context_tokens(messages: list, model: str = "unknown") -> int:
     prompt, the tool schemas and the cached prefix - none of which character
     heuristics can see. Only the anchor's own output and the messages appended
     after it are estimated, so the error stops accumulating over a session.
+
+    An anchor only describes the *current* history while no compaction has run
+    since. Its ``tokens_input`` counts whatever was in the prompt at the time,
+    including messages compaction has since removed, so anchoring on one that
+    predates *compacted_at* re-counts the history that was just dropped and the
+    reported size never falls. Those are skipped and the character estimate is
+    used until a post-compaction call records a fresh anchor.
+
+    ``compacted_at`` is the moment of the last successful compaction rather than a
+    message timestamp: the messages that survive a compaction are older than the
+    summary that replaced them, so ordering cannot tell a stale anchor from a
+    fresh one.
     """
+    anchor_floor = compacted_at or 0
     anchor_index = -1
     anchor_prompt_tokens = 0
     for index in range(len(messages) - 1, -1, -1):
-        reported = _get_tokens_input(messages[index])
-        if reported:
+        message = messages[index]
+        reported = _get_tokens_input(message)
+        if reported and _get_time_created(message) > anchor_floor:
             anchor_index = index
             anchor_prompt_tokens = reported
             break
@@ -167,7 +188,12 @@ def _offload_tool_output(
 
 
 def find_split_point(messages: list, keep_ratio: float = 0.3) -> int:
-    """Find a split point so the recent portion keeps about ``keep_ratio`` of the tokens."""
+    """Find a split point so the recent portion keeps about ``keep_ratio`` of the tokens.
+
+    Returns 0 when nothing should be compacted: either no boundary is safe (see
+    :func:`_retreat_to_safe_split`), or the portion that would be folded in is
+    nothing but earlier summaries.
+    """
     total = estimate_tokens(messages)
     target = int(total * keep_ratio)
     running = 0
@@ -179,22 +205,40 @@ def find_split_point(messages: list, keep_ratio: float = 0.3) -> int:
             split = i
             break
 
-    return _retreat_to_safe_split(messages, split)
+    # The backward walk can only reach the target at index 0 when the first
+    # message alone outweighs the keep_ratio — a giant pasted prompt, say. That
+    # reported "unsplittable" for exactly the history that most needed
+    # compacting, so start the boundary at 1 and let the retreat validate it.
+    split = _retreat_to_safe_split(messages, max(1, split))
+    if split > 0 and all(_is_summary(message) for message in messages[:split]):
+        # Folding summary-into-summary rewrites the summary without freeing any
+        # context, and because the hard limit is still exceeded it would repeat
+        # on every model call. Refusing here keeps that out of the failure
+        # counter (returning False from compact would trip the circuit breaker).
+        return 0
+    return split
 
 
 def _retreat_to_safe_split(messages: list, split: int) -> int:
     """Move the split backward to a boundary that is safe to compact at.
 
-    Retreating (rather than advancing) satisfies three constraints at once:
+    Retreating (rather than advancing) satisfies the two hard constraints:
 
     * A tool response never starts the recent portion. Its declaring assistant
       message would otherwise stay behind in the compacted portion, leaving an
       orphan tool message that violates the assistant->tool pairing contract and
       makes the provider reject the request.
-    * The recent portion starts on a user message, so the kept history reads as
-      whole turns.
     * The recent portion can never end up empty, which advancing past a trailing
       run of tool messages would cause.
+
+    A user boundary is preferred on top of that, so the kept history reads as
+    whole turns. It is a preference, not a requirement: one prompt followed by a
+    long agentic run has a single user message at index 0 and therefore no user
+    boundary to retreat to, and demanding one left those sessions permanently
+    uncompactable no matter how large the context grew. When no user boundary is
+    available the non-tool boundary is used instead - pairing stays valid, since
+    a split at an assistant message keeps that message and its tool results
+    together in the recent portion.
 
     Returning 0 means nothing can be compacted safely and the caller should skip
     compaction entirely.
@@ -202,9 +246,11 @@ def _retreat_to_safe_split(messages: list, split: int) -> int:
     safe = min(split, len(messages) - 1) if messages else 0
     while safe > 0 and _get_role(messages[safe]) == "tool":
         safe -= 1
-    while safe > 0 and _get_role(messages[safe]) != "user":
-        safe -= 1
-    return safe
+
+    preferred = safe
+    while preferred > 0 and _get_role(messages[preferred]) != "user":
+        preferred -= 1
+    return preferred if preferred > 0 else safe
 
 
 NEW_SUMMARY_ANCHOR = (
@@ -224,12 +270,13 @@ CONTINUATION_INSTRUCTION = (
     "the summary or asking the user to repeat anything."
 )
 
+SUMMARY_SYSTEM_PROMPT = (
+    "You are compacting a coding session so that work can continue in a fresh "
+    "context window. Respond with plain text only. Do not call any tool."
+)
+
 SUMMARY_PROMPT_TEMPLATE = """\
-You are compacting a coding session so that work can continue in a fresh context window.
-
 {anchor_instruction}
-
-Respond with plain text only. Do not call any tool.
 
 Write these sections, omitting a section only when the transcript has nothing for it:
 
@@ -322,7 +369,7 @@ def evaluate_compaction(
     if not messages:
         return CompactionPlan(session_id, model_max_tokens, 0, 0, False)
 
-    token_count = estimate_context_tokens(messages, model)
+    token_count = estimate_context_tokens(messages, model, last_compacted_at)
     over_threshold = should_compact(
         scope_tokens=count_tokens_since_compact(
             messages, last_compacted_at, model),
@@ -376,6 +423,8 @@ async def run_compaction_plan(
     model: str = "gpt-4o",
     provider: str = "ollama",
     messages: Optional[list] = None,
+    tools: Optional[list[dict]] = None,
+    on_delta: Optional[Callable[[str], None]] = None,
 ) -> bool:
     """Execute a prepared compaction plan against caller-owned *messages*."""
     if not plan.needs_compaction:
@@ -388,6 +437,8 @@ async def run_compaction_plan(
         provider,
         messages=messages,
         split_index=plan.split_index or None,
+        tools=tools,
+        on_delta=on_delta,
     )
 
 
@@ -419,6 +470,8 @@ async def compact(
     provider: str = "ollama",
     messages: Optional[list] = None,
     split_index: Optional[int] = None,
+    tools: Optional[list[dict]] = None,
+    on_delta: Optional[Callable[[str], None]] = None,
 ) -> bool:
     """Run session compaction (Layer 2). Returns whether history was compacted.
 
@@ -445,19 +498,35 @@ async def compact(
     log.info(f"[Compaction] session={session_id}, before={len(messages)} msgs, {before_tokens} tokens, split at={split}")
 
     summary = await _generate_summary(
-        old_text, llm, model, has_previous_summary=_contains_summary(old))
+        old_text,
+        llm,
+        model,
+        has_previous_summary=_contains_summary(old),
+        tools=tools,
+        on_delta=on_delta,
+    )
     if not summary:
         log.warning(
             "[Compaction] session=%s aborted: summary generation failed", session_id)
         return False
 
     now_ms = int(time.time() * 1000)
+    # The summary stands in for the history it replaces, so it is stamped at
+    # that boundary rather than at "now". The prompt then reads in
+    # chronological order (the summary leads), the next compaction finds it
+    # inside the portion it folds in - keeping exactly one summary instead of
+    # piling a new one beside it - and it is not counted as growth since the
+    # last compaction. Session updated_at is untouched (see add_message).
+    boundary_ms = (
+        min(_get_time_created(m) for m in recent) - 1 if recent else now_ms
+    )
     await db.add_message(
         session_id=session_id,
         role="assistant",
         content=(f"[Previous conversation summary]\n{summary}\n\n"
                  f"{CONTINUATION_INSTRUCTION}"),
         summary=True,
+        time_created=boundary_ms,
     )
     # Also compact tool responses whose tool_call assistant was compacted
     compacted_tc_ids = set()
@@ -503,35 +572,60 @@ async def _generate_summary(
     llm: LLMProvider,
     model: str,
     has_previous_summary: bool = False,
+    tools: Optional[list[dict]] = None,
+    on_delta: Optional[Callable[[str], None]] = None,
 ) -> str:
-    """Generate a summary with the LLM. Returns an empty string on failure."""
-    try:
-        prompt = SUMMARY_PROMPT_TEMPLATE.format(
-            conversation=conversation,
-            anchor_instruction=(
-                PREVIOUS_SUMMARY_ANCHOR if has_previous_summary
-                else NEW_SUMMARY_ANCHOR),
-        )
-        response = await llm.chat(
-            messages=[{"role": "user", "content": prompt}],
-            model=model,
-        )
-        summary = response.content if hasattr(
-            response, 'content') else str(response)
-        return (summary or "").strip()
-    except Exception as error:
-        log.warning("[Compaction] summary generation failed: %s", error)
-        return ""
+    """Generate a summary with the LLM. Returns an empty string on failure.
+
+    Routed through :func:`nova.llm.oneshot.stream_text_once` rather than a bare
+    one-shot call: the request shape is not free (some gateways only serve
+    streaming, agent-shaped requests), and streaming lets the caller show the
+    summary while it is being written.
+
+    A failure returns ``""``, never the error text: the caller writes this
+    straight into the session as the replacement context, so returning the
+    provider's error string would poison the context it is meant to compress.
+
+    Args:
+        conversation: Pre-rendered transcript to compress.
+        llm: Provider to summarise with.
+        model: Model id.
+        has_previous_summary: Whether the transcript already folds in a summary.
+        tools: Caller's tool schemas, so the request looks like an agent turn.
+        on_delta: Called with each summary chunk as it arrives.
+
+    Returns:
+        The summary text, or ``""`` when generation failed.
+    """
+    prompt = SUMMARY_PROMPT_TEMPLATE.format(
+        conversation=conversation,
+        anchor_instruction=(
+            PREVIOUS_SUMMARY_ANCHOR if has_previous_summary
+            else NEW_SUMMARY_ANCHOR),
+    )
+    summary = await stream_text_once(
+        llm,
+        messages=[
+            Message(role="system", content=SUMMARY_SYSTEM_PROMPT),
+            Message(role="user", content=prompt),
+        ],
+        model=model,
+        tools=tools,
+        on_delta=on_delta,
+        label="[Compaction] summary generation",
+    )
+    return (summary or "").strip()
+
+
+def _is_summary(message) -> bool:
+    """Whether *message* is a compaction summary rather than real history."""
+    if isinstance(message, dict):
+        return bool(message.get("summary"))
+    return bool(getattr(message, "summary", 0))
 
 
 def _contains_summary(messages: list) -> bool:
-    for message in messages:
-        if isinstance(message, dict):
-            if message.get("summary"):
-                return True
-        elif getattr(message, "summary", 0):
-            return True
-    return False
+    return any(_is_summary(message) for message in messages)
 
 
 def _generate_id() -> str:
@@ -701,17 +795,21 @@ class CompactionController:
         db: "DataSourceProtocol",
         llm: LLMProvider,
         emit: Any,
+        tools: Optional[list[dict]] = None,
     ) -> Any:
         """Compact if needed, announcing it around the summarisation call.
 
         ``compacted`` records whether history actually changed, so the caller
-        knows when to reload it.
+        knows when to reload it. ``tools`` is forwarded to the summary call so
+        the request is shaped like an agent turn (see
+        :mod:`nova.llm.oneshot`).
         """
         self.compacted = False
         # Always emit current context usage so the TUI can render the ctx bar
         # with the same numbers the compaction decision uses.
         try:
-            used = estimate_context_tokens(messages, self.model)
+            compacted_at = _get_session_compacted_at(session)
+            used = estimate_context_tokens(messages, self.model, compacted_at)
             limit = get_context_limit(self.model, self.provider)
             percent = int(used / limit * 100) if limit else 0
             ctx_payload = {"used": used, "limit": limit, "percent": percent}
@@ -731,14 +829,35 @@ class CompactionController:
         await emit(AgentEvent.COMPACTION_START, payload)
         yield AgentEvent.COMPACTION_START, payload
 
-        compacted = await run_compaction_plan(
-            plan,
-            db=db,
-            llm=llm,
-            model=self.model,
-            provider=self.provider,
-            messages=messages,
-        )
+        # The summary is written by a nested (awaited) call, so its chunks land
+        # on a callback rather than arriving from this generator. Bridge them
+        # through a queue so partial text reaches the client as it is produced.
+        deltas: asyncio.Queue[Optional[str]] = asyncio.Queue()
+
+        async def summarise() -> bool:
+            try:
+                return await run_compaction_plan(
+                    plan,
+                    db=db,
+                    llm=llm,
+                    model=self.model,
+                    provider=self.provider,
+                    messages=messages,
+                    tools=tools,
+                    on_delta=deltas.put_nowait,
+                )
+            finally:
+                # Close the drain below even if summarising raised, so the
+                # generator cannot deadlock waiting on a missing sentinel.
+                deltas.put_nowait(None)
+
+        task = asyncio.create_task(summarise())
+        while True:
+            chunk = await deltas.get()
+            if chunk is None:
+                break
+            yield AgentEvent.COMPACTION_DELTA, {"delta": chunk}
+        compacted = await task
         self.record_result(compacted, session)
 
         await emit(AgentEvent.COMPACTION_END, payload)
@@ -747,7 +866,8 @@ class CompactionController:
         if compacted and session is not None:
             try:
                 fresh = await db.get_messages(_get_session_id(session))
-                used_after = estimate_context_tokens(fresh, self.model)
+                used_after = estimate_context_tokens(
+                    fresh, self.model, _get_session_compacted_at(session))
                 limit_after = get_context_limit(self.model, self.provider)
                 percent_after = int(used_after / limit_after * 100) if limit_after else 0
                 ctx_after = {"used": used_after, "limit": limit_after, "percent": percent_after}

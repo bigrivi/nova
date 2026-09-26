@@ -9,7 +9,8 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from nova.llm import ToolResult
+from nova.llm import Message, ToolResult
+from nova.llm.oneshot import stream_text_once
 from nova.tools.registry import tool
 
 if TYPE_CHECKING:
@@ -17,6 +18,12 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 from nova.tools.web_search import TOOL as web_search_tool
+
+EXTRACT_SYSTEM_PROMPT = (
+    "You are a web content extractor. Extract the information relevant to the "
+    "given goal from the page content. Return only the extracted information, "
+    "no extra commentary. Never call a tool."
+)
 
 _BROWSER_DESCRIPTION = """\
 A browser automation tool for interacting with web pages through various actions.
@@ -410,17 +417,22 @@ async def browser_use(
             content_trunc = raw_content[:8000]
             if ctx is None:
                 return ToolResult(success=False, error="ToolContext not available for LLM extraction")
-            response = await ctx.llm.chat(
+            text = await stream_text_once(
+                ctx.llm,
                 messages=[
-                    {"role": "system", "content": "You are a web content extractor. Extract the information relevant to the given goal from the page content. Return only the extracted information, no extra commentary."},
-                    {"role": "user", "content": f"Goal: {goal}\n\nPage content:\n{content_trunc}"},
+                    Message(role="system", content=EXTRACT_SYSTEM_PROMPT),
+                    Message(
+                        role="user",
+                        content=f"Goal: {goal}\n\nPage content:\n{content_trunc}",
+                    ),
                 ],
                 model=ctx.model,
+                tools=ctx.tool_schemas,
+                label="Browser content extraction",
             )
-            log.info("extract_content llm response type=%s content=%s",
-                     type(response).__name__,
-                     getattr(response, 'content', str(response))[:500])
-            return ToolResult(content=response.content)
+            if text is None:
+                return ToolResult(success=False, error="Content extraction failed")
+            return ToolResult(content=text)
 
         elif action == "switch_tab":
             if tab_id is None:

@@ -11,12 +11,18 @@ import logging
 from typing import Any, Optional
 
 from nova.llm import LLMProvider, Message as LLMMessage
+from nova.llm.oneshot import stream_text_once
 
 log = logging.getLogger(__name__)
 
 MIN_MESSAGES_TO_REVIEW = 4
 MESSAGES_SAMPLED = 30
 TOOL_CONTENT_CHARS = 200
+
+REVIEW_SYSTEM_PROMPT = (
+    "You extract durable facts from coding conversations. Never call a tool; "
+    "reply with the JSON array only."
+)
 
 REVIEW_PROMPT_HEADER = (
     "Review the recent conversation and extract durable facts "
@@ -50,11 +56,13 @@ class MemoryReviewer:
         session: Any,
         model: str,
         data_source: Optional[Any] = None,
+        tools: Optional[list[dict]] = None,
     ) -> None:
         self._llm = llm
         self._session = session
         self._model = model
         self._data_source = data_source
+        self._tools = tools
 
     async def run(self) -> None:
         try:
@@ -63,11 +71,19 @@ class MemoryReviewer:
                 return
 
             prompt = self._build_prompt(messages)
-            result = await self._llm.chat(
-                messages=[LLMMessage(role="user", content=prompt)],
+            text = await stream_text_once(
+                self._llm,
+                messages=[
+                    LLMMessage(role="system", content=REVIEW_SYSTEM_PROMPT),
+                    LLMMessage(role="user", content=prompt),
+                ],
                 model=self._model,
+                tools=self._tools,
+                label="Background memory review",
             )
-            facts = parse_review_facts(result.content)
+            if text is None:
+                return
+            facts = parse_review_facts(text)
             if not facts:
                 return
 

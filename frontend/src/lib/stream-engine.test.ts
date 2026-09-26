@@ -36,7 +36,10 @@ function makeDeps(overrides: Partial<StreamEngineDeps> = {}): StreamEngineDeps {
         setCurrentThreadId: vi.fn(),
         setThreads: vi.fn(),
         runTransition: (fn) => fn(),
-        reasoning: { setCompacting: vi.fn() },
+        reasoning: {
+            setCompacting: vi.fn(),
+            appendCompactionDelta: vi.fn(),
+        },
         approval: { setPendingForSession: vi.fn(), setPending: vi.fn() },
         todo: { setActive: vi.fn() },
         ...overrides,
@@ -76,6 +79,35 @@ describe("handleStreamEvent control frames", () => {
         expect(deps.reasoning.setCompacting).toHaveBeenLastCalledWith(true);
         handleStreamEvent({ type: "data-nova-compaction-end" }, env, deps);
         expect(deps.reasoning.setCompacting).toHaveBeenLastCalledWith(false);
+    });
+
+    it("forwards each summary chunk while compacting", () => {
+        const deps = makeDeps();
+        const env = makeEnv();
+        handleStreamEvent(
+            { type: "data-nova-compaction-delta", data: { delta: "Request: " } },
+            env,
+            deps,
+        );
+        handleStreamEvent(
+            { type: "data-nova-compaction-delta", data: { delta: "fix the bug" } },
+            env,
+            deps,
+        );
+        expect(deps.reasoning.appendCompactionDelta).toHaveBeenNthCalledWith(
+            1,
+            "Request: ",
+        );
+        expect(deps.reasoning.appendCompactionDelta).toHaveBeenNthCalledWith(
+            2,
+            "fix the bug",
+        );
+    });
+
+    it("tolerates a compaction delta without a payload", () => {
+        const deps = makeDeps();
+        handleStreamEvent({ type: "data-nova-compaction-delta" }, makeEnv(), deps);
+        expect(deps.reasoning.appendCompactionDelta).toHaveBeenLastCalledWith("");
     });
 
     it("ignores heartbeat frames", () => {

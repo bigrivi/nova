@@ -90,6 +90,19 @@
     --sidebar-ring: oklch(0.708 0 0);
 }
 
+/* ChatGPT-style reveal: slide a long thread title far enough to expose its
+   tail, then hold. The component measures the exact overflow and passes it in
+   as a negative length, so the travel distance and the animation duration come
+   from a single measurement; short titles never get the class and stay put. */
+@keyframes title-reveal {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--reveal-distance, 0));
+  }
+}
+
 @layer base {
   html,
   body,

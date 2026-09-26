@@ -1,4 +1,4 @@
-"""Process-level session-state event bus for push-based UI updates.
+"""Process-level session event bus for push-based UI updates.
 
 Replaces the frontend's periodic ``/active`` poll: the RequestRegistry pushes
 active/idle transitions here, and each connected client holds one SSE
@@ -6,6 +6,10 @@ subscription that receives a snapshot on connect followed by live deltas. A
 sub-agent auto-wake flips its parent session to ``active`` the instant the
 headless turn registers, so the client learns immediately instead of up to one
 poll interval late.
+
+The bus also carries one-shot data events (a regenerated session title, a
+background task state change) that are not state transitions, so they skip the
+active-set de-duplication.
 
 Fan-out mirrors StreamBuffer: one bounded ``asyncio.Queue`` per connection,
 published with ``put_nowait`` so a slow client drops events rather than
@@ -34,9 +38,29 @@ class SessionEventBus:
             if session_id not in self._active:
                 return
             self._active.discard(session_id)
+        self._broadcast({"type": "state", "session_id": session_id, "state": state})
+
+    def publish_title(self, session_id: str, title: str) -> None:
+        """Broadcast a regenerated session title.
+
+        Not a transition, so it is emitted even when the session is idle and
+        must not be folded into the active-set de-duplication.
+        """
+        self._broadcast({"type": "title", "session_id": session_id, "title": title})
+
+    def publish_task(self, task: dict) -> None:
+        """Broadcast a background task snapshot after it was created or changed.
+
+        Tasks are pushed rather than polled: the client renders status from
+        these frames plus the connect snapshot, so no ``/api/tasks`` loop is
+        needed to notice a task appearing or finishing.
+        """
+        self._broadcast({"type": "task", "task": task})
+
+    def _broadcast(self, frame: dict) -> None:
         for queue in self._subscribers:
             try:
-                queue.put_nowait((session_id, state))
+                queue.put_nowait(frame)
             except asyncio.QueueFull:
                 continue
 

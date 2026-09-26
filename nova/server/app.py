@@ -110,11 +110,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.request_registry = request_registry
     app.state.stream_buffer = stream_buffer
     app.state.session_event_bus = session_event_bus
-    app.state.background_task_manager = get_background_task_manager()
+    task_manager = get_background_task_manager()
+    # Push task lifecycle instead of letting the client poll /api/tasks.
+    task_manager.set_listener(
+        lambda record: session_event_bus.publish_task(
+            record.to_dict(include_output=False)
+        )
+    )
+    app.state.background_task_manager = task_manager
     app.state.chat_service = ChatService(
         settings=settings,
         request_registry=request_registry,
         stream_buffer=stream_buffer,
+        on_title_updated=session_event_bus.publish_title,
     )
     _wire_subagent_autowake(app)
 
