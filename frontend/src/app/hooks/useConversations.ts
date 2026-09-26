@@ -175,111 +175,6 @@ export function useConversations(deps: ConversationDeps): Conversations {
             );
     }, [currentThreadId]);
 
-    // Push, not poll: one SSE connection carries a snapshot of active sessions
-    // on connect plus live active/idle deltas as the registry reports them, so
-    // a sub-agent auto-wake lights its parent thread instantly. EventSource
-    // auto-reconnects and re-sends the snapshot, keeping the map correct.
-    useEffect(() => {
-        const source = new EventSource(sessionEventsUrl());
-
-        function applySnapshot(
-            active: string[],
-            tasks: NovaBackgroundTask[],
-        ) {
-            const seenNow = new Set(active);
-            const seenBefore = prevActiveSnapshotRef.current;
-            prevActiveSnapshotRef.current = seenNow;
-            setRunningByThread((previous) =>
-                reconcileRunningMap(
-                    previous,
-                    seenNow,
-                    seenBefore,
-                    (threadId) => abortControllersRef.current.has(threadId),
-                ),
-            );
-            // Tasks are pushed, not polled: this snapshot is the resync point
-            // and the "task" frames below keep it current from here on.
-            useBackgroundTaskStore.getState().replaceTasks(tasks);
-        }
-
-        function applyDelta(sessionId: string, state: string) {
-            const running = state === "active";
-            const snapshot = new Set(prevActiveSnapshotRef.current);
-            if (running) {
-                snapshot.add(sessionId);
-            } else {
-                snapshot.delete(sessionId);
-            }
-            prevActiveSnapshotRef.current = snapshot;
-            if (!running && abortControllersRef.current.has(sessionId)) {
-                return;
-            }
-            setRunningByThread((previous) =>
-                nextRunningMap(previous, sessionId, running),
-            );
-            // Edge-trigger the tail off the event itself, not off the
-            // running-map boolean: if the light is already on (e.g. the
-            // previous turn's local stream hasn't cleaned up yet), the map
-            // identity doesn't change and no effect would fire, so a
-            // server-initiated turn would never be tailed. Active events for
-            // streams this client started itself are consumed lighting-only.
-            const decision = decideTailOnActive({
-                active: running,
-                current: sessionId === currentThreadIdRef.current,
-                localStream: abortControllersRef.current.has(sessionId),
-                ownTurn: expectOwnActiveRef.current.delete(sessionId),
-            });
-            if (decision === "tail-now") {
-                void resumeThreadStream(sessionId, getLastSequence(sessionId));
-            } else if (decision === "park") {
-                // A local stream is still draining: park the tail request
-                // for the stream's cleanup to consume (see the streamThread
-                // finally block). Tailing now would race the open stream;
-                // doing nothing would miss the turn entirely.
-                pendingTailRef.current.add(sessionId);
-            }
-        }
-
-        source.onmessage = (event) => {
-            try {
-                const payload = JSON.parse(event.data);
-                if (payload.type === "snapshot") {
-                    applySnapshot(payload.active ?? [], payload.tasks ?? []);
-                } else if (payload.type === "state") {
-                    applyDelta(payload.session_id, payload.state);
-                } else if (payload.type === "task") {
-                    // A background task was created or changed status. Pushed
-                    // over this stream, so no /api/tasks poll is needed.
-                    useBackgroundTaskStore.getState().updateTask(payload.task);
-                } else if (payload.type === "title") {
-                    // The background title job finished. Renaming in place
-                    // keeps the sidebar from reordering under the cursor;
-                    // if this client missed the frame the next load still
-                    // picks the title up from /api/sessions.
-                    setThreads((previous) =>
-                        renameThreadTitle(
-                            previous,
-                            payload.session_id,
-                            payload.title,
-                        ),
-                    );
-                }
-            } catch {
-                // Malformed frame is non-fatal; the next event corrects state.
-            }
-        };
-
-        // Close the stream when the page is hidden or torn down so the
-        // backend is not left holding an orphaned SSE connection.
-        const handlePageHide = () => source.close();
-        window.addEventListener("pagehide", handlePageHide);
-
-        return () => {
-            window.removeEventListener("pagehide", handlePageHide);
-            source.close();
-        };
-    }, []);
-
     async function loadThread(threadId: string) {
         try {
             const messages = await listMessages(threadId);
@@ -612,6 +507,111 @@ export function useConversations(deps: ConversationDeps): Conversations {
             resumeFromSequence: fromSequence ?? 0,
         });
     }
+
+    // Push, not poll: one SSE connection carries a snapshot of active sessions
+    // on connect plus live active/idle deltas as the registry reports them, so
+    // a sub-agent auto-wake lights its parent thread instantly. EventSource
+    // auto-reconnects and re-sends the snapshot, keeping the map correct.
+    useEffect(() => {
+        const source = new EventSource(sessionEventsUrl());
+
+        function applySnapshot(
+            active: string[],
+            tasks: NovaBackgroundTask[],
+        ) {
+            const seenNow = new Set(active);
+            const seenBefore = prevActiveSnapshotRef.current;
+            prevActiveSnapshotRef.current = seenNow;
+            setRunningByThread((previous) =>
+                reconcileRunningMap(
+                    previous,
+                    seenNow,
+                    seenBefore,
+                    (threadId) => abortControllersRef.current.has(threadId),
+                ),
+            );
+            // Tasks are pushed, not polled: this snapshot is the resync point
+            // and the "task" frames below keep it current from here on.
+            useBackgroundTaskStore.getState().replaceTasks(tasks);
+        }
+
+        function applyDelta(sessionId: string, state: string) {
+            const running = state === "active";
+            const snapshot = new Set(prevActiveSnapshotRef.current);
+            if (running) {
+                snapshot.add(sessionId);
+            } else {
+                snapshot.delete(sessionId);
+            }
+            prevActiveSnapshotRef.current = snapshot;
+            if (!running && abortControllersRef.current.has(sessionId)) {
+                return;
+            }
+            setRunningByThread((previous) =>
+                nextRunningMap(previous, sessionId, running),
+            );
+            // Edge-trigger the tail off the event itself, not off the
+            // running-map boolean: if the light is already on (e.g. the
+            // previous turn's local stream hasn't cleaned up yet), the map
+            // identity doesn't change and no effect would fire, so a
+            // server-initiated turn would never be tailed. Active events for
+            // streams this client started itself are consumed lighting-only.
+            const decision = decideTailOnActive({
+                active: running,
+                current: sessionId === currentThreadIdRef.current,
+                localStream: abortControllersRef.current.has(sessionId),
+                ownTurn: expectOwnActiveRef.current.delete(sessionId),
+            });
+            if (decision === "tail-now") {
+                void resumeThreadStream(sessionId, getLastSequence(sessionId));
+            } else if (decision === "park") {
+                // A local stream is still draining: park the tail request
+                // for the stream's cleanup to consume (see the streamThread
+                // finally block). Tailing now would race the open stream;
+                // doing nothing would miss the turn entirely.
+                pendingTailRef.current.add(sessionId);
+            }
+        }
+
+        source.onmessage = (event) => {
+            try {
+                const payload = JSON.parse(event.data);
+                if (payload.type === "snapshot") {
+                    applySnapshot(payload.active ?? [], payload.tasks ?? []);
+                } else if (payload.type === "state") {
+                    applyDelta(payload.session_id, payload.state);
+                } else if (payload.type === "task") {
+                    // A background task was created or changed status. Pushed
+                    // over this stream, so no /api/tasks poll is needed.
+                    useBackgroundTaskStore.getState().updateTask(payload.task);
+                } else if (payload.type === "title") {
+                    // The background title job finished. Renaming in place
+                    // keeps the sidebar from reordering under the cursor;
+                    // if this client missed the frame the next load still
+                    // picks the title up from /api/sessions.
+                    setThreads((previous) =>
+                        renameThreadTitle(
+                            previous,
+                            payload.session_id,
+                            payload.title,
+                        ),
+                    );
+                }
+            } catch {
+                // Malformed frame is non-fatal; the next event corrects state.
+            }
+        };
+
+        // Close the stream when the page is hidden or torn down so the
+        // backend is not left holding an orphaned SSE connection.
+        const handlePageHide = () => source.close();
+        window.addEventListener("pagehide", handlePageHide);
+
+        return () => {
+            window.removeEventListener("pagehide", handlePageHide);
+            source.close();
+        };
+    }, []);
 
     async function submitPrompt(
         prompt: string,
