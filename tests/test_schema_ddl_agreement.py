@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 
 import pytest
 
@@ -52,7 +51,6 @@ def get_settings_clear():
     get_settings.cache_clear()
 
 
-@pytest.mark.asyncio
 class TestDdlAgreesWithMigrations:
     def test_every_migrated_column_is_in_the_ddl(self):
         """A fresh database should be created in its final shape."""
@@ -76,6 +74,7 @@ class TestDdlAgreesWithMigrations:
     def test_an_unknown_table_yields_nothing(self):
         assert _ddl_columns(_DDL, "no_such_table") == set()
 
+    @pytest.mark.asyncio
     async def test_a_fresh_database_needs_no_alter(self, home, caplog):
         """The migration should find nothing to do on a new install."""
         settings = Settings.load_config()
@@ -86,6 +85,7 @@ class TestDdlAgreesWithMigrations:
         finally:
             await close_db()
 
+    @pytest.mark.asyncio
     async def test_the_guard_reports_a_ddl_that_drifted(self, home, monkeypatch, caplog):
         """Drop a column from the DDL and the startup log has to say so."""
         from nova.db import sqlite_repository as module
