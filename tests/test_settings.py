@@ -189,7 +189,7 @@ def test_settings_compaction_defaults(monkeypatch, tmp_path):
     assert comp.snip_max_chars == 2000
     assert comp.snip_tool_output_token_budget == 50000
     assert comp.snip_preserve_last_n_messages == 12
-    assert comp.summary_keep_ratio == 0.3
+    assert comp.summary_keep_tokens == 20000
     assert comp.max_consecutive_failures == 3
 
 
@@ -205,7 +205,7 @@ def test_settings_compaction_from_config(monkeypatch, tmp_path):
                 "snip_max_chars": 4000,
                 "snip_tool_output_token_budget": 90000,
                 "snip_preserve_last_n_messages": 20,
-                "summary_keep_ratio": 0.5,
+                "summary_keep_tokens": 40000,
                 "max_consecutive_failures": 5,
             },
         },
@@ -220,19 +220,57 @@ def test_settings_compaction_from_config(monkeypatch, tmp_path):
     assert comp.snip_max_chars == 4000
     assert comp.snip_tool_output_token_budget == 90000
     assert comp.snip_preserve_last_n_messages == 20
-    assert comp.summary_keep_ratio == 0.5
+    assert comp.summary_keep_tokens == 40000
     assert comp.max_consecutive_failures == 5
+
+
+def test_settings_compaction_reads_the_deprecated_ratio(monkeypatch, tmp_path):
+    """A config written before the budget was absolute still has to load.
+
+    The ratio is converted against the default window, which is the closest
+    available reading of what the author asked for, and warns so the value can be
+    restated.
+    """
+    home = tmp_path / "nova-compaction-legacy-home"
+    _write_config(
+        home,
+        {"providers": {}, "compaction": {"summary_keep_ratio": 0.3}},
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    comp = Settings.load_config().compaction
+
+    assert comp.summary_keep_tokens == 0.3 * 128000
+
+
+def test_settings_compaction_prefers_the_budget_over_the_deprecated_ratio(
+    monkeypatch, tmp_path
+):
+    home = tmp_path / "nova-compaction-both-home"
+    _write_config(
+        home,
+        {
+            "providers": {},
+            "compaction": {
+                "summary_keep_ratio": 0.3,
+                "summary_keep_tokens": 5000,
+            },
+        },
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    assert Settings.load_config().compaction.summary_keep_tokens == 5000
 
 
 def test_settings_compaction_partial_config_keeps_defaults(monkeypatch, tmp_path):
     home = tmp_path / "nova-compaction-partial-home"
-    _write_config(home, {"providers": {}, "compaction": {"summary_keep_ratio": 0.9}})
+    _write_config(home, {"providers": {}, "compaction": {"summary_keep_tokens": 9000}})
     monkeypatch.setenv("NOVA_HOME", str(home))
 
     settings = Settings.load_config()
     comp = settings.compaction
 
-    assert comp.summary_keep_ratio == 0.9
+    assert comp.summary_keep_tokens == 9000
     assert comp.output_reserve_tokens == 16000
     assert comp.snip_preserve_last_n_messages == 12
 

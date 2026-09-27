@@ -20,6 +20,7 @@ from nova.agent.compaction import (
     _get_tool_call_ids,
     _get_tool_call_id,
     _get_msg_id,
+    evaluate_compaction,
 )
 
 
@@ -38,8 +39,8 @@ class TestEstimateTokens:
     def test_single_message(self):
         messages = [MockMessage("1", "user", "Hello")]
         tokens = estimate_tokens(messages)
-        # "Hello" = 5 chars, 5/4=1, 1*1.2=1
-        assert tokens > 0  # 1 > 0
+        # "Hello" = 5 chars, 5/4 = 1
+        assert tokens == 1
 
     def test_multiple_messages(self):
         messages = [
@@ -48,14 +49,14 @@ class TestEstimateTokens:
             MockMessage("3", "user", "Can you help me?"),  # 17 chars
         ]
         tokens = estimate_tokens(messages)
-        # total=53 chars, 53/4=13, 13*1.2=15.6->15
-        assert tokens > 10  # Updated for new chars/4 * 1.2 formula
+        # 18/4=4, 18/4=4, 17/4=4, each message floored before summing
+        assert tokens == 11
 
     def test_long_content(self):
         messages = [MockMessage("1", "user", "A" * 1000)]
         tokens = estimate_tokens(messages)
-        # 1000 chars, 1000/4=250, 250*1.2=300
-        assert tokens >= 300  # Updated: use >= instead of >
+        # 1000 chars, 1000/4=250
+        assert tokens == 250
 
 
 class TestSnipOldToolResults:
@@ -154,7 +155,7 @@ class TestFindSplitPoint:
             content = f"Message {i}: " + "x" * 100
             messages.append(MockMessage(str(i), "user", content))
         
-        split = find_split_point(messages, keep_ratio=0.3)
+        split = find_split_point(messages, keep_tokens=20)
         
         assert 0 <= split < 10
 
@@ -227,10 +228,10 @@ class TestShouldCompact:
             assert threshold >= window * 0.5
 
 
-class TestGetContextLimitWithMargin:
+class TestResolveContextLimit:
     def test_with_provider_joint_lookup(self):
         """Provider + model joint lookup returns correct limit."""
-        from nova.llm.tokenizer import get_context_limit_with_margin
+        from nova.llm.tokenizer import resolve_context_limit
         
         mock_settings = MagicMock()
         mock_settings.providers = {
@@ -240,12 +241,12 @@ class TestGetContextLimitWithMargin:
         with patch("nova.settings.get_settings", return_value=mock_settings):
             from nova.settings import get_settings
             get_settings.cache_clear()
-            result = get_context_limit_with_margin("gemma4:26b", "ollama")
-            assert result == int(32000 / 1.2)
+            result = resolve_context_limit("gemma4:26b", "ollama")
+            assert result == 32000
 
     def test_with_provider_context_window_fallback(self):
         """Falls back to context_window when limit.context missing."""
-        from nova.llm.tokenizer import get_context_limit_with_margin
+        from nova.llm.tokenizer import resolve_context_limit
         
         mock_settings = MagicMock()
         mock_settings.providers = {
@@ -255,12 +256,12 @@ class TestGetContextLimitWithMargin:
         with patch("nova.settings.get_settings", return_value=mock_settings):
             from nova.settings import get_settings
             get_settings.cache_clear()
-            result = get_context_limit_with_margin("claude-3-sonnet", "anthropic")
-            assert result == int(200000 / 1.2)
+            result = resolve_context_limit("claude-3-sonnet", "anthropic")
+            assert result == 200000
 
     def test_unknown_provider_hardcoded_fallback(self):
         """Falls back to hardcoded defaults for unknown provider."""
-        from nova.llm.tokenizer import get_context_limit_with_margin
+        from nova.llm.tokenizer import resolve_context_limit
         
         mock_settings = MagicMock()
         mock_settings.providers = {}
@@ -268,11 +269,11 @@ class TestGetContextLimitWithMargin:
         with patch("nova.settings.get_settings", return_value=mock_settings):
             from nova.settings import get_settings
             get_settings.cache_clear()
-            result = get_context_limit_with_margin("gpt-4o", "unknown")
-            assert result == 106666
+            result = resolve_context_limit("gpt-4o", "unknown")
+            assert result == 128000
 
     def test_get_context_limit_passes_provider(self):
-        """get_context_limit passes provider to get_context_limit_with_margin."""
+        """get_context_limit passes provider to resolve_context_limit."""
         mock_settings = MagicMock()
         mock_settings.providers = {
             "openai": MagicMock(models={"gpt-4o": {"limit": {"context": 200000}}}),
@@ -282,21 +283,18 @@ class TestGetContextLimitWithMargin:
             from nova.settings import get_settings
             get_settings.cache_clear()
             result = get_context_limit("gpt-4o", "openai")
-            assert result == int(200000 / 1.2)
+            assert result == 200000
 
 
 class TestGetContextLimit:
     def test_gpt4o(self):
-        # 128000 / 1.2 = 106666
-        assert get_context_limit("gpt-4o", "openai") == 106666
+        assert get_context_limit("gpt-4o", "openai") == 128000
 
     def test_gemma(self):
-        # 32000 / 1.2 = 26666
-        assert get_context_limit("gemma4:26b", "ollama") == 26666
+        assert get_context_limit("gemma4:26b", "ollama") == 32000
 
     def test_unknown_model(self):
-        # 128000 / 1.2 = 106666
-        assert get_context_limit("unknown-model", "openai") == 106666
+        assert get_context_limit("unknown-model", "openai") == 128000
 
 
 class TestHelperFunctions:
@@ -345,6 +343,46 @@ class TestHelperFunctions:
     def test_get_tool_call_ids_empty(self):
         msg = MockMessage("1", "user", "hello")
         assert _get_tool_call_ids(msg) == []
+
+
+class TestForcedCompaction:
+    """A provider rejection outranks the token estimate.
+
+    The estimate is what normally decides to compact, so it is also what can be
+    wrong; when the provider refuses the request outright there is nothing left
+    to weigh.
+    """
+
+    def _messages(self):
+        return [
+            MockMessage("1", "user", "short"),
+            MockMessage("2", "assistant", "short"),
+        ]
+
+    def test_under_threshold_history_is_left_alone_by_default(self):
+        plan = evaluate_compaction("s", self._messages(), None, "gpt-4o", "openai")
+        assert plan.over_threshold is False
+        assert plan.needs_compaction is False
+
+    def test_force_plans_a_compaction_the_estimate_would_skip(self):
+        plan = evaluate_compaction(
+            "s", self._messages(), None, "gpt-4o", "openai", force=True)
+        assert plan.over_threshold is True
+        assert plan.needs_compaction is True
+        assert plan.split_index > 0
+
+    def test_force_still_needs_a_splittable_history(self):
+        """Forcing must not manufacture a plan that cannot be executed.
+
+        A single message has no boundary to cut on, so announcing a compaction
+        here would strand the caller with a no-op it already reported.
+        """
+        plan = evaluate_compaction(
+            "s", [MockMessage("1", "user", "only")], None, "gpt-4o", "openai",
+            force=True,
+        )
+        assert plan.over_threshold is True
+        assert plan.needs_compaction is False
 
     def test_get_tool_call_id_from_object(self):
         msg = MockMessage("2", "tool", "result")
@@ -596,7 +634,7 @@ async def test_second_compaction_folds_the_previous_summary():
         await db.add_message(session_id, "assistant", "next answer " + "w" * 4000)
 
         live = await db.get_messages(session_id)
-        split = find_split_point(live, keep_ratio=0.3)
+        split = find_split_point(live, keep_tokens=1000)
         assert split > 0
         assert any(m.summary == 1 for m in live[:split]), (
             "the previous summary must fall inside the portion being folded in")
@@ -709,6 +747,85 @@ async def test_context_frames_drop_across_a_compaction(monkeypatch):
         before, after = frames
         assert after["used"] < before["used"], (
             f"context did not shrink: {before['used']} -> {after['used']}"
+        )
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_the_shrink_comes_from_the_history_not_from_the_estimator(monkeypatch):
+    """The reported drop must be a real reduction, measured like for like.
+
+    The frame comparison above passes for the wrong reason when the estimator
+    changes underneath it: a pre-compaction reading is anchored on the provider's
+    own figure, while the post-compaction reading falls back to characters because
+    no post-compaction call has happened yet. That gap alone is larger than the
+    reduction, so the frame assertion would hold even if compaction freed nothing.
+
+    Estimating both histories against the same ``compacted_at`` removes the
+    estimator from the comparison, leaving only the difference in content.
+    """
+    from nova.agent.compaction import CompactionController, estimate_context_tokens
+    from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.session.manager import SessionContext
+
+    monkeypatch.setattr(
+        "nova.agent.compaction.get_context_limit", lambda model, provider: 4_000
+    )
+
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
+    await db.connect()
+    try:
+        session_id = "shrink-is-real"
+        session = SessionContext.create()
+        session.id = session_id
+        await db.save_session(session)
+
+        for turn in range(6):
+            await db.add_message(session_id, "user", f"q{turn} " + "x" * 8_000)
+            await db.add_message(
+                session_id, "assistant", f"a{turn} " + "y" * 8_000
+            )
+
+        live_session = await db.get_session(session_id)
+        messages = await db.get_messages(session_id)
+        before_history = estimate_context_tokens(messages, "gpt-4o")
+
+        controller = CompactionController(model="gpt-4o", provider="openai")
+
+        async def emit(event, payload):
+            return None
+
+        result = controller.run_with_events(
+            messages=messages,
+            session=live_session,
+            db=db,
+            llm=StubSummaryProvider("folded"),
+            emit=emit,
+        )
+        async for _ in result:
+            pass
+        assert controller.compacted is True
+
+        fresh = await db.get_messages(session_id)
+        compacted_at = live_session["compacted_at"]
+        after_history = estimate_context_tokens(fresh, "gpt-4o", compacted_at)
+        before_like_for_like = estimate_context_tokens(
+            messages, "gpt-4o", compacted_at
+        )
+
+        removed = before_history - after_history
+        assert removed > 0, "compaction freed nothing"
+        assert after_history < before_like_for_like, (
+            "the two histories are not comparable, so the frames prove nothing"
+        )
+        # Half the history, not merely "some of it": a split that folds in one
+        # message still reduces the total, so a weaker bound would pass for a
+        # compaction that freed almost nothing.
+        assert removed >= before_history * 0.5, (
+            f"compaction removed {removed} of {before_history} tokens, "
+            "which is not a real reduction"
         )
     finally:
         await db.close()
@@ -927,7 +1044,13 @@ class TestCjkTokenEstimation:
         assert estimate_tokens_by_type(mixed) == expected
 
 
-class TestSplitPointPairing:
+class TestSafeBoundary:
+    """The recent portion may begin anywhere except on a tool response.
+
+    A tool response whose declaring assistant message sits in the compacted
+    portion is an orphan, and the provider rejects the request.
+    """
+
     def _paired_history(self):
         return [
             MockTimedMessage("1", "user", "q1"),
@@ -938,18 +1061,51 @@ class TestSplitPointPairing:
             MockTimedMessage("6", "assistant", "done"),
         ]
 
-    def test_split_retreats_to_the_user_turn_boundary(self):
-        from nova.agent.compaction import _retreat_to_safe_split
+    def test_boundary_steps_forward_past_a_tool_response(self):
+        from nova.agent.compaction import _first_safe_boundary
 
         history = self._paired_history()
-        for candidate in (2, 3, 4, 5):
-            assert _retreat_to_safe_split(history, candidate) == 2
+        assert _first_safe_boundary(history, 4) == 5
+        assert _first_safe_boundary(history, 5) == 5
 
-    def test_split_never_separates_assistant_from_its_tool_response(self):
-        from nova.agent.compaction import _retreat_to_safe_split
+    def test_no_target_ever_lands_on_a_tool_response(self):
+        from nova.agent.compaction import _first_safe_boundary
 
         history = self._paired_history()
-        split = _retreat_to_safe_split(history, 4)
+        for target in range(len(history) + 2):
+            split = _first_safe_boundary(history, target)
+            assert split == 0 or history[split].role != "tool", target
+
+    def test_an_all_tool_tail_falls_back_to_the_earliest_boundary(self):
+        """The pairing constraint outranks the budget.
+
+        Landing on the last message instead would leave the recent portion
+        starting with a tool response, which the provider rejects.
+        """
+        from nova.agent.compaction import _first_safe_boundary
+
+        history = [
+            MockTimedMessage("1", "user", "q"),
+            MockTimedMessage("2", "assistant", "", tool_calls=[{"id": "a"}]),
+            MockTimedMessage("3", "tool", "r1", tool_call_id="a"),
+            MockTimedMessage("4", "tool", "r2", tool_call_id="a"),
+        ]
+        split = _first_safe_boundary(history, 2)
+        assert split == 1
+        assert history[split].role != "tool"
+
+    def test_a_history_of_only_tool_responses_has_no_boundary(self):
+        from nova.agent.compaction import _first_safe_boundary
+
+        history = [
+            MockTimedMessage("1", "tool", "r1", tool_call_id="a"),
+            MockTimedMessage("2", "tool", "r2", tool_call_id="a"),
+        ]
+        assert _first_safe_boundary(history, 1) == 0
+
+    def test_retained_portion_keeps_assistant_tool_pairing(self):
+        history = self._paired_history()
+        split = find_split_point(history, keep_tokens=1)
         recent = history[split:]
         declared = {
             call["id"]
@@ -962,72 +1118,116 @@ class TestSplitPointPairing:
             for message in recent
             if message.role == "tool" and message.tool_call_id
         }
-        assert answered <= declared
-        assert recent[0].role == "user"
         assert recent
+        assert answered <= declared
+        assert recent[0].role != "tool"
 
-    def test_single_user_turn_can_still_be_compacted(self):
-        """One prompt followed by an agentic run has no user boundary to use.
+    def test_single_user_turn_is_still_compactable(self):
+        """One prompt followed by an agentic run has no user boundary at all.
 
-        Requiring a user boundary left every such session uncompactable however
-        large its context grew, so the split falls back to the assistant
-        boundary instead.
+        The recent portion therefore starts mid-turn, which is fine: the prompt
+        itself is summarised, so the model still learns what was asked.
         """
-        from nova.agent.compaction import _retreat_to_safe_split
-
         history = [
             MockTimedMessage("1", "user", "q"),
             MockTimedMessage("2", "assistant", "", tool_calls=[{"id": "a"}]),
             MockTimedMessage("3", "tool", "r1", tool_call_id="a"),
             MockTimedMessage("4", "tool", "r2", tool_call_id="a"),
         ]
-        for candidate in (2, 3, 4):
-            split = _retreat_to_safe_split(history, candidate)
-            assert split == 1, f"candidate {candidate} should split after the prompt"
-            recent = history[split:]
-            assert recent, "the recent portion must not be empty"
-            assert recent[0].role != "tool", "a tool response must not start it"
+        split = find_split_point(history, keep_tokens=1)
+        assert split > 0
+        recent = history[split:]
+        assert recent
+        assert recent[0].role != "tool"
 
-    def test_zero_split_is_untouched(self):
-        from nova.agent.compaction import _retreat_to_safe_split
 
-        history = [MockTimedMessage("1", "tool", "r", tool_call_id="a")]
-        assert _retreat_to_safe_split(history, 0) == 0
+class TestKeepBudget:
+    def test_a_history_within_budget_is_left_alone(self):
+        """Nothing to gain, and compacting anyway would repeat on every call.
 
-    def test_find_split_point_returns_safe_boundary(self):
-        history = [
-            MockTimedMessage("1", "user", "x" * 4000),
-            MockTimedMessage("2", "assistant", "", tool_calls=[{"id": "a"}]),
-            MockTimedMessage("3", "tool", "y" * 4000, tool_call_id="a"),
-            MockTimedMessage("4", "user", "z" * 40),
-            MockTimedMessage("5", "assistant", "w" * 40),
-        ]
-        split = find_split_point(history, keep_ratio=0.3)
-        # Safe means "not a tool response": a user boundary is preferred, but a
-        # single-user-turn history has none and must still be compactable.
-        assert split == 0 or _get_role(history[split]) != "tool"
-
-    def test_find_split_point_compacts_a_dominant_first_message(self):
-        """A first message that alone outweighs keep_ratio must still split.
-
-        The backward walk could only reach the target at index 0 there, which
-        reported "unsplittable" for the history that most needed compacting.
+        A ratio could not produce this case; an absolute budget can, whenever the
+        budget exceeds the history.
         """
+        history = [
+            MockTimedMessage("1", "user", "q"),
+            MockTimedMessage("2", "assistant", "a"),
+        ]
+        assert find_split_point(history, keep_tokens=20000) == 0
+
+    def test_forcing_overrides_the_budget_check(self):
+        """A rejected request can be small and still not fit.
+
+        When the fixed prompt rather than the history is what overflows, folding
+        the history is the only remedy left, so the budget check must not block it.
+        """
+        history = [
+            MockTimedMessage("1", "user", "q"),
+            MockTimedMessage("2", "assistant", "a"),
+        ]
+        assert find_split_point(history, keep_tokens=20000, force=True) == 1
+
+    def test_the_budget_bounds_what_is_kept(self):
+        """Retention tracks the budget, up to the granularity of one message.
+
+        The walk adds whole messages until it reaches the budget, so it can
+        overshoot by the last message it added; snapping forward over a run of
+        tool responses can add more. It must not overshoot without bound.
+        """
+        history = [
+            MockTimedMessage(str(i), "user" if i % 2 == 0 else "assistant",
+                             f"{i} " + "x" * 8000)
+            for i in range(20)
+        ]
+        per_message = max(estimate_tokens([message]) for message in history)
+        for budget in (2000, 8000, 20000):
+            split = find_split_point(history, keep_tokens=budget)
+            assert split > 0, budget
+            kept = estimate_tokens(history[split:])
+            assert kept <= budget + per_message, (
+                f"budget {budget} kept {kept}, one message is {per_message}")
+
+    def test_retention_does_not_grow_with_the_history(self):
+        """The defect this replaces: a ratio made the floor rise with the bloat.
+
+        One turn that dumped a large tool result left a permanently higher floor,
+        because the retained portion was always a share of a history that had
+        itself grown. Measured on real sessions, the share version kept up to
+        4.4x its target; the budget keeps the same amount regardless.
+        """
+        def build(count: int):
+            return [
+                MockTimedMessage(str(i), "user" if i % 2 == 0 else "assistant",
+                                 f"{i} " + "x" * 8000)
+                for i in range(count)
+            ]
+
+        kept = []
+        for count in (10, 20, 40):
+            history = build(count)
+            split = find_split_point(history, keep_tokens=8000)
+            assert split > 0, count
+            kept.append(estimate_tokens(history[split:]))
+
+        assert max(kept) - min(kept) <= 2000, (
+            f"retention moved with the history: {kept}")
+
+    def test_a_dominant_first_message_is_still_split(self):
+        """A first message that alone outweighs the budget must not block it."""
         history = [
             MockTimedMessage("1", "user", "x" * 40000),
             MockTimedMessage("2", "user", "short"),
             MockTimedMessage("3", "assistant", "short"),
         ]
-        assert find_split_point(history, keep_ratio=0.3) == 1
+        assert find_split_point(history, keep_tokens=4000) == 1
 
-    def test_find_split_point_refuses_to_fold_summary_into_summary(self):
+    def test_refuses_to_fold_summary_into_summary(self):
         """Compacting only summaries frees no context and would repeat forever."""
         history = [
             MockTimedMessage("1", "assistant", "earlier summary", summary=1),
             MockTimedMessage("2", "assistant", "", tool_calls=[{"id": "a"}]),
             MockTimedMessage("3", "tool", "r", tool_call_id="a"),
         ]
-        assert find_split_point(history, keep_ratio=0.3) == 0
+        assert find_split_point(history, keep_tokens=1) == 0
 
 
 @pytest.mark.asyncio
@@ -1189,7 +1389,7 @@ class TestUsageAnchoredEstimation:
             MockUsageMessage("3", "user", "z" * 8000, time_created=3),
             MockUsageMessage("4", "assistant", "w" * 8000, time_created=4),
         ]
-        assert find_split_point(history, keep_ratio=0.3) > 0
+        assert find_split_point(history, keep_tokens=100) > 0
 
     def test_scope_growth_excludes_the_carried_prefix_even_with_usage(self):
         from nova.agent.compaction import count_tokens_since_compact
@@ -1496,7 +1696,10 @@ class TestInLoopCompaction:
         async with self._isolated_store():
             provider = self._provider([
                 [TextDelta(content="first answer")],
-                [TextDelta(content="X" * 400_000),
+                # Large enough to cross the threshold for an unknown model: the
+                # default window is 128000 and the reserve leaves 104000, so
+                # 500k ASCII characters is about 125k estimated tokens.
+                [TextDelta(content="X" * 500_000),
                  ToolCall(id="t1", name="tiny_tool", arguments="{}")],
                 [TextDelta(content="done")],
             ])
@@ -1675,11 +1878,16 @@ class TestContextWindowResolution:
 
         assert normalise_model_id(raw) == normalised
 
-    def test_margin_is_applied_on_top_of_the_resolved_window(self):
-        from nova.llm.tokenizer import SAFETY_MARGIN, get_context_limit_with_margin
+    def test_the_window_is_reported_undivided(self):
+        """The provider's own number, with no margin taken off it.
 
-        assert get_context_limit_with_margin("gemini-3-flash", "unconfigured") == int(
-            1_048_576 / SAFETY_MARGIN)
+        The margin used to be subtracted here, which made compaction fire before
+        the window was actually full. Shrinking a hard number does not make the
+        provider more forgiving, and an anchored estimate is already exact.
+        """
+        from nova.llm.tokenizer import resolve_context_limit
+
+        assert resolve_context_limit("gemini-3-flash", "unconfigured") == 1_048_576
 
 
 # ---------------------------------------------------------------------------

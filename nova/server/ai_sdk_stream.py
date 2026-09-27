@@ -276,6 +276,7 @@ class AISDKStreamAdapter:
                         "data": {
                             "message_count": data_payload.get("message_count", 0),
                             "token_count": data_payload.get("token_count", 0),
+                            "reason": data_payload.get("reason", "threshold"),
                         },
                     }
                 )

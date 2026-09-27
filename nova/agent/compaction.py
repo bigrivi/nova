@@ -105,12 +105,12 @@ def estimate_context_tokens(
 
 
 def get_context_limit(model: str, provider: str) -> int:
-    """Return the context limit for a model, with safety margin.
+    """The context window to plan against, as the provider states it.
 
-    Reserves 20% of context window for safety margin.
+    Thin wrapper kept so compaction callers need not reach into the tokenizer.
     """
-    from nova.llm.tokenizer import get_context_limit_with_margin
-    return get_context_limit_with_margin(model, provider)
+    from nova.llm.tokenizer import resolve_context_limit
+    return resolve_context_limit(model, provider)
 
 
 def snip_old_tool_results(
@@ -187,29 +187,45 @@ def _offload_tool_output(
         return None
 
 
-def find_split_point(messages: list, keep_ratio: float = 0.3) -> int:
-    """Find a split point so the recent portion keeps about ``keep_ratio`` of the tokens.
+def find_split_point(
+    messages: list, keep_tokens: int = 20000, force: bool = False
+) -> int:
+    """Find a split point leaving roughly ``keep_tokens`` of recent history.
 
-    Returns 0 when nothing should be compacted: either no boundary is safe (see
-    :func:`_retreat_to_safe_split`), or the portion that would be folded in is
-    nothing but earlier summaries.
+    The budget is absolute rather than a share of the history. A share grew with
+    the history, so a single turn that dumped a large tool result left a
+    permanently higher floor for the rest of the session, and every later
+    compaction inherited it.
+
+    Returns 0 when nothing should be compacted: the whole history already fits the
+    budget, no boundary is safe, or the portion that would be folded in is nothing
+    but earlier summaries.
+
+    ``force`` skips the budget check. A request the provider rejected as too large
+    can be that small a history when the fixed prompt - system prompt, tool
+    schemas - is what does not fit, and folding the history is then the only
+    remedy available. Declining to try would guarantee the retry failed too.
     """
     total = estimate_tokens(messages)
-    target = int(total * keep_ratio)
-    running = 0
+    if total <= keep_tokens and not force:
+        # Already within budget. With a ratio this could not happen, so it needs
+        # saying: compacting here would shave off a message or two, leave the
+        # threshold exceeded, and repeat on every call until the breaker tripped.
+        return 0
 
-    split = 0
+    running = 0
+    target = 0
     for i in range(len(messages) - 1, -1, -1):
         running += estimate_tokens([messages[i]])
-        if running >= target:
-            split = i
+        if running >= keep_tokens:
+            target = i
             break
 
-    # The backward walk can only reach the target at index 0 when the first
-    # message alone outweighs the keep_ratio — a giant pasted prompt, say. That
-    # reported "unsplittable" for exactly the history that most needed
-    # compacting, so start the boundary at 1 and let the retreat validate it.
-    split = _retreat_to_safe_split(messages, max(1, split))
+    # The walk can only reach the budget at index 0 when the first message alone
+    # outweighs it — a giant pasted prompt, say. That reported "unsplittable" for
+    # exactly the history that most needed compacting, so start the boundary at 1
+    # and let the boundary search validate it.
+    split = _first_safe_boundary(messages, max(1, target))
     if split > 0 and all(_is_summary(message) for message in messages[:split]):
         # Folding summary-into-summary rewrites the summary without freeing any
         # context, and because the hard limit is still exceeded it would repeat
@@ -219,38 +235,34 @@ def find_split_point(messages: list, keep_ratio: float = 0.3) -> int:
     return split
 
 
-def _retreat_to_safe_split(messages: list, split: int) -> int:
-    """Move the split backward to a boundary that is safe to compact at.
+def _first_safe_boundary(messages: list, target: int) -> int:
+    """The first index at or after *target* that a split may leave in the past.
 
-    Retreating (rather than advancing) satisfies the two hard constraints:
+    A tool response must never start the recent portion. Its declaring assistant
+    message would be in the compacted portion, leaving an orphan tool message that
+    breaks the assistant->tool pairing contract and makes the provider reject the
+    request. So tool messages are not eligible boundaries.
 
-    * A tool response never starts the recent portion. Its declaring assistant
-      message would otherwise stay behind in the compacted portion, leaving an
-      orphan tool message that violates the assistant->tool pairing contract and
-      makes the provider reject the request.
-    * The recent portion can never end up empty, which advancing past a trailing
-      run of tool messages would cause.
+    The search moves forward from the budget target rather than backward to a
+    user message. Preferring a user boundary reads better, but nothing depends on
+    it: the turn's opening user message is itself summarised, so the model still
+    learns what was asked. Moving backward instead meant the distance to the
+    previous user turn decided how much was kept, which for a session that had
+    compacted down to a single exchange kept almost everything, and for a long
+    agentic turn kept 4x the budget.
 
-    A user boundary is preferred on top of that, so the kept history reads as
-    whole turns. It is a preference, not a requirement: one prompt followed by a
-    long agentic run has a single user message at index 0 and therefore no user
-    boundary to retreat to, and demanding one left those sessions permanently
-    uncompactable no matter how large the context grew. When no user boundary is
-    available the non-tool boundary is used instead - pairing stays valid, since
-    a split at an assistant message keeps that message and its tool results
-    together in the recent portion.
-
-    Returning 0 means nothing can be compacted safely and the caller should skip
-    compaction entirely.
+    Returns 0 when no eligible boundary exists at or after *target*, in which case
+    the whole remaining history is a tool run and the split falls back to the
+    earliest eligible index rather than onto a tool message.
     """
-    safe = min(split, len(messages) - 1) if messages else 0
-    while safe > 0 and _get_role(messages[safe]) == "tool":
-        safe -= 1
-
-    preferred = safe
-    while preferred > 0 and _get_role(messages[preferred]) != "user":
-        preferred -= 1
-    return preferred if preferred > 0 else safe
+    count = len(messages)
+    for index in range(min(target, count), count):
+        if _get_role(messages[index]) != "tool":
+            return index
+    for index in range(min(target, count) - 1, -1, -1):
+        if _get_role(messages[index]) != "tool":
+            return index
+    return 0
 
 
 NEW_SUMMARY_ANCHOR = (
@@ -357,11 +369,16 @@ def evaluate_compaction(
     last_compacted_at: Optional[int],
     model: str = "gpt-4o",
     provider: str = "ollama",
+    force: bool = False,
 ) -> CompactionPlan:
     """Pure decision step: no IO, no mutation, no message payload in the result.
 
     A plan only asks for compaction when the history can also be split safely,
     so callers never announce a compaction that would turn into a no-op.
+
+    ``force`` skips the token-pressure test. The provider rejecting a request as
+    too large is a better signal than any estimate, and it arrives precisely when
+    the estimate was wrong.
     """
     model_max_tokens = get_context_limit(model, provider)
     comp = get_settings().compaction
@@ -370,14 +387,19 @@ def evaluate_compaction(
         return CompactionPlan(session_id, model_max_tokens, 0, 0, False)
 
     token_count = estimate_context_tokens(messages, model, last_compacted_at)
-    over_threshold = should_compact(
+    over_threshold = force or should_compact(
         scope_tokens=count_tokens_since_compact(
             messages, last_compacted_at, model),
         total_tokens=token_count,
         model_max_tokens=model_max_tokens,
     )
+    # The budget never takes more than half the window, for the same reason the
+    # reserve does: a budget larger than the window would put the split point out
+    # of reach, so each call would compact a message or two, leave the threshold
+    # exceeded, and repeat until the circuit breaker opened.
+    keep_tokens = min(comp.summary_keep_tokens, model_max_tokens // 2)
     split_index = find_split_point(
-        messages, keep_ratio=comp.summary_keep_ratio) if over_threshold else 0
+        messages, keep_tokens=keep_tokens, force=force) if over_threshold else 0
     return CompactionPlan(
         session_id,
         model_max_tokens,
@@ -396,6 +418,7 @@ async def prepare_compaction(
     db: "DataSourceProtocol",
     model: str = "gpt-4o",
     provider: str = "ollama",
+    force: bool = False,
 ) -> CompactionPlan:
     """Evaluate *messages*, run Layer 1 snipping when needed, then re-evaluate.
 
@@ -403,7 +426,7 @@ async def prepare_compaction(
     stays consistent with what was written back to the database.
     """
     plan = evaluate_compaction(
-        session_id, messages, last_compacted_at, model, provider)
+        session_id, messages, last_compacted_at, model, provider, force=force)
     if not plan.over_threshold:
         return plan
 
@@ -413,7 +436,7 @@ async def prepare_compaction(
     # defence left.
     await snip_tool_results_in_db(db, session_id, messages)
     return evaluate_compaction(
-        session_id, messages, last_compacted_at, model, provider)
+        session_id, messages, last_compacted_at, model, provider, force=force)
 
 
 async def run_compaction_plan(
@@ -487,7 +510,12 @@ async def compact(
     before_tokens = estimate_tokens(messages)
     comp = get_settings().compaction
     split = split_index if split_index is not None else find_split_point(
-        messages, keep_ratio=comp.summary_keep_ratio)
+        messages,
+        keep_tokens=min(
+            comp.summary_keep_tokens,
+            get_context_limit(model, provider) // 2,
+        ),
+    )
     if split <= 0:
         return False
 
@@ -741,6 +769,9 @@ class CompactionController:
         self.provider = provider
         self.consecutive_failures = 0
         self.compacted = False
+        # Set by the caller when the provider rejected a request as too large, so
+        # the next plan ignores token pressure. Consumed on the next run.
+        self.force_next = False
 
     def summarising_allowed(self) -> bool:
         limit = get_settings().compaction.max_consecutive_failures
@@ -758,6 +789,7 @@ class CompactionController:
         messages: list,
         session: Any,
         db: "DataSourceProtocol",
+        force: bool = False,
     ) -> Optional[CompactionPlan]:
         """Decide whether Layer 2 should run, after Layer 1 has had its chance.
 
@@ -772,6 +804,7 @@ class CompactionController:
             db=db,
             model=self.model,
             provider=self.provider,
+            force=force,
         )
         if not plan.needs_compaction:
             return None
@@ -805,6 +838,10 @@ class CompactionController:
         :mod:`nova.llm.oneshot`).
         """
         self.compacted = False
+        # A forced run is consumed here so the latch cannot survive a turn that
+        # ends up not needing a plan at all.
+        force = self.force_next
+        self.force_next = False
         # Always emit current context usage so the TUI can render the ctx bar
         # with the same numbers the compaction decision uses.
         try:
@@ -818,13 +855,14 @@ class CompactionController:
         except Exception:
             pass
 
-        plan = await self.plan(messages, session, db)
+        plan = await self.plan(messages, session, db, force=force)
         if plan is None:
             return
 
         payload = {
             "message_count": plan.message_count,
             "token_count": plan.token_count,
+            "reason": "overflow" if force else "threshold",
         }
         await emit(AgentEvent.COMPACTION_START, payload)
         yield AgentEvent.COMPACTION_START, payload

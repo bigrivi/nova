@@ -8,8 +8,7 @@ from nova.llm.tokenizer import (
     estimate_tokens_by_type,
     estimate_message_tokens,
     estimate_messages_tokens,
-    get_context_limit_with_margin,
-    SAFETY_MARGIN,
+    resolve_context_limit,
     CHARS_PER_TOKEN_TEXT,
     CHARS_PER_TOKEN_TOOL,
     IMAGE_CHAR_ESTIMATE,
@@ -60,7 +59,7 @@ class TestEstimateMessageTokens:
         """User message with string content."""
         msg = MockMessage("user", "Hello, how are you?")
         result = estimate_message_tokens(msg, model="gpt-4")
-        # chars=18, /4 = 4.5 -> 5, *1.2 = 6
+        # chars=18, /4 = 4.5 -> 4
         assert result > 0
         assert isinstance(result, int)
 
@@ -68,8 +67,8 @@ class TestEstimateMessageTokens:
         """Tool result with string content (uses chars/2)."""
         msg = MockMessage("tool", "A" * 100)
         result = estimate_message_tokens(msg, model="unknown")
-        # 100/2=50, *1.2=60
-        assert result == 60
+        # 100/2=50
+        assert result == 50
 
     def test_list_content_with_text(self):
         """Message with list content containing text blocks."""
@@ -78,7 +77,7 @@ class TestEstimateMessageTokens:
             {"type": "text", "text": "World"}
         ])
         result = estimate_message_tokens(msg, model="gpt-4")
-        # "Hello"=5, "World"=5, total=10, /4=2 (int), *1.2=2 (int)
+        # "Hello"=5, "World"=5, total=10, /4=2 (int)
         assert result == 2
 
     def test_list_content_with_image(self):
@@ -88,8 +87,8 @@ class TestEstimateMessageTokens:
             {"type": "text", "text": "What's this?"}
         ])
         result = estimate_message_tokens(msg, model="gpt-4")
-        # text=12/4=3, image=8000//4=2000, total=2003, *1.2=2403 -> 2403
-        assert result >= 2400
+        # text=12/4=3, image=8000//4=2000, total=2003
+        assert result >= 2000
 
     def test_list_content_with_thinking(self):
         """Assistant message with thinking block."""
@@ -98,7 +97,7 @@ class TestEstimateMessageTokens:
             {"type": "text", "text": "Hello"}
         ])
         result = estimate_message_tokens(msg, model="gpt-4")
-        # thinking=str->15/4=3, text=5/4=1, total=4, *1.2=4.8->4
+        # thinking=str->15/4=3, text=5/4=1, total=4
         assert result == 4
 
     def test_with_tool_calls(self):
@@ -145,52 +144,61 @@ class TestEstimateMessagesTokens:
             MockMessage("assitant", "C" * 50)
         ]
         result = estimate_messages_tokens(messages, model="gpt-4")
-        # Actual output: 89 (chars/4 + chars/2 with safety margin)
-        assert result == 89
+        # The gpt-4 path uses tiktoken: 13 + 50 + 12. The removed 1.2 pad was
+        # applied per message, not to the sum, which is where 15 + 60 + 14 = 89
+        # came from.
+        assert result == 75
 
 
-class TestGetContextLimitWithMargin:
-    """Test context limit with safety margin."""
+class TestResolveContextLimit:
+    """The planned window is the one the provider states, undivided."""
 
     def test_known_model(self):
-        """Known model returns limit with 1.2x safety margin."""
-        result = get_context_limit_with_margin("gpt-4o", provider="openai")
-        # 128000 / 1.2 = 106666
-        assert result == 106666
+        result = resolve_context_limit("gpt-4o", provider="openai")
+        assert result == 128000
 
     def test_gpt4(self):
         """GPT-4 has 8192 context window."""
-        result = get_context_limit_with_margin("gpt-4", provider="openai")
-        # 8192 / 1.2 = 6826
-        assert result == 6826
+        result = resolve_context_limit("gpt-4", provider="openai")
+        assert result == 8192
 
     def test_gemma(self):
-        """Gemma model."""
-        result = get_context_limit_with_margin("gemma4:26b", provider="ollama")
-        # 32000 / 1.2 = 26666
-        assert result == 26666
+        result = resolve_context_limit("gemma4:26b", provider="ollama")
+        assert result == 32000
 
     def test_unknown_model(self):
-        """Unknown model returns default (128000 / 1.2)."""
-        result = get_context_limit_with_margin("unknown-model", provider="openai")
-        # 128000 / 1.2 = 106666
-        assert result == 106666
+        """Unknown model falls back to the default window, still undivided."""
+        result = resolve_context_limit("unknown-model", provider="openai")
+        assert result == 128000
 
 
-class TestSafetyMargin:
-    """Test safety margin application."""
+class TestNoEstimatePadding:
+    """Estimates are reported as measured, with no global multiplier.
 
-    def test_margin_value(self):
-        """SAFETY_MARGIN should be 1.2."""
-        assert SAFETY_MARGIN == 1.2
+    A blanket 1.2 was applied to every estimate. Measured against a real
+    tokenizer the character heuristic already over-counts prose by 6-45% and only
+    under-counts code, so the pad inflated the common case while silently scaling
+    every budget compared against an estimate - including the recent-portion
+    budget, which therefore retained 20% more content than it was set to. A
+    request that still overshoots is handled by compacting and retrying, not by
+    padding the number.
+    """
 
-    def test_margin_applied(self):
-        """Safety margin is applied to final result."""
-        text = "A" * 4
-        # Without margin: 4/4=1
-        # With margin: 1 * 1.2 = 1.2 -> 1
-        result = estimate_tokens_by_type(text, is_tool_result=False)
-        assert result == 1
+    def test_there_is_no_margin_constant(self):
+        import nova.llm.tokenizer as tokenizer
+
+        assert not hasattr(tokenizer, "SAFETY_MARGIN")
+
+    def test_prose_is_the_bare_character_ratio(self):
+        text = "the assistant completed the recommendations for the plaza"
+        result = estimate_message_tokens(MockMessage("user", text), model="unknown")
+        assert result == len(text) // 4
+
+    def test_tool_results_use_their_own_ratio(self):
+        """Tool output is denser, so it gets 2 chars per token, not 4."""
+        result = estimate_message_tokens(
+            MockMessage("tool", "A" * 100), model="unknown")
+        assert result == 50
 
 
 class TestTiktokenFallback:
@@ -240,8 +248,8 @@ class TestProviderAwareContextLimit:
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
             get_settings.cache_clear()
-            result = get_context_limit_with_margin("gemma4:26b", provider="ollama")
-            assert result == int(32000 / 1.2)
+            result = resolve_context_limit("gemma4:26b", provider="ollama")
+            assert result == 32000
 
     def test_provider_model_limit_context_priority(self):
         """limit.context takes priority over context_window."""
@@ -259,8 +267,8 @@ class TestProviderAwareContextLimit:
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
             get_settings.cache_clear()
-            result = get_context_limit_with_margin("gpt-4o", provider="openai")
-            assert result == int(200000 / 1.2)
+            result = resolve_context_limit("gpt-4o", provider="openai")
+            assert result == 200000
 
     def test_provider_model_context_window_fallback(self):
         """Falls back to context_window when limit.context missing."""
@@ -275,8 +283,8 @@ class TestProviderAwareContextLimit:
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
             get_settings.cache_clear()
-            result = get_context_limit_with_margin("claude-3-5-sonnet", provider="anthropic")
-            assert result == int(200000 / 1.2)
+            result = resolve_context_limit("claude-3-5-sonnet", provider="anthropic")
+            assert result == 200000
 
     def test_unknown_provider_falls_back_to_hardcoded(self):
         """Unknown provider falls back to hardcoded defaults."""
@@ -285,8 +293,8 @@ class TestProviderAwareContextLimit:
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
             get_settings.cache_clear()
-            result = get_context_limit_with_margin("gpt-4o", provider="unknown-provider")
-            assert result == 106666  # 128000 / 1.2
+            result = resolve_context_limit("gpt-4o", provider="unknown-provider")
+            assert result == 128000
 
     def test_unknown_model_falls_back_to_hardcoded(self):
         """Unknown model in known provider falls back to hardcoded defaults."""
@@ -299,6 +307,6 @@ class TestProviderAwareContextLimit:
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
             get_settings.cache_clear()
-            result = get_context_limit_with_margin("unknown-model", provider="openai")
-            assert result == 106666  # 128000 / 1.2
+            result = resolve_context_limit("unknown-model", provider="openai")
+            assert result == 128000
 

@@ -15,9 +15,6 @@ IMAGE_CHAR_ESTIMATE = 8000            # Fixed estimate for images
 # ratios above underestimate Chinese/Japanese/Korean content by 2-4x.
 CHARS_PER_TOKEN_CJK = 1
 
-# Safety margin to account for estimation inaccuracy
-SAFETY_MARGIN = 1.2
-
 _CJK_RANGES = (
     (0x3040, 0x30FF),    # Hiragana + Katakana
     (0x3400, 0x4DBF),    # CJK Unified Ideographs Extension A
@@ -95,7 +92,7 @@ def estimate_message_tokens(message, model: str = "unknown") -> int:
     if not has_non_text and ("gpt" in model.lower() or "openai" in model.lower()):
         real_tokens = _estimate_with_tiktoken(message, model)
         if real_tokens is not None:
-            return int(real_tokens * SAFETY_MARGIN)
+            return real_tokens
 
     # Fallback to character estimation
     total = 0
@@ -133,8 +130,7 @@ def estimate_message_tokens(message, model: str = "unknown") -> int:
             except:
                 total += 32  # Fallback estimate
 
-    # Apply safety margin
-    return int(total * SAFETY_MARGIN)
+    return total
 
 
 def estimate_messages_tokens(messages: list, model: str = "unknown") -> int:
@@ -355,15 +351,24 @@ def _default_context_window() -> int:
     return DEFAULT_CONTEXT_WINDOW
 
 
-def get_context_limit_with_margin(model: str, provider: str) -> int:
-    """Context limit for a model, reduced by the estimation safety margin."""
+def resolve_context_limit(model: str, provider: str) -> int:
+    """The context window to plan against, exactly as the provider states it.
+
+    No margin is subtracted. The window is a hard number, and shrinking it does
+    not make the provider any more forgiving - it only makes compaction fire
+    earlier than it needs to. Where a request can still overshoot, the reactive
+    path handles it: a provider rejection is compacted and retried once.
+
+    Headroom for the reply and the summarisation request is reserved separately,
+    by :func:`nova.agent.compaction.compaction_threshold`.
+    """
     window, source = resolve_context_window(model, provider)
     if source == "default":
         log.warning(
             "Unknown context window for model %r (provider %r); assuming %d. "
             "Set providers.%s.models.%s.limit.context in config.json to correct it.",
             model, provider, window, provider, model)
-    return int(window / SAFETY_MARGIN)
+    return window
 
 
 # Keep existing helper functions

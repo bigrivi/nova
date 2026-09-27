@@ -25,6 +25,7 @@ from nova.agent.hierarchy import AgentHierarchy
 from nova.agent.memory_review import MemoryReviewer
 from nova.agent.toolset import ToolsetBuilder
 from nova.agent.llm_stream import TurnStreamReader, TurnOutcome
+from nova.agent.overflow import is_context_overflow
 from nova.agent.tool_invoker import (
     ToolInvoker, ToolOutcome, has_parsable_arguments)
 from nova.agent.events import (
@@ -130,6 +131,9 @@ class Agent:
             model=self.config.model, provider=self.config.provider)
 
         self._turns_since_review = 0
+        # One compact-and-retry per user request. A second overflow means the
+        # fixed prompt alone does not fit, which retrying cannot fix.
+        self._overflow_recovered = False
         self._guardrails = ToolGuardrails()
         self._approval = get_approval_manager()
 
@@ -325,6 +329,26 @@ class Agent:
             timeout=reasoning_timeout,
             session_id=session_id,
         )
+
+    def _try_overflow_recovery(self, error_message: str | None) -> bool:
+        """Whether to compact and re-run after the provider rejected the request.
+
+        Token pressure normally decides to compact, which means an overflowing
+        request is possible whenever the estimate was low. The provider saying so
+        outright is a better signal than any estimate, so it takes precedence and
+        the failed turn is replayed. One attempt per user request: a second
+        overflow means the fixed prompt alone does not fit, and retrying cannot
+        change that.
+        """
+        if self._overflow_recovered:
+            return False
+        if not is_context_overflow(error_message):
+            return False
+        self._overflow_recovered = True
+        self._compaction.force_next = True
+        log.warning(
+            "Provider rejected the request as too large; compacting and retrying once")
+        return True
 
     def _executable_tool_calls(self, tool_calls: list, turn_count: int) -> list:
         executable = []
@@ -540,6 +564,7 @@ class Agent:
             yield AgentEvent.TURN_START, {"turn": turn_count}
 
             done_payload = None
+            retry_after_compaction = False
             async for event, data in self._run_turn(
                 turn_count,
                 tool_schemas,
@@ -549,15 +574,33 @@ class Agent:
                 if event == AgentEvent.DONE:
                     done_payload = data
                 elif event == AgentEvent.ERROR:
+                    message = data.get("message") if isinstance(data, dict) else data
+                    if self._try_overflow_recovery(message):
+                        # The provider refused the request as too large. The error
+                        # is not surfaced: the client sees one turn, not a failure
+                        # followed by a silent retry.
+                        retry_after_compaction = True
+                        break
                     log.error(
                         "[Session %s] Agent error: %s",
                         session_id,
-                        data.get("message") if isinstance(data, dict) else data,
+                        message,
                     )
                     yield event, data
                     return
                 else:
                     yield event, data
+
+            if retry_after_compaction:
+                # The rejected turn is over, so close it out; the retry opens a
+                # new one, and the client's turn boundaries stay balanced.
+                log.info(
+                    "[Turn %d] End (rejected as too large; retrying after compaction)",
+                    turn_count,
+                )
+                await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
+                yield AgentEvent.TURN_END, {"turn": turn_count}
+                continue
 
             log.info("[Turn %d] End", turn_count)
             await self._emit(AgentEvent.TURN_END, {"turn": turn_count})

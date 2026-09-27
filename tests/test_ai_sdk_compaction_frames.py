@@ -25,7 +25,20 @@ def test_compaction_start_carries_the_plan_size() -> None:
         AgentEvent.COMPACTION_START, {"message_count": 12, "token_count": 3400}
     )
     assert frame["type"] == "data-nova-compaction-start"
-    assert frame["data"] == {"message_count": 12, "token_count": 3400}
+    assert frame["data"] == {
+        "message_count": 12,
+        "token_count": 3400,
+        "reason": "threshold",
+    }
+
+
+def test_compaction_start_distinguishes_an_overflow_recovery() -> None:
+    """The client can tell a routine compaction from repairing a rejected request."""
+    frame = frame_for(
+        AgentEvent.COMPACTION_START,
+        {"message_count": 30, "token_count": 9000, "reason": "overflow"},
+    )
+    assert frame["data"]["reason"] == "overflow"
 
 
 def test_compaction_delta_carries_each_chunk() -> None:

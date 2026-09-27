@@ -20,7 +20,7 @@ from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite_repository import SqliteRepository
 from nova.llm import ToolResult
-from nova.llm.provider import Done, LLMProvider, ReasoningDelta, TextDelta, ToolCall
+from nova.llm.provider import Done, Error, LLMProvider, ReasoningDelta, TextDelta, ToolCall
 from nova.session import manager as session_manager_module
 
 
@@ -504,3 +504,167 @@ class TestProviderSessionId:
 
         assert session_id is not None
         assert provider.seen_session_ids == [session_id]
+
+
+OVERFLOW_ERROR_TEXT = (
+    "Input length (265330) exceeds model's maximum context length (262144)."
+)
+RATE_LIMIT_ERROR_TEXT = "rate limit exceeded, slow down"
+PROBE = "probe-marker-4f2a"
+
+
+class OverflowProvider(ScriptedProvider):
+    """Rejects requests carrying *PROBE* while any remain, then behaves.
+
+    Keyed on content rather than a call count because the compaction summary
+    goes through ``chat_stream`` too, so counting calls cannot tell a rejected
+    turn from a summarisation request.
+    """
+
+    def __init__(self, scripts, reject_times: int = 1,
+                 error_text: str = OVERFLOW_ERROR_TEXT):
+        super().__init__(scripts)
+        self.reject_times = reject_times
+        self.error_text = error_text
+        self.rejections = 0
+
+    async def chat_stream(self, messages, model="m", tools=None, **kwargs):
+        carries_probe = any(
+            PROBE in str(getattr(message, "content", "") or "") for message in messages
+        )
+        if carries_probe and self.rejections < self.reject_times:
+            self.rejections += 1
+            await asyncio.sleep(0)
+            yield Error(message=self.error_text)
+            return
+        async for item in super().chat_stream(messages, model=model, tools=tools, **kwargs):
+            yield item
+
+    async def chat(self, messages, model="m", stream=False, tools=None, **kwargs):
+        self.summary_calls += 1
+        return Done(content="the folded history")
+
+
+async def _session_with_history(provider, turns: int = 4):
+    """An agent whose session already holds enough history to compact.
+
+    History goes in through the repository: ``SessionManager.add_message`` takes
+    no session id and writes to whatever session is current.
+    """
+    holder = isolated_agent(provider)
+    agent, database = await holder.__aenter__()
+    session_id = None
+    async for event, data in agent.chat_stream("hello"):
+        if event == AgentEvent.SESSION:
+            session_id = data
+    for index in range(turns):
+        await database.add_message(
+            session_id, "user", f"question {index} " + "x" * 4000)
+        await database.add_message(
+            session_id, "assistant", f"answer {index} " + "y" * 4000)
+    provider.rejections = 0
+    provider.summary_calls = 0
+    return holder, agent, database, session_id
+
+
+async def _collect(agent, message: str, session_id: str) -> list:
+    events = []
+    async for event, data in agent.chat_stream(message, session_id=session_id):
+        events.append((event, data))
+    return events
+
+
+def _payloads(events, event_type) -> list:
+    return [(data or {}) for event, data in events if event == event_type]
+
+
+def _text(events) -> str:
+    """Concatenate streamed text, tolerating either payload shape."""
+    parts = []
+    for payload in _payloads(events, AgentEvent.TEXT_DELTA):
+        parts.append(payload if isinstance(payload, str) else payload.get("delta", ""))
+    return "".join(parts)
+
+
+class TestOverflowRecovery:
+    @pytest.mark.asyncio
+    async def test_rejected_request_is_compacted_and_retried(self):
+        provider = OverflowProvider([[TextDelta(content="recovered")]])
+        holder, agent, _db, session_id = await _session_with_history(provider)
+        try:
+            events = await _collect(agent, f"try again {PROBE}", session_id)
+        finally:
+            await holder.__aexit__(None, None, None)
+
+        assert _payloads(events, AgentEvent.ERROR) == [], (
+            "the rejection is recovered from, so no error reaches the client")
+        assert [p.get("reason") for p in _payloads(events, AgentEvent.COMPACTION_START)] == [
+            "overflow"]
+        assert provider.rejections == 1, "exactly one request was rejected"
+        assert "recovered" in _text(events)
+
+    @pytest.mark.asyncio
+    async def test_the_retry_runs_after_the_history_was_shortened(self):
+        provider = OverflowProvider([[TextDelta(content="ok")]])
+        holder, agent, _db, session_id = await _session_with_history(provider)
+        try:
+            events = await _collect(agent, f"again {PROBE}", session_id)
+        finally:
+            await holder.__aexit__(None, None, None)
+
+        kinds = [event for event, _ in events]
+        assert AgentEvent.COMPACTION_START in kinds
+        assert kinds.index(AgentEvent.COMPACTION_START) < kinds.index(
+            AgentEvent.TEXT_DELTA), "the retry must be the one that produces text"
+        assert AgentEvent.TURN_END in kinds, "the rejected turn is closed out"
+        assert kinds.count(AgentEvent.TURN_START) == 2, "the retry opens a turn"
+
+    @pytest.mark.asyncio
+    async def test_a_second_overflow_is_not_retried_again(self):
+        """One attempt per request: a second rejection means it cannot fit."""
+        provider = OverflowProvider([[TextDelta(content="ok")]], reject_times=5)
+        holder, agent, _db, session_id = await _session_with_history(provider)
+        try:
+            events = await _collect(agent, f"again {PROBE}", session_id)
+        finally:
+            await holder.__aexit__(None, None, None)
+
+        assert provider.rejections == 2, "one rejection plus exactly one retry"
+        assert [p.get("reason") for p in _payloads(events, AgentEvent.ERROR)] == [
+            "llm_error"]
+        assert [p.get("reason") for p in _payloads(events, AgentEvent.COMPACTION_START)] == [
+            "overflow"], "the retry does not compact a second time"
+
+    @pytest.mark.asyncio
+    async def test_a_rate_limited_request_is_not_retried(self):
+        """Throttling is not a size problem; compacting would only double it."""
+        provider = OverflowProvider(
+            [[TextDelta(content="ok")]], reject_times=5,
+            error_text=RATE_LIMIT_ERROR_TEXT,
+        )
+        holder, agent, _db, session_id = await _session_with_history(provider)
+        try:
+            events = await _collect(agent, f"again {PROBE}", session_id)
+        finally:
+            await holder.__aexit__(None, None, None)
+
+        assert provider.rejections == 1, "no retry"
+        assert _payloads(events, AgentEvent.COMPACTION_START) == [], "no forced compaction"
+        assert [p.get("reason") for p in _payloads(events, AgentEvent.ERROR)] == [
+            "llm_error"]
+
+    @pytest.mark.asyncio
+    async def test_the_retry_does_not_duplicate_the_user_message(self):
+        """A rejected turn persists nothing, so the replay must not add a second."""
+        provider = OverflowProvider([[TextDelta(content="ok")]])
+        holder, agent, database, session_id = await _session_with_history(provider)
+        try:
+            await _collect(agent, f"only once {PROBE}", session_id)
+            messages = await database.get_messages(session_id)
+        finally:
+            await holder.__aexit__(None, None, None)
+
+        contents = [m.content for m in messages if m.role == "user"]
+        assert contents.count(f"only once {PROBE}") == 1
+        assert len([m for m in messages if m.summary == 1]) == 1, (
+            "the rejected turn's history is summarised once, not twice")

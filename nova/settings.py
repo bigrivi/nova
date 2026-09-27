@@ -62,7 +62,13 @@ class CompactionSettings:
     snip_max_chars: int = 2000        # Layer 1: trim tool results longer than this
     snip_tool_output_token_budget: int = 50000  # Layer 1: recent tool output kept verbatim
     snip_preserve_last_n_messages: int = 12  # Layer 1: keep last N messages unchanged
-    summary_keep_ratio: float = 0.3   # Layer 2: keep recent portion of tokens at split
+    # Layer 2: absolute budget for the recent portion, in estimated message
+    # tokens. Character estimates, not provider-billed tokens: the character
+    # heuristic runs about 1 token per CJK character and 1 per 4 Latin ones, so
+    # the same number retains less content in Chinese than in English. It is
+    # finally capped at half the window, so a budget larger than the window
+    # cannot put the split point out of reach.
+    summary_keep_tokens: int = 20000
     max_consecutive_failures: int = 3  # stop auto-compacting after this many failures
     default_context_window: int = 128000  # assumed window when a model is unknown
 
@@ -193,6 +199,7 @@ def _parse_compaction_config(raw: Any) -> CompactionSettings:
         return CompactionSettings()
     if not isinstance(raw, dict):
         raise ValueError("Invalid Nova config: 'compaction' must be an object")
+    default_window = int(raw.get("default_context_window", 128000))
     return CompactionSettings(
         output_reserve_tokens=int(raw.get("output_reserve_tokens", 16000)),
         summary_reserve_tokens=int(raw.get("summary_reserve_tokens", 8000)),
@@ -202,10 +209,32 @@ def _parse_compaction_config(raw: Any) -> CompactionSettings:
         snip_preserve_last_n_messages=int(
             raw.get("snip_preserve_last_n_messages",
                     raw.get("snip_preserve_last_n_turns", 12))),
-        summary_keep_ratio=float(raw.get("summary_keep_ratio", 0.3)),
+        summary_keep_tokens=_parse_summary_keep_tokens(raw, default_window),
         max_consecutive_failures=int(raw.get("max_consecutive_failures", 3)),
-        default_context_window=int(raw.get("default_context_window", 128000)),
+        default_context_window=default_window,
     )
+
+
+def _parse_summary_keep_tokens(raw: dict, default_window: int) -> int:
+    """Read the recent-portion budget, honouring the ratio that preceded it.
+
+    The budget is absolute because a share of the history grew with the history:
+    one turn that dumped a huge tool result left a permanently higher floor for
+    the rest of the session. A ratio cannot be honoured without knowing the
+    window, so it is converted against the configured default as an approximation
+    of what the author was asking for.
+    """
+    if "summary_keep_tokens" in raw:
+        return int(raw["summary_keep_tokens"])
+    if "summary_keep_ratio" in raw:
+        converted = int(float(raw["summary_keep_ratio"]) * default_window)
+        logging.getLogger(__name__).warning(
+            "config.json compaction.summary_keep_ratio is deprecated and has been "
+            "read as summary_keep_tokens=%d; set summary_keep_tokens directly",
+            converted,
+        )
+        return converted
+    return CompactionSettings.summary_keep_tokens
 
 
 def _parse_server_config(raw: Any) -> tuple[str, int, str, str, str]:
