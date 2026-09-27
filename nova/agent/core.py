@@ -13,7 +13,7 @@ from nova.session.protocol import SessionProtocol
 from nova.agent.title_generator import generate_session_title
 from nova.tools.registry import ToolRegistry, tool
 from nova.prompt import PromptBuilder, PromptConfig
-from nova.agent.compaction import CompactionController
+from nova.agent.compaction import CompactionController, CompactionError
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.skills.service import SkillService
 from nova.constants import DEFAULT_AGENT_KEY
@@ -550,15 +550,24 @@ class Agent:
             # request: a single request can run many tool turns and each tool
             # result can be arbitrarily large, so a request that started well
             # inside the window can overrun it halfway through.
-            async for event, data in self._compaction.run_with_events(
-                session_messages,
-                current_session,
-                data_source,
-                self.llm,
-                self._emit,
-                tools=tool_schemas,
-            ):
-                yield event, data
+            try:
+                async for event, data in self._compaction.maybe_compact(
+                    session_messages,
+                    current_session,
+                    data_source,
+                    self.llm,
+                    self._emit,
+                    tools=tool_schemas,
+                ):
+                    yield event, data
+            except CompactionError as error:
+                # Compaction is load-bearing: a turn that must compact but cannot
+                # would otherwise continue with an oversized history and fail
+                # later for a murkier reason. Abort with an explicit error the
+                # client can show.
+                log.error("[Session %s] Compaction failed: %s", session_id, error)
+                yield AgentEvent.ERROR, _error_payload("compaction_error", str(error))
+                return
             if self._compaction.compacted:
                 session_messages = await self.session.get_messages()
 

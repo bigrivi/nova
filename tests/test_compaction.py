@@ -23,6 +23,7 @@ from nova.agent.compaction import (
     evaluate_compaction,
     _format_for_summary,
     SUMMARY_MESSAGE_MAX_CHARS,
+    CompactionError,
 )
 
 
@@ -173,19 +174,17 @@ class TestFindSplitPoint:
 
 class TestShouldCompact:
     def test_no_compact_when_empty(self):
-        assert not should_compact(
-            scope_tokens=0, total_tokens=0, model_max_tokens=10000)
+        assert not should_compact(total_tokens=0, model_max_tokens=10000)
 
-    def test_compact_when_scope_reaches_threshold(self):
+    def test_compact_when_total_reaches_the_threshold_not_the_window(self):
+        """The trigger is the threshold, so the reserve stays free."""
         from nova.agent.compaction import compaction_threshold
 
         model_max_tokens = 200_000
         threshold = compaction_threshold(model_max_tokens)
+        assert threshold < model_max_tokens, "the reserve must leave headroom"
         assert should_compact(
-            scope_tokens=threshold,
-            total_tokens=threshold,
-            model_max_tokens=model_max_tokens,
-        )
+            total_tokens=threshold, model_max_tokens=model_max_tokens)
 
     def test_no_compact_below_threshold(self):
         from nova.agent.compaction import compaction_threshold
@@ -193,25 +192,11 @@ class TestShouldCompact:
         model_max_tokens = 200_000
         threshold = compaction_threshold(model_max_tokens)
         assert not should_compact(
-            scope_tokens=threshold - 1,
-            total_tokens=threshold - 1,
-            model_max_tokens=model_max_tokens,
-        )
+            total_tokens=threshold - 1, model_max_tokens=model_max_tokens)
 
     def test_message_count_alone_never_triggers_compaction(self):
         """A long history of tiny messages must not compact a 1M window."""
-        assert not should_compact(
-            scope_tokens=5_000,
-            total_tokens=5_000,
-            model_max_tokens=1_000_000,
-        )
-
-    def test_hard_context_cap_forces_compaction_despite_small_scope(self):
-        assert should_compact(
-            scope_tokens=10,
-            total_tokens=200_000,
-            model_max_tokens=200_000,
-        )
+        assert not should_compact(total_tokens=5_000, model_max_tokens=1_000_000)
 
     def test_threshold_reserves_are_absolute_not_proportional(self):
         from nova.agent.compaction import compaction_threshold
@@ -533,16 +518,16 @@ async def test_summary_failure_never_poisons_the_context():
         await _seed_compactable_session(db, session_id)
         messages = await db.get_messages(session_id)
 
-        compacted = await compact(
-            session_id,
-            db,
-            ErroringProvider(),
-            "gpt-4o",
-            messages=messages,
-            split_index=2,
-        )
+        with pytest.raises(CompactionError):
+            await compact(
+                session_id,
+                db,
+                ErroringProvider(),
+                "gpt-4o",
+                messages=messages,
+                split_index=2,
+            )
 
-        assert compacted is False
         active = await db.get_messages(session_id)
         assert not any(m.summary == 1 for m in active)
         assert not any("403" in (m.content or "") for m in active)
@@ -734,7 +719,7 @@ async def test_context_frames_drop_across_a_compaction(monkeypatch):
             if event == AgentEvent.CONTEXT_UPDATE:
                 frames.append(payload)
 
-        result = controller.run_with_events(
+        result = controller.maybe_compact(
             messages=messages,
             session=live_session,
             db=db,
@@ -750,6 +735,61 @@ async def test_context_frames_drop_across_a_compaction(monkeypatch):
         assert after["used"] < before["used"], (
             f"context did not shrink: {before['used']} -> {after['used']}"
         )
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_context_limit_is_the_compaction_threshold(monkeypatch):
+    """The bar's denominator is the trigger point, not the raw window.
+
+    Reporting against the raw window left the bar short of full at the very
+    moment compaction fired, because the reserve is headroom the history can
+    never use. The denominator must therefore be the same threshold the
+    compaction decision uses.
+    """
+    from nova.agent.compaction import CompactionController, compaction_threshold
+    from nova.agent.events import AgentEvent
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.config import DatabaseConfig
+    from nova.session.manager import SessionContext
+
+    window = 128_000
+    monkeypatch.setattr(
+        "nova.agent.compaction.get_context_limit", lambda model, provider: window
+    )
+
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
+    await db.connect()
+    try:
+        session_id = "context-limit"
+        session = SessionContext.create()
+        session.id = session_id
+        await db.save_session(session)
+        await db.add_message(session_id, "user", "hi")
+
+        live_session = await db.get_session(session_id)
+        messages = await db.get_messages(session_id)
+        controller = CompactionController(model="gpt-4o", provider="openai")
+
+        frames: list[dict] = []
+
+        async def emit(event, payload):
+            if event == AgentEvent.CONTEXT_UPDATE:
+                frames.append(payload)
+
+        async for _ in controller.maybe_compact(
+            messages=messages,
+            session=live_session,
+            db=db,
+            llm=StubSummaryProvider("x"),
+            emit=emit,
+        ):
+            pass
+
+        assert frames, "a context frame is emitted every turn"
+        assert frames[0]["limit"] == compaction_threshold(window)
+        assert frames[0]["limit"] < window, "the reserve must be excluded"
     finally:
         await db.close()
 
@@ -799,7 +839,7 @@ async def test_the_shrink_comes_from_the_history_not_from_the_estimator(monkeypa
         async def emit(event, payload):
             return None
 
-        result = controller.run_with_events(
+        result = controller.maybe_compact(
             messages=messages,
             session=live_session,
             db=db,
@@ -847,7 +887,8 @@ async def test_compact_aborts_without_writing_when_summary_fails():
         before = await db.get_messages(session_id)
         llm = StubSummaryProvider(fail=True)
 
-        assert await compact(session_id, db, llm, "gemma4:26b", split_index=2) is False
+        with pytest.raises(CompactionError):
+            await compact(session_id, db, llm, "gemma4:26b", split_index=2)
 
         after = await db.get_messages(session_id)
         assert [m.id for m in after] == [m.id for m in before]
@@ -856,6 +897,46 @@ async def test_compact_aborts_without_writing_when_summary_fails():
 
         session = await db.get_session(session_id)
         assert session["compacted_at"] is None
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_a_transient_summary_failure_is_retried_once():
+    """One retry absorbs a transient failure; the second attempt lands."""
+    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.config import DatabaseConfig
+    from nova.agent.compaction import compact
+
+    class FailOnceProvider(StubSummaryProvider):
+        def __init__(self):
+            super().__init__("recovered summary")
+            self.attempts = 0
+
+        async def chat_stream(self, messages, model="m", tools=None, **kwargs):
+            from nova.llm.provider import Error
+
+            self.attempts += 1
+            if self.attempts == 1:
+                yield Error(message="temporary upstream failure")
+                return
+            async for item in super().chat_stream(
+                messages, model=model, tools=tools, **kwargs
+            ):
+                yield item
+
+    db = SqliteRepository(DatabaseConfig(path=":memory:"))
+    await db.connect()
+    try:
+        session_id = "retry-session"
+        await _seed_compactable_session(db, session_id)
+        provider = FailOnceProvider()
+
+        assert await compact(
+            session_id, db, provider, "gemma4:26b", split_index=2) is True
+        assert provider.attempts == 2, "the failed attempt is retried once"
+        after = await db.get_messages(session_id)
+        assert [m for m in after if m.summary == 1], "the retry's summary is stored"
     finally:
         await db.close()
 
@@ -990,41 +1071,54 @@ class TestContextEstimateAnchor:
         assert estimate_context_tokens(messages) >= 5000
 
 
-class TestTokensSinceCompact:
-    def test_counts_whole_history_before_the_first_compaction(self):
-        from nova.agent.compaction import count_tokens_since_compact
+class TestNoRepeatedCompaction:
+    @pytest.mark.asyncio
+    async def test_a_small_window_does_not_recompact_on_the_next_turn(self, monkeypatch):
+        """After a compaction the kept portion must fall below the threshold.
 
-        messages = [MockTimedMessage("1", "user", "x" * 400, time_created=100)]
-        assert count_tokens_since_compact(messages, None) == estimate_tokens(messages)
+        Capping the kept budget at half the threshold is what stops the total
+        from staying over it, which would otherwise compact again every turn.
+        """
+        from nova.agent.compaction import CompactionController
+        from nova.db.sqlite_repository import SqliteRepository
+        from nova.db.config import DatabaseConfig
+        from nova.session.manager import SessionContext
 
-    def test_counts_only_messages_created_after_compaction(self):
-        from nova.agent.compaction import count_tokens_since_compact
+        monkeypatch.setattr(
+            "nova.agent.compaction.get_context_limit", lambda model, provider: 8_000)
 
-        old = MockTimedMessage("1", "user", "x" * 4000, time_created=100)
-        fresh = MockTimedMessage("2", "user", "y" * 40, time_created=300)
-        scope = count_tokens_since_compact([old, fresh], 200)
-        assert scope == estimate_tokens([fresh])
-        assert scope < estimate_tokens([old, fresh])
+        db = SqliteRepository(DatabaseConfig(path=":memory:"))
+        await db.connect()
+        try:
+            session_id = "small-window"
+            session = SessionContext.create()
+            session.id = session_id
+            await db.save_session(session)
+            for turn in range(4):
+                await db.add_message(session_id, "user", f"q{turn} " + "x" * 4_000)
+                await db.add_message(session_id, "assistant", f"a{turn} " + "y" * 4_000)
 
-    def test_carried_summary_prefix_does_not_force_repeated_compaction(self):
-        """The summary plus preserved history must not consume the budget."""
-        from nova.agent.compaction import count_tokens_since_compact, compaction_threshold
+            controller = CompactionController(model="gpt-4o", provider="openai")
 
-        model_max_tokens = 200_000
-        carried = [
-            MockTimedMessage("summary", "assistant", "s" * 900_000, time_created=100),
-        ]
-        fresh = MockTimedMessage("new", "user", "hello", time_created=9_000)
-        history = carried + [fresh]
+            async def emit(event, payload):
+                return None
 
-        scope = count_tokens_since_compact(history, 5_000)
-        assert scope < compaction_threshold(model_max_tokens)
-        # The soft budget is satisfied, yet the hard window cap still fires.
-        assert should_compact(
-            scope_tokens=scope,
-            total_tokens=estimate_tokens(history),
-            model_max_tokens=model_max_tokens,
-        )
+            live_session = await db.get_session(session_id)
+            messages = await db.get_messages(session_id)
+            async for _ in controller.maybe_compact(
+                messages=messages, session=live_session, db=db,
+                llm=StubSummaryProvider("folded"), emit=emit,
+            ):
+                pass
+            assert controller.compacted is True, "the oversized history should compact"
+
+            await db.add_message(session_id, "user", "next")
+            live_session = await db.get_session(session_id)
+            messages = await db.get_messages(session_id)
+            assert await controller.plan(messages, live_session, db) is None, (
+                "the compacted history must sit below the threshold")
+        finally:
+            await db.close()
 
 
 class TestCjkTokenEstimation:
@@ -1392,17 +1486,6 @@ class TestUsageAnchoredEstimation:
             MockUsageMessage("4", "assistant", "w" * 8000, time_created=4),
         ]
         assert find_split_point(history, keep_tokens=100) > 0
-
-    def test_scope_growth_excludes_the_carried_prefix_even_with_usage(self):
-        from nova.agent.compaction import count_tokens_since_compact
-
-        carried = MockUsageMessage("1", "assistant", "s" * 4000,
-                                   tokens_input=500_000, tokens_output=100,
-                                   time_created=100)
-        fresh = MockUsageMessage("2", "user", "hi", time_created=9_000)
-        scope = count_tokens_since_compact([carried, fresh], 5_000)
-        assert scope == estimate_tokens([fresh])
-        assert scope < 100
 
 
 class TestCompactionSummaryContract:

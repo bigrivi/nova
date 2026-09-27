@@ -42,6 +42,15 @@ class CompactionPlan:
     over_threshold: bool = False
 
 
+class CompactionError(RuntimeError):
+    """Raised when a required summary cannot be generated.
+
+    Compaction is load-bearing: a turn that must compact but cannot would
+    otherwise continue with an oversized history and fail later for an
+    unrelated-looking reason, so the failure is surfaced to the caller instead.
+    """
+
+
 def estimate_tokens(messages: list, model: str = "unknown") -> int:
     """Character-based token estimate for *messages* taken in isolation.
 
@@ -309,26 +318,6 @@ Write these sections, omitting a section only when the transcript has nothing fo
 Summary:"""
 
 
-def count_tokens_since_compact(
-    messages: list,
-    last_compacted_at: Optional[int],
-    model: str = "unknown",
-) -> int:
-    """Tokens accumulated after the last compaction.
-
-    Budgeting only the growth since the previous compaction keeps a large
-    carried prefix - the summary plus the history it preserved - from consuming
-    the whole allowance and forcing a compaction on every single request.
-    """
-    if not last_compacted_at:
-        return estimate_tokens(messages, model)
-    fresh = [
-        message for message in messages
-        if _get_time_created(message) > last_compacted_at
-    ]
-    return estimate_tokens(fresh, model)
-
-
 def compaction_threshold(model_max_tokens: int) -> int:
     """Token headroom that must stay free for the reply and the summary request.
 
@@ -348,19 +337,18 @@ def compaction_threshold(model_max_tokens: int) -> int:
 
 
 def should_compact(
-    scope_tokens: int,
     total_tokens: int,
     model_max_tokens: int,
 ) -> bool:
     """Decide whether compaction should run, on token pressure alone.
 
-    ``scope_tokens`` is the growth since the last compaction and drives the soft
-    threshold; ``total_tokens`` guards the hard context window so a bloated
-    carried prefix still forces a compaction.
+    The trigger is the absolute context size against the compaction threshold, so
+    the reserve stays free for the reply and the summarisation request however
+    large the carried prefix grows. It is deliberately not the growth since the
+    last compaction: bounding the total by the threshold also bounds the growth
+    (growth <= total), so a separate growth trigger would be subsumed.
     """
-    if scope_tokens >= compaction_threshold(model_max_tokens):
-        return True
-    return total_tokens >= model_max_tokens
+    return total_tokens >= compaction_threshold(model_max_tokens)
 
 
 def evaluate_compaction(
@@ -387,17 +375,15 @@ def evaluate_compaction(
         return CompactionPlan(session_id, model_max_tokens, 0, 0, False)
 
     token_count = estimate_context_tokens(messages, model, last_compacted_at)
+    threshold = compaction_threshold(model_max_tokens)
     over_threshold = force or should_compact(
-        scope_tokens=count_tokens_since_compact(
-            messages, last_compacted_at, model),
         total_tokens=token_count,
         model_max_tokens=model_max_tokens,
     )
-    # The budget never takes more than half the window, for the same reason the
-    # reserve does: a budget larger than the window would put the split point out
-    # of reach, so each call would compact a message or two, leave the threshold
-    # exceeded, and repeat until the circuit breaker opened.
-    keep_tokens = min(comp.summary_keep_tokens, model_max_tokens // 2)
+    # The budget never takes more than half the threshold: after a compaction the
+    # kept portion plus the summary must leave room below the threshold, or the
+    # next call would find the total already over it and compact on every turn.
+    keep_tokens = min(comp.summary_keep_tokens, threshold // 2)
     split_index = find_split_point(
         messages, keep_tokens=keep_tokens, force=force) if over_threshold else 0
     return CompactionPlan(
@@ -513,7 +499,7 @@ async def compact(
         messages,
         keep_tokens=min(
             comp.summary_keep_tokens,
-            get_context_limit(model, provider) // 2,
+            compaction_threshold(get_context_limit(model, provider)) // 2,
         ),
     )
     if split <= 0:
@@ -533,10 +519,11 @@ async def compact(
         tools=tools,
         on_delta=on_delta,
     )
-    if not summary:
+    if summary is None:
         log.warning(
             "[Compaction] session=%s aborted: summary generation failed", session_id)
-        return False
+        raise CompactionError(
+            f"summary generation failed for session {session_id}")
 
     now_ms = int(time.time() * 1000)
     # The summary stands in for the history it replaces, so it is stamped at
@@ -626,17 +613,22 @@ async def _generate_summary(
     has_previous_summary: bool = False,
     tools: Optional[list[dict]] = None,
     on_delta: Optional[Callable[[str], None]] = None,
-) -> str:
-    """Generate a summary with the LLM. Returns an empty string on failure.
+) -> Optional[str]:
+    """Generate a summary with the LLM. Returns ``None`` when it cannot.
 
     Routed through :func:`nova.llm.oneshot.stream_text_once` rather than a bare
     one-shot call: the request shape is not free (some gateways only serve
     streaming, agent-shaped requests), and streaming lets the caller show the
     summary while it is being written.
 
-    A failure returns ``""``, never the error text: the caller writes this
-    straight into the session as the replacement context, so returning the
-    provider's error string would poison the context it is meant to compress.
+    A single retry absorbs a transient failure. The retry is skipped once a
+    partial summary has already reached *on_delta*: replaying on top of that
+    partial text would splice two attempts into one garbled summary, and the
+    caller discards the summary and aborts anyway if the retry also fails.
+
+    Never returns the provider's error text: the caller writes the result
+    straight into the session as the replacement context, so an error string
+    would poison the context it is meant to compress.
 
     Args:
         conversation: Pre-rendered transcript to compress.
@@ -647,7 +639,8 @@ async def _generate_summary(
         on_delta: Called with each summary chunk as it arrives.
 
     Returns:
-        The summary text, or ``""`` when generation failed.
+        The summary text, or ``None`` when every attempt failed or returned
+        nothing.
     """
     prompt = SUMMARY_PROMPT_TEMPLATE.format(
         conversation=conversation,
@@ -655,18 +648,33 @@ async def _generate_summary(
             PREVIOUS_SUMMARY_ANCHOR if has_previous_summary
             else NEW_SUMMARY_ANCHOR),
     )
-    summary = await stream_text_once(
-        llm,
-        messages=[
-            Message(role="system", content=SUMMARY_SYSTEM_PROMPT),
-            Message(role="user", content=prompt),
-        ],
-        model=model,
-        tools=tools,
-        on_delta=on_delta,
-        label="[Compaction] summary generation",
-    )
-    return (summary or "").strip()
+    for attempt in ("first", "retry"):
+        emitted = False
+
+        def relay(chunk: str) -> None:
+            nonlocal emitted
+            emitted = True
+            if on_delta is not None:
+                on_delta(chunk)
+
+        summary = await stream_text_once(
+            llm,
+            messages=[
+                Message(role="system", content=SUMMARY_SYSTEM_PROMPT),
+                Message(role="user", content=prompt),
+            ],
+            model=model,
+            tools=tools,
+            on_delta=relay,
+            label="[Compaction] summary generation",
+        )
+        if summary is not None and summary.strip():
+            return summary.strip()
+        if emitted:
+            return None
+        if attempt == "first":
+            log.warning("[Compaction] summary generation failed; retrying once")
+    return None
 
 
 def _is_summary(message) -> bool:
@@ -861,7 +869,7 @@ class CompactionController:
         log.warning("Compaction failed (%d consecutive)",
                     self.consecutive_failures)
 
-    async def run_with_events(
+    async def maybe_compact(
         self,
         messages: list,
         session: Any,
@@ -887,7 +895,13 @@ class CompactionController:
         try:
             compacted_at = _get_session_compacted_at(session)
             used = estimate_context_tokens(messages, self.model, compacted_at)
-            limit = get_context_limit(self.model, self.provider)
+            # Report against the compaction threshold, not the raw window. The
+            # reserve is headroom the history can never use (the reply plus the
+            # summarisation request), so a raw-window denominator shows the bar
+            # short of full at the very moment compaction fires. Deriving it from
+            # compaction_threshold keeps the figure and the trigger in lockstep.
+            limit = compaction_threshold(
+                get_context_limit(self.model, self.provider))
             percent = int(used / limit * 100) if limit else 0
             ctx_payload = {"used": used, "limit": limit, "percent": percent}
             await emit(AgentEvent.CONTEXT_UPDATE, ctx_payload)
@@ -935,7 +949,13 @@ class CompactionController:
             if chunk is None:
                 break
             yield AgentEvent.COMPACTION_DELTA, {"delta": chunk}
-        compacted = await task
+        try:
+            compacted = await task
+        except CompactionError:
+            # Count the failure before surfacing it, so the streak reflects it
+            # even though the turn ends here.
+            self.record_result(False, session)
+            raise
         self.record_result(compacted, session)
 
         await emit(AgentEvent.COMPACTION_END, payload)
@@ -946,7 +966,8 @@ class CompactionController:
                 fresh = await db.get_messages(_get_session_id(session))
                 used_after = estimate_context_tokens(
                     fresh, self.model, _get_session_compacted_at(session))
-                limit_after = get_context_limit(self.model, self.provider)
+                limit_after = compaction_threshold(
+                    get_context_limit(self.model, self.provider))
                 percent_after = int(used_after / limit_after * 100) if limit_after else 0
                 ctx_after = {"used": used_after, "limit": limit_after, "percent": percent_after}
                 await emit(AgentEvent.CONTEXT_UPDATE, ctx_after)

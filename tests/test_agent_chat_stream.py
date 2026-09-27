@@ -696,3 +696,48 @@ class TestOverflowRecovery:
             "the second request must recover too; the latch resets per request")
         assert "ok" in _text(second), (
             "the retry runs on the second request and produces the model's reply")
+
+
+class SummaryDownOverflowProvider(ScriptedProvider):
+    """Rejects a probe turn as too large (forcing compaction) and fails the
+    summary call too, so the forced compaction cannot complete."""
+
+    async def chat_stream(self, messages, model="m", tools=None, **kwargs):
+        from nova.agent.compaction import SUMMARY_SYSTEM_PROMPT
+
+        if messages and getattr(messages[0], "content", "") == SUMMARY_SYSTEM_PROMPT:
+            await asyncio.sleep(0)
+            yield Error(message="summary upstream down")
+            return
+        carries_probe = any(
+            PROBE in str(getattr(message, "content", "") or "")
+            for message in messages
+        )
+        if carries_probe:
+            await asyncio.sleep(0)
+            yield Error(message=OVERFLOW_ERROR_TEXT)
+            return
+        async for item in super().chat_stream(
+            messages, model=model, tools=tools, **kwargs
+        ):
+            yield item
+
+
+@pytest.mark.asyncio
+async def test_a_failed_summary_aborts_the_turn_with_an_error():
+    """A compaction that cannot summarise ends the stream, it does not continue.
+
+    The provider rejects the request as too large (forcing a compaction) and
+    fails the summary call, so the turn must surface a compaction error and stop
+    rather than carry on with the oversized history.
+    """
+    provider = SummaryDownOverflowProvider([[TextDelta(content="unused")]])
+    holder, agent, _db, session_id = await _session_with_history(provider)
+    try:
+        events = await _collect(agent, f"again {PROBE}", session_id)
+    finally:
+        await holder.__aexit__(None, None, None)
+
+    assert [p.get("reason") for p in _payloads(events, AgentEvent.ERROR)] == [
+        "compaction_error"], "the failure reaches the client as a compaction error"
+    assert "unused" not in _text(events), "the turn is aborted, not continued"
