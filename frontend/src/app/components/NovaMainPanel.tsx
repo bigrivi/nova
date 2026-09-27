@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Thread } from "../../components/assistant-ui/thread";
 import { Button } from "../../components/ui/button";
 import type { NovaAgent, NovaModelRecord } from "../../types/nova";
+import type { ModelOption } from "../../components/assistant-ui/elements/model-selector";
 
 export interface NovaMainPanelProps {
     sidebarCollapsed: boolean;
@@ -13,8 +14,11 @@ export interface NovaMainPanelProps {
     onComposerSubmit: () => void;
     onCancel: () => void;
     models: NovaModelRecord[];
+    modelOptions: ModelOption[];
     selectedModelId: string | null;
     onSelectModel: (value: string) => void;
+    reasoningEffort: string | null;
+    onReasoningEffortChange: (effort: string) => void;
     agents: NovaAgent[];
     selectedAgentKey: string;
     onSelectAgent: (agentKey: string) => void;
@@ -39,8 +43,11 @@ export function NovaMainPanel({
     onComposerSubmit,
     onCancel,
     models,
+    modelOptions,
     selectedModelId,
     onSelectModel,
+    reasoningEffort,
+    onReasoningEffortChange,
     agents,
     selectedAgentKey,
     onSelectAgent,
@@ -85,8 +92,11 @@ export function NovaMainPanel({
                     }}
                     modelSelection={{
                         models,
+                        options: modelOptions,
                         selectedModelId,
                         onSelect: onSelectModel,
+                        effort: reasoningEffort,
+                        onEffortChange: onReasoningEffortChange,
                     }}
                     agentSelection={{
                         agents,

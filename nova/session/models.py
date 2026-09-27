@@ -23,6 +23,10 @@ class Message:
     cost: Optional[float] = None
     tokens_input: Optional[int] = None
     tokens_output: Optional[int] = None
+    # The effort this turn actually ran with, next to the model it ran on. Pure
+    # provenance: it is never read back to make a decision, only to answer "why
+    # was this turn slow" after the session has moved on.
+    reasoning_effort: Optional[str] = None
     time_created: int = field(default_factory=lambda: int(time.time() * 1000))
     tool_calls: Optional[list] = None
     tool_call_id: Optional[str] = None
@@ -56,6 +60,13 @@ class Session:
     turn_count: int = 0
     metadata: Optional[dict] = None
     project_id: Optional[str] = None
+    # The route this session is being run with. Written on every turn and on
+    # every model change, so reopening the session restores the model it was
+    # actually using instead of whatever the agent points at today.
+    # reasoning_effort is only meaningful alongside the model it was picked for.
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    reasoning_effort: Optional[str] = None
 
 
 @dataclass

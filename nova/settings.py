@@ -182,7 +182,19 @@ def _parse_provider_configs(raw_providers: Any) -> dict[str, ProviderConfig]:
     return providers
 
 
-_INTERNAL_MODEL_KEYS = {"name", "reasoning_field", "limit", "context_window", "extra_body"}
+# Keys that describe the model to Nova rather than to the provider. They are
+# stripped before a model's entry is flattened into the request body, so a
+# declaration like reasoning_effort_levels cannot leak out as a literal field
+# the provider would reject. `reasoning_effort` is deliberately NOT here: a
+# hand-written value must reach the body, where it outranks the per-turn choice.
+_INTERNAL_MODEL_KEYS = {
+    "name",
+    "reasoning_field",
+    "limit",
+    "context_window",
+    "extra_body",
+    "reasoning_effort_levels",
+}
 
 
 def _deep_merge(target: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:

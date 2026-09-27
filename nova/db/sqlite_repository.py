@@ -189,6 +189,7 @@ def _row_to_message(row_dict: dict[str, Any]) -> Message:
         tokens_input=row_dict.get("tokens_input"),
         tokens_output=row_dict.get("tokens_output"),
         variant=row_dict.get("variant"),
+        reasoning_effort=row_dict.get("reasoning_effort"),
     )
 
 
@@ -235,14 +236,28 @@ class SqliteRepository(NovaRepository):
         # Table and column names are literals from the map below, never caller
         # input; SQLite cannot bind identifiers, so interpolation is the only option.
         required_columns: dict[str, dict[str, str]] = {
+            "memories": {"owner_agent_key": "TEXT"},
+            # A session records the route it is actually being run with, so
+            # reopening it restores that model rather than whatever the agent
+            # points at today. reasoning_effort rides along: it is only
+            # meaningful for the model recorded next to it. The message column
+            # is the per-turn copy of the same fact, for auditing a turn after
+            # the session has moved on.
+            #
+            # One entry per table: a repeated key would silently drop the
+            # earlier columns from the migration.
             "sessions": {
                 "workspace_dir": "TEXT",
                 "pinned": "INTEGER DEFAULT 0",
                 "project_id": "TEXT",
+                "provider": "TEXT",
+                "model": "TEXT",
+                "reasoning_effort": "TEXT",
             },
-            "messages": {"provider_meta": "TEXT"},
-            "agents": {"posture": "TEXT DEFAULT 'full'", "mode": "TEXT DEFAULT 'primary'"},
-            "memories": {"owner_agent_key": "TEXT"},
+            "messages": {
+                "provider_meta": "TEXT",
+                "reasoning_effort": "TEXT",
+            },
         }
         for table, columns_map in required_columns.items():
             try:
@@ -496,8 +511,9 @@ class SqliteRepository(NovaRepository):
             await self._conn.execute(
                 """INSERT INTO sessions
                 (id, agent_key, title, parent_id, summary_goal, summary_accomplished, summary_remaining,
-                created_at, updated_at, compacted_at, message_count, turn_count, metadata, workspace_dir, pinned, project_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                created_at, updated_at, compacted_at, message_count, turn_count, metadata, workspace_dir, pinned, project_id,
+                provider, model, reasoning_effort)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                 agent_key=excluded.agent_key, title=excluded.title,
                 parent_id=excluded.parent_id, summary_goal=excluded.summary_goal,
@@ -506,7 +522,9 @@ class SqliteRepository(NovaRepository):
                 updated_at=excluded.updated_at, compacted_at=excluded.compacted_at,
                 message_count=excluded.message_count, turn_count=excluded.turn_count,
                 metadata=excluded.metadata, workspace_dir=excluded.workspace_dir,
-                pinned=excluded.pinned, project_id=excluded.project_id""",
+                pinned=excluded.pinned, project_id=excluded.project_id,
+                provider=excluded.provider, model=excluded.model,
+                reasoning_effort=excluded.reasoning_effort""",
                 (
                     session.id,
                     agent_key,
@@ -524,6 +542,9 @@ class SqliteRepository(NovaRepository):
                     getattr(session, "workspace_dir", None),
                     1 if getattr(session, "pinned", False) else 0,
                     getattr(session, "project_id", None),
+                    getattr(session, "provider", None),
+                    getattr(session, "model", None),
+                    getattr(session, "reasoning_effort", None),
                 ),
             )
             await self._conn.commit()
@@ -582,6 +603,30 @@ class SqliteRepository(NovaRepository):
             cursor = await self._conn.execute(
                 "UPDATE sessions SET pinned = ? WHERE id = ?",
                 (1 if pinned else 0, session_id),
+            )
+            await self._conn.commit()
+            return cursor.rowcount > 0
+
+    async def set_session_route(
+        self,
+        session_id: str,
+        provider: str | None,
+        model: str | None,
+        reasoning_effort: str | None,
+    ) -> bool:
+        """Record the route a session runs with. Returns True if it exists.
+
+        One statement, not three: ``reasoning_effort`` is only meaningful for the
+        model beside it, so a caller that could set them separately could leave
+        the session claiming an effort its model does not accept.
+        """
+        await self._ensure_connected()
+        async with self._lock:
+            cursor = await self._conn.execute(
+                """UPDATE sessions
+                SET provider = ?, model = ?, reasoning_effort = ?
+                WHERE id = ?""",
+                (provider, model, reasoning_effort, session_id),
             )
             await self._conn.commit()
             return cursor.rowcount > 0
@@ -708,6 +753,7 @@ class SqliteRepository(NovaRepository):
         tokens_output: Optional[int] = None,
         provider_meta: Optional[dict] = None,
         model: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
         error: Optional[str] = None,
         variant: Optional[str] = None,
         time_created: Optional[int] = None,
@@ -729,8 +775,8 @@ class SqliteRepository(NovaRepository):
         async with self._lock:
             await self._conn.execute(
                 """INSERT INTO messages
-                (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output, provider_meta, model, error, variant)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output, provider_meta, model, error, variant, reasoning_effort)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     msg_id,
                     session_id,
@@ -751,6 +797,7 @@ class SqliteRepository(NovaRepository):
                     model,
                     error,
                     variant,
+                    reasoning_effort,
                 ),
             )
             await self._conn.execute(
@@ -774,6 +821,7 @@ class SqliteRepository(NovaRepository):
             error=error,
             provider_meta=provider_meta,
             model=model,
+            reasoning_effort=reasoning_effort,
             tokens_input=tokens_input,
             tokens_output=tokens_output,
             variant=variant,

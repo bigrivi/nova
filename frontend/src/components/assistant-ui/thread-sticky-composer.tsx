@@ -11,6 +11,7 @@ import { useAui } from "@assistant-ui/react";
 
 import { useComposerStore } from "../../stores/composer-store";
 import type { NovaAgent, NovaModelRecord } from "../../types/nova";
+import type { ModelOption } from "./elements/model-selector";
 import { Button } from "../ui/button";
 import { BackgroundTasksPanel } from "./background-tasks-panel";
 import { ComposerAddAttachment, ComposerAttachments } from "./attachment";
@@ -36,8 +37,11 @@ type ThreadStickyComposerProps = {
     };
     modelSelection: {
         models: NovaModelRecord[];
+        options: ModelOption[];
         selectedModelId: string | null;
         onSelect: (modelId: string) => void;
+        effort: string | null;
+        onEffortChange: (effort: string) => void;
     };
     agentSelection: {
         agents: NovaAgent[];
@@ -129,8 +133,11 @@ export function ThreadStickyComposer({
                         <div className="flex items-center gap-2">
                             <ModelSelector
                                 models={modelSelection.models}
+                                options={modelSelection.options}
                                 selectedModelId={modelSelection.selectedModelId}
                                 onSelect={modelSelection.onSelect}
+                                effort={modelSelection.effort}
+                                onEffortChange={modelSelection.onEffortChange}
                             />
 
                             {composer.isRunning ? (

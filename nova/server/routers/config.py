@@ -33,6 +33,8 @@ router = APIRouter()
 
 
 def build_model_list_response(settings: Settings) -> ModelListResponse:
+    from nova.llm.reasoning import resolve_effort_levels
+
     items: list[ModelRecord] = []
     for provider_key, provider_config in settings.providers.items():
         for model_key, model_config in provider_config.models.items():
@@ -51,6 +53,11 @@ def build_model_list_response(settings: Settings) -> ModelListResponse:
                     model=model_key,
                     label=configured_name,
                     tools=tools_enabled,
+                    efforts=resolve_effort_levels(
+                        model_key,
+                        provider_config.type,
+                        model_config if isinstance(model_config, dict) else None,
+                    ),
                 )
             )
     return ModelListResponse(items=items)

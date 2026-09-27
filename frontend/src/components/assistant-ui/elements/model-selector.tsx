@@ -19,7 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { cva, type VariantProps } from "class-variance-authority";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
-import { RadioGroup as RadioGroupPrimitive } from "radix-ui";
+import { handleEffortArrowKeys, ReasoningEffort } from "./reasoning-effort";
 import {
     createContext,
     useCallback,
@@ -355,12 +355,22 @@ function ModelSelectorValue({
     return (
         <span
             data-slot="model-selector-value"
-            className={cn("flex min-w-0 items-center gap-2", className)}
+            className={cn(
+                "flex min-w-0 items-center gap-1.5 whitespace-nowrap",
+                className,
+            )}
         >
             {selectedModel.icon && <ModelIcon>{selectedModel.icon}</ModelIcon>}
             <span className="truncate font-medium">{selectedModel.name}</span>
             {effortName && (
-                <span className="text-muted-foreground min-w-7.5 truncate text-center">
+                // A badge rather than a second line: the trigger is a fixed
+                // height pill, so anything but an inline chip wraps out of it.
+                // Warm-tinted so the level reads as its own attribute and not
+                // as more model name, which is what a grey chip looked like.
+                <span
+                    data-slot="model-selector-value-effort"
+                    className="shrink-0 rounded bg-amber-500/15 px-1 py-px text-[10px] leading-tight font-medium text-amber-700 dark:bg-amber-400/15 dark:text-amber-300"
+                >
                     {effortName}
                 </span>
             )}
@@ -613,64 +623,49 @@ export type ModelSelectorEffortProps = ComponentPropsWithoutRef<"div"> & {
 };
 
 function ModelSelectorEffort({
-    label = "Thinking",
-    className,
-    onKeyDown,
-    ...props
+  label = "Thinking",
+  className,
+  onKeyDown,
+  ...props
 }: ModelSelectorEffortProps) {
-    const { efforts, effort, setEffort } = useModelSelectorEfforts();
+  const { efforts, effort, setEffort } = useModelSelectorEfforts();
+  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
 
-    if (!efforts?.length) return null;
+  if (!efforts?.length) return null;
 
-    return (
-        <div
-            data-slot="model-selector-effort"
-            className={cn(
-                "flex cursor-default items-center justify-between gap-3 border-t px-3 py-2",
-                className,
-            )}
-            onKeyDown={(e) => {
-                onKeyDown?.(e);
-                if (e.defaultPrevented) return;
-                // cmdk's Command root claims Home/End to jump the model list; stop
-                // them here so only the radiogroup reacts.
-                if (e.key === "Home" || e.key === "End") e.stopPropagation();
-                // Vertical arrows refocus cmdk's input before the event bubbles to
-                // the Command root: the same keypress then moves the list highlight,
-                // and Enter selects again (cmdk's Enter is inert while a radio has
-                // focus, so the highlight would otherwise move with no way to act).
-                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-                    e.currentTarget
-                        .closest("[cmdk-root]")
-                        ?.querySelector<HTMLInputElement>("[cmdk-input]")
-                        ?.focus();
-                }
-            }}
-            {...props}
-        >
-            <span className="text-muted-foreground text-xs">{label}</span>
-            <RadioGroupPrimitive.Root
-                value={effort ?? ""}
-                onValueChange={setEffort}
-                orientation="horizontal"
-                aria-label={typeof label === "string" ? label : "Reasoning effort"}
-                className="flex items-center gap-0.5"
-            >
-                {efforts.map((option) => (
-                    <RadioGroupPrimitive.Item
-                        key={option.id}
-                        value={option.id}
-                        className={cn(
-                            "focus-visible:ring-ring/50 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer rounded-md px-2 py-1 text-xs transition-colors outline-none focus-visible:ring-1",
-                            "data-[state=checked]:bg-accent data-[state=checked]:text-accent-foreground data-[state=checked]:font-medium",
-                        )}
-                    >
-                        {option.name}
-                    </RadioGroupPrimitive.Item>
-                ))}
-            </RadioGroupPrimitive.Root>
-        </div>
-    );
+  return (
+    <div
+      data-slot="model-selector-effort"
+      className={cn("w-full border-t px-3 py-2.5", className)}
+      onKeyDown={(e) => {
+        onKeyDown?.(e);
+        if (e.defaultPrevented) return;
+        // cmdk's Command root claims Home/End to jump the model list; stop them
+        // here so only the level control reacts.
+        if (e.key === "Home" || e.key === "End") e.stopPropagation();
+        // Vertical arrows refocus cmdk's input before the event bubbles to the
+        // Command root: the same keypress then moves the list highlight, and
+        // Enter selects again (cmdk's Enter is inert while a button has focus,
+        // so the highlight would otherwise move with no way to act).
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          e.currentTarget
+            .closest("[cmdk-root]")
+            ?.querySelector<HTMLInputElement>("[cmdk-input]")
+            ?.focus();
+        }
+        handleEffortArrowKeys(e, buttons, (key) => key && setEffort(key));
+      }}
+      {...props}
+    >
+      <ReasoningEffort
+        label={typeof label === "string" ? label : "Thinking"}
+        levels={efforts.map((option) => ({ key: option.id, label: option.name }))}
+        selectedKey={effort ?? ""}
+        onSelect={setEffort}
+        buttonsRef={buttons}
+      />
+    </div>
+  );
 }
 
 export type ModelSelectorProps = Omit<ModelSelectorRootProps, "children"> &

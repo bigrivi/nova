@@ -162,6 +162,48 @@ async def _agent_dir(agent_key: str) -> Path:
     return settings.home / "agents" / agent_key
 
 
+def _resolve_effort(
+    settings,
+    provider: str,
+    model: str,
+    requested: str | None,
+    session_effort: str | None,
+) -> str | None:
+    """Pick the reasoning level for a run, validated against what the model takes.
+
+    Order: this request, then the level the session last ran with, then the
+    model config's default. Every candidate goes through ``fit_effort``, so a
+    level left behind by a different model - or a hand-edited one the provider
+    would reject - is dropped instead of sent.
+    """
+    from nova.llm.reasoning import fit_effort, resolve_effort_levels
+
+    try:
+        provider_config = settings.providers.get(provider)
+    except Exception:
+        return None
+    if provider_config is None:
+        return None
+
+    levels = resolve_effort_levels(
+        model,
+        provider_config.type,
+        provider_config.models.get(model)
+        if isinstance(provider_config.models, dict) else None,
+    )
+    if not levels:
+        return None
+
+    for candidate in (requested, session_effort, provider_config.models.get(model, {})
+                      if isinstance(provider_config.models, dict) else None):
+        if isinstance(candidate, dict):
+            candidate = candidate.get("reasoning_effort")
+        fitted = fit_effort(levels, candidate)
+        if fitted:
+            return fitted
+    return None
+
+
 def _first_configured_route(settings) -> tuple[str | None, str | None]:
     provider = next(iter(settings.providers.keys()), None)
     if provider is None:
@@ -180,6 +222,8 @@ async def build_agent(
     depth: int = 0,
     data_source: DataSourceProtocol | None = None,
     on_title_updated: Callable[[str, str], None] | None = None,
+    session_id: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> Agent:
     settings = get_settings()
 
@@ -208,6 +252,15 @@ async def build_agent(
     except Exception:
         pass
 
+    # Read once: the session tier feeds both the route and the effort fallback.
+    session_route: dict = {}
+    if session_id and not is_sub_agent:
+        try:
+            source = data_source or await get_default_data_source()
+            session_route = await source.get_session(session_id) or {}
+        except Exception:
+            session_route = {}
+
     if is_sub_agent:
         # A sub-agent runs on its own configured route; empty inherits the
         # caller, then falls back to the first configured route.
@@ -218,8 +271,19 @@ async def build_agent(
             resolved_provider = resolved_provider or fallback_provider
             resolved_model = resolved_model or fallback_model
     else:
-        resolved_provider = provider or ((record or {}).get("provider"))
-        resolved_model = model or ((record or {}).get("model"))
+        # Request beats session beats agent. The session tier is what makes a
+        # resumed conversation run on the model it was run with, instead of
+        # silently following the agent to whatever it points at now.
+        resolved_provider = (
+            provider
+            or session_route.get("provider")
+            or (record or {}).get("provider")
+        )
+        resolved_model = (
+            model
+            or session_route.get("model")
+            or (record or {}).get("model")
+        )
 
     if not resolved_provider or not resolved_model:
         raise ValueError(
@@ -227,13 +291,25 @@ async def build_agent(
             "Set one via /create-agent or update the DB agents table."
         )
 
+    resolved_effort = _resolve_effort(
+        settings=settings,
+        provider=resolved_provider,
+        model=resolved_model,
+        requested=reasoning_effort,
+        session_effort=session_route.get("reasoning_effort"),
+    )
+
     allowed_tools = allowed_tools_for((record or {}).get("posture")) if is_sub_agent else None
 
     # Cache 2: LLMProvider
     llm = llm or build_llm(provider=resolved_provider, model=resolved_model)
 
     agent = Agent(
-        config=AgentConfig(model=resolved_model, provider=resolved_provider),
+        config=AgentConfig(
+            model=resolved_model,
+            provider=resolved_provider,
+            reasoning_effort=resolved_effort,
+        ),
         llm_provider=llm,
         agent_key=agent_key,
         agent_dir=agent_dir,

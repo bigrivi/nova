@@ -197,6 +197,8 @@ def test_models_endpoint_returns_configured_models(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     payload = response.json()
+    # `efforts` is the ladder the picker offers for that model, empty when the
+    # model declares none. Both entries here declare nothing, so both are empty.
     assert payload["items"] == [
         {
             "id": "openai:gpt-5.4",
@@ -205,6 +207,7 @@ def test_models_endpoint_returns_configured_models(monkeypatch, tmp_path):
             "model": "gpt-5.4",
             "label": "gpt-5.4",
             "tools": True,
+            "efforts": [],
         },
         {
             "id": "ollama:gemma4:26b",
@@ -213,6 +216,7 @@ def test_models_endpoint_returns_configured_models(monkeypatch, tmp_path):
             "model": "gemma4:26b",
             "label": "gemma4:26b",
             "tools": True,
+            "efforts": [],
         },
     ]
 

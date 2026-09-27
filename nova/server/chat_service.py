@@ -264,6 +264,52 @@ class ChatService:
         ]
         return MessageListResponse(items=items)
 
+    async def get_session_route(self, session_id: str) -> dict | None:
+        """The route a session runs with, for restoring it when reopened.
+
+        Separate from the message history on purpose: opening a conversation has
+        to know the model and effort before any message is loaded, and a history
+        scan would have to guess which of the last few turns still applies.
+        """
+        data_source = await self._get_data_source()
+        session = await data_source.get_session(session_id)
+        if session is None:
+            return None
+        return {
+            "provider": session.get("provider"),
+            "model": session.get("model"),
+            "reasoning_effort": session.get("reasoning_effort"),
+        }
+
+    async def set_session_route(
+        self,
+        session_id: str,
+        provider: str | None,
+        model: str | None,
+        reasoning_effort: str | None,
+    ) -> bool:
+        """Record a session's route, dropping a level its model cannot take.
+
+        Validated on the way in rather than only at agent build time, so what a
+        later GET hands back is always a level the model actually accepts.
+        """
+        if provider and model and reasoning_effort:
+            from nova.llm.reasoning import fit_effort, resolve_effort_levels
+
+            provider_config = self._settings.providers.get(provider)
+            if provider_config is not None:
+                levels = resolve_effort_levels(
+                    model,
+                    provider_config.type,
+                    provider_config.models.get(model)
+                    if isinstance(provider_config.models, dict) else None,
+                )
+                reasoning_effort = fit_effort(levels, reasoning_effort)
+        data_source = await self._get_data_source()
+        return await data_source.set_session_route(
+            session_id, provider, model, reasoning_effort
+        )
+
     async def get_context(self, session_id: str, provider: str | None = None, model: str | None = None) -> dict:
         from nova.agent.compaction import estimate_context_tokens, get_context_limit
 
@@ -446,6 +492,8 @@ class ChatService:
             model=request.model,
             is_new_session=not request.session_id,
             on_title_updated=self._on_title_updated,
+            session_id=request.session_id,
+            reasoning_effort=request.reasoning_effort,
         )
         register_key = request.session_id
         if register_key:

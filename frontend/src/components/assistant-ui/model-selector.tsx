@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import {
     ModelSelectorContent,
+    ModelSelectorEffort,
     ModelSelectorEmpty,
     ModelSelectorGroup,
     ModelSelectorItem,
@@ -19,8 +20,13 @@ import type { NovaModelRecord } from "../../types/nova";
 
 type ModelSelectorProps = {
     models: NovaModelRecord[];
+    /** The same models in selector shape; built once by the model config hook. */
+    options: ModelOption[];
     selectedModelId: string | null;
     onSelect: (modelId: string) => void;
+    /** Current reasoning level; kept across model switches. */
+    effort: string | null;
+    onEffortChange: (effort: string) => void;
 };
 
 type ModelGroup = {
@@ -51,31 +57,20 @@ function groupModels(models: NovaModelRecord[]): ModelGroup[] {
 
 export function ModelSelector({
     models,
+    options,
     selectedModelId,
     onSelect,
+    effort,
+    onEffortChange,
 }: ModelSelectorProps) {
     const { t } = useTranslation();
     const selectId = "nova-model-select";
     const groupedModels = useMemo(() => groupModels(models), [models]);
     const selectedModel = models.find((model) => model.id === selectedModelId);
-    const modelOptions = useMemo<ModelOption[]>(
-        () =>
-            models.map((model) => ({
-                id: model.id,
-                name: model.label,
-                keywords: [
-                    model.label,
-                    model.provider_name,
-                    model.provider,
-                    model.id,
-                ],
-            })),
-        [models],
-    );
 
     function toModelOption(model: NovaModelRecord): ModelOption {
         return (
-            modelOptions.find((option) => option.id === model.id) ?? {
+            options.find((option) => option.id === model.id) ?? {
                 id: model.id,
                 name: model.label,
             }
@@ -88,9 +83,11 @@ export function ModelSelector({
                 {t("modelSelector.activeModel")}
             </label>
             <ModelSelectorRoot
-                models={modelOptions}
+                models={options}
                 value={selectedModelId ?? undefined}
                 onValueChange={onSelect}
+                effort={effort ?? undefined}
+                onEffortChange={onEffortChange}
             >
                 <ModelSelectorTrigger
                     id={selectId}
@@ -104,7 +101,6 @@ export function ModelSelector({
                 >
                     <ModelSelectorValue
                         placeholder={t("modelSelector.noModelsAvailable")}
-                        showEffort={false}
                     />
                 </ModelSelectorTrigger>
                 <ModelSelectorContent
@@ -143,6 +139,9 @@ export function ModelSelector({
                             return parts;
                         })}
                     </ModelSelectorList>
+                    <ModelSelectorEffort
+                        label={t("modelSelector.reasoningEffort")}
+                    />
                 </ModelSelectorContent>
             </ModelSelectorRoot>
         </div>

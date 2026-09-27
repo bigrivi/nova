@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypeAlias
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class AttachmentData(BaseModel):
@@ -20,6 +20,9 @@ class ChatRequest(BaseModel):
     message: str
     provider: str | None = None
     model: str | None = None
+    # Reasoning level for this turn. Validated against what the model accepts
+    # server-side; an unknown level is dropped rather than forwarded.
+    reasoning_effort: str | None = None
     agent_key: str = Field(default="main")
     workspace_dir: str | None = None
     project_id: str | None = None
@@ -165,6 +168,9 @@ class ModelRecord(BaseModel):
     model: str
     label: str
     tools: bool = False
+    # Reasoning levels this model accepts, empty when it has none. The UI offers
+    # exactly these and nothing when the list is empty.
+    efforts: list[str] = []
 
 
 class ModelListResponse(BaseModel):
@@ -219,6 +225,28 @@ class ProviderUpdateRequest(BaseModel):
 
 class ProviderDeleteRequest(BaseModel):
     key: str
+
+
+class UpdateSessionRouteRequest(BaseModel):
+    # Written as one unit: an effort only means something next to its model.
+    # The write replaces the whole route, so a body naming a level without a
+    # model would record an effort belonging to nothing; rejecting it here
+    # keeps every reachable session state one a model can actually run.
+    provider: str | None = None
+    model: str | None = None
+    reasoning_effort: str | None = None
+
+    @model_validator(mode="after")
+    def _effort_needs_a_model(self) -> "UpdateSessionRouteRequest":
+        if self.reasoning_effort is not None and not self.model:
+            raise ValueError("reasoning_effort requires a model")
+        return self
+
+
+class SessionRouteResponse(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+    reasoning_effort: str | None = None
 
 
 class ModelUpdateRequest(BaseModel):

@@ -50,6 +50,9 @@ class AgentConfig:
     temperature: float = 0.7
     tools: Optional[list] = None
     memory_review_interval: int = 10
+    # Reasoning level for this run. None means "whatever the model config
+    # declares", which is also what a provider that has no such concept gets.
+    reasoning_effort: Optional[str] = None
 
 
 def build_user_message(
@@ -328,7 +331,30 @@ class Agent:
             abort_event=self._abort_event,
             timeout=reasoning_timeout,
             session_id=session_id,
+            reasoning_effort=self.config.reasoning_effort,
         )
+
+    async def _record_session_route(self, data_source) -> None:
+        """Stamp the route this session is running with onto the session row.
+
+        Written per turn rather than per session load so that reopening an old
+        conversation restores the model and effort it actually ran with, instead
+        of whatever the agent happens to point at today.
+        """
+        session = self.session.get_current_session()
+        if session is None:
+            return
+        try:
+            await data_source.set_session_route(
+                session.id,
+                self.config.provider,
+                self.config.model,
+                self.config.reasoning_effort,
+            )
+        except Exception as error:
+            # The route is a convenience for the next visit, not state the turn
+            # depends on; failing to record it must not fail the turn.
+            log.warning("[Session %s] could not record route: %s", session.id, error)
 
     def _try_overflow_recovery(self, error_message: str | None) -> bool:
         """Whether to compact and re-run after the provider rejected the request.
@@ -382,6 +408,7 @@ class Agent:
             tokens_output=reader.tokens_output,
             provider_meta=reader.provider_meta,
             model=self.config.model,
+            reasoning_effort=self.config.reasoning_effort,
         )
 
     async def _invoke_tools(
@@ -550,6 +577,7 @@ class Agent:
             # request: a single request can run many tool turns and each tool
             # result can be arbitrarily large, so a request that started well
             # inside the window can overrun it halfway through.
+            await self._record_session_route(data_source)
             try:
                 async for event, data in self._compaction.maybe_compact(
                     session_messages,

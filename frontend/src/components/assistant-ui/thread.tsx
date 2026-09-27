@@ -3,6 +3,7 @@ import { AskUserTool } from "@/components/assistant-ui/ask-user-tool";
 import { useZoom } from "@/lib/use-zoom";
 import { useApprovalStore } from "@/stores/approval-store";
 import { useAskUserStore } from "@/stores/ask-user-store";
+import type { ModelOption } from "./elements/model-selector";
 import type { NovaAgent, NovaModelRecord } from "@/types/nova";
 import { AuiIf, ThreadPrimitive } from "@assistant-ui/react";
 import type { KeyboardEvent, RefObject } from "react";
@@ -25,8 +26,11 @@ type ThreadProps = {
     };
     modelSelection: {
         models: NovaModelRecord[];
+        options: ModelOption[];
         selectedModelId: string | null;
         onSelect: (modelId: string) => void;
+        effort: string | null;
+        onEffortChange: (effort: string) => void;
     };
     agentSelection: {
         agents: NovaAgent[];

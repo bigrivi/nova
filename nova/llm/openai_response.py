@@ -19,6 +19,7 @@ from nova.llm.provider import (
     TextDelta,
     ToolCall,
 )
+from nova.llm.reasoning import apply_effort
 from nova.llm.request_hook import run_request_hook, run_session_hook
 
 log = logging.getLogger(__name__)
@@ -150,7 +151,7 @@ class OpenAIResponsesProvider(LLMProvider):
         # If single user message, Zen also accepts string input; keep array for consistency
         return result
 
-    def _build_body(self, input_data: list | str, model: str, stream: bool = False, tools: list[dict] | None = None, session_id: Optional[str] = None) -> dict:
+    def _build_body(self, input_data: list | str, model: str, stream: bool = False, tools: list[dict] | None = None, session_id: Optional[str] = None, reasoning_effort: Optional[str] = None) -> dict:
         body: dict = {"model": model, "input": input_data}
         if stream:
             body["stream"] = True
@@ -184,9 +185,10 @@ class OpenAIResponsesProvider(LLMProvider):
             if resp_tools:
                 body["tools"] = resp_tools
 
-        # Muse Spark benefits from high reasoning effort
-        if "reasoning" not in body:
-            body["reasoning"] = {"effort": "high"}
+        # Muse Spark's own config usually sets `reasoning`; apply_effort's
+        # setdefault keeps that winning over the per-turn selection, and only
+        # fills the gap when nothing was configured.
+        apply_effort(body, reasoning_effort, "openai-response")
         return body
 
     async def _post_with_retry(self, session, url, headers, body, abort_event, timeout=None):
@@ -262,9 +264,9 @@ class OpenAIResponsesProvider(LLMProvider):
             cache_read_tokens=int(cached) if cached is not None else None,
         )
 
-    async def chat(self, messages: list, model: str, stream: bool = False, tools: list[dict] | None = None, abort_event=None, session_id: Optional[str] = None) -> Done | Error:
+    async def chat(self, messages: list, model: str, stream: bool = False, tools: list[dict] | None = None, abort_event=None, session_id: Optional[str] = None, reasoning_effort: Optional[str] = None) -> Done | Error:
         input_data = self._format_input(messages)
-        body = self._build_body(input_data, model, stream=False, tools=tools, session_id=session_id)
+        body = self._build_body(input_data, model, stream=False, tools=tools, session_id=session_id, reasoning_effort=reasoning_effort)
         headers = self._build_headers(session_id=session_id)
         url = f"{self.base_url}/responses"
         connector = self._make_connector()
@@ -287,9 +289,9 @@ class OpenAIResponsesProvider(LLMProvider):
             if not connector.closed:
                 await connector.close()
 
-    async def chat_stream(self, messages: list, model: str, tools: list[dict] | None = None, abort_event=None, timeout=None, session_id: Optional[str] = None) -> AsyncGenerator[ChatStreamEvent, None]:
+    async def chat_stream(self, messages: list, model: str, tools: list[dict] | None = None, abort_event=None, timeout=None, session_id: Optional[str] = None, reasoning_effort: Optional[str] = None) -> AsyncGenerator[ChatStreamEvent, None]:
         input_data = self._format_input(messages)
-        body = self._build_body(input_data, model, stream=True, tools=tools, session_id=session_id)
+        body = self._build_body(input_data, model, stream=True, tools=tools, session_id=session_id, reasoning_effort=reasoning_effort)
         headers = self._build_headers(session_id=session_id)
         url = f"{self.base_url}/responses"
         headers["Accept"] = "text/event-stream"

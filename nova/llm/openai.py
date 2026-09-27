@@ -21,6 +21,7 @@ from nova.llm.provider import (
     TextDelta,
     ToolCall,
 )
+from nova.llm.reasoning import apply_effort
 from nova.llm.request_hook import run_request_hook, run_session_hook
 
 log = logging.getLogger(__name__)
@@ -104,7 +105,7 @@ class OpenAIProvider(LLMProvider):
             headers.update(run_request_hook(self._request_hook, session_id))
         return headers
 
-    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] = None, session_id: Optional[str] = None) -> dict:
+    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] = None, session_id: Optional[str] = None, reasoning_effort: Optional[str] = None) -> dict:
         body = {"messages": messages}
         if model:
             body["model"] = model
@@ -118,6 +119,11 @@ class OpenAIProvider(LLMProvider):
         # proxies do); the official OpenAI Chat Completions API honours it.
         prompt_caching = opts.pop("prompt_caching", True)
         body.update(opts)
+
+        # Applied after request_options so a value written into config.json wins:
+        # the operator's hand-set level is a deliberate override of the per-turn
+        # selection, and `setdefault` is what encodes that precedence.
+        apply_effort(body, reasoning_effort, "openai-compatible")
 
         if config_tools:
             if tools:
@@ -306,6 +312,7 @@ class OpenAIProvider(LLMProvider):
         tools: list[dict] = None,
         abort_event: Optional[asyncio.Event] = None,
         session_id: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> Done:
         formatted_messages = self._format_messages(messages)
 
@@ -316,6 +323,7 @@ class OpenAIProvider(LLMProvider):
             stream=stream,
             tools=tools,
             session_id=session_id,
+            reasoning_effort=reasoning_effort,
         )
 
         url = f"{self.base_url}/chat/completions"
@@ -396,6 +404,7 @@ class OpenAIProvider(LLMProvider):
         abort_event: Optional[asyncio.Event] = None,
         timeout: Optional[int] = None,
         session_id: Optional[str] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         formatted_messages = self._format_messages(messages)
         headers = self._build_headers(session_id=session_id)

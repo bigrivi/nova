@@ -16,8 +16,10 @@ from nova.server.schemas import (
     RenameSessionRequest,
     SessionActionResponse,
     SessionListResponse,
+    SessionRouteResponse,
     UpdateSessionPinnedRequest,
     UpdateSessionProjectRequest,
+    UpdateSessionRouteRequest,
     UpdateSessionWorkspaceRequest,
 )
 
@@ -75,6 +77,30 @@ async def set_session_workspace(
     if not updated:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return SessionActionResponse(status="workspace_updated", session_id=session_id)
+
+
+@router.get("/api/sessions/{session_id}/route", response_model=SessionRouteResponse)
+async def get_session_route(
+    session_id: str,
+    chat_service: ChatService = Depends(get_chat_service),
+) -> SessionRouteResponse:
+    route = await chat_service.get_session_route(session_id)
+    if route is None:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    return SessionRouteResponse(**route)
+
+
+@router.put("/api/sessions/{session_id}/route", response_model=SessionActionResponse)
+async def set_session_route(
+    session_id: str,
+    body: UpdateSessionRouteRequest,
+    chat_service: ChatService = Depends(get_chat_service),
+) -> SessionActionResponse:
+    updated = await chat_service.set_session_route(
+        session_id, body.provider, body.model, body.reasoning_effort)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    return SessionActionResponse(status="route_updated", session_id=session_id)
 
 
 @router.put("/api/sessions/{session_id}/pinned", response_model=SessionActionResponse)

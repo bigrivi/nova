@@ -5,6 +5,7 @@ import {
     clearLastSequence,
     deleteSession,
     getLastSequence,
+    getSessionRoute,
     getStreamStatus,
     interruptChat,
     listMessages,
@@ -50,6 +51,7 @@ import { useReasoningStore } from "../../stores/reasoning-store";
 import { useTodoStore } from "../../stores/todo-store";
 import type {
     NovaAttachmentData,
+    NovaSessionRoute,
     NovaBackgroundTask,
     NovaModelRecord,
     NovaThreadSummary,
@@ -60,6 +62,10 @@ export interface ConversationDeps {
     selectedModelId: string | null;
     selectedAgentKey: string;
     syncAgentForThread: (agentKey: string | null | undefined) => void;
+    /** The level that applies right now, already filtered by the model. */
+    getReasoningEffort?: () => string | null;
+    /** Apply a reopened session's recorded route back onto the composer. */
+    applySessionRoute?: (route: NovaSessionRoute) => void;
 }
 
 export interface Conversations {
@@ -238,6 +244,14 @@ export function useConversations(deps: ConversationDeps): Conversations {
         setCurrentThreadId(threadId);
         const thread = threads.find((item) => item.id === threadId);
         deps.syncAgentForThread(thread?.agent_key);
+        // Restore the model and level this conversation actually ran with, so
+        // reopening it does not silently continue on whatever the agent points
+        // at today. A session with no recorded route leaves the selection alone.
+        void getSessionRoute(threadId).then((route) => {
+            if (route) {
+                deps.applySessionRoute?.(route);
+            }
+        });
         void loadThread(threadId);
     }
 
@@ -373,6 +387,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
         provider: string | null;
         model: string | null;
         agentKey: string | null;
+        reasoningEffort?: string | null;
         attachments?: NovaAttachmentData[];
         resumeFromSequence: number | null;
     }) {
@@ -400,6 +415,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
                 provider: args.provider,
                 model: args.model,
                 agentKey: args.agentKey,
+                reasoningEffort: args.reasoningEffort ?? null,
                 projectId: args.projectId,
                 attachments: args.attachments,
                 signal: controller.signal,
@@ -690,6 +706,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
             provider: selectedModel?.provider || null,
             model: selectedModel?.model || null,
             agentKey: selectedAgentKey,
+            reasoningEffort: deps.getReasoningEffort?.() ?? null,
             attachments,
             resumeFromSequence: null,
         });

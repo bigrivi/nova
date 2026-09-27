@@ -58,6 +58,15 @@ export type NovaModelRecord = {
     model: string;
     label: string;
     tools: boolean;
+    /** Reasoning levels this model accepts; empty means it offers none. */
+    efforts: string[];
+};
+
+/** The model a session runs with, restored when the session is reopened. */
+export type NovaSessionRoute = {
+    provider: string | null;
+    model: string | null;
+    reasoning_effort: string | null;
 };
 
 export type NovaProviderRecord = {

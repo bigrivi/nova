@@ -1,4 +1,5 @@
 import type {
+    NovaSessionRoute,
     NovaAgent,
     NovaAgentCreateRequest,
     NovaAttachmentData,
@@ -24,6 +25,8 @@ type JsonResponse<T> = {
 
 type StreamChatOptions = {
     message: string;
+    /** Reasoning level for this turn; validated server-side. */
+    reasoningEffort?: string | null;
     sessionId?: string | null;
     provider?: string | null;
     model?: string | null;
@@ -339,6 +342,48 @@ export async function deleteModel(
     return response.items;
 }
 
+/** Read the model a session runs with, so reopening it restores that model. */
+export async function getSessionRoute(
+    sessionId: string,
+): Promise<NovaSessionRoute | null> {
+    try {
+        const response = await apiFetch(
+            `/api/sessions/${encodeURIComponent(sessionId)}/route`,
+        );
+        if (!response.ok) {
+            return null;
+        }
+        return (await response.json()) as NovaSessionRoute;
+    } catch {
+        // Sessions recorded before routes existed answer 404; the caller then
+        // keeps whatever the agent points at, which is what it always did.
+        return null;
+    }
+}
+
+/**
+ * Record a session's model and reasoning level.
+ *
+ * One request, not two: an effort only means something next to the model it was
+ * picked for, so the two are never written apart.
+ */
+export async function setSessionRoute(
+    sessionId: string,
+    route: NovaSessionRoute,
+): Promise<void> {
+    const response = await apiFetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}/route`,
+        {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(route),
+        },
+    );
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+}
+
 export async function updateAgent(
     key: string,
     data: { model: string; provider: string },
@@ -626,6 +671,7 @@ async function runStreamOnce(
             provider: options.provider || undefined,
             model: options.model || undefined,
             agent_key: options.agentKey || undefined,
+            reasoning_effort: options.reasoningEffort || undefined,
             workspace_dir: options.workspaceDir || undefined,
             project_id: options.projectId || undefined,
             attachments: options.attachments || [],

@@ -41,6 +41,7 @@
     "modelSelector.addProvider": "Add provider",
     "modelSelector.addModel": "Add model",
     "modelSelector.searchModels": "Search models...",
+    "modelSelector.reasoningEffort": "Thinking",
     "modelSelector.noMatchingModels": "No matching models.",
     "modelSelector.addProviderDialogTitle": "Add provider",
     "modelSelector.addProviderDialogDescription": "Save a new provider into Nova's config.json. Provider keys must be unique.",

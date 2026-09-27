@@ -57,6 +57,9 @@ class InMemoryRepository(NovaRepository):
             "message_count": getattr(session, "message_count", 0),
             "turn_count": getattr(session, "turn_count", 0),
             "metadata": json.dumps(getattr(session, "metadata", None)) if getattr(session, "metadata", None) else None,
+            "provider": getattr(session, "provider", None),
+            "model": getattr(session, "model", None),
+            "reasoning_effort": getattr(session, "reasoning_effort", None),
         }
 
     async def get_session(self, session_id: str) -> dict[str, Any] | None:
@@ -91,6 +94,21 @@ class InMemoryRepository(NovaRepository):
         if session is None:
             return False
         session["pinned"] = pinned
+        return True
+
+    async def set_session_route(
+        self,
+        session_id: str,
+        provider: str | None,
+        model: str | None,
+        reasoning_effort: str | None,
+    ) -> bool:
+        session = self._sessions.get(session_id)
+        if session is None:
+            return False
+        session["provider"] = provider
+        session["model"] = model
+        session["reasoning_effort"] = reasoning_effort
         return True
 
     async def set_session_project(self, session_id: str, project_id: str | None) -> bool:
@@ -179,6 +197,7 @@ class InMemoryRepository(NovaRepository):
             error=kwargs.get("error"),
             provider_meta=kwargs.get("provider_meta"),
             model=kwargs.get("model"),
+            reasoning_effort=kwargs.get("reasoning_effort"),
             tokens_input=kwargs.get("tokens_input"),
             tokens_output=kwargs.get("tokens_output"),
             # A caller may place a row at an earlier point in time (compaction
