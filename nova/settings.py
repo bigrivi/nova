@@ -215,6 +215,13 @@ def _parse_compaction_config(raw: Any) -> CompactionSettings:
     )
 
 
+#: Floor for the recent-portion budget. Below this, ``find_split_point`` targets
+#: only the last message or two, compaction frees almost nothing, the threshold
+#: stays exceeded, and every turn recompacts until the breaker opens. A config
+#: value of 0 or negative would otherwise cause exactly that.
+_MIN_SUMMARY_KEEP_TOKENS = 1024
+
+
 def _parse_summary_keep_tokens(raw: dict, default_window: int) -> int:
     """Read the recent-portion budget, honouring the ratio that preceded it.
 
@@ -225,7 +232,7 @@ def _parse_summary_keep_tokens(raw: dict, default_window: int) -> int:
     of what the author was asking for.
     """
     if "summary_keep_tokens" in raw:
-        return int(raw["summary_keep_tokens"])
+        return max(_MIN_SUMMARY_KEEP_TOKENS, int(raw["summary_keep_tokens"]))
     if "summary_keep_ratio" in raw:
         converted = int(float(raw["summary_keep_ratio"]) * default_window)
         logging.getLogger(__name__).warning(
@@ -233,7 +240,7 @@ def _parse_summary_keep_tokens(raw: dict, default_window: int) -> int:
             "read as summary_keep_tokens=%d; set summary_keep_tokens directly",
             converted,
         )
-        return converted
+        return max(_MIN_SUMMARY_KEEP_TOKENS, converted)
     return CompactionSettings.summary_keep_tokens
 
 

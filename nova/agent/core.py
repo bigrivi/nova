@@ -501,6 +501,9 @@ class Agent:
         message_variant: str | None = None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         self._abort_event.clear()
+        # Per-request latch: one compact-and-retry per user request. Reset here,
+        # not only in __init__, so a reused Agent still recovers on later requests.
+        self._overflow_recovered = False
 
         current_session = await self._resolve_session(
             session_id, user_input, workspace_dir, project_id)

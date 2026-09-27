@@ -582,14 +582,38 @@ async def compact(
     return True
 
 
+#: Per-message cap for ordinary messages folded into the summariser transcript.
+#: Bounds what one oversized tool result or pasted blob can contribute: about
+#: 2000 characters is roughly 500 English tokens, room for a code block or a
+#: short explanation, while a single runaway message still cannot crowd out the
+#: rest of the history. Summaries are exempt (see _format_for_summary).
+SUMMARY_MESSAGE_MAX_CHARS = 2000
+
+
 def _format_for_summary(messages: list) -> str:
-    """Format messages for summary generation."""
+    """Render the older portion of a session as a transcript for the summariser.
+
+    Ordinary messages are truncated to :data:`SUMMARY_MESSAGE_MAX_CHARS` so one
+    enormous tool result or pasted blob cannot crowd out everything else in the
+    summary prompt.
+
+    Summary messages are kept whole. A summary is already the compressed
+    stand-in for all the history before it, and the previous-summary anchor
+    instructs the summariser to carry every still-relevant fact from it forward.
+    Truncating one would silently drop exactly the facts that instruction demands
+    be preserved, and because each compaction folds the last summary into the
+    next, the loss would compound: the earlier the history, the more of it is
+    erased. Keeping the summary intact is what makes that fold lossless.
+    """
     lines = []
     for m in messages:
         role = _get_role(m)
         content = _get_content(m)
         if content:
-            lines.append(f"[{role}]: {content[:500]}")
+            if _is_summary(m):
+                lines.append(f"[{role}]: {content}")
+            else:
+                lines.append(f"[{role}]: {content[:SUMMARY_MESSAGE_MAX_CHARS]}")
         elif _get_tool_calls(m):
             lines.append(f"[{role}]: (tool calls)")
     return "\n".join(lines)
@@ -808,11 +832,27 @@ class CompactionController:
         )
         if not plan.needs_compaction:
             return None
-        if not self.summarising_allowed():
+        # The breaker guards speculative auto-compaction: repeated attempts that
+        # only the token estimate triggered. A forced run is not speculative. It
+        # follows a provider rejection that only compaction can clear, and the
+        # caller latches it to at most one attempt per user request (see
+        # Agent._overflow_recovered), so it cannot loop. Gating it here would
+        # block the one action that can make the pending request succeed, leaving
+        # the session to re-fail every request until a human intervenes.
+        if not force and not self.summarising_allowed():
             return None
         return plan
 
     def record_result(self, compacted: bool, session: Any) -> None:
+        """Fold one compaction outcome into the consecutive-failure streak.
+
+        Forced (overflow-driven) runs share this streak with automatic ones: the
+        counter measures whether summarisation currently works, which is true
+        regardless of what triggered the attempt, and a success clears it either
+        way. Only the gate in :meth:`plan` exempts forced runs; keeping a single
+        counter means the breaker re-arms from a forced success and no second
+        piece of state can drift out of sync.
+        """
         if compacted:
             self.consecutive_failures = 0
             _set_session_compacted_at(session, int(time.time() * 1000))

@@ -75,8 +75,8 @@ def estimate_tokens_by_type(text: str, is_tool_result: bool = False) -> int:
 def estimate_message_tokens(message, model: str = "unknown") -> int:
     """Estimate tokens for a single message.
 
-    Uses type-aware character estimation with safety margin.
-    Optionally uses tiktoken for OpenAI models if available.
+    Uses type-aware character estimation, or tiktoken for OpenAI models when
+    available. No safety margin is applied; the count is the raw estimate.
     Skips tiktoken if message contains non-text blocks (image, thinking, etc.)
     """
     # Check if message might contain non-text blocks (skip tiktoken in that case)
@@ -188,7 +188,7 @@ _EXACT_CONTEXT_WINDOWS = {
 
 # Ordered family patterns: the first substring that matches a normalised model
 # id wins, so more specific entries must come first. Values are the vendor's
-# advertised context window; the safety margin is applied afterwards.
+# advertised context window, used exactly as-is; no safety margin is subtracted.
 _FAMILY_CONTEXT_WINDOWS = (
     # OpenAI
     ("gpt-4o", 128000),

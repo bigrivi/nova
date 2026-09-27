@@ -25,25 +25,32 @@ OVERFLOW_PATTERNS = (
     re.compile(r"prompt (?:is )?too long", re.IGNORECASE),
     re.compile(r"request_too_large", re.IGNORECASE),
     # OpenAI completions and responses, plus the many OpenAI-compatible proxies.
+    # Both phrasings carry "maximum context length": the chat-completions form
+    # ("This model's maximum context length is N tokens. However, your messages
+    # resulted in M tokens") and the request-size form ("... exceeds the model's
+    # maximum context length of M tokens"). The bare phrase covers both; the
+    # error code covers structured JSON responses. The phrase shows up only in
+    # overflow errors - quota and throttling say neither - so it stays narrow.
+    re.compile(r"maximum context length", re.IGNORECASE),
+    re.compile(r"context_length_exceeded", re.IGNORECASE),
     re.compile(r"exceeds the context window", re.IGNORECASE),
-    re.compile(
-        r"exceeds (?:the )?(?:model'?s )?maximum context length"
-        r"(?: of [\d,]+ tokens?|\s*\([\d,]+\))",
-        re.IGNORECASE,
-    ),
     # Ollama, when the deployment reports instead of silently truncating.
     re.compile(r"prompt too long; exceeded (?:max )?context length", re.IGNORECASE),
 )
 
 #: Error texts that look like an overflow but are not, and win over the patterns
-#: above. Rate limiting is the reason this table exists: one widely deployed
-#: provider phrases throttling as "ThrottlingException: Too many tokens, please
-#: wait before trying again.", which reads as a token overflow. Compacting and
-#: retrying that only turns one failure into two.
+#: above (see :func:`is_context_overflow`). Throttling is why this table exists:
+#: one widely deployed provider phrases it as "ThrottlingException: Too many
+#: tokens, please wait before trying again.", which reads as a token overflow.
+#: Quota and billing errors say "exceeded ... quota", which a broad overflow
+#: pattern could also catch. Compacting and retrying any of these only turns one
+#: failure into two.
 NON_OVERFLOW_PATTERNS = (
-    re.compile(r"^(Throttling error|Service unavailable):", re.IGNORECASE),
+    re.compile(r"throttl", re.IGNORECASE),
     re.compile(r"rate limit", re.IGNORECASE),
     re.compile(r"too many requests", re.IGNORECASE),
+    re.compile(r"quota", re.IGNORECASE),
+    re.compile(r"billing", re.IGNORECASE),
 )
 
 

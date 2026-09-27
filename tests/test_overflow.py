@@ -13,6 +13,9 @@ class TestErrorTextPatterns:
         "Your input exceeds the context window of this model",
         "Requested token count exceeds the model's maximum context length of 131072 tokens",
         "Input length (265330) exceeds model's maximum context length (262144).",
+        ("This model's maximum context length is 128000 tokens. However, your "
+         "messages resulted in 130000 tokens. Please reduce the length."),
+        '{"error":{"code":"context_length_exceeded","message":"too long"}}',
         "prompt too long; exceeded max context length by 512 tokens",
     ])
     def test_recognised_as_overflow(self, message):
@@ -44,6 +47,14 @@ class TestNonOverflowVeto:
         "Service unavailable: try again",
     ])
     def test_throttling_is_never_overflow(self, message):
+        assert is_context_overflow(message) is False
+
+    @pytest.mark.parametrize("message", [
+        "You exceeded your current quota, please check your plan and billing details.",
+        "insufficient_quota",
+        "Error code: 429 - insufficient_quota: You exceeded your current quota.",
+    ])
+    def test_quota_and_billing_are_never_overflow(self, message):
         assert is_context_overflow(message) is False
 
     def test_veto_wins_when_both_tables_would_match(self):

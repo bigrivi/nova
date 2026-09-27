@@ -21,6 +21,8 @@ from nova.agent.compaction import (
     _get_tool_call_id,
     _get_msg_id,
     evaluate_compaction,
+    _format_for_summary,
+    SUMMARY_MESSAGE_MAX_CHARS,
 )
 
 
@@ -2140,3 +2142,67 @@ async def test_compaction_pipeline_never_rewrites_reasoning_content_when_provide
             )
     finally:
         await db.close()
+
+
+class TestSummaryFoldingIsLossless:
+    def test_a_previous_summary_is_not_truncated_when_recompacted(self):
+        """Folding a prior summary into a new one must not clip it.
+
+        The previous-summary anchor tells the summariser to carry every
+        still-relevant fact forward. Truncating the summary to a fixed cap would
+        drop exactly those facts, and the loss compounds with each compaction.
+        """
+        summary_text = "FACT-" + "x" * 3000 + "-TAIL-" + "y" * 2000
+        messages = [
+            MockTimedMessage("1", "assistant", summary_text,
+                             time_created=100, summary=1),
+            MockTimedMessage("2", "user", "ordinary follow-up", time_created=200),
+        ]
+
+        rendered = _format_for_summary(messages)
+
+        assert summary_text in rendered, "the previous summary must survive whole"
+
+    def test_an_ordinary_message_is_still_capped(self):
+        """Ordinary messages keep a cap so one huge paste cannot dominate."""
+        huge = "z" * (SUMMARY_MESSAGE_MAX_CHARS + 500)
+        rendered = _format_for_summary(
+            [MockTimedMessage("1", "tool", huge, time_created=1)])
+
+        assert huge not in rendered
+        assert huge[:SUMMARY_MESSAGE_MAX_CHARS] in rendered
+
+
+class TestForcedCompactionBypassesBreaker:
+    @pytest.mark.asyncio
+    async def test_forced_plan_ignores_an_open_circuit_breaker(self, monkeypatch):
+        """A provider rejection stays recoverable after auto-compaction tripped.
+
+        The breaker still guards threshold-triggered auto-compaction, but a
+        forced run is the only way the rejected request can succeed, so it
+        bypasses the gate.
+        """
+        from nova.agent import compaction as compaction_module
+        from nova.agent.compaction import CompactionController, CompactionPlan
+
+        async def fake_prepare_compaction(session_id, messages, last_compacted_at,
+                                          db, model="gpt-4o", provider="ollama",
+                                          force=False):
+            return CompactionPlan(
+                session_id, 128000, 200000, len(messages),
+                needs_compaction=True, split_index=3, over_threshold=True,
+            )
+
+        monkeypatch.setattr(
+            compaction_module, "prepare_compaction", fake_prepare_compaction)
+
+        controller = CompactionController(model="gpt-4o", provider="openai")
+        controller.consecutive_failures = 99  # breaker open
+        assert not controller.summarising_allowed()
+        session = {"id": "s1", "compacted_at": None}
+
+        forced = await controller.plan([], session, None, force=True)
+        assert forced is not None, "a forced run must not be blocked by the breaker"
+
+        auto = await controller.plan([], session, None, force=False)
+        assert auto is None, "the breaker still guards threshold-triggered compaction"

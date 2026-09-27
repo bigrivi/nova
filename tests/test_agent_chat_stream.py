@@ -668,3 +668,31 @@ class TestOverflowRecovery:
         assert contents.count(f"only once {PROBE}") == 1
         assert len([m for m in messages if m.summary == 1]) == 1, (
             "the rejected turn's history is summarised once, not twice")
+
+    @pytest.mark.asyncio
+    async def test_a_later_request_on_the_same_agent_recovers_again(self):
+        """The one-retry budget is per request, not per Agent lifetime.
+
+        A reused Agent outlives a single ``chat_stream`` call, so the recovery
+        latch must reset each request. Without the reset the second overflow in
+        a process surfaces raw, with no compaction and no retry.
+        """
+        provider = OverflowProvider([[TextDelta(content="ok")]])
+        holder, agent, database, session_id = await _session_with_history(provider)
+        try:
+            first = await _collect(agent, f"first {PROBE}", session_id)
+            for index in range(4):
+                await database.add_message(
+                    session_id, "user", f"more {index} " + "x" * 4000)
+                await database.add_message(
+                    session_id, "assistant", f"reply {index} " + "y" * 4000)
+            provider.rejections = 0
+            second = await _collect(agent, f"second {PROBE}", session_id)
+        finally:
+            await holder.__aexit__(None, None, None)
+
+        assert _payloads(first, AgentEvent.ERROR) == [], "the first request recovers"
+        assert _payloads(second, AgentEvent.ERROR) == [], (
+            "the second request must recover too; the latch resets per request")
+        assert "ok" in _text(second), (
+            "the retry runs on the second request and produces the model's reply")
