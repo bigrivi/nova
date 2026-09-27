@@ -5,7 +5,7 @@ import { LoginDialog } from "../components/auth/login-dialog";
 import { resolveModelEffort } from "../components/assistant-ui/elements/model-selector";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { agentDisplayName } from "../lib/agent-display";
-import { setSessionRoute } from "../lib/nova-api";
+import { setSessionRoute, updateAgent } from "../lib/nova-api";
 import { useReasoningEffortStore } from "../stores/reasoning-effort-store";
 import { NovaMainPanel } from "./components/NovaMainPanel";
 import { NovaSidebarPanel } from "./components/NovaSidebarPanel";
@@ -33,6 +33,12 @@ export function NovaAppShell() {
         reasoningEffort ?? undefined,
     );
 
+    // Reopening a conversation restores what it ran with, which is not the
+    // same as the user picking that route now. Without this the restore would
+    // travel back through the writers below and quietly overwrite the default a
+    // new conversation starts from.
+    const restoringRoute = useRef(false);
+
     const conversations = useConversations({
         models: modelConfig.models,
         selectedModelId: modelConfig.selectedModelId,
@@ -40,12 +46,13 @@ export function NovaAppShell() {
         syncAgentForThread: agentSelection.syncAgentForThread,
         getReasoningEffort: () => activeEffort ?? null,
         applySessionRoute: (route) => {
+            restoringRoute.current = true;
             if (route.model) {
                 const match = modelConfig.models.find(
                     (model) => model.model === route.model,
                 );
                 if (match && match.id !== modelConfig.selectedModelId) {
-                    modelConfig.handleModelSelect(match.id);
+                    modelConfig.setSelectedModelId(match.id);
                 }
             }
             if (route.reasoning_effort !== undefined) {
@@ -63,6 +70,7 @@ export function NovaAppShell() {
         setProjects: projects.setProjects,
         setAgents: agentSelection.setAgents,
         setSelectedModelId: modelConfig.setSelectedModelId,
+        setReasoningEffort,
         setSelectedAgentKey: agentSelection.setSelectedAgentKey,
     });
 
@@ -83,37 +91,69 @@ export function NovaAppShell() {
 
     const isNewChat = conversations.isDraftThread;
 
-    // One writer for the session's route. A model change has to land on both
-    // the session and the agent: the session so reopening it restores that
-    // model, the agent so a brand-new chat starts from it. The effort rides
-    // along in the same request because it is only meaningful for the model
-    // beside it. Drafts have no session row yet - their route is recorded by
-    // the backend on the first turn instead.
-    const pushedRoute = useRef("");
+    // Two writers, because a route lives in two places.
+    //
+    // The agent row is the default a brand-new conversation starts from, so it
+    // takes every explicit pick - including one made while composing a draft,
+    // which is the case that used to be lost. The session row is what that one
+    // conversation ran with, so reopening it restores those values. The level
+    // rides along with the model in both, since it means nothing beside a
+    // different model.
+    const selectedModel = modelConfig.selectedModelId;
+    const routeParts = selectedModel ? selectedModel.split(":") : [];
+    const routeProvider = routeParts[0] ?? null;
+    const routeModel = routeParts[1] ?? null;
+
+    const pushedAgent = useRef("");
     useEffect(() => {
-        if (isNewChat || !modelConfig.selectedModelId) {
-            pushedRoute.current = "";
+        if (!routeProvider || !routeModel) {
             return;
         }
-        const [provider, model] = modelConfig.selectedModelId.split(":");
-        if (!provider || !model) {
+        if (restoringRoute.current) {
+            // Consumed by this one skip: the next real change is a real change.
+            restoringRoute.current = false;
+            pushedAgent.current = "";
             return;
         }
-        const key = `${conversations.currentThreadId}|${provider}:${model}|${
+        const key = `${routeProvider}:${routeModel}|${activeEffort ?? ""}`;
+        if (pushedAgent.current === key) {
+            return;
+        }
+        pushedAgent.current = key;
+        void updateAgent(agentSelection.selectedAgentKey, {
+            model: routeModel,
+            provider: routeProvider,
+            reasoningEffort: activeEffort ?? null,
+        }).catch(() => {});
+    }, [
+        routeProvider,
+        routeModel,
+        activeEffort,
+        agentSelection.selectedAgentKey,
+    ]);
+
+    const pushedSession = useRef("");
+    useEffect(() => {
+        if (isNewChat || !routeProvider || !routeModel) {
+            pushedSession.current = "";
+            return;
+        }
+        const key = `${conversations.currentThreadId}|${routeProvider}:${routeModel}|${
             activeEffort ?? ""
         }`;
-        if (pushedRoute.current === key) {
+        if (pushedSession.current === key) {
             return;
         }
-        pushedRoute.current = key;
+        pushedSession.current = key;
         void setSessionRoute(conversations.currentThreadId, {
-            provider,
-            model,
+            provider: routeProvider,
+            model: routeModel,
             reasoning_effort: activeEffort ?? null,
         }).catch(() => {});
     }, [
         isNewChat,
-        modelConfig.selectedModelId,
+        routeProvider,
+        routeModel,
         conversations.currentThreadId,
         activeEffort,
     ]);

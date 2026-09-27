@@ -19,7 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { cva, type VariantProps } from "class-variance-authority";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
-import { handleEffortArrowKeys, ReasoningEffort } from "./reasoning-effort";
+import { ReasoningEffort } from "./reasoning-effort";
 import {
     createContext,
     useCallback,
@@ -369,7 +369,7 @@ function ModelSelectorValue({
                 // as more model name, which is what a grey chip looked like.
                 <span
                     data-slot="model-selector-value-effort"
-                    className="shrink-0 rounded bg-amber-500/15 px-1 py-px text-[10px] leading-tight font-medium text-amber-700 dark:bg-amber-400/15 dark:text-amber-300"
+                    className="bg-brand-soft text-brand shrink-0 rounded px-1 py-px text-[10px] leading-tight font-medium"
                 >
                     {effortName}
                 </span>
@@ -629,7 +629,6 @@ function ModelSelectorEffort({
   ...props
 }: ModelSelectorEffortProps) {
   const { efforts, effort, setEffort } = useModelSelectorEfforts();
-  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
 
   if (!efforts?.length) return null;
 
@@ -639,21 +638,11 @@ function ModelSelectorEffort({
       className={cn("w-full border-t px-3 py-2.5", className)}
       onKeyDown={(e) => {
         onKeyDown?.(e);
+        // The slider handles the arrow keys itself and stops them there, since
+        // cmdk's Command root also answers them and would move the model
+        // highlight at the same time.
         if (e.defaultPrevented) return;
-        // cmdk's Command root claims Home/End to jump the model list; stop them
-        // here so only the level control reacts.
         if (e.key === "Home" || e.key === "End") e.stopPropagation();
-        // Vertical arrows refocus cmdk's input before the event bubbles to the
-        // Command root: the same keypress then moves the list highlight, and
-        // Enter selects again (cmdk's Enter is inert while a button has focus,
-        // so the highlight would otherwise move with no way to act).
-        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-          e.currentTarget
-            .closest("[cmdk-root]")
-            ?.querySelector<HTMLInputElement>("[cmdk-input]")
-            ?.focus();
-        }
-        handleEffortArrowKeys(e, buttons, (key) => key && setEffort(key));
       }}
       {...props}
     >
@@ -662,7 +651,6 @@ function ModelSelectorEffort({
         levels={efforts.map((option) => ({ key: option.id, label: option.name }))}
         selectedKey={effort ?? ""}
         onSelect={setEffort}
-        buttonsRef={buttons}
       />
     </div>
   );

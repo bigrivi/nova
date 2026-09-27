@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from pathlib import Path
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS agents (
     description TEXT DEFAULT '',
     model TEXT NOT NULL,
     provider TEXT NOT NULL,
+    reasoning_effort TEXT,
     tools TEXT,
     workspace_dir TEXT,
     mode TEXT DEFAULT 'primary',
@@ -67,6 +69,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     message_count INTEGER DEFAULT 0,
     turn_count INTEGER DEFAULT 0,
     metadata TEXT,
+    provider TEXT,
+    model TEXT,
+    reasoning_effort TEXT,
     FOREIGN KEY (agent_key) REFERENCES agents(key)
 );
 
@@ -94,6 +99,7 @@ CREATE TABLE IF NOT EXISTS messages (
     group_id TEXT,
     reasoning_elapsed_ms INTEGER,
     provider_meta TEXT,
+    reasoning_effort TEXT,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
@@ -203,6 +209,29 @@ def _to_ms_timestamp(value: Any) -> int:
     return int(value)
 
 
+def _ddl_columns(ddl: str, table: str) -> set[str]:
+    """Column names a CREATE TABLE block in *ddl* declares for *table*.
+
+    Only used to notice a migration whose column never made it into the DDL, so
+    it reads the one statement for that table and takes the names off the
+    parentheses. Anything unexpected yields an empty set, which makes the check
+    report rather than hide.
+    """
+    match = re.search(
+        rf"CREATE TABLE IF NOT EXISTS {re.escape(table)}\s*\((.*?)\n\);",
+        ddl,
+        re.DOTALL,
+    )
+    if match is None:
+        return set()
+    names: set[str] = set()
+    for line in match.group(1).splitlines():
+        name = line.strip().split(" ", 1)[0].strip()
+        if name and not name.startswith(("--", "PRIMARY", "FOREIGN", "UNIQUE", "CHECK")):
+            names.add(name)
+    return names
+
+
 class SqliteRepository(NovaRepository):
     def __init__(self, config: DatabaseConfig | None = None):
         self.config = config or DatabaseConfig()
@@ -237,6 +266,12 @@ class SqliteRepository(NovaRepository):
         # input; SQLite cannot bind identifiers, so interpolation is the only option.
         required_columns: dict[str, dict[str, str]] = {
             "memories": {"owner_agent_key": "TEXT"},
+            # The agent holds the default route a brand-new conversation starts
+            # from, reasoning level included: without it every new chat would
+            # open on whatever the provider defaults to and the pick made in
+            # the previous one would be gone. A session still records its own
+            # level, so conversations can differ from each other.
+            "agents": {"reasoning_effort": "TEXT"},
             # A session records the route it is actually being run with, so
             # reopening it restores that model rather than whatever the agent
             # points at today. reasoning_effort rides along: it is only
@@ -266,6 +301,19 @@ class SqliteRepository(NovaRepository):
             except Exception as exception:
                 log.error("Could not inspect table %s for migration: %s", table, exception)
                 continue
+            # Every column here also belongs in _DDL, so a fresh database is
+            # created with the final shape and this loop only has work to do on
+            # a database that predates the column. Drift between the two lists
+            # is silent - the migration quietly does the work instead - and a
+            # fresh install pays for ALTER TABLE it did not need.
+            missing_from_ddl = set(columns_map) - existing - _ddl_columns(_DDL, table)
+            if missing_from_ddl:
+                log.error(
+                    "Column(s) %s for %s are migrated but missing from _DDL; a new"
+                    " database will only get them through ALTER TABLE",
+                    ", ".join(sorted(missing_from_ddl)),
+                    table,
+                )
             for column, column_type in columns_map.items():
                 if column in existing:
                     continue
@@ -978,11 +1026,12 @@ class SqliteRepository(NovaRepository):
         async with self._lock:
             await self._conn.execute(
                 """INSERT INTO agents
-                (key, name, description, model, provider, tools, workspace_dir, mode, posture, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (key, name, description, model, provider, reasoning_effort, tools, workspace_dir, mode, posture, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(key) DO UPDATE SET
                 name=excluded.name, description=excluded.description,
                 model=excluded.model, provider=excluded.provider,
+                reasoning_effort=excluded.reasoning_effort,
                 tools=excluded.tools, workspace_dir=excluded.workspace_dir,
                 mode=excluded.mode, posture=excluded.posture,
                 updated_at=excluded.updated_at""",
@@ -992,6 +1041,7 @@ class SqliteRepository(NovaRepository):
                     agent.get("description", ""),
                     agent["model"],
                     agent["provider"],
+                    agent.get("reasoning_effort"),
                     agent.get("tools"),
                     agent.get("workspace_dir"),
                     agent.get("mode", "primary"),

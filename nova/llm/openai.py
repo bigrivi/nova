@@ -66,6 +66,7 @@ class OpenAIProvider(LLMProvider):
         extra_headers: Optional[dict] = None,
         request_hook: Optional[str] = None,
         request_session_hook: Optional[str] = None,
+        default_reasoning_effort: Optional[str] = None,
     ):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
@@ -76,6 +77,7 @@ class OpenAIProvider(LLMProvider):
         self._extra_headers = dict(extra_headers or {})
         self._request_hook = request_hook
         self._request_session_hook = request_session_hook
+        self._default_reasoning_effort = default_reasoning_effort
 
     def _make_connector(self) -> aiohttp.TCPConnector:
         return aiohttp.TCPConnector(
@@ -120,10 +122,14 @@ class OpenAIProvider(LLMProvider):
         prompt_caching = opts.pop("prompt_caching", True)
         body.update(opts)
 
-        # Applied after request_options so a value written into config.json wins:
-        # the operator's hand-set level is a deliberate override of the per-turn
-        # selection, and `setdefault` is what encodes that precedence.
-        apply_effort(body, reasoning_effort, "openai-compatible")
+        # The per-turn selection, falling back to the configured default: a level
+        # in config.json is what to use when nothing was picked, not a ceiling
+        # that overrules an explicit pick.
+        apply_effort(
+            body,
+            reasoning_effort or self._default_reasoning_effort,
+            "openai-compatible",
+        )
 
         if config_tools:
             if tools:

@@ -1,7 +1,7 @@
 import { startTransition, useMemo, useState } from "react";
 
 import type { ModelOption } from "../../components/assistant-ui/elements/model-selector";
-import { listProviders, updateAgent } from "../../lib/nova-api";
+import { listProviders } from "../../lib/nova-api";
 import type { NovaModelRecord, NovaProviderRecord } from "../../types/nova";
 
 export interface ModelConfig {
@@ -57,11 +57,10 @@ export function useModelConfig(): ModelConfig {
     );
 
     function handleModelSelect(value: string) {
+        // Persistence is the shell's job: it writes the model and the reasoning
+        // level together, and knows to skip the write when the change came from
+        // restoring a session rather than from the user picking something.
         setSelectedModelId(value);
-        const [provider, model] = value.split(":");
-        if (provider && model) {
-            updateAgent("main", { provider, model }).catch(() => {});
-        }
     }
 
     function handleConfigModelsUpdated(nextModels: NovaModelRecord[]) {
@@ -75,12 +74,6 @@ export function useModelConfig(): ModelConfig {
             }
             const fallback = nextModels[0] ?? null;
             setSelectedModelId(fallback?.id ?? null);
-            if (fallback?.provider && fallback?.model) {
-                updateAgent("main", {
-                    provider: fallback.provider,
-                    model: fallback.model,
-                }).catch(() => {});
-            }
         });
     }
 

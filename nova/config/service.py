@@ -14,6 +14,26 @@ class ConfigValidationError(ValueError):
     pass
 
 
+class _Unset:
+    """Marks an argument the caller left out, as distinct from ``None``.
+
+    ``None`` is a real choice here - clearing a stored reasoning level - so a
+    plain default would conflate "not mentioned" with "remove it" and let a
+    model-only update wipe the setting.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "UNSET"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+_UNSET = _Unset()
+
+
 _SUPPORTED_PROVIDER_TYPES: frozenset[str] = frozenset(
     {"ollama", "openai-compatible", "openai-response", "anthropic"}
 )
@@ -111,7 +131,21 @@ class ConfigService:
         data_source = await self._get_data_source()
         await data_source.set_agent_parents(child_key, parent_keys)
 
-    async def update_agent_model(self, key: str, model: str, provider: str) -> dict | None:
+    async def update_agent_model(
+        self,
+        key: str,
+        model: str,
+        provider: str,
+        reasoning_effort: str | None | _Unset = _UNSET,
+    ) -> dict | None:
+        """Point an agent at a model, and optionally at a reasoning level.
+
+        The level is filtered against what the model declares before it is
+        stored, so the default a new conversation starts from is always a level
+        that model accepts. Passing ``None`` clears it; omitting the argument
+        leaves the stored one alone, so a caller that only knows the model does
+        not silently reset someone's choice.
+        """
         data_source = await self._get_data_source()
         existing = await data_source.get_agent(key)
         if existing is None:
@@ -119,9 +153,39 @@ class ConfigService:
         now = int(time.time() * 1000)
         existing["model"] = model
         existing["provider"] = provider
+        if not isinstance(reasoning_effort, _Unset):
+            existing["reasoning_effort"] = self._fit_effort(
+                provider, model, reasoning_effort
+            )
         existing["updated_at"] = now
         await data_source.save_agent(existing)
         return existing
+
+    @staticmethod
+    def _fit_effort(
+        provider: str, model: str, effort: str | None
+    ) -> str | None:
+        """Keep *effort* only when the model declares it, else drop it."""
+        from nova.llm.reasoning import fit_effort, resolve_effort_levels
+        from nova.settings import get_settings
+
+        if not effort:
+            return None
+        try:
+            provider_config = get_settings().providers.get(provider)
+        except Exception:
+            return None
+        if provider_config is None:
+            return None
+        models = provider_config.models
+        return fit_effort(
+            resolve_effort_levels(
+                model,
+                provider_config.type,
+                models.get(model) if isinstance(models, dict) else None,
+            ),
+            effort,
+        )
 
     async def get_agent_children(self, parent_key: str) -> list[str]:
         """Get all child keys of an agent."""

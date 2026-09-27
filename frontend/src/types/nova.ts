@@ -116,6 +116,8 @@ export type NovaAgent = {
     description: string;
     model: string;
     provider: string;
+    /** Default reasoning level for new conversations on this agent. */
+    reasoning_effort?: string | null;
     tools?: string | string[] | null;
     posture?: NovaAgentPosture;
     parents: string[];

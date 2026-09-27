@@ -53,6 +53,7 @@ class OpenAIResponsesProvider(LLMProvider):
         extra_headers: Optional[dict] = None,
         request_hook: Optional[str] = None,
         request_session_hook: Optional[str] = None,
+        default_reasoning_effort: Optional[str] = None,
     ):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
@@ -62,6 +63,7 @@ class OpenAIResponsesProvider(LLMProvider):
         self._extra_headers = dict(extra_headers or {})
         self._request_hook = request_hook
         self._request_session_hook = request_session_hook
+        self._default_reasoning_effort = default_reasoning_effort
 
     def _make_connector(self) -> aiohttp.TCPConnector:
         return aiohttp.TCPConnector(limit=10, limit_per_host=5, ttl_dns_cache=300)
@@ -185,10 +187,15 @@ class OpenAIResponsesProvider(LLMProvider):
             if resp_tools:
                 body["tools"] = resp_tools
 
-        # Muse Spark's own config usually sets `reasoning`; apply_effort's
-        # setdefault keeps that winning over the per-turn selection, and only
-        # fills the gap when nothing was configured.
-        apply_effort(body, reasoning_effort, "openai-response")
+        # The Responses API nests the level under `reasoning`; it has no flat
+        # `reasoning_effort`, and sending one is a 400 rather than a shrug. The
+        # per-turn selection wins, falling back to the configured default, which
+        # is the same precedence the Chat Completions path uses.
+        apply_effort(
+            body,
+            reasoning_effort or self._default_reasoning_effort,
+            "openai-response",
+        )
         return body
 
     async def _post_with_retry(self, session, url, headers, body, abort_event, timeout=None):

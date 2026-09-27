@@ -277,3 +277,198 @@ class TestRouteStorage:
         assert session["model"] == "gpt-5.5"
         assert session["reasoning_effort"] == "high"
         await source.close()
+
+    async def test_the_agent_gains_a_reasoning_effort_column(
+        self, monkeypatch, tmp_path
+    ):
+        """An install that predates the column upgrades in place."""
+        import sqlite3
+
+        home = tmp_path / ".nova"
+        home.mkdir()
+        (home / "config.json").write_text(
+            json.dumps({"providers": {"gw": GATEWAY}}), encoding="utf-8"
+        )
+        db_path = home / "nova.db"
+        with sqlite3.connect(db_path) as raw:
+            # The real schema minus the column being added, so the migration is
+            # the only thing that has to supply it.
+            raw.execute(
+                "CREATE TABLE agents ("
+                "key TEXT PRIMARY KEY, name TEXT NOT NULL,"
+                " description TEXT DEFAULT '', model TEXT NOT NULL,"
+                " provider TEXT NOT NULL, tools TEXT, workspace_dir TEXT,"
+                " mode TEXT DEFAULT 'primary', posture TEXT DEFAULT 'full',"
+                " created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)"
+            )
+            raw.execute(
+                "INSERT INTO agents (key, name, model, provider, created_at, updated_at)"
+                " VALUES ('main', 'Nova', 'gpt-5.5', 'gw', 0, 0)"
+            )
+
+        monkeypatch.setenv("NOVA_HOME", str(home))
+        await init_db(DatabaseConfig(path=Settings.load_config().database_path))
+        try:
+            with sqlite3.connect(db_path) as raw:
+                columns = {row[1] for row in raw.execute("PRAGMA table_info(agents)")}
+                model = raw.execute(
+                    "SELECT model FROM agents WHERE key = 'main'"
+                ).fetchone()[0]
+            assert "reasoning_effort" in columns
+            assert model == "gpt-5.5", "the migration must not rewrite rows"
+        finally:
+            await close_db()
+
+
+@pytest.mark.asyncio
+class TestAgentDefault:
+    """The agent row is the default a brand-new conversation starts from.
+
+    Without it every new chat reopens on the provider's own default and the
+    level picked in the previous one is gone.
+    """
+
+    async def test_a_level_is_stored_on_the_agent(self, client):
+        response = await client.patch(
+            "/api/agents/main",
+            json={
+                "provider": "gw",
+                "model": "gpt-5.5",
+                "reasoning_effort": "high",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["reasoning_effort"] == "high"
+        assert (await client.get("/api/agents/main")).json()["reasoning_effort"] == "high"
+
+    async def test_an_undeclared_level_is_dropped_on_write(self, client):
+        """Same rule as the session route: never store what the model refuses."""
+        await client.patch(
+            "/api/agents/main",
+            json={"provider": "gw", "model": "gpt-5.5", "reasoning_effort": "xhigh"},
+        )
+        assert (await client.get("/api/agents/main")).json()["reasoning_effort"] is None
+
+    async def test_a_model_that_declares_nothing_stores_no_level(self, client):
+        await client.patch(
+            "/api/agents/main",
+            json={"provider": "gw", "model": "plain-model", "reasoning_effort": "high"},
+        )
+        assert (await client.get("/api/agents/main")).json()["reasoning_effort"] is None
+
+    async def test_a_model_only_update_leaves_the_level_alone(self, client):
+        """The point of the sentinel: a model swap must not reset the choice.
+
+        The picker always sends both, but a caller that only knows the model
+        would otherwise silently clear someone's default.
+        """
+        await client.patch(
+            "/api/agents/main",
+            json={"provider": "gw", "model": "gpt-5.5", "reasoning_effort": "low"},
+        )
+        await client.patch("/api/agents/main", json={"provider": "gw", "model": "gpt-5.5"})
+
+        agent = (await client.get("/api/agents/main")).json()
+        assert agent["reasoning_effort"] == "low"
+        assert agent["model"] == "gpt-5.5"
+
+    async def test_an_explicit_null_clears_the_level(self, client):
+        await client.patch(
+            "/api/agents/main",
+            json={"provider": "gw", "model": "gpt-5.5", "reasoning_effort": "low"},
+        )
+        await client.patch(
+            "/api/agents/main",
+            json={"provider": "gw", "model": "gpt-5.5", "reasoning_effort": None},
+        )
+        assert (await client.get("/api/agents/main")).json()["reasoning_effort"] is None
+
+    async def test_the_agent_and_a_session_hold_their_own_level(self, client, session_id):
+        """A default is not a lock: the conversation still picks its own."""
+        await client.patch(
+            "/api/agents/main",
+            json={"provider": "gw", "model": "gpt-5.5", "reasoning_effort": "low"},
+        )
+        await put_route(
+            client, session_id, provider="gw", model="gpt-5.5", reasoning_effort="high"
+        )
+        assert (await client.get("/api/agents/main")).json()["reasoning_effort"] == "low"
+        assert (await get_route(client, session_id)).json()["reasoning_effort"] == "high"
+
+    async def test_an_unknown_agent_is_a_404(self, client):
+        response = await client.patch(
+            "/api/agents/nope",
+            json={"provider": "gw", "model": "gpt-5.5", "reasoning_effort": "high"},
+        )
+        assert response.status_code == 404
+
+
+class TestEffortPrecedence:
+    """Which level a run uses, from the four places one can come from."""
+
+    @staticmethod
+    def resolve(requested=None, session=None, agent=None, config=None):
+        from types import SimpleNamespace
+
+        from nova.app.runtime import _resolve_effort
+
+        settings = SimpleNamespace(
+            providers={
+                "gw": SimpleNamespace(
+                    type="openai-compatible",
+                    models={
+                        "gpt-5.5": {
+                            "reasoning_effort_levels": ["low", "medium", "high"],
+                            **({"reasoning_effort": config} if config else {}),
+                        }
+                    },
+                )
+            }
+        )
+        return _resolve_effort(
+            settings=settings,
+            provider="gw",
+            model="gpt-5.5",
+            requested=requested,
+            session_effort=session,
+            agent_effort=agent,
+        )
+
+    def test_the_request_wins(self):
+        assert self.resolve("high", "low", "medium", "low") == "high"
+
+    def test_the_session_beats_the_agent_default(self):
+        assert self.resolve(None, "high", "low") == "high"
+
+    def test_the_agent_default_beats_the_model_config(self):
+        assert self.resolve(None, None, "high", "low") == "high"
+
+    def test_the_model_config_is_the_floor(self):
+        assert self.resolve(None, None, None, "medium") == "medium"
+
+    def test_nothing_anywhere_means_no_level(self):
+        assert self.resolve() is None
+
+    def test_a_level_for_a_different_model_is_skipped_not_returned(self):
+        """Falls through to the next candidate rather than stopping on a bad one."""
+        assert self.resolve(None, "xhigh", "low") == "low"
+
+    def test_a_model_declaring_no_levels_gets_none(self):
+        from types import SimpleNamespace
+
+        from nova.app.runtime import _resolve_effort
+
+        settings = SimpleNamespace(
+            providers={"gw": SimpleNamespace(type="openai-compatible", models={"m": {}})}
+        )
+        assert (
+            _resolve_effort(
+                settings=settings,
+                provider="gw",
+                model="m",
+                requested="high",
+                session_effort="high",
+                agent_effort="high",
+            )
+            is None
+        )

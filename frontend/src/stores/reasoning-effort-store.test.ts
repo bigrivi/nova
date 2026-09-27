@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { nextEffortIndex } from "../components/assistant-ui/elements/reasoning-effort";
+import {
+    effortRatio,
+    effortRungAt,
+    trackWidth,
+} from "../components/assistant-ui/elements/reasoning-effort";
 import {
     resolveModelEffort,
     type ModelOption,
@@ -95,41 +99,51 @@ describe("reasoning level selection", () => {
     });
 });
 
-describe("arrow keys across the level control", () => {
-    it("steps along the ladder", () => {
-        expect(nextEffortIndex("ArrowRight", 0, 5)).toBe(1);
-        expect(nextEffortIndex("ArrowLeft", 3, 5)).toBe(2);
+describe("slider geometry", () => {
+    it("spreads the rungs across the whole track", () => {
+        // With no captions to line up with, the rungs run end to end and the
+        // rail needs no inset of its own.
+        for (const count of [2, 3, 4, 5, 6]) {
+            expect(effortRatio(0, count)).toBe(0);
+            expect(effortRatio(count - 1, count)).toBe(1);
+        }
     });
 
-    it("wraps at both ends", () => {
-        expect(nextEffortIndex("ArrowRight", 4, 5)).toBe(0);
-        expect(nextEffortIndex("ArrowLeft", 0, 5)).toBe(4);
+    it("spaces the rungs evenly", () => {
+        expect(effortRatio(2, 5)).toBe(0.5);
+        expect(effortRatio(0, 4)).toBe(0);
+        expect(effortRatio(3, 4)).toBe(1);
+        expect(effortRatio(1, 3)).toBeCloseTo(0.5);
     });
 
-    it("jumps to either end", () => {
-        expect(nextEffortIndex("Home", 3, 5)).toBe(0);
-        expect(nextEffortIndex("End", 1, 5)).toBe(4);
+    it("collapses a single rung to the start", () => {
+        // One rung is rendered as a readout, not a slider, so the ratio is only
+        // ever a fallback; 0 keeps the fill from covering the whole rail.
+        expect(effortRatio(0, 1)).toBe(0);
+        expect(effortRatio(0, 0)).toBe(0);
     });
 
-    it("enters at the first rung when focus is outside the group", () => {
-        // A wrapped index would land on the last rung, which reads as the model
-        // quietly jumping to its most expensive setting.
-        expect(nextEffortIndex("ArrowRight", -1, 5)).toBe(0);
-        expect(nextEffortIndex("ArrowLeft", -1, 5)).toBe(0);
+    it("rounds a drop to the nearest rung", () => {
+        expect(effortRungAt(0, 5)).toBe(0);
+        expect(effortRungAt(0.5, 5)).toBe(2);
+        expect(effortRungAt(1, 5)).toBe(4);
+        expect(effortRungAt(0.26, 5)).toBe(1);
     });
 
-    it("ignores keys that are not its own", () => {
-        expect(nextEffortIndex("ArrowUp", 1, 5)).toBe(null);
-        expect(nextEffortIndex("Enter", 1, 5)).toBe(null);
+    it("clamps a drag released past either end", () => {
+        // Wrapping instead would send "the most" back to the least.
+        expect(effortRungAt(-0.4, 5)).toBe(0);
+        expect(effortRungAt(1.9, 5)).toBe(4);
     });
 
-    it("does nothing when there are no levels", () => {
-        expect(nextEffortIndex("ArrowRight", 0, 0)).toBe(null);
-        expect(nextEffortIndex("Home", -1, 0)).toBe(null);
+    it("treats a degenerate measurement as the first rung", () => {
+        expect(effortRungAt(Number.NaN, 5)).toBe(0);
+        expect(effortRungAt(0.5, 1)).toBe(0);
+        expect(effortRungAt(0.5, 0)).toBe(0);
     });
 
-    it("handles a single level", () => {
-        expect(nextEffortIndex("ArrowRight", 0, 1)).toBe(0);
-        expect(nextEffortIndex("End", 0, 1)).toBe(0);
+    it("widens the track as rungs are added", () => {
+        const widths = [1, 2, 3, 4, 5, 6].map(trackWidth);
+        expect(widths).toEqual([...widths].sort((a, b) => a - b));
     });
 });

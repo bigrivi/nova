@@ -130,7 +130,7 @@ export function ThreadStickyComposer({
                         <div className="flex min-w-0 items-center gap-2">
                             <ComposerAddAttachment />
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
                             <ModelSelector
                                 models={modelSelection.models}
                                 options={modelSelection.options}

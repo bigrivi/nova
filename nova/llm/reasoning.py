@@ -92,9 +92,8 @@ def apply_effort(
     """Write *effort* into a request body in *provider_type*'s spelling.
 
     Chat Completions takes a flat ``reasoning_effort``; the Responses API nests
-    it under ``reasoning``. Anything already present in *body* wins, so a
-    hand-written ``reasoning_effort`` in config.json still overrides the
-    per-turn selection.
+    it under ``reasoning``. Anything already in *body* is left alone, so a value
+    the caller put there directly outranks this one.
     """
     if not effort:
         return body

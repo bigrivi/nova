@@ -27,6 +27,8 @@ export interface BootstrapSetters {
     setProjects: (projects: NovaProject[]) => void;
     setAgents: (agents: NovaAgent[]) => void;
     setSelectedModelId: (modelId: string) => void;
+    /** Adopt the agent's stored level, so a new chat opens on it. */
+    setReasoningEffort: (effort: string | null) => void;
     setSelectedAgentKey: (agentKey: string) => void;
 }
 
@@ -114,6 +116,9 @@ export function useBootstrap(setters: BootstrapSetters): BootstrapControls {
                         if (availableModels.some((m) => m.id === modelId)) {
                             setters.setSelectedModelId(modelId);
                         }
+                    }
+                    if (agent?.reasoning_effort !== undefined) {
+                        setters.setReasoningEffort(agent.reasoning_effort ?? null);
                     }
                 } catch {
                     // Best-effort model preselect; ignore when /api/agents/main

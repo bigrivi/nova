@@ -47,6 +47,10 @@ def build_llm(
         model_name=model,
         provider_name=provider,
     )
+    # Read separately from the request options: `reasoning_effort` is an
+    # internal config key, and the provider has to write it under whichever
+    # spelling its wire format uses.
+    default_effort = settings.get_default_reasoning_effort(model, provider)
 
     if provider_type == "faker":
         options = provider_config.options
@@ -78,6 +82,7 @@ def build_llm(
             base_url=base_url,
             request_options=request_options,
             user_agent=user_agent,
+            default_reasoning_effort=default_effort,
             **_header_options(provider_config.options),
             **kwargs,
         )
@@ -91,6 +96,7 @@ def build_llm(
             base_url=base_url,
             request_options=request_options,
             user_agent=user_agent,
+            default_reasoning_effort=default_effort,
             **_header_options(provider_config.options),
         )
     elif provider_type == "anthropic":
@@ -168,13 +174,16 @@ def _resolve_effort(
     model: str,
     requested: str | None,
     session_effort: str | None,
+    agent_effort: str | None = None,
 ) -> str | None:
     """Pick the reasoning level for a run, validated against what the model takes.
 
     Order: this request, then the level the session last ran with, then the
-    model config's default. Every candidate goes through ``fit_effort``, so a
-    level left behind by a different model - or a hand-edited one the provider
-    would reject - is dropped instead of sent.
+    agent's default, then the model config's default. The agent tier is what
+    makes a brand-new conversation open on the level the last one was set to.
+    Every candidate goes through ``fit_effort``, so a level left behind by a
+    different model - or a hand-edited one the provider would reject - is
+    dropped instead of sent.
     """
     from nova.llm.reasoning import fit_effort, resolve_effort_levels
 
@@ -194,7 +203,8 @@ def _resolve_effort(
     if not levels:
         return None
 
-    for candidate in (requested, session_effort, provider_config.models.get(model, {})
+    for candidate in (requested, session_effort, agent_effort,
+                      provider_config.models.get(model, {})
                       if isinstance(provider_config.models, dict) else None):
         if isinstance(candidate, dict):
             candidate = candidate.get("reasoning_effort")
@@ -297,6 +307,9 @@ async def build_agent(
         model=resolved_model,
         requested=reasoning_effort,
         session_effort=session_route.get("reasoning_effort"),
+        # A sub-agent inherits the caller's level rather than the agent's
+        # default: it was not chosen with this agent in mind.
+        agent_effort=None if is_sub_agent else (record or {}).get("reasoning_effort"),
     )
 
     allowed_tools = allowed_tools_for((record or {}).get("posture")) if is_sub_agent else None

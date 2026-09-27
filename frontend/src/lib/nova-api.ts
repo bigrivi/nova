@@ -386,12 +386,23 @@ export async function setSessionRoute(
 
 export async function updateAgent(
     key: string,
-    data: { model: string; provider: string },
+    data: {
+        model: string;
+        provider: string;
+        /** Default level for new conversations; null clears it. */
+        reasoningEffort?: string | null;
+    },
 ): Promise<void> {
     const response = await apiFetch(`/api/agents/${encodeURIComponent(key)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+            model: data.model,
+            provider: data.provider,
+            ...(data.reasoningEffort !== undefined
+                ? { reasoning_effort: data.reasoningEffort }
+                : {}),
+        }),
     });
     if (!response.ok) {
         throw new Error(await parseErrorMessage(response));
@@ -474,7 +485,11 @@ export async function setAgentParents(
 
 export async function getAgent(
     key: string,
-): Promise<{ model: string; provider: string } | null> {
+): Promise<{
+    model: string;
+    provider: string;
+    reasoning_effort?: string | null;
+} | null> {
     const response = await apiFetch(`/api/agents/${encodeURIComponent(key)}`);
     if (!response.ok) return null;
     return response.json();

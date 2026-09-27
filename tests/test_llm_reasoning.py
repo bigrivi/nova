@@ -122,12 +122,12 @@ class TestApplyEffort:
             "reasoning": {"effort": "high"}
         }
 
-    def test_config_wins_over_the_per_turn_selection(self):
-        """A hand-written level in config.json is a deliberate override.
+    def test_a_value_already_in_the_body_is_left_alone(self):
+        """`setdefault` is what makes the call order the precedence.
 
-        `setdefault` is what encodes that precedence, and it is why
-        `reasoning_effort` stays in the passthrough keys while
-        `reasoning_effort_levels` does not.
+        Applied per-turn first and to the configured default second, a default
+        fills the gap rather than overruling an explicit pick; a value the caller
+        put in the body directly outranks both.
         """
         body = apply_effort({"reasoning_effort": "medium"}, "high", "openai-compatible")
         assert body["reasoning_effort"] == "medium"
@@ -171,7 +171,8 @@ class TestRequestBody:
         assert session.calls[0]["json"]["reasoning_effort"] == "xhigh"
 
     @pytest.mark.asyncio
-    async def test_config_level_outranks_the_selection(self, monkeypatch):
+    async def test_a_value_put_straight_in_the_options_still_wins(self, monkeypatch):
+        """`setdefault` in apply_effort: the body arrived with it already set."""
         from nova.llm.openai import OpenAIProvider
 
         session = self._session(monkeypatch)
@@ -194,12 +195,14 @@ class TestRequestBody:
         await provider.chat([{"role": "user", "content": "hi"}], model="gpt-5.5")
         assert "reasoning_effort" not in session.calls[0]["json"]
 
-    def test_the_level_list_never_leaks_into_the_payload(self, tmp_path):
-        """It describes the UI, not the request, so settings must not forward it.
+    def test_neither_effort_key_reaches_the_payload_raw(self, tmp_path):
+        """Both are internal config keys, read by name rather than forwarded.
 
-        `reasoning_effort_levels` is in the internal-keys set while
-        `reasoning_effort` deliberately is not - one is metadata, the other is
-        a request field, and only the latter is meant to reach the provider.
+        `reasoning_effort_levels` describes the UI and `reasoning_effort` is a
+        default whose spelling differs per provider, so neither can ride the
+        generic passthrough. Letting the latter through sent a flat
+        `reasoning_effort` to the Responses API, which has no such field and
+        answered 400.
         """
         import json
 
@@ -228,7 +231,155 @@ class TestRequestBody:
             ),
             encoding="utf-8",
         )
-        options = Settings.load_config().get_request_options("gpt-5.5", "gw")
+        settings = Settings.load_config()
 
+        options = settings.get_request_options("gpt-5.5", "gw")
         assert "reasoning_effort_levels" not in options
-        assert options["reasoning_effort"] == "high"
+        assert "reasoning_effort" not in options
+        assert settings.get_default_reasoning_effort("gpt-5.5", "gw") == "high"
+
+
+class TestConfiguredDefaultReachesTheWire:
+    """A level set in config.json must arrive in the provider's own spelling.
+
+    Regression: the value used to ride the request-options passthrough, so a
+    Responses-API model emitted both a flat `reasoning_effort` and a nested
+    `reasoning.effort`. The flat one is an unknown parameter there and the
+    provider answered 400 `unknown parameter reasoning_effort`.
+    """
+
+    @staticmethod
+    def _settings(home, provider_type: str, **model):
+        import json
+
+        from nova.settings import Settings
+
+        home.mkdir(parents=True, exist_ok=True)
+        (home / "config.json").write_text(
+            json.dumps(
+                {
+                    "providers": {
+                        "gw": {
+                            "type": provider_type,
+                            "name": "gw",
+                            "options": {"base_url": "http://x", "api_key": "k"},
+                            "models": {"m": {"name": "m", **model}},
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        return Settings.load_config()
+
+    @staticmethod
+    def _build(provider_type: str, per_turn, default):
+        from nova.llm.openai import OpenAIProvider
+        from nova.llm.openai_response import OpenAIResponsesProvider
+
+        cls = (
+            OpenAIProvider
+            if provider_type == "openai-compatible"
+            else OpenAIResponsesProvider
+        )
+        return cls(api_key="k", default_reasoning_effort=default)._build_body(
+            [{"role": "user", "content": "hi"}], "m", reasoning_effort=per_turn
+        )
+
+    def test_the_responses_api_never_sees_a_flat_effort(self):
+        body = self._build("openai-response", "xhigh", "high")
+        assert "reasoning_effort" not in body
+        assert body["reasoning"] == {"effort": "xhigh"}
+
+    def test_chat_completions_takes_the_flat_field(self):
+        body = self._build("openai-compatible", "xhigh", "high")
+        assert body["reasoning_effort"] == "xhigh"
+        assert "reasoning" not in body
+
+    def test_the_per_turn_pick_outranks_the_configured_default(self):
+        """A configured level is a fallback, not a ceiling.
+
+        It is what a run uses when nothing was picked; picking one explicitly
+        has to be able to go above or below it, or the control in the composer
+        would be inert on every model whose config names a default.
+        """
+        assert (
+            self._build("openai-compatible", "xhigh", "medium")["reasoning_effort"]
+            == "xhigh"
+        )
+        assert (
+            self._build("openai-response", "xhigh", "medium")["reasoning"]
+            == {"effort": "xhigh"}
+        )
+        assert (
+            self._build("openai-compatible", "low", "high")["reasoning_effort"]
+            == "low"
+        )
+
+    def test_the_configured_default_applies_when_nothing_was_picked(self):
+        assert (
+            self._build("openai-compatible", None, "medium")["reasoning_effort"]
+            == "medium"
+        )
+        assert self._build("openai-response", None, "medium")["reasoning"] == {
+            "effort": "medium"
+        }
+
+    def test_the_per_turn_pick_applies_when_config_says_nothing(self):
+        assert self._build("openai-compatible", "xhigh", None)["reasoning_effort"] == "xhigh"
+        assert self._build("openai-response", "xhigh", None)["reasoning"] == {"effort": "xhigh"}
+
+    def test_neither_leaves_the_body_without_a_level(self):
+        assert "reasoning_effort" not in self._build("openai-compatible", None, None)
+        assert "reasoning" not in self._build("openai-response", None, None)
+
+    def test_end_to_end_from_config(self, monkeypatch, tmp_path):
+        """The whole path, from config.json through to the request body."""
+        from nova.app.runtime import build_llm
+
+        home = tmp_path / ".nova"
+        self._settings(
+            home,
+            "openai-response",
+            reasoning_effort="high",
+            reasoning_effort_levels=["minimal", "low", "medium", "high", "xhigh"],
+        )
+        monkeypatch.setenv("NOVA_HOME", str(home))
+        from nova.settings import get_settings
+
+        get_settings.cache_clear()
+        try:
+            body = build_llm(provider="gw", model="m")._build_body(
+                [{"role": "user", "content": "hi"}], "m", reasoning_effort="xhigh"
+            )
+        finally:
+            get_settings.cache_clear()
+
+        assert "reasoning_effort" not in body
+        assert body["reasoning"] == {"effort": "xhigh"}, (
+            "the pick from the composer must reach the wire, not the config default"
+        )
+
+    def test_end_to_end_falls_back_to_the_configured_default(self, monkeypatch, tmp_path):
+        """Same config, nothing picked: the default is what runs."""
+        from nova.app.runtime import build_llm
+
+        home = tmp_path / ".nova"
+        self._settings(
+            home,
+            "openai-response",
+            reasoning_effort="high",
+            reasoning_effort_levels=["minimal", "low", "medium", "high", "xhigh"],
+        )
+        monkeypatch.setenv("NOVA_HOME", str(home))
+        from nova.settings import get_settings
+
+        get_settings.cache_clear()
+        try:
+            body = build_llm(provider="gw", model="m")._build_body(
+                [{"role": "user", "content": "hi"}], "m", reasoning_effort=None
+            )
+        finally:
+            get_settings.cache_clear()
+
+        assert body["reasoning"] == {"effort": "high"}

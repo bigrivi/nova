@@ -12,7 +12,7 @@ from nova.config.agent_import import (
     parse_agent_markdown,
     slugify_key,
 )
-from nova.config.service import AgentCreateRequest, ConfigService
+from nova.config.service import _UNSET, AgentCreateRequest, ConfigService
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.server.deps import get_settings
 from nova.settings import Settings
@@ -170,7 +170,15 @@ async def update_agent(
     provider = body.get("provider")
     if not model or not provider:
         raise HTTPException(status_code=400, detail="model and provider are required")
-    agent = await service.update_agent_model(key, model, provider)
+    # Only rewrite the level when the caller named the key. A model-only update
+    # must not clear the default a new conversation starts from.
+    has_effort = "reasoning_effort" in body
+    agent = await service.update_agent_model(
+        key,
+        model,
+        provider,
+        body.get("reasoning_effort") if has_effort else _UNSET,
+    )
     if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent '{key}' not found")
     return agent

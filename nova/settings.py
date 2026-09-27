@@ -194,6 +194,12 @@ _INTERNAL_MODEL_KEYS = {
     "context_window",
     "extra_body",
     "reasoning_effort_levels",
+    # The configured default level, not a request field. The spelling differs per
+    # provider - flat `reasoning_effort` on Chat Completions, nested
+    # `reasoning.effort` on the Responses API - so letting this ride the generic
+    # passthrough sent an unknown parameter that the provider rejected with a
+    # 400. It is applied by `apply_effort` instead, which knows the spelling.
+    "reasoning_effort",
 }
 
 
@@ -430,6 +436,22 @@ class Settings:
         if isinstance(model_extra, dict):
             _deep_merge(result, model_extra)
         return result
+
+    def get_default_reasoning_effort(
+        self, model_name: str, provider_name: str
+    ) -> str | None:
+        """The level config.json sets as this model's default, if any.
+
+        Read from the model entry rather than from the request options, because
+        ``reasoning_effort`` is an internal key: it must reach the body through
+        the provider's own spelling, not through the passthrough.
+        """
+        provider_config = self.get_provider_config(provider_name)
+        model_entry = provider_config.models.get(model_name)
+        if not isinstance(model_entry, dict):
+            return None
+        value = model_entry.get("reasoning_effort")
+        return value if isinstance(value, str) and value.strip() else None
 
     def get_model_config(self, model_key: str, provider_name: str) -> dict[str, Any]:
         provider_config = self.get_provider_config(provider_name)

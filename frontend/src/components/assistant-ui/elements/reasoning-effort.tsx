@@ -1,10 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
 "use client";
 
-import type { ComponentProps, KeyboardEvent, RefObject } from "react";
 import { cn } from "@/lib/utils";
+import { useCallback, useRef, type ComponentProps, type ReactNode } from "react";
 import { field } from "./surfaces";
-import { announced, pct } from "../utils/range";
 
 export interface EffortLevel {
   key: string;
@@ -13,7 +12,7 @@ export interface EffortLevel {
    * Token budget for this rung, when the app knows one. It is optional because
    * what a level costs is the provider's business: a gateway's ladder carries no
    * numbers, and a made-up budget would put a false figure on screen and in the
-   * accessibility tree. Without it the bar and its readout are not rendered.
+   * accessibility tree. Without it the budget readout is not rendered.
    */
   budget?: number;
 }
@@ -29,11 +28,54 @@ export type ReasoningEffortProps = Omit<
   spent?: number;
   /** Heading for the control. Upstream hardcodes the English "Thinking". */
   label?: string;
-  /** The level buttons, so arrow keys can move between them. */
-  buttonsRef?: RefObject<(HTMLButtonElement | null)[] | null>;
+  /** Replaces the level captions when the raw ids would not read well. */
+  renderLevel?: (level: EffortLevel) => ReactNode;
 };
 
 const fmt = (n: number) => n.toLocaleString("en-US");
+
+/**
+ * Track width by how many rungs there are, so a three-level ladder does not
+ * spread across the same space a six-level one needs.
+ */
+export function trackWidth(count: number): number {
+  if (count >= 6) return 280;
+  if (count === 5) return 250;
+  if (count === 4) return 220;
+  if (count === 3) return 190;
+  return 160;
+}
+
+/**
+ * Half a rung dot, in pixels. The rungs are inset by this at each end so they
+ * sit inside the rail rather than on its tips, while the rail itself still runs
+ * the full width.
+ */
+const DOT_INSET = 2;
+
+/**
+ * Where a level sits along the track, as a 0…1 ratio of the usable span.
+ *
+ * With the per-rung captions gone the rungs no longer have to line up with a
+ * column of text, so they span the full width and the rail needs no inset of
+ * its own.
+ */
+export function effortRatio(index: number, count: number): number {
+  if (count <= 1) return 0;
+  return index / (count - 1);
+}
+
+/** The rung a pointer at *ratio* (0…1 across the track) belongs to. */
+export function effortRungAt(ratio: number, count: number): number {
+  if (count <= 1) return 0;
+  if (Number.isNaN(ratio)) return 0;
+  return Math.min(count - 1, Math.max(0, Math.round(ratio * (count - 1))));
+}
+
+/** A CSS `left`/`width` that keeps a dot-sized gap at both ends of the rail. */
+function dotOffset(ratio: number): string {
+  return `calc(${DOT_INSET}px + (100% - ${DOT_INSET * 2}px) * ${ratio})`;
+}
 
 export function ReasoningEffort({
   levels,
@@ -41,136 +83,165 @@ export function ReasoningEffort({
   onSelect,
   spent,
   label = "Thinking",
-  buttonsRef,
-  onKeyDown,
+  renderLevel,
   className,
   ...props
 }: ReasoningEffortProps) {
-  const budget = levels.find((level) => level.key === selectedKey)?.budget ?? 0;
-  // A budget of zero means "unknown", not "spent nothing", so the bar stays
-  // hidden rather than showing an empty track that reads as a real reading.
+  const count = levels.length;
+  const index = Math.max(
+    0,
+    levels.findIndex((level) => level.key === selectedKey),
+  );
+  const track = useRef<HTMLDivElement>(null);
+  const budget = levels[index]?.budget ?? 0;
   const measurable = budget > 0 && typeof spent === "number";
-  const used = measurable ? pct(spent as number, budget) : 0;
+
+  /** Nearest rung to a pointer position, so a drag lands where it was dropped. */
+  const rungAt = useCallback(
+    (clientX: number): number => {
+      const rect = track.current?.getBoundingClientRect();
+      if (!rect || rect.width === 0) return 0;
+      return effortRungAt((clientX - rect.left) / rect.width, count);
+    },
+    [count],
+  );
+
+  const choose = useCallback(
+    (next: number) => {
+      const level = levels[next];
+      if (level && level.key !== selectedKey) onSelect?.(level.key);
+    },
+    [levels, onSelect, selectedKey],
+  );
+
+  // Dragging and releasing past the end should still land on a rung, so the
+  // pointer is captured for the whole gesture rather than only while over the
+  // track.
+  const dragging = useRef(false);
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!onSelect || count <= 1) return;
+    dragging.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    choose(rungAt(event.clientX));
+  };
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging.current) return;
+    choose(rungAt(event.clientX));
+  };
+  const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragging.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!onSelect || count <= 1) return;
+    const step = event.key === "ArrowRight" || event.key === "ArrowUp" ? 1
+      : event.key === "ArrowLeft" || event.key === "ArrowDown" ? -1
+      : 0;
+    if (step === 0 && event.key !== "Home" && event.key !== "End") return;
+    // The picker is a cmdk list, which also answers these keys; stop here so
+    // one keypress moves the level and not the model highlight.
+    event.preventDefault();
+    event.stopPropagation();
+    const next =
+      event.key === "Home" ? 0
+      : event.key === "End" ? count - 1
+      : Math.min(count - 1, Math.max(0, index + step));
+    choose(next);
+  };
 
   return (
     <div
       data-slot="reasoning-effort"
-      className={cn("flex w-full max-w-sm flex-col gap-2.5", className)}
-      onKeyDown={onKeyDown}
+      className={cn("flex w-full flex-col gap-2", className)}
+      style={{ minWidth: trackWidth(count) }}
       {...props}
     >
-      <div className="flex items-baseline justify-between">
-        <span className="text-[13.5px] font-medium">{label}</span>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-muted-foreground shrink-0 text-xs whitespace-nowrap">
+          {label}
+        </span>
+        {/* Only the active level is named. A caption per rung would need a
+            column each to stay legible, and the rungs are already ordered
+            left to right, so the extra row mostly repeated the track. */}
+        <span className="text-foreground min-w-0 truncate text-xs font-medium">
+          {levels[index]?.label}
+        </span>
         {measurable && (
-          <span className="text-foreground/35 tabular-nums text-xs">
+          <span className="text-muted-foreground/70 shrink-0 text-[11px] tabular-nums">
             {fmt(spent as number)} / {fmt(budget)}
           </span>
         )}
       </div>
 
-      <div className={cn(field, "flex gap-0.5 rounded-full p-0.5")}>
-        {levels.map((level, index) => {
-          const active = level.key === selectedKey;
-          const className = cn(
-            "flex-1 rounded-full py-1 text-xs font-medium transition-[background-color,color,scale] duration-150",
-            onSelect && "active:scale-[0.97]",
-            active
-              ? "bg-background text-foreground/90"
-              : onSelect
-                ? "text-foreground/45 hover:text-foreground/70"
-                : "text-foreground/45",
-          );
-          return onSelect ? (
-            <button
-              key={level.key}
-              type="button"
-              aria-pressed={active}
-              // Only the selected rung is in the tab order; the arrow keys move
-              // between them, which is what a radiogroup does natively.
-              tabIndex={active ? 0 : -1}
-              ref={(node) => {
-                if (!buttonsRef) return;
-                buttonsRef.current = buttonsRef.current ?? [];
-                buttonsRef.current[index] = node;
-              }}
-              onClick={() => onSelect(level.key)}
-              data-key={level.key}
-              className={className}
-            >
-              {level.label}
-            </button>
-          ) : (
-            <span
-              key={level.key}
-              aria-current={active ? "true" : undefined}
-              className={className}
-            >
-              {level.label}
-            </span>
-          );
-        })}
-      </div>
+      {count > 1 ? (
+        <>
+          <div
+            ref={track}
+            role="slider"
+            tabIndex={onSelect ? 0 : -1}
+            aria-label={label}
+            aria-valuemin={0}
+            aria-valuemax={count - 1}
+            aria-valuenow={index}
+            aria-valuetext={levels[index]?.label}
+            aria-orientation="horizontal"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            onKeyDown={onKeyDown}
+            className={cn(
+              "group/track relative flex h-4 w-full touch-none items-center",
+              onSelect && "cursor-pointer",
+            )}
+          >
+            {/* The rail is the full width of the track. It keeps its base colour
+                at rest: a rail that only appears on hover reads as an empty
+                element until the pointer finds it. */}
+            <div className="bg-foreground/10 absolute inset-0 rounded-full" />
 
-      {measurable && (
-        <span
-          role="progressbar"
-          aria-label={`${label} budget used`}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={announced(used)}
-          aria-valuetext={`${fmt(spent as number)} of ${fmt(budget)}`}
-          className="bg-foreground/[0.06] h-[3px] w-full overflow-hidden rounded-full"
-        >
-          <span
-            className="block h-full rounded-full bg-blue-500 transition-[width] duration-500 motion-reduce:transition-none dark:bg-blue-400"
-            style={{ width: `${used}%` }}
-          />
-        </span>
+            <div
+              className="bg-brand absolute h-full rounded-full transition-[width] duration-150"
+              style={{
+                left: 0,
+                width: dotOffset(effortRatio(index, count)),
+              }}
+            />
+
+            {/* The rungs paint after the fill so they stay countable wherever the
+                thumb is. They are surface-coloured with a ring rather than grey:
+                a grey dot vanishes into the blue fill, and a blue one vanishes
+                into the rail, so neither single colour survives both halves of
+                the track. */}
+            {levels.map((level, i) => (
+              <span
+                key={level.key}
+                aria-hidden="true"
+                // The captions are gone, so the name rides on the dot itself for
+                // anyone who wants to know what a rung is called.
+                title={level.label}
+                className="bg-background ring-foreground/20 absolute size-1 -translate-x-1/2 rounded-full ring-1"
+                style={{ left: dotOffset(effortRatio(i, count)) }}
+              />
+            ))}
+
+            <span
+              aria-hidden="true"
+              className="bg-brand pointer-events-none absolute size-3.5 -translate-x-1/2 rounded-full border-2 border-background shadow-sm transition-transform group-hover/track:scale-110"
+              style={{ left: dotOffset(effortRatio(index, count)) }}
+            />
+          </div>
+        </>
+      ) : (
+        // One rung is not a choice, so it reads as a readout rather than a
+        // control that cannot be moved.
+        <div className={cn(field, "rounded-md px-2 py-1.5 text-xs")}>
+          {renderLevel ? renderLevel(levels[0]) : levels[0]?.label}
+        </div>
       )}
     </div>
   );
-}
-
-/**
- * Which rung the arrow keys land on, or null when the key is not ours.
- *
- * Separate from the DOM work so the wrap-around and the out-of-range cases can
- * be checked without a browser: a radiogroup this small is easy to get wrong
- * at the two ends, where the errors are invisible until someone presses the
- * key twice.
- */
-export function nextEffortIndex(
-  key: string,
-  current: number,
-  count: number,
-): number | null {
-  if (count <= 0) return null;
-  if (key === "Home") return 0;
-  if (key === "End") return count - 1;
-  const step = key === "ArrowRight" ? 1 : key === "ArrowLeft" ? -1 : 0;
-  if (step === 0) return null;
-  // Focus outside the group (current === -1) enters at the first rung rather
-  // than wrapping in from an arbitrary end.
-  if (current < 0) return 0;
-  return (current + step + count) % count;
-}
-
-/** Move focus and selection along the level buttons with the arrow keys. */
-export function handleEffortArrowKeys(
-  event: KeyboardEvent<HTMLDivElement>,
-  buttons: RefObject<(HTMLButtonElement | null)[] | null>,
-  select: (key: string) => void,
-) {
-  const items = (buttons.current ?? []).filter(
-    (node): node is HTMLButtonElement => node !== null,
-  );
-  const current = items.findIndex((node) => node === document.activeElement);
-  const next = nextEffortIndex(event.key, current, items.length);
-  if (next === null) return;
-
-  event.preventDefault();
-  event.stopPropagation();
-  items[next]?.focus();
-  const key = items[next]?.dataset.key;
-  if (key) select(key);
 }
