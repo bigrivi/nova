@@ -121,7 +121,6 @@ def test_1_3_sparse_output_long_connection_not_parked(monkeypatch, tmp_path) -> 
     """Steady sparse output over a long connection must reach [DONE]."""
     import nova.server.chat_stream as stream_module
 
-    monkeypatch.setattr(stream_module, "STREAM_RESUME_TAIL_TIMEOUT_SECONDS", 0.6)
     monkeypatch.setattr(stream_module, "STREAM_HEARTBEAT_INTERVAL_SECONDS", 0.05)
 
     async def slow_stream(request):  # type: ignore[no-untyped-def]

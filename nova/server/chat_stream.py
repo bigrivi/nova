@@ -27,7 +27,6 @@ from nova.server.stream_buffer import CONNECTION_QUEUE_MAXSIZE, StreamBuffer
 
 log = logging.getLogger(__name__)
 
-STREAM_RESUME_TAIL_TIMEOUT_SECONDS = 120.0
 STREAM_HEARTBEAT_INTERVAL_SECONDS = 15.0
 STREAM_SSE_PING_BYTES = b":ping\n\n"
 
@@ -42,11 +41,6 @@ CHAT_STREAM_SSE_RESPONSE_EXAMPLE = (
     "data: [DONE]\n\n"
 )
 
-# Legacy aliases — same objects, for backward compatibility.
-_RESUME_TAIL_TIMEOUT = STREAM_RESUME_TAIL_TIMEOUT_SECONDS
-_HEARTBEAT_INTERVAL = STREAM_HEARTBEAT_INTERVAL_SECONDS
-_SSE_PING = STREAM_SSE_PING_BYTES
-STREAM_RESPONSE_EXAMPLE = CHAT_STREAM_SSE_RESPONSE_EXAMPLE
 
 
 def split_sequence_id_prefix(chunk: bytes) -> tuple[bytes, bytes]:
@@ -258,7 +252,6 @@ class ChatStreamOrchestrator:
                         buffer.is_done(session_id),
                     )
                     loop = asyncio.get_running_loop()
-                    idle_since = loop.time()
                     last_send = loop.time()
                     while True:
                         if is_server_stopping(http_request):
@@ -266,6 +259,13 @@ class ChatStreamOrchestrator:
                         try:
                             chunk = subscriber_queue.get_nowait()
                         except asyncio.QueueEmpty:
+                            # Follow the turn to its end. is_done fires on every
+                            # terminal path (mark_done on completion, abort_turn on
+                            # error/cancel/interrupt), so this cannot tail forever;
+                            # only turn completion, a client disconnect, or server
+                            # shutdown ends the follow. There is no no-progress
+                            # cutoff, so a slow or quiet turn is not dropped before
+                            # it finishes.
                             if buffer.is_done(session_id):
                                 log.info(
                                     "[RESUME-DBG] resume LIVE-TAIL return: is_done "
@@ -273,13 +273,11 @@ class ChatStreamOrchestrator:
                                     session_id,
                                 )
                                 return
-                            now = loop.time()
-                            if now - idle_since > stream_module.STREAM_RESUME_TAIL_TIMEOUT_SECONDS:
-                                return
                             if await http_request.is_disconnected():
                                 return
-                            if now - last_send >= stream_module.STREAM_HEARTBEAT_INTERVAL_SECONDS:
-                                yield stream_module.STREAM_SSE_PING_BYTES
+                            now = loop.time()
+                            if now - last_send >= STREAM_HEARTBEAT_INTERVAL_SECONDS:
+                                yield STREAM_SSE_PING_BYTES
                                 last_send = now
                             else:
                                 await asyncio.sleep(0.05)
@@ -295,7 +293,6 @@ class ChatStreamOrchestrator:
                             return
                         yield normalize_session_chunk_for_session(chunk, session_id)
                         last_send = loop.time()
-                        idle_since = loop.time()
                         if b"[DONE]" in chunk:
                             log.info(
                                 "[RESUME-DBG] resume LIVE-yield DONE seq=%s session=%s -> return",
@@ -358,8 +355,6 @@ class ChatStreamOrchestrator:
 
             task = asyncio.create_task(producer())
             try:
-                loop = asyncio.get_running_loop()
-                idle_since = loop.time()
                 while True:
                     if is_server_stopping(http_request):
                         break
@@ -369,10 +364,15 @@ class ChatStreamOrchestrator:
                             timeout=stream_module.STREAM_HEARTBEAT_INTERVAL_SECONDS,
                         )
                     except asyncio.TimeoutError:
+                        # A live, still-connected client stays attached for the
+                        # whole turn. The turn is bounded by the provider's own
+                        # idle/total timeout, so this cannot wait forever; a
+                        # no-progress stall is ridden out with heartbeats so the
+                        # client still receives the turn's terminal event (e.g. a
+                        # provider "stream ended before response.completed" error)
+                        # instead of a connection that closes mid-turn. Only a
+                        # client disconnect or a server shutdown parks it early.
                         if is_server_stopping(http_request) or await http_request.is_disconnected():
-                            await park_detached_stream_session(registry, stream_session_id)
-                            break
-                        if loop.time() - idle_since > stream_module.STREAM_RESUME_TAIL_TIMEOUT_SECONDS:
                             await park_detached_stream_session(registry, stream_session_id)
                             break
                         yield stream_module.STREAM_SSE_PING_BYTES
@@ -383,7 +383,6 @@ class ChatStreamOrchestrator:
                         await park_detached_stream_session(registry, stream_session_id)
                         break
                     yield item
-                    idle_since = loop.time()
                     if b"[DONE]" in item:
                         break
             except GeneratorExit:

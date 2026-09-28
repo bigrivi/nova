@@ -268,6 +268,110 @@ def test_endpoint_idle_stream_emits_ping_heartbeat(monkeypatch, tmp_path):
     assert b"data: [DONE]" in response.content
 
 
+def test_live_stream_holds_until_turn_end_despite_stall(monkeypatch, tmp_path):
+    """A connected client rides out a mid-turn stall and still gets the terminal event.
+
+    Regression: a silent upstream (a gateway that stops sending before
+    ``response.completed``) used to trip the live loop's no-progress park, closing
+    the SSE before the turn ended, so the client never saw the terminal error.
+    The connection now tracks the turn to its end (itself bounded by the
+    provider's own idle/total timeout); only a client disconnect or server
+    shutdown parks it early.
+    """
+    import nova.server.chat_stream as stream_module
+
+    # Heartbeat fast so the stall produces visible :ping frames while the
+    # connection is held open, rather than a premature close.
+    monkeypatch.setattr(stream_module, "STREAM_HEARTBEAT_INTERVAL_SECONDS", 0.05)
+
+    async def stalling_stream(request):
+        yield AgentEvent.SESSION, "sess-STALL"
+        yield AgentEvent.TURN_START, None
+        # A long silence with no events, well past the old park window.
+        await asyncio.sleep(0.8)
+        yield AgentEvent.ERROR, {"message": "stream ended before response.completed"}
+
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-stall"))
+    app = create_app(settings=get_settings())
+    app.state.chat_service._agent_event_stream = stalling_stream
+    client = TestClient(app)
+
+    response = client.post("/api/chat/stream", json={"message": "hi", "session_id": "sess-STALL"})
+
+    assert response.status_code == 200
+    body = response.content
+    assert b":ping" in body  # heartbeats kept the connection warm during the stall
+    assert b'"type":"error"' in body
+    assert b"stream ended before response.completed" in body
+    assert b"data: [DONE]" in body
+
+
+@pytest.mark.asyncio
+async def test_resume_tail_follows_until_done_not_parked_on_idle(monkeypatch, tmp_path):
+    """A resumed connection follows a stalled in-flight turn to completion.
+
+    Regression: the resume live-tail used to return after a fixed no-progress
+    window elapsed with no new frame, dropping a slow or quiet in-flight turn
+    before it finished. It now ends only on ``is_done`` (turn complete), client
+    disconnect, or server shutdown.
+    """
+    import nova.server.chat_stream as stream_module
+    from nova.server.chat_stream import ChatStreamOrchestrator
+    from nova.server.schemas import ChatRequest
+
+    monkeypatch.setattr(stream_module, "STREAM_HEARTBEAT_INTERVAL_SECONDS", 0.05)
+
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-resume-hold"))
+    app = create_app(settings=get_settings())
+    chat_service = app.state.chat_service
+    buffer = chat_service.stream_buffer
+    registry = chat_service.request_registry
+
+    session_id = "sess-RESUME-HOLD"
+    # An in-flight turn: a couple of buffered frames, slot detached (follow), not done.
+    await registry.register(session_id, object())
+    assert await registry.detach(session_id) is True
+    buffer.begin_turn(session_id)
+    buffer.append(session_id, b'data: {"type":"start"}\n\n')
+    buffer.append(session_id, b'data: {"type":"text-delta","delta":"hi"}\n\n')
+
+    class _FakeApp:
+        state = app.state
+
+    class _FakeRequest:
+        app = _FakeApp()
+
+        async def is_disconnected(self) -> bool:
+            return False
+
+    orchestrator = ChatStreamOrchestrator(_FakeRequest())
+    request = ChatRequest(message="", session_id=session_id, resume_from_seq=1)
+    response = await orchestrator.handle_chat_stream(request)
+
+    async def consume() -> list[bytes]:
+        collected: list[bytes] = []
+        async for chunk in response.body_iterator:
+            collected.append(chunk if isinstance(chunk, bytes) else bytes(chunk))
+        return collected
+
+    async def finish_turn_later() -> None:
+        # Well past the (tiny, monkeypatched) old park window.
+        await asyncio.sleep(0.5)
+        buffer.append(session_id, b'data: {"type":"finish"}\n\n')
+        buffer.append(session_id, b"data: [DONE]\n\n")
+        buffer.mark_done(session_id)
+
+    consumer = asyncio.create_task(consume())
+    finisher = asyncio.create_task(finish_turn_later())
+    chunks = await asyncio.wait_for(consumer, timeout=5)
+    await finisher
+
+    joined = b"".join(chunks)
+    assert b":ping" in joined  # heartbeats during the stall, not an early park
+    assert b'"type":"finish"' in joined  # frames delivered after the old park window
+    assert b"data: [DONE]" in joined  # tailed all the way to the terminal frame
+
+
 def test_endpoint_unknown_session_status_idle(monkeypatch, tmp_path):
     app = _make_app(monkeypatch, tmp_path, "home-404")
     client = TestClient(app)
