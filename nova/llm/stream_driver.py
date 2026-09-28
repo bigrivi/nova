@@ -18,6 +18,26 @@ from nova.llm.stream_read import StreamAborted, StreamPoller
 from nova.llm.stream_trace import StreamTrace
 
 
+def output_limit_error(reason: str) -> Error:
+    """Error for a turn that hit the model's output-token limit with no answer.
+
+    A model can spend its whole output budget on reasoning and stop - OpenAI
+    ``finish_reason=length``, Anthropic ``stop_reason=max_tokens`` - without ever
+    producing answer text, which otherwise surfaces as an empty assistant
+    message. Reporting it as an error tells the user why the turn was empty.
+
+    Args:
+        reason: The wire-level stop reason, named in the message.
+    """
+    return Error(
+        message=(
+            "the model reached its output token limit before producing any "
+            f"answer ({reason}); it likely spent the whole budget on reasoning "
+            "- try a lower reasoning effort or a larger output limit"
+        )
+    )
+
+
 class StreamParser(ABC):
     """Translates one wire format's events into Nova stream events.
 
@@ -52,8 +72,13 @@ class StreamParser(ABC):
         """
 
     @abstractmethod
-    def build_done(self, acc: StreamAccumulator) -> Done:
-        """Build the terminal ``Done`` from the accumulated state."""
+    def build_done(self, acc: StreamAccumulator) -> "Done | Error":
+        """Build the terminal event from the accumulated state.
+
+        Usually a ``Done``. A parser may instead return an ``Error`` when the
+        stream ended without a usable answer - e.g. the output-token limit was
+        hit before any answer text arrived (see :func:`output_limit_error`).
+        """
 
     def on_eof(self, acc: StreamAccumulator) -> Iterable[ChatStreamEvent]:
         """Yield terminal events when the transport ends without a terminal event.

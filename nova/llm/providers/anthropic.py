@@ -22,7 +22,7 @@ from nova.llm.provider import (
     ToolCall,
 )
 from nova.llm.request_hook import run_request_hook, run_session_hook
-from nova.llm.stream_driver import StreamParser
+from nova.llm.stream_driver import StreamParser, output_limit_error
 from nova.llm.tokenizer import normalise_model_id
 
 # Re-exported so a single source of truth for the retry policy is observable on
@@ -194,6 +194,7 @@ class _AnthropicStreamParser(StreamParser):
         self._tool_calls: dict[int, dict] = {}
         self._thinking_state: dict[int, dict] = {}
         self._final_thinking_blocks: list[dict] = []
+        self._stop_reason: str | None = None
 
     def feed(self, event: dict, acc: StreamAccumulator):
         event_type = event.get("type", "")
@@ -298,6 +299,11 @@ class _AnthropicStreamParser(StreamParser):
             return
 
         if event_type == "message_delta":
+            delta = event.get("delta", {})
+            if isinstance(delta, dict):
+                stop_reason = delta.get("stop_reason")
+                if stop_reason:
+                    self._stop_reason = stop_reason
             usage = event.get("usage", {}) if isinstance(event.get("usage"), dict) else {}
             if isinstance(usage, dict) and usage.get("output_tokens") is not None:
                 try:
@@ -323,13 +329,17 @@ class _AnthropicStreamParser(StreamParser):
         # ping / unknown -> ignore
         return
 
-    def build_done(self, acc: StreamAccumulator) -> Done:
+    def build_done(self, acc: StreamAccumulator) -> Done | Error:
         provider_meta = _thinking_provider_meta(self._final_thinking_blocks)
         final_tool_calls = [
             _state_to_tool_call(tool_call_state)
             for _index, tool_call_state in sorted(self._tool_calls.items())
             if tool_call_state.get("name")
         ]
+        # A turn that hit the output-token limit without producing any answer
+        # (all budget spent on reasoning) is a failure, not an empty answer.
+        if not acc.content and not final_tool_calls and self._stop_reason == "max_tokens":
+            return output_limit_error("stop_reason=max_tokens")
         return Done(
             content=acc.content,
             tool_calls=final_tool_calls,

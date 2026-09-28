@@ -1220,3 +1220,49 @@ async def test_chat_stream_cache_read_tokens_parsed(monkeypatch):
     assert isinstance(done, Done)
     assert done.cache_read_tokens == 1234
     assert done.tokens_input == 5 + 1234 + 10
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_max_tokens_without_answer_is_error(monkeypatch):
+    """stop_reason=max_tokens with no answer text (budget spent on thinking)."""
+    events = [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 10}}},
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": "", "signature": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "reasoning..."}},
+        {"type": "content_block_stop", "index": 0},
+        {"type": "message_delta", "delta": {"stop_reason": "max_tokens"}, "usage": {"output_tokens": 64000}},
+        {"type": "message_stop"},
+    ]
+    _install_fake(monkeypatch, _FakeResponse(status=200, sse_lines=_sse_lines(events)))
+    provider = AnthropicProvider(api_key="k")
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-opus-4-8"
+        )
+    ]
+    assert isinstance(collected[-1], Error)
+    assert "stop_reason=max_tokens" in collected[-1].message
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_max_tokens_with_partial_answer_is_done(monkeypatch):
+    """A partial answer before max_tokens is kept, not turned into an error."""
+    events = [
+        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
+        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "partial"}},
+        {"type": "content_block_stop", "index": 0},
+        {"type": "message_delta", "delta": {"stop_reason": "max_tokens"}, "usage": {"output_tokens": 5}},
+        {"type": "message_stop"},
+    ]
+    _install_fake(monkeypatch, _FakeResponse(status=200, sse_lines=_sse_lines(events)))
+    provider = AnthropicProvider(api_key="k")
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-opus-4-8"
+        )
+    ]
+    done = collected[-1]
+    assert isinstance(done, Done)
+    assert done.content == "partial"

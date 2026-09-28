@@ -15,13 +15,14 @@ from nova.llm.policy import StreamPolicy, TransportPolicy
 from nova.llm.provider import (
     RETRY_STATUS_CODES,
     Done,
+    Error,
     ReasoningDelta,
     TextDelta,
     ToolCall,
 )
 from nova.llm.reasoning import apply_effort
 from nova.llm.request_hook import run_request_hook, run_session_hook
-from nova.llm.stream_driver import StreamParser
+from nova.llm.stream_driver import StreamParser, output_limit_error
 
 # Re-exported so the retry policy stays single-sourced; see
 # tests/test_retry_status_codes.py.
@@ -69,6 +70,7 @@ class _OpenAIChatStreamParser(StreamParser):
         super().__init__()
         self._reasoning_field = reasoning_field
         self._tool_calls: dict[int, dict[str, object]] = {}
+        self._finish_reason: str | None = None
 
     def feed(self, event: dict, acc: StreamAccumulator):
         usage = event.get("usage")
@@ -135,10 +137,13 @@ class _OpenAIChatStreamParser(StreamParser):
             acc.add_text(content)
             yield TextDelta(content=content)
 
-        if choice.get("finish_reason") == "tool_calls":
+        finish_reason = choice.get("finish_reason")
+        if finish_reason:
+            self._finish_reason = finish_reason
+        if finish_reason == "tool_calls":
             self.finished = True
 
-    def build_done(self, acc: StreamAccumulator) -> Done:
+    def build_done(self, acc: StreamAccumulator) -> Done | Error:
         tool_calls = [
             ToolCall(
                 id=str(tool_state["id"]),
@@ -148,6 +153,10 @@ class _OpenAIChatStreamParser(StreamParser):
             for _, tool_state in sorted(self._tool_calls.items())
             if tool_state["name"]
         ]
+        # A turn that hit the output-token limit without producing any answer
+        # (all budget spent on reasoning) is a failure, not an empty answer.
+        if not acc.content and not tool_calls and self._finish_reason == "length":
+            return output_limit_error("finish_reason=length")
         return Done(
             content=acc.content,
             tool_calls=tool_calls,

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from nova.llm.providers.openai_chat import OpenAIProvider
-from nova.llm.provider import Done
+from nova.llm.provider import Done, Error
 
 
 class _FakeConnector:
@@ -140,3 +138,48 @@ async def test_chat_stream_cache_read_tokens_parsed(monkeypatch):
     assert isinstance(done, Done)
     assert done.content == "hi"
     assert done.cache_read_tokens == 70
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_length_without_answer_is_error(monkeypatch):
+    """finish_reason=length with no answer text (budget spent on reasoning)."""
+    lines = [
+        b'data: {"choices": [{"delta": {"reasoning_content": "thinking hard"}}]}\n',
+        b'data: {"choices": [{"delta": {}, "finish_reason": "length"}]}\n',
+        b"data: [DONE]\n",
+    ]
+    _install_fake(monkeypatch, _FakeResponse(lines=lines))
+    provider = OpenAIProvider(api_key="k")
+
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [{"role": "user", "content": "hi"}], model="gpt-5"
+        )
+    ]
+
+    assert isinstance(collected[-1], Error)
+    assert "finish_reason=length" in collected[-1].message
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_length_with_partial_answer_is_done(monkeypatch):
+    """A partial answer before the length cut is kept, not turned into an error."""
+    lines = [
+        b'data: {"choices": [{"delta": {"content": "partial"}}]}\n',
+        b'data: {"choices": [{"delta": {}, "finish_reason": "length"}]}\n',
+        b"data: [DONE]\n",
+    ]
+    _install_fake(monkeypatch, _FakeResponse(lines=lines))
+    provider = OpenAIProvider(api_key="k")
+
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [{"role": "user", "content": "hi"}], model="gpt-5"
+        )
+    ]
+
+    done = collected[-1]
+    assert isinstance(done, Done)
+    assert done.content == "partial"
