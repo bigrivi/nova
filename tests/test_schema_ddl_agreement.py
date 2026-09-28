@@ -26,7 +26,7 @@ GATEWAY = {
 }
 
 MIGRATED = {
-    "agents": {"reasoning_effort"},
+    "agents": {"reasoning_effort", "mode", "posture"},
     "sessions": {"workspace_dir", "pinned", "project_id", "provider", "model",
                  "reasoning_effort"},
     "messages": {"provider_meta", "reasoning_effort"},
@@ -104,5 +104,51 @@ class TestDdlAgreesWithMigrations:
         try:
             assert "missing from _DDL" in caplog.text
             assert "reasoning_effort" in caplog.text
+        finally:
+            await close_db()
+
+
+class TestOldAgentTableIsMigrated:
+    @pytest.mark.asyncio
+    async def test_an_old_agents_table_gains_mode_and_posture(
+        self, home, tmp_path
+    ):
+        """A database from before mode/posture must still accept agent writes.
+
+        Fresh installs get both columns from the DDL, but an existing database
+        keeps its old shape - and save_agent writes both, so importing (or
+        editing) any agent failed there with "no such column: mode".
+        """
+        import aiosqlite
+
+        db_path = home / "nova.db"
+        async with aiosqlite.connect(db_path) as conn:
+            await conn.execute(
+                "CREATE TABLE agents ("
+                "key TEXT PRIMARY KEY, name TEXT NOT NULL, "
+                "description TEXT DEFAULT '', model TEXT NOT NULL, "
+                "provider TEXT NOT NULL, reasoning_effort TEXT, tools TEXT, "
+                "workspace_dir TEXT, created_at INTEGER NOT NULL, "
+                "updated_at INTEGER NOT NULL)"
+            )
+            await conn.commit()
+
+        settings = Settings.load_config()
+        repo = await init_db(DatabaseConfig(path=settings.database_path))
+        try:
+            await repo.save_agent(
+                {
+                    "key": "imported",
+                    "name": "Imported",
+                    "description": "",
+                    "model": "gpt-5",
+                    "provider": "gw",
+                    "mode": "subagent",
+                    "posture": "full",
+                }
+            )
+            cursor = await repo._conn.execute("PRAGMA table_info(agents)")
+            columns = {row[1] for row in await cursor.fetchall()}
+            assert {"mode", "posture"} <= columns
         finally:
             await close_db()

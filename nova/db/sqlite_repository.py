@@ -271,7 +271,15 @@ class SqliteRepository(NovaRepository):
             # open on whatever the provider defaults to and the pick made in
             # the previous one would be gone. A session still records its own
             # level, so conversations can differ from each other.
-            "agents": {"reasoning_effort": "TEXT"},
+            "agents": {
+                "reasoning_effort": "TEXT",
+                # mode/posture were added after reasoning_effort; a database
+                # created before them has neither, and save_agent writes both,
+                # so importing (or editing) any agent failed there with
+                # "no such column". Defaults match the _DDL below.
+                "mode": "TEXT DEFAULT 'primary'",
+                "posture": "TEXT DEFAULT 'full'",
+            },
             # A session records the route it is actually being run with, so
             # reopening it restores that model rather than whatever the agent
             # points at today. reasoning_effort rides along: it is only
