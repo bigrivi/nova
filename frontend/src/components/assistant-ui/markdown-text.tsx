@@ -7,7 +7,7 @@ import {
     unstable_memoizeMarkdownComponents as memoizeMarkdownComponents,
     useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
-import { CheckIcon, CopyIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, TriangleAlertIcon } from "lucide-react";
 import Prism from "prismjs";
 import "prismjs/components/prism-bash";
 import "prismjs/components/prism-csharp";
@@ -25,7 +25,7 @@ import "prismjs/components/prism-sql";
 import "prismjs/components/prism-tsx";
 import "prismjs/components/prism-typescript";
 import "prismjs/components/prism-yaml";
-import { type FC, memo, useMemo, useState } from "react";
+import { type FC, memo, type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import remarkGfm from "remark-gfm";
 
@@ -213,6 +213,30 @@ const useCopyToClipboard = ({
     return { isCopied, copyToClipboard };
 };
 
+// Sentinel that appendFailureNotice() prepends to a failed turn's reason (see
+// lib/thread-stream.ts). It is rendered as a distinct error callout instead of
+// plain body text, so a failure reads as an error rather than as the answer.
+const FAILURE_NOTICE_PREFIX = "[error] ";
+
+function failureNoticeLead(children: ReactNode): string | null {
+    if (typeof children === "string") return children;
+    if (Array.isArray(children) && typeof children[0] === "string") {
+        return children[0];
+    }
+    return null;
+}
+
+function stripFailurePrefix(children: ReactNode): ReactNode {
+    if (typeof children === "string") {
+        return children.slice(FAILURE_NOTICE_PREFIX.length);
+    }
+    if (Array.isArray(children) && typeof children[0] === "string") {
+        const [first, ...rest] = children;
+        return [first.slice(FAILURE_NOTICE_PREFIX.length), ...rest];
+    }
+    return children;
+}
+
 const defaultComponents = memoizeMarkdownComponents({
     h1: ({ className, ...props }) => (
         <h1
@@ -268,15 +292,36 @@ const defaultComponents = memoizeMarkdownComponents({
             {...props}
         />
     ),
-    p: ({ className, ...props }) => (
-        <p
-            className={cn(
-                "aui-md-p my-2.5 leading-normal first:mt-0 last:mb-0",
-                className,
-            )}
-            {...props}
-        />
-    ),
+    p: ({ className, children, ...props }) => {
+        const lead = failureNoticeLead(children);
+        if (lead?.startsWith(FAILURE_NOTICE_PREFIX)) {
+            return (
+                <div
+                    data-slot="assistant-failure-notice"
+                    className="aui-md-error my-2.5 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive first:mt-0 last:mb-0"
+                >
+                    <TriangleAlertIcon
+                        className="mt-0.5 size-4 shrink-0"
+                        aria-hidden="true"
+                    />
+                    <span className="aui-md-error-text min-w-0 leading-normal break-words">
+                        {stripFailurePrefix(children)}
+                    </span>
+                </div>
+            );
+        }
+        return (
+            <p
+                className={cn(
+                    "aui-md-p my-2.5 leading-normal first:mt-0 last:mb-0",
+                    className,
+                )}
+                {...props}
+            >
+                {children}
+            </p>
+        );
+    },
     a: ({ className, ...props }) => (
         <a
             className={cn(
