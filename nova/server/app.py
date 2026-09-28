@@ -12,6 +12,7 @@ from fastapi import FastAPI
 
 from nova.server.auth import BasicAuthMiddleware
 from nova.server.chat_service import ChatService
+from nova.server.error_logging import install_error_logging
 from nova.server.request_registry import RequestRegistry
 from nova.server.routers import (
     agents,
@@ -154,6 +155,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "service": "nova",
                 "mode": "server",
             }
+
+    # Log every API failure into nova.log before answering it the default
+    # way, so a failed endpoint always leaves a record of why.
+    install_error_logging(app)
 
     return app
 
