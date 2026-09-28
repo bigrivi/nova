@@ -10,6 +10,7 @@ from typing import AsyncGenerator, Optional
 import aiohttp
 
 from nova.llm.provider import (
+    STREAM_IDLE_TIMEOUT_SECONDS,
     ChatStreamEvent,
     Done,
     Error,
@@ -23,6 +24,8 @@ from nova.llm.provider import (
 )
 from nova.llm.reasoning import apply_effort
 from nova.llm.request_hook import run_request_hook, run_session_hook
+from nova.llm.stream_read import StreamAborted, StreamPoller
+from nova.llm.stream_trace import StreamTrace
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +38,6 @@ _MAX_STREAM_TOOL_ARG_CHARS = 1_000_000
 # Always bound stalled upstream reads; total is still caller-controlled
 # (total=timeout when set, total=None otherwise) so long legitimate
 # generations are not capped by an overall deadline.
-_STREAM_SOCK_READ_TIMEOUT = 180
 _MAX_TOOL_CALLS = 64
 
 
@@ -60,7 +62,7 @@ class OpenAIProvider(LLMProvider):
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         request_options: Optional[dict] = None,
-        timeout: int = 120,
+        timeout_seconds: int = 120,
         reasoning_field: str = "reasoning_content",
         user_agent: Optional[str] = None,
         extra_headers: Optional[dict] = None,
@@ -71,7 +73,7 @@ class OpenAIProvider(LLMProvider):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
-        self.timeout = timeout
+        self.timeout_seconds = timeout_seconds
         self._reasoning_field = reasoning_field
         self._user_agent = user_agent
         self._extra_headers = dict(extra_headers or {})
@@ -252,7 +254,7 @@ class OpenAIProvider(LLMProvider):
                     headers=headers,
                     json=body,
                     timeout=timeout if timeout is not None else aiohttp.ClientTimeout(
-                        total=self.timeout),
+                        total=self.timeout_seconds),
                 ),
                 name=f"openai_post_attempt_{attempt}",
             )
@@ -408,7 +410,7 @@ class OpenAIProvider(LLMProvider):
         model: str,
         tools: list[dict] = None,
         abort_event: Optional[asyncio.Event] = None,
-        timeout: Optional[int] = None,
+        total_timeout_seconds: Optional[int] = None,
         session_id: Optional[str] = None,
         reasoning_effort: Optional[str] = None,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
@@ -425,7 +427,11 @@ class OpenAIProvider(LLMProvider):
         connector = self._make_connector()
         session = aiohttp.ClientSession(connector=connector, trust_env=True)
 
-        effective_timeout = aiohttp.ClientTimeout(total=timeout, sock_read=_STREAM_SOCK_READ_TIMEOUT) if timeout is not None else aiohttp.ClientTimeout(total=None, sock_read=_STREAM_SOCK_READ_TIMEOUT)
+        effective_timeout = aiohttp.ClientTimeout(
+            total=total_timeout_seconds if total_timeout_seconds is not None else self.timeout_seconds,
+            sock_connect=STREAM_IDLE_TIMEOUT_SECONDS,
+            sock_read=STREAM_IDLE_TIMEOUT_SECONDS,
+        )
 
         try:
             resp = await self._post_with_retry(
@@ -458,20 +464,26 @@ class OpenAIProvider(LLMProvider):
                 usage_tokens_cached: Optional[int] = None
 
                 it = resp.content.__aiter__()
+                trace = StreamTrace("openai-chat", model)
+                trace.opened()
+                poller = StreamPoller(it.__anext__, abort_event, trace)
                 while True:
-                    if abort_event and abort_event.is_set():
+                    try:
+                        line = await poller.next_line()
+                    except StreamAborted:
                         resp.close()
+                        trace.end("aborted", content=len(accumulated_content))
                         yield Done(content=accumulated_content, tool_calls=[], aborted=True)
                         return
-                    try:
-                        line = await asyncio.wait_for(it.__anext__(), timeout=0.5)
-                    except asyncio.TimeoutError:
-                        continue
                     except StopAsyncIteration:
+                        trace.end("peer closed", content=len(accumulated_content))
                         break
 
+                    trace.line(line)
                     line = line.decode("utf-8").strip()
                     if not line or line == "data: [DONE]":
+                        if line:
+                            trace.mark("[DONE] read past, loop continues")
                         continue
 
                     if line.startswith("data: "):

@@ -9,6 +9,9 @@ import logging
 from typing import AsyncGenerator, Optional
 
 from nova.llm import ChatStreamEvent, LLMProvider, Done, ReasoningDelta, ToolCall, TextDelta, Error
+from nova.llm.provider import STREAM_IDLE_TIMEOUT_SECONDS
+from nova.llm.stream_read import StreamAborted, StreamPoller
+from nova.llm.stream_trace import StreamTrace
 
 log = logging.getLogger(__name__)
 
@@ -16,17 +19,20 @@ log = logging.getLogger(__name__)
 # (~128 KiB); a full JSON response line can exceed it.
 _MAX_SSE_LINE_BYTES = 16 * 1024 * 1024
 
+# Bound on a single socket read, so a peer that goes quiet without closing is
+# not waited on indefinitely.
+
 
 class OllamaProvider(LLMProvider):
     def __init__(
         self,
         base_url: Optional[str] = None,
         request_options: Optional[dict] = None,
-        timeout: int = 120,
+        timeout_seconds: int = 120,
     ):
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
-        self.timeout = timeout
+        self.timeout_seconds = timeout_seconds
 
     @staticmethod
     def _build_http_error_message(url: str, status: int, text: str) -> str:
@@ -122,7 +128,7 @@ class OllamaProvider(LLMProvider):
         try:
             post_task = asyncio.create_task(
                 session.post(url, json=body,
-                             timeout=aiohttp.ClientTimeout(total=self.timeout))
+                             timeout=aiohttp.ClientTimeout(total=self.timeout_seconds))
             )
             abort_task = (
                 asyncio.create_task(abort_event.wait(), name="abort_watcher")
@@ -187,7 +193,7 @@ class OllamaProvider(LLMProvider):
         model: str,
         tools: list[dict] = None,
         abort_event: Optional[asyncio.Event] = None,
-        timeout: Optional[int] = None,
+        total_timeout_seconds: Optional[int] = None,
         **kwargs
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         formatted_messages = self._format_messages(messages)
@@ -203,12 +209,15 @@ class OllamaProvider(LLMProvider):
         connector = aiohttp.TCPConnector()
         session = aiohttp.ClientSession(connector=connector)
 
-        effective_timeout = timeout if timeout is not None else self.timeout
+        effective_timeout = aiohttp.ClientTimeout(
+            total=total_timeout_seconds if total_timeout_seconds is not None else self.timeout_seconds,
+            sock_connect=STREAM_IDLE_TIMEOUT_SECONDS,
+            sock_read=STREAM_IDLE_TIMEOUT_SECONDS,
+        )
 
         try:
             post_task = asyncio.create_task(
-                session.post(url, json=body,
-                             timeout=aiohttp.ClientTimeout(total=effective_timeout))
+                session.post(url, json=body, timeout=effective_timeout)
             )
             abort_task = (
                 asyncio.create_task(abort_event.wait(), name="abort_watcher")
@@ -247,21 +256,28 @@ class OllamaProvider(LLMProvider):
                     yield Error(message=error_message)
                     return
 
+                trace = StreamTrace("ollama", model)
+                trace.opened()
+                poller = StreamPoller(
+                    lambda: resp.content.readline(
+                        max_line_length=_MAX_SSE_LINE_BYTES
+                    ),
+                    abort_event,
+                    trace,
+                )
                 while True:
-                    if abort_event and abort_event.is_set():
+                    try:
+                        line = await poller.next_line()
+                    except StreamAborted:
                         resp.close()
+                        trace.end("aborted", content=len(accumulated_content))
                         yield Done(content=accumulated_content, tool_calls=[], aborted=True)
                         return
-                    try:
-                        line = await asyncio.wait_for(
-                            resp.content.readline(max_line_length=_MAX_SSE_LINE_BYTES),
-                            timeout=0.5,
-                        )
-                    except asyncio.TimeoutError:
-                        continue
                     if not line:
+                        trace.end("peer closed", content=len(accumulated_content))
                         break
 
+                    trace.line(line)
                     line = line.decode("utf-8").strip()
                     if not line:
                         continue

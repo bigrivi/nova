@@ -15,6 +15,27 @@ RETRY_STATUS_CODES = frozenset({500, 502, 503, 504, 529})
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 1.0
 
+# The config-facing name of the Responses API provider. It is also what
+# ``apply_effort`` branches on, so the spelling matters: it is
+# "openai-response", singular. Keep one copy so a log label or a body builder
+# cannot drift from the value the config and the reasoning rules use.
+PROVIDER_TYPE_OPENAI_RESPONSE = "openai-response"
+
+# How long a stream may go quiet before it is treated as dead, in seconds.
+#
+# This is the only timeout the transports carry, and it is an *idle* limit -
+# time between two reads - not a deadline on the whole response. A model that
+# reasons for minutes, or an answer that streams for minutes, is fine; what is
+# not fine is a peer that stops sending and never closes, which would otherwise
+# hold the turn open forever. It bounds both the socket read and establishing
+# the connection, because a connect that takes this long has already failed and
+# keeping a second number for it only invites the two to disagree.
+#
+# 300s matches the reference implementation's default HTTP idle timeout, which
+# was raised to that after long local SSE streams were being cut off at a
+# shorter value.
+STREAM_IDLE_TIMEOUT_SECONDS = 300
+
 
 @dataclass
 class Message:
@@ -98,9 +119,19 @@ class ReasoningDelta(ChatEvent):
 
 @dataclass
 class Error(ChatEvent):
-    """Error event."""
+    """Error event.
+
+    ``content`` and ``tool_calls`` carry whatever the turn had already
+    accumulated when the failure struck. A stream can die after most of an
+    answer has arrived, and the text is the only part of it that still exists;
+    dropping it silently loses work the user watched appear. Consumers that do
+    not care may ignore both - the defaults keep the event meaning exactly what
+    it meant before.
+    """
     type: str = "error"
     message: str = ""
+    content: str = ""
+    tool_calls: list[ToolCall] = field(default_factory=list)
 
 
 ChatStreamEvent = Union[TextDelta, ReasoningDelta, ToolCall, Done, Error]

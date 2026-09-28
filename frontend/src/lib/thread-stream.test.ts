@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { NovaStreamEvent } from "../types/nova";
 import {
+    appendFailureNotice,
     applyStreamEvent,
     applyStreamEventOnce,
     describeStreamSideEffects,
@@ -322,6 +323,29 @@ describe("applyStreamEvent non-patch branches", () => {
                 (error as Error & { retryable?: boolean }).retryable,
             ).toBe(false);
         }
+    });
+
+    it("appendFailureNotice keeps text that had already streamed", () => {
+        // A turn that produced half an answer and then failed is more useful as
+        // "half an answer, then why it stopped" than as the reason alone.
+        expect(appendFailureNotice("half an answer", "went quiet")).toBe(
+            "half an answer\n\n[error] went quiet",
+        );
+    });
+
+    it("appendFailureNotice does not leave a blank gap when nothing streamed", () => {
+        expect(appendFailureNotice("", "went quiet")).toBe(
+            "[error] went quiet",
+        );
+        expect(appendFailureNotice("   ", "went quiet")).toBe(
+            "[error] went quiet",
+        );
+    });
+
+    it("appendFailureNotice trims the tail so partial text is not padded", () => {
+        expect(appendFailureNotice("half an answer\n", "went quiet")).toBe(
+            "half an answer\n\n[error] went quiet",
+        );
     });
 });
 

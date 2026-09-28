@@ -18,7 +18,6 @@ from nova.db import DataSourceProtocol, get_default_data_source
 from nova.skills.service import SkillService
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.agent.tool_guardrails import ToolGuardrails
-from nova.agent.reasoning_timeouts import get_reasoning_timeout
 from nova.tools.approval import get_approval_manager
 from nova.settings import get_settings
 from nova.agent.hierarchy import AgentHierarchy
@@ -280,6 +279,12 @@ class Agent:
         async for event, data in reader.consume(
             await self._start_completion_stream(turn_count, tool_schemas, loaded_messages)
         ):
+            if event == AgentEvent.ERROR:
+                # Persist before handing the error out. The consumer treats an
+                # error as terminal and returns, which abandons this generator
+                # at the yield - so anything written after it would never run,
+                # and the text the user watched arrive would be lost.
+                await self._persist_failed_turn(reader, group_id)
             yield event, data
         if reader.outcome is not TurnOutcome.CONTINUE:
             return
@@ -319,17 +324,15 @@ class Agent:
         loaded_messages: Optional[list],
     ) -> AsyncGenerator[Any, None]:
         messages = await self._build_messages(loaded_messages=loaded_messages)
-        reasoning_timeout = get_reasoning_timeout(self.config.model, default=120)
         current_session = self.session.get_current_session()
         session_id = current_session.id if current_session else None
         log.info(
-            f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}, timeout={reasoning_timeout}")
+            f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}, timeout={getattr(self.llm, 'timeout_seconds', None)}")
         return self.llm.chat_stream(
             messages=messages,
             model=self.config.model,
             tools=tool_schemas,
             abort_event=self._abort_event,
-            timeout=reasoning_timeout,
             session_id=session_id,
             reasoning_effort=self.config.reasoning_effort,
         )
@@ -387,6 +390,38 @@ class Agent:
                     f"with invalid JSON arguments: {tool_call.arguments!r}"
                 )
         return executable
+
+    async def _persist_failed_turn(
+        self,
+        reader: TurnStreamReader,
+        group_id: Optional[str],
+    ) -> None:
+        """Keep the text a failed turn produced, so a reload does not lose it.
+
+        The turn is over either way. Without this, text the user watched arrive
+        exists only in the stream: nothing is written, so reopening the session
+        shows a turn that produced nothing at all.
+
+        A user abort is deliberately excluded. They asked for the turn to stop,
+        and the contract there is that history is left as it was - the existing
+        interrupt tests pin that.
+
+        Args:
+            reader: The finished turn, holding the text and the failure reason.
+            group_id: Tool-call group the turn belongs to, if any.
+        """
+        if reader.outcome is not TurnOutcome.FAILED or not reader.content:
+            return
+        await self.session.add_message(
+            role="assistant",
+            content=reader.content,
+            reasoning_content=reader.reasoning or None,
+            group_id=group_id,
+            reasoning_elapsed_ms=reader.reasoning_elapsed_ms,
+            error=reader.error_message or "turn failed",
+            model=self.config.model,
+            reasoning_effort=self.config.reasoning_effort,
+        )
 
     async def _persist_assistant_message(
         self,

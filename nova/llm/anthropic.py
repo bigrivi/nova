@@ -11,6 +11,7 @@ from typing import AsyncGenerator, Optional
 import aiohttp
 
 from nova.llm.provider import (
+    STREAM_IDLE_TIMEOUT_SECONDS,
     ChatStreamEvent,
     Done,
     Error,
@@ -23,6 +24,8 @@ from nova.llm.provider import (
     ToolCall,
 )
 from nova.llm.request_hook import run_request_hook, run_session_hook
+from nova.llm.stream_read import StreamAborted, StreamPoller
+from nova.llm.stream_trace import StreamTrace
 from nova.llm.tokenizer import normalise_model_id
 
 log = logging.getLogger(__name__)
@@ -36,7 +39,6 @@ _MAX_STREAM_TOOL_ARG_CHARS = 1_000_000
 # Always bound stalled upstream reads; total is still caller-controlled
 # (total=timeout when set, total=None otherwise) so long legitimate
 # generations are not capped by an overall deadline.
-_STREAM_SOCK_READ_TIMEOUT = 180
 # aiohttp caps a single SSE line at the stream reader's high-water mark
 # (~128 KiB); large events (e.g. a big tool_use payload) exceed it.
 _MAX_SSE_LINE_BYTES = 16 * 1024 * 1024
@@ -185,7 +187,7 @@ class AnthropicProvider(LLMProvider):
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         request_options: Optional[dict] = None,
-        timeout: int = 120,
+        timeout_seconds: int = 120,
         user_agent: Optional[str] = None,
         anthropic_version: str = "2023-06-01",
         betas: Optional[list[str]] = None,
@@ -197,7 +199,7 @@ class AnthropicProvider(LLMProvider):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
-        self.timeout = timeout
+        self.timeout_seconds = timeout_seconds
         self._user_agent = user_agent
         self._anthropic_version = anthropic_version
         self._betas = list(betas) if betas else None
@@ -629,7 +631,7 @@ class AnthropicProvider(LLMProvider):
                     url,
                     headers=headers,
                     json=body,
-                    timeout=timeout if timeout is not None else aiohttp.ClientTimeout(total=self.timeout),
+                    timeout=timeout if timeout is not None else aiohttp.ClientTimeout(total=self.timeout_seconds),
                 ),
                 name=f"anthropic_post_attempt_{attempt}",
             )
@@ -784,7 +786,7 @@ class AnthropicProvider(LLMProvider):
         model: str,
         tools: list[dict] = None,
         abort_event: Optional[asyncio.Event] = None,
-        timeout: Optional[int] = None,
+        total_timeout_seconds: Optional[int] = None,
         session_id: Optional[str] = None,
         **kwargs,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
@@ -794,7 +796,11 @@ class AnthropicProvider(LLMProvider):
         url = self._endpoint()
         connector = self._make_connector()
         session = aiohttp.ClientSession(connector=connector, trust_env=True)
-        effective_timeout = aiohttp.ClientTimeout(total=timeout, sock_read=_STREAM_SOCK_READ_TIMEOUT) if timeout is not None else aiohttp.ClientTimeout(total=None, sock_read=_STREAM_SOCK_READ_TIMEOUT)
+        effective_timeout = aiohttp.ClientTimeout(
+            total=total_timeout_seconds if total_timeout_seconds is not None else self.timeout_seconds,
+            sock_connect=STREAM_IDLE_TIMEOUT_SECONDS,
+            sock_read=STREAM_IDLE_TIMEOUT_SECONDS,
+        )
         try:
             response = await self._post_with_retry(session=session, url=url, headers=headers, body=body, abort_event=abort_event, timeout=effective_timeout)
             if response is None:
@@ -816,21 +822,28 @@ class AnthropicProvider(LLMProvider):
                 tokens_output: Optional[int] = None
                 cache_read_tokens: Optional[int] = None
 
+                trace = StreamTrace("anthropic", model)
+                trace.opened()
+                poller = StreamPoller(
+                    lambda: response.content.readline(
+                        max_line_length=_MAX_SSE_LINE_BYTES
+                    ),
+                    abort_event,
+                    trace,
+                )
                 while True:
-                    if abort_event and abort_event.is_set():
+                    try:
+                        line = await poller.next_line()
+                    except StreamAborted:
                         response.close()
+                        trace.end("aborted", content=len(accumulated_content))
                         yield Done(content=accumulated_content, tool_calls=[], aborted=True)
                         return
-                    try:
-                        line = await asyncio.wait_for(
-                            response.content.readline(max_line_length=_MAX_SSE_LINE_BYTES),
-                            timeout=0.5,
-                        )
-                    except asyncio.TimeoutError:
-                        continue
                     if not line:
+                        trace.end("peer closed", content=len(accumulated_content))
                         break
 
+                    trace.line(line)
                     line = line.decode("utf-8") if isinstance(line, (bytes, bytearray)) else str(line)
                     line = line.strip()
                     if not line:
@@ -840,6 +853,8 @@ class AnthropicProvider(LLMProvider):
                     if line.startswith("data:"):
                         line = line[5:].strip()
                     if not line or line == "[DONE]":
+                        if line:
+                            trace.mark("[DONE] read past, loop continues")
                         continue
                     try:
                         data = json.loads(line)

@@ -53,6 +53,9 @@ class TurnStreamReader:
         self.provider_meta: Optional[dict] = None
         self.reasoning_elapsed_ms: Optional[int] = None
         self.outcome = TurnOutcome.CONTINUE
+        # Why a failed turn failed. Kept here rather than only in the emitted
+        # event so the caller can record it alongside whatever text arrived.
+        self.error_message = ""
 
         self._text_started = False
         self._reasoning_started = False
@@ -103,6 +106,7 @@ class TurnStreamReader:
 
                 elif chunk_type == "error":
                     self.outcome = TurnOutcome.FAILED
+                    self.error_message = chunk.message
                     yield AgentEvent.ERROR, error_payload("llm_error", chunk.message)
                     return
 
@@ -117,6 +121,7 @@ class TurnStreamReader:
         except Exception as error:
             log.error(f"[Turn {self._turn_count}] LLM call failed: {error}")
             self.outcome = TurnOutcome.FAILED
+            self.error_message = str(error)
             yield AgentEvent.ERROR, error_payload("llm_error", str(error))
             return
         finally:

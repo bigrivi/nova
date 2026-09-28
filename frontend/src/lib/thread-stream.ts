@@ -294,6 +294,20 @@ export function throwStreamError(event: NovaStreamEvent): never {
     throw error;
 }
 
+/**
+ * Build the text a failed turn should leave on screen.
+ *
+ * Whatever already streamed stays: the user watched it arrive, and a turn that
+ * produced half an answer and then failed is more useful as "half an answer,
+ * then why it stopped" than as an error message alone. The reason is appended
+ * on its own line so it cannot be mistaken for part of the answer.
+ */
+export function appendFailureNotice(text: string, message: string): string {
+    const notice = `[error] ${message}`;
+    const kept = text.trimEnd();
+    return kept ? `${kept}\n\n${notice}` : notice;
+}
+
 export type StreamSideEffect =
     | { kind: "ask-user"; input: unknown }
     | { kind: "todo-active"; input: unknown };

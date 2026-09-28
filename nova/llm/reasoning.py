@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+from nova.llm.provider import PROVIDER_TYPE_OPENAI_RESPONSE
+
 # Config key an operator sets on a model to declare its levels, e.g.
 #   "models": {"gpt-5.5": {"reasoning_effort_levels": ["low", "medium", "high"]}}
 LEVELS_CONFIG_KEY = "reasoning_effort_levels"
@@ -27,7 +29,7 @@ LEVELS_CONFIG_KEY = "reasoning_effort_levels"
 # effort concept (only thinking budgets) and Ollama/faker have none, so a
 # declaration on those is ignored rather than silently sent and rejected.
 EFFORT_PROVIDER_TYPES: frozenset[str] = frozenset(
-    {"openai-compatible", "openai-response"}
+    {"openai-compatible", PROVIDER_TYPE_OPENAI_RESPONSE}
 )
 
 
@@ -99,7 +101,7 @@ def apply_effort(
         return body
     if provider_type == "openai-compatible":
         body.setdefault("reasoning_effort", effort)
-    elif provider_type == "openai-response":
+    elif provider_type == PROVIDER_TYPE_OPENAI_RESPONSE:
         body.setdefault("reasoning", {"effort": effort})
     return body
 

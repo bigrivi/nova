@@ -26,7 +26,7 @@ import {
     nextRunningMap,
     reconcileRunningMap,
 } from "../../lib/thread-running";
-import { setAssistantText } from "../../lib/thread-stream";
+import { appendFailureNotice, setAssistantText } from "../../lib/thread-stream";
 import {
     consumeParkedTail,
     decideTailOnActive,
@@ -439,7 +439,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
                 setAssistantText(
                     previous,
                     failedAssistantId,
-                    () => `[error] ${messageText}`,
+                    (text) => appendFailureNotice(text, messageText),
                 ),
             );
         } finally {

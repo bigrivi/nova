@@ -8,7 +8,7 @@ from nova.agent.core import AgentEvent
 from nova.db.sqlite_repository import SqliteRepository
 from nova.db.config import DatabaseConfig
 from nova.llm import ToolResult
-from nova.llm.provider import Done, LLMProvider, TextDelta, ToolCall
+from nova.llm.provider import Done, Error, LLMProvider, TextDelta, ToolCall
 
 
 def _done_reason(data) -> str:
@@ -280,3 +280,55 @@ async def test_done_content_is_preserved_when_provider_returns_error_without_tex
         ("user", "trigger provider error"),
         ("assistant", "Error: HTTP 400 from provider: bad request"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_turn_keeps_the_text_that_had_already_streamed(db):
+    """Text the user watched arrive must survive the turn that killed it.
+
+    Without this the text exists only in the stream: nothing is written, so
+    reopening the session shows a turn that appears to have produced nothing.
+    """
+    provider = ScriptedProvider(
+        [
+            [
+                TextDelta(content="half an answer"),
+                Error(
+                    message=(
+                        "stream sent nothing for the socket read timeout after 300s;"
+                        " 15 characters had already arrived"
+                    )
+                ),
+            ]
+        ]
+    )
+    agent = Agent(
+        config=AgentConfig(model="test-model", max_iterations=1),
+        llm_provider=provider,
+    )
+
+    async for _event, _data in agent.chat_stream("ask"):
+        pass
+
+    messages = await agent.session.get_messages()
+    assert [(msg.role, msg.content) for msg in messages] == [
+        ("user", "ask"),
+        ("assistant", "half an answer"),
+    ]
+    assert "socket read timeout" in (messages[1].error or "")
+
+
+@pytest.mark.asyncio
+async def test_a_failed_turn_with_no_text_writes_no_message(db):
+    """A turn that produced nothing must not leave an empty assistant row."""
+    provider = ScriptedProvider([[Error(message="boom")]])
+    agent = Agent(
+        config=AgentConfig(model="test-model", max_iterations=1),
+        llm_provider=provider,
+    )
+
+    async for _event, _data in agent.chat_stream("ask"):
+        pass
+
+    messages = await agent.session.get_messages()
+    assert [(msg.role, msg.content) for msg in messages] == [("user", "ask")]

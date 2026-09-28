@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import json
 
 import aiohttp
 import pytest
 
 from nova.llm.openai_response import OpenAIResponsesProvider
-from nova.llm.provider import Done, Error, Message, TextDelta
+from nova.llm.provider import Done, Error, Message, TextDelta, ToolCall
 
 # The Responses API sends the whole response as ONE `response.completed` SSE
 # line. aiohttp's StreamReader caps a single line at its high-water mark
@@ -155,7 +154,14 @@ async def test_stream_handles_completed_line_larger_than_aiohttp_default(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_stream_ends_on_eof_without_trailing_newline(monkeypatch):
+async def test_stream_without_completed_event_is_reported_as_truncated(monkeypatch):
+    """EOF without `response.completed` is a cut-off response, not a result.
+
+    The protocol's terminal event is what says the response is whole. A socket
+    that simply closes can mean anything - a dropped connection, a proxy
+    timeout - so treating it as success would hand back a partial answer as if
+    it were complete.
+    """
     lines = [b'data: {"type":"response.output_text.delta","delta":"ok"}']
     _install_fake(monkeypatch, _FakeResponse(lines=lines))
     provider = OpenAIResponsesProvider(api_key="k")
@@ -167,8 +173,142 @@ async def test_stream_ends_on_eof_without_trailing_newline(monkeypatch):
         )
     ]
 
-    assert isinstance(collected[-1], Done)
+    assert isinstance(collected[-1], Error)
+    assert "response.completed" in collected[-1].message
+    # What did arrive is still handed back rather than thrown away.
     assert collected[-1].content == "ok"
+
+
+@pytest.mark.asyncio
+async def test_stream_stops_at_completed_without_waiting_for_a_close(monkeypatch):
+    """`response.completed` ends the read; the peer need never close.
+
+    Gateways are free to hold the socket open afterwards. Waiting for the close
+    means waiting for the socket read timeout, which is minutes of a turn that
+    has already finished.
+    """
+    lines = [
+        b'data: {"type":"response.output_text.delta","delta":"hi"}\n',
+        _completed_line("hi", {"input_tokens": 1, "output_tokens": 2}),
+        b'data: {"type":"response.output_text.delta","delta":"unreachable"}\n',
+    ]
+    response = _FakeResponse(lines=lines)
+    _install_fake(monkeypatch, response)
+    provider = OpenAIResponsesProvider(api_key="k")
+
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="gpt-5"
+        )
+    ]
+
+    assert isinstance(collected[-1], Done)
+    assert collected[-1].content == "hi"
+    # Only the delta and the completed line were read: the trailing line was
+    # never asked for.
+    assert response.content._index == 2
+
+
+@pytest.mark.asyncio
+async def test_a_server_reported_failure_is_an_error_not_an_empty_answer(monkeypatch):
+    """response.failed / response.incomplete / error used to be skipped."""
+    lines = [
+        (
+            b'data: {"type":"response.failed","response":{"status":"failed",'
+            b'"error":{"code":"server_error","message":"upstream exploded"}}}\n'
+        )
+    ]
+    _install_fake(monkeypatch, _FakeResponse(lines=lines))
+    provider = OpenAIResponsesProvider(api_key="k")
+
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="gpt-5"
+        )
+    ]
+
+    assert isinstance(collected[-1], Error)
+    assert "response.failed" in collected[-1].message
+    assert "server_error" in collected[-1].message
+    assert "upstream exploded" in collected[-1].message
+
+
+@pytest.mark.asyncio
+async def test_an_error_event_carries_the_server_message(monkeypatch):
+    lines = [b'data: {"type":"error","code":"rate_limit","message":"slow down"}\n']
+    _install_fake(monkeypatch, _FakeResponse(lines=lines))
+    provider = OpenAIResponsesProvider(api_key="k")
+
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="gpt-5"
+        )
+    ]
+
+    assert isinstance(collected[-1], Error)
+    assert "rate_limit" in collected[-1].message
+    assert "slow down" in collected[-1].message
+
+
+@pytest.mark.asyncio
+async def test_an_incomplete_response_names_the_reason(monkeypatch):
+    lines = [
+        (
+            b'data: {"type":"response.incomplete","response":{"status":"incomplete",'
+            b'"incomplete_details":{"reason":"max_output_tokens"}}}\n'
+        )
+    ]
+    _install_fake(monkeypatch, _FakeResponse(lines=lines))
+    provider = OpenAIResponsesProvider(api_key="k")
+
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="gpt-5"
+        )
+    ]
+
+    assert isinstance(collected[-1], Error)
+    assert "max_output_tokens" in collected[-1].message
+
+
+@pytest.mark.asyncio
+async def test_a_normal_turn_still_produces_text_tool_call_and_done(monkeypatch):
+    """Regression: the event sequence a healthy stream produces is unchanged."""
+    lines = [
+        b'data: {"type":"response.output_text.delta","delta":"he"}\n',
+        b'data: {"type":"response.output_text.delta","delta":"llo"}\n',
+        (
+            b'data: {"type":"response.output_item.added","output_index":0,'
+            b'"item":{"type":"function_call","call_id":"call_1","name":"lookup",'
+            b'"arguments":"{\\"q\\":1}"}}\n'
+        ),
+        b'data: {"type":"response.function_call_arguments.done","output_index":0}\n',
+        _completed_line("hello", {"input_tokens": 11, "output_tokens": 22}),
+    ]
+    _install_fake(monkeypatch, _FakeResponse(lines=lines))
+    provider = OpenAIResponsesProvider(api_key="k")
+
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="gpt-5"
+        )
+    ]
+
+    kinds = [type(event).__name__ for event in collected]
+    assert kinds == ["TextDelta", "TextDelta", "ToolCall", "Done"]
+    assert "".join(e.content for e in collected if isinstance(e, TextDelta)) == "hello"
+    tool_call = next(e for e in collected if isinstance(e, ToolCall))
+    assert (tool_call.id, tool_call.name) == ("call_1", "lookup")
+    done = collected[-1]
+    assert done.content == "hello"
+    assert done.tokens_input == 11
+    assert done.tokens_output == 22
+    assert [tc.name for tc in done.tool_calls] == ["lookup"]
 
 
 def test_build_body_sets_prompt_cache_key_from_session():
@@ -250,3 +390,27 @@ async def test_stream_reads_cached_tokens_from_completed(monkeypatch):
     done = collected[-1]
     assert isinstance(done, Done)
     assert done.cache_read_tokens == 60
+
+
+def test_a_failure_message_reports_the_size_without_claiming_it_survived():
+    """The text rides the event; whether anything keeps it is the consumer's job.
+
+    An earlier wording said the characters "were kept", which was not true of
+    any consumer, so the message promised something the code did not do.
+    """
+    provider = OpenAIResponsesProvider(api_key="k")
+
+    error = provider._partial_error("stream went quiet", "half an answer", {})
+
+    assert error.content == "half an answer"
+    assert "14 characters had already arrived" in error.message
+    assert "kept" not in error.message
+
+
+def test_a_failure_message_without_content_is_just_the_reason():
+    provider = OpenAIResponsesProvider(api_key="k")
+
+    error = provider._partial_error("stream went quiet", "", {})
+
+    assert error.message == "stream went quiet"
+    assert error.content == ""
