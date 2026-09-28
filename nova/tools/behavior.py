@@ -12,7 +12,7 @@ orchestration loop in Agent._run_turn.
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Optional, Protocol
 
 from nova.tools.shell import is_dangerous, is_hardline

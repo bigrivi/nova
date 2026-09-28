@@ -325,7 +325,7 @@ class ChatStreamOrchestrator:
 
         async def event_stream():
             stream_queue: asyncio.Queue[bytes | None] = asyncio.Queue(
-                maxsize=stream_module.CONNECTION_QUEUE_MAXSIZE
+                maxsize=CONNECTION_QUEUE_MAXSIZE
             )
             stream_session_id = session_id
 

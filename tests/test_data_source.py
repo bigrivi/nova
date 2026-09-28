@@ -13,7 +13,6 @@ from nova.db import (
     register_data_source_provider,
     set_data_source_config,
 )
-from nova.db.providers.aiosqlite_provider import AioSqliteDatabaseProvider
 from nova.db.sqlite_repository import SqliteRepository
 
 

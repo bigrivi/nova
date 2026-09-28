@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from nova.agent.subagent_jobs import COMPLETED, ERROR, RUNNING, SubAgentJob, SubAgentJobManager
-from nova.tools import subagent_status as subagent_status_module
 from nova.tools.subagent_status import subagent_status
 
 

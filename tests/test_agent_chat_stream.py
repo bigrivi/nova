@@ -12,7 +12,6 @@ import asyncio
 import contextlib
 
 import pytest
-import pytest_asyncio
 
 from nova import Agent, AgentConfig
 from nova.agent.core import AgentEvent, build_user_message
@@ -20,7 +19,7 @@ from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite_repository import SqliteRepository
 from nova.llm import ToolResult
-from nova.llm.provider import Done, Error, LLMProvider, ReasoningDelta, TextDelta, ToolCall
+from nova.llm.provider import Done, Error, LLMProvider, TextDelta, ToolCall
 from nova.session import manager as session_manager_module
 
 
@@ -259,7 +258,6 @@ class TestApprovalFlow:
 
         async with isolated_agent(provider) as (agent, _db):
             # Force the shell tool to require approval
-            from unittest.mock import AsyncMock
 
             agent.tool_registry.set_behavior = lambda *a, **k: None  # keep existing
             # Patch the behavior for shell

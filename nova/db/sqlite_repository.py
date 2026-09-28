@@ -19,7 +19,7 @@ from nova.constants import DEFAULT_AGENT_KEY
 from nova.db.config import DatabaseConfig
 from nova.db.repository import NovaRepository
 from nova.project.paths import normalize_project_path, project_label_from_path
-from nova.session.models import Message, MessageFilter, Session
+from nova.session.models import Message, MessageFilter
 
 log = logging.getLogger(__name__)
 

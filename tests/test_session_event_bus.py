@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 
 import pytest
@@ -269,10 +268,6 @@ def test_events_stream_exits_promptly_when_server_stopping(
     from fastapi.testclient import TestClient
 
     from nova.server import create_app
-    from nova.server.app import (
-        GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
-        build_uvicorn_config,
-    )
     from nova.settings import get_settings
 
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))

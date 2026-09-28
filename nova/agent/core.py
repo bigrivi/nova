@@ -1,8 +1,7 @@
 import asyncio
 import logging
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, Optional
 
@@ -11,7 +10,7 @@ from nova.session import get_session_manager
 from nova.session.manager import SessionContext, default_session_title
 from nova.session.protocol import SessionProtocol
 from nova.agent.title_generator import generate_session_title
-from nova.tools.registry import ToolRegistry, tool
+from nova.tools.registry import ToolRegistry
 from nova.prompt import PromptBuilder, PromptConfig
 from nova.agent.compaction import CompactionController, CompactionError
 from nova.db import DataSourceProtocol, get_default_data_source
@@ -19,14 +18,13 @@ from nova.skills.service import SkillService
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.agent.tool_guardrails import ToolGuardrails
 from nova.tools.approval import get_approval_manager
-from nova.settings import get_settings
 from nova.agent.hierarchy import AgentHierarchy
 from nova.agent.memory_review import MemoryReviewer
 from nova.agent.toolset import ToolsetBuilder
 from nova.agent.llm_stream import TurnStreamReader, TurnOutcome
 from nova.agent.overflow import is_context_overflow
 from nova.agent.tool_invoker import (
-    ToolInvoker, ToolOutcome, has_parsable_arguments)
+    ToolInvoker, has_parsable_arguments)
 from nova.agent.events import (
     AgentEvent,
     EventBus,

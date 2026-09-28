@@ -14,7 +14,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from nova.llm import ToolResult
 
 log = logging.getLogger(__name__)
 

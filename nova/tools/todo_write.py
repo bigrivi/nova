@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool

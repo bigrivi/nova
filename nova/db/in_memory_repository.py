@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 import uuid
 import json
-from typing import Any, Optional
+from typing import Any
 
 from nova.db.repository import NovaRepository
 from nova.session.models import Message, MessageFilter

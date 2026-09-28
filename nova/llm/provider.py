@@ -5,8 +5,7 @@ LLM provider interface definitions.
 import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, Optional, Any, Union
-from enum import Enum
+from typing import AsyncGenerator, Optional, Union
 
 # Shared HTTP retry policy for all providers. 429 is quota/throttle feedback,
 # not a transient fault: retrying it only burns quota faster, so it fails

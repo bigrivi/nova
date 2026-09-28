@@ -14,7 +14,6 @@ delete_memory = _memory_tools.delete_memory
 list_memories = _memory_tools.list_memories
 from nova.db.sqlite_repository import SqliteRepository
 from nova.db.config import DatabaseConfig
-from nova.llm import ToolResult
 from nova.llm.provider import Done, LLMProvider, TextDelta, ToolCall
 
 

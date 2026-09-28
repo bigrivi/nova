@@ -3,7 +3,6 @@ Tool registry.
 """
 
 import asyncio
-import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Optional, Any
 

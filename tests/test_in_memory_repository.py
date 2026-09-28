@@ -14,7 +14,7 @@ from nova.db import (
 from nova.memory.repository import MemoryRepository
 from nova.memory.models import MemoryRecord, MemorySearchFilters
 from nova.session.manager import SessionManager
-from nova.session.models import MessageFilter, Session
+from nova.session.models import Session
 
 
 @pytest.mark.asyncio

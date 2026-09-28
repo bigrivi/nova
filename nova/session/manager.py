@@ -3,13 +3,12 @@ import json
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Optional
 import uuid
 
 from nova.db import get_default_data_source
 from nova.db.repository import NovaRepository
 from nova.session.models import Message, MessageFilter
-from nova.llm import Message as LLMMessage
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.session.protocol import SessionProtocol
 

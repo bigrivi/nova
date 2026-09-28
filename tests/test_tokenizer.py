@@ -2,7 +2,6 @@
 Tests for nova/llm/tokenizer.py - type-aware token estimation.
 """
 
-import pytest
 from unittest.mock import patch
 from nova.llm.tokenizer import (
     estimate_tokens_by_type,
@@ -11,7 +10,6 @@ from nova.llm.tokenizer import (
     resolve_context_limit,
     CHARS_PER_TOKEN_TEXT,
     CHARS_PER_TOKEN_TOOL,
-    IMAGE_CHAR_ESTIMATE,
 )
 
 
@@ -218,7 +216,7 @@ class TestProviderAwareContextLimit:
 
     def _mock_settings(self, providers_dict):
         """Helper to mock settings with specific provider config."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock
         
         mock_settings = MagicMock()
         mock_settings.providers = {}

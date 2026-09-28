@@ -6,7 +6,6 @@ import time
 from typing import Optional
 
 import httpx
-import uvicorn
 from uvicorn import Server
 
 from nova.server.app import build_uvicorn_config, create_app

@@ -6,7 +6,7 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Optional
 
 log = logging.getLogger(__name__)
 
