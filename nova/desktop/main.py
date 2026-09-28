@@ -6,7 +6,7 @@ from typing import Optional
 import webview
 
 from nova.desktop.server_thread import ServerThread
-from nova.settings import Settings
+from nova.settings import Settings, configure_logging
 
 
 def _window_url(host: str, port: int) -> str:
@@ -20,6 +20,13 @@ def _window_url(host: str, port: int) -> str:
 
 def run_desktop(settings: Optional[Settings] = None, dev: bool = False) -> None:
     settings = settings or Settings.load_config()
+
+    # The desktop launch path never went through __main__, so without this the
+    # root logger has no handler at all: the server thread runs in-process, and
+    # everything it logs falls through to logging.lastResort, which only emits
+    # WARNING+ to a stderr the packaged app has no console for. The result was a
+    # desktop app that wrote nothing to logs/nova.log while the CLI did.
+    configure_logging(settings)
 
     server = ServerThread(settings)
     server.start()
