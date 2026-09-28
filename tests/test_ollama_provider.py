@@ -5,7 +5,7 @@ import json
 import aiohttp
 import pytest
 
-from nova.llm.ollama import OllamaProvider
+from nova.llm.providers.ollama import OllamaProvider
 from nova.llm.provider import Done, Error, Message, TextDelta
 
 # aiohttp's StreamReader caps a single line at its high-water mark (~128 KiB)
@@ -89,11 +89,11 @@ def _install_fake(monkeypatch, response: _FakeResponse) -> _FakeSession:
     connector = _FakeConnector()
 
     monkeypatch.setattr(
-        "nova.llm.ollama.aiohttp.ClientSession",
+        "nova.llm.providers.ollama.aiohttp.ClientSession",
         lambda *args, **kwargs: session,
     )
     monkeypatch.setattr(
-        "nova.llm.ollama.aiohttp.TCPConnector",
+        "nova.llm.providers.ollama.aiohttp.TCPConnector",
         lambda *args, **kwargs: connector,
     )
     return session

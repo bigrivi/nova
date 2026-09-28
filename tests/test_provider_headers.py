@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 import nova.llm.request_hook as request_hook
-from nova.llm.anthropic import AnthropicProvider
-from nova.llm.openai import OpenAIProvider
-from nova.llm.openai_response import OpenAIResponsesProvider
+from nova.llm.providers.anthropic import AnthropicProvider
+from nova.llm.providers.openai_chat import OpenAIProvider
+from nova.llm.providers.openai_responses import OpenAIResponsesProvider
 from nova.llm.request_hook import RequestHookError, resolve_hook_path
 
 

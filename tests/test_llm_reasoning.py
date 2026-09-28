@@ -159,7 +159,7 @@ class TestRequestBody:
 
     @pytest.mark.asyncio
     async def test_selected_level_reaches_the_payload(self, monkeypatch):
-        from nova.llm.openai import OpenAIProvider
+        from nova.llm.providers.openai_chat import OpenAIProvider
 
         session = self._session(monkeypatch)
         provider = OpenAIProvider(api_key="k")
@@ -173,7 +173,7 @@ class TestRequestBody:
     @pytest.mark.asyncio
     async def test_a_value_put_straight_in_the_options_still_wins(self, monkeypatch):
         """`setdefault` in apply_effort: the body arrived with it already set."""
-        from nova.llm.openai import OpenAIProvider
+        from nova.llm.providers.openai_chat import OpenAIProvider
 
         session = self._session(monkeypatch)
         provider = OpenAIProvider(
@@ -188,7 +188,7 @@ class TestRequestBody:
 
     @pytest.mark.asyncio
     async def test_no_selection_sends_no_field(self, monkeypatch):
-        from nova.llm.openai import OpenAIProvider
+        from nova.llm.providers.openai_chat import OpenAIProvider
 
         session = self._session(monkeypatch)
         provider = OpenAIProvider(api_key="k")
@@ -274,8 +274,8 @@ class TestConfiguredDefaultReachesTheWire:
 
     @staticmethod
     def _build(provider_type: str, per_turn, default):
-        from nova.llm.openai import OpenAIProvider
-        from nova.llm.openai_response import OpenAIResponsesProvider
+        from nova.llm.providers.openai_chat import OpenAIProvider
+        from nova.llm.providers.openai_responses import OpenAIResponsesProvider
 
         cls = (
             OpenAIProvider

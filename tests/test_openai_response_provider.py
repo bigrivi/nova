@@ -5,7 +5,7 @@ import json
 import aiohttp
 import pytest
 
-from nova.llm.openai_response import OpenAIResponsesProvider
+from nova.llm.providers.openai_responses import OpenAIResponsesProvider
 from nova.llm.provider import Done, Error, Message, TextDelta, ToolCall
 
 # The Responses API sends the whole response as ONE `response.completed` SSE
@@ -96,11 +96,11 @@ def _install_fake(monkeypatch, response: _FakeResponse) -> _FakeSession:
     connector = _FakeConnector()
 
     monkeypatch.setattr(
-        "nova.llm.openai_response.aiohttp.ClientSession",
+        "nova.llm.providers.openai_responses.aiohttp.ClientSession",
         lambda *args, **kwargs: session,
     )
     monkeypatch.setattr(
-        "nova.llm.openai_response.aiohttp.TCPConnector",
+        "nova.llm.providers.openai_responses.aiohttp.TCPConnector",
         lambda *args, **kwargs: connector,
     )
     return session

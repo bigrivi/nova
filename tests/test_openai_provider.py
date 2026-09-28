@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from nova.llm.openai import OpenAIProvider
+from nova.llm.providers.openai_chat import OpenAIProvider
 from nova.llm.provider import Done
 
 
@@ -78,11 +78,11 @@ class _FakeSession:
 def _install_fake(monkeypatch, response: _FakeResponse) -> _FakeSession:
     session = _FakeSession(response)
     monkeypatch.setattr(
-        "nova.llm.openai.aiohttp.ClientSession",
+        "nova.llm.providers.openai_chat.aiohttp.ClientSession",
         lambda *args, **kwargs: session,
     )
     monkeypatch.setattr(
-        "nova.llm.openai.aiohttp.TCPConnector",
+        "nova.llm.providers.openai_chat.aiohttp.TCPConnector",
         lambda *args, **kwargs: _FakeConnector(),
     )
     return session

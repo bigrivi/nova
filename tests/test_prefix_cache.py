@@ -36,9 +36,9 @@ from nova.agent.core import AgentEvent
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite_repository import SqliteRepository
-from nova.llm.anthropic import AnthropicProvider
-from nova.llm.openai import OpenAIProvider
-from nova.llm.openai_response import OpenAIResponsesProvider
+from nova.llm.providers.anthropic import AnthropicProvider
+from nova.llm.providers.openai_chat import OpenAIProvider
+from nova.llm.providers.openai_responses import OpenAIResponsesProvider
 from nova.llm.provider import Done, LLMProvider, Message, ReasoningDelta, TextDelta
 from nova.llm.tokenizer import estimate_tokens_by_type
 from nova.memory.models import MemoryWriteRequest

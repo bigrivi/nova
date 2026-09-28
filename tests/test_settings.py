@@ -8,8 +8,8 @@ import pytest
 from nova.settings import Settings, configure_logging, get_settings, reload_settings
 from nova.db import database as db_module
 from nova.db.sqlite_repository import SqliteRepository
-from nova.llm.ollama import OllamaProvider
-from nova.llm.openai import OpenAIProvider
+from nova.llm.providers.ollama import OllamaProvider
+from nova.llm.providers.openai_chat import OpenAIProvider
 
 
 def _write_config(home: Path, payload: dict) -> None:

@@ -6,7 +6,7 @@ import json
 import aiohttp
 import pytest
 
-from nova.llm.anthropic import AnthropicProvider, _default_max_output_tokens, _preserves_thinking
+from nova.llm.providers.anthropic import AnthropicProvider, _default_max_output_tokens, _preserves_thinking
 from nova.llm.provider import Done, Error, LLMProvider, Message, ReasoningDelta, TextDelta, ToolCall
 
 # ---------------------------------------------------------------------------
@@ -136,8 +136,8 @@ def _install_fake(monkeypatch, response: _FakeResponse) -> tuple[_FakeSession, _
     def _fake_connector_factory(*args, **kwargs):
         return connector
 
-    monkeypatch.setattr("nova.llm.anthropic.aiohttp.ClientSession", _fake_session_factory)
-    monkeypatch.setattr("nova.llm.anthropic.aiohttp.TCPConnector", _fake_connector_factory)
+    monkeypatch.setattr("nova.llm.providers.anthropic.aiohttp.ClientSession", _fake_session_factory)
+    monkeypatch.setattr("nova.llm.providers.anthropic.aiohttp.TCPConnector", _fake_connector_factory)
     return session, connector
 
 

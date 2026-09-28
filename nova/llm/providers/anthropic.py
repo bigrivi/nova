@@ -2,31 +2,32 @@
 Anthropic LLM Provider
 """
 
-import asyncio
 import json
 import logging
 import re
-from typing import AsyncGenerator, Optional
+from typing import Optional
 
-import aiohttp
+import aiohttp  # noqa: F401  # kept so tests can patch nova.llm.providers.anthropic.aiohttp
 
+from nova.llm.accumulator import StreamAccumulator
+from nova.llm.framing import SSEFramer
+from nova.llm.http_provider import HttpProvider
+from nova.llm.policy import StreamPolicy, TransportPolicy
 from nova.llm.provider import (
-    STREAM_IDLE_TIMEOUT_SECONDS,
-    ChatStreamEvent,
+    RETRY_STATUS_CODES,
     Done,
     Error,
-    LLMProvider,
-    MAX_RETRIES,
-    RETRY_BASE_DELAY,
-    RETRY_STATUS_CODES,
     ReasoningDelta,
     TextDelta,
     ToolCall,
 )
 from nova.llm.request_hook import run_request_hook, run_session_hook
-from nova.llm.stream_read import StreamAborted, StreamPoller
-from nova.llm.stream_trace import StreamTrace
+from nova.llm.stream_driver import StreamParser
 from nova.llm.tokenizer import normalise_model_id
+
+# Re-exported so a single source of truth for the retry policy is observable on
+# this module; see tests/test_retry_status_codes.py.
+_ = RETRY_STATUS_CODES
 
 log = logging.getLogger(__name__)
 
@@ -181,7 +182,182 @@ def _thinking_provider_meta(thinking_blocks: list[dict]) -> Optional[dict]:
     return provider_meta
 
 
-class AnthropicProvider(LLMProvider):
+class _AnthropicStreamParser(StreamParser):
+    """Translate Anthropic Messages SSE events into Nova stream events.
+
+    Owns the per-turn tool-call assembly and thinking-block state; text and
+    token totals live on the shared accumulator.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._tool_calls: dict[int, dict] = {}
+        self._thinking_state: dict[int, dict] = {}
+        self._final_thinking_blocks: list[dict] = []
+
+    def feed(self, event: dict, acc: StreamAccumulator):
+        event_type = event.get("type", "")
+
+        if event_type == "message_start":
+            start_message = event.get("message", {})
+            usage = start_message.get("usage", {}) if isinstance(start_message, dict) else {}
+            if isinstance(usage, dict):
+                prompt_tokens = int(usage.get("input_tokens", 0) or 0)
+                raw_cache_read = usage.get("cache_read_input_tokens")
+                acc.cache_read_tokens = int(raw_cache_read) if raw_cache_read is not None else None
+                cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
+                acc.tokens_input = prompt_tokens + (acc.cache_read_tokens or 0) + cache_creation_tokens
+                if usage.get("output_tokens") is not None:
+                    try:
+                        acc.tokens_output = int(usage["output_tokens"])
+                    except Exception:
+                        pass
+            return
+
+        if event_type == "content_block_start":
+            block_index = _content_block_index(event)
+            content_block = event.get("content_block", {})
+            if not isinstance(content_block, dict):
+                return
+            content_block_type = content_block.get("type")
+            if content_block_type == "text":
+                text = content_block.get("text", "")
+                if text:
+                    acc.add_text(text)
+                    yield TextDelta(content=text)
+            elif content_block_type == "thinking":
+                self._thinking_state[block_index] = {"thinking": content_block.get("thinking", "") or "", "signature": content_block.get("signature", "") or "", "type": "thinking"}
+            elif content_block_type == "redacted_thinking":
+                self._thinking_state[block_index] = {"type": "redacted_thinking", "data": content_block.get("data", "") or ""}
+            elif content_block_type == "tool_use":
+                if len(self._tool_calls) >= _MAX_TOOL_CALLS and block_index not in self._tool_calls:
+                    return
+                self._tool_calls[block_index] = {
+                    "id": content_block.get("id", f"call_{block_index}"),
+                    "name": content_block.get("name", ""),
+                    "arguments": "",
+                    "yielded": False,
+                }
+                initial_tool_input = content_block.get("input")
+                if isinstance(initial_tool_input, dict) and initial_tool_input:
+                    try:
+                        initial_input_json = json.dumps(initial_tool_input, ensure_ascii=False)
+                        if initial_input_json != "{}":
+                            self._tool_calls[block_index]["initial_input"] = initial_input_json
+                    except Exception:
+                        pass
+            return
+
+        if event_type == "content_block_delta":
+            block_index = _content_block_index(event)
+            delta = event.get("delta", {})
+            if not isinstance(delta, dict):
+                return
+            delta_type = delta.get("type")
+            if delta_type == "text_delta":
+                text = delta.get("text", "")
+                if text:
+                    acc.add_text(text)
+                    yield TextDelta(content=text)
+            elif delta_type == "thinking_delta":
+                thinking_text = delta.get("thinking", "")
+                if thinking_text:
+                    if block_index not in self._thinking_state:
+                        self._thinking_state[block_index] = {"thinking": "", "signature": "", "type": "thinking"}
+                    self._thinking_state[block_index]["thinking"] = self._thinking_state[block_index].get("thinking", "") + thinking_text
+                    yield ReasoningDelta(content=thinking_text)
+            elif delta_type == "signature_delta":
+                signature_chunk = delta.get("signature", "")
+                if signature_chunk:
+                    if block_index not in self._thinking_state:
+                        self._thinking_state[block_index] = {"thinking": "", "signature": "", "type": "thinking"}
+                    self._thinking_state[block_index]["signature"] = self._thinking_state[block_index].get("signature", "") + signature_chunk
+            elif delta_type == "input_json_delta":
+                partial_json = delta.get("partial_json", "")
+                if partial_json:
+                    if block_index not in self._tool_calls:
+                        if len(self._tool_calls) >= _MAX_TOOL_CALLS:
+                            return
+                        self._tool_calls[block_index] = {"id": f"call_{block_index}", "name": "", "arguments": "", "yielded": False}
+                    self._tool_calls[block_index]["arguments"] += partial_json
+                    acc.guard_tool_args(len(str(self._tool_calls[block_index]["arguments"])))
+            return
+
+        if event_type == "content_block_stop":
+            block_index = _content_block_index(event)
+            tool_call_state = self._tool_calls.get(block_index)
+            if tool_call_state is not None and tool_call_state.get("name") and not tool_call_state.get("yielded"):
+                tool_call_state["yielded"] = True
+                yield _state_to_tool_call(tool_call_state)
+            thinking_block = self._thinking_state.get(block_index)
+            if thinking_block is not None:
+                if thinking_block.get("type") == "thinking":
+                    self._final_thinking_blocks.append({"type": "thinking", "thinking": thinking_block.get("thinking", ""), "signature": thinking_block.get("signature", "")})
+                elif thinking_block.get("type") == "redacted_thinking":
+                    self._final_thinking_blocks.append({"type": "redacted_thinking", "data": thinking_block.get("data", "")})
+            return
+
+        if event_type == "message_delta":
+            usage = event.get("usage", {}) if isinstance(event.get("usage"), dict) else {}
+            if isinstance(usage, dict) and usage.get("output_tokens") is not None:
+                try:
+                    acc.tokens_output = int(usage["output_tokens"])
+                except Exception:
+                    pass
+            return
+
+        if event_type == "message_stop":
+            self.finished = True
+            return
+
+        if event_type == "error":
+            error_payload = event.get("error", {}) if isinstance(event.get("error"), dict) else {}
+            error_type = error_payload.get("type", "error") if isinstance(error_payload, dict) else "error"
+            error_text = error_payload.get("message", "") if isinstance(error_payload, dict) else ""
+            error_detail = f"{error_type}: {error_text}" if error_text else str(error_type)
+            log.error("Anthropic stream error event: %s", error_detail)
+            self.stopped = True
+            yield Error(message=error_detail)
+            return
+
+        # ping / unknown -> ignore
+        return
+
+    def build_done(self, acc: StreamAccumulator) -> Done:
+        provider_meta = _thinking_provider_meta(self._final_thinking_blocks)
+        final_tool_calls = [
+            _state_to_tool_call(tool_call_state)
+            for _index, tool_call_state in sorted(self._tool_calls.items())
+            if tool_call_state.get("name")
+        ]
+        return Done(
+            content=acc.content,
+            tool_calls=final_tool_calls,
+            tokens_input=acc.tokens_input,
+            tokens_output=acc.tokens_output,
+            provider_meta=provider_meta,
+            cache_read_tokens=acc.cache_read_tokens,
+        )
+
+
+class AnthropicProvider(HttpProvider):
+    framer = SSEFramer()
+    stream_policy = StreamPolicy(
+        line_limit=_MAX_SSE_LINE_BYTES,
+        max_content_chars=_MAX_STREAM_CONTENT_CHARS,
+        max_tool_arg_chars=_MAX_STREAM_TOOL_ARG_CHARS,
+        swallow_cancel=True,
+        cancel_keeps_content=False,
+    )
+    transport_policy = TransportPolicy(
+        use_retry=True,
+        trust_env=True,
+        honor_retry_after=True,
+        guard_non_json=True,
+        connector_kwargs={"limit": 10, "limit_per_host": 5, "ttl_dns_cache": 300},
+    )
+    trace_label = "anthropic"
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -213,18 +389,6 @@ class AnthropicProvider(LLMProvider):
         if resolved_base_url.endswith("/v1"):
             return f"{resolved_base_url}/messages"
         return f"{resolved_base_url}/v1/messages"
-
-    def _make_connector(self) -> aiohttp.TCPConnector:
-        return aiohttp.TCPConnector(
-            limit=10,
-            limit_per_host=5,
-            ttl_dns_cache=300,
-        )
-
-    @staticmethod
-    def _build_http_error_message(url: str, status: int, text: str) -> str:
-        detail = (text or "").strip() or "<empty response>"
-        return f"HTTP {status} from {url}: {detail}"
 
     def _build_headers(self, session_id: Optional[str] = None) -> dict[str, str]:
         headers = {
@@ -615,413 +779,72 @@ class AnthropicProvider(LLMProvider):
             if isinstance(last_content, list) and last_content:
                 last_content[-1] = {**last_content[-1], "cache_control": cache_control}
 
-    async def _post_with_retry(
-        self,
-        session: aiohttp.ClientSession,
-        url: str,
-        headers: dict,
-        body: dict,
-        abort_event: Optional[asyncio.Event],
-        timeout: Optional[aiohttp.ClientTimeout] = None,
-    ) -> Optional[aiohttp.ClientResponse]:
-        delay = RETRY_BASE_DELAY
-        for attempt in range(MAX_RETRIES):
-            post_task = asyncio.create_task(
-                session.post(
-                    url,
-                    headers=headers,
-                    json=body,
-                    timeout=timeout if timeout is not None else aiohttp.ClientTimeout(total=self.timeout_seconds),
-                ),
-                name=f"anthropic_post_attempt_{attempt}",
-            )
-            abort_task = (
-                asyncio.create_task(abort_event.wait(), name="abort_watcher") if abort_event else None
-            )
-            wait_targets = [post_task] + ([abort_task] if abort_task else [])
-            completed, _ = await asyncio.wait(wait_targets, return_when=asyncio.FIRST_COMPLETED)
-
-            if abort_task and abort_task in completed:
-                post_task.cancel()
-                try:
-                    await post_task
-                except Exception:
-                    pass
-                return None
-
-            if abort_task:
-                abort_task.cancel()
-                try:
-                    await abort_task
-                except (asyncio.CancelledError, Exception):
-                    pass
-
-            try:
-                response = post_task.result()
-            except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as exception:
-                if attempt < MAX_RETRIES - 1:
-                    log.warning("Connection error (attempt %d/%d): %s, retrying in %.1fs", attempt + 1, MAX_RETRIES, exception, delay)
-                    await asyncio.sleep(delay)
-                    delay *= 2
-                    continue
-                log.error("Connection error after %d attempts: %s", MAX_RETRIES, exception)
-                raise
-            except Exception as exception:
-                log.error("Unexpected error in post_task: %s", exception)
-                raise
-
-            if response.status in RETRY_STATUS_CODES and attempt < MAX_RETRIES - 1:
-                retry_after = response.headers.get("retry-after") or response.headers.get("Retry-After")
-                if retry_after is not None:
-                    try:
-                        retry_delay = float(retry_after)
-                        retry_delay = min(max(retry_delay, 0), 60)
-                        await response.release()
-                        log.warning("Got %d (attempt %d/%d), retrying in %.1fs (retry-after)", response.status, attempt + 1, MAX_RETRIES, retry_delay)
-                        await asyncio.sleep(retry_delay)
-                        delay *= 2
-                        continue
-                    except Exception:
-                        pass
-                await response.release()
-                log.warning("Got %d (attempt %d/%d), retrying in %.1fs", response.status, attempt + 1, MAX_RETRIES, delay)
-                await asyncio.sleep(delay)
-                delay *= 2
-                continue
-
-            return response
-
-        raise RuntimeError(f"Failed after {MAX_RETRIES} attempts")
-
-    async def chat(
+    def _prepare_request(
         self,
         messages: list,
         model: str,
-        stream: bool = False,
-        tools: list[dict] = None,
-        abort_event: Optional[asyncio.Event] = None,
-        session_id: Optional[str] = None,
-        **kwargs,
-    ) -> Done:
+        stream: bool,
+        tools: Optional[list[dict]],
+        session_id: Optional[str],
+        reasoning_effort: Optional[str],
+    ) -> tuple[str, dict[str, str], dict]:
         headers = self._build_headers(session_id=session_id)
+        if stream:
+            headers["Accept"] = "text/event-stream"
         body = self._build_body(messages=messages, model=model, stream=stream, tools=tools)
-        url = self._endpoint()
-        connector = self._make_connector()
-        session = aiohttp.ClientSession(connector=connector, trust_env=True)
-        try:
-            response = await self._post_with_retry(session=session, url=url, headers=headers, body=body, abort_event=abort_event)
-            if response is None:
-                return Done(content="", tool_calls=[], aborted=True)
-            async with response:
-                if response.status != 200:
-                    text = await response.text()
-                    error_message = self._build_http_error_message(url=url, status=response.status, text=text)
-                    log.error("Anthropic provider request failed: %s", error_message)
-                    return Error(message=error_message)
-                try:
-                    data = await response.json()
-                except Exception:
-                    text = await response.text()
-                    log.error("Anthropic provider response was not valid JSON (content-type=%s): %.200s", response.content_type, text)
-                    return Error(message="unexpected response from API")
+        return self._endpoint(), headers, body
 
-                content_blocks = data.get("content", [])
-                text_parts: list[str] = []
-                tool_calls: list[ToolCall] = []
-                thinking_blocks: list[dict] = []
-                if isinstance(content_blocks, list):
-                    for block in content_blocks:
-                        if not isinstance(block, dict):
-                            continue
-                        block_type = block.get("type")
-                        if block_type == "text":
-                            text_parts.append(block.get("text", ""))
-                        elif block_type == "thinking":
-                            thinking_blocks.append({"type": "thinking", "thinking": block.get("thinking", ""), "signature": block.get("signature", "")})
-                        elif block_type == "redacted_thinking":
-                            thinking_blocks.append({"type": "redacted_thinking", "data": block.get("data", "")})
-                        elif block_type == "tool_use":
-                            tool_use_id = block.get("id", "")
-                            tool_name = block.get("name", "")
-                            tool_input = block.get("input", {})
-                            if not isinstance(tool_input, dict):
-                                tool_input = {}
-                            tool_calls.append(ToolCall(id=str(tool_use_id), name=str(tool_name), arguments=json.dumps(tool_input, ensure_ascii=False)))
-
-                provider_meta = _thinking_provider_meta(thinking_blocks)
-
-                usage = data.get("usage") if isinstance(data, dict) else None
-                tokens_input: Optional[int] = None
-                tokens_output: Optional[int] = None
-                cache_read_tokens: Optional[int] = None
-                if isinstance(usage, dict):
-                    # tokens_input is sum of the three input fields (true prompt cost)
-                    prompt_tokens = int(usage.get("input_tokens", 0) or 0)
-                    raw_cache_read = usage.get("cache_read_input_tokens")
-                    cache_read_tokens = int(raw_cache_read) if raw_cache_read is not None else None
-                    cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
-                    tokens_input = prompt_tokens + (cache_read_tokens or 0) + cache_creation_tokens
-                    if usage.get("output_tokens") is not None:
-                        tokens_output = int(usage["output_tokens"])
-
-                return Done(
-                    content="".join(text_parts),
-                    tool_calls=tool_calls,
-                    tokens_input=tokens_input,
-                    tokens_output=tokens_output,
-                    provider_meta=provider_meta,
-                    cache_read_tokens=cache_read_tokens,
-                )
-        except Exception as exception:
-            log.exception("Anthropic provider chat request raised an exception")
-            return Error(message=str(exception))
-        finally:
-            await session.close()
-            if not connector.closed:
-                await connector.close()
-
-    async def chat_stream(
-        self,
-        messages: list,
-        model: str,
-        tools: list[dict] = None,
-        abort_event: Optional[asyncio.Event] = None,
-        total_timeout_seconds: Optional[int] = None,
-        session_id: Optional[str] = None,
-        **kwargs,
-    ) -> AsyncGenerator[ChatStreamEvent, None]:
-        headers = self._build_headers(session_id=session_id)
-        headers["Accept"] = "text/event-stream"
-        body = self._build_body(messages=messages, model=model, stream=True, tools=tools)
-        url = self._endpoint()
-        connector = self._make_connector()
-        session = aiohttp.ClientSession(connector=connector, trust_env=True)
-        effective_timeout = aiohttp.ClientTimeout(
-            total=total_timeout_seconds if total_timeout_seconds is not None else self.timeout_seconds,
-            sock_connect=STREAM_IDLE_TIMEOUT_SECONDS,
-            sock_read=STREAM_IDLE_TIMEOUT_SECONDS,
-        )
-        try:
-            response = await self._post_with_retry(session=session, url=url, headers=headers, body=body, abort_event=abort_event, timeout=effective_timeout)
-            if response is None:
-                yield Done(content="", tool_calls=[], aborted=True)
-                return
-            async with response:
-                if response.status != 200:
-                    text = await response.text()
-                    error_message = self._build_http_error_message(url=url, status=response.status, text=text)
-                    log.error("Anthropic provider stream request failed: %s", error_message)
-                    yield Error(message=error_message)
-                    return
-
-                accumulated_content = ""
-                accumulated_tool_calls: dict[int, dict] = {}
-                thinking_state: dict[int, dict] = {}
-                final_thinking_blocks: list[dict] = []
-                tokens_input: Optional[int] = None
-                tokens_output: Optional[int] = None
-                cache_read_tokens: Optional[int] = None
-
-                trace = StreamTrace("anthropic", model)
-                trace.opened()
-                poller = StreamPoller(
-                    lambda: response.content.readline(
-                        max_line_length=_MAX_SSE_LINE_BYTES
-                    ),
-                    abort_event,
-                    trace,
-                )
-                while True:
-                    try:
-                        line = await poller.next_line()
-                    except StreamAborted:
-                        response.close()
-                        trace.end("aborted", content=len(accumulated_content))
-                        yield Done(content=accumulated_content, tool_calls=[], aborted=True)
-                        return
-                    if not line:
-                        trace.end("peer closed", content=len(accumulated_content))
-                        break
-
-                    trace.line(line)
-                    line = line.decode("utf-8") if isinstance(line, (bytes, bytearray)) else str(line)
-                    line = line.strip()
-                    if not line:
-                        continue
-                    if line.startswith("event:"):
-                        continue
-                    if line.startswith("data:"):
-                        line = line[5:].strip()
-                    if not line or line == "[DONE]":
-                        if line:
-                            trace.mark("[DONE] read past, loop continues")
-                        continue
-                    try:
-                        data = json.loads(line)
-                    except json.JSONDecodeError:
-                        log.debug("Anthropic provider received non-JSON stream chunk", exc_info=True)
-                        continue
-
-                    event_type = data.get("type", "")
-
-                    if event_type == "message_start":
-                        start_message = data.get("message", {})
-                        usage = start_message.get("usage", {}) if isinstance(start_message, dict) else {}
-                        if isinstance(usage, dict):
-                            prompt_tokens = int(usage.get("input_tokens", 0) or 0)
-                            raw_cache_read = usage.get("cache_read_input_tokens")
-                            cache_read_tokens = int(raw_cache_read) if raw_cache_read is not None else None
-                            cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
-                            tokens_input = prompt_tokens + (cache_read_tokens or 0) + cache_creation_tokens
-                            if usage.get("output_tokens") is not None:
-                                try:
-                                    tokens_output = int(usage["output_tokens"])
-                                except Exception:
-                                    pass
-                        continue
-
-                    if event_type == "content_block_start":
-                        block_index = _content_block_index(data)
-                        content_block = data.get("content_block", {})
-                        if not isinstance(content_block, dict):
-                            continue
-                        content_block_type = content_block.get("type")
-                        if content_block_type == "text":
-                            text = content_block.get("text", "")
-                            if text:
-                                if len(accumulated_content) + len(text) > _MAX_STREAM_CONTENT_CHARS:
-                                    log.error("Anthropic stream runaway content: model=%s size=%s exceeds %s", model, len(accumulated_content) + len(text), _MAX_STREAM_CONTENT_CHARS)
-                                    response.close()
-                                    yield Error(message=f"model {model} produced runaway/unbounded output (>{_MAX_STREAM_CONTENT_CHARS} chars), stream aborted")
-                                    return
-                                accumulated_content += text
-                                yield TextDelta(content=text)
-                        elif content_block_type == "thinking":
-                            thinking_state[block_index] = {"thinking": content_block.get("thinking", "") or "", "signature": content_block.get("signature", "") or "", "type": "thinking"}
-                        elif content_block_type == "redacted_thinking":
-                            thinking_state[block_index] = {"type": "redacted_thinking", "data": content_block.get("data", "") or ""}
-                        elif content_block_type == "tool_use":
-                            if len(accumulated_tool_calls) >= _MAX_TOOL_CALLS and block_index not in accumulated_tool_calls:
-                                continue
-                            accumulated_tool_calls[block_index] = {
-                                "id": content_block.get("id", f"call_{block_index}"),
-                                "name": content_block.get("name", ""),
-                                "arguments": "",
-                                "yielded": False,
-                            }
-                            initial_tool_input = content_block.get("input")
-                            if isinstance(initial_tool_input, dict) and initial_tool_input:
-                                try:
-                                    initial_input_json = json.dumps(initial_tool_input, ensure_ascii=False)
-                                    if initial_input_json != "{}":
-                                        accumulated_tool_calls[block_index]["initial_input"] = initial_input_json
-                                except Exception:
-                                    pass
-                        continue
-
-                    if event_type == "content_block_delta":
-                        block_index = _content_block_index(data)
-                        delta = data.get("delta", {})
-                        if not isinstance(delta, dict):
-                            continue
-                        delta_type = delta.get("type")
-                        if delta_type == "text_delta":
-                            text = delta.get("text", "")
-                            if text:
-                                if len(accumulated_content) + len(text) > _MAX_STREAM_CONTENT_CHARS:
-                                    log.error("Anthropic stream runaway content: model=%s size=%s exceeds %s", model, len(accumulated_content) + len(text), _MAX_STREAM_CONTENT_CHARS)
-                                    response.close()
-                                    yield Error(message=f"model {model} produced runaway/unbounded output (>{_MAX_STREAM_CONTENT_CHARS} chars), stream aborted")
-                                    return
-                                accumulated_content += text
-                                yield TextDelta(content=text)
-                        elif delta_type == "thinking_delta":
-                            thinking_text = delta.get("thinking", "")
-                            if thinking_text:
-                                if block_index not in thinking_state:
-                                    thinking_state[block_index] = {"thinking": "", "signature": "", "type": "thinking"}
-                                thinking_state[block_index]["thinking"] = thinking_state[block_index].get("thinking", "") + thinking_text
-                                yield ReasoningDelta(content=thinking_text)
-                        elif delta_type == "signature_delta":
-                            signature_chunk = delta.get("signature", "")
-                            if signature_chunk:
-                                if block_index not in thinking_state:
-                                    thinking_state[block_index] = {"thinking": "", "signature": "", "type": "thinking"}
-                                thinking_state[block_index]["signature"] = thinking_state[block_index].get("signature", "") + signature_chunk
-                        elif delta_type == "input_json_delta":
-                            partial_json = delta.get("partial_json", "")
-                            if partial_json:
-                                if block_index not in accumulated_tool_calls:
-                                    if len(accumulated_tool_calls) >= _MAX_TOOL_CALLS:
-                                        continue
-                                    accumulated_tool_calls[block_index] = {"id": f"call_{block_index}", "name": "", "arguments": "", "yielded": False}
-                                accumulated_tool_calls[block_index]["arguments"] += partial_json
-                                if len(str(accumulated_tool_calls[block_index]["arguments"])) > _MAX_STREAM_TOOL_ARG_CHARS:
-                                    log.error("Anthropic stream runaway tool args: model=%s size=%s exceeds %s", model, len(str(accumulated_tool_calls[block_index]["arguments"])), _MAX_STREAM_TOOL_ARG_CHARS)
-                                    response.close()
-                                    yield Error(message=f"model {model} produced runaway/unbounded tool arguments output (>{_MAX_STREAM_TOOL_ARG_CHARS} chars), stream aborted")
-                                    return
-                        continue
-
-                    if event_type == "content_block_stop":
-                        block_index = _content_block_index(data)
-                        tool_call_state = accumulated_tool_calls.get(block_index)
-                        if tool_call_state is not None and tool_call_state.get("name") and not tool_call_state.get("yielded"):
-                            tool_call_state["yielded"] = True
-                            yield _state_to_tool_call(tool_call_state)
-                        thinking_block = thinking_state.get(block_index)
-                        if thinking_block is not None:
-                            if thinking_block.get("type") == "thinking":
-                                final_thinking_blocks.append({"type": "thinking", "thinking": thinking_block.get("thinking", ""), "signature": thinking_block.get("signature", "")})
-                            elif thinking_block.get("type") == "redacted_thinking":
-                                final_thinking_blocks.append({"type": "redacted_thinking", "data": thinking_block.get("data", "")})
-                        continue
-
-                    if event_type == "message_delta":
-                        usage = data.get("usage", {}) if isinstance(data.get("usage"), dict) else {}
-                        if isinstance(usage, dict) and usage.get("output_tokens") is not None:
-                            try:
-                                tokens_output = int(usage["output_tokens"])
-                            except Exception:
-                                pass
-                        continue
-
-                    if event_type == "message_stop":
-                        break
-
-                    if event_type == "error":
-                        error_payload = data.get("error", {}) if isinstance(data.get("error"), dict) else {}
-                        error_type = error_payload.get("type", "error") if isinstance(error_payload, dict) else "error"
-                        error_text = error_payload.get("message", "") if isinstance(error_payload, dict) else ""
-                        error_detail = f"{error_type}: {error_text}" if error_text else str(error_type)
-                        log.error("Anthropic stream error event: %s", error_detail)
-                        yield Error(message=error_detail)
-                        return
-
-                    if event_type == "ping":
-                        continue
-                    # unknown -> ignore
+    def _parse_response(self, data: dict) -> Done:
+        content_blocks = data.get("content", [])
+        text_parts: list[str] = []
+        tool_calls: list[ToolCall] = []
+        thinking_blocks: list[dict] = []
+        if isinstance(content_blocks, list):
+            for block in content_blocks:
+                if not isinstance(block, dict):
                     continue
+                block_type = block.get("type")
+                if block_type == "text":
+                    text_parts.append(block.get("text", ""))
+                elif block_type == "thinking":
+                    thinking_blocks.append({"type": "thinking", "thinking": block.get("thinking", ""), "signature": block.get("signature", "")})
+                elif block_type == "redacted_thinking":
+                    thinking_blocks.append({"type": "redacted_thinking", "data": block.get("data", "")})
+                elif block_type == "tool_use":
+                    tool_use_id = block.get("id", "")
+                    tool_name = block.get("name", "")
+                    tool_input = block.get("input", {})
+                    if not isinstance(tool_input, dict):
+                        tool_input = {}
+                    tool_calls.append(ToolCall(id=str(tool_use_id), name=str(tool_name), arguments=json.dumps(tool_input, ensure_ascii=False)))
 
-                provider_meta = _thinking_provider_meta(final_thinking_blocks)
+        provider_meta = _thinking_provider_meta(thinking_blocks)
 
-                final_tool_calls = [
-                    _state_to_tool_call(tool_call_state)
-                    for _index, tool_call_state in sorted(accumulated_tool_calls.items())
-                    if tool_call_state.get("name")
-                ]
-                yield Done(content=accumulated_content, tool_calls=final_tool_calls, tokens_input=tokens_input, tokens_output=tokens_output, provider_meta=provider_meta, cache_read_tokens=cache_read_tokens)
+        usage = data.get("usage") if isinstance(data, dict) else None
+        tokens_input: Optional[int] = None
+        tokens_output: Optional[int] = None
+        cache_read_tokens: Optional[int] = None
+        if isinstance(usage, dict):
+            # tokens_input is sum of the three input fields (true prompt cost)
+            prompt_tokens = int(usage.get("input_tokens", 0) or 0)
+            raw_cache_read = usage.get("cache_read_input_tokens")
+            cache_read_tokens = int(raw_cache_read) if raw_cache_read is not None else None
+            cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
+            tokens_input = prompt_tokens + (cache_read_tokens or 0) + cache_creation_tokens
+            if usage.get("output_tokens") is not None:
+                tokens_output = int(usage["output_tokens"])
 
-        except asyncio.CancelledError:
-            yield Done(content="", tool_calls=[], aborted=True)
-            return
-        except Exception as exception:
-            log.exception("Anthropic provider chat_stream raised an exception")
-            yield Error(message=str(exception))
-        finally:
-            await session.close()
-            if not connector.closed:
-                await connector.close()
+        return Done(
+            content="".join(text_parts),
+            tool_calls=tool_calls,
+            tokens_input=tokens_input,
+            tokens_output=tokens_output,
+            provider_meta=provider_meta,
+            cache_read_tokens=cache_read_tokens,
+        )
+
+    def _new_parser(self, model: str) -> StreamParser:
+        return _AnthropicStreamParser()
 
     async def count_tokens(self, text: str, model: str = None) -> int:
         chinese_chars = sum(1 for character in text if '\u4e00' <= character <= '\u9fff')
