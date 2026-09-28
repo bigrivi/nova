@@ -60,9 +60,17 @@ export function BackgroundTasksPanel() {
     const error = useBackgroundTaskStore((state) => state.error);
     const updateTask = useBackgroundTaskStore((state) => state.updateTask);
     const setError = useBackgroundTaskStore((state) => state.setError);
+    const total = tasks.length;
     const activeCount = tasks.filter(
         (task) => task.status === "running" || task.status === "queued",
     ).length;
+    const succeededCount = tasks.filter(
+        (task) => task.status === "succeeded",
+    ).length;
+    const failedCount = tasks.filter(
+        (task) => task.status === "failed" || task.status === "timed_out",
+    ).length;
+    const allDone = total > 0 && activeCount === 0;
 
     if (tasks.length === 0 && !error) return null;
 
@@ -83,27 +91,48 @@ export function BackgroundTasksPanel() {
     };
 
     return (
-        <div className="pointer-events-auto pb-2">
-            <div className="relative w-full rounded-t-lg border border-b-0 border-[#E4E1D9] bg-[#FAFAF9] shadow-[0_1px_2px_rgba(20,20,18,0.04),0_8px_20px_rgba(20,20,18,0.05)]">
+        // Root is tucked under the panel/composer below (-mb-5, inner -mb-px) so
+        // the panel reads as one piece with it; border-b-0 + rounded-b-none keep
+        // the element below's top border as the single divider. Copied from
+        // TodoProgressPanel so the two panels stack seamlessly.
+        <div className="pointer-events-auto pb-0 -mb-5">
+            <div className="relative pb-5 -mb-px w-full rounded-t-lg rounded-b-none border border-b-0 border-[#E4E3DF] bg-[#FAFAF9] shadow-[0_1px_2px_rgba(20,20,18,0.04),0_8px_20px_rgba(20,20,18,0.05)]">
                 <button
                     type="button"
                     onClick={() => setOpen((value) => !value)}
                     aria-expanded={open}
-                    className="flex w-full items-center gap-2.5 rounded-t-lg px-4 py-2.5 text-sm hover:bg-muted/50"
+                    className="flex w-full items-center gap-2.5 rounded-t-lg bg-[#FAFAF9] px-4 py-2.5 text-sm hover:bg-muted/50"
                 >
-                    <Loader2Icon
-                        className={cn(
-                            "size-4 shrink-0 text-[#A5750F]",
-                            activeCount > 0 &&
-                                "animate-spin motion-reduce:animate-none",
-                        )}
-                        aria-hidden="true"
-                    />
+                    {activeCount > 0 ? (
+                        <Loader2Icon
+                            className="size-4 shrink-0 animate-spin text-[#A5750F] motion-reduce:animate-none"
+                            aria-hidden="true"
+                        />
+                    ) : failedCount > 0 ? (
+                        <XCircleIcon
+                            className="size-4 shrink-0 text-[#B23B2E]"
+                            aria-hidden="true"
+                        />
+                    ) : (
+                        <CheckCircle2Icon
+                            className="size-4 shrink-0 text-emerald-500"
+                            aria-hidden="true"
+                        />
+                    )}
                     <span className="min-w-0 flex-1 truncate text-start leading-none">
                         {t("tasks.backgroundTitle")}
                     </span>
-                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums text-muted-foreground">
-                        {activeCount}
+                    <span
+                        className={cn(
+                            "shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
+                            allDone
+                                ? failedCount > 0
+                                    ? "bg-[#B23B2E]/10 text-[#B23B2E]"
+                                    : "bg-emerald-500/10 text-emerald-600"
+                                : "bg-muted text-muted-foreground",
+                        )}
+                    >
+                        {succeededCount}/{total}
                     </span>
                     <ChevronDownIcon
                         className={cn(
@@ -115,7 +144,7 @@ export function BackgroundTasksPanel() {
                 </button>
 
                 {open ? (
-                    <div className="max-h-64 overflow-y-auto border-t border-[#ECECEA] px-3 py-2">
+                    <div className="max-h-64 overflow-y-auto border-t border-t-[#ECECEA] px-4 pb-2.5 pt-2">
                         {error ? (
                             <p className="px-1 py-2 text-xs text-[#B23B2E]">
                                 {error}
