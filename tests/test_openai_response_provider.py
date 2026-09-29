@@ -414,3 +414,39 @@ def test_a_failure_message_without_content_is_just_the_reason():
 
     assert error.message == "stream went quiet"
     assert error.content == ""
+
+
+def test_tool_result_with_image_keeps_the_image():
+    """A tool that read an image must hand it to the model, not drop it.
+
+    `function_call_output.output` accepts text/image parts, so the image
+    rides along instead of leaving the model blind to what the tool saw.
+    """
+    provider = OpenAIResponsesProvider(api_key="k")
+    items = provider._format_input([
+        {"role": "tool", "content": "Image loaded: shot.png",
+         "tool_call_id": "call_1", "images": ["QUJD"]},
+    ])
+
+    assert items == [{
+        "type": "function_call_output",
+        "call_id": "call_1",
+        "output": [
+            {"type": "input_text", "text": "Image loaded: shot.png"},
+            {"type": "input_image",
+             "image_url": "data:image/png;base64,QUJD"},
+        ],
+    }]
+
+
+def test_tool_result_without_image_stays_a_plain_string():
+    provider = OpenAIResponsesProvider(api_key="k")
+    items = provider._format_input([
+        {"role": "tool", "content": "done", "tool_call_id": "call_1"},
+    ])
+
+    assert items == [{
+        "type": "function_call_output",
+        "call_id": "call_1",
+        "output": "done",
+    }]

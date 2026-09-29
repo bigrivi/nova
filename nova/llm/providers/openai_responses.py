@@ -276,10 +276,22 @@ class OpenAIResponsesProvider(HttpProvider):
 
             # Tool result -> function_call_output
             if role == "tool" and tool_call_id:
+                # `output` takes text/image/file parts, so a tool that read an
+                # image can show it to the model. Passing text alone left the
+                # model blind to everything the tool had just looked at.
+                if images:
+                    output: object = [
+                        {"type": "input_text", "text": content or ""},
+                        *({"type": "input_image",
+                           "image_url": f"data:image/png;base64,{img}"}
+                          for img in images),
+                    ]
+                else:
+                    output = content or ""
                 result.append({
                     "type": "function_call_output",
                     "call_id": tool_call_id,
-                    "output": content or "",
+                    "output": output,
                 })
                 continue
 

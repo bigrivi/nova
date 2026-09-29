@@ -183,3 +183,62 @@ async def test_chat_stream_length_with_partial_answer_is_done(monkeypatch):
     done = collected[-1]
     assert isinstance(done, Done)
     assert done.content == "partial"
+
+
+def test_tool_result_with_image_keeps_its_role_and_call_id():
+    """An image from a tool must not rewrite the tool message into a user turn.
+
+    Rewriting the role orphans the assistant's tool_call, and providers reject
+    the entire request with a 400. The image travels in a following user turn
+    instead, because only user content may hold image parts.
+    """
+    provider = OpenAIProvider(api_key="k")
+    formatted = provider._format_messages([
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"id": "call_1", "type": "function",
+                            "function": {"name": "read_image",
+                                         "arguments": "{}"}}],
+        },
+        {"role": "tool", "content": "Image loaded: shot.png",
+         "tool_call_id": "call_1", "images": ["QUJD"]},
+    ])
+
+    assert [m["role"] for m in formatted] == ["assistant", "tool", "user"]
+    tool_msg, image_msg = formatted[1], formatted[2]
+    assert tool_msg["tool_call_id"] == "call_1"
+    assert tool_msg["name"] == "read_image"
+    assert tool_msg["content"] == "Image loaded: shot.png"
+    assert image_msg["content"] == [
+        {"type": "image_url",
+         "image_url": {"url": "data:image/png;base64,QUJD"}}
+    ]
+    # Nothing may carry a tool_call_id without being a tool turn.
+    assert all(
+        not m.get("tool_call_id") for m in formatted if m["role"] == "user"
+    )
+
+
+def test_user_message_with_image_keeps_single_turn():
+    provider = OpenAIProvider(api_key="k")
+    formatted = provider._format_messages([
+        {"role": "user", "content": "look", "images": ["QUJD"]},
+    ])
+
+    assert len(formatted) == 1
+    assert formatted[0]["role"] == "user"
+    assert [c["type"] for c in formatted[0]["content"]] == ["text", "image_url"]
+
+
+def test_message_without_images_is_untouched():
+    provider = OpenAIProvider(api_key="k")
+    formatted = provider._format_messages([
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "yo"},
+    ])
+
+    assert formatted == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "yo", "reasoning_content": ""},
+    ]

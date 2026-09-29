@@ -309,15 +309,27 @@ class OpenAIProvider(HttpProvider):
                 continue
 
             if images:
-                content_list = [{"type": "text", "text": content or ""}]
-                for img in images:
-                    content_list.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{img}"}
-                    })
-                m = {"role": "user", "content": content_list}
+                image_parts = [
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/png;base64,{img}"}}
+                    for img in images
+                ]
+                if role == "user":
+                    m = {"role": "user",
+                         "content": [{"type": "text", "text": content or ""},
+                                     *image_parts]}
+                    trailing = []
+                else:
+                    # Only a user turn may carry image parts. Rewriting a tool
+                    # message's role orphans the assistant's tool_call and the
+                    # provider rejects the whole request with 400. Answer the
+                    # call with its text, then hand the image over in a user
+                    # turn of its own.
+                    m = {"role": role, "content": content or ""}
+                    trailing = [{"role": "user", "content": image_parts}]
             else:
                 m = {"role": role, "content": content or ""}
+                trailing = []
 
             if role == "assistant":
                 rc = getattr(msg, self._reasoning_field, None) or get_attr(
@@ -354,6 +366,7 @@ class OpenAIProvider(HttpProvider):
                         m["name"] = tool_name
 
             result.append(m)
+            result.extend(trailing)
         return result
 
     def _prepare_request(
