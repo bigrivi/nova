@@ -34,6 +34,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useMacHiddenTitlebar } from "@/lib/desktop-chrome";
 import { cn } from "@/lib/utils";
 import type { NovaProject, NovaThreadSummary } from "@/types/nova";
 
@@ -88,6 +89,7 @@ export type ThreadSidebarProps = {
     projects: NovaProject[];
     activeThreadId?: string;
     runningThreadId?: string;
+    appVersion: string | null;
     dispatch: SidebarDispatch;
 };
 
@@ -569,6 +571,8 @@ export const ThreadSidebar = memo(function ThreadSidebar(
 ) {
     const { dispatch } = props;
     const { t } = useTranslation();
+    // macOS desktop only: native traffic lights overlay the sidebar top.
+    const macHiddenTitlebar = useMacHiddenTitlebar();
     const groups = useMemo(
         () => groupThreads(props.threads, props.projects),
         [props.threads, props.projects],
@@ -702,14 +706,38 @@ export const ThreadSidebar = memo(function ThreadSidebar(
         return t(`sidebar.date.${dateBucket(thread.updated_at)}`);
     };
 
+    // WorkBuddy-style header on macOS hidden-titlebar: the native traffic
+    // lights occupy the left of the top band, so the toolbar actions live
+    // on the same row at the right; elsewhere the header is unchanged.
+    const headerActions = (
+        <div className="flex gap-0.5">
+            <button type="button" title={t("sidebar.searchTitle")} onClick={() => setSearchOpen(true)} className="flex size-7 items-center justify-center rounded-[7px] text-[#6E6A60] hover:bg-[#EFEDE6] hover:text-[#201F1C]"><SearchIcon className="size-4" /></button>
+            <button type="button" aria-label={t("app.collapseSidebar")} onClick={dispatch.collapseSidebar} className="flex size-7 items-center justify-center rounded-[7px] text-[#6E6A60] hover:bg-[#EFEDE6] hover:text-[#201F1C]"><PanelLeftCloseIcon className="size-4" /></button>
+        </div>
+    );
+
     return (
         <aside className="flex h-screen w-(--sidebar-width) shrink-0 flex-col border-r border-[#E4E1D9] bg-[#FBFAF7] text-[#201F1C]">
-            <div className="flex items-center justify-between px-3.5 pb-2.5 pt-4">
-                <span className="text-[15px] font-bold tracking-[-0.01em]">Nova</span>
-                <div className="flex gap-0.5">
-                    <button type="button" title={t("sidebar.searchTitle")} onClick={() => setSearchOpen(true)} className="flex size-7 items-center justify-center rounded-[7px] text-[#6E6A60] hover:bg-[#EFEDE6] hover:text-[#201F1C]"><SearchIcon className="size-4" /></button>
-                    <button type="button" aria-label={t("app.collapseSidebar")} onClick={dispatch.collapseSidebar} className="flex size-7 items-center justify-center rounded-[7px] text-[#6E6A60] hover:bg-[#EFEDE6] hover:text-[#201F1C]"><PanelLeftCloseIcon className="size-4" /></button>
+            {macHiddenTitlebar ? (
+                <div className="pywebview-drag-region flex h-10 w-full shrink-0 items-center justify-end pl-[76px] pr-2.5">
+                    {headerActions}
                 </div>
+            ) : null}
+            <div
+                className={cn(
+                    "flex items-center justify-between px-3.5 pb-2.5",
+                    macHiddenTitlebar ? "pt-0" : "pt-4",
+                )}
+            >
+                <div className="flex min-w-0 items-baseline gap-1.5">
+                    <span className="text-[15px] font-bold tracking-[-0.01em]">
+                        Nova
+                    </span>
+                    <span className="truncate text-xs text-[#9C978A]">
+                        {props.appVersion ?? ""}
+                    </span>
+                </div>
+                {macHiddenTitlebar ? null : headerActions}
             </div>
             <div className="px-3 pb-2.5">
                 <button type="button" onClick={dispatch.newThread} disabled={false} className="flex w-full items-center gap-2 rounded-[9px] border border-[#D6D2C7] bg-white px-3 py-2 text-[13.5px] font-medium hover:border-[#1D5FA8] hover:text-[#1D5FA8] disabled:opacity-50"><PlusIcon className="size-[15px]" />{t("threadList.newChat")}</button>

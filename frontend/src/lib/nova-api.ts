@@ -185,6 +185,25 @@ export function sessionEventsUrl(): string {
     return buildUrl("/api/events");
 }
 
+export type HealthStatus = {
+    status: string;
+    service: string;
+    mode: string;
+    version?: string | null;
+};
+
+/** Backend version for the sidebar badge; null when unreachable. */
+export async function fetchAppVersion(): Promise<string | null> {
+    try {
+        const payload = await parseJson<HealthStatus>(
+            await apiFetch("/health"),
+        );
+        return payload.version ?? null;
+    } catch {
+        return null;
+    }
+}
+
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
     const authHeader = getAuthHeader();
     let headers: HeadersInit | undefined = init?.headers;

@@ -5,6 +5,7 @@ from typing import Optional
 
 import webview
 
+from nova.desktop.macos_chrome import wire_hidden_titlebar
 from nova.desktop.server_thread import ServerThread
 from nova.settings import Settings, configure_logging
 
@@ -43,6 +44,7 @@ def run_desktop(settings: Optional[Settings] = None, dev: bool = False) -> None:
         print(f"[desktop] Backend ready at {url}")
 
     window = webview.create_window("Nova", url=url, width=1200, height=800, min_size=(800, 600), resizable=True, text_select=True)
+    wire_hidden_titlebar()
 
     try:
         webview.start()

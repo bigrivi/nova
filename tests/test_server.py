@@ -15,6 +15,7 @@ from nova.db.database import close_db, init_db
 from nova.memory.models import MemoryWriteRequest
 from nova.memory.service import MemoryService
 import nova.server.app as server_app
+from nova import __version__ as nova_version
 from nova.server import create_app, run_server
 from nova.server.auth import check_basic_auth, get_configured_credentials
 from nova.server.request_registry import RequestRegistry
@@ -118,7 +119,12 @@ def test_health_endpoint(monkeypatch):
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "nova", "mode": "server"}
+    assert response.json() == {
+        "status": "ok",
+        "service": "nova",
+        "mode": "server",
+        "version": nova_version,
+    }
 
 
 def test_session_pinned_endpoint_and_summary(monkeypatch):

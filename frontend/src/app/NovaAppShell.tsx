@@ -1,11 +1,11 @@
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { LoginDialog } from "../components/auth/login-dialog";
 import { resolveModelEffort } from "../components/assistant-ui/elements/model-selector";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { agentDisplayName } from "../lib/agent-display";
-import { setSessionRoute, updateAgent } from "../lib/nova-api";
+import { fetchAppVersion, setSessionRoute, updateAgent } from "../lib/nova-api";
 import { useReasoningEffortStore } from "../stores/reasoning-effort-store";
 import { NovaMainPanel } from "./components/NovaMainPanel";
 import { NovaSidebarPanel } from "./components/NovaSidebarPanel";
@@ -21,6 +21,19 @@ export function NovaAppShell() {
     const viewport = useViewport();
     const modelConfig = useModelConfig();
     const agentSelection = useAgentSelection();
+    // Backend version for the WorkBuddy-style sidebar badge.
+    const [appVersion, setAppVersion] = useState<string | null>(null);
+    useEffect(() => {
+        let live = true;
+        fetchAppVersion()
+            .then((version) => {
+                if (live) setAppVersion(version);
+            })
+            .catch(() => {});
+        return () => {
+            live = false;
+        };
+    }, []);
     const reasoningEffort = useReasoningEffortStore((state) => state.effort);
     const setReasoningEffort = useReasoningEffortStore(
         (state) => state.setEffort,
@@ -194,6 +207,7 @@ export function NovaAppShell() {
                         agents={agentSelection.agents}
                         models={modelConfig.models}
                         providers={modelConfig.providers}
+                        appVersion={appVersion}
                         onCollapse={() => viewport.setIsSidebarCollapsed(true)}
                         onNewThread={() => {
                             conversations.switchToDraftThread();
@@ -253,6 +267,7 @@ export function NovaAppShell() {
                         sessionProjectName={sessionProjectName}
                         assistantName={assistantName}
                         assistantAgentKey={assistantAgentKey}
+                        threadTitle={activeThread?.title ?? null}
                     />
                 </div>
 

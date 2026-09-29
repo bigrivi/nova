@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { Thread } from "../../components/assistant-ui/thread";
 import { Button } from "../../components/ui/button";
+import { useMacHiddenTitlebar } from "../../lib/desktop-chrome";
 import type { NovaAgent, NovaModelRecord } from "../../types/nova";
 import type { ModelOption } from "../../components/assistant-ui/elements/model-selector";
 
@@ -29,6 +30,7 @@ export interface NovaMainPanelProps {
     sessionProjectName: string | null;
     assistantName: string;
     assistantAgentKey: string | null;
+    threadTitle: string | null;
 }
 
 /**
@@ -58,17 +60,39 @@ export function NovaMainPanel({
     sessionProjectName,
     assistantName,
     assistantAgentKey,
+    threadTitle,
 }: NovaMainPanelProps) {
     const { t } = useTranslation();
+    // macOS desktop only: keep the expand button clear of traffic lights.
+    const macHiddenTitlebar = useMacHiddenTitlebar();
+    // WorkBuddy-style main titlebar: conversation title plus drag space.
+    const mainTitle = isNewChat ? t("threadList.newChat") : (threadTitle ?? "");
 
     return (
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+            {macHiddenTitlebar ? (
+                <div
+                    className={
+                        sidebarCollapsed
+                            ? "pywebview-drag-region flex h-10 w-full shrink-0 items-center gap-2 pl-[132px] pr-4"
+                            : "pywebview-drag-region flex h-10 w-full shrink-0 items-center gap-2 px-4"
+                    }
+                >
+                    <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.01em]">
+                        {mainTitle}
+                    </h1>
+                </div>
+            ) : null}
             {sidebarCollapsed ? (
                 <Button
                     type="button"
                     variant="outline"
                     size="icon"
-                    className="fixed left-4 top-4 z-30 rounded-full border border-[#E4E3DF] bg-white shadow-[0_8px_24px_rgba(20,20,18,0.07)]"
+                    className={
+                        macHiddenTitlebar
+                            ? "fixed left-[84px] top-0.5 z-30 rounded-full border border-[#E4E3DF] bg-white shadow-[0_8px_24px_rgba(20,20,18,0.07)]"
+                            : "fixed left-4 top-4 z-30 rounded-full border border-[#E4E3DF] bg-white shadow-[0_8px_24px_rgba(20,20,18,0.07)]"
+                    }
                     aria-label={t("app.expandSidebar")}
                     onClick={onExpandSidebar}
                 >

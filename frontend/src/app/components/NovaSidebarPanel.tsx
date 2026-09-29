@@ -23,6 +23,7 @@ export interface NovaSidebarPanelProps {
     agents: NovaAgent[];
     models: NovaModelRecord[];
     providers: NovaProviderRecord[];
+    appVersion: string | null;
     onCollapse: () => void;
     onNewThread: () => void;
     onNewThreadInProject: (projectId: string) => void;
@@ -66,6 +67,7 @@ export function NovaSidebarPanel(props: NovaSidebarPanelProps) {
         agents,
         models,
         providers,
+        appVersion,
     } = props;
     const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
 
@@ -156,6 +158,7 @@ export function NovaSidebarPanel(props: NovaSidebarPanelProps) {
                     projects={projects}
                     activeThreadId={activeThreadListId}
                     runningThreadId={isRunning ? activeThreadListId : undefined}
+                    appVersion={appVersion}
                     dispatch={dispatch}
                 />
             </div>
