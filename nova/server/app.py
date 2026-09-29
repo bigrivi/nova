@@ -24,6 +24,7 @@ from nova.server.routers import (
     memory,
     projects,
     sessions,
+    speech,
     tasks,
 )
 from nova.server.session_event_bus import SessionEventBus
@@ -125,6 +126,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         stream_buffer=stream_buffer,
         on_title_updated=session_event_bus.publish_title,
     )
+    from nova.speech.service import SpeechService
+
+    app.state.speech_service = SpeechService(settings)
     _wire_subagent_autowake(app)
 
     for module in (
@@ -138,6 +142,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         events,
         memory,
         tasks,
+        speech,
     ):
         app.include_router(module.router)
 

@@ -380,6 +380,80 @@ export async function getSessionRoute(
     }
 }
 
+export type SessionContextUsage = {
+    used: number;
+    limit: number;
+    percent: number;
+    message_count: number;
+};
+
+/**
+ * Read a session's context-window usage, computed on demand from its stored
+ * messages. Null when unreachable; the caller keeps whatever it showed.
+ */
+export async function fetchSessionContext(
+    sessionId: string,
+): Promise<SessionContextUsage | null> {
+    try {
+        const response = await apiFetch(
+            `/api/sessions/${encodeURIComponent(sessionId)}/context`,
+        );
+        if (!response.ok) {
+            return null;
+        }
+        return (await response.json()) as SessionContextUsage;
+    } catch {
+        return null;
+    }
+}
+
+export type SpeechStatus = {
+    enabled: boolean;
+    reason?: string | null;
+    provider?: string | null;
+    model?: string | null;
+    recording?: boolean;
+    /** Epoch ms the in-flight take started, when the backend is recording. */
+    recording_since_ms?: number | null;
+};
+
+/** Whether the composer microphone button should show. Never throws. */
+export async function getSpeechStatus(): Promise<SpeechStatus> {
+    try {
+        const response = await apiFetch("/api/speech/status");
+        if (!response.ok) {
+            return { enabled: false };
+        }
+        return (await response.json()) as SpeechStatus;
+    } catch {
+        return { enabled: false };
+    }
+}
+
+/** Begin a native microphone recording. Throws with the server message. */
+export async function startSpeechRecording(): Promise<void> {
+    const response = await apiFetch("/api/speech/start", { method: "POST" });
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+}
+
+/** Stop recording and return the transcript (possibly empty). */
+export async function stopSpeechRecording(): Promise<string> {
+    const payload = await parseJson<{ text: string }>(
+        await apiFetch("/api/speech/stop", { method: "POST" }),
+    );
+    return payload.text ?? "";
+}
+
+/** Abandon the take in progress; the audio is discarded, not transcribed. */
+export async function cancelSpeechRecording(): Promise<void> {
+    const response = await apiFetch("/api/speech/cancel", { method: "POST" });
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+}
+
 /**
  * Record a session's model and reasoning level.
  *

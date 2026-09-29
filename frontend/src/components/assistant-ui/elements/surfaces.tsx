@@ -40,7 +40,7 @@ export const labelSwapOut =
 export const collapsePanel =
   "h-(--collapsible-panel-height) overflow-hidden transition-[height] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] data-[ending-style]:h-0 data-[starting-style]:h-0 motion-reduce:transition-none";
 
-export const live = "text-blue-500 dark:text-blue-400";
+export const live = "text-brand";
 
 export const mono = "font-mono text-[11px] tracking-tight";
 

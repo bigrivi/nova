@@ -157,7 +157,7 @@ function ToolFallbackTrigger({
         <CollapsibleTrigger
             data-slot="tool-fallback-trigger"
             className={cn(
-                "aui-tool-fallback-trigger group/trigger flex w-full cursor-pointer items-center gap-[9px] bg-white px-3 py-[10px] text-left hover:bg-[#FAFAF8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1D5FA8]/20 focus-visible:ring-inset motion-reduce:transition-none",
+                "aui-tool-fallback-trigger group/trigger flex w-full cursor-pointer items-center gap-[9px] bg-card px-3 py-[10px] text-left hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/20 focus-visible:ring-inset motion-reduce:transition-none",
                 className,
             )}
             {...props}
@@ -169,8 +169,8 @@ function ToolFallbackTrigger({
                     "flex size-[15px] shrink-0 items-center justify-center rounded-full",
                     isRunning && "bg-[#F7EEDD] text-[#A5750F]",
                     !isRunning && !isCancelled && !errored && "bg-[#E5F3EB] text-[#157A4A]",
-                    isCancelled && "bg-[#F0F0EE] text-[#9C978A]",
-                    errored && "bg-[#FBEDEA] text-[#B23B2E]",
+                    isCancelled && "bg-muted text-weak",
+                    errored && "bg-danger-soft text-danger",
                     statusType === "requires-action" && !errored && "bg-[#F7EEDD] text-[#A5750F]",
                 )}
             >
@@ -193,13 +193,13 @@ function ToolFallbackTrigger({
                     isCancelled && "line-through opacity-60",
                 )}
             >
-                <span className="shrink-0 font-mono text-[12.5px] font-medium text-[#1C1B18]">
+                <span className="shrink-0 font-mono text-[12.5px] font-medium text-foreground">
                     {toolName}
                 </span>
                 {paramSummary ? (
                     <span
                         title={paramSummary}
-                        className="truncate font-mono text-[12px] font-normal text-[#9C978A]"
+                        className="truncate font-mono text-[12px] font-normal text-weak"
                     >
                         {paramSummary}
                     </span>
@@ -208,7 +208,7 @@ function ToolFallbackTrigger({
             {backgroundTaskLabel ? (
                 <span
                     data-slot="tool-fallback-background-task"
-                    className="flex shrink-0 items-center gap-1 rounded-full bg-[#EAF2FA] px-2 py-1 font-sans text-[10px] font-medium text-[#1D5FA8]"
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-brand-soft px-2 py-1 font-sans text-[10px] font-medium text-brand"
                     title={backgroundTaskStatus ?? backgroundTaskLabel}
                 >
                     <Clock3Icon className="size-3" aria-hidden="true" />
@@ -223,7 +223,7 @@ function ToolFallbackTrigger({
             <ChevronDownIcon
                 data-slot="tool-fallback-trigger-chevron"
                 className={cn(
-                    "aui-tool-fallback-trigger-chevron size-[14px] shrink-0 text-[#9C978A]",
+                    "aui-tool-fallback-trigger-chevron size-[14px] shrink-0 text-weak",
                     "transition-transform duration-(--animation-duration) ease-out motion-reduce:transition-none",
                     "group-data-[state=closed]/trigger:-rotate-90",
                     "group-data-[state=open]/trigger:rotate-0",
@@ -255,7 +255,7 @@ function ToolFallbackContent({
             )}
             {...props}
         >
-            <div className="flex min-w-0 max-w-full flex-col gap-2 border-t border-[#E4E1D9] bg-[#FBFAF7] px-[14px] py-3 pl-6 font-mono text-[12px] leading-[1.7] text-[#6E6A60] min-[520px]:pl-10">
+            <div className="flex min-w-0 max-w-full flex-col gap-2 border-t border-border bg-muted/40 px-[14px] py-3 pl-6 font-mono text-[12px] leading-[1.7] text-weak-strong min-[520px]:pl-10">
                 {children}
             </div>
         </CollapsibleContent>
@@ -299,16 +299,16 @@ function ToolFallbackResult({
             <div
                 data-slot="tool-fallback-result"
                 className={cn(
-                    "aui-tool-fallback-result border-t border-dashed border-[#E4E1D9] pt-2",
+                    "aui-tool-fallback-result border-t border-dashed border-border pt-2",
                     className,
                 )}
                 {...props}
             >
-                <p className="font-semibold text-[#1C1B18]">
+                <p className="font-semibold text-foreground">
                     {t("tools.backgroundTask")}
                 </p>
                 {backgroundTask.message ? (
-                    <p className="mt-1 whitespace-pre-wrap break-words font-sans text-[#6E6A60]">
+                    <p className="mt-1 whitespace-pre-wrap break-words font-sans text-weak-strong">
                         {backgroundTask.message}
                     </p>
                 ) : null}
@@ -324,10 +324,10 @@ function ToolFallbackResult({
     return (
         <div
             data-slot="tool-fallback-result"
-            className={cn("aui-tool-fallback-result border-t border-dashed border-[#E4E1D9] pt-2", className)}
+            className={cn("aui-tool-fallback-result border-t border-dashed border-border pt-2", className)}
             {...props}
         >
-            <p className="aui-tool-fallback-result-header font-semibold text-[#1C1B18]">
+            <p className="aui-tool-fallback-result-header font-semibold text-foreground">
                 {t("tools.result")}
             </p>
             <pre className="aui-tool-fallback-result-content whitespace-pre-wrap break-words">
@@ -364,10 +364,10 @@ function ToolFallbackError({
 
     return (
         <div data-slot="tool-fallback-error" className={cn("aui-tool-fallback-error", className)} {...props}>
-            <p className="aui-tool-fallback-error-header font-semibold text-[#B23B2E]">
+            <p className="aui-tool-fallback-error-header font-semibold text-danger">
                 {headerText}
             </p>
-            <p className="aui-tool-fallback-error-reason whitespace-pre-wrap break-words text-[#6E6A60]">
+            <p className="aui-tool-fallback-error-reason whitespace-pre-wrap break-words text-weak-strong">
                 {errorText}
             </p>
         </div>

@@ -206,8 +206,8 @@ const ThreadRow = memo(function ThreadRow({
             className={cn(
                 "group/thread flex min-h-8 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13.5px] transition-colors",
                 selected
-                    ? "bg-[#EAF1F9] font-semibold text-[#1D5FA8]"
-                    : "text-[#201F1C] hover:bg-[#F0EEE7]",
+                    ? "bg-brand-soft font-semibold text-brand"
+                    : "text-weak hover:bg-muted/60 hover:text-foreground",
             )}
         >
             <button
@@ -220,7 +220,7 @@ const ThreadRow = memo(function ThreadRow({
                 <Icon
                     className={cn(
                         "size-[15px] shrink-0",
-                        thread.pinned ? "text-[#B7791F]" : selected ? "text-[#1D5FA8]" : "text-[#9C978A]",
+                        thread.pinned ? "text-pin" : selected ? "text-brand" : "text-weak",
                     )}
                 />
                 {renaming ? (
@@ -237,7 +237,7 @@ const ThreadRow = memo(function ThreadRow({
                                 setRenaming(false);
                             }
                         }}
-                        className="min-w-0 flex-1 rounded-[5px] border border-[#1D5FA8] bg-white px-1.5 py-0.5 text-[13.5px] font-normal text-[#201F1C] outline-none"
+                        className="min-w-0 flex-1 rounded-[5px] border border-brand bg-card px-1.5 py-0.5 text-[13.5px] font-normal text-foreground outline-none"
                     />
                 ) : (
                     <HoverScrollText text={thread.title} />
@@ -245,7 +245,7 @@ const ThreadRow = memo(function ThreadRow({
                 {running ? (
                     <Loader2Icon
                         aria-label={t("sidebar.running")}
-                        className="size-3.5 shrink-0 animate-spin text-[#1D5FA8] motion-reduce:animate-none"
+                        className="size-3.5 shrink-0 animate-spin text-brand motion-reduce:animate-none"
                     />
                 ) : null}
             </button>
@@ -264,7 +264,7 @@ const ThreadRow = memo(function ThreadRow({
                     <DropdownMenuTrigger asChild>
                         <button
                             type="button"
-                            className="thread-more flex size-[22px] shrink-0 items-center justify-center rounded-md text-[#9C978A] opacity-0 hover:bg-[#E5E2D9] hover:text-[#201F1C] focus-visible:opacity-100 data-[state=open]:opacity-100 group-hover/thread:opacity-100"
+                            className="thread-more flex size-[22px] shrink-0 items-center justify-center rounded-md text-weak opacity-0 hover:bg-muted/60 hover:text-foreground focus-visible:opacity-100 data-[state=open]:opacity-100 group-hover/thread:opacity-100"
                             aria-label={t("threadList.moreActions")}
                         >
                             <MoreHorizontalIcon className="size-4" />
@@ -275,7 +275,7 @@ const ThreadRow = memo(function ThreadRow({
                         align="start"
                         side="right"
                         collisionPadding={12}
-                        className="w-52 border-[#E4E1D9] bg-white"
+                        className="w-52 border-border bg-card"
                         onFocusOutside={(event) => {
                             if (
                                 flyoutRef.current?.contains(
@@ -314,7 +314,7 @@ const ThreadRow = memo(function ThreadRow({
                                 showToast(t(thread.pinned ? "sidebar.unpinnedToast" : "sidebar.pinnedToast"));
                             }}
                         >
-                            <PinIcon className="size-4 text-[#B7791F]" />
+                            <PinIcon className="size-4 text-pin" />
                             {t(thread.pinned ? "sidebar.unpin" : "sidebar.pin")}
                         </DropdownMenuItem>
                         <DropdownMenuItem
@@ -335,15 +335,15 @@ const ThreadRow = memo(function ThreadRow({
                                 {t("sidebar.moveToProject")}
                             </span>
                             {currentProject ? (
-                                <span className="shrink-0 text-xs text-[#9C978A]">
+                                <span className="shrink-0 text-xs text-weak">
                                     {currentProject.name}
                                 </span>
                             ) : null}
-                            <ChevronRightIcon className="size-3.5 shrink-0 text-[#9C978A]" />
+                            <ChevronRightIcon className="size-3.5 shrink-0 text-weak" />
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
-                            className="text-[#B23B2E] data-highlighted:bg-[#FBEDEA] data-highlighted:text-[#B23B2E]"
+                            className="text-danger data-highlighted:bg-danger-soft data-highlighted:text-danger"
                             onSelect={() => setConfirmDeleteOpen(true)}
                         >
                             <Trash2Icon className="size-4" />
@@ -438,10 +438,10 @@ function ProjectRow({
         <div className="group/project mb-0.5">
             <div
                 className={cn(
-                    "flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors",
+                    "flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-(--sidebar-project-weight) transition-colors",
                     highlighted
-                        ? "bg-[#EAF1F9] text-[#1D5FA8]"
-                        : "text-[#201F1C] hover:bg-[#F0EEE7]",
+                        ? "bg-brand-soft text-brand"
+                        : "text-foreground hover:bg-muted/60",
                 )}
             >
                 <button
@@ -452,11 +452,11 @@ function ProjectRow({
                 >
                     <ChevronRightIcon
                         className={cn(
-                            "size-3 shrink-0 text-[#9C978A] transition-transform",
+                            "size-3 shrink-0 text-weak transition-transform",
                             open && "rotate-90",
                         )}
                     />
-                    <FolderIcon className="size-[15px] shrink-0 text-[#1D5FA8]" />
+                    <FolderIcon className="size-[15px] shrink-0 text-brand" />
                     {renaming ? (
                         <input
                             autoFocus
@@ -473,17 +473,17 @@ function ProjectRow({
                                     setRenaming(false);
                                 }
                             }}
-                            className="min-w-0 flex-1 rounded-[5px] border border-[#1D5FA8] bg-white px-1.5 py-0.5 text-[13px] font-normal text-[#201F1C] outline-none"
+                            className="min-w-0 flex-1 rounded-[5px] border border-brand bg-card px-1.5 py-0.5 text-[13px] font-normal text-foreground outline-none"
                         />
                     ) : (
                         <span className="truncate">{project.name}</span>
                     )}
                     {project.qualifier ? (
-                        <span className="truncate text-[11px] font-normal text-[#9C978A]">
+                        <span className="truncate text-[11px] font-normal text-weak-strong">
                             {project.qualifier}
                         </span>
                     ) : null}
-                    <span className="ml-auto shrink-0 text-[11px] font-medium text-[#9C978A]">
+                    <span className="ml-auto shrink-0 text-[11px] font-medium text-weak-strong">
                         {project.threads.length}
                     </span>
                 </button>
@@ -498,7 +498,7 @@ function ProjectRow({
                             }
                             title={t("sidebar.newChatInProject")}
                             aria-label={t("sidebar.newChatInProject")}
-                            className="project-add flex size-[22px] shrink-0 items-center justify-center rounded-md text-[#9C978A] opacity-0 hover:bg-[#E5E2D9] hover:text-[#201F1C] focus-visible:opacity-100 group-hover/project:opacity-100 disabled:cursor-not-allowed"
+                            className="project-add flex size-[22px] shrink-0 items-center justify-center rounded-md text-weak opacity-0 hover:bg-muted/60 hover:text-foreground focus-visible:opacity-100 group-hover/project:opacity-100 disabled:cursor-not-allowed"
                         >
                             <PlusIcon className="size-3.5" />
                         </button>
@@ -510,7 +510,7 @@ function ProjectRow({
                             <DropdownMenuTrigger asChild>
                                 <button
                                     type="button"
-                                    className="project-more flex size-[22px] shrink-0 items-center justify-center rounded-md text-[#9C978A] opacity-0 hover:bg-[#E5E2D9] hover:text-[#201F1C] focus-visible:opacity-100 data-[state=open]:opacity-100 group-hover/project:opacity-100"
+                                    className="project-more flex size-[22px] shrink-0 items-center justify-center rounded-md text-weak opacity-0 hover:bg-muted/60 hover:text-foreground focus-visible:opacity-100 data-[state=open]:opacity-100 group-hover/project:opacity-100"
                                     aria-label={t("sidebar.projectActions")}
                                 >
                                     <MoreHorizontalIcon className="size-4" />
@@ -520,7 +520,7 @@ function ProjectRow({
                                 align="start"
                                 side="right"
                                 collisionPadding={12}
-                                className="w-48 border-[#E4E1D9] bg-white"
+                                className="w-48 border-border bg-card"
                             >
                                 <DropdownMenuItem
                                     onSelect={() => setRenaming(true)}
@@ -530,7 +530,7 @@ function ProjectRow({
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
-                                    className="text-[#B23B2E] data-highlighted:bg-[#FBEDEA] data-highlighted:text-[#B23B2E]"
+                                    className="text-danger data-highlighted:bg-danger-soft data-highlighted:text-danger"
                                     onSelect={() => setConfirmDeleteOpen(true)}
                                 >
                                     <Trash2Icon className="size-4" />
@@ -542,10 +542,10 @@ function ProjectRow({
                 ) : null}
             </div>
             {open ? (
-                <div className="ml-5 border-l border-[#E4E1D9] pl-3">
+                <div className="ml-5 border-l border-border pl-3">
                     {children}
                     {project.threads.length === 0 && project.pinnedCount > 0 ? (
-                        <div className="px-2 pb-2 pt-0.5 text-[12px] text-[#9C978A]">
+                        <div className="px-2 pb-2 pt-0.5 text-[12px] text-weak-strong">
                             {t("sidebar.projectAllPinned", {
                                 count: project.pinnedCount,
                             })}
@@ -681,7 +681,7 @@ export const ThreadSidebar = memo(function ThreadSidebar(
                     <button
                         type="button"
                         onClick={() => showMoreFor(key)}
-                        className="mt-0.5 w-full rounded-lg px-2 py-1.5 text-left text-[12.5px] text-[#9C978A] hover:bg-[#F0EEE7] hover:text-[#201F1C]"
+                        className="mt-0.5 w-full rounded-lg px-2 py-1.5 text-left text-[12.5px] text-weak-strong hover:bg-muted/60 hover:text-foreground"
                     >
                         {t("sidebar.showMore", {
                             count: Math.min(PAGE_SIZE, hidden),
@@ -711,13 +711,13 @@ export const ThreadSidebar = memo(function ThreadSidebar(
     // on the same row at the right; elsewhere the header is unchanged.
     const headerActions = (
         <div className="flex gap-0.5">
-            <button type="button" title={t("sidebar.searchTitle")} onClick={() => setSearchOpen(true)} className="flex size-7 items-center justify-center rounded-[7px] text-[#6E6A60] hover:bg-[#EFEDE6] hover:text-[#201F1C]"><SearchIcon className="size-4" /></button>
-            <button type="button" aria-label={t("app.collapseSidebar")} onClick={dispatch.collapseSidebar} className="flex size-7 items-center justify-center rounded-[7px] text-[#6E6A60] hover:bg-[#EFEDE6] hover:text-[#201F1C]"><PanelLeftCloseIcon className="size-4" /></button>
+            <button type="button" title={t("sidebar.searchTitle")} onClick={() => setSearchOpen(true)} className="flex size-7 items-center justify-center rounded-[7px] text-weak-strong hover:bg-muted/60 hover:text-foreground"><SearchIcon className="size-4" /></button>
+            <button type="button" aria-label={t("app.collapseSidebar")} onClick={dispatch.collapseSidebar} className="flex size-7 items-center justify-center rounded-[7px] text-weak-strong hover:bg-muted/60 hover:text-foreground"><PanelLeftCloseIcon className="size-4" /></button>
         </div>
     );
 
     return (
-        <aside className="flex h-screen w-(--sidebar-width) shrink-0 flex-col border-r border-[#E4E1D9] bg-[#FBFAF7] text-[#201F1C]">
+        <aside className="flex h-screen w-(--sidebar-width) shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-foreground">
             {macHiddenTitlebar ? (
                 <div className="pywebview-drag-region flex h-10 w-full shrink-0 items-center justify-end pl-[76px] pr-2.5">
                     {headerActions}
@@ -730,19 +730,19 @@ export const ThreadSidebar = memo(function ThreadSidebar(
                 )}
             >
                 <div className="flex min-w-0 items-baseline gap-1.5">
-                    <span className="text-[15px] font-bold tracking-[-0.01em]">
+                    <span className="text-(--sidebar-title-size) font-(--sidebar-title-weight) tracking-[-0.01em]">
                         Nova
                     </span>
-                    <span className="truncate text-xs text-[#9C978A]">
+                    <span className="truncate text-xs text-weak-strong">
                         {props.appVersion ?? ""}
                     </span>
                 </div>
                 {macHiddenTitlebar ? null : headerActions}
             </div>
             <div className="px-3 pb-2.5">
-                <button type="button" onClick={dispatch.newThread} disabled={false} className="flex w-full items-center gap-2 rounded-[9px] border border-[#D6D2C7] bg-white px-3 py-2 text-[13.5px] font-medium hover:border-[#1D5FA8] hover:text-[#1D5FA8] disabled:opacity-50"><PlusIcon className="size-[15px]" />{t("threadList.newChat")}</button>
+                <button type="button" onClick={dispatch.newThread} disabled={false} className="flex w-full items-center gap-2 rounded-[9px] border border-border bg-card px-3 py-2 text-[13.5px] font-medium hover:border-brand hover:text-brand disabled:opacity-50"><PlusIcon className="size-[15px]" />{t("threadList.newChat")}</button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            <div className="min-h-0 flex-1 overflow-y-auto px-(--sidebar-gutter) pb-3">
                 <Section title={t("sidebar.pinned")} collapsed={collapsedSections.has("pinned")} onToggle={() => toggleSection("pinned")} empty={groups.pinned.length === 0 ? t("sidebar.noPinned") : null}>{allRows(groups.pinned)}</Section>
                 <Section
                     title={t("sidebar.projects")}
@@ -760,7 +760,7 @@ export const ThreadSidebar = memo(function ThreadSidebar(
                             onClick={() => setCreateProjectOpen(true)}
                             title={t("sidebar.newProject")}
                             aria-label={t("sidebar.newProject")}
-                            className="section-add flex size-[22px] items-center justify-center rounded-md text-[#9C978A] hover:bg-[#E5E2D9] hover:text-[#201F1C] disabled:cursor-not-allowed"
+                            className="section-add flex size-[22px] items-center justify-center rounded-md text-weak hover:bg-muted/60 hover:text-foreground disabled:cursor-not-allowed"
                         >
                             <PlusIcon className="size-3.5" />
                         </button>
@@ -786,33 +786,33 @@ export const ThreadSidebar = memo(function ThreadSidebar(
                         if (!bucket.length) return null;
                         return (
                             <Fragment key={key}>
-                                <div className="px-2 pb-1 pt-2 text-[11px] font-semibold text-[#9C978A]">{t(`sidebar.date.${key}`)}</div>
+                                <div className="px-2 pb-1 pt-2 text-(--sidebar-date-size) font-(--sidebar-date-weight) text-weak-strong">{t(`sidebar.date.${key}`)}</div>
                                 {pagedRows(`chat:${key}`, bucket)}
                             </Fragment>
                         );
                     })}
                 </Section>
             </div>
-            <div className="border-t border-[#E4E1D9] p-2">
+            <div className="border-t border-border p-2">
                 <button
                     type="button"
                     onClick={dispatch.openSettings}
-                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13.5px] text-[#6E6A60] hover:bg-[#F0EEE7] hover:text-[#201F1C]"
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13.5px] text-weak-strong hover:bg-muted/60 hover:text-foreground"
                 >
                     <SettingsIcon className="size-4" />
                     {t("sidebar.settings")}
                 </button>
             </div>
-            {searchOpen ? <div role="dialog" aria-modal="true" className="fixed inset-0 z-[70] flex items-start justify-center bg-[rgba(28,27,24,.32)] pt-[108px]" onMouseDown={(event) => event.target === event.currentTarget && setSearchOpen(false)}>
-                <div className="flex max-h-[60vh] w-[560px] max-w-[90vw] flex-col overflow-hidden rounded-[13px] bg-white shadow-[0_24px_60px_rgba(0,0,0,.22)]">
-                    <div className="flex items-center gap-2.5 border-b border-[#E4E1D9] px-4 py-3.5"><SearchIcon className="size-[17px] text-[#9C978A]" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("sidebar.searchPlaceholder")} className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" /><kbd className="rounded border border-[#D6D2C7] px-1.5 py-0.5 font-mono text-[11px] text-[#9C978A]">Esc</kbd></div>
+            {searchOpen ? <div role="dialog" aria-modal="true" className="fixed inset-0 z-[70] flex items-start justify-center bg-black/40 pt-[108px]" onMouseDown={(event) => event.target === event.currentTarget && setSearchOpen(false)}>
+                <div className="flex max-h-[60vh] w-[560px] max-w-[90vw] flex-col overflow-hidden rounded-[13px] bg-card shadow-[0_24px_60px_rgba(0,0,0,.22)]">
+                    <div className="flex items-center gap-2.5 border-b border-border px-4 py-3.5"><SearchIcon className="size-[17px] text-weak" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("sidebar.searchPlaceholder")} className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" /><kbd className="rounded border border-border px-1.5 py-0.5 font-mono text-[11px] text-weak">Esc</kbd></div>
                     <div className="overflow-y-auto p-1.5">{searchResults.length ? searchResults.map((thread) => <button key={thread.id} type="button" onClick={() => {
                                     dispatch.selectThread(thread.id);
                                     setSearchOpen(false);
-                                }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13.5px] hover:bg-[#F0EEE7]"><MessageCircleIcon className="size-4 shrink-0 text-[#9C978A]" /><span className="min-w-0 flex-1 truncate"><HighlightedText text={thread.title} query={query.trim()} /></span><span className="shrink-0 text-[11px] text-[#9C978A]">{groupMeta(thread)}</span></button>) : <div className="px-4 py-6 text-center text-[13px] text-[#9C978A]">{t("sidebar.searchEmpty")}</div>}</div>
+                                }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13.5px] hover:bg-muted/60"><MessageCircleIcon className="size-4 shrink-0 text-weak" /><span className="min-w-0 flex-1 truncate"><HighlightedText text={thread.title} query={query.trim()} /></span><span className="shrink-0 text-[11px] text-weak">{groupMeta(thread)}</span></button>) : <div className="px-4 py-6 text-center text-[13px] text-weak">{t("sidebar.searchEmpty")}</div>}</div>
                 </div>
             </div> : null}
-            {toast ? <div className="fixed bottom-5 left-1/2 z-[80] -translate-x-1/2 rounded-full bg-[#201F1C] px-3.5 py-2 text-xs text-white">{toast}</div> : null}
+            {toast ? <div className="fixed bottom-5 left-1/2 z-[80] -translate-x-1/2 rounded-full bg-primary px-3.5 py-2 text-xs text-primary-foreground">{toast}</div> : null}
             <CreateProjectDialog
                 open={createProjectOpen}
                 onOpenChange={setCreateProjectOpen}
@@ -841,12 +841,12 @@ function Section({
 }) {
     return (
         <section className="mb-1">
-            <div className="group/section flex items-center gap-1 rounded-md px-2 pb-1 pt-3">
+            <div className="group/section flex items-center gap-1 rounded-(--sidebar-section-radius) px-2 pb-1 pt-3">
                 <button
                     type="button"
                     aria-expanded={!collapsed}
                     onClick={onToggle}
-                    className="flex min-w-0 flex-1 items-center gap-1 text-left text-[11.5px] font-semibold text-[#6E6A60] hover:text-[#201F1C]"
+                    className="flex min-w-0 flex-1 items-center gap-1 text-left text-(--sidebar-section-size) font-(--sidebar-section-weight) text-weak-strong hover:text-foreground"
                 >
                     <span>{title}</span>
                     <ChevronRightIcon
@@ -864,7 +864,7 @@ function Section({
                 ) : null}
             </div>
             {collapsed ? null : empty ? (
-                <div className="px-2 pb-2.5 pt-0.5 text-[12px] text-[#9C978A]">
+                <div className="px-2 pb-2.5 pt-0.5 text-[12px] text-weak-strong">
                     {empty}
                 </div>
             ) : (

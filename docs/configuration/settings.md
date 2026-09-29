@@ -138,13 +138,14 @@ cd frontend && npm run dev -- --host
 
 ## Config File Shape
 
-`~/.nova/config.json` is the only file `Settings.load_config` reads. The loader understands exactly four top-level keys:
+`~/.nova/config.json` is the only file `Settings.load_config` reads. The loader understands exactly five top-level keys:
 
 ```json
 {
   "providers": {},
   "mcp_servers": {},
   "compaction": {},
+  "transcription": {},
   "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"}
 }
 ```
@@ -152,9 +153,36 @@ cd frontend && npm run dev -- --host
 * `providers`: object mapping alias to provider config. Missing, `null`, or absent defaults to `{}`. Each entry must be an object with a `type` string. Optional fields: `name` (defaults to the alias), `options` (object, defaults to `{}`), `models` (object, defaults to `{}`). Model values that are not objects are normalized to `{"name": value}`.
 * `mcp_servers`: object mapping name to server config. Non-object values are ignored and replaced with `{}`. See `docs/advanced/mcp.md` for the stdio and HTTP shapes.
 * `compaction`: object with tuning keys. See `docs/advanced/compaction.md` for the real keys and defaults.
+* `transcription`: object configuring voice-to-text. See [Voice to Text](#voice-to-text) below.
 * `server`: object with `host` (default `127.0.0.1`), `port` (default `8765`, must be 1-65535), `log_level` (default `INFO`), and optional `auth_user` / `auth_password` for LAN auth (see above). A non-object `server` or an invalid port raises `ValueError` at startup. `port` also accepts a numeric string.
 
 All other top-level keys are ignored.
+
+## Voice to Text
+
+The composer's microphone button appears only when `transcription` is configured. Recording happens in the Nova process through the OS audio API (AVAudioRecorder on macOS, winmm on Windows), then the audio is sent to an OpenAI-compatible `/audio/transcriptions` endpoint using the key from this file. The webview cannot capture audio itself, so there is no browser-microphone permission to grant.
+
+```json
+{
+  "transcription": {
+    "provider": "groq",
+    "api_key": "gsk-...",
+    "base_url": "https://api.groq.com/openai/v1",
+    "model": "whisper-large-v3-turbo",
+    "language": "zh"
+  }
+}
+```
+
+| Key | Default | Notes |
+| --- | --- | --- |
+| `api_key` | none | Required. Falls back to the `GROQ_API_KEY` environment variable; the file wins. Without either, voice input stays hidden. |
+| `provider` | `groq` | Label only, reported by `GET /api/speech/status`. |
+| `base_url` | `https://api.groq.com/openai/v1` | Any OpenAI-compatible base URL works. |
+| `model` | `whisper-large-v3-turbo` | Whisper model name. |
+| `language` | `zh` | ISO 639-1 code such as `zh` or `en`. |
+
+Takes are capped at 24 MB and a silent take costs no provider call. On Linux, `/api/speech/status` reports the microphone as unavailable and the button stays hidden. The key never leaves the server: the frontend only calls `/api/speech/status`, `/api/speech/start`, `/api/speech/stop`, and `/api/speech/cancel` (discards the audio without a provider call). `/api/speech/status` carries `recording` and `recording_since_ms`, so a window that reloads mid-take resumes the elapsed-time readout instead of showing a conflicting "already in progress" error.
 
 ### `model` and `model_provider` are not read
 

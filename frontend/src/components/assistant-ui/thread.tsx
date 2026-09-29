@@ -15,6 +15,7 @@ import { ThreadMessage } from "./thread-message";
 import { ThreadScrollToBottom } from "./thread-scroll-to-bottom";
 import { ThreadStickyComposer } from "./thread-sticky-composer";
 import type { ThreadComposerContextBarProps } from "./thread-sticky-composer";
+import type { ContextUsage } from "../../stores/context-usage-store";
 
 type ThreadProps = {
     composerRef: RefObject<HTMLTextAreaElement | null>;
@@ -40,6 +41,8 @@ type ThreadProps = {
     contextBar: ThreadComposerContextBarProps;
     assistantName: string;
     assistantAgentKey: string | null;
+    /** Current session's context usage; null hides the composer pill. */
+    contextUsage?: ContextUsage | null;
 };
 
 export const Thread: FC<ThreadProps> = ({
@@ -50,6 +53,7 @@ export const Thread: FC<ThreadProps> = ({
     contextBar,
     assistantName,
     assistantAgentKey,
+    contextUsage = null,
 }) => {
     const zoomTargetRef = useZoom();
     const activeCall = useAskUserStore((s) => s.active);
@@ -65,6 +69,7 @@ export const Thread: FC<ThreadProps> = ({
             modelSelection={modelSelection}
             agentSelection={agentSelection}
             contextBar={contextBar}
+            contextUsage={contextUsage}
         />
     );
     const composerNodeWithDisclaimer = (
@@ -75,6 +80,7 @@ export const Thread: FC<ThreadProps> = ({
             agentSelection={agentSelection}
             contextBar={contextBar}
             showDisclaimer
+            contextUsage={contextUsage}
         />
     );
 

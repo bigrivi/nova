@@ -92,7 +92,7 @@ const DelegateToolImpl: ToolCallMessagePartComponent = ({
             />
             <ToolFallbackContent>
                 {taskPreview ? (
-                    <p className="whitespace-pre-wrap break-words font-sans text-sm font-normal leading-6 text-slate-900">
+                    <p className="whitespace-pre-wrap break-words font-sans text-sm font-normal leading-6 text-foreground">
                         {taskPreview}
                     </p>
                 ) : null}

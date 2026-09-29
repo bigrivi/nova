@@ -82,7 +82,7 @@ const CodeRunToolImpl: ToolCallMessagePartComponent = ({
                                 {description}
                             </p>
                         )}
-                        <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-lg border border-[#D6D2C7] bg-white p-3 font-mono text-sm leading-relaxed [tab-size:4]">
+                        <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-card p-3 font-mono text-sm leading-relaxed [tab-size:4]">
                             {highlightedHtml ? (
                                 <code
                                     className="language-python font-mono! [tab-size:4]! bg-transparent! whitespace-pre-wrap! break-words!"

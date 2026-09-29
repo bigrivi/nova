@@ -47,7 +47,7 @@ export const CompactionBanner: FC = () => {
                 <pre
                     ref={scrollRef}
                     data-slot="compaction-summary"
-                    className="mt-1.5 max-h-40 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md border border-dashed border-[#E4E1D9] bg-[#F8F7F4] p-2 font-mono text-[11px] leading-relaxed text-[#6E6A60]"
+                    className="mt-1.5 max-h-40 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md border border-dashed border-border bg-muted/40 p-2 font-mono text-[11px] leading-relaxed text-weak-strong"
                 >
                     {summary}
                 </pre>

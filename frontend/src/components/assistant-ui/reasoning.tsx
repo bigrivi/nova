@@ -82,23 +82,23 @@ export const ReasoningChainGroup = ({
         <Collapsible
             open={open}
             onOpenChange={setUserOpen}
-            className="mb-2 max-w-full overflow-hidden rounded-[10px] border border-[#E4E1D9] bg-white"
+            className="mb-2 max-w-full overflow-hidden rounded-[10px] border border-border bg-card"
         >
             <CollapsibleTrigger asChild>
                 <button
                     type="button"
-                    className="flex w-full items-center gap-2 px-[13px] py-[11px] text-left hover:bg-[#FAFAF8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6E56CF]/30 focus-visible:ring-inset"
+                    className="flex w-full items-center gap-2 px-[13px] py-[11px] text-left hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 focus-visible:ring-inset"
                 >
-                    <span className="flex items-center gap-2 text-[13px] font-medium text-[#1C1B18]">
+                    <span className="flex items-center gap-2 text-[13px] font-medium text-foreground">
                         <BrainIcon
-                            className="size-4 shrink-0 text-[#6E56CF]"
+                            className="size-4 shrink-0 text-brand"
                             aria-hidden="true"
                         />
-                        <span className={cn(chainActive && "text-[#6E56CF]")}>
+                        <span className={cn(chainActive && "text-brand")}>
                             {headerLabel}
                         </span>
                         {headerSub ? (
-                            <span className="font-normal text-[#9C978A]">
+                            <span className="font-normal text-weak">
                                 {headerSub}
                             </span>
                         ) : null}
@@ -106,7 +106,7 @@ export const ReasoningChainGroup = ({
                     <span className="ml-auto flex items-center">
                         <ChevronDownIcon
                             className={cn(
-                                "size-4 shrink-0 text-[#9C978A] transition-transform duration-200 motion-reduce:transition-none",
+                                "size-4 shrink-0 text-weak transition-transform duration-200 motion-reduce:transition-none",
                                 open && "rotate-180",
                             )}
                             aria-hidden="true"
@@ -115,8 +115,8 @@ export const ReasoningChainGroup = ({
                 </button>
             </CollapsibleTrigger>
             <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none">
-                <div className="min-w-0 border-t border-[#E4E1D9] bg-[#FDFCFA] px-[14px] pb-4 pt-4">
-                    <div className="relative min-w-0 pl-[22px] before:absolute before:bottom-[6px] before:left-[5px] before:top-[6px] before:w-px before:bg-[#D3CFC4] before:content-['']">
+                <div className="min-w-0 border-t border-border bg-muted/40 px-[14px] pb-4 pt-4">
+                    <div className="relative min-w-0 pl-[22px] before:absolute before:bottom-[6px] before:left-[5px] before:top-[6px] before:w-px before:bg-border before:content-['']">
                         <InTimelineContext.Provider value={true}>
                             {children}
                         </InTimelineContext.Provider>
@@ -144,7 +144,7 @@ export const Reasoning: FC<{ elapsedMs?: number | null }> = ({
             <span
                 aria-hidden="true"
                 className={cn(
-                    "absolute top-[6px] size-[9px] rounded-full border-2 border-[#6E56CF] bg-white",
+                    "absolute top-[6px] size-[9px] rounded-full border-2 border-brand bg-card",
                     inTimeline ? "-left-[22px]" : "left-0",
                 )}
             />
@@ -152,19 +152,19 @@ export const Reasoning: FC<{ elapsedMs?: number | null }> = ({
                 <CollapsibleTrigger asChild>
                     <button
                         type="button"
-                        className="flex w-full items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6E56CF]/25 focus-visible:ring-inset"
+                        className="flex w-full items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/25 focus-visible:ring-inset"
                     >
-                        <span className="text-[12.5px] font-semibold text-[#6E56CF]">
+                        <span className="text-[12.5px] font-semibold text-brand">
                             {t("reasoning.thinkingTag")}
                         </span>
                         {elapsedMs != null ? (
-                            <span className="text-[12px] font-normal text-[#9C978A]">
+                            <span className="text-[12px] font-normal text-weak">
                                 · {formatTime(elapsedMs)}
                             </span>
                         ) : null}
                         <ChevronDownIcon
                             className={cn(
-                                "size-3.5 shrink-0 text-[#9C978A] transition-transform duration-200 motion-reduce:transition-none",
+                                "size-3.5 shrink-0 text-weak transition-transform duration-200 motion-reduce:transition-none",
                                 open && "rotate-180",
                             )}
                             aria-hidden="true"
@@ -172,7 +172,7 @@ export const Reasoning: FC<{ elapsedMs?: number | null }> = ({
                     </button>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none">
-                    <div className="min-w-0 break-words pt-1 text-[14px] leading-[1.75] text-[#6E6A60]">
+                    <div className="min-w-0 break-words pt-1 text-[14px] leading-[1.75] text-weak-strong">
                         <MessagePartPrimitive.Text
                             component="div"
                             className="whitespace-pre-wrap break-words"

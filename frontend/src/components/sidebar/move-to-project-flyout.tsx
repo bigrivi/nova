@@ -124,23 +124,23 @@ export function MoveToProjectFlyout({
     return createPortal(
         <div
             ref={panelRef}
-            className="fixed z-[70] w-[220px] overflow-hidden rounded-[10px] border border-[#E4E1D9] bg-white shadow-[0_12px_32px_rgba(0,0,0,.16)]"
+            className="fixed z-[70] w-[220px] overflow-hidden rounded-[10px] border border-border bg-card shadow-[0_12px_32px_rgba(0,0,0,.16)]"
             style={{ left: position.left, top: position.top }}
         >
-            <div className="flex items-center gap-[7px] border-b border-[#E4E1D9] px-2.5 py-2">
-                <SearchIcon className="size-3.5 shrink-0 text-[#9C978A]" />
+            <div className="flex items-center gap-[7px] border-b border-border px-2.5 py-2">
+                <SearchIcon className="size-3.5 shrink-0 text-weak" />
                 <input
                     ref={inputRef}
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder={t("sidebar.searchProjects")}
                     autoComplete="off"
-                    className="min-w-0 flex-1 bg-transparent text-[13px] text-[#201F1C] outline-none"
+                    className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none"
                 />
             </div>
             <div className="max-h-[208px] overflow-y-auto p-1.5">
                 {matched.length === 0 && !newProjectName ? (
-                    <div className="px-2.5 py-4 text-center text-[12.5px] text-[#9C978A]">
+                    <div className="px-2.5 py-4 text-center text-[12.5px] text-weak">
                         {t("sidebar.noMatchingProjects")}
                     </div>
                 ) : (
@@ -151,9 +151,9 @@ export function MoveToProjectFlyout({
                                 key={project.id}
                                 type="button"
                                 onClick={() => onSelect(project.id, project.name)}
-                                className="flex w-full items-center gap-2 rounded-[7px] px-2 py-1.5 text-left text-[13px] text-[#201F1C] hover:bg-[#F0EEE7]"
+                                className="flex w-full items-center gap-2 rounded-[7px] px-2 py-1.5 text-left text-[13px] text-foreground hover:bg-muted/60"
                             >
-                                <FolderIcon className="size-3.5 shrink-0 text-[#9C978A]" />
+                                <FolderIcon className="size-3.5 shrink-0 text-weak" />
                                 <span className="min-w-0 flex-1 truncate">
                                     <HighlightedText
                                         text={project.name}
@@ -161,7 +161,7 @@ export function MoveToProjectFlyout({
                                     />
                                 </span>
                                 {isCurrent ? (
-                                    <CheckIcon className="size-3.5 shrink-0 text-[#1D5FA8]" />
+                                    <CheckIcon className="size-3.5 shrink-0 text-brand" />
                                 ) : null}
                             </button>
                         );
@@ -171,7 +171,7 @@ export function MoveToProjectFlyout({
                     <button
                         type="button"
                         onClick={() => void onCreate(newProjectName)}
-                        className="flex w-full items-center gap-2 rounded-[7px] px-2 py-1.5 text-left text-[13px] text-[#1D5FA8] hover:bg-[#EAF1F9]"
+                        className="flex w-full items-center gap-2 rounded-[7px] px-2 py-1.5 text-left text-[13px] text-brand hover:bg-brand-soft"
                     >
                         <PlusIcon className="size-3.5 shrink-0" />
                         <span className="min-w-0 flex-1 truncate">
@@ -187,8 +187,8 @@ export function MoveToProjectFlyout({
                     type="button"
                     onClick={() => onRemove(currentProject.name)}
                     className={cn(
-                        "w-full border-t border-[#E4E1D9] px-2.5 py-2 text-left text-[13px] text-[#B23B2E]",
-                        "hover:bg-[#FBEDEA]",
+                        "w-full border-t border-border px-2.5 py-2 text-left text-[13px] text-danger",
+                        "hover:bg-danger-soft",
                     )}
                 >
                     {t("sidebar.removeProjectNamed", {

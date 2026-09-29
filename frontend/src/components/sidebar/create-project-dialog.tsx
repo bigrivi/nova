@@ -74,20 +74,20 @@ export function CreateProjectDialog({
                         }}
                         placeholder={t("sidebar.projectNamePlaceholder")}
                         aria-label={t("sidebar.projectNamePlaceholder")}
-                        className="w-full rounded-[9px] border border-[#E4E3DF] bg-white px-3 py-2 text-sm text-[#201F1C] outline-none focus:border-[#1D5FA8]"
+                        className="w-full rounded-[9px] border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-brand"
                     />
                     <div className="flex items-center gap-2">
                         <button
                             type="button"
                             onClick={() => setPickerOpen(true)}
                             aria-label={t("sidebar.projectPathPlaceholder")}
-                            className="flex min-w-0 flex-1 items-center gap-2 rounded-[9px] border border-[#E4E3DF] bg-white px-3 py-2 text-left text-sm text-[#201F1C] hover:border-[#1D5FA8]"
+                            className="flex min-w-0 flex-1 items-center gap-2 rounded-[9px] border border-border bg-card px-3 py-2 text-left text-sm text-foreground hover:border-brand"
                         >
-                            <FolderIcon className="size-4 shrink-0 text-[#9C978A]" />
+                            <FolderIcon className="size-4 shrink-0 text-weak" />
                             <span
                                 className={cn(
                                     "min-w-0 flex-1 truncate",
-                                    !path && "text-[#9C978A]",
+                                    !path && "text-weak",
                                 )}
                             >
                                 {path || t("sidebar.projectPathPlaceholder")}
@@ -98,7 +98,7 @@ export function CreateProjectDialog({
                                 type="button"
                                 onClick={() => setPath("")}
                                 aria-label={t("sidebar.projectPathClear")}
-                                className="flex size-8 shrink-0 items-center justify-center rounded-md text-[#9C978A] hover:bg-[#E5E2D9] hover:text-[#201F1C]"
+                                className="flex size-8 shrink-0 items-center justify-center rounded-md text-weak hover:bg-muted/60 hover:text-foreground"
                             >
                                 <XIcon className="size-4" />
                             </button>

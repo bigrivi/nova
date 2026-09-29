@@ -13,10 +13,15 @@ from fastapi import Request
 
 from nova.server.chat_service import ChatService
 from nova.settings import Settings, reload_settings
+from nova.speech.service import SpeechService
 
 
 def get_chat_service(request: Request) -> ChatService:
     return request.app.state.chat_service
+
+
+def get_speech_service(request: Request) -> SpeechService:
+    return request.app.state.speech_service
 
 
 def get_settings(request: Request) -> Settings:
@@ -56,6 +61,9 @@ def refresh_settings(request: Request) -> Settings:
     """
     refreshed_settings = reload_settings()
     request.app.state.settings = refreshed_settings
+    speech_service = getattr(request.app.state, "speech_service", None)
+    if speech_service is not None:
+        speech_service.update_settings(refreshed_settings)
     chat_service = request.app.state.chat_service
     update_settings = getattr(chat_service, "update_settings", None)
     if callable(update_settings):

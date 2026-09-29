@@ -46,7 +46,7 @@ export const ApprovalDialog = () => {
                             {pending.description}
                         </div>
                     )}
-                    <pre className="overflow-x-auto rounded-xl border border-amber-200 bg-white/80 px-3 py-2 text-xs text-slate-700">
+                    <pre className="overflow-x-auto rounded-xl border border-amber-200 bg-card/80 px-3 py-2 text-xs text-slate-700">
                         {pending.command}
                     </pre>
                     <div className="flex items-center gap-2">
@@ -60,14 +60,14 @@ export const ApprovalDialog = () => {
                         <button
                             type="button"
                             onClick={() => handleApprove(true)}
-                            className="rounded-xl border border-amber-300 bg-white/80 px-4 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-100"
+                            className="rounded-xl border border-amber-300 bg-card/80 px-4 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-100"
                         >
                             {t("approval.remember")}
                         </button>
                         <button
                             type="button"
                             onClick={handleReject}
-                            className="rounded-xl border border-slate-300 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
+                            className="rounded-xl border border-slate-300 bg-card/80 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
                         >
                             {t("approval.reject")}
                         </button>

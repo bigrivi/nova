@@ -31,23 +31,23 @@ export const ToolGroup = ({
             {inTimeline ? (
                 <span
                     aria-hidden="true"
-                    className="absolute -left-[22px] top-[5px] size-[9px] rounded-[3px] border-2 border-[#1D5FA8] bg-white"
+                    className="absolute -left-[22px] top-[5px] size-[9px] rounded-[3px] border-2 border-brand bg-card"
                 />
             ) : null}
-            <div className="max-w-full overflow-hidden rounded-[10px] border border-[#E4E1D9] bg-white">
-                <div className="flex items-center gap-[7px] border-b border-[#E4E1D9] bg-[#F0F5FB] px-3 py-[9px]">
+            <div className="max-w-full overflow-hidden rounded-[10px] border border-border bg-card">
+                <div className="flex items-center gap-[7px] border-b border-border bg-brand-soft px-3 py-[9px]">
                     <WrenchIcon
-                        className="size-[14px] shrink-0 text-[#1D5FA8]"
+                        className="size-[14px] shrink-0 text-brand"
                         aria-hidden="true"
                     />
-                    <span className="text-[12.5px] font-semibold text-[#1D5FA8]">
+                    <span className="text-[12.5px] font-semibold text-brand">
                         {t("tools.toolCalls")}
                     </span>
-                    <span className="ml-auto font-mono text-[11.5px] text-[#9C978A]">
+                    <span className="ml-auto font-mono text-[11.5px] text-weak">
                         {count}
                     </span>
                 </div>
-                <div className="divide-y divide-[#E4E1D9]">{children}</div>
+                <div className="divide-y divide-border">{children}</div>
             </div>
         </div>
     );

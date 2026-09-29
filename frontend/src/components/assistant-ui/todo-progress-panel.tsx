@@ -76,11 +76,11 @@ const TodoProgressPanelImpl = () => {
     return (
         // Root is intentionally tucked 1px under the Composer below (-mb-px); keep border-b-0 + rounded-b-none so the Composer's top border is the single divider and squared corners don't peek at the sides.
         <div className="pointer-events-auto pb-0 -mb-5">
-            <div className="relative pb-5 -mb-px w-full rounded-t-lg rounded-b-none border border-b-0 border-[#E4E3DF] bg-[#FAFAF9] shadow-[0_1px_2px_rgba(20,20,18,0.04),0_8px_20px_rgba(20,20,18,0.05)]">
+            <div className="relative pb-5 -mb-px w-full rounded-t-lg rounded-b-none border border-b-0 border-border bg-card shadow-[0_1px_2px_rgba(20,20,18,0.04),0_8px_20px_rgba(20,20,18,0.05)]">
                 <button
                     type="button"
                     onClick={() => setOpen((value) => !value)}
-                    className="flex w-full items-center gap-2.5 rounded-t-lg bg-[#FAFAF9] px-4 py-2.5 text-sm hover:bg-muted/50"
+                    className="flex w-full items-center gap-2.5 rounded-t-lg bg-card px-4 py-2.5 text-sm hover:bg-muted/50"
                 >
                     {inProgress && !allDone ? (
                         <Loader2Icon className="size-4 shrink-0 animate-spin text-sky-500" />
@@ -116,7 +116,7 @@ const TodoProgressPanelImpl = () => {
                 </button>
 
                 {open && (
-                    <div className="border-t border-t-[#ECECEA] px-4 pb-2.5 pt-2">
+                    <div className="border-t border-t-border px-4 pb-2.5 pt-2">
                         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                             {t("tools.todoProgress")}
                         </div>

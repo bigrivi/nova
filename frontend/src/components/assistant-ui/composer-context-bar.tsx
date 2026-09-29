@@ -182,7 +182,7 @@ export function ComposerContextBar({
         <div className="flex min-w-0 items-center py-2">
             <span
                 title={t("composer.agentFixed")}
-                className="inline-flex shrink-0 cursor-default select-none items-center gap-1.5 rounded-md px-[7px] py-[2px] text-[12.5px] font-medium text-muted-foreground opacity-80"
+                className="inline-flex shrink-0 cursor-default select-none items-center gap-1.5 rounded-md pr-[7px] py-[2px] text-[12.5px] font-medium text-muted-foreground opacity-80"
             >
                 <AgentAvatar agentKey={avatarKey} name={agentLabel || "?"} />
                 <span className="truncate">@{agentLabel}</span>

@@ -96,12 +96,12 @@ export function BackgroundTasksPanel() {
         // the element below's top border as the single divider. Copied from
         // TodoProgressPanel so the two panels stack seamlessly.
         <div className="pointer-events-auto pb-0 -mb-5">
-            <div className="relative pb-5 -mb-px w-full rounded-t-lg rounded-b-none border border-b-0 border-[#E4E3DF] bg-[#FAFAF9] shadow-[0_1px_2px_rgba(20,20,18,0.04),0_8px_20px_rgba(20,20,18,0.05)]">
+            <div className="relative pb-5 -mb-px w-full rounded-t-lg rounded-b-none border border-b-0 border-border bg-card shadow-[0_1px_2px_rgba(20,20,18,0.04),0_8px_20px_rgba(20,20,18,0.05)]">
                 <button
                     type="button"
                     onClick={() => setOpen((value) => !value)}
                     aria-expanded={open}
-                    className="flex w-full items-center gap-2.5 rounded-t-lg bg-[#FAFAF9] px-4 py-2.5 text-sm hover:bg-muted/50"
+                    className="flex w-full items-center gap-2.5 rounded-t-lg bg-card px-4 py-2.5 text-sm hover:bg-muted/50"
                 >
                     {activeCount > 0 ? (
                         <Loader2Icon
@@ -110,7 +110,7 @@ export function BackgroundTasksPanel() {
                         />
                     ) : failedCount > 0 ? (
                         <XCircleIcon
-                            className="size-4 shrink-0 text-[#B23B2E]"
+                            className="size-4 shrink-0 text-danger"
                             aria-hidden="true"
                         />
                     ) : (
@@ -127,7 +127,7 @@ export function BackgroundTasksPanel() {
                             "shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
                             allDone
                                 ? failedCount > 0
-                                    ? "bg-[#B23B2E]/10 text-[#B23B2E]"
+                                    ? "bg-danger/10 text-danger"
                                     : "bg-emerald-500/10 text-emerald-600"
                                 : "bg-muted text-muted-foreground",
                         )}
@@ -144,9 +144,9 @@ export function BackgroundTasksPanel() {
                 </button>
 
                 {open ? (
-                    <div className="max-h-64 overflow-y-auto border-t border-t-[#ECECEA] px-4 pb-2.5 pt-2">
+                    <div className="max-h-64 overflow-y-auto border-t border-t-border px-4 pb-2.5 pt-2">
                         {error ? (
-                            <p className="px-1 py-2 text-xs text-[#B23B2E]">
+                            <p className="px-1 py-2 text-xs text-danger">
                                 {error}
                             </p>
                         ) : null}
@@ -154,7 +154,7 @@ export function BackgroundTasksPanel() {
                             {tasks.map((task) => (
                                 <li
                                     key={task.task_id}
-                                    className="rounded-lg border border-[#E4E3DF] bg-white px-3 py-2"
+                                    className="rounded-lg border border-border bg-card px-3 py-2"
                                 >
                                     <div className="flex min-w-0 items-center gap-2">
                                         <span
@@ -167,14 +167,14 @@ export function BackgroundTasksPanel() {
                                                       ? "text-[#157A4A]"
                                                       : task.status === "failed" ||
                                                           task.status === "timed_out"
-                                                        ? "text-[#B23B2E]"
-                                                        : "text-[#9C978A]",
+                                                        ? "text-danger"
+                                                        : "text-weak",
                                             )}
                                             aria-hidden="true"
                                         >
                                             {statusIcon(task.status)}
                                         </span>
-                                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-[#1C1B18]">
+                                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
                                             {task.label}
                                         </span>
                                         <span className="hidden shrink-0 text-[10px] text-muted-foreground sm:inline">
@@ -203,7 +203,7 @@ export function BackgroundTasksPanel() {
                                         </p>
                                     ) : null}
                                     {task.output_preview ? (
-                                        <pre className="mt-1 max-h-16 overflow-auto whitespace-pre-wrap break-words rounded bg-[#F8F7F4] p-1.5 pl-5 font-mono text-[10px] leading-relaxed text-[#6E6A60]">
+                                        <pre className="mt-1 max-h-16 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-1.5 pl-5 font-mono text-[10px] leading-relaxed text-weak-strong">
                                             {task.output_preview}
                                         </pre>
                                     ) : null}

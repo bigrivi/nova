@@ -5,17 +5,21 @@
 @import "tw-shimmer";
 @import "prism-themes/themes/prism-one-light.css";
 
+/* Class-based dark mode (toggled from Settings > General, defaults to the
+   operating system). Every `dark:` variant below keys off `.dark`.
+
+   Adding a theme: copy the `.dark` block, rename the class, set the same
+   custom properties, then register the class in `src/lib/theme.ts`. Both
+   blocks must define the identical property set — `theme-tokens.test.ts`
+   enforces that. Presentation tokens (weights, sizes, gutter, shadow,
+   scrollbar) live there too so no component needs a `dark:` variant. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-active-foreground: var(--sidebar-active-foreground);
-    --color-sidebar-active: var(--sidebar-active);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
     --color-sidebar-muted-foreground: var(--sidebar-muted-foreground);
     --color-sidebar-foreground: var(--sidebar-foreground);
     --color-sidebar: var(--sidebar);
@@ -36,8 +40,28 @@
     --color-secondary: var(--secondary);
     --color-primary-foreground: var(--primary-foreground);
     --color-primary: var(--primary);
+    /* Single emphasis color of the chat UI (active thread, selected model,
+       Nova avatar, @Nova chip, status tags). */
     --color-brand: var(--brand);
     --color-brand-soft: var(--brand-soft);
+    --color-on-brand: var(--on-brand);
+    /* Secondary text. `weak` is approved for white surfaces only (4.52:1);
+       `weak-strong` passes on every tinted surface (4.69:1+ light). */
+    --color-weak: var(--weak);
+    --color-weak-strong: var(--weak-strong);
+    /* Pinned-list pin glyph (decorative). */
+    --color-pin: var(--pin);
+    /* User message bubble. */
+    --color-user-bubble: var(--user-bubble);
+    --color-user-bubble-border: var(--user-bubble-border);
+    /* Inline code. */
+    --color-code-bg: var(--code-bg);
+    --color-code-border: var(--code-border);
+    --color-code-fg: var(--code-fg);
+    /* Destructive actions. */
+    --color-danger: var(--danger);
+    --color-danger-soft: var(--danger-soft);
+    --color-success: var(--success);
     --color-popover-foreground: var(--popover-foreground);
     --color-popover: var(--popover);
     --color-card-foreground: var(--card-foreground);
@@ -54,29 +78,41 @@
 }
 
 :root {
+    color-scheme: light;
     --background: #F6F5F3;
-    --foreground: oklch(0.145 0 0);
+    --foreground: #201F1C;
     --card: #FFFFFF;
-    --card-foreground: oklch(0.145 0 0);
+    --card-foreground: #201F1C;
     --popover: #FFFFFF;
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
+    --popover-foreground: #201F1C;
+    --primary: #201F1C;
+    --primary-foreground: #FFFFFF;
+    --secondary: #ECEAE4;
+    --secondary-foreground: #201F1C;
+    --muted: #ECEAE4;
+    --muted-foreground: #7A766F;
     --accent: oklch(0.97 0 0);
     --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    /* The selection blue this app uses for the active thread and the selected
-       model. `--primary` is near-black in this theme, so anything that should
-       read as "the app's own colour" rather than as emphasis uses this. */
+    /* The single emphasis color of the chat UI: active thread, selected
+       model, Nova avatar, @Nova chip, status tags. */
     --brand: #1D5FA8;
     --brand-soft: #EAF1F9;
+    --on-brand: #FFFFFF;
+    --weak: #7A766F;
+    --weak-strong: #6E6A60;
+    --pin: #8A867F;
+    --user-bubble: #EEF1F6;
+    --user-bubble-border: #D9DFEA;
+    --code-bg: #F6F5F2;
+    --code-border: #F0EEE9;
+    --code-fg: #201F1C;
+    --danger: #B23B2E;
+    --danger-soft: #FBEDEA;
+    --success: #17703F;
+    --destructive: #B23B2E;
     --border: #E4E3DF;
     --input: #E4E3DF;
-    --ring: oklch(0.708 0 0);
+    --ring: #A8A29E;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -84,17 +120,123 @@
     --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
     --sidebar-width: 296px;
-    --sidebar: #F6F5F3;
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-muted-foreground: oklch(0.5 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: #FFFFFF;
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-active: #FFFFFF;
-    --sidebar-active-foreground: oklch(0.145 0 0);
-    --sidebar-border: #F6F5F3;
-    --sidebar-ring: oklch(0.708 0 0);
+    --sidebar: #F1EFEA;
+    --sidebar-foreground: #201F1C;
+    --sidebar-muted-foreground: #6E6A60;
+    --sidebar-border: #E4E1D9;
+    --sidebar-ring: #A8A29E;
+    /* Per-theme presentation tokens. Every theme (including future ones) sets
+       these, so no component needs a `dark:` variant for weight, size, or
+       spacing. */
+    --sidebar-title-size: 0.9375rem;
+    --sidebar-title-weight: 700;
+    --sidebar-section-size: 0.6875rem;
+    --sidebar-section-weight: 600;
+    --sidebar-date-size: 0.6875rem;
+    --sidebar-date-weight: 600;
+    --sidebar-project-weight: 700;
+    --sidebar-gutter: 0.5rem;
+    --sidebar-section-radius: var(--radius-sm);
+    --composer-disclaimer-size: 0.6875rem;
+    --composer-shadow: 0 4px 24px rgb(20 20 18 / 0.04);
+    /* Placeholders sit on tinted surfaces more often than not, so they use
+       the stronger weak token in every theme. */
+    --placeholder-text: var(--weak-strong);
+    --code-block-fg: #201F1C;
+    --scrollbar-size: 8px;
+    --scrollbar-thumb: rgb(0 0 0 / 0.18);
+    --scrollbar-thumb-hover: rgb(0 0 0 / 0.32);
+}
+
+/* Dark theme: same token names, warm charcoal ramp. Every text/background
+   pair below clears WCAG AA 4.5:1 (see theme-tokens.test.ts). */
+.dark {
+    color-scheme: dark;
+    --background: #1C1B1A;
+    --foreground: #E8E5E0;
+    --card: #262524;
+    --card-foreground: #E8E5E0;
+    --popover: #262524;
+    --popover-foreground: #E8E5E0;
+    --primary: #E8E5E0;
+    --primary-foreground: #1C1B18;
+    --secondary: #2B2A25;
+    --secondary-foreground: #E8E5E0;
+    --muted: #2B2A25;
+    --muted-foreground: #B4B0AA;
+    --accent: #2B2A25;
+    --accent-foreground: #E8E5E0;
+    --brand: #7FA6F0;
+    --brand-soft: #22304A;
+    --on-brand: #1C1B18;
+    --weak: #B4B0AA;
+    /* #8F8A83 scaled up one step so weak text clears AA on every dark
+       surface (card included), per the contrast requirement. */
+    --weak-strong: #938E86;
+    --pin: #8A867F;
+    --user-bubble: #262A33;
+    --user-bubble-border: #343A46;
+    --code-bg: #2A2826;
+    --code-border: #37342F;
+    --code-fg: #D9D5CF;
+    --danger: #E8A0A0;
+    --danger-soft: #3A2320;
+    --success: #6FCF97;
+    --destructive: #E8A0A0;
+    --border: #2E2C2A;
+    --input: #2E2C2A;
+    --ring: #6B655C;
+    --sidebar: #151413;
+    --sidebar-foreground: #E8E5E0;
+    --sidebar-muted-foreground: #B4B0AA;
+    --sidebar-border: #2E2C2A;
+    --sidebar-ring: #6B655C;
+    /* Dark theme reads calmer: lighter weight on the brand word, 12px
+       secondary rows, roomier sidebar gutter, 8px group-title corners. */
+    --sidebar-title-weight: 600;
+    --sidebar-section-size: 0.75rem;
+    --sidebar-section-weight: 500;
+    --sidebar-date-size: 0.75rem;
+    --sidebar-date-weight: 500;
+    --sidebar-project-weight: 500;
+    --sidebar-gutter: 0.75rem;
+    --sidebar-section-radius: 0.5rem;
+    --composer-disclaimer-size: 0.75rem;
+    /* The lift shadow reads as a haze on a dark surface. */
+    --composer-shadow: none;
+    --code-block-fg: #E8E5E0;
+    --scrollbar-thumb: rgb(255 255 255 / 0.16);
+    --scrollbar-thumb-hover: rgb(255 255 255 / 0.28);
+}
+
+/* Thin overlay-style scrollbars: transparent track, no detached rail column.
+   Both themes supply a visible thumb so the affordance never disappears;
+   only the colours differ. Sidebar and main share this rule. */
+*::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+}
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* Code blocks keep the light syntax palette; the base colour comes from
+   --code-block-fg so dark themes stay readable. */
+.dark code[class*="language-"],
+.dark pre[class*="language-"] {
+    color: var(--code-block-fg);
+    text-shadow: none;
 }
 
 /* ChatGPT-style reveal: slide a long thread title far enough to expose its
@@ -127,6 +269,32 @@
 
   html {
     @apply font-sans;
+  }
+
+  /* Only <a href> is a pointer by default; the UA stylesheet gives every
+     <button> `cursor: default`, so no control shows a hand without saying so.
+     Lives in base on purpose: utilities outrank it, which is what keeps the
+     deliberate `cursor-default` on menu items and read-only chips. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    @apply cursor-pointer;
+  }
+
+  /* Every native placeholder follows the theme's placeholder token at full
+     strength so the 4.5:1 contract holds; explicit `placeholder:` utilities
+     win because utilities sort after the base layer. */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--placeholder-text);
+    opacity: 1;
+  }
+
+  /* Opt-in code wrapping (Settings > General): long lines fold instead of
+     scrolling sideways. Copying is unaffected, it only changes display. */
+  .code-wrap .aui-md-pre {
+    white-space: pre-wrap;
+    overflow-x: visible;
+    word-break: break-word;
   }
 }
 

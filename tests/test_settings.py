@@ -18,6 +18,58 @@ def _write_config(home: Path, payload: dict) -> None:
     )
 
 
+def test_settings_transcription_defaults_to_disabled_groq(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "nova-tx-default"))
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    settings = Settings.load_config()
+
+    assert settings.transcription.provider == "groq"
+    assert settings.transcription.api_key == ""
+    assert settings.transcription.enabled is False
+    assert settings.transcription.base_url == "https://api.groq.com/openai/v1"
+    assert settings.transcription.model == "whisper-large-v3-turbo"
+    assert settings.transcription.language == "zh"
+
+
+def test_settings_transcription_from_config(monkeypatch, tmp_path):
+    home = tmp_path / "nova-tx-config"
+    _write_config(home, {
+        "providers": {},
+        "transcription": {
+            "api_key": "gsk-test",
+            "model": "whisper-large-v3",
+            "language": "en",
+        },
+    })
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    settings = Settings.load_config()
+
+    assert settings.transcription.enabled is True
+    assert settings.transcription.api_key == "gsk-test"
+    assert settings.transcription.provider == "groq"
+    assert settings.transcription.base_url == "https://api.groq.com/openai/v1"
+    assert settings.transcription.model == "whisper-large-v3"
+    assert settings.transcription.language == "en"
+
+
+def test_settings_transcription_env_fallback(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "nova-tx-env"))
+    monkeypatch.setenv("GROQ_API_KEY", "gsk-env")
+    settings = Settings.load_config()
+
+    assert settings.transcription.enabled is True
+    assert settings.transcription.api_key == "gsk-env"
+
+
+def test_settings_transcription_invalid_block_raises(monkeypatch, tmp_path):
+    home = tmp_path / "nova-tx-bad"
+    _write_config(home, {"providers": {}, "transcription": ["groq"]})
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    with pytest.raises(ValueError, match="transcription"):
+        Settings.load_config()
+
+
 def test_settings_defaults_create_config_file(monkeypatch, tmp_path):
     home = tmp_path / "nova-default-home"
     monkeypatch.setenv("NOVA_HOME", str(home))

@@ -4,6 +4,7 @@ import { startTransition, useEffect, useRef, useState } from "react";
 import {
     clearLastSequence,
     deleteSession,
+    fetchSessionContext,
     getLastSequence,
     getSessionRoute,
     getStreamStatus,
@@ -47,6 +48,7 @@ import {
 } from "../../stores/ask-user-store";
 import { useBackgroundTaskStore } from "../../stores/background-task-store";
 import { useComposerStore } from "../../stores/composer-store";
+import { useContextUsageStore } from "../../stores/context-usage-store";
 import { useReasoningStore } from "../../stores/reasoning-store";
 import { useTodoStore } from "../../stores/todo-store";
 import type {
@@ -192,6 +194,16 @@ export function useConversations(deps: ConversationDeps): Conversations {
                     [threadId]: toThreadMessages(messages),
                 }));
             });
+            // Context usage is computed on demand; fetch it alongside history
+            // so the composer pill shows immediately without waiting for a
+            // stream. Failures keep whatever the pill showed before.
+            void fetchSessionContext(threadId).then((usage) => {
+                if (usage) {
+                    useContextUsageStore
+                        .getState()
+                        .setForSession(threadId, usage);
+                }
+            });
             try {
                 const status = await getStreamStatus(threadId);
                 if (status.status === "done" || status.status === "idle") {
@@ -317,6 +329,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
             abortControllersRef.current.delete(threadId);
             setThreadRunning(threadId, false);
             await deleteSession(threadId, deleteMemories);
+            useContextUsageStore.getState().clearSession(threadId);
             startTransition(() => {
                 setThreads((previous) =>
                     previous.filter((thread) => thread.id !== threadId),
@@ -373,6 +386,12 @@ export function useConversations(deps: ConversationDeps): Conversations {
             },
             todo: {
                 setActive: (input) => useTodoStore.getState().setActive(input),
+            },
+            contextUsage: {
+                setForSession: (sessionId, usage) =>
+                    useContextUsageStore
+                        .getState()
+                        .setForSession(sessionId, usage),
             },
         };
     }

@@ -102,6 +102,12 @@ export interface StreamEngineDeps {
         ) => void;
     };
     todo: { setActive: (input: unknown) => void };
+    contextUsage: {
+        setForSession: (
+            sessionId: string,
+            usage: { used: number; limit: number; percent: number },
+        ) => void;
+    };
 }
 
 function getSeenSequences(
@@ -223,6 +229,25 @@ const TERMINAL_HANDLERS: Record<
     },
     "data-nova-input-required": (_event, env) => {
         env.flags.requiresInput = true;
+    },
+    "data-nova-context": (event, env, deps) => {
+        const data = event.data ?? {};
+        const used = Number(data.used ?? 0);
+        const limit = Number(data.limit ?? 0);
+        const percent = Number(data.percent ?? 0);
+        if (
+            !Number.isFinite(used) ||
+            !Number.isFinite(limit) ||
+            !Number.isFinite(percent) ||
+            limit <= 0
+        ) {
+            return;
+        }
+        deps.contextUsage.setForSession(env.state.activeThreadId, {
+            used,
+            limit,
+            percent,
+        });
     },
 };
 

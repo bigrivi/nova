@@ -14,14 +14,26 @@ import {
     CheckIcon,
     CpuIcon,
     DatabaseIcon,
+    MoonIcon,
     SettingsIcon,
+    SunIcon,
+    SunMoonIcon,
     UsersIcon,
     type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-const ACTIVE_NAV_CLASS = "bg-[#EAF2FB] text-[#1D5FA8]";
-const IDLE_NAV_CLASS = "text-[#201F1C] hover:bg-[#F0EEE7]";
+import { useThemeMode, type ThemeMode } from "@/lib/theme";
+import { setZoomLevel, useZoomLevel } from "@/lib/use-zoom";
+import {
+    useCodeWrap,
+    useContextRingVisible,
+    useSendShortcut,
+    type SendShortcut,
+} from "@/lib/ui-prefs";
+
+const ACTIVE_NAV_CLASS = "bg-brand-soft text-brand";
+const IDLE_NAV_CLASS = "text-foreground hover:bg-muted/60";
 
 type SettingsSection = "general" | "memory" | "models" | "agents";
 
@@ -40,6 +52,28 @@ const LANGUAGES = [
     { code: "zh-CN", label: "简体中文" },
     { code: "en", label: "English" },
 ] as const;
+
+const THEME_MODES: ReadonlyArray<{
+    mode: ThemeMode;
+    labelKey: string;
+    icon: LucideIcon;
+}> = [
+    { mode: "light", labelKey: "settings.general.themeLight", icon: SunIcon },
+    {
+        mode: "system",
+        labelKey: "settings.general.themeSystem",
+        icon: SunMoonIcon,
+    },
+    { mode: "dark", labelKey: "settings.general.themeDark", icon: MoonIcon },
+];
+
+const SEND_SHORTCUTS: ReadonlyArray<{
+    value: SendShortcut;
+    labelKey: string;
+}> = [
+    { value: "enter", labelKey: "settings.general.sendEnter" },
+    { value: "mod-enter", labelKey: "settings.general.sendModEnter" },
+];
 
 export interface SettingsDialogProps {
     open: boolean;
@@ -72,6 +106,13 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
     const { t, i18n } = useTranslation();
     const [section, setSection] = useState<SettingsSection>("general");
+    const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
+    const zoom = useZoomLevel();
+    const { value: sendShortcut, setValue: setSendShortcut } =
+        useSendShortcut();
+    const { enabled: codeWrap, setEnabled: setCodeWrap } = useCodeWrap();
+    const { visible: ringVisible, setVisible: setRingVisible } =
+        useContextRingVisible();
 
     // The general section keeps a distinct title (Settings > General) while the
     // other three reuse their nav label, matching the reference layout.
@@ -99,7 +140,7 @@ export function SettingsDialog({
         <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogContent className="h-[min(78vh,720px)] gap-0 overflow-hidden p-0 sm:max-w-4xl">
                 <div className="flex h-full min-h-0 w-full min-w-0">
-                    <nav className="w-52 shrink-0 overflow-y-auto border-r border-border bg-[#FBFAF7] p-3">
+                    <nav className="w-52 shrink-0 overflow-y-auto border-r border-border bg-sidebar p-3">
                         {SECTIONS.map((item) => {
                             const Icon = item.icon;
                             const isActive = item.id === section;
@@ -131,6 +172,7 @@ export function SettingsDialog({
                         </header>
                         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-5">
                             {section === "general" ? (
+                                <>
                                 <section className="flex items-start justify-between gap-6 border-b border-border pb-5">
                                     <div className="min-w-0">
                                         <h3 className="text-[14px] font-semibold">
@@ -158,8 +200,8 @@ export function SettingsDialog({
                                                     className={cn(
                                                         "flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-[13px] transition-colors",
                                                         isActive
-                                                            ? "bg-[#1D5FA8] text-white"
-                                                            : "text-[#6E6A60] hover:bg-[#F0EEE7]",
+                                                            ? "bg-brand text-on-brand"
+                                                            : "text-weak-strong hover:bg-muted/60",
                                                     )}
                                                 >
                                                     {isActive ? (
@@ -171,6 +213,193 @@ export function SettingsDialog({
                                         })}
                                     </div>
                                 </section>
+                                <section className="flex items-start justify-between gap-6 border-b border-border py-5">
+                                    <div className="min-w-0">
+                                        <h3 className="text-[14px] font-semibold">
+                                            {t("settings.general.theme")}
+                                        </h3>
+                                        <p className="mt-1 text-[13px] text-muted-foreground">
+                                            {t(
+                                                "settings.general.themeDescription",
+                                            )}
+                                        </p>
+                                    </div>
+                                    <div className="flex shrink-0 rounded-lg border border-border p-0.5">
+                                        {THEME_MODES.map((item) => {
+                                            const Icon = item.icon;
+                                            const isActive =
+                                                themeMode === item.mode;
+                                            return (
+                                                <button
+                                                    key={item.mode}
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setThemeMode(item.mode)
+                                                    }
+                                                    className={cn(
+                                                        "flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-[13px] transition-colors",
+                                                        isActive
+                                                            ? "bg-brand text-on-brand"
+                                                            : "text-weak-strong hover:bg-muted/60",
+                                                    )}
+                                                >
+                                                    <Icon className="size-3.5" />
+                                                    {t(item.labelKey)}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </section>
+                                <section className="flex items-start justify-between gap-6 border-b border-border py-5">
+                                    <div className="min-w-0">
+                                        <h3 className="text-[14px] font-semibold">
+                                            {t("settings.general.zoom")}
+                                        </h3>
+                                        <p className="mt-1 text-[13px] text-muted-foreground">
+                                            {t(
+                                                "settings.general.zoomDescription",
+                                            )}
+                                        </p>
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-3">
+                                        <span className="w-12 text-right text-[13px] tabular-nums text-weak-strong">
+                                            {Math.round(zoom * 100)}%
+                                        </span>
+                                        <input
+                                            type="range"
+                                            min={50}
+                                            max={200}
+                                            step={10}
+                                            value={Math.round(zoom * 100)}
+                                            onChange={(event) =>
+                                                setZoomLevel(
+                                                    Number(event.target.value) /
+                                                        100,
+                                                )
+                                            }
+                                            aria-label={t(
+                                                "settings.general.zoom",
+                                            )}
+                                            className="w-36 accent-brand"
+                                        />
+                                    </div>
+                                </section>
+                                <section className="flex items-start justify-between gap-6 border-b border-border py-5">
+                                    <div className="min-w-0">
+                                        <h3 className="text-[14px] font-semibold">
+                                            {t("settings.general.sendShortcut")}
+                                        </h3>
+                                        <p className="mt-1 text-[13px] text-muted-foreground">
+                                            {t(
+                                                "settings.general.sendShortcutDescription",
+                                            )}
+                                        </p>
+                                    </div>
+                                    <div className="flex shrink-0 rounded-lg border border-border p-0.5">
+                                        {SEND_SHORTCUTS.map((item) => {
+                                            const isActive =
+                                                sendShortcut === item.value;
+                                            return (
+                                                <button
+                                                    key={item.value}
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setSendShortcut(
+                                                            item.value,
+                                                        )
+                                                    }
+                                                    className={cn(
+                                                        "flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-[13px] transition-colors",
+                                                        isActive
+                                                            ? "bg-brand text-on-brand"
+                                                            : "text-weak-strong hover:bg-muted/60",
+                                                    )}
+                                                >
+                                                    {t(item.labelKey)}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </section>
+                                <section className="flex items-start justify-between gap-6 border-b border-border py-5">
+                                    <div className="min-w-0">
+                                        <h3 className="text-[14px] font-semibold">
+                                            {t("settings.general.contextRing")}
+                                        </h3>
+                                        <p className="mt-1 text-[13px] text-muted-foreground">
+                                            {t(
+                                                "settings.general.contextRingDescription",
+                                            )}
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={ringVisible}
+                                        aria-label={t(
+                                            "settings.general.contextRing",
+                                        )}
+                                        onClick={() =>
+                                            setRingVisible(!ringVisible)
+                                        }
+                                        className={cn(
+                                            "relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors",
+                                            ringVisible
+                                                ? "bg-brand"
+                                                : "bg-muted",
+                                        )}
+                                    >
+                                        <span
+                                            aria-hidden
+                                            className={cn(
+                                                "absolute top-[3px] size-4 rounded-full bg-white shadow transition-all",
+                                                ringVisible
+                                                    ? "left-[18px]"
+                                                    : "left-[3px]",
+                                            )}
+                                        />
+                                    </button>
+                                </section>
+                                <section className="flex items-start justify-between gap-6 py-5">
+                                    <div className="min-w-0">
+                                        <h3 className="text-[14px] font-semibold">
+                                            {t("settings.general.codeWrap")}
+                                        </h3>
+                                        <p className="mt-1 text-[13px] text-muted-foreground">
+                                            {t(
+                                                "settings.general.codeWrapDescription",
+                                            )}
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={codeWrap}
+                                        aria-label={t(
+                                            "settings.general.codeWrap",
+                                        )}
+                                        onClick={() =>
+                                            setCodeWrap(!codeWrap)
+                                        }
+                                        className={cn(
+                                            "relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors",
+                                            codeWrap
+                                                ? "bg-brand"
+                                                : "bg-muted",
+                                        )}
+                                    >
+                                        <span
+                                            aria-hidden
+                                            className={cn(
+                                                "absolute top-[3px] size-4 rounded-full bg-white shadow transition-all",
+                                                codeWrap
+                                                    ? "left-[18px]"
+                                                    : "left-[3px]",
+                                            )}
+                                        />
+                                    </button>
+                                </section>
+                                </>
                             ) : null}
                             {section === "memory" ? <MemoryManagerContent /> : null}
                             {section === "models" ? (

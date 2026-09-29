@@ -32,6 +32,7 @@ dependencies = [
     "playwright",
     "markdownify",
     "pywebview>=5,<7",
+    "pyobjc-framework-AVFoundation; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]

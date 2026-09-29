@@ -54,6 +54,26 @@ class ProviderConfig:
 
 
 @dataclass(frozen=True)
+class TranscriptionSettings:
+    """Voice-to-text, overridable via config.json ``transcription`` block.
+
+    Billing rides the user's own provider key (Nova has no subscription);
+    Whisper-class endpoints cost roughly $0.006/min. Absent without an
+    api_key, in which case the composer hides the microphone button.
+    """
+
+    provider: str = "groq"
+    api_key: str = field(default="", repr=False)
+    base_url: str = "https://api.groq.com/openai/v1"
+    model: str = "whisper-large-v3-turbo"
+    language: str = "zh"
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.api_key.strip())
+
+
+@dataclass(frozen=True)
 class CompactionSettings:
     """Context compaction thresholds, overridable via config.json ``compaction`` block."""
 
@@ -212,6 +232,30 @@ def _deep_merge(target: dict[str, Any], source: dict[str, Any]) -> dict[str, Any
     return target
 
 
+def _resolve_transcription_api_key() -> str:
+    return os.getenv("GROQ_API_KEY", "").strip()
+
+
+def _parse_transcription_config(raw: Any) -> TranscriptionSettings:
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ValueError(
+            "Invalid Nova config: 'transcription' must be an object")
+    api_key = str(raw.get("api_key", "")).strip()
+    if not api_key:
+        api_key = _resolve_transcription_api_key()
+    return TranscriptionSettings(
+        provider=str(raw.get("provider", "groq")).strip() or "groq",
+        api_key=api_key,
+        base_url=str(raw.get("base_url", "https://api.groq.com/openai/v1")).strip()
+        or "https://api.groq.com/openai/v1",
+        model=str(raw.get("model", "whisper-large-v3-turbo")).strip()
+        or "whisper-large-v3-turbo",
+        language=str(raw.get("language", "zh")).strip() or "zh",
+    )
+
+
 def _parse_compaction_config(raw: Any) -> CompactionSettings:
     if raw is None:
         return CompactionSettings()
@@ -315,6 +359,10 @@ class Settings:
     # Context compaction thresholds.
     compaction: CompactionSettings = field(default_factory=CompactionSettings)
 
+    # Voice-to-text (Groq Whisper by default). Empty api_key disables it.
+    transcription: TranscriptionSettings = field(
+        default_factory=TranscriptionSettings)
+
     # Runtime config file path.
     config_path: Path | None = None
 
@@ -337,6 +385,8 @@ class Settings:
         raw_mcp = config_payload.get("mcp_servers")
         mcp_servers = dict(raw_mcp) if isinstance(raw_mcp, dict) else {}
         compaction = _parse_compaction_config(config_payload.get("compaction"))
+        transcription = _parse_transcription_config(
+            config_payload.get("transcription"))
         host, port, log_level, auth_user, auth_password = _parse_server_config(
             config_payload.get("server")
         )
@@ -355,6 +405,7 @@ class Settings:
             providers=providers,
             mcp_servers=mcp_servers,
             compaction=compaction,
+            transcription=transcription,
             auth_user=auth_user,
             auth_password=auth_password,
         )

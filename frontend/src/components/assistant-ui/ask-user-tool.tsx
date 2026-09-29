@@ -291,7 +291,7 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
                             className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
                                 answer === "yes"
                                     ? "bg-sky-600 text-white"
-                                    : "border border-sky-200 bg-white/80 text-slate-700 hover:bg-sky-50"
+                                    : "border border-sky-200 bg-card/80 text-slate-700 hover:bg-sky-50"
                             }`}
                         >
                             {t("tools.confirmYes")}
@@ -302,7 +302,7 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
                             className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
                                 answer === "no"
                                     ? "bg-sky-600 text-white"
-                                    : "border border-sky-200 bg-white/80 text-slate-700 hover:bg-sky-50"
+                                    : "border border-sky-200 bg-card/80 text-slate-700 hover:bg-sky-50"
                             }`}
                         >
                             {t("tools.confirmNo")}
@@ -329,7 +329,7 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
                                     className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition-colors ${
                                         selected
                                             ? "border-sky-400 bg-sky-100 text-sky-900"
-                                            : "border-sky-200 bg-white/80 text-slate-900 hover:bg-sky-50"
+                                            : "border-sky-200 bg-card/80 text-foreground hover:bg-sky-50"
                                     }`}
                                 >
                                     <div className="flex items-center gap-2">
@@ -364,7 +364,7 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
                         onKeyDown={handleKeyDown}
                         placeholder={t("tools.answerPlaceholder")}
                         rows={4}
-                        className="w-full min-h-[80px] rounded-xl border border-sky-200 bg-white/80 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 resize-y"
+                        className="w-full min-h-[80px] rounded-xl border border-sky-200 bg-card/80 px-3 py-2 text-sm text-foreground placeholder-slate-400 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 resize-y"
                     />
                 ) : (
                     <input
@@ -373,7 +373,7 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
                         onChange={(e) => setAnswer(aid, e.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder={t("tools.answerPlaceholder")}
-                        className="w-full rounded-xl border border-sky-200 bg-white/80 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400"
+                        className="w-full rounded-xl border border-sky-200 bg-card/80 px-3 py-2 text-sm text-foreground placeholder-slate-400 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400"
                     />
                 )}
 
@@ -402,7 +402,7 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
                         <div className="text-sm font-medium text-sky-950">
                             {q.header || q.question}
                         </div>
-                        <div className="rounded-lg border border-sky-200 bg-white/80 px-3 py-2 text-sm text-slate-700">
+                        <div className="rounded-lg border border-sky-200 bg-card/80 px-3 py-2 text-sm text-slate-700">
                             {answer ||
                                 (q.required ? "(not answered)" : "(skipped)")}
                         </div>
@@ -434,7 +434,7 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
                                     <div className="whitespace-pre-wrap text-sm font-medium leading-6 text-sky-950">
                                         {q.question}
                                     </div>
-                                    <div className="rounded-xl border border-sky-200 bg-white/80 px-3 py-2 text-sm text-slate-700">
+                                    <div className="rounded-xl border border-sky-200 bg-card/80 px-3 py-2 text-sm text-slate-700">
                                         {answers[aid] ||
                                             (q.required
                                                 ? "(not answered)"

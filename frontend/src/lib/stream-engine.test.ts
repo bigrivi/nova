@@ -42,6 +42,7 @@ function makeDeps(overrides: Partial<StreamEngineDeps> = {}): StreamEngineDeps {
         },
         approval: { setPendingForSession: vi.fn(), setPending: vi.fn() },
         todo: { setActive: vi.fn() },
+        contextUsage: { setForSession: vi.fn() },
         ...overrides,
     };
 }
@@ -148,6 +149,34 @@ describe("handleStreamEvent control frames", () => {
         const env = makeEnv();
         handleStreamEvent({ type: "data-nova-input-required" }, env, makeDeps());
         expect(env.flags.requiresInput).toBe(true);
+    });
+
+    it("records context usage for the active thread", () => {
+        const deps = makeDeps();
+        const event: NovaStreamEvent = {
+            type: "data-nova-context",
+            data: { used: 49500, limit: 300000, percent: 16 },
+        };
+        handleStreamEvent(event, makeEnv(), deps);
+        expect(deps.contextUsage.setForSession).toHaveBeenCalledWith("t-1", {
+            used: 49500,
+            limit: 300000,
+            percent: 16,
+        });
+        expect(deps.setThreadMessages).not.toHaveBeenCalled();
+    });
+
+    it("ignores context frames with a useless limit", () => {
+        const deps = makeDeps();
+        handleStreamEvent(
+            {
+                type: "data-nova-context",
+                data: { used: 10, limit: 0, percent: 0 },
+            },
+            makeEnv(),
+            deps,
+        );
+        expect(deps.contextUsage.setForSession).not.toHaveBeenCalled();
     });
 
     it("throws on error events", () => {

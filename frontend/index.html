@@ -5,6 +5,23 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Nova Desktop</title>
+    <script>
+      // Paint the saved theme before first render to avoid a light flash.
+      // Mirrors readThemeMode()/resolveTheme() in src/lib/theme.ts.
+      try {
+        var mode = localStorage.getItem("nova.ui.theme-mode") || "system";
+        var dark =
+          mode === "dark" ||
+          (mode !== "light" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
+        if (localStorage.getItem("nova.ui.code-wrap") === "1") {
+          document.documentElement.classList.add("code-wrap");
+        }
+      } catch (e) {
+        /* Storage unavailable: fall through to the light theme. */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

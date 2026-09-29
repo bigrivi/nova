@@ -146,7 +146,7 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
     };
 
     return (
-        <div className="aui-code-header-root mt-2.5 flex items-center rounded-t-lg border border-[#D6D2C7] bg-muted/50 px-3 py-1.5 text-xs">
+        <div className="aui-code-header-root mt-2.5 flex items-center rounded-t-lg border border-border bg-muted/50 px-3 py-1.5 text-xs">
             {language && language !== "unknown" && (
                 <span className="aui-code-header-language font-medium text-muted-foreground lowercase">
                     {language}
@@ -352,7 +352,7 @@ const defaultComponents = memoizeMarkdownComponents({
     ol: ({ className, ...props }) => (
         <ol
             className={cn(
-                "aui-md-ol my-2 ms-4 list-decimal marker:text-muted-foreground [&>li]:mt-1",
+                "aui-md-ol my-2 ms-4 list-decimal marker:text-weak-strong [&>li]:mt-1",
                 className,
             )}
             {...props}
@@ -381,7 +381,7 @@ const defaultComponents = memoizeMarkdownComponents({
     th: ({ className, ...props }) => (
         <th
             className={cn(
-                "aui-md-th border-s border-t border-b border-[#E4E1D9] bg-[#ECEAE3] px-2 py-1 text-start font-medium last:border-e first:rounded-ss-lg last:rounded-se-lg [[align=center]]:text-center [[align=right]]:text-right",
+                "aui-md-th border-s border-t border-b border-border bg-muted px-2 py-1 text-start font-medium last:border-e first:rounded-ss-lg last:rounded-se-lg [[align=center]]:text-center [[align=right]]:text-right",
                 className,
             )}
             {...props}
@@ -390,7 +390,7 @@ const defaultComponents = memoizeMarkdownComponents({
     td: ({ className, ...props }) => (
         <td
             className={cn(
-                "aui-md-td border-s border-b border-[#E4E1D9] px-2 py-1 text-start break-words last:border-e [[align=center]]:text-center [[align=right]]:text-right",
+                "aui-md-td border-s border-b border-border px-2 py-1 text-start break-words last:border-e [[align=center]]:text-center [[align=right]]:text-right",
                 className,
             )}
             {...props}
@@ -399,7 +399,7 @@ const defaultComponents = memoizeMarkdownComponents({
     tr: ({ className, ...props }) => (
         <tr
             className={cn(
-                "aui-md-tr m-0 even:bg-[#FAFAF9] [&:hover>td]:bg-[#F1F0ED] [&:last-child>td:first-child]:rounded-es-lg [&:last-child>td:last-child]:rounded-ee-lg",
+                "aui-md-tr m-0 even:bg-muted/40 [&:hover>td]:bg-muted/60 [&:last-child>td:first-child]:rounded-es-lg [&:last-child>td:last-child]:rounded-ee-lg",
                 className,
             )}
             {...props}
@@ -420,7 +420,7 @@ const defaultComponents = memoizeMarkdownComponents({
     pre: ({ className, ...props }) => (
         <pre
             className={cn(
-                "aui-md-pre my-0! overflow-x-auto rounded-t-none! rounded-b-lg! border border-[#D6D2C7] border-t-0 bg-white! p-3! font-mono! text-xs! leading-relaxed! [tab-size:4]!",
+                "aui-md-pre my-0! overflow-x-auto rounded-t-none! rounded-b-lg! border border-border border-t-0 bg-card! p-3! font-mono! text-xs! leading-relaxed! [tab-size:4]!",
                 className,
             )}
             {...props}
@@ -434,7 +434,7 @@ const defaultComponents = memoizeMarkdownComponents({
             <code
                 className={cn(
                     !isCodeBlock &&
-                        "aui-md-inline-code rounded-md border border-border/50 bg-muted/50 px-1.5 py-0.5 font-mono text-[0.85em]",
+                        "aui-md-inline-code rounded border border-code-border bg-code-bg px-1.5 py-0.5 font-mono text-[0.85em] text-code-fg",
                     className,
                 )}
                 {...props}

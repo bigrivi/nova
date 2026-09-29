@@ -5,8 +5,9 @@ import { LoginDialog } from "../components/auth/login-dialog";
 import { resolveModelEffort } from "../components/assistant-ui/elements/model-selector";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { agentDisplayName } from "../lib/agent-display";
-import { fetchAppVersion, setSessionRoute, updateAgent } from "../lib/nova-api";
+import { fetchAppVersion, getSpeechStatus, setSessionRoute, updateAgent } from "../lib/nova-api";
 import { useReasoningEffortStore } from "../stores/reasoning-effort-store";
+import { useSpeechStore } from "../stores/speech-store";
 import { NovaMainPanel } from "./components/NovaMainPanel";
 import { NovaSidebarPanel } from "./components/NovaSidebarPanel";
 import { useAgentSelection } from "./hooks/useAgentSelection";
@@ -28,6 +29,24 @@ export function NovaAppShell() {
         fetchAppVersion()
             .then((version) => {
                 if (live) setAppVersion(version);
+            })
+            .catch(() => {});
+        // Microphone button visibility follows the transcription config.
+        getSpeechStatus()
+            .then((status) => {
+                if (!live) {
+                    return;
+                }
+                const speech = useSpeechStore.getState();
+                speech.setEnabled(status.enabled);
+                // A take started before a reload outlives the view; adopt it
+                // so the panel offers cancel/send instead of a 409, with the
+                // clock picked up where the backend left it.
+                if (status.recording) {
+                    const startedAt =
+                        status.recording_since_ms ?? Date.now();
+                    speech.setPhase("recording", startedAt);
+                }
             })
             .catch(() => {});
         return () => {
@@ -268,6 +287,7 @@ export function NovaAppShell() {
                         assistantName={assistantName}
                         assistantAgentKey={assistantAgentKey}
                         threadTitle={activeThread?.title ?? null}
+                        currentThreadId={conversations.currentThreadId}
                     />
                 </div>
 

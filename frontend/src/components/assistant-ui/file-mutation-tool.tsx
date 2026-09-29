@@ -298,12 +298,12 @@ const FileMutationToolImpl: ToolCallMessagePartComponent = ({
                     message={errored ? errorTextFromResult(result) : null}
                 />
                 {model.filePath ? (
-                    <div className="font-mono text-xs font-medium text-[#1D5FA8]">
+                    <div className="font-mono text-xs font-medium text-brand">
                         {model.filePath}
                     </div>
                 ) : null}
                 {errored ? null : model.headline ? (
-                    <p className="font-sans text-sm font-medium leading-6 text-slate-900">
+                    <p className="font-sans text-sm font-medium leading-6 text-foreground">
                         {model.headline}
                     </p>
                 ) : null}
@@ -311,7 +311,7 @@ const FileMutationToolImpl: ToolCallMessagePartComponent = ({
                     <SplitDiffBlock diff={model.diff} />
                 ) : model.plainResult ? (
                     <div className="pb-1">
-                        <pre className="whitespace-pre-wrap rounded-xl bg-white px-3 py-3 text-[12px] leading-6 text-slate-700">
+                        <pre className="whitespace-pre-wrap rounded-xl bg-card px-3 py-3 text-[12px] leading-6 text-foreground">
                             {model.plainResult}
                         </pre>
                     </div>

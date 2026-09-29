@@ -10,6 +10,9 @@ import { useTranslation } from "react-i18next";
 import { useAui } from "@assistant-ui/react";
 
 import { useComposerStore } from "../../stores/composer-store";
+import type { ContextUsage } from "../../stores/context-usage-store";
+import { useContextRingVisible } from "../../lib/ui-prefs";
+import { ContextRing } from "./context-ring";
 import type { NovaAgent, NovaModelRecord } from "../../types/nova";
 import type { ModelOption } from "./elements/model-selector";
 import { Button } from "../ui/button";
@@ -21,6 +24,7 @@ import {
 } from "./composer-context-bar";
 import { ModelSelector } from "./model-selector";
 import { TodoProgressPanel } from "./todo-progress-panel";
+import { VoiceErrorHint, VoiceInputButton } from "./voice-input-button";
 
 export type ThreadComposerContextBarProps = Omit<
     ComposerContextBarProps,
@@ -50,6 +54,8 @@ type ThreadStickyComposerProps = {
     };
     contextBar: ThreadComposerContextBarProps;
     showDisclaimer?: boolean;
+    /** Current session's context usage; null hides the ring (e.g. drafts). */
+    contextUsage?: ContextUsage | null;
 };
 
 export function ThreadStickyComposer({
@@ -59,11 +65,14 @@ export function ThreadStickyComposer({
     agentSelection,
     contextBar,
     showDisclaimer = false,
+    contextUsage = null,
 }: ThreadStickyComposerProps) {
     const { t } = useTranslation();
     const aui = useAui();
     const text = useComposerStore((state) => state.text);
     const setText = useComposerStore((state) => state.setText);
+    // User-toggled in Settings > General; hides the ring but keeps the data.
+    const { visible: ringVisible } = useContextRingVisible();
 
     // Auto-size reads the draft here, so a keystroke re-renders the composer
     // alone instead of the whole shell.
@@ -100,7 +109,7 @@ export function ThreadStickyComposer({
             <div className="relative z-10 w-full">
                 <BackgroundTasksPanel />
                 <TodoProgressPanel />
-                <div className="pointer-events-auto relative rounded-(--composer-radius) border border-[#E4E3DF] bg-white p-3 shadow-[0_4px_24px_rgba(20,20,18,0.04)] transition-[box-shadow,border-color] focus-within:border-ring/75">
+                <div className="pointer-events-auto relative rounded-(--composer-radius) border border-border bg-card p-3 shadow-(--composer-shadow) transition-[box-shadow,border-color] focus-within:border-brand/40">
                     <ComposerContextBar
                         isNewChat={contextBar.isNewChat}
                         agents={agentSelection.agents}
@@ -118,7 +127,7 @@ export function ThreadStickyComposer({
                         readOnly={composer.isRunning}
                         placeholder={t("composer.sendMessage")}
                         aria-label={t("composer.messageInput")}
-                        className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1 py-1 text-sm outline-none placeholder:text-muted-foreground/80 readOnly:cursor-default readOnly:opacity-60"
+                        className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1 py-1 text-sm outline-none readOnly:cursor-default readOnly:opacity-60"
                         onChange={(event) => setText(event.target.value)}
                         onKeyDown={composer.onKeyDown}
                         onPaste={handlePaste}
@@ -129,8 +138,12 @@ export function ThreadStickyComposer({
                     <div className="mt-3 flex items-center justify-between gap-3">
                         <div className="flex min-w-0 items-center gap-2">
                             <ComposerAddAttachment />
+                            <VoiceErrorHint />
                         </div>
                         <div className="flex min-w-0 items-center gap-2">
+                            {contextUsage && ringVisible ? (
+                                <ContextRing usage={contextUsage} />
+                            ) : null}
                             <ModelSelector
                                 models={modelSelection.models}
                                 options={modelSelection.options}
@@ -139,7 +152,7 @@ export function ThreadStickyComposer({
                                 effort={modelSelection.effort}
                                 onEffortChange={modelSelection.onEffortChange}
                             />
-
+                            <VoiceInputButton composerRef={composerRef} />
                             {composer.isRunning ? (
                                 <Button
                                     type="button"
@@ -167,7 +180,7 @@ export function ThreadStickyComposer({
                     </div>
                 </div>
                 {showDisclaimer ? (
-                    <p className="mt-2 text-center text-[11px] leading-normal text-muted-foreground">
+                    <p className="mt-2 text-center text-(--composer-disclaimer-size) leading-normal text-weak-strong">
                         {t("composer.aiDisclaimer")}
                     </p>
                 ) : null}

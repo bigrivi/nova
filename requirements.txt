@@ -18,3 +18,6 @@ markdownify
 
 # Desktop GUI shell (pywebview)
 pywebview>=5,<7
+
+# Native macOS microphone recording for voice-to-text (macOS only)
+pyobjc-framework-AVFoundation; sys_platform == 'darwin'

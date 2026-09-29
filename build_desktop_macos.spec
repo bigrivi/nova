@@ -117,5 +117,9 @@ app = BUNDLE(
         'CFBundleDisplayName': 'Nova',
         'CFBundlePackageType': 'APPL',
         'NSHighResolutionCapable': True,
+        'NSMicrophoneUsageDescription': (
+            'Nova uses the microphone only when you tap the voice-input '
+            'button, to transcribe your speech into the message box.'
+        ),
     },
 )

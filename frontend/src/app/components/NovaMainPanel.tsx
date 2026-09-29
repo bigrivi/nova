@@ -4,6 +4,9 @@ import { useTranslation } from "react-i18next";
 import { Thread } from "../../components/assistant-ui/thread";
 import { Button } from "../../components/ui/button";
 import { useMacHiddenTitlebar } from "../../lib/desktop-chrome";
+import { DRAFT_THREAD_ID } from "../../lib/nova-constants";
+import { readSendShortcut, shouldSendOnKeyDown } from "../../lib/ui-prefs";
+import { useContextUsageStore } from "../../stores/context-usage-store";
 import type { NovaAgent, NovaModelRecord } from "../../types/nova";
 import type { ModelOption } from "../../components/assistant-ui/elements/model-selector";
 
@@ -31,6 +34,7 @@ export interface NovaMainPanelProps {
     assistantName: string;
     assistantAgentKey: string | null;
     threadTitle: string | null;
+    currentThreadId: string;
 }
 
 /**
@@ -61,12 +65,19 @@ export function NovaMainPanel({
     assistantName,
     assistantAgentKey,
     threadTitle,
+    currentThreadId,
 }: NovaMainPanelProps) {
     const { t } = useTranslation();
     // macOS desktop only: keep the expand button clear of traffic lights.
     const macHiddenTitlebar = useMacHiddenTitlebar();
     // WorkBuddy-style main titlebar: conversation title plus drag space.
     const mainTitle = isNewChat ? t("threadList.newChat") : (threadTitle ?? "");
+    // Drafts have no stored history, so the pill stays hidden there.
+    const contextUsage = useContextUsageStore((state) =>
+        currentThreadId === DRAFT_THREAD_ID
+            ? undefined
+            : state.bySession[currentThreadId],
+    );
 
     return (
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
@@ -90,8 +101,8 @@ export function NovaMainPanel({
                     size="icon"
                     className={
                         macHiddenTitlebar
-                            ? "fixed left-[84px] top-0.5 z-30 rounded-full border border-[#E4E3DF] bg-white shadow-[0_8px_24px_rgba(20,20,18,0.07)]"
-                            : "fixed left-4 top-4 z-30 rounded-full border border-[#E4E3DF] bg-white shadow-[0_8px_24px_rgba(20,20,18,0.07)]"
+                            ? "fixed left-[84px] top-0.5 z-30 rounded-full border border-border bg-card shadow-[0_8px_24px_rgba(20,20,18,0.07)]"
+                            : "fixed left-4 top-4 z-30 rounded-full border border-border bg-card shadow-[0_8px_24px_rgba(20,20,18,0.07)]"
                     }
                     aria-label={t("app.expandSidebar")}
                     onClick={onExpandSidebar}
@@ -108,7 +119,12 @@ export function NovaMainPanel({
                         onSubmit: onComposerSubmit,
                         onCancel,
                         onKeyDown: (event) => {
-                            if (event.key === "Enter" && !event.shiftKey) {
+                            if (
+                                shouldSendOnKeyDown(
+                                    event,
+                                    readSendShortcut(),
+                                )
+                            ) {
                                 event.preventDefault();
                                 onComposerSubmit();
                             }
@@ -136,6 +152,7 @@ export function NovaMainPanel({
                     }}
                     assistantName={assistantName}
                     assistantAgentKey={assistantAgentKey}
+                    contextUsage={contextUsage ?? null}
                 />
             </div>
         </main>

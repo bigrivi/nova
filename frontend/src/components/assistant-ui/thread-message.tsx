@@ -8,15 +8,13 @@ import {
 } from "@/components/assistant-ui/reasoning";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { ToolGroup } from "@/components/assistant-ui/tool-group";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
     buildTimelinePathMap,
     createTimelineGroupBy,
     readPartElapsedMs,
 } from "@/lib/timeline-grouping";
-import { DEFAULT_AGENT_KEY } from "@/lib/nova-constants";
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
-import { BotIcon, ChevronDownIcon, FileText } from "lucide-react";
+import { ChevronDownIcon, FileText } from "lucide-react";
 import { memo, useMemo, useState, type FC } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/shallow";
@@ -104,7 +102,7 @@ const SubagentChip: FC<ParsedSubagent> = ({ target, status, body }) => {
                 "max-w-full overflow-hidden rounded-xl border",
                 isError
                     ? "border-rose-200/80 bg-rose-50/40"
-                    : "border-[#E4E3DF] bg-muted/40",
+                    : "border-border bg-muted/40",
             )}
         >
             <CollapsibleTrigger asChild>
@@ -148,7 +146,7 @@ const SubagentChip: FC<ParsedSubagent> = ({ target, status, body }) => {
             </CollapsibleTrigger>
             {body ? (
                 <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none">
-                    <div className="border-t border-[#E4E3DF] px-3 py-2.5">
+                    <div className="border-t border-border px-3 py-2.5">
                         <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
                             {body}
                         </div>
@@ -205,7 +203,7 @@ const UserMessage: FC = () => {
             <UserMessageAttachments />
 
             <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
-                <div className="aui-user-message-content wrap-break-word rounded-2xl border border-[#E4E3DF] bg-white px-4 py-2.5 text-foreground shadow-[0_2px_8px_rgba(20,20,18,0.04)] empty:hidden">
+                <div className="aui-user-message-content wrap-break-word rounded-2xl border border-user-bubble-border bg-user-bubble px-4 py-2.5 text-foreground shadow-[0_2px_8px_rgba(20,20,18,0.04)] empty:hidden">
                     <MessagePrimitive.Parts
                         components={{
                             Text: UserText,
@@ -221,9 +219,8 @@ const AssistantMessage: FC<{ name: string; agentKey: string | null }> = ({
     name,
     agentKey,
 }) => {
-    // The default/main agent keeps the branded bot icon; a named primary agent
-    // shows its own identity avatar (same component as the composer's chip).
-    const isDefaultAgent = !agentKey || agentKey === DEFAULT_AGENT_KEY;
+    // The avatar decides between the branded bot and a named agent's initial,
+    // so this header and the composer chip cannot disagree.
     const parts = useAuiState(useShallow((s) => s.message.parts));
     const toolUIs = useAuiState((s) => s.tools.toolUIs);
     const groupBy = useMemo(
@@ -269,19 +266,8 @@ const AssistantMessage: FC<{ name: string; agentKey: string | null }> = ({
             className="fade-in slide-in-from-bottom-1 flex animate-in flex-col gap-y-2 duration-150"
         >
             <div className="flex min-w-0 items-center gap-2 leading-none">
-                {isDefaultAgent ? (
-                    <Avatar
-                        size="sm"
-                        className="size-6 border border-emerald-200/80 bg-emerald-50 text-emerald-900 shadow-sm after:hidden"
-                    >
-                        <AvatarFallback className="bg-transparent text-emerald-900">
-                            <BotIcon className="size-3" />
-                        </AvatarFallback>
-                    </Avatar>
-                ) : (
-                    <AgentAvatar agentKey={agentKey} name={name} size="lg" />
-                )}
-                <span className="text-[12px] font-medium tracking-[0.01em] text-muted-foreground">
+                <AgentAvatar agentKey={agentKey ?? ""} name={name} size="lg" />
+                <span className="text-[12px] font-medium tracking-[0.01em] text-weak-strong">
                     {name}
                 </span>
             </div>
