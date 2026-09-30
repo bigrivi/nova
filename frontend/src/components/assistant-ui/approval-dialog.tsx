@@ -19,7 +19,9 @@ export const ApprovalDialog = () => {
             approved: true,
             remember,
         });
-        useApprovalStore.getState().setPending(null);
+        // Clear the per-session entry too, or syncPendingToSession would
+        // restore this same prompt the next time the thread is opened.
+        useApprovalStore.getState().clearPendingForSession(pending.sessionId);
     };
 
     const handleReject = async () => {
@@ -28,7 +30,7 @@ export const ApprovalDialog = () => {
             requestId: pending.requestId,
             approved: false,
         });
-        useApprovalStore.getState().setPending(null);
+        useApprovalStore.getState().clearPendingForSession(pending.sessionId);
     };
 
     return (

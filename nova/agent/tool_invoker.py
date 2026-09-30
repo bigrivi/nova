@@ -122,6 +122,10 @@ class ToolInvoker:
                             self._turn_count,
                             approval_request_id,
                         )
+                        # Retract the request so a resumed/replayed stream cannot
+                        # re-show a dialog for an approval that is already answered.
+                        yield AgentEvent.APPROVAL_RESULT, {
+                            "id": approval_request_id, "approved": False}
                         self.outcome = ToolOutcome.STOPPED
                         yield AgentEvent.DONE, done_payload(
                             "stopped", "Command rejected by user")
@@ -131,6 +135,8 @@ class ToolInvoker:
                         self._turn_count,
                         approval_request_id,
                     )
+                    yield AgentEvent.APPROVAL_RESULT, {
+                        "id": approval_request_id, "approved": True}
                     break
 
             result = await self.execute_with_abort(

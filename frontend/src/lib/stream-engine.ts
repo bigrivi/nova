@@ -100,6 +100,7 @@ export interface StreamEngineDeps {
                 description: string;
             } | null,
         ) => void;
+        clearPendingForSession: (sessionId: string) => void;
     };
     todo: { setActive: (input: unknown) => void };
     contextUsage: {
@@ -226,6 +227,12 @@ const TERMINAL_HANDLERS: Record<
         if (threadId === deps.currentThreadIdRef.current) {
             deps.approval.setPending(pending);
         }
+    },
+    // The retraction paired with approval-required: a replayed take-back clears
+    // a dialog for an approval that was already answered, so a resume never
+    // resurrects a ghost prompt that 404s when acted on.
+    "data-nova-approval-resolved": (_event, env, deps) => {
+        deps.approval.clearPendingForSession(env.state.activeThreadId);
     },
     "data-nova-input-required": (_event, env) => {
         env.flags.requiresInput = true;

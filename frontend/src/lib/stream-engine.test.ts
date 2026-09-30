@@ -40,7 +40,11 @@ function makeDeps(overrides: Partial<StreamEngineDeps> = {}): StreamEngineDeps {
             setCompacting: vi.fn(),
             appendCompactionDelta: vi.fn(),
         },
-        approval: { setPendingForSession: vi.fn(), setPending: vi.fn() },
+        approval: {
+            setPendingForSession: vi.fn(),
+            setPending: vi.fn(),
+            clearPendingForSession: vi.fn(),
+        },
         todo: { setActive: vi.fn() },
         contextUsage: { setForSession: vi.fn() },
         ...overrides,
@@ -143,6 +147,30 @@ describe("handleStreamEvent control frames", () => {
         handleStreamEvent(event, makeEnv(), deps);
         expect(deps.approval.setPendingForSession).toHaveBeenCalledTimes(1);
         expect(deps.approval.setPending).not.toHaveBeenCalled();
+    });
+
+    it("clears the approval when a resolved frame replays after it", () => {
+        // A second client opening the session replays approval-required then
+        // approval-resolved; the take-back must clear the ghost prompt.
+        const deps = makeDeps({ currentThreadIdRef: { current: "t-1" } });
+        const env = makeEnv();
+        handleStreamEvent(
+            {
+                type: "data-nova-approval-required",
+                data: { requestId: "r", command: "c", description: "d" },
+            },
+            env,
+            deps,
+        );
+        handleStreamEvent(
+            {
+                type: "data-nova-approval-resolved",
+                data: { requestId: "r", approved: true },
+            },
+            env,
+            deps,
+        );
+        expect(deps.approval.clearPendingForSession).toHaveBeenCalledWith("t-1");
     });
 
     it("raises the requiresInput flag", () => {

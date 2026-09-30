@@ -248,6 +248,24 @@ class AISDKStreamAdapter:
             chunks.append(b"data: {\"type\":\"data-nova-heartbeat\"}\n\n")
             return chunks
 
+        if event == AgentEvent.APPROVAL_RESULT:
+            # The paired retraction for a prior approval-required frame: a resume
+            # replays both, so the client clears a dialog it can no longer act on
+            # (resolving again 404s, since the request is already consumed).
+            data_payload = data if isinstance(data, dict) else {}
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "data-nova-approval-resolved",
+                        "data": {
+                            "requestId": data_payload.get("id", ""),
+                            "approved": bool(data_payload.get("approved", False)),
+                        },
+                    }
+                )
+            )
+            return chunks
+
         if event == AgentEvent.APPROVAL_REQUIRED:
             data_payload = data if isinstance(data, dict) else {}
             chunks.append(

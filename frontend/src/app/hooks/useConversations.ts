@@ -383,6 +383,10 @@ export function useConversations(deps: ConversationDeps): Conversations {
                         .setPendingForSession(sessionId, pending),
                 setPending: (pending) =>
                     useApprovalStore.getState().setPending(pending),
+                clearPendingForSession: (sessionId) =>
+                    useApprovalStore
+                        .getState()
+                        .clearPendingForSession(sessionId),
             },
             todo: {
                 setActive: (input) => useTodoStore.getState().setActive(input),

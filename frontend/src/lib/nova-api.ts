@@ -702,8 +702,8 @@ export async function approveCommand(options: {
     requestId: string;
     approved: boolean;
     remember?: boolean;
-}): Promise<void> {
-    await apiFetch(
+}): Promise<boolean> {
+    const response = await apiFetch(
         "/api/chat/approve" +
             `?session_id=${encodeURIComponent(options.sessionId)}`,
         {
@@ -716,6 +716,9 @@ export async function approveCommand(options: {
             }),
         },
     );
+    // 404 means the request was already consumed (a replayed ghost prompt).
+    // Report it so the caller clears the stale dialog instead of leaving it up.
+    return response.ok;
 }
 
 export async function interruptChat(sessionId: string): Promise<void> {

@@ -284,6 +284,10 @@ class TestApprovalFlow:
             assert any(e == AgentEvent.APPROVAL_REQUIRED for e, _ in events)
             assert any(e == AgentEvent.DONE and d.get("reason") == "stopped" for e, d in events)
             assert not any(e == AgentEvent.TOOL_RESULT for e, _ in events)
+            # A resolution event must accompany the denial so a replayed stream
+            # retracts the dialog instead of resurrecting an answered prompt.
+            resolved = [d for e, d in events if e == AgentEvent.APPROVAL_RESULT]
+            assert resolved and resolved[0].get("approved") is False
 
 
 class TestMemoryReviewScheduling:
