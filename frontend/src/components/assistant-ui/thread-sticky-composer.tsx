@@ -16,7 +16,6 @@ import { ContextRing } from "./context-ring";
 import type { NovaAgent, NovaModelRecord } from "../../types/nova";
 import type { ModelOption } from "./elements/model-selector";
 import { Button } from "../ui/button";
-import { BackgroundTasksPanel } from "./background-tasks-panel";
 import { ComposerAddAttachment, ComposerAttachments } from "./attachment";
 import {
     ComposerContextBar,
@@ -107,7 +106,6 @@ export function ThreadStickyComposer({
         <div className="pointer-events-none relative overflow-x-clip pb-2 pt-3">
             <div className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-t from-background via-background to-transparent" />
             <div className="relative z-10 w-full">
-                <BackgroundTasksPanel />
                 <TodoProgressPanel />
                 <div className="pointer-events-auto relative rounded-(--composer-radius) border border-border bg-card p-3 shadow-(--composer-shadow) transition-[box-shadow,border-color] focus-within:border-brand/40">
                     <ComposerContextBar
