@@ -87,7 +87,7 @@ async def import_agent(
     try:
         parsed = parse_agent_markdown(body.content)
     except AgentImportError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     key = slugify_key(body.key or parsed.name)
     if not _AGENT_KEY_PATTERN.match(key):

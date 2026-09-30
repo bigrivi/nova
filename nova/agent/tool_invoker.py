@@ -340,7 +340,7 @@ def parse_tool_arguments(arguments_text: Any) -> dict:
         raise ValueError(
             f"Invalid JSON in tool call arguments: {arguments_text!r}\n"
             f"Parse error: {error}"
-        )
+        ) from error
 
 
 def has_parsable_arguments(tool_call: Any) -> bool:

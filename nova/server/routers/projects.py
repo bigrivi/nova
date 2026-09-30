@@ -31,7 +31,7 @@ async def create_project(
     try:
         project = await chat_service.create_project(body.name, body.path)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ProjectRecord(**project)
 
 
@@ -42,7 +42,7 @@ async def resolve_project(
     try:
         project = await chat_service.resolve_project_for_path(body.path, body.name)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ProjectRecord(**project)
 
 
@@ -60,7 +60,7 @@ async def update_project(
     try:
         project = await chat_service.update_project(project_id, **fields)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if project is None:
         raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
     return ProjectRecord(**project)

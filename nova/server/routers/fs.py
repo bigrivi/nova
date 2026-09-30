@@ -15,6 +15,6 @@ async def fs_list(path: str | None = None) -> DirectoryListing:
     try:
         return list_directory(path)
     except (FileNotFoundError, NotADirectoryError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
+        raise HTTPException(status_code=403, detail=str(exc)) from exc

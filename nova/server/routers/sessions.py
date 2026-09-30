@@ -124,7 +124,7 @@ async def set_session_project(
     try:
         updated = await chat_service.set_session_project(session_id, body.project_id)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     if not updated:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return SessionActionResponse(status="project_updated", session_id=session_id)

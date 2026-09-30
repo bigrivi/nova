@@ -121,13 +121,10 @@ def estimate_message_tokens(message, model: str = "unknown") -> int:
     tool_calls = _get_tool_calls(message)
     for tc in tool_calls:
         if isinstance(tc, dict):
-            try:
-                total += estimate_tokens_by_type(
-                    str(tc.get("arguments", {})),
-                    is_tool_result=False
-                )
-            except:
-                total += 32  # Fallback estimate
+            total += estimate_tokens_by_type(
+                str(tc.get("arguments", {})),
+                is_tool_result=False
+            )
 
     return total
 
@@ -162,7 +159,7 @@ def _estimate_with_tiktoken(message, model: str):
         # Try to get encoding for specific model, fallfall to cl100k_base
         try:
             enc = tiktoken.encoding_for_model(model)
-        except:
+        except KeyError:
             enc = tiktoken.get_encoding("cl100k_base")
 
         return len(enc.encode(text_to_encode))

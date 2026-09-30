@@ -134,7 +134,7 @@ class PromptBuilder:
         parts.append(self.SYSTEM_PROMPT_TEMPLATE.format(
             identity=identity,
             available_skills=available_skills_section,
-            date=date or datetime.now().strftime("%Y-%m-%d %A"),
+            date=date or datetime.now().astimezone().strftime("%Y-%m-%d %A"),
             home=settings.home,
             workspace_dir=workspace_override or self.config.workspace_dir or str(settings.workspace_dir),
             platform=self._get_platform(),
