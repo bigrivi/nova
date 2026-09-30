@@ -88,8 +88,16 @@ class SpeechService:
     def cancel(self) -> dict[str, object]:
         """Stop recording and throw the audio away without transcribing.
 
-        Raises RuntimeError when nothing is recording.
+        Raises RuntimeError when nothing is recording, or when the platform has
+        no recorder at all. The gate has to be repeated here rather than left to
+        the recorder: on such a platform there is no recorder to raise, and
+        dereferencing None surfaced as a 500 from the route instead of the 409
+        every other rejection produces.
         """
+        if self._recorder is None:
+            raise RuntimeError(
+                self._unavailable_reason or "no audio recorder for this platform"
+            )
         _discard(self._recorder.stop())
         self._started_at = None
         return {"recording": False}

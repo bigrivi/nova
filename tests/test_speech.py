@@ -221,6 +221,34 @@ def test_cancel_discards_audio_without_transcribing(monkeypatch, tmp_path) -> No
         service.cancel()
 
 
+def test_cancel_without_a_recorder_is_a_conflict_not_a_crash(
+    monkeypatch, tmp_path
+) -> None:
+    """No recorder means nothing to stop, and that is a 409, not a 500.
+
+    Reproduces the unsupported-platform path on any host by handing the app a
+    recorder-less service, which is what create_recorder leaves behind where
+    native recording does not exist. macOS never hit this: there a real
+    recorder refuses the cancel itself, so the route test passed for an
+    unrelated reason.
+    """
+    from fastapi.testclient import TestClient
+
+    import nova.speech.service as service_module
+
+    def _boom() -> Recorder:
+        raise RuntimeError("native recording is supported on macOS and Windows only")
+
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "nova-voice-unsupported"))
+    monkeypatch.setattr(service_module, "create_recorder", _boom)
+    app = create_app(settings=Settings.load_config())
+    assert app.state.speech_service._recorder is None
+
+    client = TestClient(app, raise_server_exceptions=False)
+
+    assert client.post("/api/speech/cancel").status_code == 409
+
+
 def test_service_reports_reason_when_no_recorder(monkeypatch, tmp_path) -> None:
     import nova.speech.service as service_module
 
@@ -236,9 +264,13 @@ def test_service_reports_reason_when_no_recorder(monkeypatch, tmp_path) -> None:
         service.start()
 
 
-def test_main_thread_hop_runs_inline_and_defines_one_runner() -> None:
-    """The ObjC helper class must be defined once, or the second take dies."""
-    recorder_module._RUNNER_CLS = None
+def test_main_thread_hop_runs_inline_on_the_main_thread() -> None:
+    """Already on the main thread, so the hop is a direct call.
+
+    Cross-platform on purpose: the fallback is what keeps the desktop server
+    thread from deadlocking on waitUntilDone, and on Linux it is the only path
+    there is.
+    """
     calls: list[str] = []
 
     def _record(value: str) -> str:
@@ -248,6 +280,13 @@ def test_main_thread_hop_runs_inline_and_defines_one_runner() -> None:
     assert recorder_module._call_on_main_thread(_record, "a") == "a"
     assert calls == ["a"]
 
+
+@pytest.mark.skipif(
+    sys.platform != "darwin", reason="the ObjC helper only exists where PyObjC does"
+)
+def test_main_thread_hop_defines_one_runner() -> None:
+    """The ObjC helper class must be defined once, or the second take dies."""
+    recorder_module._RUNNER_CLS = None
     first = recorder_module._runner_cls()
     assert recorder_module._runner_cls() is first
 
