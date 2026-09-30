@@ -242,9 +242,14 @@ async def test_create_app_pushes_task_updates_onto_the_event_bus(
     assert mine, "no task frame reached the event bus"
     assert all(frame["type"] == "task" for frame in mine)
     assert mine[-1]["task"]["status"] == "succeeded"
-    # The frame must not carry the bounded output tail: it is broadcast to
-    # every client, and the tail can be tens of kilobytes.
-    assert "output_tail" not in mine[-1]["task"]
+    # Only the terminal frame carries the bounded output tail, so the tool card
+    # can swap its "still running" handle for the real result. Running frames
+    # stay lean because they are broadcast to every client on each transition.
+    assert "output_tail" in mine[-1]["task"]
+    non_terminal = [
+        frame for frame in mine if frame["task"]["status"] != "succeeded"
+    ]
+    assert all("output_tail" not in frame["task"] for frame in non_terminal)
 
 
 def test_events_ping_interval_bounds_shutdown_latency() -> None:

@@ -69,6 +69,7 @@ const CodeRunToolImpl: ToolCallMessagePartComponent = ({
                         ? t(`tasks.status.${backgroundStatus}`)
                         : null
                 }
+                backgroundState={trackedTask?.status ?? null}
             />
             <ToolFallbackContent>
                 <ToolFallbackError
@@ -97,7 +98,7 @@ const CodeRunToolImpl: ToolCallMessagePartComponent = ({
                     </div>
                 )}
                 {!isCancelled && !errored && (
-                    <ToolFallbackResult result={result} />
+                    <ToolFallbackResult result={result} liveTask={trackedTask} />
                 )}
             </ToolFallbackContent>
         </ToolFallbackRoot>

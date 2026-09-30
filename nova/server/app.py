@@ -113,10 +113,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.stream_buffer = stream_buffer
     app.state.session_event_bus = session_event_bus
     task_manager = get_background_task_manager()
-    # Push task lifecycle instead of letting the client poll /api/tasks.
+    # Push task lifecycle instead of letting the client poll /api/tasks. The
+    # bounded output rides only terminal frames so the tool card can swap its
+    # handle for the real result, without high-frequency large frames while
+    # the task is still running.
+    from nova.tasks.models import TERMINAL_STATUSES
+
     task_manager.set_listener(
         lambda record: session_event_bus.publish_task(
-            record.to_dict(include_output=False)
+            record.to_dict(include_output=record.status in TERMINAL_STATUSES)
         )
     )
     app.state.background_task_manager = task_manager

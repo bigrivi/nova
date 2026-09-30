@@ -42,8 +42,13 @@ async def session_events(
         manager = getattr(http_request.app.state, "background_task_manager", None)
         if manager is None:
             return []
+        from nova.tasks.models import TERMINAL_STATUSES
+
+        # Terminal tasks carry their output so a tool card mounted from history
+        # shows the final result, not the stale "still running" handle.
         return [
-            record.to_dict(include_output=False) for record in manager.list_all()
+            record.to_dict(include_output=record.status in TERMINAL_STATUSES)
+            for record in manager.list_all()
         ]
 
     async def event_stream():

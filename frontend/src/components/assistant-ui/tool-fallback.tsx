@@ -12,6 +12,7 @@ import {
     readBackgroundTaskReference,
 } from "@/lib/background-task";
 import { useBackgroundTaskStore } from "@/stores/background-task-store";
+import type { NovaBackgroundTask, NovaBackgroundTaskStatus } from "@/types/nova";
 
 import {
     useScrollLock,
@@ -28,6 +29,18 @@ import {
 } from "lucide-react";
 import { memo, useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+
+const TERMINAL_TASK_STATUSES: ReadonlySet<NovaBackgroundTaskStatus> = new Set([
+    "succeeded",
+    "failed",
+    "cancelled",
+    "timed_out",
+    "interrupted",
+]);
+
+function isTerminalTaskStatus(status: NovaBackgroundTaskStatus): boolean {
+    return TERMINAL_TASK_STATUSES.has(status);
+}
 
 const ANIMATION_DURATION = 200;
 
@@ -134,6 +147,7 @@ function ToolFallbackTrigger({
     isError,
     backgroundTaskLabel,
     backgroundTaskStatus,
+    backgroundState,
     className,
     ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
@@ -143,14 +157,24 @@ function ToolFallbackTrigger({
     isError?: boolean;
     backgroundTaskLabel?: string;
     backgroundTaskStatus?: string | null;
+    backgroundState?: NovaBackgroundTaskStatus | null;
 }) {
     const statusType = status?.type ?? "complete";
-    const isRunning = statusType === "running";
+    // A detached background task keeps living after the tool call returns its
+    // handle (status "complete"), so the dot follows the task's own state when
+    // there is one: spinner while it runs, check/cross once it settles.
+    const taskRunning =
+        backgroundState === "queued" || backgroundState === "running";
+    const taskFailed =
+        backgroundState === "failed" || backgroundState === "timed_out";
+    const taskCancelled = backgroundState === "cancelled";
+    const isRunning = statusType === "running" || taskRunning;
     const isCancelled =
-        status?.type === "incomplete" && status.reason === "cancelled";
+        (status?.type === "incomplete" && status.reason === "cancelled") ||
+        taskCancelled;
     const statusError =
         status?.type === "incomplete" && !isCancelled && status.error != null;
-    const errored = isError === true || statusError;
+    const errored = (isError === true || statusError || taskFailed) && !taskRunning;
     const paramSummary = getParamSummary(argsText);
 
     return (
@@ -286,12 +310,52 @@ function ToolFallbackArgs({
 
 function ToolFallbackResult({
     result,
+    liveTask,
     className,
     ...props
 }: React.ComponentProps<"div"> & {
     result?: unknown;
+    liveTask?: NovaBackgroundTask | null;
 }) {
     const { t } = useTranslation();
+
+    // A settled background task replaces its handle with the real output, so
+    // the card reads like a finished tool call rather than "still running".
+    if (liveTask && isTerminalTaskStatus(liveTask.status)) {
+        const body =
+            liveTask.output_tail?.trim() ||
+            liveTask.result?.trim() ||
+            liveTask.error?.trim() ||
+            "";
+        return (
+            <div
+                data-slot="tool-fallback-result"
+                className={cn(
+                    "aui-tool-fallback-result border-t border-dashed border-border pt-2",
+                    className,
+                )}
+                {...props}
+            >
+                <p className="font-semibold text-foreground">
+                    {t(`tasks.status.${liveTask.status}`)}
+                    {typeof liveTask.exit_code === "number"
+                        ? ` · exit ${liveTask.exit_code}`
+                        : ""}
+                </p>
+                {body ? (
+                    <pre className="mt-1 whitespace-pre-wrap break-words">
+                        {body}
+                    </pre>
+                ) : null}
+                {liveTask.output_truncated ? (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                        {t("tasks.outputTruncated")}
+                    </p>
+                ) : null}
+            </div>
+        );
+    }
+
     if (result === undefined) return null;
     const backgroundTask = readBackgroundTaskEnvelope(result);
     if (backgroundTask) {
@@ -411,11 +475,14 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
                     backgroundTask ? t("tools.backgroundTask") : undefined
                 }
                 backgroundTaskStatus={backgroundStatusLabel}
+                backgroundState={trackedTask?.status ?? null}
             />
             <ToolFallbackContent>
                 <ToolFallbackError status={status} message={errorMessage} />
                 <ToolFallbackArgs argsText={argsText} className={cn(isCancelled && "opacity-60")} />
-                {!isCancelled && !errored && <ToolFallbackResult result={result} />}
+                {!isCancelled && !errored && (
+                    <ToolFallbackResult result={result} liveTask={trackedTask} />
+                )}
             </ToolFallbackContent>
         </ToolFallbackRoot>
     );
