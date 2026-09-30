@@ -138,11 +138,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # the task is still running.
     from nova.tasks.models import TERMINAL_STATUSES
 
-    task_manager.set_listener(
-        lambda record: session_event_bus.publish_task(
+    def _publish_task(record) -> None:
+        # A foreground command is synchronous from the outside: the request
+        # that issued it is blocked on the answer, so a queued or running frame
+        # tells the user nothing they can act on -- it only makes a spinner
+        # appear next to a call that is about to resolve itself. Detached work
+        # is the opposite case, there the user is free to look at it, so its
+        # intermediate states are published as before.
+        if not record.background and record.status not in TERMINAL_STATUSES:
+            return
+        session_event_bus.publish_task(
             record.to_dict(include_output=record.status in TERMINAL_STATUSES)
         )
-    )
+
+    task_manager.set_listener(_publish_task)
     app.state.background_task_manager = task_manager
     app.state.chat_service = ChatService(
         settings=settings,
