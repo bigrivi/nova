@@ -49,6 +49,7 @@ class StdioTransport(McpTransport):
         self._process: asyncio.subprocess.Process | None = None
         self._pending: dict[str, asyncio.Future] = {}
         self._reader_task: asyncio.Task | None = None
+        self._stderr_task: asyncio.Task | None = None
         self._request_id = 0
 
     def _next_id(self) -> str:
@@ -76,7 +77,10 @@ class StdioTransport(McpTransport):
                     break
                 log.debug("MCP stderr: %s", line.decode().rstrip())
 
-        asyncio.create_task(_read_stderr())
+        # Held on the instance, unlike the stdout reader: nothing else reaches
+        # this task, so if it were collected stderr would stop being drained,
+        # the pipe would fill, and the MCP server would block on its next write.
+        self._stderr_task = asyncio.create_task(_read_stderr())
 
     async def send_request(self, method: str, params: dict | None = None) -> dict:
         req_id = self._next_id()
@@ -123,12 +127,16 @@ class StdioTransport(McpTransport):
                 log.debug("MCP notification: %s", msg.get("method", msg))
 
     async def close(self) -> None:
-        if self._reader_task:
-            self._reader_task.cancel()
+        for task in (self._reader_task, self._stderr_task):
+            if task is None:
+                continue
+            task.cancel()
             try:
-                await self._reader_task
+                await task
             except (asyncio.CancelledError, Exception):
                 pass
+        self._reader_task = None
+        self._stderr_task = None
         if self._process and self._process.returncode is None:
             self._process.terminate()
             try:

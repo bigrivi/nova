@@ -2,6 +2,7 @@
 Image tool - read image files and convert to base64.
 """
 
+import asyncio
 import base64
 import json
 import os
@@ -11,6 +12,11 @@ from nova.llm import ToolResult
 from nova.tools.registry import tool
 
 SUPPORTED_FORMATS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+
+
+def _read_as_base64(path: Path) -> str:
+    with open(path, "rb") as handle:
+        return base64.b64encode(handle.read()).decode("utf-8")
 
 
 def _get_image_format(file_path: str) -> str:
@@ -55,8 +61,9 @@ async def read_image(file_path: str) -> ToolResult:
         )
 
     try:
-        with open(p, "rb") as f:
-            image_data = base64.b64encode(f.read()).decode("utf-8")
+        # Base64 of a multi-megabyte image is slow enough to stall the event
+        # loop, and the agent is the only thing running on it.
+        image_data = await asyncio.to_thread(_read_as_base64, p)
 
         file_name = p.name
         file_size = os.path.getsize(p)

@@ -1,4 +1,5 @@
 import importlib
+from typing import ClassVar
 
 import pytest
 
@@ -22,7 +23,7 @@ class MockResponse:
 
 
 class MockAsyncClient:
-    calls = []
+    calls: ClassVar[list] = []
 
     def __init__(self, *args, **kwargs):
         pass

@@ -3,12 +3,12 @@ import pytest_asyncio
 
 from nova import Agent, AgentConfig
 from nova.agent.core import AgentEvent
-from nova.memory.models import MemoryRecord, MemoryWriteRequest
-from nova.memory.service import MemoryService
-from nova.memory.tools import MemoryTools
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite_repository import SqliteRepository
 from nova.llm.provider import Done, LLMProvider, TextDelta, ToolCall
+from nova.memory.models import MemoryRecord, MemoryWriteRequest
+from nova.memory.service import MemoryService
+from nova.memory.tools import MemoryTools
 
 _memory_tools = MemoryTools(agent_key=None)
 save_memory = _memory_tools.save_memory

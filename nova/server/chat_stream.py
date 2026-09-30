@@ -317,12 +317,15 @@ class ChatStreamOrchestrator:
                 },
             )
 
-        if chat_request.session_id and registry is not None:
-            if not await registry.try_register(chat_request.session_id, _RESERVED):
-                raise HTTPException(
-                    status_code=409,
-                    detail="Session is busy: another request is already running for this session. Wait for it to finish before sending another message.",
-                )
+        if (
+            chat_request.session_id
+            and registry is not None
+            and not await registry.try_register(chat_request.session_id, _RESERVED)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Session is busy: another request is already running for this session. Wait for it to finish before sending another message.",
+            )
 
         owns_buffer = (
             service_stream_buffer is not None and buffer is service_stream_buffer

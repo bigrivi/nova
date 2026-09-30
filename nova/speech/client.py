@@ -28,7 +28,11 @@ async def transcribe_file(
     url = base_url.rstrip("/") + "/audio/transcriptions"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
-            with open(audio_path, "rb") as handle:
+            # httpx's multipart encoder reads the handle synchronously, so
+            # wrapping the open in a thread would not move the read off the
+            # loop; only a streaming upload would, and that needs a different
+            # request shape.
+            with open(audio_path, "rb") as handle:  # noqa: ASYNC230
                 response = await client.post(
                     url,
                     headers={"Authorization": f"Bearer {api_key}"},

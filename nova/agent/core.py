@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import uuid
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -135,6 +135,11 @@ class Agent:
         )
 
         self._turns_since_review = 0
+        # Fire-and-forget work (title generation, memory review) is reachable
+        # from a turn, so these tasks need a strong reference for as long as
+        # they run: asyncio only holds a weak one, and a collected task is
+        # silently dropped mid-flight.
+        self._background_tasks: set[asyncio.Task] = set()
         # One compact-and-retry per user request. A second overflow means the
         # fixed prompt alone does not fit, which retrying cannot fix.
         self._overflow_recovered = False
@@ -530,7 +535,7 @@ class Agent:
         """
         if self.is_sub_agent or self._on_title_updated is None:
             return
-        asyncio.create_task(self._generate_title_in_background(session, first_message))
+        self._spawn(self._generate_title_in_background(session, first_message))
 
     async def _generate_title_in_background(
         self, session: SessionContext, first_message: str
@@ -576,7 +581,13 @@ class Agent:
         if self._turns_since_review < self.config.memory_review_interval:
             return
         self._turns_since_review = 0
-        asyncio.create_task(self._run_memory_review())
+        self._spawn(self._run_memory_review())
+
+    def _spawn(self, coro: Coroutine[Any, Any, None]) -> None:
+        """Run *coro* in the background, holding it until it finishes."""
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     async def chat_stream(
         self,

@@ -343,11 +343,13 @@ class ConfigService:
                 if stripped_key:
                     options["api_key"] = stripped_key
 
-        if effective_type in {"openai-compatible", "openai-response"}:
-            if not str(options.get("base_url", "")).strip():
-                raise ConfigValidationError(
-                    f"Base URL is required for {effective_type} providers."
-                )
+        if (
+            effective_type in {"openai-compatible", "openai-response"}
+            and not str(options.get("base_url", "")).strip()
+        ):
+            raise ConfigValidationError(
+                f"Base URL is required for {effective_type} providers."
+            )
 
         _write_json(self._config_path, payload)
         return payload

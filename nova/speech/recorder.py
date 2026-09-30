@@ -163,7 +163,10 @@ class MacRecorder:
         """Begin recording. Raises RuntimeError when already recording."""
         if self._recorder is not None:
             raise RuntimeError("Recording already in progress")
-        tmp = tempfile.NamedTemporaryFile(
+        # delete=False: the platform recorder writes to this path after the
+        # handle is closed, so it has to outlive the statement. A `with` block
+        # would delete the file the recorder is about to open.
+        tmp = tempfile.NamedTemporaryFile(  # noqa: SIM115
             suffix=".m4a", prefix="nova-voice-", delete=False
         )
         tmp.close()
@@ -349,7 +352,8 @@ class WindowsRecorder:
             raise RuntimeError("Recording already in progress")
         dll, kernel = _winmm()
         handle, event, buffers = self._open_device(dll, kernel)
-        tmp = tempfile.NamedTemporaryFile(
+        # delete=False, for the same reason as the macOS path above.
+        tmp = tempfile.NamedTemporaryFile(  # noqa: SIM115
             suffix=".wav", prefix="nova-voice-", delete=False
         )
         tmp.close()

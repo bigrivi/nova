@@ -6,7 +6,6 @@ import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import Union
 
 # Shared HTTP retry policy for all providers. 429 is quota/throttle feedback,
 # not a transient fault: retrying it only burns quota faster, so it fails
@@ -139,7 +138,7 @@ class Error(ChatEvent):
     tool_calls: list[ToolCall] = field(default_factory=list)
 
 
-ChatStreamEvent = Union[TextDelta, ReasoningDelta, ToolCall, Done, Error]
+ChatStreamEvent = TextDelta | ReasoningDelta | ToolCall | Done | Error
 
 
 class LLMProvider(ABC):

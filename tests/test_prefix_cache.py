@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import copy
+import itertools
 import json
 
 import pytest
@@ -44,7 +45,6 @@ from nova.llm.tokenizer import estimate_tokens_by_type
 from nova.memory.models import MemoryWriteRequest
 from nova.memory.service import MemoryService
 from nova.session import manager as session_manager_module
-import itertools
 
 _PROVIDERS = ("anthropic", "openai", "openai_response")
 
