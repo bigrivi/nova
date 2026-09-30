@@ -41,10 +41,8 @@ from nova.server.request_registry import (
     TERMINAL_TTL as REGISTRY_TERMINAL_TTL,
 )
 from nova.server.request_registry import RequestRegistry
-from nova.server.stream_buffer import CONNECTION_QUEUE_MAXSIZE
+from nova.server.stream_buffer import CONNECTION_QUEUE_MAXSIZE, MAX_FRAMES, StreamBuffer
 from nova.server.stream_buffer import IDLE_TTL as BUFFER_IDLE_TTL
-from nova.server.stream_buffer import MAX_FRAMES
-from nova.server.stream_buffer import StreamBuffer
 from nova.settings import get_settings
 
 

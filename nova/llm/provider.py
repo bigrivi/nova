@@ -4,8 +4,9 @@ LLM provider interface definitions.
 
 import asyncio
 from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, Optional, Union
+from typing import Union
 
 # Shared HTTP retry policy for all providers. 429 is quota/throttle feedback,
 # not a transient fault: retrying it only burns quota faster, so it fails
@@ -40,23 +41,23 @@ STREAM_IDLE_TIMEOUT_SECONDS = 300
 class Message:
     role: str
     content: str
-    name: Optional[str] = None
-    tool_calls: Optional[list] = None
-    tool_call_id: Optional[str] = None
-    images: Optional[list[str]] = None
-    reasoning_content: Optional[str] = None
+    name: str | None = None
+    tool_calls: list | None = None
+    tool_call_id: str | None = None
+    images: list[str] | None = None
+    reasoning_content: str | None = None
     # Opaque per-vendor state a provider needs handed back verbatim on the next
     # request (Anthropic thinking signatures today). Never business data, and
     # never surfaced to the UI.
-    provider_meta: Optional[dict] = None
-    model: Optional[str] = None
+    provider_meta: dict | None = None
+    model: str | None = None
 
 
 @dataclass
 class ToolResult:
     success: bool = True
     content: str = ""
-    error: Optional[str] = None
+    error: str | None = None
     requires_input: bool = False
 
 
@@ -96,13 +97,13 @@ class Done(ChatEvent):
     content: str = ""
     tool_calls: list = None
     aborted: bool = False
-    tokens_input: Optional[int] = None
-    tokens_output: Optional[int] = None
-    provider_meta: Optional[dict] = None
+    tokens_input: int | None = None
+    tokens_output: int | None = None
+    provider_meta: dict | None = None
     # Input tokens served from the prompt cache this turn, when the vendor
     # reports it (Anthropic cache_read_input_tokens, OpenAI cached_tokens).
     # None means unknown (vendor silent), not necessarily zero.
-    cache_read_tokens: Optional[int] = None
+    cache_read_tokens: int | None = None
 
     def __post_init__(self):
         if self.tool_calls is None:
@@ -157,8 +158,8 @@ class LLMProvider(ABC):
         messages: list,
         model: str = "gpt-4o",
         tools: list[dict] = None,
-        abort_event: Optional[asyncio.Event] = None,
-        timeout: Optional[int] = None,
+        abort_event: asyncio.Event | None = None,
+        timeout: int | None = None,
         **kwargs
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         pass

@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from enum import Enum
-from typing import Any, AsyncGenerator, Awaitable, Callable, Optional
+from typing import Any
 
 from nova.agent.events import AgentEvent, done_payload, error_payload
 
@@ -36,7 +37,7 @@ class TurnStreamReader:
     def __init__(
         self,
         emit: Callable[..., Awaitable[None]],
-        stop_if_aborted: Callable[[], Awaitable[Optional[dict]]],
+        stop_if_aborted: Callable[[], Awaitable[dict | None]],
         turn_count: int = 0,
     ) -> None:
         self._emit = emit
@@ -47,11 +48,11 @@ class TurnStreamReader:
         self.reasoning = ""
         self.tool_calls: dict[str, Any] = {}
         self.done_content = ""
-        self.tokens_input: Optional[int] = None
-        self.tokens_output: Optional[int] = None
-        self.cache_read_tokens: Optional[int] = None
-        self.provider_meta: Optional[dict] = None
-        self.reasoning_elapsed_ms: Optional[int] = None
+        self.tokens_input: int | None = None
+        self.tokens_output: int | None = None
+        self.cache_read_tokens: int | None = None
+        self.provider_meta: dict | None = None
+        self.reasoning_elapsed_ms: int | None = None
         self.outcome = TurnOutcome.CONTINUE
         # Why a failed turn failed. Kept here rather than only in the emitted
         # event so the caller can record it alongside whatever text arrived.
@@ -59,7 +60,7 @@ class TurnStreamReader:
 
         self._text_started = False
         self._reasoning_started = False
-        self._reasoning_started_at: Optional[float] = None
+        self._reasoning_started_at: float | None = None
 
     async def consume(
         self,
@@ -147,7 +148,7 @@ class TurnStreamReader:
             if hasattr(tool_call, "name") and tool_call.name
         ]
 
-    def _reasoning_elapsed(self) -> Optional[int]:
+    def _reasoning_elapsed(self) -> int | None:
         if self._reasoning_started_at is None:
             return None
         return int((time.monotonic() - self._reasoning_started_at) * 1000)

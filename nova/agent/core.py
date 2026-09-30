@@ -1,36 +1,41 @@
 import asyncio
 import logging
 import uuid
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, AsyncGenerator, Callable, Optional
+from typing import Any, Optional
 
-from nova.llm import LLMProvider, Message as LLMMessage
-from nova.session import get_session_manager
-from nova.session.manager import SessionContext, default_session_title
-from nova.session.protocol import SessionProtocol
-from nova.agent.title_generator import generate_session_title
-from nova.tools.registry import ToolRegistry
-from nova.prompt import PromptBuilder, PromptConfig
 from nova.agent.compaction import CompactionController, CompactionError
-from nova.db import DataSourceProtocol, get_default_data_source
-from nova.skills.service import SkillService
-from nova.constants import DEFAULT_AGENT_KEY
-from nova.agent.tool_guardrails import ToolGuardrails
-from nova.tools.approval import get_approval_manager
-from nova.agent.hierarchy import AgentHierarchy
-from nova.agent.memory_review import MemoryReviewer
-from nova.agent.toolset import ToolsetBuilder
-from nova.agent.llm_stream import TurnStreamReader, TurnOutcome
-from nova.agent.overflow import is_context_overflow
-from nova.agent.tool_invoker import (
-    ToolInvoker, has_parsable_arguments)
 from nova.agent.events import (
     AgentEvent,
     EventBus,
+)
+from nova.agent.events import (
     done_payload as _done_payload,
+)
+from nova.agent.events import (
     error_payload as _error_payload,
 )
+from nova.agent.hierarchy import AgentHierarchy
+from nova.agent.llm_stream import TurnOutcome, TurnStreamReader
+from nova.agent.memory_review import MemoryReviewer
+from nova.agent.overflow import is_context_overflow
+from nova.agent.title_generator import generate_session_title
+from nova.agent.tool_guardrails import ToolGuardrails
+from nova.agent.tool_invoker import ToolInvoker, has_parsable_arguments
+from nova.agent.toolset import ToolsetBuilder
+from nova.constants import DEFAULT_AGENT_KEY
+from nova.db import DataSourceProtocol, get_default_data_source
+from nova.llm import LLMProvider
+from nova.llm import Message as LLMMessage
+from nova.prompt import PromptBuilder, PromptConfig
+from nova.session import get_session_manager
+from nova.session.manager import SessionContext, default_session_title
+from nova.session.protocol import SessionProtocol
+from nova.skills.service import SkillService
+from nova.tools.approval import get_approval_manager
+from nova.tools.registry import ToolRegistry
 
 log = logging.getLogger(__name__)
 
@@ -45,16 +50,16 @@ class AgentConfig:
     max_iterations: int = 100
     max_tokens: int = 8192
     temperature: float = 0.7
-    tools: Optional[list] = None
+    tools: list | None = None
     memory_review_interval: int = 10
     # Reasoning level for this run. None means "whatever the model config
     # declares", which is also what a provider that has no such concept gets.
-    reasoning_effort: Optional[str] = None
+    reasoning_effort: str | None = None
 
 
 def build_user_message(
     user_input: str,
-    attachments: Optional[list[dict]] = None,
+    attachments: list[dict] | None = None,
 ) -> tuple[str, list[str]]:
     """Fold attachments into the text and image payload of a user message.
 
@@ -82,18 +87,18 @@ def build_user_message(
 class Agent:
     def __init__(
         self,
-        config: Optional[AgentConfig] = None,
-        llm_provider: Optional[LLMProvider] = None,
-        session_manager: Optional[SessionProtocol] = None,
+        config: AgentConfig | None = None,
+        llm_provider: LLMProvider | None = None,
+        session_manager: SessionProtocol | None = None,
         agent_key: str = DEFAULT_AGENT_KEY,
-        agent_dir: Optional[Path] = None,
+        agent_dir: Path | None = None,
         parent_agent: Optional["Agent"] = None,
         is_sub_agent: bool = False,
         depth: int = 0,
-        allowed_tools: Optional[frozenset[str]] = None,
-        prompt_config: Optional[PromptConfig] = None,
-        data_source: Optional[DataSourceProtocol] = None,
-        on_title_updated: Optional[Callable[[str, str], None]] = None,
+        allowed_tools: frozenset[str] | None = None,
+        prompt_config: PromptConfig | None = None,
+        data_source: DataSourceProtocol | None = None,
+        on_title_updated: Callable[[str, str], None] | None = None,
     ):
         self.config = config or AgentConfig()
         self.agent_key = agent_key
@@ -123,8 +128,8 @@ class Agent:
             prompt_config or PromptConfig.from_agent_dir(agent_dir))
 
         self._abort_event = asyncio.Event()
-        self._base_system_prompt: Optional[str] = None
-        self._active_workspace: Optional[str] = None
+        self._base_system_prompt: str | None = None
+        self._active_workspace: str | None = None
         self._last_user_input: str = ""
         self._skill_tools: Any = None
         self._compaction = CompactionController(
@@ -155,7 +160,7 @@ class Agent:
         """Resolve a pending approval request (called from server route)."""
         return self._approval.resolve(approval_request_id, approved, remember)
 
-    async def _stop_if_aborted(self) -> Optional[dict[str, Any]]:
+    async def _stop_if_aborted(self) -> dict[str, Any] | None:
         """Return a done payload when execution should stop."""
         if self._abort_event.is_set():
             payload = _done_payload("stopped", "Stopped by user")
@@ -241,7 +246,7 @@ class Agent:
             converted_messages.append(llm_message)
         return converted_messages
 
-    async def _build_messages(self, loaded_messages: Optional[list] = None) -> list[LLMMessage]:
+    async def _build_messages(self, loaded_messages: list | None = None) -> list[LLMMessage]:
         session = self.session.get_current_session()
 
         if self._base_system_prompt is None:
@@ -261,8 +266,8 @@ class Agent:
         self,
         turn_count: int,
         tool_schemas: Any,
-        group_id: Optional[str] = None,
-        loaded_messages: Optional[list] = None,
+        group_id: str | None = None,
+        loaded_messages: list | None = None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         stop_payload = await self._stop_if_aborted()
         if stop_payload:
@@ -319,7 +324,7 @@ class Agent:
         self,
         turn_count: int,
         tool_schemas: Any,
-        loaded_messages: Optional[list],
+        loaded_messages: list | None,
     ) -> AsyncGenerator[Any, None]:
         messages = await self._build_messages(loaded_messages=loaded_messages)
         current_session = self.session.get_current_session()
@@ -392,7 +397,7 @@ class Agent:
     async def _persist_failed_turn(
         self,
         reader: TurnStreamReader,
-        group_id: Optional[str],
+        group_id: str | None,
     ) -> None:
         """Keep the text a failed turn produced, so a reload does not lose it.
 
@@ -425,7 +430,7 @@ class Agent:
         self,
         reader: TurnStreamReader,
         tool_calls: list,
-        group_id: Optional[str],
+        group_id: str | None,
     ) -> None:
         await self.session.add_message(
             role="assistant",
@@ -447,7 +452,7 @@ class Agent:
     async def _invoke_tools(
         self,
         tool_calls: list,
-        group_id: Optional[str],
+        group_id: str | None,
         turn_count: int,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         invoker = ToolInvoker(
@@ -469,10 +474,10 @@ class Agent:
 
     async def _resolve_session(
         self,
-        session_id: Optional[str],
+        session_id: str | None,
         user_input: str,
-        workspace_dir: Optional[str],
-        project_id: Optional[str] = None,
+        workspace_dir: str | None,
+        project_id: str | None = None,
     ) -> SessionContext:
         """Load the requested session, creating one when it is absent."""
         if session_id and await self.session.load_session(session_id):
@@ -794,7 +799,7 @@ class Agent:
         """Get all parent agent rows from the database (M2M; may be multiple)."""
         return await self._hierarchy.parent_agent_records()
 
-    async def get_primary_parent_record(self) -> Optional[dict]:
+    async def get_primary_parent_record(self) -> dict | None:
         """Get the first parent agent row from the database.
 
         This is the database's ordering, not necessarily the same parent

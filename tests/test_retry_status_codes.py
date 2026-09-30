@@ -3,8 +3,8 @@
 Quota/throttle feedback is not a transient fault; retrying it only burns
 quota faster.
 """
-from nova.llm.providers import anthropic, openai_chat, openai_responses
 from nova.llm.provider import RETRY_STATUS_CODES
+from nova.llm.providers import anthropic, openai_chat, openai_responses
 
 
 def test_429_not_retried():

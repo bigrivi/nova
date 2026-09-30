@@ -1,4 +1,3 @@
-from typing import List
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
@@ -61,7 +60,7 @@ _MAX_IN_PROGRESS = 1
         "required": ["todos"],
     },
 )
-async def todo_write(todos: List[dict]) -> ToolResult:
+async def todo_write(todos: list[dict]) -> ToolResult:
     lines = ["## Tasks\n"]
     counts: dict[str, int] = {}
     unknown: list[tuple[int, str]] = []

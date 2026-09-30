@@ -4,8 +4,8 @@ import json
 import logging
 import os
 import re
-import sys
 import shutil
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -242,18 +242,18 @@ def _invalidate_cache():
 )
 async def browser_use(
     action: str,
-    url: Optional[str] = None,
-    index: Optional[int] = None,
-    text: Optional[str] = None,
-    scroll_amount: Optional[int] = None,
-    tab_id: Optional[int] = None,
-    query: Optional[str] = None,
-    goal: Optional[str] = None,
-    keep_attrs: Optional[str] = None,
-    selector: Optional[str] = None,
-    keys: Optional[str] = None,
-    seconds: Optional[int] = None,
-    screenshot: Optional[bool] = None,
+    url: str | None = None,
+    index: int | None = None,
+    text: str | None = None,
+    scroll_amount: int | None = None,
+    tab_id: int | None = None,
+    query: str | None = None,
+    goal: str | None = None,
+    keep_attrs: str | None = None,
+    selector: str | None = None,
+    keys: str | None = None,
+    seconds: int | None = None,
+    screenshot: bool | None = None,
     ctx: Optional["ToolContext"] = None,
 ) -> ToolResult:
     global _page
@@ -469,7 +469,7 @@ async def browser_use(
 
     except Exception as e:
         log.exception("Browser action '%s' failed", action)
-        return ToolResult(success=False, error=f"Browser action '{action}' failed: {str(e)}")
+        return ToolResult(success=False, error=f"Browser action '{action}' failed: {e!s}")
 
 
 async def _get_clickable_elements(page) -> list[dict]:

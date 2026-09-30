@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
@@ -24,7 +23,7 @@ from nova.tools.workspace_context import get_active_workspace
         "required": ["pattern"],
     },
 )
-async def glob(pattern: str, path: Optional[str] = None) -> ToolResult:
+async def glob(pattern: str, path: str | None = None) -> ToolResult:
     try:
         search_path = Path(path) if path else Path(get_active_workspace() or Path.cwd())
         matches = list(search_path.glob(pattern))

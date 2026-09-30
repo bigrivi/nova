@@ -10,8 +10,6 @@ while still giving every call an explicit owner.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from nova.llm import ToolResult
 from nova.memory.models import MemoryWriteRequest
 from nova.memory.service import MemoryService
@@ -46,8 +44,8 @@ class MemoryTools:
 
     def __init__(
         self,
-        agent_key: Optional[str] = None,
-        service: Optional[MemoryService] = None,
+        agent_key: str | None = None,
+        service: MemoryService | None = None,
     ) -> None:
         self._agent_key = agent_key
         self._service = service
@@ -127,8 +125,8 @@ class MemoryTools:
         summary: str,
         scope: str,
         memory_type: str,
-        tags: Optional[list[str]] = None,
-        session_id: Optional[str] = None,
+        tags: list[str] | None = None,
+        session_id: str | None = None,
     ) -> ToolResult:
         if has_threats(content):
             return ToolResult(success=False, content="Memory content rejected — flagged as potential injection.")
@@ -195,8 +193,8 @@ class MemoryTools:
         self,
         query: str,
         scope: str = "all",
-        memory_type: Optional[str] = None,
-        session_id: Optional[str] = None,
+        memory_type: str | None = None,
+        session_id: str | None = None,
         limit: int = 5,
         use_ai: bool = False,
     ) -> ToolResult:
@@ -253,10 +251,10 @@ class MemoryTools:
     )
     async def delete_memory(
         self,
-        id: Optional[str] = None,
-        key: Optional[str] = None,
-        scope: Optional[str] = None,
-        session_id: Optional[str] = None,
+        id: str | None = None,
+        key: str | None = None,
+        scope: str | None = None,
+        session_id: str | None = None,
     ) -> ToolResult:
         try:
             deleted = await self._get_service().delete(
@@ -307,8 +305,8 @@ class MemoryTools:
     async def list_memories(
         self,
         scope: str = "all",
-        memory_type: Optional[str] = None,
-        session_id: Optional[str] = None,
+        memory_type: str | None = None,
+        session_id: str | None = None,
         limit: int = 20,
     ) -> ToolResult:
         try:

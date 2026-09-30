@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
 import aiohttp  # noqa: F401  # kept so tests can patch nova.llm.providers.openai_responses.aiohttp
 
@@ -72,7 +71,7 @@ class _ResponsesStreamParser(StreamParser):
     partial ``Error`` that carries whatever text had already arrived.
     """
 
-    def __init__(self, provider: "OpenAIResponsesProvider") -> None:
+    def __init__(self, provider: OpenAIResponsesProvider) -> None:
         super().__init__()
         self._provider = provider
         self._tool_calls: dict[int, dict] = {}
@@ -224,15 +223,15 @@ class OpenAIResponsesProvider(HttpProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        request_options: Optional[dict] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        request_options: dict | None = None,
         timeout_seconds: int = 120,
-        user_agent: Optional[str] = None,
-        extra_headers: Optional[dict] = None,
-        request_hook: Optional[str] = None,
-        request_session_hook: Optional[str] = None,
-        default_reasoning_effort: Optional[str] = None,
+        user_agent: str | None = None,
+        extra_headers: dict | None = None,
+        request_hook: str | None = None,
+        request_session_hook: str | None = None,
+        default_reasoning_effort: str | None = None,
     ):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
@@ -244,7 +243,7 @@ class OpenAIResponsesProvider(HttpProvider):
         self._request_session_hook = request_session_hook
         self._default_reasoning_effort = default_reasoning_effort
 
-    def _build_headers(self, session_id: Optional[str] = None) -> dict[str, str]:
+    def _build_headers(self, session_id: str | None = None) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self._user_agent:
             headers["User-Agent"] = self._user_agent
@@ -336,7 +335,7 @@ class OpenAIResponsesProvider(HttpProvider):
         # If single user message, Zen also accepts string input; keep array for consistency
         return result
 
-    def _build_body(self, input_data: list | str, model: str, stream: bool = False, tools: list[dict] | None = None, session_id: Optional[str] = None, reasoning_effort: Optional[str] = None) -> dict:
+    def _build_body(self, input_data: list | str, model: str, stream: bool = False, tools: list[dict] | None = None, session_id: str | None = None, reasoning_effort: str | None = None) -> dict:
         body: dict = {"model": model, "input": input_data}
         if stream:
             body["stream"] = True
@@ -386,9 +385,9 @@ class OpenAIResponsesProvider(HttpProvider):
         messages: list,
         model: str,
         stream: bool,
-        tools: Optional[list[dict]],
-        session_id: Optional[str],
-        reasoning_effort: Optional[str],
+        tools: list[dict] | None,
+        session_id: str | None,
+        reasoning_effort: str | None,
     ) -> tuple[str, dict[str, str], dict]:
         input_data = self._format_input(messages)
         body = self._build_body(input_data, model, stream=stream, tools=tools, session_id=session_id, reasoning_effort=reasoning_effort)

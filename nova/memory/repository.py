@@ -5,7 +5,6 @@ Database-backed memory repository.
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 from nova.db import get_default_data_source
 from nova.db.repository import NovaRepository
@@ -43,9 +42,9 @@ class MemoryRepository:
         self,
         key: str,
         scope: str,
-        session_id: Optional[str] = None,
-        owner_agent_key: Optional[str] = None,
-    ) -> Optional[MemoryRecord]:
+        session_id: str | None = None,
+        owner_agent_key: str | None = None,
+    ) -> MemoryRecord | None:
         data_source = await self._get_data_source()
         row = await data_source.get_memory_by_key(key, scope, session_id, owner_agent_key)
         return self._row_to_record(row) if row else None
@@ -74,8 +73,8 @@ class MemoryRepository:
         self,
         key: str,
         scope: str,
-        session_id: Optional[str] = None,
-        owner_agent_key: Optional[str] = None,
+        session_id: str | None = None,
+        owner_agent_key: str | None = None,
     ) -> int:
         data_source = await self._get_data_source()
         return await data_source.delete_memory_by_key(key, scope, session_id, owner_agent_key)
@@ -95,7 +94,7 @@ class MemoryRepository:
             updated_at=row["updated_at"],
         )
 
-    def _load_tags(self, raw_tags: Optional[str]) -> list[str]:
+    def _load_tags(self, raw_tags: str | None) -> list[str]:
         if not raw_tags:
             return []
         try:

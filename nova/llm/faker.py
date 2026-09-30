@@ -3,11 +3,20 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import random
 import re
 from collections.abc import AsyncGenerator
-import logging
-from nova.llm.provider import ChatStreamEvent, Done, Error, LLMProvider, ReasoningDelta, TextDelta, ToolCall
+
+from nova.llm.provider import (
+    ChatStreamEvent,
+    Done,
+    Error,
+    LLMProvider,
+    ReasoningDelta,
+    TextDelta,
+    ToolCall,
+)
 
 log = logging.getLogger(__name__)
 
@@ -506,12 +515,7 @@ class FakerLLMProvider(LLMProvider):
         chunks: list[str] = []
         buffer = ""
         for char in text:
-            if "\u4e00" <= char <= "\u9fff":
-                if buffer:
-                    chunks.append(buffer)
-                    buffer = ""
-                chunks.append(char)
-            elif char.isspace():
+            if "\u4e00" <= char <= "\u9fff" or char.isspace():
                 if buffer:
                     chunks.append(buffer)
                     buffer = ""

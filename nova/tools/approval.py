@@ -6,7 +6,6 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -18,7 +17,7 @@ class ApprovalRequest:
     description: str
     created_at: float
     expires_at: float
-    approved: Optional[bool] = None
+    approved: bool | None = None
     session_id: str = ""
 
 
@@ -57,7 +56,7 @@ class ApprovalManager:
 
     async def wait_with_heartbeat(
         self, req_id: str, heartbeat_interval: int = 15,
-    ) -> AsyncGenerator[Optional[bool], None]:
+    ) -> AsyncGenerator[bool | None, None]:
         """Async generator: yields None for each heartbeat tick,
         then yields True if approved, False if rejected."""
         if not req_id:
@@ -71,7 +70,7 @@ class ApprovalManager:
             while True:
                 try:
                     await asyncio.wait_for(event.wait(), timeout=heartbeat_interval)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield None
                     continue
                 req = self._pending.get(req_id)
@@ -115,7 +114,7 @@ class ApprovalManager:
         return [r for r in self._pending.values() if r.approved is None]
 
 
-_manager: Optional[ApprovalManager] = None
+_manager: ApprovalManager | None = None
 
 
 def get_approval_manager() -> ApprovalManager:

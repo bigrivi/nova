@@ -8,8 +8,9 @@ must write nothing to the database and broadcast nothing to the frontend.
 from __future__ import annotations
 
 import contextlib
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 import pytest
 

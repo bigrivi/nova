@@ -4,16 +4,14 @@ Memory prompt-context helpers.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from nova.memory.service import MemoryService
 
 
 async def build_memory_index_for_system(
-    session_id: Optional[str] = None,
+    session_id: str | None = None,
     limit: int = 30,
-    service: Optional[MemoryService] = None,
-    agent_key: Optional[str] = None,
+    service: MemoryService | None = None,
+    agent_key: str | None = None,
 ) -> str:
     """Build a lightweight memory index for injection into the system prompt.
 

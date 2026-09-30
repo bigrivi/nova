@@ -146,18 +146,17 @@ class RequestRegistry:
     async def register(self, session_id: str, agent: Agent) -> None:
         """Bind *agent* to *session_id* (active state, touch, bump sequence)."""
         lock = await self._session_lock(session_id)
-        async with lock:
-            async with self._map_lock:
-                slot = self._slots.get(session_id)
-                sequence_number = (slot.stream_sequence + 1) if slot is not None else 0
-                self._slots[session_id] = _Slot(
-                    owner=agent,
-                    stream_sequence=sequence_number,
-                    state=ACTIVE,
-                    last_access=time.monotonic(),
-                )
-                self._mark_active_locked(session_id)
-                self._enforce_cap_locked()
+        async with lock, self._map_lock:
+            slot = self._slots.get(session_id)
+            sequence_number = (slot.stream_sequence + 1) if slot is not None else 0
+            self._slots[session_id] = _Slot(
+                owner=agent,
+                stream_sequence=sequence_number,
+                state=ACTIVE,
+                last_access=time.monotonic(),
+            )
+            self._mark_active_locked(session_id)
+            self._enforce_cap_locked()
 
     async def try_register(self, session_id: str, agent: Any) -> bool:
         """Atomically reserve a session slot; False if already held.
@@ -168,21 +167,20 @@ class RequestRegistry:
         Detached slots still hold the slot (409); done slots are free.
         """
         lock = await self._session_lock(session_id)
-        async with lock:
-            async with self._map_lock:
-                slot = self._slots.get(session_id)
-                if slot is not None and slot.state in (ACTIVE, DETACHED):
-                    return False
-                sequence_number = (slot.stream_sequence + 1) if slot is not None else 0
-                self._slots[session_id] = _Slot(
-                    owner=agent,
-                    stream_sequence=sequence_number,
-                    state=ACTIVE,
-                    last_access=time.monotonic(),
-                )
-                self._mark_active_locked(session_id)
-                self._enforce_cap_locked()
-                return True
+        async with lock, self._map_lock:
+            slot = self._slots.get(session_id)
+            if slot is not None and slot.state in (ACTIVE, DETACHED):
+                return False
+            sequence_number = (slot.stream_sequence + 1) if slot is not None else 0
+            self._slots[session_id] = _Slot(
+                owner=agent,
+                stream_sequence=sequence_number,
+                state=ACTIVE,
+                last_access=time.monotonic(),
+            )
+            self._mark_active_locked(session_id)
+            self._enforce_cap_locked()
+            return True
 
     async def unregister_if_current(self, session_id: str, agent: Any) -> bool:
         """Remove the entry only if it still belongs to *agent*.
@@ -191,32 +189,29 @@ class RequestRegistry:
         delete_session or a concurrent request took the slot.
         """
         lock = await self._session_lock(session_id)
-        async with lock:
-            async with self._map_lock:
-                slot = self._slots.get(session_id)
-                if slot is not None and slot.owner is agent:
-                    del self._slots[session_id]
-                    self._mark_free_locked(session_id)
-                    return True
-                return False
+        async with lock, self._map_lock:
+            slot = self._slots.get(session_id)
+            if slot is not None and slot.owner is agent:
+                del self._slots[session_id]
+                self._mark_free_locked(session_id)
+                return True
+            return False
 
     async def unregister(self, session_id: str) -> None:
         lock = await self._session_lock(session_id)
-        async with lock:
-            async with self._map_lock:
-                self._slots.pop(session_id, None)
-                self._mark_free_locked(session_id)
+        async with lock, self._map_lock:
+            self._slots.pop(session_id, None)
+            self._mark_free_locked(session_id)
 
     async def get(self, session_id: str) -> Any:
         """Return the slot owner (Agent or _RESERVED), touching the slot."""
         lock = await self._session_lock(session_id)
-        async with lock:
-            async with self._map_lock:
-                slot = self._slots.get(session_id)
-                if slot is None:
-                    return None
-                slot.last_access = time.monotonic()
-                return slot.owner
+        async with lock, self._map_lock:
+            slot = self._slots.get(session_id)
+            if slot is None:
+                return None
+            slot.last_access = time.monotonic()
+            return slot.owner
 
     async def interrupt(self, session_id: str) -> bool:
         """Interrupt the slot owner; works on active and detached slots.
@@ -256,39 +251,36 @@ class RequestRegistry:
         Detached slots keep holding the slot: try_register → False (409).
         """
         lock = await self._session_lock(session_id)
-        async with lock:
-            async with self._map_lock:
-                slot = self._slots.get(session_id)
-                if slot is None or slot.state != ACTIVE:
-                    return False
-                slot.state = DETACHED
-                slot.last_access = time.monotonic()
-                return True
+        async with lock, self._map_lock:
+            slot = self._slots.get(session_id)
+            if slot is None or slot.state != ACTIVE:
+                return False
+            slot.state = DETACHED
+            slot.last_access = time.monotonic()
+            return True
 
     async def reattach(self, session_id: str, agent: Any) -> bool:
         """Rebind a detached slot to a resumed stream agent."""
         lock = await self._session_lock(session_id)
-        async with lock:
-            async with self._map_lock:
-                slot = self._slots.get(session_id)
-                if slot is None or slot.state != DETACHED:
-                    return False
-                slot.owner = agent
-                slot.state = ACTIVE
-                slot.stream_sequence += 1
-                slot.last_access = time.monotonic()
-                self._mark_active_locked(session_id)
-                return True
+        async with lock, self._map_lock:
+            slot = self._slots.get(session_id)
+            if slot is None or slot.state != DETACHED:
+                return False
+            slot.owner = agent
+            slot.state = ACTIVE
+            slot.stream_sequence += 1
+            slot.last_access = time.monotonic()
+            self._mark_active_locked(session_id)
+            return True
 
     async def touch(self, session_id: str) -> bool:
         """Refresh last_access; False if no slot."""
         lock = await self._session_lock(session_id)
-        async with lock:
-            async with self._map_lock:
-                if session_id not in self._slots:
-                    return False
-                self._touch_locked(session_id)
-                return True
+        async with lock, self._map_lock:
+            if session_id not in self._slots:
+                return False
+            self._touch_locked(session_id)
+            return True
 
     async def mark_done(self, session_id: str) -> bool:
         """Mark a slot terminal (done) while keeping it for resume/status.
@@ -298,15 +290,14 @@ class RequestRegistry:
         until then so ``replay_since`` and ``/stream/status`` keep working.
         """
         lock = await self._session_lock(session_id)
-        async with lock:
-            async with self._map_lock:
-                slot = self._slots.get(session_id)
-                if slot is None:
-                    return False
-                slot.state = DONE
-                slot.last_access = time.monotonic()
-                self._mark_free_locked(session_id)
-                return True
+        async with lock, self._map_lock:
+            slot = self._slots.get(session_id)
+            if slot is None:
+                return False
+            slot.state = DONE
+            slot.last_access = time.monotonic()
+            self._mark_free_locked(session_id)
+            return True
 
     def attach_buffer(self, buffer: Any) -> None:
         """Bind a StreamBuffer whose lifetime tracks slot eviction.

@@ -5,7 +5,6 @@ import httpx
 from nova.llm import ToolResult
 from nova.tools.registry import tool
 
-
 API_BASE_URL = "https://mcp.exa.ai"
 API_SEARCH_ENDPOINT = "/mcp"
 DEFAULT_NUM_RESULTS = 8

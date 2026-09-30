@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from nova.llm.providers.openai_chat import OpenAIProvider
 from nova.llm.provider import Done, Error
+from nova.llm.providers.openai_chat import OpenAIProvider
 
 
 class _FakeConnector:
@@ -65,7 +65,7 @@ class _FakeSession:
         self._response = response
         self.calls: list[dict] = []
 
-    async def post(self, url, headers=None, json=None, timeout=None):  # noqa: A002
+    async def post(self, url, headers=None, json=None, timeout=None):
         self.calls.append({"url": url, "headers": headers, "json": json})
         return self._response
 

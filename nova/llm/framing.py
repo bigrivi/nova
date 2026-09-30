@@ -103,4 +103,4 @@ class NDJSONFramer:
         return obj if isinstance(obj, dict) else None
 
 
-__all__ = ["SSEFramer", "NDJSONFramer"]
+__all__ = ["NDJSONFramer", "SSEFramer"]

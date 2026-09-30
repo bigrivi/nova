@@ -72,7 +72,7 @@ class StreamParser(ABC):
         """
 
     @abstractmethod
-    def build_done(self, acc: StreamAccumulator) -> "Done | Error":
+    def build_done(self, acc: StreamAccumulator) -> Done | Error:
         """Build the terminal event from the accumulated state.
 
         Usually a ``Done``. A parser may instead return an ``Error`` when the

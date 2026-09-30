@@ -6,7 +6,7 @@ from typing import Any
 
 from nova.llm import ToolResult
 from nova.mcp.client import McpClient
-from nova.mcp.transport import create_transport, McpError
+from nova.mcp.transport import McpError, create_transport
 from nova.settings import get_settings
 from nova.tools.registry import ToolRegistry
 
@@ -66,7 +66,7 @@ _PER_SERVER_TIMEOUT = 10
 class MCPManager:
     """Global singleton managing MCP server connections across all agents."""
 
-    _instance: "MCPManager | None" = None
+    _instance: MCPManager | None = None
 
     def __init__(self) -> None:
         self._mcp_clients: list[McpClient] = []
@@ -74,7 +74,7 @@ class MCPManager:
         self._lock = asyncio.Lock()
 
     @classmethod
-    def get_shared(cls) -> "MCPManager":
+    def get_shared(cls) -> MCPManager:
         if cls._instance is None:
             cls._instance = MCPManager()
         return cls._instance
@@ -112,7 +112,7 @@ class MCPManager:
                         server_name,
                     )
                     return client
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     log.warning(
                         "MCP server '%s' timed out after %ds",
                         server_name,

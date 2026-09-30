@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -16,6 +15,6 @@ class Project:
 
     id: str
     name: str
-    path: Optional[str] = None
+    path: str | None = None
     created_at: int = field(default_factory=lambda: int(time.time() * 1000))
     updated_at: int = field(default_factory=lambda: int(time.time() * 1000))

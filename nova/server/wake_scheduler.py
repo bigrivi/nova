@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 log = logging.getLogger(__name__)
 
@@ -131,5 +131,5 @@ class WakeScheduler:
                     self._wait_free(parent_id),
                     timeout=self._wait_free_timeout_seconds,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 log.debug("Wake wait_free re-poll for parent %s", parent_id)

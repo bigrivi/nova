@@ -1,26 +1,26 @@
 from __future__ import annotations
 
 import base64
-
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-import pytest
-import pytest_asyncio
-from starlette.types import ASGIApp
 import json
 
+import pytest
+import pytest_asyncio
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from starlette.types import ASGIApp
+
+import nova.server.app as server_app
+from nova import __version__ as nova_version
 from nova.db.config import DatabaseConfig
-from nova.session.models import Session
 from nova.db.database import close_db, init_db
 from nova.memory.models import MemoryWriteRequest
 from nova.memory.service import MemoryService
-import nova.server.app as server_app
-from nova import __version__ as nova_version
 from nova.server import create_app, run_server
 from nova.server.auth import check_basic_auth, get_configured_credentials
 from nova.server.request_registry import RequestRegistry
-from nova.tools.approval import get_approval_manager
+from nova.session.models import Session
 from nova.settings import Settings, get_settings
+from nova.tools.approval import get_approval_manager
 
 
 class EventStub:
@@ -1452,7 +1452,7 @@ def test_check_basic_auth_rejects_malformed(header):
 
 
 def test_check_basic_auth_accepts_non_ascii_credentials():
-    encoded = base64.b64encode("用户:密码".encode("utf-8")).decode("ascii")
+    encoded = base64.b64encode("用户:密码".encode()).decode("ascii")
 
     assert check_basic_auth(f"Basic {encoded}", ("用户", "密码")) is True
 

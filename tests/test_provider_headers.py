@@ -201,8 +201,8 @@ def test_build_llm_wires_request_hook(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("NOVA_HOME", str(home))
 
-    from nova.settings import get_settings
     import nova.app.runtime as runtime
+    from nova.settings import get_settings
 
     get_settings.cache_clear()
     runtime._llm_cache.clear()

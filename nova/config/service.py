@@ -136,7 +136,7 @@ class ConfigService:
         key: str,
         model: str,
         provider: str,
-        reasoning_effort: str | None | _Unset = _UNSET,
+        reasoning_effort: str | _Unset | None = _UNSET,
     ) -> dict | None:
         """Point an agent at a model, and optionally at a reasoning level.
 

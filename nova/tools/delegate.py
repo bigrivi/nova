@@ -7,7 +7,6 @@ model must not wait or poll.
 """
 
 import logging
-from typing import Optional
 
 from nova.agent.spawn import MAX_SPAWN_DEPTH, SPAWN_DEPTH
 from nova.llm import ToolResult
@@ -51,7 +50,7 @@ log = logging.getLogger(__name__)
 async def delegate_to_agent(
     target: str,
     task: str,
-    context: Optional[str] = None,
+    context: str | None = None,
 ) -> ToolResult:
     """Fire *task* to sub-agent *target* in the background and return a handle."""
     try:
@@ -120,7 +119,7 @@ async def delegate_to_agent(
 
     except Exception as e:
         log.error("Failed to delegate task to '%s': %s", target, e)
-        return ToolResult(success=False, content=f"Failed to delegate task: {str(e)}")
+        return ToolResult(success=False, content=f"Failed to delegate task: {e!s}")
 
 
 TOOL = delegate_to_agent

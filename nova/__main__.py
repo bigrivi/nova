@@ -4,8 +4,8 @@ Nova - General-purpose agent system.
 Launch command: python -m nova
 """
 
-import asyncio
 import argparse
+import asyncio
 import os
 import shutil
 import subprocess

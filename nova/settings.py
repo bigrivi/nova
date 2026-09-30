@@ -8,9 +8,9 @@ credentials. Only ``NOVA_HOME`` (where the config file lives) and
 
 from __future__ import annotations
 
+import json
 import logging
 import os
-import json
 from dataclasses import dataclass, field
 from functools import lru_cache
 from logging.handlers import TimedRotatingFileHandler
@@ -377,7 +377,7 @@ class Settings:
         self.ensure_directories()
 
     @classmethod
-    def load_config(cls) -> "Settings":
+    def load_config(cls) -> Settings:
         home = Path(os.getenv("NOVA_HOME", Path.home() / ".nova")).expanduser()
         config_path = _ensure_config_file(home)
         config_payload = _load_config_payload(config_path)

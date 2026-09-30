@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from nova.db.config import DatabaseConfig
 from nova.settings import get_settings
@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from nova.db.repository import NovaRepository
 
 
-_db: Optional[NovaRepository] = None
+_db: NovaRepository | None = None
 _init_lock = asyncio.Lock()
 
 
@@ -40,7 +40,11 @@ async def ensure_db() -> NovaRepository:
 
 async def init_db(config: DatabaseConfig | None = None) -> NovaRepository:
     global _db
-    from nova.db.data_source import DataSourceConfig, DataSourceType, get_data_source_provider
+    from nova.db.data_source import (
+        DataSourceConfig,
+        DataSourceType,
+        get_data_source_provider,
+    )
 
     provider = get_data_source_provider(DataSourceType.AIO_SQLITE)
     _db = provider.create(

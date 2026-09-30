@@ -11,15 +11,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from enum import Enum
-from typing import Any, AsyncGenerator, Awaitable, Callable, Optional
+from typing import Any
 
 from nova.agent.events import AgentEvent, done_payload
 from nova.agent.tool_guardrails import GuardrailAction, ToolGuardrails
 from nova.llm import LLMProvider, ToolCall, ToolResult
+from nova.session.protocol import SessionProtocol
 from nova.tools.approval import ApprovalManager
 from nova.tools.behavior import TurnContext
-from nova.session.protocol import SessionProtocol
 from nova.tools.registry import ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ class ToolInvoker:
         abort_event: asyncio.Event,
         emit: Callable[..., Awaitable[None]],
         emit_approval: Callable[[dict], Awaitable[None]],
-        stop_if_aborted: Callable[[], Awaitable[Optional[dict]]],
+        stop_if_aborted: Callable[[], Awaitable[dict | None]],
         turn_count: int = 0,
     ) -> None:
         self._registry = registry
@@ -73,7 +74,7 @@ class ToolInvoker:
     async def run(
         self,
         tool_calls: list,
-        group_id: Optional[str] = None,
+        group_id: str | None = None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         current_session = self._session.get_current_session()
         session_id = current_session.id if current_session and current_session.id else ""
@@ -186,7 +187,7 @@ class ToolInvoker:
         self,
         tool_call: Any,
         all_tool_calls: list,
-        group_id: Optional[str],
+        group_id: str | None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         """Emit the tool-call event, checking for an abort on either side of it.
 
@@ -217,7 +218,7 @@ class ToolInvoker:
         tool_call: Any,
         arguments: dict,
         approval_request_id: str = "",
-    ) -> Optional[ToolResult]:
+    ) -> ToolResult | None:
         """Run the tool, returning None when the user interrupted it."""
         tool_task = asyncio.create_task(
             self.execute(tool_call, arguments,
@@ -300,7 +301,7 @@ class ToolInvoker:
     async def persist_cancelled(
         self,
         tool_calls: list,
-        group_id: Optional[str],
+        group_id: str | None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         """Write a cancelled result for every declared call that did not run.
 

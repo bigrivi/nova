@@ -91,7 +91,7 @@ async def stream_text_once(
         if timeout is None:
             return await drain()
         return await asyncio.wait_for(drain(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         log.warning("%s timed out after %ss", label, timeout)
         return None
     except Exception as exception:

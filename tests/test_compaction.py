@@ -2,28 +2,29 @@
 Compaction Module Tests using pytest
 """
 
-import pytest
 import asyncio
 import contextlib
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from nova.agent.compaction import (
-    estimate_context_tokens,
-    estimate_tokens,
-    snip_old_tool_results,
-    find_split_point,
-    should_compact,
-    get_context_limit,
-    _get_content,
-    _get_role,
-    _get_tool_calls,
-    _get_tool_call_ids,
-    _get_tool_call_id,
-    _get_msg_id,
-    evaluate_compaction,
-    _format_for_summary,
     SUMMARY_MESSAGE_MAX_CHARS,
     CompactionError,
+    _format_for_summary,
+    _get_content,
+    _get_msg_id,
+    _get_role,
+    _get_tool_call_id,
+    _get_tool_call_ids,
+    _get_tool_calls,
+    estimate_context_tokens,
+    estimate_tokens,
+    evaluate_compaction,
+    find_split_point,
+    get_context_limit,
+    should_compact,
+    snip_old_tool_results,
 )
 
 
@@ -157,9 +158,9 @@ class TestFindSplitPoint:
         for i in range(10):
             content = f"Message {i}: " + "x" * 100
             messages.append(MockMessage(str(i), "user", content))
-        
+
         split = find_split_point(messages, keep_tokens=20)
-        
+
         assert 0 <= split < 10
 
     def test_returns_index_not_count(self):
@@ -167,7 +168,7 @@ class TestFindSplitPoint:
             MockMessage(str(i), "user", "x" * 100) for i in range(5)
         ]
         split = find_split_point(messages)
-        
+
         assert isinstance(split, int)
         assert 0 <= split <= 4
 
@@ -219,12 +220,12 @@ class TestResolveContextLimit:
     def test_with_provider_joint_lookup(self):
         """Provider + model joint lookup returns correct limit."""
         from nova.llm.tokenizer import resolve_context_limit
-        
+
         mock_settings = MagicMock()
         mock_settings.providers = {
             "ollama": MagicMock(models={"gemma4:26b": {"limit": {"context": 32000}}}),
         }
-        
+
         with patch("nova.settings.get_settings", return_value=mock_settings):
             from nova.settings import get_settings
             get_settings.cache_clear()
@@ -234,12 +235,12 @@ class TestResolveContextLimit:
     def test_with_provider_context_window_fallback(self):
         """Falls back to context_window when limit.context missing."""
         from nova.llm.tokenizer import resolve_context_limit
-        
+
         mock_settings = MagicMock()
         mock_settings.providers = {
             "anthropic": MagicMock(models={"claude-3-sonnet": {"context_window": 200000}}),
         }
-        
+
         with patch("nova.settings.get_settings", return_value=mock_settings):
             from nova.settings import get_settings
             get_settings.cache_clear()
@@ -249,10 +250,10 @@ class TestResolveContextLimit:
     def test_unknown_provider_hardcoded_fallback(self):
         """Falls back to hardcoded defaults for unknown provider."""
         from nova.llm.tokenizer import resolve_context_limit
-        
+
         mock_settings = MagicMock()
         mock_settings.providers = {}
-        
+
         with patch("nova.settings.get_settings", return_value=mock_settings):
             from nova.settings import get_settings
             get_settings.cache_clear()
@@ -265,7 +266,7 @@ class TestResolveContextLimit:
         mock_settings.providers = {
             "openai": MagicMock(models={"gpt-4o": {"limit": {"context": 200000}}}),
         }
-        
+
         with patch("nova.settings.get_settings", return_value=mock_settings):
             from nova.settings import get_settings
             get_settings.cache_clear()
@@ -390,10 +391,10 @@ async def test_compact_orphaned_tool_response_is_also_compacted():
     """When split separates tool_call assistant from its response, the orphaned
     tool response is also compacted to avoid tool message without preceding tool_calls."""
     from nova.agent.compaction import compact
-    from nova.db.sqlite_repository import SqliteRepository
     from nova.db.config import DatabaseConfig
-    from nova.session.models import MessageFilter
+    from nova.db.sqlite_repository import SqliteRepository
     from nova.session.manager import SessionContext
+    from nova.session.models import MessageFilter
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -502,8 +503,8 @@ async def test_summary_failure_never_poisons_the_context():
     what the old ``str(response)`` fallback used to leak into the session.
     """
     from nova.agent.compaction import compact
-    from nova.db.sqlite_repository import SqliteRepository
     from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
 
     class ErroringProvider(StubSummaryProvider):
         async def chat_stream(self, messages, model="m", tools=None, **kwargs):
@@ -539,8 +540,8 @@ async def test_summary_failure_never_poisons_the_context():
 async def test_summary_streams_to_the_caller():
     """The summary is streamed so the UI can show it while it is written."""
     from nova.agent.compaction import compact
-    from nova.db.sqlite_repository import SqliteRepository
     from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -575,8 +576,8 @@ async def test_summary_is_placed_at_the_compaction_boundary():
     piled up beside it. Session updated_at must still track insertion order.
     """
     from nova.agent.compaction import compact
-    from nova.db.sqlite_repository import SqliteRepository
     from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -605,8 +606,8 @@ async def test_summary_is_placed_at_the_compaction_boundary():
 async def test_second_compaction_folds_the_previous_summary():
     """Exactly one summary survives, because the next split includes it."""
     from nova.agent.compaction import compact
-    from nova.db.sqlite_repository import SqliteRepository
     from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -644,9 +645,9 @@ async def test_second_compaction_folds_the_previous_summary():
 
 @pytest.mark.asyncio
 async def test_compact_writes_summary_and_marks_old_messages():
-    from nova.db.sqlite_repository import SqliteRepository
-    from nova.db.config import DatabaseConfig
     from nova.agent.compaction import compact
+    from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -680,8 +681,8 @@ async def test_context_frames_drop_across_a_compaction(monkeypatch):
     """
     from nova.agent.compaction import CompactionController
     from nova.agent.events import AgentEvent
-    from nova.db.sqlite_repository import SqliteRepository
     from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
     from nova.session.manager import SessionContext
 
     monkeypatch.setattr(
@@ -750,8 +751,8 @@ async def test_context_limit_is_the_compaction_threshold(monkeypatch):
     """
     from nova.agent.compaction import CompactionController, compaction_threshold
     from nova.agent.events import AgentEvent
-    from nova.db.sqlite_repository import SqliteRepository
     from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
     from nova.session.manager import SessionContext
 
     window = 128_000
@@ -875,9 +876,9 @@ async def test_the_shrink_comes_from_the_history_not_from_the_estimator(monkeypa
 
 @pytest.mark.asyncio
 async def test_compact_aborts_without_writing_when_summary_fails():
-    from nova.db.sqlite_repository import SqliteRepository
-    from nova.db.config import DatabaseConfig
     from nova.agent.compaction import compact
+    from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -904,9 +905,9 @@ async def test_compact_aborts_without_writing_when_summary_fails():
 @pytest.mark.asyncio
 async def test_a_transient_summary_failure_is_retried_once():
     """One retry absorbs a transient failure; the second attempt lands."""
-    from nova.db.sqlite_repository import SqliteRepository
-    from nova.db.config import DatabaseConfig
     from nova.agent.compaction import compact
+    from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
 
     class FailOnceProvider(StubSummaryProvider):
         def __init__(self):
@@ -943,11 +944,11 @@ async def test_a_transient_summary_failure_is_retried_once():
 
 @pytest.mark.asyncio
 async def test_prepare_and_run_compaction_with_real_llm():
-    from nova.db.sqlite_repository import SqliteRepository
-    from nova.db.config import DatabaseConfig
-    from nova.session.manager import SessionContext
     from nova.agent.compaction import prepare_compaction, run_compaction_plan
+    from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
     from nova.llm import OllamaProvider
+    from nova.session.manager import SessionContext
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -1080,8 +1081,8 @@ class TestNoRepeatedCompaction:
         from staying over it, which would otherwise compact again every turn.
         """
         from nova.agent.compaction import CompactionController
-        from nova.db.sqlite_repository import SqliteRepository
         from nova.db.config import DatabaseConfig
+        from nova.db.sqlite_repository import SqliteRepository
         from nova.session.manager import SessionContext
 
         monkeypatch.setattr(
@@ -1331,9 +1332,9 @@ async def test_chat_stream_loads_messages_once_per_request():
     """chat_stream owns the single message load; turn 1 reuses it, later turns reload."""
     from nova import Agent, AgentConfig
     from nova.agent.core import AgentEvent
-    from nova.db.sqlite_repository import SqliteRepository
-    from nova.db.config import DatabaseConfig
     from nova.db import database as db_module
+    from nova.db.config import DatabaseConfig
+    from nova.db.sqlite_repository import SqliteRepository
     from nova.llm import ToolResult
     from nova.llm.provider import Done, LLMProvider, TextDelta, ToolCall
 
@@ -1491,9 +1492,9 @@ class TestUsageAnchoredEstimation:
 class TestCompactionSummaryContract:
     @pytest.mark.asyncio
     async def test_summary_message_carries_a_continuation_instruction(self):
-        from nova.db.sqlite_repository import SqliteRepository
+        from nova.agent.compaction import CONTINUATION_INSTRUCTION, compact
         from nova.db.config import DatabaseConfig
-        from nova.agent.compaction import compact, CONTINUATION_INSTRUCTION
+        from nova.db.sqlite_repository import SqliteRepository
 
         db = SqliteRepository(DatabaseConfig(path=":memory:"))
         await db.connect()
@@ -1510,9 +1511,9 @@ class TestCompactionSummaryContract:
 
     @pytest.mark.asyncio
     async def test_prompt_asks_to_fold_in_a_previous_summary(self):
-        from nova.db.sqlite_repository import SqliteRepository
+        from nova.agent.compaction import PREVIOUS_SUMMARY_ANCHOR, compact
         from nova.db.config import DatabaseConfig
-        from nova.agent.compaction import compact, PREVIOUS_SUMMARY_ANCHOR
+        from nova.db.sqlite_repository import SqliteRepository
 
         class PromptCapturingProvider(StubSummaryProvider):
             def __init__(self):
@@ -1558,7 +1559,7 @@ class TestCompactionSummaryContract:
 class TestCompactionCircuitBreaker:
     def _agent(self):
         from nova import Agent, AgentConfig
-        from nova.llm.provider import LLMProvider, Done
+        from nova.llm.provider import Done, LLMProvider
 
         class UnusedProvider(LLMProvider):
             async def chat(self, messages, model="m", stream=False, tools=None, **kwargs):
@@ -1598,8 +1599,8 @@ class TestSummaryLifecycle:
     @pytest.mark.asyncio
     async def test_a_compacted_summary_leaves_the_active_history(self):
         """Summaries must not accumulate forever: once compacted they drop out."""
-        from nova.db.sqlite_repository import SqliteRepository
         from nova.db.config import DatabaseConfig
+        from nova.db.sqlite_repository import SqliteRepository
 
         db = SqliteRepository(DatabaseConfig(path=":memory:"))
         await db.connect()
@@ -1621,9 +1622,9 @@ class TestSummaryLifecycle:
 
     @pytest.mark.asyncio
     async def test_repeated_compaction_does_not_grow_the_summary_chain(self):
-        from nova.db.sqlite_repository import SqliteRepository
-        from nova.db.config import DatabaseConfig
         from nova.agent.compaction import compact
+        from nova.db.config import DatabaseConfig
+        from nova.db.sqlite_repository import SqliteRepository
 
         db = SqliteRepository(DatabaseConfig(path=":memory:"))
         await db.connect()
@@ -1709,9 +1710,9 @@ class TestInLoopCompaction:
         first use. Swapping only ``database._db`` would leave message writes on
         the previous test's store while compaction wrote to the new one.
         """
-        from nova.db.sqlite_repository import SqliteRepository
-        from nova.db.config import DatabaseConfig
         from nova.db import database as db_module
+        from nova.db.config import DatabaseConfig
+        from nova.db.sqlite_repository import SqliteRepository
         from nova.session import manager as session_manager
 
         database = SqliteRepository(DatabaseConfig(path=":memory:"))

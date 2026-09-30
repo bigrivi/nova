@@ -7,7 +7,7 @@ agent runtime.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from nova.db import DataSourceProtocol, get_default_data_source
 
@@ -21,23 +21,23 @@ class AgentHierarchy:
     def __init__(
         self,
         agent_key: str,
-        data_source: Optional[DataSourceProtocol] = None,
-        parent_agent: Optional["Agent"] = None,
+        data_source: DataSourceProtocol | None = None,
+        parent_agent: Agent | None = None,
     ) -> None:
         self.agent_key = agent_key
         self.parent_agent = parent_agent
         self._data_source = data_source
-        self._sub_agents: list["Agent"] = []
+        self._sub_agents: list[Agent] = []
 
     async def _store(self) -> DataSourceProtocol:
         return self._data_source or await get_default_data_source()
 
-    def add_sub_agent(self, owner: "Agent", sub_agent: "Agent") -> None:
+    def add_sub_agent(self, owner: Agent, sub_agent: Agent) -> None:
         sub_agent.parent_agent = owner
         sub_agent.is_sub_agent = True
         self._sub_agents.append(sub_agent)
 
-    def sub_agents(self) -> list["Agent"]:
+    def sub_agents(self) -> list[Agent]:
         return self._sub_agents.copy()
 
     async def child_agent_records(self) -> list[dict]:
@@ -48,7 +48,7 @@ class AgentHierarchy:
         store = await self._store()
         return await self._records(store, await store.get_agent_parents(self.agent_key))
 
-    async def first_parent_agent_record(self) -> Optional[dict]:
+    async def first_parent_agent_record(self) -> dict | None:
         store = await self._store()
         parent_keys = await store.get_agent_parents(self.agent_key)
         if parent_keys:

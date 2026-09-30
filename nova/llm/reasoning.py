@@ -17,8 +17,6 @@ Two responsibilities stay apart on purpose:
 
 from __future__ import annotations
 
-from typing import Optional
-
 from nova.llm.provider import PROVIDER_TYPE_OPENAI_RESPONSE
 
 # Config key an operator sets on a model to declare its levels, e.g.
@@ -33,7 +31,7 @@ EFFORT_PROVIDER_TYPES: frozenset[str] = frozenset(
 )
 
 
-def _levels_from_config(model_config: Optional[dict]) -> Optional[list[str]]:
+def _levels_from_config(model_config: dict | None) -> list[str] | None:
     """Read the declared levels, or None when the model declares none.
 
     A bare string is accepted as a one-level list so a single-value declaration
@@ -51,7 +49,7 @@ def _levels_from_config(model_config: Optional[dict]) -> Optional[list[str]]:
 def resolve_effort_levels(
     model: str,
     provider_type: str,
-    model_config: Optional[dict] = None,
+    model_config: dict | None = None,
 ) -> list[str]:
     """Return the reasoning levels *model* declares, or ``[]`` when it declares none.
 
@@ -74,7 +72,7 @@ def resolve_effort_levels(
     return list(dict.fromkeys(declared))
 
 
-def fit_effort(levels: list[str], effort: Optional[str]) -> Optional[str]:
+def fit_effort(levels: list[str], effort: str | None) -> str | None:
     """Return *effort* when the model declared it, otherwise ``None``.
 
     Applied to every value that reaches the model - the per-turn selection, a
@@ -88,7 +86,7 @@ def fit_effort(levels: list[str], effort: Optional[str]) -> Optional[str]:
 
 def apply_effort(
     body: dict,
-    effort: Optional[str],
+    effort: str | None,
     provider_type: str,
 ) -> dict:
     """Write *effort* into a request body in *provider_type*'s spelling.

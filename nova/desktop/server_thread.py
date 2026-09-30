@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
-from typing import Optional
 
 import httpx
 from uvicorn import Server
@@ -15,8 +14,8 @@ from nova.settings import Settings
 class ServerThread:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.server: Optional[Server] = None
-        self.thread: Optional[threading.Thread] = None
+        self.server: Server | None = None
+        self.thread: threading.Thread | None = None
         self.port: int = settings.port
         self.host: str = settings.host
 

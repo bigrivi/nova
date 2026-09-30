@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 import webview
 
 from nova.desktop.macos_chrome import wire_hidden_titlebar

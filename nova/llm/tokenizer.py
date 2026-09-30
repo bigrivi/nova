@@ -2,7 +2,6 @@
 
 import logging
 import re
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -317,7 +316,7 @@ def resolve_context_window(model: str, provider: str) -> tuple[int, str]:
     return _default_context_window(), "default"
 
 
-def _configured_context_window(model: str, provider: str) -> Optional[int]:
+def _configured_context_window(model: str, provider: str) -> int | None:
     try:
         from nova.settings import get_settings
         settings = get_settings()

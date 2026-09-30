@@ -15,8 +15,7 @@ import json
 import logging
 from typing import Any
 
-from fastapi import HTTPException
-from fastapi import Request
+from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from nova.server.chat_service import ChatService
@@ -363,7 +362,7 @@ class ChatStreamOrchestrator:
                             stream_queue.get(),
                             timeout=stream_module.STREAM_HEARTBEAT_INTERVAL_SECONDS,
                         )
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         # A live, still-connected client stays attached for the
                         # whole turn. The turn is bounded by the provider's own
                         # idle/total timeout, so this cannot wait forever; a

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 
@@ -11,15 +11,15 @@ from nova.server.request_registry import _RESERVED, RequestRegistry
 
 
 class _FakeDataSource:
-    def __init__(self, session: Optional[dict]) -> None:
+    def __init__(self, session: dict | None) -> None:
         self._session = session
 
-    async def get_session(self, session_id: str) -> Optional[dict]:
+    async def get_session(self, session_id: str) -> dict | None:
         return self._session
 
 
 class _FakeChatService:
-    def __init__(self, registry: RequestRegistry, session: Optional[dict]) -> None:
+    def __init__(self, registry: RequestRegistry, session: dict | None) -> None:
         self.request_registry = registry
         self._data_source = _FakeDataSource(session)
         self.seen_requests: list[Any] = []

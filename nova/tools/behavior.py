@@ -12,8 +12,9 @@ orchestration loop in Agent._run_turn.
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Protocol
+from typing import Any, Protocol
 
 from nova.tools.shell import is_dangerous, is_hardline
 
@@ -28,8 +29,8 @@ class PreExecutionCheck:
     """Result of a before_execute hook."""
 
     allowed: bool = True
-    reject_reason: Optional[str] = None
-    approval_request: Optional[dict] = None
+    reject_reason: str | None = None
+    approval_request: dict | None = None
 
 
 @dataclass
@@ -42,7 +43,7 @@ class TurnContext:
     """
 
     approval_manager: Any = None
-    event_emitter: Optional[Callable] = None
+    event_emitter: Callable | None = None
     session_id: str = ""
 
 
@@ -67,7 +68,7 @@ class ToolBehavior(Protocol):
         """
         ...
 
-    def postprocess(self, raw_content: str) -> tuple[str, Optional[list]]:
+    def postprocess(self, raw_content: str) -> tuple[str, list | None]:
         """Post-process the tool result content.
 
         Returns ``(text, images_or_None)``.  The default is a no-op
@@ -90,7 +91,7 @@ class DefaultToolBehavior:
     async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
         return PreExecutionCheck()
 
-    def postprocess(self, raw_content: str) -> tuple[str, Optional[list]]:
+    def postprocess(self, raw_content: str) -> tuple[str, list | None]:
         return raw_content, None
 
     def on_success(self, ctx: TurnContext) -> None:
@@ -157,7 +158,7 @@ class ImageReturningToolBehavior(DefaultToolBehavior):
     """Behaviour for tools whose JSON result carries ``images`` and
     ``text`` fields (e.g. ``read_image``, ``browser_use``)."""
 
-    def postprocess(self, raw_content: str) -> tuple[str, Optional[list]]:
+    def postprocess(self, raw_content: str) -> tuple[str, list | None]:
         try:
             data = json.loads(raw_content)
             return data.get("text", ""), data.get("images")

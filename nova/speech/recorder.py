@@ -31,7 +31,7 @@ from ctypes import (
     c_void_p,
 )
 from pathlib import Path
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ def _runner_cls() -> Any:
                 func, args, box = self._call
                 try:
                     box["value"] = func(*args)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     box["error"] = exc
 
         _RUNNER_CLS = _Runner
@@ -156,7 +156,7 @@ class MacRecorder:
 
     def __init__(self) -> None:
         self._recorder: Any = None
-        self._path: Optional[str] = None
+        self._path: str | None = None
 
     @property
     def recording(self) -> bool:
@@ -337,8 +337,8 @@ class WindowsRecorder:
         self._event: Any = None
         self._buffers: list[_WinmmBuffer] = []
         self._frames: list[bytes] = []
-        self._path: Optional[str] = None
-        self._pump: Optional[threading.Thread] = None
+        self._path: str | None = None
+        self._pump: threading.Thread | None = None
         self._lock = threading.Lock()
         self._closing = threading.Event()
 

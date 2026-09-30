@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import json
 import time
 import uuid
-import json
 from typing import Any
 
 from nova.db.repository import NovaRepository

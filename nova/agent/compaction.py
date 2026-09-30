@@ -16,7 +16,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from nova.agent.events import AgentEvent
 from nova.llm import LLMProvider, Message
@@ -66,7 +66,7 @@ def estimate_tokens(messages: list, model: str = "unknown") -> int:
 def estimate_context_tokens(
     messages: list,
     model: str = "unknown",
-    compacted_at: Optional[int] = None,
+    compacted_at: int | None = None,
 ) -> int:
     """Absolute context size of *messages*, anchored on the provider's accounting.
 
@@ -127,7 +127,7 @@ def snip_old_tool_results(
     max_chars: int = 2000,
     preserve_last_n_messages: int = 12,
     tool_output_token_budget: int = 50000,
-    offload_dir: Optional[str] = None,
+    offload_dir: str | None = None,
 ) -> list:
     """Layer 1: trim tool results under a reverse token budget.
 
@@ -179,10 +179,10 @@ def snip_old_tool_results(
 
 
 def _offload_tool_output(
-    offload_dir: Optional[str],
+    offload_dir: str | None,
     message_id: str,
     content: str,
-) -> Optional[str]:
+) -> str | None:
     if not offload_dir or not message_id:
         return None
     try:
@@ -354,7 +354,7 @@ def should_compact(
 def evaluate_compaction(
     session_id: str,
     messages: list,
-    last_compacted_at: Optional[int],
+    last_compacted_at: int | None,
     model: str = "gpt-4o",
     provider: str = "ollama",
     force: bool = False,
@@ -400,8 +400,8 @@ def evaluate_compaction(
 async def prepare_compaction(
     session_id: str,
     messages: list,
-    last_compacted_at: Optional[int],
-    db: "DataSourceProtocol",
+    last_compacted_at: int | None,
+    db: DataSourceProtocol,
     model: str = "gpt-4o",
     provider: str = "ollama",
     force: bool = False,
@@ -427,13 +427,13 @@ async def prepare_compaction(
 
 async def run_compaction_plan(
     plan: CompactionPlan,
-    db: "DataSourceProtocol",
+    db: DataSourceProtocol,
     llm: LLMProvider,
     model: str = "gpt-4o",
     provider: str = "ollama",
-    messages: Optional[list] = None,
-    tools: Optional[list[dict]] = None,
-    on_delta: Optional[Callable[[str], None]] = None,
+    messages: list | None = None,
+    tools: list[dict] | None = None,
+    on_delta: Callable[[str], None] | None = None,
 ) -> bool:
     """Execute a prepared compaction plan against caller-owned *messages*."""
     if not plan.needs_compaction:
@@ -451,7 +451,7 @@ async def run_compaction_plan(
     )
 
 
-async def snip_tool_results_in_db(db: "DataSourceProtocol", session_id: str, messages: list) -> None:
+async def snip_tool_results_in_db(db: DataSourceProtocol, session_id: str, messages: list) -> None:
     """Layer 1: trim old tool results stored in the database."""
     settings = get_settings()
     comp = settings.compaction
@@ -473,14 +473,14 @@ async def snip_tool_results_in_db(db: "DataSourceProtocol", session_id: str, mes
 
 async def compact(
     session_id: str,
-    db: "DataSourceProtocol",
+    db: DataSourceProtocol,
     llm: LLMProvider,
     model: str = "gpt-4o",
     provider: str = "ollama",
-    messages: Optional[list] = None,
-    split_index: Optional[int] = None,
-    tools: Optional[list[dict]] = None,
-    on_delta: Optional[Callable[[str], None]] = None,
+    messages: list | None = None,
+    split_index: int | None = None,
+    tools: list[dict] | None = None,
+    on_delta: Callable[[str], None] | None = None,
 ) -> bool:
     """Run session compaction (Layer 2). Returns whether history was compacted.
 
@@ -611,9 +611,9 @@ async def _generate_summary(
     llm: LLMProvider,
     model: str,
     has_previous_summary: bool = False,
-    tools: Optional[list[dict]] = None,
-    on_delta: Optional[Callable[[str], None]] = None,
-) -> Optional[str]:
+    tools: list[dict] | None = None,
+    on_delta: Callable[[str], None] | None = None,
+) -> str | None:
     """Generate a summary with the LLM. Returns ``None`` when it cannot.
 
     Routed through :func:`nova.llm.oneshot.stream_text_once` rather than a bare
@@ -750,7 +750,7 @@ def _get_time_created(msg) -> int:
     return int(getattr(msg, "time_created", 0) or 0)
 
 
-def _get_session_id(session) -> Optional[str]:
+def _get_session_id(session) -> str | None:
     """Sessions reach this module both as SessionContext objects and as raw
     ``db.get_session()`` dicts, so every field read has to accept both."""
     if session is None:
@@ -760,7 +760,7 @@ def _get_session_id(session) -> Optional[str]:
     return getattr(session, "id", None)
 
 
-def _get_session_compacted_at(session) -> Optional[int]:
+def _get_session_compacted_at(session) -> int | None:
     if session is None:
         return None
     if isinstance(session, dict):
@@ -820,9 +820,9 @@ class CompactionController:
         self,
         messages: list,
         session: Any,
-        db: "DataSourceProtocol",
+        db: DataSourceProtocol,
         force: bool = False,
-    ) -> Optional[CompactionPlan]:
+    ) -> CompactionPlan | None:
         """Decide whether Layer 2 should run, after Layer 1 has had its chance.
 
         Layer 1 lives inside ``prepare_compaction`` and never calls a model, so it
@@ -873,10 +873,10 @@ class CompactionController:
         self,
         messages: list,
         session: Any,
-        db: "DataSourceProtocol",
+        db: DataSourceProtocol,
         llm: LLMProvider,
         emit: Any,
-        tools: Optional[list[dict]] = None,
+        tools: list[dict] | None = None,
     ) -> Any:
         """Compact if needed, announcing it around the summarisation call.
 
@@ -924,7 +924,7 @@ class CompactionController:
         # The summary is written by a nested (awaited) call, so its chunks land
         # on a callback rather than arriving from this generator. Bridge them
         # through a queue so partial text reaches the client as it is produced.
-        deltas: asyncio.Queue[Optional[str]] = asyncio.Queue()
+        deltas: asyncio.Queue[str | None] = asyncio.Queue()
 
         async def summarise() -> bool:
             try:

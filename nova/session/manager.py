@@ -1,16 +1,16 @@
 import asyncio
 import json
 import time
+import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Optional
-import uuid
 
+from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import get_default_data_source
 from nova.db.repository import NovaRepository
 from nova.session.models import Message, MessageFilter
-from nova.constants import DEFAULT_AGENT_KEY
 from nova.session.protocol import SessionProtocol
+
 
 def default_session_title(user_message: str | None = None) -> str:
     """Derive a session's starting title from its first user message.
@@ -31,14 +31,14 @@ class SessionContext:
     created_at: int = 0
     updated_at: int = 0
     metadata: dict = field(default_factory=dict)
-    title: Optional[str] = None
-    parent_id: Optional[str] = None
-    workspace_dir: Optional[str] = None
-    project_id: Optional[str] = None
-    summary_goal: Optional[str] = None
-    summary_accomplished: Optional[str] = None
-    summary_remaining: Optional[str] = None
-    compacted_at: Optional[int] = None
+    title: str | None = None
+    parent_id: str | None = None
+    workspace_dir: str | None = None
+    project_id: str | None = None
+    summary_goal: str | None = None
+    summary_accomplished: str | None = None
+    summary_remaining: str | None = None
+    compacted_at: int | None = None
     message_count: int = 0
     turn_count: int = 0
 
@@ -53,7 +53,7 @@ class SessionContext:
         )
 
 
-_current_session: ContextVar[Optional[SessionContext]] = ContextVar(
+_current_session: ContextVar[SessionContext | None] = ContextVar(
     "current_session", default=None)
 
 
@@ -67,21 +67,21 @@ class SessionManager(SessionProtocol):
             self._data_source = await get_default_data_source()
         return self._data_source
 
-    def get_current_session(self) -> Optional[SessionContext]:
+    def get_current_session(self) -> SessionContext | None:
         return _current_session.get()
 
-    def set_current_session(self, session: Optional[SessionContext]) -> None:
+    def set_current_session(self, session: SessionContext | None) -> None:
         _current_session.set(session)
 
     async def create_session(
         self,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
         persist: bool = True,
         first_message: str = None,
         agent_key: str = DEFAULT_AGENT_KEY,
-        parent_id: Optional[str] = None,
-        workspace_dir: Optional[str] = None,
-        project_id: Optional[str] = None,
+        parent_id: str | None = None,
+        workspace_dir: str | None = None,
+        project_id: str | None = None,
     ) -> SessionContext:
         session = SessionContext.create(agent_key=agent_key)
         session.metadata = metadata or {}
@@ -98,7 +98,7 @@ class SessionManager(SessionProtocol):
         self,
         parent_session_id: str,
         agent_key: str = DEFAULT_AGENT_KEY,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
         first_message: str = None,
     ) -> SessionContext:
         """Create a child session linked to a parent session."""
@@ -156,7 +156,7 @@ class SessionManager(SessionProtocol):
             data_source = await self._get_data_source()
             await data_source.save_session(session)
 
-    async def load_session(self, session_id: str) -> Optional[SessionContext]:
+    async def load_session(self, session_id: str) -> SessionContext | None:
         async with self._lock:
             data_source = await self._get_data_source()
             session_data = await data_source.get_session(session_id)
@@ -188,19 +188,19 @@ class SessionManager(SessionProtocol):
         self,
         role: str,
         content: str,
-        tool_calls: Optional[list] = None,
-        tool_call_id: Optional[str] = None,
-        images: Optional[list[str]] = None,
-        reasoning_content: Optional[str] = None,
-        group_id: Optional[str] = None,
-        reasoning_elapsed_ms: Optional[int] = None,
-        error: Optional[str] = None,
-        tokens_input: Optional[int] = None,
-        tokens_output: Optional[int] = None,
-        provider_meta: Optional[dict] = None,
-        model: Optional[str] = None,
-        reasoning_effort: Optional[str] = None,
-        variant: Optional[str] = None,
+        tool_calls: list | None = None,
+        tool_call_id: str | None = None,
+        images: list[str] | None = None,
+        reasoning_content: str | None = None,
+        group_id: str | None = None,
+        reasoning_elapsed_ms: int | None = None,
+        error: str | None = None,
+        tokens_input: int | None = None,
+        tokens_output: int | None = None,
+        provider_meta: dict | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        variant: str | None = None,
     ) -> Message:
         session = self.get_current_session()
         if not session:
@@ -233,7 +233,7 @@ class SessionManager(SessionProtocol):
     async def rollback_messages(
         self,
         message_ids: list[str],
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> int:
         sid = session_id or (self.get_current_session(
         ).id if self.get_current_session() else None)
@@ -251,8 +251,8 @@ class SessionManager(SessionProtocol):
 
     async def get_messages(
         self,
-        session_id: Optional[str] = None,
-        limit: Optional[int] = None,
+        session_id: str | None = None,
+        limit: int | None = None,
     ) -> list[Message]:
         sid = session_id or (self.get_current_session(
         ).id if self.get_current_session() else None)
@@ -301,7 +301,7 @@ class SessionManager(SessionProtocol):
             await data_source.compress_messages(session.id, target_count)
 
 
-_manager: Optional[SessionManager] = None
+_manager: SessionManager | None = None
 
 
 def get_session_manager() -> SessionManager:

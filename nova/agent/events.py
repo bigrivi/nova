@@ -8,9 +8,10 @@ import the agent and everything it depends on.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from enum import Enum
 from inspect import iscoroutinefunction
-from typing import Any, Callable, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class AgentEvent(Enum):
     APPROVAL_RESULT = "approval_result"
 
 
-def done_payload(reason: str, content: Optional[str] = None) -> dict[str, Any]:
+def done_payload(reason: str, content: str | None = None) -> dict[str, Any]:
     return {"reason": reason, "content": content}
 
 

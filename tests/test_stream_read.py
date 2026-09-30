@@ -59,7 +59,7 @@ class TestTheFreeze:
         """
 
         async def fail_now() -> bytes:
-            raise asyncio.TimeoutError
+            raise TimeoutError
 
         read = _Counter(fail_now)
 
@@ -67,7 +67,7 @@ class TestTheFreeze:
             """The old loop body: True if it would keep going."""
             try:
                 await asyncio.wait_for(read(), timeout=POLL)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return True
             return False
 
@@ -82,7 +82,7 @@ class TestTheFreeze:
         """The fix: a failure from the stream ends the turn instead of looping."""
 
         async def fail_now() -> bytes:
-            raise asyncio.TimeoutError
+            raise TimeoutError
 
         read = _Counter(fail_now)
         poller = StreamPoller(read, None, _trace(), poll_seconds=POLL)
@@ -98,7 +98,7 @@ class TestTheFreeze:
         """aiohttp's own TimeoutError stringifies to "", which is unusable."""
 
         async def fail_now() -> bytes:
-            raise asyncio.TimeoutError
+            raise TimeoutError
 
         poller = StreamPoller(
             _Counter(fail_now), None, _trace(), poll_seconds=POLL

@@ -14,7 +14,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 log = logging.getLogger(__name__)
 
 NOVA_SITE_PACKAGES = Path.home() / ".nova" / "site-packages"

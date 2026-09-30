@@ -11,7 +11,7 @@ import re
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import aiosqlite
 
@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 """
 
 
-def _parse_tool_calls(raw: Optional[str]) -> Optional[list]:
+def _parse_tool_calls(raw: str | None) -> list | None:
     if not raw:
         return None
     try:
@@ -147,7 +147,7 @@ def _parse_tool_calls(raw: Optional[str]) -> Optional[list]:
         return None
 
 
-def _serialize_tool_calls(tool_calls: Optional[list]) -> Optional[str]:
+def _serialize_tool_calls(tool_calls: list | None) -> str | None:
     if not tool_calls:
         return None
     items: list[Any] = []
@@ -161,7 +161,7 @@ def _serialize_tool_calls(tool_calls: Optional[list]) -> Optional[str]:
     return json.dumps(items, ensure_ascii=False)
 
 
-def _parse_provider_meta(raw: Optional[str]) -> Optional[dict]:
+def _parse_provider_meta(raw: str | None) -> dict | None:
     if not raw:
         return None
     try:
@@ -235,7 +235,7 @@ def _ddl_columns(ddl: str, table: str) -> set[str]:
 class SqliteRepository(NovaRepository):
     def __init__(self, config: DatabaseConfig | None = None):
         self.config = config or DatabaseConfig()
-        self._conn: Optional[aiosqlite.Connection] = None
+        self._conn: aiosqlite.Connection | None = None
         self._lock = asyncio.Lock()
 
     async def connect(self) -> None:
@@ -605,7 +605,7 @@ class SqliteRepository(NovaRepository):
             )
             await self._conn.commit()
 
-    async def get_session(self, session_id: str) -> Optional[dict]:
+    async def get_session(self, session_id: str) -> dict | None:
         await self._ensure_connected()
         cursor = await self._conn.execute(
             "SELECT * FROM sessions WHERE id = ?",
@@ -714,7 +714,7 @@ class SqliteRepository(NovaRepository):
             )
             await self._conn.commit()
 
-    async def get_project(self, project_id: str) -> Optional[dict]:
+    async def get_project(self, project_id: str) -> dict | None:
         await self._ensure_connected()
         cursor = await self._conn.execute(
             "SELECT * FROM projects WHERE id = ?",
@@ -798,21 +798,21 @@ class SqliteRepository(NovaRepository):
         session_id: str,
         role: str,
         content: str,
-        tool_calls: Optional[list] = None,
-        tool_call_id: Optional[str] = None,
+        tool_calls: list | None = None,
+        tool_call_id: str | None = None,
         summary: bool = False,
-        images: Optional[list[str]] = None,
-        reasoning_content: Optional[str] = None,
-        group_id: Optional[str] = None,
-        reasoning_elapsed_ms: Optional[int] = None,
-        tokens_input: Optional[int] = None,
-        tokens_output: Optional[int] = None,
-        provider_meta: Optional[dict] = None,
-        model: Optional[str] = None,
-        reasoning_effort: Optional[str] = None,
-        error: Optional[str] = None,
-        variant: Optional[str] = None,
-        time_created: Optional[int] = None,
+        images: list[str] | None = None,
+        reasoning_content: str | None = None,
+        group_id: str | None = None,
+        reasoning_elapsed_ms: int | None = None,
+        tokens_input: int | None = None,
+        tokens_output: int | None = None,
+        provider_meta: dict | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        error: str | None = None,
+        variant: str | None = None,
+        time_created: int | None = None,
     ) -> Message:
         await self._ensure_connected()
         msg_id = str(uuid.uuid4())
@@ -1191,8 +1191,8 @@ class SqliteRepository(NovaRepository):
         self,
         key: str,
         scope: str,
-        session_id: Optional[str] = None,
-        owner_agent_key: Optional[str] = None,
+        session_id: str | None = None,
+        owner_agent_key: str | None = None,
     ) -> dict | None:
         await self._ensure_connected()
         # owner_agent_key is matched exactly (including NULL) so one agent's
@@ -1266,8 +1266,8 @@ class SqliteRepository(NovaRepository):
         self,
         key: str,
         scope: str,
-        session_id: Optional[str] = None,
-        owner_agent_key: Optional[str] = None,
+        session_id: str | None = None,
+        owner_agent_key: str | None = None,
     ) -> int:
         await self._ensure_connected()
         async with self._lock:

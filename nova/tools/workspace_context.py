@@ -10,16 +10,15 @@ concurrent sessions on the server never race over a shared cwd.
 from __future__ import annotations
 
 from contextvars import ContextVar
-from typing import Optional
 
-_active_workspace: ContextVar[Optional[str]] = ContextVar(
+_active_workspace: ContextVar[str | None] = ContextVar(
     "active_workspace", default=None
 )
 
 
-def set_active_workspace(path: Optional[str]) -> None:
+def set_active_workspace(path: str | None) -> None:
     _active_workspace.set(path or None)
 
 
-def get_active_workspace() -> Optional[str]:
+def get_active_workspace() -> str | None:
     return _active_workspace.get()

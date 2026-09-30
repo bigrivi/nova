@@ -10,7 +10,6 @@ never enters message history.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -47,17 +46,17 @@ class StreamAccumulator:
     def __init__(
         self,
         model: str,
-        max_content_chars: Optional[int],
-        max_tool_arg_chars: Optional[int],
+        max_content_chars: int | None,
+        max_tool_arg_chars: int | None,
     ) -> None:
         self._model = model
         self._max_content_chars = max_content_chars
         self._max_tool_arg_chars = max_tool_arg_chars
         self.content = ""
-        self.tokens_input: Optional[int] = None
-        self.tokens_output: Optional[int] = None
-        self.cache_read_tokens: Optional[int] = None
-        self.provider_meta: Optional[dict] = None
+        self.tokens_input: int | None = None
+        self.tokens_output: int | None = None
+        self.cache_read_tokens: int | None = None
+        self.provider_meta: dict | None = None
 
     def add_text(self, text: str) -> None:
         """Append streamed text, guarding the content ceiling.

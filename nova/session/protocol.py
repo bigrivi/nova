@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from nova.session.models import Message
 
@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class SessionProtocol(Protocol):
-    def get_current_session(self) -> Optional[SessionContext]: ...
+    def get_current_session(self) -> SessionContext | None: ...
 
     async def create_session(
         self,
@@ -18,10 +18,10 @@ class SessionProtocol(Protocol):
         persist: bool = True,
         first_message: str = None,
         agent_key: str = ...,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> SessionContext: ...
 
-    async def load_session(self, session_id: str) -> Optional[SessionContext]: ...
+    async def load_session(self, session_id: str) -> SessionContext | None: ...
 
     async def apply_generated_title(
         self, session_id: str, title: str, expected_title: str
@@ -29,8 +29,8 @@ class SessionProtocol(Protocol):
 
     async def get_messages(
         self,
-        session_id: Optional[str] = None,
-        limit: Optional[int] = None,
+        session_id: str | None = None,
+        limit: int | None = None,
     ) -> list[Message]: ...
 
     async def add_message(
@@ -38,13 +38,13 @@ class SessionProtocol(Protocol):
         role: str,
         content: str,
         *,
-        tool_calls: Optional[list] = None,
-        tool_call_id: Optional[str] = None,
-        images: Optional[list[str]] = None,
-        reasoning_content: Optional[str] = None,
-        group_id: Optional[str] = None,
-        reasoning_elapsed_ms: Optional[int] = None,
-        error: Optional[str] = None,
-        tokens_input: Optional[int] = None,
-        tokens_output: Optional[int] = None,
+        tool_calls: list | None = None,
+        tool_call_id: str | None = None,
+        images: list[str] | None = None,
+        reasoning_content: str | None = None,
+        group_id: str | None = None,
+        reasoning_elapsed_ms: int | None = None,
+        error: str | None = None,
+        tokens_input: int | None = None,
+        tokens_output: int | None = None,
     ) -> Message: ...

@@ -237,7 +237,7 @@ class UpdateSessionRouteRequest(BaseModel):
     reasoning_effort: str | None = None
 
     @model_validator(mode="after")
-    def _effort_needs_a_model(self) -> "UpdateSessionRouteRequest":
+    def _effort_needs_a_model(self) -> UpdateSessionRouteRequest:
         if self.reasoning_effort is not None and not self.model:
             raise ValueError("reasoning_effort requires a model")
         return self

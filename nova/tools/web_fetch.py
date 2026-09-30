@@ -5,7 +5,6 @@ import httpx
 from nova.llm import ToolResult
 from nova.tools.registry import tool
 
-
 MAX_RESPONSE_SIZE = 5 * 1024 * 1024
 DEFAULT_TIMEOUT = 30.0
 MAX_TIMEOUT = 120.0

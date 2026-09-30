@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import os
 import json
+import os
 
 import httpx
 import pytest
-
 
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_OLLAMA_MODEL = "gemma4:26b"

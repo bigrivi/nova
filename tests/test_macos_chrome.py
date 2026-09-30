@@ -183,7 +183,7 @@ class _FakeShownEvent:
     def __init__(self) -> None:
         self.handlers: list[object] = []
 
-    def __iadd__(self, handler: object) -> "_FakeShownEvent":
+    def __iadd__(self, handler: object) -> _FakeShownEvent:
         self.handlers.append(handler)
         return self
 
@@ -233,10 +233,10 @@ def _install_fake_foundation(monkeypatch: pytest.MonkeyPatch) -> None:
 
     class _FakeNSObject:
         @classmethod
-        def alloc(cls) -> "_FakeNSObject":
+        def alloc(cls) -> _FakeNSObject:
             return cls()
 
-        def init(self) -> "_FakeNSObject":
+        def init(self) -> _FakeNSObject:
             return self
 
         def performSelectorOnMainThread_withObject_waitUntilDone_(

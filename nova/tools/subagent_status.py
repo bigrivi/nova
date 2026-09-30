@@ -8,7 +8,6 @@ session instead of guessing.
 
 import logging
 import time
-from typing import Optional
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
@@ -56,7 +55,7 @@ def _format_record(record) -> str:
         "required": [],
     },
 )
-async def subagent_status(target: Optional[str] = None) -> ToolResult:
+async def subagent_status(target: str | None = None) -> ToolResult:
     """Report the status of this session's delegated sub-agent jobs."""
     try:
         from nova.session.manager import get_session_manager

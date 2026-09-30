@@ -4,7 +4,6 @@ OpenAI LLM Provider
 
 import json
 import logging
-from typing import Optional
 
 import aiohttp  # noqa: F401  # kept so tests can patch nova.llm.providers.openai_chat.aiohttp
 
@@ -42,7 +41,7 @@ _MAX_STREAM_TOOL_ARG_CHARS = 1_000_000
 _MAX_TOOL_CALLS = 64
 
 
-def _cached_tokens_from_usage(usage: object) -> Optional[int]:
+def _cached_tokens_from_usage(usage: object) -> int | None:
     """Extract prompt-cache hits from a Chat Completions usage payload.
 
     Official API reports them as ``usage.prompt_tokens_details.cached_tokens``;
@@ -191,16 +190,16 @@ class OpenAIProvider(HttpProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        request_options: Optional[dict] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        request_options: dict | None = None,
         timeout_seconds: int = 120,
         reasoning_field: str = "reasoning_content",
-        user_agent: Optional[str] = None,
-        extra_headers: Optional[dict] = None,
-        request_hook: Optional[str] = None,
-        request_session_hook: Optional[str] = None,
-        default_reasoning_effort: Optional[str] = None,
+        user_agent: str | None = None,
+        extra_headers: dict | None = None,
+        request_hook: str | None = None,
+        request_session_hook: str | None = None,
+        default_reasoning_effort: str | None = None,
     ):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
@@ -213,7 +212,7 @@ class OpenAIProvider(HttpProvider):
         self._request_session_hook = request_session_hook
         self._default_reasoning_effort = default_reasoning_effort
 
-    def _build_headers(self, session_id: Optional[str] = None) -> dict[str, str]:
+    def _build_headers(self, session_id: str | None = None) -> dict[str, str]:
         headers = {
             "Content-Type": "application/json",
         }
@@ -229,7 +228,7 @@ class OpenAIProvider(HttpProvider):
             headers.update(run_request_hook(self._request_hook, session_id))
         return headers
 
-    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] = None, session_id: Optional[str] = None, reasoning_effort: Optional[str] = None) -> dict:
+    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] = None, session_id: str | None = None, reasoning_effort: str | None = None) -> dict:
         body = {"messages": messages}
         if model:
             body["model"] = model
@@ -374,9 +373,9 @@ class OpenAIProvider(HttpProvider):
         messages: list,
         model: str,
         stream: bool,
-        tools: Optional[list[dict]],
-        session_id: Optional[str],
-        reasoning_effort: Optional[str],
+        tools: list[dict] | None,
+        session_id: str | None,
+        reasoning_effort: str | None,
     ) -> tuple[str, dict[str, str], dict]:
         formatted_messages = self._format_messages(messages)
         headers = self._build_headers(session_id=session_id)

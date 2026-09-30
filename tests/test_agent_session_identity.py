@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 import time
+
+import pytest
 
 from nova.agent import Agent, AgentConfig
 from nova.db.config import DatabaseConfig

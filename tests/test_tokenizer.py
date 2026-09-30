@@ -3,13 +3,14 @@ Tests for nova/llm/tokenizer.py - type-aware token estimation.
 """
 
 from unittest.mock import patch
+
 from nova.llm.tokenizer import (
-    estimate_tokens_by_type,
-    estimate_message_tokens,
-    estimate_messages_tokens,
-    resolve_context_limit,
     CHARS_PER_TOKEN_TEXT,
     CHARS_PER_TOKEN_TOOL,
+    estimate_message_tokens,
+    estimate_messages_tokens,
+    estimate_tokens_by_type,
+    resolve_context_limit,
 )
 
 
@@ -217,15 +218,15 @@ class TestProviderAwareContextLimit:
     def _mock_settings(self, providers_dict):
         """Helper to mock settings with specific provider config."""
         from unittest.mock import MagicMock
-        
+
         mock_settings = MagicMock()
         mock_settings.providers = {}
-        
+
         for provider_name, provider_data in providers_dict.items():
             mock_provider = MagicMock()
             mock_provider.models = provider_data.get("models", {})
             mock_settings.providers[provider_name] = mock_provider
-        
+
         return mock_settings
 
     def test_provider_model_joint_lookup(self):
@@ -242,7 +243,7 @@ class TestProviderAwareContextLimit:
                 }
             }
         })
-        
+
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
             get_settings.cache_clear()
@@ -261,7 +262,7 @@ class TestProviderAwareContextLimit:
                 }
             }
         })
-        
+
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
             get_settings.cache_clear()
@@ -277,7 +278,7 @@ class TestProviderAwareContextLimit:
                 }
             }
         })
-        
+
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
             get_settings.cache_clear()
@@ -287,7 +288,7 @@ class TestProviderAwareContextLimit:
     def test_unknown_provider_falls_back_to_hardcoded(self):
         """Unknown provider falls back to hardcoded defaults."""
         mock = self._mock_settings({})
-        
+
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
             get_settings.cache_clear()
@@ -301,7 +302,7 @@ class TestProviderAwareContextLimit:
                 "models": {}
             }
         })
-        
+
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
             get_settings.cache_clear()

@@ -12,10 +12,10 @@ Contract:
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 
 import pytest
 import pytest_asyncio
-import sqlite3
 
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite_repository import SqliteRepository

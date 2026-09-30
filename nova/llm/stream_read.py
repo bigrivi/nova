@@ -229,7 +229,7 @@ class StreamPoller:
             raise StreamTimeout(
                 self._why("stream sent nothing for the socket read timeout")
             ) from exc
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise StreamTimeout(
                 self._why("stream hit the request's total timeout")
             ) from exc

@@ -4,25 +4,24 @@ Memory application service.
 
 from __future__ import annotations
 
+import json
+import re
 import time
 import uuid
-import re
-import json
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
 
+from nova.db.repository import NovaRepository
 from nova.llm import Message as LLMMessage
 from nova.llm.oneshot import stream_text_once
 from nova.memory.models import (
+    VALID_MEMORY_SCOPES,
+    VALID_MEMORY_TYPES,
     MemoryRecord,
     MemorySearchFilters,
     MemoryWriteRequest,
-    VALID_MEMORY_SCOPES,
-    VALID_MEMORY_TYPES,
 )
 from nova.memory.repository import MemoryRepository
-from nova.db.repository import NovaRepository
 from nova.settings import get_settings
-
 
 MemoryAISelector = Callable[[str, list[MemoryRecord], int], Awaitable[list[MemoryRecord]]]
 
@@ -32,8 +31,8 @@ MIN_RELEVANCE_SCORE = 5
 class MemoryService:
     def __init__(
         self,
-        repository: Optional[MemoryRepository] = None,
-        data_source: Optional[NovaRepository] = None,
+        repository: MemoryRepository | None = None,
+        data_source: NovaRepository | None = None,
     ):
         self.repository = repository or MemoryRepository(data_source=data_source)
 
@@ -62,12 +61,12 @@ class MemoryService:
         self,
         query: str,
         scope: str = "all",
-        memory_type: Optional[str] = None,
-        session_id: Optional[str] = None,
+        memory_type: str | None = None,
+        session_id: str | None = None,
         limit: int = 5,
         use_ai: bool = False,
-        ai_selector: Optional[MemoryAISelector] = None,
-        agent_key: Optional[str] = None,
+        ai_selector: MemoryAISelector | None = None,
+        agent_key: str | None = None,
     ) -> list[MemoryRecord]:
         normalized_scope = self._normalize_search_scope(scope)
         normalized_type = self._normalize_optional_memory_type(memory_type)
@@ -97,10 +96,10 @@ class MemoryService:
     async def list_memories(
         self,
         scope: str = "all",
-        memory_type: Optional[str] = None,
-        session_id: Optional[str] = None,
+        memory_type: str | None = None,
+        session_id: str | None = None,
         limit: int = 20,
-        agent_key: Optional[str] = None,
+        agent_key: str | None = None,
     ) -> list[MemoryRecord]:
         normalized_scope = self._normalize_search_scope(scope)
         normalized_type = self._normalize_optional_memory_type(memory_type)
@@ -117,11 +116,11 @@ class MemoryService:
 
     async def delete(
         self,
-        memory_id: Optional[str] = None,
-        key: Optional[str] = None,
-        scope: Optional[str] = None,
-        session_id: Optional[str] = None,
-        agent_key: Optional[str] = None,
+        memory_id: str | None = None,
+        key: str | None = None,
+        scope: str | None = None,
+        session_id: str | None = None,
+        agent_key: str | None = None,
     ) -> int:
         normalized_memory_id = self._normalize_optional_text(memory_id)
         if normalized_memory_id:
@@ -142,14 +141,14 @@ class MemoryService:
             owner_agent_key=final_owner,
         )
 
-    async def delete_by_session(self, session_id: Optional[str]) -> int:
+    async def delete_by_session(self, session_id: str | None) -> int:
         """Delete all memories (any scope or type) tied to a session."""
         normalized_session_id = self._normalize_optional_text(session_id)
         if not normalized_session_id:
             return 0
         return await self.repository.delete_by_session(normalized_session_id)
 
-    async def list_by_session(self, session_id: Optional[str]) -> list[MemoryRecord]:
+    async def list_by_session(self, session_id: str | None) -> list[MemoryRecord]:
         """List all memories (any scope or type) tied to a session."""
         normalized_session_id = self._normalize_optional_text(session_id)
         if not normalized_session_id:
@@ -174,7 +173,7 @@ class MemoryService:
             raise ValueError(f"Unsupported memory type: {memory_type}")
         return normalized
 
-    def _normalize_optional_memory_type(self, memory_type: Optional[str]) -> Optional[str]:
+    def _normalize_optional_memory_type(self, memory_type: str | None) -> str | None:
         if memory_type is None:
             return None
         return self._normalize_memory_type(memory_type)
@@ -192,7 +191,7 @@ class MemoryService:
                 normalized.append(text)
         return normalized
 
-    def _resolve_owner_agent_key(self, scope: str, explicit: Optional[str]) -> Optional[str]:
+    def _resolve_owner_agent_key(self, scope: str, explicit: str | None) -> str | None:
         """Owner key for a memory: bound only when the scope is ``agent``.
 
         ``agent`` memories are private to the writing agent, so an explicit owner
@@ -209,13 +208,13 @@ class MemoryService:
             )
         return owner
 
-    def _normalize_session_id(self, scope: str, session_id: Optional[str]) -> Optional[str]:
+    def _normalize_session_id(self, scope: str, session_id: str | None) -> str | None:
         normalized_session_id = self._normalize_optional_text(session_id)
         if scope == "session" and not normalized_session_id:
             raise ValueError("session_id is required when scope is session")
         return normalized_session_id
 
-    def _validate_scope_session_pair(self, scope: str, session_id: Optional[str]) -> None:
+    def _validate_scope_session_pair(self, scope: str, session_id: str | None) -> None:
         if scope == "session" and not session_id:
             raise ValueError("session_id is required when scope is session")
 
@@ -225,7 +224,7 @@ class MemoryService:
             raise ValueError(f"{field_name} is required")
         return normalized
 
-    def _normalize_optional_text(self, value: Optional[str]) -> Optional[str]:
+    def _normalize_optional_text(self, value: str | None) -> str | None:
         if value is None:
             return None
         text = str(value).strip()

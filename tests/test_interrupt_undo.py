@@ -5,8 +5,8 @@ import pytest_asyncio
 
 from nova import Agent, AgentConfig
 from nova.agent.core import AgentEvent
-from nova.db.sqlite_repository import SqliteRepository
 from nova.db.config import DatabaseConfig
+from nova.db.sqlite_repository import SqliteRepository
 from nova.llm import ToolResult
 from nova.llm.provider import Done, Error, LLMProvider, TextDelta, ToolCall
 

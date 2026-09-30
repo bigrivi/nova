@@ -8,7 +8,7 @@ registry is populated, so it is kept out of the agent runtime.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from nova.mcp.manager import MCPManager
 from nova.tools.approval import ApprovalManager
@@ -39,8 +39,8 @@ class ToolsetBuilder:
         skill_service: Any,
         approval: ApprovalManager,
         is_sub_agent: bool,
-        allowed_tools: Optional[frozenset[str]] = None,
-        agent_key: Optional[str] = None,
+        allowed_tools: frozenset[str] | None = None,
+        agent_key: str | None = None,
     ) -> None:
         self._registry = registry
         self._skill_service = skill_service

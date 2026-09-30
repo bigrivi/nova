@@ -5,7 +5,7 @@ import json
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -43,9 +43,9 @@ class StdioTransport(McpTransport):
         self._command = command
         self._args = args or []
         self._env = env or {}
-        self._process: Optional[asyncio.subprocess.Process] = None
+        self._process: asyncio.subprocess.Process | None = None
         self._pending: dict[str, asyncio.Future] = {}
-        self._reader_task: Optional[asyncio.Task] = None
+        self._reader_task: asyncio.Task | None = None
         self._request_id = 0
 
     def _next_id(self) -> str:
@@ -128,7 +128,7 @@ class StdioTransport(McpTransport):
             self._process.terminate()
             try:
                 await asyncio.wait_for(self._process.wait(), timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._process.kill()
                 await self._process.wait()
 
@@ -138,7 +138,7 @@ class HttpTransport(McpTransport):
         self._url = url
         self._headers = headers or {}
         self._timeout = timeout
-        self._session: Optional[Any] = None
+        self._session: Any | None = None
         self._request_id = 0
 
     def _next_id(self) -> str:

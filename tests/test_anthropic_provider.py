@@ -6,8 +6,20 @@ import json
 import aiohttp
 import pytest
 
-from nova.llm.providers.anthropic import AnthropicProvider, _default_max_output_tokens, _preserves_thinking
-from nova.llm.provider import Done, Error, LLMProvider, Message, ReasoningDelta, TextDelta, ToolCall
+from nova.llm.provider import (
+    Done,
+    Error,
+    LLMProvider,
+    Message,
+    ReasoningDelta,
+    TextDelta,
+    ToolCall,
+)
+from nova.llm.providers.anthropic import (
+    AnthropicProvider,
+    _default_max_output_tokens,
+    _preserves_thinking,
+)
 
 # ---------------------------------------------------------------------------
 # aiohttp fakes (module top, reused by every test)
@@ -95,7 +107,7 @@ class _FakeSession:
         self.calls: list[dict] = []
         self.closed = False
 
-    async def post(self, url, headers=None, json=None, timeout=None):  # noqa: A002
+    async def post(self, url, headers=None, json=None, timeout=None):
         self.calls.append({"url": url, "headers": headers, "json": json, "timeout": timeout})
         return self._response
 

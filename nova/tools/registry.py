@@ -3,8 +3,9 @@ Tool registry.
 """
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, Optional, Any
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nova.tools.behavior import ToolBehavior
@@ -103,7 +104,7 @@ class ToolRegistry:
         """Unregister a tool."""
         self.tools.pop(name, None)
 
-    def get(self, name: str) -> Optional[Tool]:
+    def get(self, name: str) -> Tool | None:
         """Get a tool by name."""
         return self.tools.get(name)
 
@@ -165,7 +166,7 @@ class ToolRegistry:
 
 
 # Global tool registry.
-_registry: Optional[ToolRegistry] = None
+_registry: ToolRegistry | None = None
 
 
 def get_registry() -> ToolRegistry:

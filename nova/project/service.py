@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.project.models import Project
@@ -19,7 +19,7 @@ class ProjectService:
     path return a list.
     """
 
-    def __init__(self, data_source: Optional[DataSourceProtocol] = None):
+    def __init__(self, data_source: DataSourceProtocol | None = None):
         self._data_source = data_source
 
     async def _get_data_source(self) -> DataSourceProtocol:

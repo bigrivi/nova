@@ -5,8 +5,8 @@ import json
 import aiohttp
 import pytest
 
-from nova.llm.providers.openai_responses import OpenAIResponsesProvider
 from nova.llm.provider import Done, Error, Message, TextDelta, ToolCall
+from nova.llm.providers.openai_responses import OpenAIResponsesProvider
 
 # The Responses API sends the whole response as ONE `response.completed` SSE
 # line. aiohttp's StreamReader caps a single line at its high-water mark
@@ -83,7 +83,7 @@ class _FakeSession:
         self.calls: list[dict] = []
         self.closed = False
 
-    async def post(self, url, headers=None, json=None, timeout=None):  # noqa: A002
+    async def post(self, url, headers=None, json=None, timeout=None):
         self.calls.append({"url": url, "headers": headers, "json": json})
         return self._response
 

@@ -1,5 +1,6 @@
-import pytest
 import importlib
+
+import pytest
 
 from nova.tools.web_search import web_search
 

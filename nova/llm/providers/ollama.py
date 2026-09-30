@@ -4,7 +4,6 @@ Ollama LLM Provider using aiohttp
 
 import json
 import logging
-from typing import Optional
 
 import aiohttp  # noqa: F401  # kept so tests can patch nova.llm.providers.ollama.aiohttp
 
@@ -38,7 +37,7 @@ class _OllamaStreamParser(StreamParser):
     def __init__(self) -> None:
         super().__init__()
         self._tool_calls: dict[int, dict] = {}
-        self._current_tool_index: Optional[int] = None
+        self._current_tool_index: int | None = None
 
     def feed(self, event: dict, acc: StreamAccumulator):
         message = event.get("message", {})
@@ -112,8 +111,8 @@ class OllamaProvider(HttpProvider):
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        request_options: Optional[dict] = None,
+        base_url: str | None = None,
+        request_options: dict | None = None,
         timeout_seconds: int = 120,
     ):
         self.base_url = (base_url or "").rstrip("/")
@@ -194,9 +193,9 @@ class OllamaProvider(HttpProvider):
         messages: list,
         model: str,
         stream: bool,
-        tools: Optional[list[dict]],
-        session_id: Optional[str],
-        reasoning_effort: Optional[str],
+        tools: list[dict] | None,
+        session_id: str | None,
+        reasoning_effort: str | None,
     ) -> tuple[str, dict[str, str], dict]:
         formatted_messages = self._format_messages(messages)
         body = self._build_body(

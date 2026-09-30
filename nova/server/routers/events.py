@@ -67,7 +67,7 @@ async def session_events(
                     item = await asyncio.wait_for(
                         queue.get(), timeout=_PING_INTERVAL_SECONDS
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     if is_server_stopping(http_request) or await http_request.is_disconnected():
                         break
                     yield b": ping\n\n"

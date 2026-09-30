@@ -1,9 +1,9 @@
-from nova.session.models import Message
 from nova.session.history_projection import (
     VISIBLE_HISTORY_TOOL_NAMES,
     build_user_visible_history_filter,
     project_user_visible_history,
 )
+from nova.session.models import Message
 
 
 def _message(
@@ -79,4 +79,4 @@ def test_project_user_visible_history_keeps_only_visible_tool_calls_and_results(
 
 
 def test_project_user_visible_history_visible_tool_allowlist_is_intentional():
-    assert VISIBLE_HISTORY_TOOL_NAMES == {"edit", "write"}
+    assert {"edit", "write"} == VISIBLE_HISTORY_TOOL_NAMES

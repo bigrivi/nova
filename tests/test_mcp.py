@@ -13,7 +13,7 @@ import pytest
 
 from nova.llm import ToolResult
 from nova.mcp.client import McpClient
-from nova.mcp.manager import init_mcp_servers, shutdown_clients, _build_wrapper
+from nova.mcp.manager import _build_wrapper, init_mcp_servers, shutdown_clients
 from nova.mcp.transport import (
     HttpTransport,
     McpError,

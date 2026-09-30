@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def detect_shell() -> tuple[str, str]:
     """Detect the best available shell.
 

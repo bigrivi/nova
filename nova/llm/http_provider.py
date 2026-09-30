@@ -17,7 +17,6 @@ import asyncio
 import logging
 from abc import abstractmethod
 from collections.abc import AsyncGenerator, Callable, Coroutine
-from typing import Optional
 
 import aiohttp
 
@@ -67,9 +66,9 @@ class HttpProvider(LLMProvider):
         messages: list,
         model: str,
         stream: bool,
-        tools: Optional[list[dict]],
-        session_id: Optional[str],
-        reasoning_effort: Optional[str],
+        tools: list[dict] | None,
+        session_id: str | None,
+        reasoning_effort: str | None,
     ) -> tuple[str, dict[str, str], dict]:
         """Return ``(url, headers, body)`` for one request.
 
@@ -116,9 +115,9 @@ class HttpProvider(LLMProvider):
         url: str,
         headers: dict,
         body: dict,
-        abort_event: Optional[asyncio.Event],
-        timeout: Optional[aiohttp.ClientTimeout] = None,
-    ) -> Optional[aiohttp.ClientResponse]:
+        abort_event: asyncio.Event | None,
+        timeout: aiohttp.ClientTimeout | None = None,
+    ) -> aiohttp.ClientResponse | None:
         """POST the body, racing an abort and retrying per the transport policy.
 
         Returns:
@@ -167,7 +166,7 @@ class HttpProvider(LLMProvider):
 
             try:
                 resp = post_task.result()
-            except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as e:
+            except (TimeoutError, aiohttp.ClientConnectionError) as e:
                 if self.transport_policy.use_retry and attempt < attempts - 1:
                     log.warning(
                         "Connection error (attempt %d/%d): %s, retrying in %.1fs",
@@ -234,7 +233,7 @@ class HttpProvider(LLMProvider):
         return connector, session
 
     def _stream_timeout(
-        self, total_timeout_seconds: Optional[int]
+        self, total_timeout_seconds: int | None
     ) -> aiohttp.ClientTimeout:
         """Build the streaming request's timeout.
 
@@ -273,10 +272,10 @@ class HttpProvider(LLMProvider):
         messages: list,
         model: str,
         stream: bool = False,
-        tools: Optional[list[dict]] = None,
-        abort_event: Optional[asyncio.Event] = None,
-        session_id: Optional[str] = None,
-        reasoning_effort: Optional[str] = None,
+        tools: list[dict] | None = None,
+        abort_event: asyncio.Event | None = None,
+        session_id: str | None = None,
+        reasoning_effort: str | None = None,
         **kwargs,
     ) -> Done:
         url, headers, body = self._prepare_request(
@@ -324,11 +323,11 @@ class HttpProvider(LLMProvider):
         self,
         messages: list,
         model: str,
-        tools: Optional[list[dict]] = None,
-        abort_event: Optional[asyncio.Event] = None,
-        total_timeout_seconds: Optional[int] = None,
-        session_id: Optional[str] = None,
-        reasoning_effort: Optional[str] = None,
+        tools: list[dict] | None = None,
+        abort_event: asyncio.Event | None = None,
+        total_timeout_seconds: int | None = None,
+        session_id: str | None = None,
+        reasoning_effort: str | None = None,
         **kwargs,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         url, headers, body = self._prepare_request(

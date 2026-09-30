@@ -2,11 +2,11 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
+from nova.settings import get_settings
 from nova.tools.shell_utils import get_shell_label
 from nova.tools.threat_patterns import has_threats
-from nova.settings import get_settings
 
 DEFAULT_AGENT_IDENTITY = (
     "You are Nova, a general-purpose personal AI assistant and autonomous agent.\n"
@@ -109,7 +109,7 @@ class PromptBuilder:
 - Shell: {shell}
 """
 
-    def __init__(self, config: Optional[PromptConfig] = None):
+    def __init__(self, config: PromptConfig | None = None):
         self.config = config or PromptConfig()
 
     def build(

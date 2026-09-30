@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from typing import Optional
 
 import webview
 
@@ -19,7 +18,7 @@ def _window_url(host: str, port: int) -> str:
     return f"http://{host}:{port}"
 
 
-def run_desktop(settings: Optional[Settings] = None, dev: bool = False) -> None:
+def run_desktop(settings: Settings | None = None, dev: bool = False) -> None:
     settings = settings or Settings.load_config()
 
     # The desktop launch path never went through __main__, so without this the

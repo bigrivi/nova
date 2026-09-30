@@ -5,7 +5,6 @@ Anthropic LLM Provider
 import json
 import logging
 import re
-from typing import Optional
 
 import aiohttp  # noqa: F401  # kept so tests can patch nova.llm.providers.anthropic.aiohttp
 
@@ -83,7 +82,7 @@ _THINKING_PRESERVED_FROM = {"opus": (4, 5), "sonnet": (4, 5)}
 _THINKING_MODEL_RE = re.compile(r"claude-(opus|sonnet|haiku)-(\d+)(?:-(\d{1,2})(?=-|$))?")
 
 
-def _preserves_thinking(model: Optional[str]) -> bool:
+def _preserves_thinking(model: str | None) -> bool:
     """Whether the model keeps prior-turn thinking blocks in context by default.
 
     Claude Opus 4.5+ and Sonnet 4.5+ retain thinking blocks from earlier
@@ -108,7 +107,7 @@ def _preserves_thinking(model: Optional[str]) -> bool:
     return threshold is not None and (major, minor) >= threshold
 
 
-def _tool_call_parts(tool_call: object) -> Optional[tuple[str, str, str]]:
+def _tool_call_parts(tool_call: object) -> tuple[str, str, str] | None:
     """Return (id, name, arguments) for either the OpenAI-nested or Nova-flat tool call shape."""
     if not isinstance(tool_call, dict):
         # ToolCall.model_dump() is what the agent persists into message history.
@@ -153,7 +152,7 @@ def _state_to_tool_call(state: dict) -> ToolCall:
     return ToolCall(id=str(state.get("id", "")), name=str(state.get("name", "")), arguments=str(arguments))
 
 
-def _thinking_provider_meta(thinking_blocks: list[dict]) -> Optional[dict]:
+def _thinking_provider_meta(thinking_blocks: list[dict]) -> dict | None:
     """Reduce a turn's thinking blocks to the state that cannot be reconstructed later.
 
     The thinking text is already persisted as the message's reasoning_content, so
@@ -161,7 +160,7 @@ def _thinking_provider_meta(thinking_blocks: list[dict]) -> Optional[dict]:
     payload of redacted blocks need carrying. Returns None when there is nothing
     to persist, because the message store keeps NULL rather than an empty object.
     """
-    signature: Optional[str] = None
+    signature: str | None = None
     redacted_entries: list[str] = []
     for block in thinking_blocks:
         block_type = block.get("type")
@@ -370,17 +369,17 @@ class AnthropicProvider(HttpProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        request_options: Optional[dict] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        request_options: dict | None = None,
         timeout_seconds: int = 120,
-        user_agent: Optional[str] = None,
+        user_agent: str | None = None,
         anthropic_version: str = "2023-06-01",
-        betas: Optional[list[str]] = None,
-        max_output_tokens: Optional[int] = None,
-        extra_headers: Optional[dict] = None,
-        request_hook: Optional[str] = None,
-        request_session_hook: Optional[str] = None,
+        betas: list[str] | None = None,
+        max_output_tokens: int | None = None,
+        extra_headers: dict | None = None,
+        request_hook: str | None = None,
+        request_session_hook: str | None = None,
     ):
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
@@ -400,7 +399,7 @@ class AnthropicProvider(HttpProvider):
             return f"{resolved_base_url}/messages"
         return f"{resolved_base_url}/v1/messages"
 
-    def _build_headers(self, session_id: Optional[str] = None) -> dict[str, str]:
+    def _build_headers(self, session_id: str | None = None) -> dict[str, str]:
         headers = {
             "Content-Type": "application/json",
             "anthropic-version": self._anthropic_version,
@@ -447,7 +446,7 @@ class AnthropicProvider(HttpProvider):
             })
         return anthropic_tools
 
-    def _replay_thinking_blocks(self, get_attr, message: object, model: Optional[str]) -> list[dict]:
+    def _replay_thinking_blocks(self, get_attr, message: object, model: str | None) -> list[dict]:
         message_model = get_attr(message, "model")
         if message_model and model and str(message_model) != str(model):
             log.debug("Skipping thinking replay: message model %s differs from request model %s",
@@ -478,7 +477,7 @@ class AnthropicProvider(HttpProvider):
                     blocks.append({"type": "redacted_thinking", "data": str(redacted_entry)})
         return blocks
 
-    def _format_messages(self, messages: list, include_thinking: bool = False, model: Optional[str] = None) -> tuple[list[dict], str]:
+    def _format_messages(self, messages: list, include_thinking: bool = False, model: str | None = None) -> tuple[list[dict], str]:
         def get_attr(message: object, key: str):
             if isinstance(message, dict):
                 return message.get(key)
@@ -502,7 +501,7 @@ class AnthropicProvider(HttpProvider):
                             declared_ids.add(tool_call_fields[0])
 
         # Identify the last assistant message by position for thinking replay
-        last_assistant_index: Optional[int] = None
+        last_assistant_index: int | None = None
         for message_index, message in enumerate(messages):
             if get_attr(message, "role") == "assistant":
                 last_assistant_index = message_index
@@ -730,9 +729,7 @@ class AnthropicProvider(HttpProvider):
         # System: message-derived wins when non-empty
         if system_text:
             body["system"] = system_text
-        elif isinstance(system_from_options, str) and system_from_options:
-            body["system"] = system_from_options
-        elif isinstance(system_from_options, list) and system_from_options:
+        elif (isinstance(system_from_options, str) and system_from_options) or (isinstance(system_from_options, list) and system_from_options):
             body["system"] = system_from_options
 
         if stream:
@@ -794,9 +791,9 @@ class AnthropicProvider(HttpProvider):
         messages: list,
         model: str,
         stream: bool,
-        tools: Optional[list[dict]],
-        session_id: Optional[str],
-        reasoning_effort: Optional[str],
+        tools: list[dict] | None,
+        session_id: str | None,
+        reasoning_effort: str | None,
     ) -> tuple[str, dict[str, str], dict]:
         headers = self._build_headers(session_id=session_id)
         if stream:
@@ -831,9 +828,9 @@ class AnthropicProvider(HttpProvider):
         provider_meta = _thinking_provider_meta(thinking_blocks)
 
         usage = data.get("usage") if isinstance(data, dict) else None
-        tokens_input: Optional[int] = None
-        tokens_output: Optional[int] = None
-        cache_read_tokens: Optional[int] = None
+        tokens_input: int | None = None
+        tokens_output: int | None = None
+        cache_read_tokens: int | None = None
         if isinstance(usage, dict):
             # tokens_input is sum of the three input fields (true prompt cost)
             prompt_tokens = int(usage.get("input_tokens", 0) or 0)

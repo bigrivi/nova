@@ -5,8 +5,8 @@ import json
 import aiohttp
 import pytest
 
-from nova.llm.providers.ollama import OllamaProvider
 from nova.llm.provider import Done, Error, Message, TextDelta
+from nova.llm.providers.ollama import OllamaProvider
 
 # aiohttp's StreamReader caps a single line at its high-water mark (~128 KiB)
 # unless readline gets an explicit larger max_line_length. A full NDJSON
@@ -76,7 +76,7 @@ class _FakeSession:
         self.calls: list[dict] = []
         self.closed = False
 
-    async def post(self, url, json=None, timeout=None):  # noqa: A002
+    async def post(self, url, json=None, timeout=None):
         self.calls.append({"url": url, "json": json})
         return self._response
 

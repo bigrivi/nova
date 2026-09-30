@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Optional
 
 from nova.settings import Settings
 from nova.speech import client as transcribe_client
@@ -31,9 +30,9 @@ class SpeechService:
     ) -> None:
         self._settings = settings
         self._unavailable_reason: str = ""
-        self._started_at: Optional[float] = None
+        self._started_at: float | None = None
         if recorder is not None:
-            self._recorder: Optional[Recorder] = recorder
+            self._recorder: Recorder | None = recorder
             return
         try:
             self._recorder = create_recorder()

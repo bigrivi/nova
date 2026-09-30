@@ -11,8 +11,8 @@ from nova.db import (
     get_default_data_source,
     set_data_source_config,
 )
-from nova.memory.repository import MemoryRepository
 from nova.memory.models import MemoryRecord, MemorySearchFilters
+from nova.memory.repository import MemoryRepository
 from nova.session.manager import SessionManager
 from nova.session.models import Session
 

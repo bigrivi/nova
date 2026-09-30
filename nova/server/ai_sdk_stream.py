@@ -13,7 +13,7 @@ from nova.agent import AgentEvent
 
 def encode_ai_sdk_sse(part: dict[str, Any]) -> bytes:
     payload = json.dumps(part, ensure_ascii=False, separators=(",", ":"))
-    return f"data: {payload}\n\n".encode("utf-8")
+    return f"data: {payload}\n\n".encode()
 
 
 def encode_ai_sdk_done() -> bytes:

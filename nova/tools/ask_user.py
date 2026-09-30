@@ -5,7 +5,6 @@ import json
 from nova.llm import ToolResult
 from nova.tools.registry import tool
 
-
 _VALID_TYPES = frozenset({"text", "select", "textarea"})
 
 
