@@ -128,6 +128,7 @@ function AgentRow({
                         type="button"
                         variant="ghost"
                         size="icon-sm"
+                        className="relative after:absolute after:-inset-2 after:content-['']"
                         aria-label={t("modelSelector.edit")}
                         title={t("modelSelector.edit")}
                         onClick={onEdit}
@@ -138,6 +139,7 @@ function AgentRow({
                         type="button"
                         variant="ghost"
                         size="icon-sm"
+                        className="relative after:absolute after:-inset-2 after:content-['']"
                         aria-label={t("modelSelector.delete")}
                         title={
                             deletable
@@ -347,7 +349,7 @@ export function AgentsManagerContent({
                     }
                 }}
             >
-                <DialogContent className="sm:max-w-sm">
+                <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-sm">
                     <DialogHeader>
                         <DialogTitle>
                             {t("agentManager.deleteConfirmTitle")}

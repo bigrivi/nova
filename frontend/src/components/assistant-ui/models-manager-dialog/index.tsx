@@ -156,8 +156,8 @@ export function ModelsManagerContent({
 
     return (
         <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
-            <div className="flex shrink-0 items-center gap-2">
-                <div className="relative min-w-0 flex-1">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <div className="relative min-w-[160px] flex-1">
                     <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
                     <input
                         value={query}

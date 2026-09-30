@@ -100,4 +100,4 @@ export function toEditState(
 }
 
 export const inputClassName =
-    "h-9 w-full rounded-lg border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20";
+    "h-9 w-full rounded-lg border bg-background px-3 text-base outline-none focus:border-ring focus:ring-2 focus:ring-ring/20 sm:text-sm";

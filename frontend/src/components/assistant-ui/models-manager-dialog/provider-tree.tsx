@@ -98,7 +98,7 @@ export function ProviderTree({
                                 type="button"
                                 size="icon-xs"
                                 variant="ghost"
-                                className="shrink-0 text-muted-foreground hover:text-foreground"
+                                className="relative shrink-0 text-muted-foreground after:absolute after:-inset-2 after:content-[''] hover:text-foreground"
                                 title={t("modelSelector.editProvider")}
                                 aria-label={t("modelSelector.editProvider")}
                                 onClick={() => onEditProvider(provider)}
@@ -109,7 +109,7 @@ export function ProviderTree({
                                 type="button"
                                 size="icon-xs"
                                 variant="ghost"
-                                className="shrink-0 text-muted-foreground hover:text-destructive"
+                                className="relative shrink-0 text-muted-foreground after:absolute after:-inset-2 after:content-[''] hover:text-destructive"
                                 title={t("modelSelector.deleteProvider")}
                                 aria-label={t("modelSelector.deleteProvider")}
                                 onClick={() => onDeleteProvider(provider)}
@@ -150,7 +150,7 @@ export function ProviderTree({
                                                 type="button"
                                                 size="icon-xs"
                                                 variant="ghost"
-                                                className="shrink-0 text-muted-foreground hover:text-foreground"
+                                                className="relative shrink-0 text-muted-foreground after:absolute after:-inset-2 after:content-[''] hover:text-foreground"
                                                 title={t(
                                                     "modelSelector.editModel",
                                                 )}
@@ -167,7 +167,7 @@ export function ProviderTree({
                                                 type="button"
                                                 size="icon-xs"
                                                 variant="ghost"
-                                                className="shrink-0 text-muted-foreground hover:text-destructive"
+                                                className="relative shrink-0 text-muted-foreground after:absolute after:-inset-2 after:content-[''] hover:text-destructive"
                                                 title={t(
                                                     "modelSelector.deleteModel",
                                                 )}

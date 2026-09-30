@@ -159,7 +159,7 @@ export function MemoryManagerContent() {
                                                             ),
                                                         )}
                                                     </div>
-                                                    <p className="mt-1 truncate text-sm font-semibold">
+                                                    <p className="mt-1 line-clamp-2 text-sm font-semibold break-words">
                                                         {memory.summary}
                                                     </p>
                                                     <p className="mt-0.5 text-sm text-muted-foreground">
@@ -175,6 +175,7 @@ export function MemoryManagerContent() {
                                                     type="button"
                                                     variant="ghost"
                                                     size="icon-sm"
+                                                    className="relative after:absolute after:-inset-2 after:content-['']"
                                                     aria-label={t(
                                                         "memory.delete",
                                                     )}
@@ -207,7 +208,7 @@ export function MemoryManagerContent() {
                     }
                 }}
             >
-                <DialogContent className="sm:max-w-sm">
+                <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-sm">
                     <DialogHeader>
                         <DialogTitle>
                             {t("memory.deleteConfirmTitle")}
