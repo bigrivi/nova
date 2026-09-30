@@ -1,6 +1,9 @@
 import { UserMessageAttachments } from "@/components/assistant-ui/attachment";
 import { CodeRunTool } from "@/components/assistant-ui/code-run-tool";
-import { MarkdownText } from "@/components/assistant-ui/markdown-text";
+import {
+    MarkdownBody,
+    MarkdownText,
+} from "@/components/assistant-ui/markdown-text";
 import {
     Reasoning,
     ReasoningChainGroup,
@@ -40,8 +43,7 @@ function groupIndices(part: { type: string }): readonly number[] {
 const ATTACHMENT_RE =
     /^<attachment name=(.*?)>\n([\s\S]*?)\n<\/attachment>\n\n([\s\S]*)$/;
 
-const SUBAGENT_RE =
-    /^\[subagent:(.+?)\s+status=(done|error)\]\s*\n?([\s\S]*)$/;
+const SUBAGENT_RE = /^\[subagent:(.+?)\s+status=(done|error)\]\s*\n?([\s\S]*)$/;
 
 type SubagentStatus = "done" | "error";
 
@@ -51,6 +53,15 @@ type ParsedSubagent = {
     body: string;
 };
 
+/**
+ * Split an already-identified sub-agent message into its parts.
+ *
+ * This no longer decides *whether* a message is a sub-agent report -- the
+ * server-set `variant` does that -- it only reads back the header the backend
+ * wrote into the content when it injected the message. Keeping the two apart is
+ * what stops a user pasting something that looks like a report from rendering
+ * as one.
+ */
 function parseSubagentMessage(text: string): ParsedSubagent | null {
     const match = text.match(SUBAGENT_RE);
     if (!match) return null;
@@ -99,7 +110,7 @@ const SubagentChip: FC<ParsedSubagent> = ({ target, status, body }) => {
             open={open}
             onOpenChange={setOpen}
             className={cn(
-                "max-w-full overflow-hidden rounded-xl border",
+                "max-w-full overflow-hidden rounded-xl border mb-4",
                 isError
                     ? "border-rose-200/80 bg-rose-50/40"
                     : "border-border bg-muted/40",
@@ -147,9 +158,13 @@ const SubagentChip: FC<ParsedSubagent> = ({ target, status, body }) => {
             {body ? (
                 <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none">
                     <div className="border-t border-border px-3 py-2.5">
-                        <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
-                            {body}
-                        </div>
+                        {/* A sub-agent answers in markdown, so the details pane
+                            parses it. Plain pre-wrapped text rendered its
+                            bullets, tables and fences as literal characters. */}
+                        <MarkdownBody
+                            text={body}
+                            className="text-sm leading-relaxed text-foreground"
+                        />
                     </div>
                 </CollapsibleContent>
             ) : null}
@@ -241,7 +256,8 @@ const AssistantMessage: FC<{ name: string; agentKey: string | null }> = ({
 
     const countVisibleTools = (indices: readonly number[]) =>
         indices.reduce(
-            (total, index) => (visibleToolIndices.has(index) ? total + 1 : total),
+            (total, index) =>
+                visibleToolIndices.has(index) ? total + 1 : total,
             0,
         );
 
@@ -276,9 +292,7 @@ const AssistantMessage: FC<{ name: string; agentKey: string | null }> = ({
                 data-slot="aui_assistant-message-content"
                 className="wrap-break-word min-w-0 text-foreground leading-relaxed flex flex-col gap-2"
             >
-                <MessagePrimitive.GroupedParts
-                    groupBy={groupBy}
-                >
+                <MessagePrimitive.GroupedParts groupBy={groupBy}>
                     {({ part, children }) => {
                         switch (part.type) {
                             case "group-chainOfThought":
@@ -348,8 +362,7 @@ const AssistantMessage: FC<{ name: string; agentKey: string | null }> = ({
                                 if (part.toolName === "ask_user") return null;
                                 if (part.toolName === "code_run")
                                     return <CodeRunTool {...toolProps} />;
-                                if (part.toolName === "todo_write")
-                                    return null;
+                                if (part.toolName === "todo_write") return null;
                                 return (
                                     toolUI ?? <ToolFallback {...toolProps} />
                                 );
@@ -392,15 +405,14 @@ export const ThreadMessage = memo(function ThreadMessage({
     const userText = useAuiState((s) => readUserText(s.message));
 
     if (role === "user") {
-        const parsed = parseSubagentMessage(userText);
-        if (variant === "subagent" || parsed) {
+        if (variant === "subagent") {
             return (
                 <div
                     data-role="subagent"
                     className="fade-in slide-in-from-bottom-1 animate-in duration-150"
                 >
                     <SubagentChip
-                        {...(parsed ?? {
+                        {...(parseSubagentMessage(userText) ?? {
                             target: "",
                             status: "done" as const,
                             body: userText,

@@ -104,8 +104,9 @@ export function toThreadMessages(
             }
             // Backend flags sub-agent completion turns with variant="subagent".
             // Surface it on metadata.custom so the thread renderer can show a
-            // compact chip instead of a user bubble (content-prefix fallback
-            // covers live-streamed messages, which carry no variant).
+            // compact chip instead of a user bubble. The live stream carries
+            // the same variant on its data-nova-wake frame, so both paths
+            // identify the message the same way.
             const metadata = message.variant
                 ? { custom: { variant: message.variant } }
                 : undefined;

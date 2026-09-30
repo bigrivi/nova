@@ -1,5 +1,6 @@
 "use client";
 
+import { TextMessagePartProvider } from "@assistant-ui/react";
 import {
     type CodeHeaderProps,
     MarkdownTextPrimitive,
@@ -105,7 +106,12 @@ const MarkdownSyntaxHighlighter: FC<SyntaxHighlighterProps> = ({
     if (!highlightedHtml) {
         return (
             <Pre className={className}>
-                <Code className={cn(className, "font-mono! [tab-size:4]! bg-transparent! leading-relaxed!")}>
+                <Code
+                    className={cn(
+                        className,
+                        "font-mono! [tab-size:4]! bg-transparent! leading-relaxed!",
+                    )}
+                >
                     {code}
                 </Code>
             </Pre>
@@ -115,12 +121,46 @@ const MarkdownSyntaxHighlighter: FC<SyntaxHighlighterProps> = ({
     return (
         <Pre className={className}>
             <Code
-                className={cn(className, "font-mono! [tab-size:4]! bg-transparent! leading-relaxed!")}
+                className={cn(
+                    className,
+                    "font-mono! [tab-size:4]! bg-transparent! leading-relaxed!",
+                )}
                 dangerouslySetInnerHTML={{ __html: highlightedHtml }}
             />
         </Pre>
     );
 };
+
+/**
+ * Render markdown from an explicit string.
+ *
+ * `MarkdownTextPrimitive` takes no text: it reads `useMessagePartText()` and
+ * sets its own children after spreading props, so anything passed as `text`
+ * would be silently ignored and the surrounding part rendered instead. A
+ * sub-agent report lives in a prop on a collapsible rather than in the part
+ * being rendered, so it needs its own part scope to render from.
+ *
+ * `defaultComponents` is referenced inside render, not at module scope: it is a
+ * `const` declared further down this file, and spreading it during module
+ * evaluation hits the temporal dead zone.
+ */
+const MarkdownBodyImpl: FC<{ text: string; className?: string }> = ({
+    text,
+    className,
+}) => (
+    <TextMessagePartProvider text={text}>
+        <MarkdownTextPrimitive
+            remarkPlugins={[remarkGfm]}
+            className={cn("aui-md", className)}
+            components={{
+                ...defaultComponents,
+                SyntaxHighlighter: MarkdownSyntaxHighlighter,
+            }}
+        />
+    </TextMessagePartProvider>
+);
+
+export const MarkdownBody = memo(MarkdownBodyImpl);
 
 const MarkdownTextImpl = () => {
     return (

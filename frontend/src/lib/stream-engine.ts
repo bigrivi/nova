@@ -3,6 +3,7 @@ import type { ThreadMessageLike } from "@assistant-ui/react";
 import type { NovaStreamEvent } from "../types/nova";
 import { DEFAULT_AGENT_KEY, DRAFT_THREAD_ID } from "./nova-constants";
 import { createOptimisticSessionTitle } from "./thread-messages";
+import { randomId } from "./utils";
 import { upsertThread } from "./thread-summary";
 import {
     applyStreamEvent,
@@ -200,6 +201,78 @@ function handleSessionHandoff(
     });
 }
 
+function readCustomField(message: unknown, field: string): string {
+    if (!message || typeof message !== "object") return "";
+    const custom = (message as { metadata?: { custom?: unknown } }).metadata
+        ?.custom;
+    if (!custom || typeof custom !== "object") return "";
+    const value = (custom as Record<string, unknown>)[field];
+    return typeof value === "string" ? value : "";
+}
+
+/**
+ * Insert the user message the server injected for this turn.
+ *
+ * A sub-agent completion runs as a headless turn nobody asked for, so the
+ * client never created a message for it and the AI SDK protocol has no frame
+ * that carries one. Without this the live view is a bare reply with nothing
+ * above it, and the chip only appears after a reload, when the message finally
+ * arrives from /api/sessions/{id}/messages. Identifying the message by its
+ * variant rather than by a content prefix is what keeps the two paths in
+ * agreement: a user pasting text that looks like a sub-agent report no longer
+ * renders as one.
+ *
+ * Identity is the backend's assistant message id, which is minted per turn.
+ * Keying on the text instead looks equivalent and is not: two sub-agent runs
+ * that fail the same way produce byte-identical reports, and the second one
+ * would be silently dropped as a duplicate.
+ */
+function handleInjectedMessage(
+    event: NovaStreamEvent,
+    env: StreamHandlerEnv,
+    deps: StreamEngineDeps,
+): void {
+    const data = event.data ?? {};
+    const variant = typeof data.variant === "string" ? data.variant : "";
+    const text = typeof data.text === "string" ? data.text : "";
+    // The backend mints this per turn, so it is the only honest identity for
+    // "this wake, already inserted". Without it two runs whose reports happen
+    // to be identical would collapse into one.
+    const wakeFor = typeof data.messageId === "string" ? data.messageId : "";
+    if (!variant || !text || !wakeFor) {
+        return;
+    }
+    const threadId = env.state.activeThreadId;
+    deps.runTransition(() => {
+        deps.setThreadMessages(threadId, (previous) => {
+            const present = previous.some(
+                (message) => readCustomField(message, "wakeFor") === wakeFor,
+            );
+            if (present) {
+                return previous;
+            }
+            const injected: ThreadMessageLike = {
+                id: randomId(),
+                role: "user",
+                content: text,
+                createdAt: new Date(),
+                metadata: { custom: { variant, wakeFor } },
+            };
+            // Before the assistant message, not appended. resumeThreadStream
+            // seeds that message before it reads a single frame, so by the time
+            // this frame arrives it is already the last entry and an append
+            // would drop the chip below the reply it introduces. Inserting at
+            // the assistant's index puts the chip back on top; the fallback
+            // only matters if the frame ever arrives without one.
+            const assistantAt = previous.findIndex(
+                (message) => message.id === env.assistantMessageId,
+            );
+            const at = assistantAt === -1 ? previous.length : assistantAt;
+            return [...previous.slice(0, at), injected, ...previous.slice(at)];
+        });
+    });
+}
+
 /**
  * Control-frame handlers that fully consume an event (no message patch). Adding
  * a new control frame means registering a handler here, not editing a branch
@@ -207,8 +280,13 @@ function handleSessionHandoff(
  */
 const TERMINAL_HANDLERS: Record<
     string,
-    (event: NovaStreamEvent, env: StreamHandlerEnv, deps: StreamEngineDeps) => void
+    (
+        event: NovaStreamEvent,
+        env: StreamHandlerEnv,
+        deps: StreamEngineDeps,
+    ) => void
 > = {
+    "data-nova-wake": handleInjectedMessage,
     "data-nova-session": handleSessionHandoff,
     "data-nova-compaction-start": (_event, _env, deps) =>
         deps.reasoning.setCompacting(true),
