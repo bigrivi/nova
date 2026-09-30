@@ -22,24 +22,27 @@ class McpError(Exception):
 
 class McpTransport(ABC):
     @abstractmethod
-    async def connect(self) -> None:
-        ...
+    async def connect(self) -> None: ...
 
     @abstractmethod
-    async def send_request(self, method: str, params: dict | None = None) -> dict:
-        ...
+    async def send_request(self, method: str, params: dict | None = None) -> dict: ...
 
     @abstractmethod
-    async def send_notification(self, method: str, params: dict | None = None) -> None:
-        ...
+    async def send_notification(
+        self, method: str, params: dict | None = None
+    ) -> None: ...
 
     @abstractmethod
-    async def close(self) -> None:
-        ...
+    async def close(self) -> None: ...
 
 
 class StdioTransport(McpTransport):
-    def __init__(self, command: str, args: list[str] | None = None, env: dict[str, str] | None = None):
+    def __init__(
+        self,
+        command: str,
+        args: list[str] | None = None,
+        env: dict[str, str] | None = None,
+    ):
         self._command = command
         self._args = args or []
         self._env = env or {}
@@ -55,7 +58,8 @@ class StdioTransport(McpTransport):
     async def connect(self) -> None:
         merged_env = {**os.environ, **self._env}
         self._process = await asyncio.create_subprocess_exec(
-            self._command, *self._args,
+            self._command,
+            *self._args,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -71,6 +75,7 @@ class StdioTransport(McpTransport):
                 if not line:
                     break
                 log.debug("MCP stderr: %s", line.decode().rstrip())
+
         asyncio.create_task(_read_stderr())
 
     async def send_request(self, method: str, params: dict | None = None) -> dict:
@@ -134,7 +139,9 @@ class StdioTransport(McpTransport):
 
 
 class HttpTransport(McpTransport):
-    def __init__(self, url: str, headers: dict[str, str] | None = None, timeout: int = 120):
+    def __init__(
+        self, url: str, headers: dict[str, str] | None = None, timeout: int = 120
+    ):
         self._url = url
         self._headers = headers or {}
         self._timeout = timeout
@@ -147,6 +154,7 @@ class HttpTransport(McpTransport):
 
     async def connect(self) -> None:
         import aiohttp
+
         self._session = aiohttp.ClientSession(
             headers={"Content-Type": "application/json", **self._headers},
             timeout=aiohttp.ClientTimeout(total=self._timeout),

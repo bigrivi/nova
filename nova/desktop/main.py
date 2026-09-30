@@ -37,7 +37,9 @@ def run_desktop(settings: Settings | None = None, dev: bool = False) -> None:
 
     if dev:
         url = "http://localhost:5173"
-        print(f"[desktop] Dev mode: frontend at {url}, backend at {server.host}:{server.port}")
+        print(
+            f"[desktop] Dev mode: frontend at {url}, backend at {server.host}:{server.port}"
+        )
     else:
         url = _window_url(server.host, server.port)
         print(f"[desktop] Backend ready at {url}")

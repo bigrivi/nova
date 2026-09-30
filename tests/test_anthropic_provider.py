@@ -25,6 +25,7 @@ from nova.llm.providers.anthropic import (
 # aiohttp fakes (module top, reused by every test)
 # ---------------------------------------------------------------------------
 
+
 class _FakeConnector:
     def __init__(self, *args, **kwargs):
         self._closed = False
@@ -49,9 +50,7 @@ class _FakeStreamContent:
         if self._index >= len(self._lines):
             return b""
         line = self._lines[self._index]
-        limit = (
-            max_line_length if max_line_length is not None else self._default_limit
-        )
+        limit = max_line_length if max_line_length is not None else self._default_limit
         if len(line) > limit:
             raise aiohttp.http_exceptions.LineTooLong(line[:100] + b"...", limit)
         self._index += 1
@@ -108,7 +107,9 @@ class _FakeSession:
         self.closed = False
 
     async def post(self, url, headers=None, json=None, timeout=None):
-        self.calls.append({"url": url, "headers": headers, "json": json, "timeout": timeout})
+        self.calls.append(
+            {"url": url, "headers": headers, "json": json, "timeout": timeout}
+        )
         return self._response
 
     async def close(self) -> None:
@@ -137,7 +138,9 @@ def _sse_lines(events: list[dict | tuple[str, dict]]) -> list[bytes]:
     return output
 
 
-def _install_fake(monkeypatch, response: _FakeResponse) -> tuple[_FakeSession, _FakeConnector]:
+def _install_fake(
+    monkeypatch, response: _FakeResponse
+) -> tuple[_FakeSession, _FakeConnector]:
     session = _FakeSession(response)
     connector = _FakeConnector()
 
@@ -148,14 +151,19 @@ def _install_fake(monkeypatch, response: _FakeResponse) -> tuple[_FakeSession, _
     def _fake_connector_factory(*args, **kwargs):
         return connector
 
-    monkeypatch.setattr("nova.llm.providers.anthropic.aiohttp.ClientSession", _fake_session_factory)
-    monkeypatch.setattr("nova.llm.providers.anthropic.aiohttp.TCPConnector", _fake_connector_factory)
+    monkeypatch.setattr(
+        "nova.llm.providers.anthropic.aiohttp.ClientSession", _fake_session_factory
+    )
+    monkeypatch.setattr(
+        "nova.llm.providers.anthropic.aiohttp.TCPConnector", _fake_connector_factory
+    )
     return session, connector
 
 
 # ---------------------------------------------------------------------------
 # A. Request shaping
 # ---------------------------------------------------------------------------
+
 
 def test_endpoint_default():
     provider = AnthropicProvider()
@@ -191,7 +199,9 @@ def test_build_headers_omits_key_when_empty():
 
 
 def test_build_headers_betas_and_user_agent():
-    provider = AnthropicProvider(api_key="k", betas=["beta1", "beta2"], user_agent="Nova/1.0")
+    provider = AnthropicProvider(
+        api_key="k", betas=["beta1", "beta2"], user_agent="Nova/1.0"
+    )
     headers = provider._build_headers()
     assert headers["anthropic-beta"] == "beta1,beta2"
     assert headers["User-Agent"] == "Nova/1.0"
@@ -206,8 +216,13 @@ def test_build_body_max_tokens_and_system_and_stream():
     # Caching disabled here to assert the raw system-derivation shape (a plain
     # string); cache_control promotion to a block list is covered separately.
     provider = AnthropicProvider(request_options={"prompt_caching": False})
-    messages = [Message(role="system", content="sys"), Message(role="user", content="hi")]
-    body = provider._build_body(messages=messages, model="claude-3-5-sonnet-20241022", stream=False)
+    messages = [
+        Message(role="system", content="sys"),
+        Message(role="user", content="hi"),
+    ]
+    body = provider._build_body(
+        messages=messages, model="claude-3-5-sonnet-20241022", stream=False
+    )
     assert body["max_tokens"] == 8192
     assert body["system"] == "sys"
     assert "stream" not in body
@@ -222,14 +237,20 @@ def test_build_body_system_joined_and_stream_true():
         Message(role="system", content="b"),
         Message(role="user", content="hi"),
     ]
-    body = provider._build_body(messages=messages, model="claude-3-opus-20240229", stream=True)
+    body = provider._build_body(
+        messages=messages, model="claude-3-opus-20240229", stream=True
+    )
     assert body["system"] == "a\n\nb"
     assert body["stream"] is True
 
 
 def test_build_body_request_options_flatten_and_max_tokens_override():
-    provider = AnthropicProvider(request_options={"max_tokens": 123, "thinking": {"type": "enabled"}})
-    body = provider._build_body(messages=[Message(role="user", content="hi")], model="claude-3-opus-20240229")
+    provider = AnthropicProvider(
+        request_options={"max_tokens": 123, "thinking": {"type": "enabled"}}
+    )
+    body = provider._build_body(
+        messages=[Message(role="user", content="hi")], model="claude-3-opus-20240229"
+    )
     assert body["max_tokens"] == 123
     assert body["thinking"] == {"type": "enabled"}
 
@@ -239,27 +260,58 @@ def test_build_body_request_options_tools_false_omits_key():
     body = provider._build_body(
         messages=[Message(role="user", content="hi")],
         model="claude-3-opus-20240229",
-        tools=[{"type": "function", "function": {"name": "read", "description": "", "parameters": {"type": "object"}}}],
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "read",
+                    "description": "",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ],
     )
     assert "tools" not in body
 
 
 def test_build_body_tools_empty_list_omits_key():
     provider = AnthropicProvider()
-    body = provider._build_body(messages=[Message(role="user", content="hi")], model="claude-3-opus-20240229", tools=[])
+    body = provider._build_body(
+        messages=[Message(role="user", content="hi")],
+        model="claude-3-opus-20240229",
+        tools=[],
+    )
     assert "tools" not in body
 
 
 def test_format_tools_via_build_body():
     provider = AnthropicProvider()
     tools = [
-        {"type": "function", "function": {"name": "read", "description": "r", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}}}},
+        {
+            "type": "function",
+            "function": {
+                "name": "read",
+                "description": "r",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                },
+            },
+        },
         {"name": "write", "input_schema": {"type": "object"}},
         {"description": "no name"},  # skipped
     ]
-    body = provider._build_body(messages=[Message(role="user", content="hi")], model="claude-3-opus-20240229", tools=tools)
+    body = provider._build_body(
+        messages=[Message(role="user", content="hi")],
+        model="claude-3-opus-20240229",
+        tools=tools,
+    )
     assert len(body["tools"]) == 2
-    assert body["tools"][0] == {"name": "read", "description": "r", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}}
+    assert body["tools"][0] == {
+        "name": "read",
+        "description": "r",
+        "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+    }
     assert body["tools"][1]["name"] == "write"
     assert body["tools"][1]["input_schema"] == {"type": "object"}
     # second entry skipped
@@ -299,14 +351,20 @@ def test_build_body_cache_control_on_system_and_last_message():
     assert body["system"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
     assert body["system"][-1]["text"] == "sys prompt"
     # The last message's last content block also carries a breakpoint.
-    assert body["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+    assert body["messages"][-1]["content"][-1]["cache_control"] == {
+        "type": "ephemeral",
+        "ttl": "1h",
+    }
 
 
 def test_build_body_cache_control_ttl_5m_omits_ttl_key():
     # 5m is the API default, so it is implied by omitting the ttl field.
     provider = AnthropicProvider(request_options={"cache_ttl": "5m"})
     body = provider._build_body(
-        messages=[Message(role="system", content="s"), Message(role="user", content="hi")],
+        messages=[
+            Message(role="system", content="s"),
+            Message(role="user", content="hi"),
+        ],
         model="claude-opus-4-8",
     )
     assert body["system"][-1]["cache_control"] == {"type": "ephemeral"}
@@ -315,29 +373,43 @@ def test_build_body_cache_control_ttl_5m_omits_ttl_key():
 def test_build_body_cache_control_ttl_1h_included():
     provider = AnthropicProvider(request_options={"cache_ttl": "1h"})
     body = provider._build_body(
-        messages=[Message(role="system", content="s"), Message(role="user", content="hi")],
+        messages=[
+            Message(role="system", content="s"),
+            Message(role="user", content="hi"),
+        ],
         model="claude-opus-4-8",
     )
     assert body["system"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
-    assert body["messages"][-1]["content"][-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+    assert body["messages"][-1]["content"][-1]["cache_control"] == {
+        "type": "ephemeral",
+        "ttl": "1h",
+    }
 
 
 def test_build_body_cache_control_disabled():
     provider = AnthropicProvider(request_options={"prompt_caching": False})
     body = provider._build_body(
-        messages=[Message(role="system", content="s"), Message(role="user", content="hi")],
+        messages=[
+            Message(role="system", content="s"),
+            Message(role="user", content="hi"),
+        ],
         model="claude-opus-4-8",
     )
     # System stays a plain string and nothing carries cache_control.
     assert body["system"] == "s"
-    assert all("cache_control" not in block for block in body["messages"][-1]["content"])
+    assert all(
+        "cache_control" not in block for block in body["messages"][-1]["content"]
+    )
 
 
 def test_build_body_cache_control_not_leaked_into_body_params():
     # prompt_caching / cache_ttl are consumed, never forwarded as API params.
-    provider = AnthropicProvider(request_options={"prompt_caching": True, "cache_ttl": "1h"})
+    provider = AnthropicProvider(
+        request_options={"prompt_caching": True, "cache_ttl": "1h"}
+    )
     body = provider._build_body(
-        messages=[Message(role="user", content="hi")], model="claude-opus-4-8",
+        messages=[Message(role="user", content="hi")],
+        model="claude-opus-4-8",
     )
     assert "prompt_caching" not in body
     assert "cache_ttl" not in body
@@ -346,7 +418,10 @@ def test_build_body_cache_control_not_leaked_into_body_params():
 def test_build_body_cache_control_unknown_ttl_falls_back_to_default():
     provider = AnthropicProvider(request_options={"cache_ttl": "bogus"})
     body = provider._build_body(
-        messages=[Message(role="system", content="s"), Message(role="user", content="hi")],
+        messages=[
+            Message(role="system", content="s"),
+            Message(role="user", content="hi"),
+        ],
         model="claude-opus-4-8",
     )
     # Unknown value is not in the accepted set -> no ttl key (API 5m default).
@@ -356,7 +431,9 @@ def test_build_body_cache_control_unknown_ttl_falls_back_to_default():
 def test_default_max_output_tokens_table():
     assert _default_max_output_tokens("claude-3-opus-20240229") == 4096
     assert _default_max_output_tokens("claude-3-5-sonnet-20241022") == 8192
-    assert _default_max_output_tokens("claude-3-7-sonnet-latest") == 64000  # suffix stripped
+    assert (
+        _default_max_output_tokens("claude-3-7-sonnet-latest") == 64000
+    )  # suffix stripped
     assert _default_max_output_tokens("claude-sonnet-4-5") == 64000
     assert _default_max_output_tokens("claude-opus-4-1") == 32000
     assert _default_max_output_tokens("unknown-model-xyz") == 8192
@@ -370,6 +447,7 @@ def test_default_max_output_tokens_table():
 # B. Message conversion
 # ---------------------------------------------------------------------------
 
+
 def test_format_messages_full_tool_round_trip():
     provider = AnthropicProvider()
     messages = [
@@ -379,8 +457,18 @@ def test_format_messages_full_tool_round_trip():
             role="assistant",
             content="will read",
             tool_calls=[
-                {"id": "toolu_1", "type": "tool_call", "name": "read", "arguments": '{"path":"a.txt"}'},
-                {"id": "toolu_2", "type": "tool_call", "name": "write", "arguments": '{"path":"b.txt"}'},
+                {
+                    "id": "toolu_1",
+                    "type": "tool_call",
+                    "name": "read",
+                    "arguments": '{"path":"a.txt"}',
+                },
+                {
+                    "id": "toolu_2",
+                    "type": "tool_call",
+                    "name": "write",
+                    "arguments": '{"path":"b.txt"}',
+                },
             ],
         ),
         Message(role="tool", tool_call_id="toolu_1", content="content a"),
@@ -409,7 +497,11 @@ def test_format_messages_plain_dict_inputs():
     provider = AnthropicProvider()
     messages = [
         {"role": "user", "content": "hi"},
-        {"role": "assistant", "content": "ok", "tool_calls": [{"id": "toolu_1", "name": "read", "arguments": '{"x":1}'}]},
+        {
+            "role": "assistant",
+            "content": "ok",
+            "tool_calls": [{"id": "toolu_1", "name": "read", "arguments": '{"x":1}'}],
+        },
         {"role": "tool", "tool_call_id": "toolu_1", "content": "out"},
     ]
     formatted, _ = provider._format_messages(messages)
@@ -428,7 +520,11 @@ def test_tool_result_blocks_sorted_front():
     provider = AnthropicProvider()
     messages = [
         Message(role="user", content="start"),
-        Message(role="assistant", content="x", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="x",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content="out"),
         Message(role="user", content="follow up"),
     ]
@@ -446,12 +542,21 @@ def test_empty_tool_result_placeholder():
     provider = AnthropicProvider()
     messages = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="x", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="x",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content=""),
     ]
     formatted, _ = provider._format_messages(messages)
     # find tool_result
-    tool_results = [block for message in formatted for block in message["content"] if block.get("type") == "tool_result"]
+    tool_results = [
+        block
+        for message in formatted
+        for block in message["content"]
+        if block.get("type") == "tool_result"
+    ]
     assert tool_results
     assert tool_results[0]["content"][0]["text"] == "(no output)"
 
@@ -461,7 +566,11 @@ def test_pair_integrity_drops_unmatched():
     # assistant with tool_call but no matching tool message -> dropped
     messages = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="x", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="x",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}],
+        ),
     ]
     formatted, _ = provider._format_messages(messages)
     # assistant should lose its tool_use blocks (only text remains)
@@ -474,7 +583,11 @@ def test_pair_integrity_drops_unmatched():
         Message(role="tool", tool_call_id="toolu_99", content="out"),
     ]
     formatted2, _ = provider._format_messages(messages2)
-    assert all(block.get("tool_use_id") != "toolu_99" for message in formatted2 for block in message.get("content", []))
+    assert all(
+        block.get("tool_use_id") != "toolu_99"
+        for message in formatted2
+        for block in message.get("content", [])
+    )
 
 
 def test_nova_flat_and_openai_nested_shapes():
@@ -482,30 +595,69 @@ def test_nova_flat_and_openai_nested_shapes():
     # Nova flat
     messages_flat = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="x", tool_calls=[{"type": "tool_call", "id": "toolu_1", "name": "read", "arguments": '{"path":"a"}'}]),
+        Message(
+            role="assistant",
+            content="x",
+            tool_calls=[
+                {
+                    "type": "tool_call",
+                    "id": "toolu_1",
+                    "name": "read",
+                    "arguments": '{"path":"a"}',
+                }
+            ],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content="out"),
     ]
     formatted, _ = provider._format_messages(messages_flat)
-    assert any(block.get("name") == "read" for message in formatted for block in message["content"] if block.get("type") == "tool_use")
+    assert any(
+        block.get("name") == "read"
+        for message in formatted
+        for block in message["content"]
+        if block.get("type") == "tool_use"
+    )
     # OpenAI nested
     messages_nested = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="x", tool_calls=[{"id": "toolu_2", "function": {"name": "write", "arguments": '{"path":"b"}'}}]),
+        Message(
+            role="assistant",
+            content="x",
+            tool_calls=[
+                {
+                    "id": "toolu_2",
+                    "function": {"name": "write", "arguments": '{"path":"b"}'},
+                }
+            ],
+        ),
         Message(role="tool", tool_call_id="toolu_2", content="out"),
     ]
     formatted2, _ = provider._format_messages(messages_nested)
-    assert any(block.get("name") == "write" for message in formatted2 for block in message["content"] if block.get("type") == "tool_use")
+    assert any(
+        block.get("name") == "write"
+        for message in formatted2
+        for block in message["content"]
+        if block.get("type") == "tool_use"
+    )
 
 
 def test_unparseable_arguments_degrades_to_empty_dict():
     provider = AnthropicProvider()
     messages = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="x", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "not-json"}]),
+        Message(
+            role="assistant",
+            content="x",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "not-json"}],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content="out"),
     ]
     formatted, _ = provider._format_messages(messages)
-    tool_use = next(block for message in formatted for block in message["content"] if block.get("type") == "tool_use")
+    tool_use = next(
+        block
+        for message in formatted
+        for block in message["content"]
+        if block.get("type") == "tool_use"
+    )
     assert tool_use["input"] == {}
 
 
@@ -515,21 +667,38 @@ def test_images_user_and_tool():
     formatted, _ = provider._format_messages(messages)
     assert len(formatted[0]["content"]) == 2
     assert formatted[0]["content"][0] == {"type": "text", "text": "hi"}
-    assert formatted[0]["content"][1] == {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "BASE64"}}
+    assert formatted[0]["content"][1] == {
+        "type": "image",
+        "source": {"type": "base64", "media_type": "image/png", "data": "BASE64"},
+    }
 
     messages2 = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="x", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="x",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content="out", images=["IMG2"]),
     ]
     formatted2, _ = provider._format_messages(messages2)
-    tool_result = next(block for message in formatted2 for block in message["content"] if block.get("type") == "tool_result")
-    assert any(content_block.get("type") == "image" for content_block in tool_result["content"])
+    tool_result = next(
+        block
+        for message in formatted2
+        for block in message["content"]
+        if block.get("type") == "tool_result"
+    )
+    assert any(
+        content_block.get("type") == "image" for content_block in tool_result["content"]
+    )
 
 
 def test_leading_assistant_dropped():
     provider = AnthropicProvider()
-    messages = [Message(role="assistant", content="should drop"), Message(role="user", content="hi")]
+    messages = [
+        Message(role="assistant", content="should drop"),
+        Message(role="user", content="hi"),
+    ]
     formatted, _ = provider._format_messages(messages)
     assert formatted[0]["role"] == "user"
     assert len(formatted) == 1
@@ -547,7 +716,9 @@ def test_leading_assistant_summary_converted_to_user():
     assert system_text == "SYSTEM PROMPT"
     assert len(formatted) == 1
     assert formatted[0]["role"] == "user"
-    first_text_blocks = [block for block in formatted[0]["content"] if block.get("type") == "text"]
+    first_text_blocks = [
+        block for block in formatted[0]["content"] if block.get("type") == "text"
+    ]
     assert first_text_blocks
     combined_text = " ".join(block.get("text", "") for block in first_text_blocks)
     assert summary_content in combined_text
@@ -563,7 +734,9 @@ def test_leading_assistant_summary_merges_with_following_user():
     formatted, _ = provider._format_messages(messages)
     assert len(formatted) == 1
     assert formatted[0]["role"] == "user"
-    text_blocks = [block for block in formatted[0]["content"] if block.get("type") == "text"]
+    text_blocks = [
+        block for block in formatted[0]["content"] if block.get("type") == "text"
+    ]
     assert len(text_blocks) == 2
     assert text_blocks[0]["text"] == summary_content
     assert text_blocks[1]["text"] == "continue"
@@ -572,7 +745,11 @@ def test_leading_assistant_summary_merges_with_following_user():
 def test_leading_assistant_with_tool_use_dropped_with_its_tool_results():
     provider = AnthropicProvider()
     messages = [
-        Message(role="assistant", content="x", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="x",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content="tool output"),
         Message(role="user", content="next"),
     ]
@@ -588,24 +765,45 @@ def test_leading_assistant_with_tool_use_dropped_with_its_tool_results():
 
 
 def test_leading_assistant_thinking_blocks_not_carried_into_user():
-    provider = AnthropicProvider(request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}})
+    provider = AnthropicProvider(
+        request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}}
+    )
     messages = [
-        Message(role="assistant", content="x", reasoning_content="should not leak", provider_meta={"thinking_signature": "sig123"}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="x",
+            reasoning_content="should not leak",
+            provider_meta={"thinking_signature": "sig123"},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content="out"),
         Message(role="user", content="next"),
     ]
-    formatted, _ = provider._format_messages(messages, include_thinking=True, model="claude-sonnet-4-5")
+    formatted, _ = provider._format_messages(
+        messages, include_thinking=True, model="claude-sonnet-4-5"
+    )
     for message in formatted:
         if message["role"] == "user":
             for block in message["content"]:
                 assert block.get("type") not in ("thinking", "redacted_thinking")
-    provider2 = AnthropicProvider(request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}})
+    provider2 = AnthropicProvider(
+        request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}}
+    )
     messages2 = [
-        Message(role="assistant", content="y", provider_meta={"redacted_thinking": ["secret"]}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_2", "name": "write", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="y",
+            provider_meta={"redacted_thinking": ["secret"]},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_2", "name": "write", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_2", content="out2"),
         Message(role="user", content="follow up"),
     ]
-    formatted2, _ = provider2._format_messages(messages2, include_thinking=True, model="claude-sonnet-4-5")
+    formatted2, _ = provider2._format_messages(
+        messages2, include_thinking=True, model="claude-sonnet-4-5"
+    )
     for message in formatted2:
         if message["role"] == "user":
             for block in message["content"]:
@@ -643,6 +841,7 @@ def test_leading_user_message_unaffected():
 # C. Non-streaming chat
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_chat_non_streaming_mixed_content(monkeypatch):
     body = {
@@ -651,16 +850,28 @@ async def test_chat_non_streaming_mixed_content(monkeypatch):
         "role": "assistant",
         "content": [
             {"type": "text", "text": "hi "},
-            {"type": "tool_use", "id": "toolu_1", "name": "read", "input": {"path": "a"}},
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "read",
+                "input": {"path": "a"},
+            },
             {"type": "text", "text": "there"},
         ],
         "stop_reason": "tool_use",
-        "usage": {"input_tokens": 10, "output_tokens": 5, "cache_read_input_tokens": 2, "cache_creation_input_tokens": 1},
+        "usage": {
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "cache_read_input_tokens": 2,
+            "cache_creation_input_tokens": 1,
+        },
     }
     response = _FakeResponse(status=200, json_data=body, text_data=json.dumps(body))
     session, _ = _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    result = await provider.chat([Message(role="user", content="hi")], model="claude-3-opus-20240229")
+    result = await provider.chat(
+        [Message(role="user", content="hi")], model="claude-3-opus-20240229"
+    )
     assert isinstance(result, Done)
     assert result.content == "hi there"
     assert len(result.tool_calls) == 1
@@ -676,11 +887,18 @@ async def test_chat_non_streaming_mixed_content(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_chat_non_streaming_error(monkeypatch):
-    error_body = {"type": "error", "error": {"type": "invalid_request_error", "message": "bad"}}
-    response = _FakeResponse(status=400, json_data=error_body, text_data=json.dumps(error_body))
+    error_body = {
+        "type": "error",
+        "error": {"type": "invalid_request_error", "message": "bad"},
+    }
+    response = _FakeResponse(
+        status=400, json_data=error_body, text_data=json.dumps(error_body)
+    )
     _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    result = await provider.chat([Message(role="user", content="hi")], model="claude-3-opus-20240229")
+    result = await provider.chat(
+        [Message(role="user", content="hi")], model="claude-3-opus-20240229"
+    )
     assert isinstance(result, Error)
     assert "400" in result.message
     assert "bad" in result.message
@@ -696,7 +914,11 @@ async def test_chat_abort_event(monkeypatch):
     response = _FakeResponse(status=200, json_data={"content": [], "usage": {}})
     _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    result = await provider.chat([Message(role="user", content="hi")], model="claude-3-5-sonnet-20241022", abort_event=abort)
+    result = await provider.chat(
+        [Message(role="user", content="hi")],
+        model="claude-3-5-sonnet-20241022",
+        abort_event=abort,
+    )
     assert isinstance(result, Done)
     assert result.aborted is True
 
@@ -705,13 +927,29 @@ async def test_chat_abort_event(monkeypatch):
 # D. Streaming chat_stream
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_chat_stream_text_canonical(monkeypatch):
     events = [
-        {"type": "message_start", "message": {"usage": {"input_tokens": 5, "output_tokens": 0}}},
-        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello "}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "world"}},
+        {
+            "type": "message_start",
+            "message": {"usage": {"input_tokens": 5, "output_tokens": 0}},
+        },
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "Hello "},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "world"},
+        },
         {"type": "content_block_stop", "index": 0},
         {"type": "message_delta", "usage": {"output_tokens": 7}},
         {"type": "message_stop"},
@@ -719,7 +957,12 @@ async def test_chat_stream_text_canonical(monkeypatch):
     response = _FakeResponse(status=200, sse_lines=_sse_lines(events))
     _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    collected = [event async for event in provider.chat_stream([Message(role="user", content="hi")], model="claude-3-opus-20240229")]
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-3-opus-20240229"
+        )
+    ]
     # assert types in order
     assert isinstance(collected[0], TextDelta) and collected[0].content == "Hello "
     assert isinstance(collected[1], TextDelta) and collected[1].content == "world"
@@ -734,7 +977,11 @@ async def test_chat_stream_text_canonical(monkeypatch):
 async def test_chat_stream_handles_oversized_sse_line(monkeypatch):
     big = "x" * 200_000
     events = [
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}},
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "hi"},
+        },
         {"type": "message_delta", "usage": {"output_tokens": 3}, "padding": big},
         {"type": "message_stop"},
     ]
@@ -762,16 +1009,38 @@ async def test_chat_stream_handles_oversized_sse_line(monkeypatch):
 @pytest.mark.asyncio
 async def test_chat_stream_tool_use_chunked_json(monkeypatch):
     events = [
-        {"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "read", "input": {}}},
-        {"type": "content_block_delta", "index": 1, "delta": {"type": "input_json_delta", "partial_json": '{"pa'}},
-        {"type": "content_block_delta", "index": 1, "delta": {"type": "input_json_delta", "partial_json": 'th": "a.txt"}'}},
+        {
+            "type": "content_block_start",
+            "index": 1,
+            "content_block": {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "read",
+                "input": {},
+            },
+        },
+        {
+            "type": "content_block_delta",
+            "index": 1,
+            "delta": {"type": "input_json_delta", "partial_json": '{"pa'},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 1,
+            "delta": {"type": "input_json_delta", "partial_json": 'th": "a.txt"}'},
+        },
         {"type": "content_block_stop", "index": 1},
         {"type": "message_stop"},
     ]
     response = _FakeResponse(status=200, sse_lines=_sse_lines(events))
     _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    collected = [event async for event in provider.chat_stream([Message(role="user", content="hi")], model="claude-3-opus-20240229")]
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-3-opus-20240229"
+        )
+    ]
     tool_calls = [event for event in collected if isinstance(event, ToolCall)]
     assert len(tool_calls) == 1
     assert tool_calls[0].id == "toolu_1"
@@ -786,17 +1055,38 @@ async def test_chat_stream_tool_use_chunked_json(monkeypatch):
 @pytest.mark.asyncio
 async def test_chat_stream_thinking(monkeypatch):
     events = [
-        {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": "", "signature": ""}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "hmm"}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": " yes"}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "sig123"}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "thinking_delta", "thinking": "hmm"},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "thinking_delta", "thinking": " yes"},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "signature_delta", "signature": "sig123"},
+        },
         {"type": "content_block_stop", "index": 0},
         {"type": "message_stop"},
     ]
     response = _FakeResponse(status=200, sse_lines=_sse_lines(events))
     _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    collected = [event async for event in provider.chat_stream([Message(role="user", content="hi")], model="claude-3-opus-20240229")]
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-3-opus-20240229"
+        )
+    ]
     reasoning = [event for event in collected if isinstance(event, ReasoningDelta)]
     assert len(reasoning) == 2
     assert reasoning[0].content == "hmm"
@@ -808,12 +1098,20 @@ async def test_chat_stream_thinking(monkeypatch):
 @pytest.mark.asyncio
 async def test_chat_stream_error_event(monkeypatch):
     events = [
-        {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}},
+        {
+            "type": "error",
+            "error": {"type": "overloaded_error", "message": "Overloaded"},
+        },
     ]
     response = _FakeResponse(status=200, sse_lines=_sse_lines(events))
     _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    collected = [event async for event in provider.chat_stream([Message(role="user", content="hi")], model="claude-3-opus-20240229")]
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-3-opus-20240229"
+        )
+    ]
     assert len(collected) == 1
     assert isinstance(collected[0], Error)
     assert "overloaded_error" in collected[0].message
@@ -824,10 +1122,22 @@ async def test_chat_stream_error_event(monkeypatch):
 async def test_chat_stream_ping_and_blank_lines_ignored(monkeypatch):
     base_events = [
         {"type": "message_start", "message": {"usage": {"input_tokens": 5}}},
-        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello "}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "Hello "},
+        },
         {"type": "ping"},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "world"}},
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "world"},
+        },
         {"type": "content_block_stop", "index": 0},
         {"type": "message_stop"},
     ]
@@ -839,7 +1149,12 @@ async def test_chat_stream_ping_and_blank_lines_ignored(monkeypatch):
     response = _FakeResponse(status=200, sse_lines=lines)
     _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    collected = [event async for event in provider.chat_stream([Message(role="user", content="hi")], model="claude-3-opus-20240229")]
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-3-opus-20240229"
+        )
+    ]
     texts = [event.content for event in collected if isinstance(event, TextDelta)]
     assert texts == ["Hello ", "world"]
     assert isinstance(collected[-1], Done)
@@ -849,7 +1164,11 @@ async def test_chat_stream_ping_and_blank_lines_ignored(monkeypatch):
 @pytest.mark.asyncio
 async def test_chat_stream_abort_mid_stream(monkeypatch):
     events = [
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}},
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "hi"},
+        },
         {"type": "message_stop"},
     ]
     response = _FakeResponse(status=200, sse_lines=_sse_lines(events))
@@ -857,19 +1176,33 @@ async def test_chat_stream_abort_mid_stream(monkeypatch):
     provider = AnthropicProvider(api_key="k")
     abort = asyncio.Event()
     abort.set()
-    collected = [event async for event in provider.chat_stream([Message(role="user", content="hi")], model="claude-3-opus-20240229", abort_event=abort)]
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")],
+            model="claude-3-opus-20240229",
+            abort_event=abort,
+        )
+    ]
     assert isinstance(collected[0], Done)
     assert collected[0].aborted is True
 
 
 @pytest.mark.asyncio
 async def test_chat_stream_non_200(monkeypatch):
-    response = _FakeResponse(status=500, text_data="internal error", json_data=None, sse_lines=[])
+    response = _FakeResponse(
+        status=500, text_data="internal error", json_data=None, sse_lines=[]
+    )
     # For stream path, response.status check happens before reading content, so sse_lines irrelevant
     # Need headers etc.
     _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    collected = [event async for event in provider.chat_stream([Message(role="user", content="hi")], model="claude-3-opus-20240229")]
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-3-opus-20240229"
+        )
+    ]
     assert isinstance(collected[0], Error)
     assert not any(isinstance(event, Done) for event in collected)
 
@@ -880,7 +1213,12 @@ async def test_chat_stream_sends_accept_and_stream_true(monkeypatch):
     response = _FakeResponse(status=200, sse_lines=_sse_lines(events))
     session, _ = _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    _ = [event async for event in provider.chat_stream([Message(role="user", content="hi")], model="claude-3-opus-20240229")]
+    _ = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-3-opus-20240229"
+        )
+    ]
     assert session.calls[0]["headers"]["Accept"] == "text/event-stream"
     assert session.calls[0]["json"]["stream"] is True
 
@@ -888,6 +1226,7 @@ async def test_chat_stream_sends_accept_and_stream_true(monkeypatch):
 # ---------------------------------------------------------------------------
 # E. Interface conformance
 # ---------------------------------------------------------------------------
+
 
 def test_provider_is_llm_provider():
     provider = AnthropicProvider()
@@ -898,8 +1237,12 @@ def test_provider_is_llm_provider():
 @pytest.mark.asyncio
 async def test_count_tokens_cjk_denser():
     provider = AnthropicProvider()
-    ascii_count = await provider.count_tokens("hello world hello world", model="claude-3-opus-20240229")
-    cjk_count = await provider.count_tokens("你好世界你好世界你好世界", model="claude-3-opus-20240229")
+    ascii_count = await provider.count_tokens(
+        "hello world hello world", model="claude-3-opus-20240229"
+    )
+    cjk_count = await provider.count_tokens(
+        "你好世界你好世界你好世界", model="claude-3-opus-20240229"
+    )
     assert ascii_count > 0
     assert cjk_count > 0
     # same character length, CJK should be denser (higher token count)
@@ -910,23 +1253,58 @@ async def test_count_tokens_cjk_denser():
 # F. Persisted thinking state (provider_meta)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_chat_stream_provider_meta_thinking_signature_concatenated(monkeypatch):
     events = [
-        {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": "", "signature": ""}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "reasoned"}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "SIG_A"}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "SIG_B"}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "thinking_delta", "thinking": "reasoned"},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "signature_delta", "signature": "SIG_A"},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "signature_delta", "signature": "SIG_B"},
+        },
         {"type": "content_block_stop", "index": 0},
-        {"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "read", "input": {}}},
-        {"type": "content_block_delta", "index": 1, "delta": {"type": "input_json_delta", "partial_json": '{"path": "a"}'}},
+        {
+            "type": "content_block_start",
+            "index": 1,
+            "content_block": {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "read",
+                "input": {},
+            },
+        },
+        {
+            "type": "content_block_delta",
+            "index": 1,
+            "delta": {"type": "input_json_delta", "partial_json": '{"path": "a"}'},
+        },
         {"type": "content_block_stop", "index": 1},
         {"type": "message_stop"},
     ]
     response = _FakeResponse(status=200, sse_lines=_sse_lines(events))
     _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    collected = [event async for event in provider.chat_stream([Message(role="user", content="hi")], model="claude-sonnet-4-5")]
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-sonnet-4-5"
+        )
+    ]
     done = collected[-1]
     assert isinstance(done, Done)
     assert done.provider_meta is not None
@@ -936,15 +1314,28 @@ async def test_chat_stream_provider_meta_thinking_signature_concatenated(monkeyp
 @pytest.mark.asyncio
 async def test_chat_stream_provider_meta_none_when_no_thinking(monkeypatch):
     events = [
-        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hello"}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "hello"},
+        },
         {"type": "content_block_stop", "index": 0},
         {"type": "message_stop"},
     ]
     response = _FakeResponse(status=200, sse_lines=_sse_lines(events))
     _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    collected = [event async for event in provider.chat_stream([Message(role="user", content="hi")], model="claude-sonnet-4-5")]
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-sonnet-4-5"
+        )
+    ]
     done = collected[-1]
     assert isinstance(done, Done)
     assert done.provider_meta is None
@@ -953,14 +1344,23 @@ async def test_chat_stream_provider_meta_none_when_no_thinking(monkeypatch):
 @pytest.mark.asyncio
 async def test_chat_stream_provider_meta_redacted_thinking(monkeypatch):
     events = [
-        {"type": "content_block_start", "index": 0, "content_block": {"type": "redacted_thinking", "data": "<data>"}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "redacted_thinking", "data": "<data>"},
+        },
         {"type": "content_block_stop", "index": 0},
         {"type": "message_stop"},
     ]
     response = _FakeResponse(status=200, sse_lines=_sse_lines(events))
     _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    collected = [event async for event in provider.chat_stream([Message(role="user", content="hi")], model="claude-sonnet-4-5")]
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-sonnet-4-5"
+        )
+    ]
     done = collected[-1]
     assert isinstance(done, Done)
     assert done.provider_meta is not None
@@ -968,59 +1368,128 @@ async def test_chat_stream_provider_meta_redacted_thinking(monkeypatch):
 
 
 def test_format_messages_rehydrates_thinking_signature():
-    provider = AnthropicProvider(request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}})
+    provider = AnthropicProvider(
+        request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}}
+    )
     messages = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="will read", reasoning_content="reasoned", provider_meta={"thinking_signature": "SIG"}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": '{"path":"a"}'}]),
+        Message(
+            role="assistant",
+            content="will read",
+            reasoning_content="reasoned",
+            provider_meta={"thinking_signature": "SIG"},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": '{"path":"a"}'}],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content="out"),
     ]
-    formatted, _ = provider._format_messages(messages, include_thinking=True, model="claude-sonnet-4-5")
-    assistant_message = next(message for message in formatted if message["role"] == "assistant")
-    assert assistant_message["content"][0] == {"type": "thinking", "thinking": "reasoned", "signature": "SIG"}
+    formatted, _ = provider._format_messages(
+        messages, include_thinking=True, model="claude-sonnet-4-5"
+    )
+    assistant_message = next(
+        message for message in formatted if message["role"] == "assistant"
+    )
+    assert assistant_message["content"][0] == {
+        "type": "thinking",
+        "thinking": "reasoned",
+        "signature": "SIG",
+    }
 
 
 def test_format_messages_empty_reasoning_content_still_emits_block():
-    provider = AnthropicProvider(request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}})
+    provider = AnthropicProvider(
+        request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}}
+    )
     messages = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="will read", reasoning_content="", provider_meta={"thinking_signature": "SIG"}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": '{"path":"a"}'}]),
+        Message(
+            role="assistant",
+            content="will read",
+            reasoning_content="",
+            provider_meta={"thinking_signature": "SIG"},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": '{"path":"a"}'}],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content="out"),
     ]
-    formatted, _ = provider._format_messages(messages, include_thinking=True, model="claude-sonnet-4-5")
-    assistant_message = next(message for message in formatted if message["role"] == "assistant")
-    assert assistant_message["content"][0] == {"type": "thinking", "thinking": "", "signature": "SIG"}
+    formatted, _ = provider._format_messages(
+        messages, include_thinking=True, model="claude-sonnet-4-5"
+    )
+    assistant_message = next(
+        message for message in formatted if message["role"] == "assistant"
+    )
+    assert assistant_message["content"][0] == {
+        "type": "thinking",
+        "thinking": "",
+        "signature": "SIG",
+    }
     # Also None reasoning_content should emit empty string
     messages2 = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="will read", reasoning_content=None, provider_meta={"thinking_signature": "SIG2"}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_2", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="will read",
+            reasoning_content=None,
+            provider_meta={"thinking_signature": "SIG2"},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_2", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_2", content="out"),
     ]
-    formatted2, _ = provider._format_messages(messages2, include_thinking=True, model="claude-sonnet-4-5")
-    assistant_message2 = next(message for message in formatted2 if message["role"] == "assistant")
-    assert assistant_message2["content"][0] == {"type": "thinking", "thinking": "", "signature": "SIG2"}
+    formatted2, _ = provider._format_messages(
+        messages2, include_thinking=True, model="claude-sonnet-4-5"
+    )
+    assistant_message2 = next(
+        message for message in formatted2 if message["role"] == "assistant"
+    )
+    assert assistant_message2["content"][0] == {
+        "type": "thinking",
+        "thinking": "",
+        "signature": "SIG2",
+    }
 
 
 def test_format_messages_thinking_disabled_no_block():
     provider = AnthropicProvider()
     messages = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="will read", reasoning_content="reasoned", provider_meta={"thinking_signature": "SIG"}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="will read",
+            reasoning_content="reasoned",
+            provider_meta={"thinking_signature": "SIG"},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content="out"),
     ]
-    formatted, _ = provider._format_messages(messages, include_thinking=False, model="claude-sonnet-4-5")
+    formatted, _ = provider._format_messages(
+        messages, include_thinking=False, model="claude-sonnet-4-5"
+    )
     for message in formatted:
         for block in message["content"]:
             assert block.get("type") not in ("thinking", "redacted_thinking")
 
 
 def test_format_messages_model_mismatch_no_block():
-    provider = AnthropicProvider(request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}})
+    provider = AnthropicProvider(
+        request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}}
+    )
     messages = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="will read", reasoning_content="reasoned", provider_meta={"thinking_signature": "SIG"}, model="claude-3-5-sonnet-20241022", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="will read",
+            reasoning_content="reasoned",
+            provider_meta={"thinking_signature": "SIG"},
+            model="claude-3-5-sonnet-20241022",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content="out"),
     ]
-    formatted, _ = provider._format_messages(messages, include_thinking=True, model="claude-sonnet-4-5")
+    formatted, _ = provider._format_messages(
+        messages, include_thinking=True, model="claude-sonnet-4-5"
+    )
     for message in formatted:
         for block in message["content"]:
             assert block.get("type") not in ("thinking", "redacted_thinking")
@@ -1029,43 +1498,100 @@ def test_format_messages_model_mismatch_no_block():
 def test_format_messages_last_assistant_only_gets_thinking_on_legacy_model():
     # Pre-4.5 models strip prior-turn thinking server-side, so only the latest
     # assistant turn is worth replaying.
-    provider = AnthropicProvider(request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}})
+    provider = AnthropicProvider(
+        request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}}
+    )
     messages = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="first", reasoning_content="r1", provider_meta={"thinking_signature": "SIG1"}, model="claude-3-7-sonnet-20250219", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="first",
+            reasoning_content="r1",
+            provider_meta={"thinking_signature": "SIG1"},
+            model="claude-3-7-sonnet-20250219",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content="out1"),
-        Message(role="assistant", content="second", reasoning_content="r2", provider_meta={"thinking_signature": "SIG2"}, model="claude-3-7-sonnet-20250219", tool_calls=[{"id": "toolu_2", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="second",
+            reasoning_content="r2",
+            provider_meta={"thinking_signature": "SIG2"},
+            model="claude-3-7-sonnet-20250219",
+            tool_calls=[{"id": "toolu_2", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_2", content="out2"),
     ]
-    formatted, _ = provider._format_messages(messages, include_thinking=True, model="claude-3-7-sonnet-20250219")
-    assistant_messages = [message for message in formatted if message["role"] == "assistant"]
+    formatted, _ = provider._format_messages(
+        messages, include_thinking=True, model="claude-3-7-sonnet-20250219"
+    )
+    assistant_messages = [
+        message for message in formatted if message["role"] == "assistant"
+    ]
     assert len(assistant_messages) == 2
     first_assistant = assistant_messages[0]
     second_assistant = assistant_messages[1]
-    assert all(block.get("type") not in ("thinking", "redacted_thinking") for block in first_assistant["content"])
-    assert second_assistant["content"][0] == {"type": "thinking", "thinking": "r2", "signature": "SIG2"}
+    assert all(
+        block.get("type") not in ("thinking", "redacted_thinking")
+        for block in first_assistant["content"]
+    )
+    assert second_assistant["content"][0] == {
+        "type": "thinking",
+        "thinking": "r2",
+        "signature": "SIG2",
+    }
 
 
 def test_format_messages_all_assistants_get_thinking_on_preserving_model():
     # Opus/Sonnet 4.5+ retain prior-turn thinking, so every assistant turn's
     # blocks must be replayed to keep the cached prefix byte-stable.
-    provider = AnthropicProvider(request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}})
+    provider = AnthropicProvider(
+        request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}}
+    )
     messages = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="first", reasoning_content="r1", provider_meta={"thinking_signature": "SIG1"}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="first",
+            reasoning_content="r1",
+            provider_meta={"thinking_signature": "SIG1"},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content="out1"),
-        Message(role="assistant", content="second", reasoning_content="r2", provider_meta={"thinking_signature": "SIG2"}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_2", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="second",
+            reasoning_content="r2",
+            provider_meta={"thinking_signature": "SIG2"},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_2", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_2", content="out2"),
     ]
-    formatted, _ = provider._format_messages(messages, include_thinking=True, model="claude-sonnet-4-5")
-    assistant_messages = [message for message in formatted if message["role"] == "assistant"]
+    formatted, _ = provider._format_messages(
+        messages, include_thinking=True, model="claude-sonnet-4-5"
+    )
+    assistant_messages = [
+        message for message in formatted if message["role"] == "assistant"
+    ]
     assert len(assistant_messages) == 2
-    assert assistant_messages[0]["content"][0] == {"type": "thinking", "thinking": "r1", "signature": "SIG1"}
-    assert assistant_messages[1]["content"][0] == {"type": "thinking", "thinking": "r2", "signature": "SIG2"}
+    assert assistant_messages[0]["content"][0] == {
+        "type": "thinking",
+        "thinking": "r1",
+        "signature": "SIG1",
+    }
+    assert assistant_messages[1]["content"][0] == {
+        "type": "thinking",
+        "thinking": "r2",
+        "signature": "SIG2",
+    }
 
 
 def test_format_messages_no_user_contains_thinking_across_cases():
-    provider = AnthropicProvider(request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}})
+    provider = AnthropicProvider(
+        request_options={"thinking": {"type": "enabled", "budget_tokens": 1024}}
+    )
 
     def assert_no_thinking_in_user(formatted_messages: list[dict]):
         for message in formatted_messages:
@@ -1076,37 +1602,72 @@ def test_format_messages_no_user_contains_thinking_across_cases():
     # Case 1: normal replay
     messages = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="x", reasoning_content="r", provider_meta={"thinking_signature": "SIG"}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="x",
+            reasoning_content="r",
+            provider_meta={"thinking_signature": "SIG"},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_1", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_1", content="out"),
     ]
-    formatted, _ = provider._format_messages(messages, include_thinking=True, model="claude-sonnet-4-5")
+    formatted, _ = provider._format_messages(
+        messages, include_thinking=True, model="claude-sonnet-4-5"
+    )
     assert_no_thinking_in_user(formatted)
 
     # Case 2: redacted replay
     messages2 = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="x", provider_meta={"redacted_thinking": ["secret"]}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_2", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="x",
+            provider_meta={"redacted_thinking": ["secret"]},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_2", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_2", content="out"),
     ]
-    formatted2, _ = provider._format_messages(messages2, include_thinking=True, model="claude-sonnet-4-5")
+    formatted2, _ = provider._format_messages(
+        messages2, include_thinking=True, model="claude-sonnet-4-5"
+    )
     assert_no_thinking_in_user(formatted2)
 
     # Case 3: empty reasoning
     messages3 = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="x", reasoning_content="", provider_meta={"thinking_signature": "SIG3"}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_3", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="x",
+            reasoning_content="",
+            provider_meta={"thinking_signature": "SIG3"},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_3", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_3", content="out"),
     ]
-    formatted3, _ = provider._format_messages(messages3, include_thinking=True, model="claude-sonnet-4-5")
+    formatted3, _ = provider._format_messages(
+        messages3, include_thinking=True, model="claude-sonnet-4-5"
+    )
     assert_no_thinking_in_user(formatted3)
 
     # Case 4: leading assistant converted to user must not carry thinking
     messages4 = [
-        Message(role="assistant", content="summary", reasoning_content="r", provider_meta={"thinking_signature": "SIG4"}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_4", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="summary",
+            reasoning_content="r",
+            provider_meta={"thinking_signature": "SIG4"},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_4", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_4", content="out"),
         Message(role="user", content="next"),
     ]
-    formatted4, _ = provider._format_messages(messages4, include_thinking=True, model="claude-sonnet-4-5")
+    formatted4, _ = provider._format_messages(
+        messages4, include_thinking=True, model="claude-sonnet-4-5"
+    )
     assert_no_thinking_in_user(formatted4)
 
     # Case 5: summary + tool mute interplay
@@ -1115,18 +1676,36 @@ def test_format_messages_no_user_contains_thinking_across_cases():
         Message(role="assistant", content=summary_content),
         Message(role="user", content="continue"),
     ]
-    formatted5, _ = provider._format_messages(messages5, include_thinking=True, model="claude-sonnet-4-5")
+    formatted5, _ = provider._format_messages(
+        messages5, include_thinking=True, model="claude-sonnet-4-5"
+    )
     assert_no_thinking_in_user(formatted5)
 
     # Case 6: two assistants, only last replays
     messages6 = [
         Message(role="user", content="hi"),
-        Message(role="assistant", content="first", reasoning_content="r1", provider_meta={"thinking_signature": "SIG1"}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_5", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="first",
+            reasoning_content="r1",
+            provider_meta={"thinking_signature": "SIG1"},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_5", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_5", content="out1"),
-        Message(role="assistant", content="second", reasoning_content="r2", provider_meta={"thinking_signature": "SIG2"}, model="claude-sonnet-4-5", tool_calls=[{"id": "toolu_6", "name": "read", "arguments": "{}"}]),
+        Message(
+            role="assistant",
+            content="second",
+            reasoning_content="r2",
+            provider_meta={"thinking_signature": "SIG2"},
+            model="claude-sonnet-4-5",
+            tool_calls=[{"id": "toolu_6", "name": "read", "arguments": "{}"}],
+        ),
         Message(role="tool", tool_call_id="toolu_6", content="out2"),
     ]
-    formatted6, _ = provider._format_messages(messages6, include_thinking=True, model="claude-sonnet-4-5")
+    formatted6, _ = provider._format_messages(
+        messages6, include_thinking=True, model="claude-sonnet-4-5"
+    )
     assert_no_thinking_in_user(formatted6)
 
 
@@ -1139,7 +1718,12 @@ async def test_chat_non_streaming_provider_meta(monkeypatch):
         "content": [
             {"type": "thinking", "thinking": "reasoned", "signature": "SIG_NONSTREAM"},
             {"type": "text", "text": "done"},
-            {"type": "tool_use", "id": "toolu_1", "name": "read", "input": {"path": "a"}},
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "read",
+                "input": {"path": "a"},
+            },
         ],
         "stop_reason": "tool_use",
         "usage": {"input_tokens": 10, "output_tokens": 5},
@@ -1147,7 +1731,9 @@ async def test_chat_non_streaming_provider_meta(monkeypatch):
     response = _FakeResponse(status=200, json_data=body, text_data=json.dumps(body))
     _install_fake(monkeypatch, response)
     provider = AnthropicProvider(api_key="k")
-    result = await provider.chat([Message(role="user", content="hi")], model="claude-sonnet-4-5")
+    result = await provider.chat(
+        [Message(role="user", content="hi")], model="claude-sonnet-4-5"
+    )
     assert isinstance(result, Done)
     assert result.provider_meta is not None
     assert result.provider_meta["thinking_signature"] == "SIG_NONSTREAM"
@@ -1162,7 +1748,9 @@ async def test_chat_non_streaming_provider_meta(monkeypatch):
     }
     response2 = _FakeResponse(status=200, json_data=body2, text_data=json.dumps(body2))
     _install_fake(monkeypatch, response2)
-    result2 = await provider.chat([Message(role="user", content="hi")], model="claude-sonnet-4-5")
+    result2 = await provider.chat(
+        [Message(role="user", content="hi")], model="claude-sonnet-4-5"
+    )
     assert isinstance(result2, Done)
     assert result2.provider_meta is None
 
@@ -1182,9 +1770,14 @@ async def test_chat_cache_read_tokens_parsed_non_stream(monkeypatch):
             "cache_creation_input_tokens": 100,
         },
     }
-    _install_fake(monkeypatch, _FakeResponse(status=200, json_data=body, text_data=json.dumps(body)))
+    _install_fake(
+        monkeypatch,
+        _FakeResponse(status=200, json_data=body, text_data=json.dumps(body)),
+    )
     provider = AnthropicProvider(api_key="k")
-    result = await provider.chat([Message(role="user", content="hi")], model="claude-opus-4-8")
+    result = await provider.chat(
+        [Message(role="user", content="hi")], model="claude-opus-4-8"
+    )
     assert isinstance(result, Done)
     assert result.cache_read_tokens == 9000
     assert result.tokens_input == 4 + 9000 + 100
@@ -1200,9 +1793,14 @@ async def test_chat_cache_read_absent_is_none_non_stream(monkeypatch):
         "stop_reason": "end_turn",
         "usage": {"input_tokens": 4, "output_tokens": 2},
     }
-    _install_fake(monkeypatch, _FakeResponse(status=200, json_data=body, text_data=json.dumps(body)))
+    _install_fake(
+        monkeypatch,
+        _FakeResponse(status=200, json_data=body, text_data=json.dumps(body)),
+    )
     provider = AnthropicProvider(api_key="k")
-    result = await provider.chat([Message(role="user", content="hi")], model="claude-opus-4-8")
+    result = await provider.chat(
+        [Message(role="user", content="hi")], model="claude-opus-4-8"
+    )
     assert isinstance(result, Done)
     assert result.cache_read_tokens is None
     assert result.tokens_input == 4
@@ -1211,11 +1809,27 @@ async def test_chat_cache_read_absent_is_none_non_stream(monkeypatch):
 @pytest.mark.asyncio
 async def test_chat_stream_cache_read_tokens_parsed(monkeypatch):
     events = [
-        {"type": "message_start", "message": {"usage": {
-            "input_tokens": 5, "output_tokens": 0,
-            "cache_read_input_tokens": 1234, "cache_creation_input_tokens": 10}}},
-        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}},
+        {
+            "type": "message_start",
+            "message": {
+                "usage": {
+                    "input_tokens": 5,
+                    "output_tokens": 0,
+                    "cache_read_input_tokens": 1234,
+                    "cache_creation_input_tokens": 10,
+                }
+            },
+        },
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "hi"},
+        },
         {"type": "content_block_stop", "index": 0},
         {"type": "message_delta", "usage": {"output_tokens": 3}},
         {"type": "message_stop"},
@@ -1239,10 +1853,22 @@ async def test_chat_stream_max_tokens_without_answer_is_error(monkeypatch):
     """stop_reason=max_tokens with no answer text (budget spent on thinking)."""
     events = [
         {"type": "message_start", "message": {"usage": {"input_tokens": 10}}},
-        {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": "", "signature": ""}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "reasoning..."}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "thinking_delta", "thinking": "reasoning..."},
+        },
         {"type": "content_block_stop", "index": 0},
-        {"type": "message_delta", "delta": {"stop_reason": "max_tokens"}, "usage": {"output_tokens": 64000}},
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "max_tokens"},
+            "usage": {"output_tokens": 64000},
+        },
         {"type": "message_stop"},
     ]
     _install_fake(monkeypatch, _FakeResponse(status=200, sse_lines=_sse_lines(events)))
@@ -1261,10 +1887,22 @@ async def test_chat_stream_max_tokens_without_answer_is_error(monkeypatch):
 async def test_chat_stream_max_tokens_with_partial_answer_is_done(monkeypatch):
     """A partial answer before max_tokens is kept, not turned into an error."""
     events = [
-        {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}},
-        {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "partial"}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "partial"},
+        },
         {"type": "content_block_stop", "index": 0},
-        {"type": "message_delta", "delta": {"stop_reason": "max_tokens"}, "usage": {"output_tokens": 5}},
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "max_tokens"},
+            "usage": {"output_tokens": 5},
+        },
         {"type": "message_stop"},
     ]
     _install_fake(monkeypatch, _FakeResponse(status=200, sse_lines=_sse_lines(events)))

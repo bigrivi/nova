@@ -77,15 +77,15 @@ def _wire_task_autowake(app: FastAPI) -> None:
 
     def _wrap(record) -> str:
         done = record.status == "succeeded"
-        body = (record.output_tail or record.result or "").strip() if done else (
-            record.error or ""
+        body = (
+            (record.output_tail or record.result or "").strip()
+            if done
+            else (record.error or "")
         )
         if record.kind == "subagent":
             target = record.metadata.get("target", "?")
             return f"[subagent:{target} status={'done' if done else 'error'}]\n{body}"
-        exit_note = (
-            f" exit={record.exit_code}" if record.exit_code is not None else ""
-        )
+        exit_note = f" exit={record.exit_code}" if record.exit_code is not None else ""
         return f"[background {record.label} status={record.status}{exit_note}]\n{body}"
 
     def _on_complete(record) -> None:
@@ -178,6 +178,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # so client-side routing works, while missing assets still 404.
         app.frontend("/", directory=str(static_dir), fallback="auto")
     else:
+
         @app.get("/")
         async def root() -> dict[str, str]:
             return {

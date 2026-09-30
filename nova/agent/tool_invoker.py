@@ -77,7 +77,9 @@ class ToolInvoker:
         group_id: str | None = None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         current_session = self._session.get_current_session()
-        session_id = current_session.id if current_session and current_session.id else ""
+        session_id = (
+            current_session.id if current_session and current_session.id else ""
+        )
         for tool_call in tool_calls:
             async for event in self._announce(tool_call, tool_calls, group_id):
                 yield event
@@ -94,11 +96,16 @@ class ToolInvoker:
             precheck = await behavior.before_execute(arguments, turn_context)
 
             if not precheck.allowed:
-                log.info("Tool rejected: %s (%s)",
-                         _name_of(tool_call), precheck.reject_reason)
+                log.info(
+                    "Tool rejected: %s (%s)",
+                    _name_of(tool_call),
+                    precheck.reject_reason,
+                )
                 self.outcome = ToolOutcome.STOPPED
-                yield AgentEvent.DONE, done_payload(
-                    "stopped", precheck.reject_reason or "Tool rejected")
+                yield (
+                    AgentEvent.DONE,
+                    done_payload("stopped", precheck.reject_reason or "Tool rejected"),
+                )
                 return
 
             approval_request_id = ""
@@ -113,7 +120,9 @@ class ToolInvoker:
                     str(precheck.approval_request.get("command", ""))[:200],
                 )
                 yield AgentEvent.APPROVAL_REQUIRED, precheck.approval_request
-                async for tick in self._approval.wait_with_heartbeat(approval_request_id):
+                async for tick in self._approval.wait_with_heartbeat(
+                    approval_request_id
+                ):
                     if tick is None:
                         yield AgentEvent.APPROVAL_HEARTBEAT, None
                         continue
@@ -125,23 +134,30 @@ class ToolInvoker:
                         )
                         # Retract the request so a resumed/replayed stream cannot
                         # re-show a dialog for an approval that is already answered.
-                        yield AgentEvent.APPROVAL_RESULT, {
-                            "id": approval_request_id, "approved": False}
+                        yield (
+                            AgentEvent.APPROVAL_RESULT,
+                            {"id": approval_request_id, "approved": False},
+                        )
                         self.outcome = ToolOutcome.STOPPED
-                        yield AgentEvent.DONE, done_payload(
-                            "stopped", "Command rejected by user")
+                        yield (
+                            AgentEvent.DONE,
+                            done_payload("stopped", "Command rejected by user"),
+                        )
                         return
                     log.info(
                         "[Turn %s] Approval granted id=%s",
                         self._turn_count,
                         approval_request_id,
                     )
-                    yield AgentEvent.APPROVAL_RESULT, {
-                        "id": approval_request_id, "approved": True}
+                    yield (
+                        AgentEvent.APPROVAL_RESULT,
+                        {"id": approval_request_id, "approved": True},
+                    )
                     break
 
             result = await self.execute_with_abort(
-                tool_call, arguments, approval_request_id=approval_request_id)
+                tool_call, arguments, approval_request_id=approval_request_id
+            )
             if result is None:
                 async for event in self.persist_cancelled(tool_calls, group_id):
                     yield event
@@ -172,13 +188,16 @@ class ToolInvoker:
             if not result.success:
                 log.info(
                     f"[Turn {self._turn_count}] Tool failed and will be returned "
-                    f"to model context: {_name_of(tool_call)}")
+                    f"to model context: {_name_of(tool_call)}"
+                )
                 continue
             if result.requires_input:
                 log.info(f"[Turn {self._turn_count}] Paused for user input")
                 self.outcome = ToolOutcome.NEEDS_INPUT
-                yield AgentEvent.DONE, done_payload(
-                    "requires_input", "User input required")
+                yield (
+                    AgentEvent.DONE,
+                    done_payload("requires_input", "User input required"),
+                )
                 return
 
             behavior.on_success(turn_context)
@@ -221,15 +240,14 @@ class ToolInvoker:
     ) -> ToolResult | None:
         """Run the tool, returning None when the user interrupted it."""
         tool_task = asyncio.create_task(
-            self.execute(tool_call, arguments,
-                         approval_request_id=approval_request_id),
+            self.execute(tool_call, arguments, approval_request_id=approval_request_id),
             name=f"tool_{tool_call.name}",
         )
-        abort_task = asyncio.create_task(
-            self._abort_event.wait(), name="abort_watcher")
+        abort_task = asyncio.create_task(self._abort_event.wait(), name="abort_watcher")
 
         done, pending = await asyncio.wait(
-            [tool_task, abort_task], return_when=asyncio.FIRST_COMPLETED)
+            [tool_task, abort_task], return_when=asyncio.FIRST_COMPLETED
+        )
 
         for pending_task in pending:
             pending_task.cancel()
@@ -258,18 +276,21 @@ class ToolInvoker:
         registered_tool = self._registry.get(tool_call.name)
         if not registered_tool:
             log.warning(f"Tool not found: {tool_call.name}")
-            return ToolResult(
-                success=False, content=f"Unknown tool: {tool_call.name}")
+            return ToolResult(success=False, content=f"Unknown tool: {tool_call.name}")
         try:
             log.info(f"Tool {tool_name} arguments: {arguments}")
             self._inject_implicit_arguments(registered_tool, arguments)
             result = await registered_tool.func(**arguments)
             log.info(
-                f"Tool {tool_name} result: {result.content[:100] if result.content else 'empty'}...")
-            if self._guardrails.observe(
-                    tool_name, arguments, result.success) == GuardrailAction.HALT:
+                f"Tool {tool_name} result: {result.content[:100] if result.content else 'empty'}..."
+            )
+            if (
+                self._guardrails.observe(tool_name, arguments, result.success)
+                == GuardrailAction.HALT
+            ):
                 log.warning(
-                    "Guardrails halted tool loop after %s with %s", tool_name, arguments)
+                    "Guardrails halted tool loop after %s with %s", tool_name, arguments
+                )
                 return ToolResult(
                     success=False,
                     content="You seem to be repeating the same action. Try a different approach.",
@@ -285,18 +306,19 @@ class ToolInvoker:
         import inspect
 
         tool_parameters = inspect.signature(registered_tool.func).parameters
-        if 'turn_context' in tool_parameters:
+        if "turn_context" in tool_parameters:
             from nova.tools.context import ToolContext
-            arguments['turn_context'] = ToolContext(
+
+            arguments["turn_context"] = ToolContext(
                 llm=self._llm,
                 model=self._model,
                 provider=self._provider,
                 tool_schemas=self._tool_schemas,
             )
-        if 'session_id' in tool_parameters:
+        if "session_id" in tool_parameters:
             current_session = self._session.get_current_session()
             if current_session is not None and current_session.id:
-                arguments['session_id'] = current_session.id
+                arguments["session_id"] = current_session.id
 
     async def persist_cancelled(
         self,
@@ -314,7 +336,8 @@ class ToolInvoker:
             if tool_call_id in self._executed_ids:
                 continue
             result = ToolResult(
-                success=False, content=CANCELLED_TOOL_CONTENT, error="cancelled")
+                success=False, content=CANCELLED_TOOL_CONTENT, error="cancelled"
+            )
             await self._session.add_message(
                 role="tool",
                 content=result.content,

@@ -36,7 +36,9 @@ from nova.tools.registry import tool
         "required": ["filePath", "oldString", "newString"],
     },
 )
-async def edit(filePath: str, oldString: str, newString: str, replaceAll: bool = False) -> ToolResult:
+async def edit(
+    filePath: str, oldString: str, newString: str, replaceAll: bool = False
+) -> ToolResult:
     p = Path(filePath)
 
     if not p.exists():
@@ -55,10 +57,16 @@ async def edit(filePath: str, oldString: str, newString: str, replaceAll: bool =
 
         count = content_norm.count(old_norm)
         if count == 0:
-            return ToolResult(success=False, content="oldString not found. Ensure exact match including whitespace and indentation.")
+            return ToolResult(
+                success=False,
+                content="oldString not found. Ensure exact match including whitespace and indentation.",
+            )
 
         if count > 1 and not replaceAll:
-            return ToolResult(success=False, content=f"oldString appears {count} times. Provide more context to make unique, or use replaceAll=true.")
+            return ToolResult(
+                success=False,
+                content=f"oldString appears {count} times. Provide more context to make unique, or use replaceAll=true.",
+            )
 
         if replaceAll:
             new_content_norm = content_norm.replace(old_norm, new_norm)
@@ -82,15 +90,20 @@ async def edit(filePath: str, oldString: str, newString: str, replaceAll: bool =
         if not final_content.endswith("\n") and new_lines:
             new_lines[-1] += "\n"
 
-        diff = list(difflib.unified_diff(
-            old_lines, new_lines,
-            fromfile=f"a/{p.name}",
-            tofile=f"b/{p.name}",
-            n=3,
-        ))
+        diff = list(
+            difflib.unified_diff(
+                old_lines,
+                new_lines,
+                fromfile=f"a/{p.name}",
+                tofile=f"b/{p.name}",
+                n=3,
+            )
+        )
 
         diff_text = "".join(diff) if diff else ""
-        return ToolResult(success=True, content=f"Changes applied to {p.name}:\n\n{diff_text}")
+        return ToolResult(
+            success=True, content=f"Changes applied to {p.name}:\n\n{diff_text}"
+        )
 
     except Exception as e:
         return ToolResult(success=False, content=f"Error: {e}")

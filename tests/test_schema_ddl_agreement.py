@@ -27,8 +27,14 @@ GATEWAY = {
 
 MIGRATED = {
     "agents": {"reasoning_effort", "mode", "posture"},
-    "sessions": {"workspace_dir", "pinned", "project_id", "provider", "model",
-                 "reasoning_effort"},
+    "sessions": {
+        "workspace_dir",
+        "pinned",
+        "project_id",
+        "provider",
+        "model",
+        "reasoning_effort",
+    },
     "messages": {"provider_meta", "reasoning_effort"},
 }
 
@@ -86,7 +92,9 @@ class TestDdlAgreesWithMigrations:
             await close_db()
 
     @pytest.mark.asyncio
-    async def test_the_guard_reports_a_ddl_that_drifted(self, home, monkeypatch, caplog):
+    async def test_the_guard_reports_a_ddl_that_drifted(
+        self, home, monkeypatch, caplog
+    ):
         """Drop a column from the DDL and the startup log has to say so."""
         from nova.db import sqlite_repository as module
 
@@ -110,9 +118,7 @@ class TestDdlAgreesWithMigrations:
 
 class TestOldAgentTableIsMigrated:
     @pytest.mark.asyncio
-    async def test_an_old_agents_table_gains_mode_and_posture(
-        self, home, tmp_path
-    ):
+    async def test_an_old_agents_table_gains_mode_and_posture(self, home, tmp_path):
         """A database from before mode/posture must still accept agent writes.
 
         Fresh installs get both columns from the DDL, but an existing database

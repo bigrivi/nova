@@ -31,7 +31,9 @@ async def db():
 
 
 @pytest.mark.asyncio
-async def test_save_session_roundtrip_preserves_timestamps_and_metadata(db: SqliteRepository):
+async def test_save_session_roundtrip_preserves_timestamps_and_metadata(
+    db: SqliteRepository,
+):
     created_at = datetime(2026, 4, 23, tzinfo=UTC)
     updated_at = datetime(2026, 4, 24, tzinfo=UTC)
     session = Session(
@@ -126,14 +128,20 @@ async def test_connect_backfills_one_project_per_normalized_workspace(tmp_path):
         # Both raw spellings of one directory landed in the same project.
         assert (await repository.get_session("session-1"))["project_id"] == paoku["id"]
         assert (await repository.get_session("session-2"))["project_id"] == paoku["id"]
-        home_project = next(project for project in projects if project["name"] == "nova")
+        home_project = next(
+            project for project in projects if project["name"] == "nova"
+        )
         assert home_project["path"].startswith(str(Path.home()))
-        assert (await repository.get_session("session-3"))["project_id"] == home_project["id"]
+        assert (await repository.get_session("session-3"))[
+            "project_id"
+        ] == home_project["id"]
         assert (await repository.get_session("session-4"))["project_id"] is None
 
         # Stored workspace spellings were normalized in place, so a directory
         # filter matches every session of that folder.
-        assert (await repository.get_session("session-2"))["workspace_dir"] == str(project_dir)
+        assert (await repository.get_session("session-2"))["workspace_dir"] == str(
+            project_dir
+        )
         home_workspace = (await repository.get_session("session-3"))["workspace_dir"]
         assert home_workspace.startswith(str(Path.home()))
         assert not home_workspace.startswith("~")
@@ -165,7 +173,9 @@ async def test_get_messages_applies_message_filter_flags(db: SqliteRepository):
     first = await db.add_message("session-2", "user", "first")
     second = await db.add_message("session-2", "tool", "tool output")
     third = await db.add_message("session-2", "assistant", "summary", summary=True)
-    fourth = await db.add_message("session-2", "assistant", "tool call", tool_calls=[_ToolCall("read")])
+    fourth = await db.add_message(
+        "session-2", "assistant", "tool call", tool_calls=[_ToolCall("read")]
+    )
 
     for index, message in enumerate([first, second, third, fourth], start=1):
         await db._conn.execute(
@@ -177,7 +187,11 @@ async def test_get_messages_applies_message_filter_flags(db: SqliteRepository):
     await db.mark_messages_compacted_by_ids("session-2", [first.id])
 
     default_messages = await db.get_messages("session-2")
-    assert [message.content for message in default_messages] == ["tool output", "summary", "tool call"]
+    assert [message.content for message in default_messages] == [
+        "tool output",
+        "summary",
+        "tool call",
+    ]
     assert default_messages[-1].tool_calls == [{"name": "read"}]
 
     filtered = await db.get_messages(
@@ -198,7 +212,9 @@ async def test_get_messages_applies_message_filter_flags(db: SqliteRepository):
 
 
 @pytest.mark.asyncio
-async def test_update_and_delete_messages_keep_session_count_in_sync(db: SqliteRepository):
+async def test_update_and_delete_messages_keep_session_count_in_sync(
+    db: SqliteRepository,
+):
     session = Session(id="session-3")
     await db.save_session(session)
 
@@ -206,12 +222,16 @@ async def test_update_and_delete_messages_keep_session_count_in_sync(db: SqliteR
     await db.add_message("session-3", "assistant", "keep")
 
     await db.update_message_content(first.id, "after")
-    updated_messages = await db.get_messages("session-3", MessageFilter(include_compacted=True))
+    updated_messages = await db.get_messages(
+        "session-3", MessageFilter(include_compacted=True)
+    )
     assert [message.content for message in updated_messages] == ["after", "keep"]
 
     deleted_count = await db.delete_messages("session-3", [first.id, "missing-id"])
     stored_session = await db.get_session("session-3")
-    remaining_messages = await db.get_messages("session-3", MessageFilter(include_compacted=True))
+    remaining_messages = await db.get_messages(
+        "session-3", MessageFilter(include_compacted=True)
+    )
 
     assert deleted_count == 1
     assert stored_session is not None
@@ -324,7 +344,9 @@ async def test_migrate_adds_provider_meta_column_to_legacy_db(tmp_path):
         provider_meta={"thinking_signature": "SIG123"},
         model="claude-sonnet-4-5",
     )
-    messages = await repository.get_messages("legacy-session", MessageFilter(include_compacted=True))
+    messages = await repository.get_messages(
+        "legacy-session", MessageFilter(include_compacted=True)
+    )
     assert len(messages) == 1
     assert messages[0].provider_meta == {"thinking_signature": "SIG123"}
     assert isinstance(messages[0].provider_meta, dict)

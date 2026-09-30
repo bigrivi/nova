@@ -45,22 +45,27 @@ class SpeechService:
         """Capability report for the composer microphone button."""
         transcription = self._settings.transcription
         if not transcription.enabled:
-            return {"enabled": False,
-                    "reason": "transcription api_key is not configured"}
+            return {
+                "enabled": False,
+                "reason": "transcription api_key is not configured",
+            }
         if self._recorder is None:
-            return {"enabled": False,
-                    "reason": self._unavailable_reason or
-                    "no audio recorder for this platform"}
-        return {"enabled": True,
-                "provider": transcription.provider,
-                "model": transcription.model,
-                "recording": self._recorder.recording,
-                # Lets a reloaded window resume the readout instead of
-                # restarting the clock at zero.
-                "recording_since_ms": (
-                    int(self._started_at * 1000)
-                    if self._started_at is not None else None
-                )}
+            return {
+                "enabled": False,
+                "reason": self._unavailable_reason
+                or "no audio recorder for this platform",
+            }
+        return {
+            "enabled": True,
+            "provider": transcription.provider,
+            "model": transcription.model,
+            "recording": self._recorder.recording,
+            # Lets a reloaded window resume the readout instead of
+            # restarting the clock at zero.
+            "recording_since_ms": (
+                int(self._started_at * 1000) if self._started_at is not None else None
+            ),
+        }
 
     def start(self) -> dict[str, object]:
         """Begin recording. Raises RuntimeError when unavailable or busy."""
@@ -100,7 +105,8 @@ class SpeechService:
         if size > MAX_AUDIO_BYTES:
             raise RuntimeError(
                 f"Audio is {size // 1024 // 1024}MB; "
-                "the 25MB provider limit was exceeded")
+                "the 25MB provider limit was exceeded"
+            )
         try:
             text = await transcribe_client.transcribe_file(
                 audio_path,

@@ -59,7 +59,8 @@ class _OllamaStreamParser(StreamParser):
                 if func.get("arguments"):
                     try:
                         existing = json.loads(
-                            self._tool_calls[index]["arguments"] or "{}")
+                            self._tool_calls[index]["arguments"] or "{}"
+                        )
                         args = func["arguments"]
                         if isinstance(args, str):
                             existing.update(json.loads(args))
@@ -67,8 +68,9 @@ class _OllamaStreamParser(StreamParser):
                             existing.update(args)
                         self._tool_calls[index]["arguments"] = json.dumps(existing)
                     except (json.JSONDecodeError, TypeError):
-                        self._tool_calls[index]["arguments"] = args if isinstance(
-                            args, str) else json.dumps(args)
+                        self._tool_calls[index]["arguments"] = (
+                            args if isinstance(args, str) else json.dumps(args)
+                        )
 
                 if self._tool_calls[index]["name"]:
                     yield ToolCall(
@@ -83,8 +85,7 @@ class _OllamaStreamParser(StreamParser):
 
     def build_done(self, acc: StreamAccumulator) -> Done:
         final_tool_calls = [
-            ToolCall(
-                id=f"call_{k}", name=v["name"], arguments=v["arguments"] or "{}")
+            ToolCall(id=f"call_{k}", name=v["name"], arguments=v["arguments"] or "{}")
             for k, v in sorted(self._tool_calls.items())
             if v["name"]
         ]
@@ -119,7 +120,13 @@ class OllamaProvider(HttpProvider):
         self.request_options = dict(request_options or {})
         self.timeout_seconds = timeout_seconds
 
-    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] | None = None) -> dict:
+    def _build_body(
+        self,
+        messages: list,
+        model: str,
+        stream: bool = False,
+        tools: list[dict] | None = None,
+    ) -> dict:
         body = {"model": model, "messages": messages, "stream": stream}
         opts = dict(self.request_options)
         config_tools = opts.pop("tools", True)
@@ -157,14 +164,16 @@ class OllamaProvider(HttpProvider):
                                     args = json.loads(args)
                                 except json.JSONDecodeError:
                                     pass
-                            formatted_tcs.append({
-                                "id": tc.get("id", ""),
-                                "function": {
-                                    "name": func.get("name", ""),
-                                    "arguments": args
+                            formatted_tcs.append(
+                                {
+                                    "id": tc.get("id", ""),
+                                    "function": {
+                                        "name": func.get("name", ""),
+                                        "arguments": args,
+                                    },
                                 }
-                            })
-                        elif hasattr(tc, 'model_dump'):
+                            )
+                        elif hasattr(tc, "model_dump"):
                             tc_dict = tc.model_dump()
                             func = tc_dict.get("function", {})
                             args = tc_dict.get("arguments", {})
@@ -173,13 +182,15 @@ class OllamaProvider(HttpProvider):
                                     args = json.loads(args)
                                 except json.JSONDecodeError:
                                     pass
-                            formatted_tcs.append({
-                                "id": tc_dict.get("id", ""),
-                                "function": {
-                                    "name": tc_dict.get("name", ""),
-                                    "arguments": args
+                            formatted_tcs.append(
+                                {
+                                    "id": tc_dict.get("id", ""),
+                                    "function": {
+                                        "name": tc_dict.get("name", ""),
+                                        "arguments": args,
+                                    },
                                 }
-                            })
+                            )
                         else:
                             formatted_tcs.append(tc)
                     m["tool_calls"] = formatted_tcs
@@ -199,7 +210,8 @@ class OllamaProvider(HttpProvider):
     ) -> tuple[str, dict[str, str], dict]:
         formatted_messages = self._format_messages(messages)
         body = self._build_body(
-            messages=formatted_messages, model=model, stream=stream, tools=tools)
+            messages=formatted_messages, model=model, stream=stream, tools=tools
+        )
         return f"{self.base_url}/api/chat", {}, body
 
     def _parse_response(self, data: dict) -> Done:
@@ -210,12 +222,15 @@ class OllamaProvider(HttpProvider):
         if message.get("tool_calls"):
             for tc in message["tool_calls"]:
                 func = tc.get("function", {})
-                tool_calls.append(ToolCall(
-                    id=tc.get("id", f"call_{len(tool_calls)}"),
-                    name=func.get("name", ""),
-                    arguments=func.get("arguments", "{}") if isinstance(
-                        func.get("arguments"), str) else json.dumps(func.get("arguments", {}))
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.get("id", f"call_{len(tool_calls)}"),
+                        name=func.get("name", ""),
+                        arguments=func.get("arguments", "{}")
+                        if isinstance(func.get("arguments"), str)
+                        else json.dumps(func.get("arguments", {})),
+                    )
+                )
 
         return Done(content=content, tool_calls=tool_calls)
 

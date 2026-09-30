@@ -68,9 +68,7 @@ class SessionEventBus:
         """The currently-active session ids, for a client connecting mid-flight."""
         return sorted(self._active)
 
-    def subscribe(
-        self, maxsize: int = CONNECTION_QUEUE_MAXSIZE
-    ) -> asyncio.Queue:
+    def subscribe(self, maxsize: int = CONNECTION_QUEUE_MAXSIZE) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
         self._subscribers.append(queue)
         return queue

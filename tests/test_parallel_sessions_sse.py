@@ -100,9 +100,7 @@ def _stream_in_thread(app, session_id: str, results: dict) -> threading.Thread:
     return thread
 
 
-def test_a_two_different_sessions_stream_concurrently_both_200(
-    monkeypatch, tmp_path
-):
+def test_a_two_different_sessions_stream_concurrently_both_200(monkeypatch, tmp_path):
     """RED: both streams 200 AND each body echoes its own session id."""
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     app = create_app(settings=get_settings())
@@ -203,9 +201,7 @@ def test_d_approve_resolves_only_targeted_session_else_404(monkeypatch, tmp_path
 
 
 @pytest.mark.asyncio
-async def test_f_detached_stream_holds_slot_and_interrupt_aborts(
-    monkeypatch, tmp_path
-):
+async def test_f_detached_stream_holds_slot_and_interrupt_aborts(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     app = create_app(settings=get_settings())
     registry = app.state.chat_service._request_registry
@@ -233,9 +229,7 @@ async def test_f_detached_stream_holds_slot_and_interrupt_aborts(
 
 
 @pytest.mark.asyncio
-async def test_g_delete_detached_session_cleans_slot_and_buffer(
-    monkeypatch, tmp_path
-):
+async def test_g_delete_detached_session_cleans_slot_and_buffer(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     settings = get_settings()
     db = await init_db(DatabaseConfig(path=str(settings.database_path)))

@@ -141,9 +141,7 @@ def _ensure_traffic_lights(native: Any, appkit: Any) -> None:
                     stray.removeFromSuperview()
                 except Exception:
                     logger.debug("Stray button removal failed", exc_info=True)
-            button = appkit.NSWindow.standardWindowButton_forStyleMask_(
-                kind, mask
-            )
+            button = appkit.NSWindow.standardWindowButton_forStyleMask_(kind, mask)
             if button is None:
                 continue
             button.setTag_(tag)
@@ -287,9 +285,7 @@ def _apply_on_main_thread(native: Any) -> bool:
                 # pre-show styling; one delayed pass lands on the final
                 # instance. Resizes re-apply through _on_resized.
                 try:
-                    self.performSelector_withObject_afterDelay_(
-                        "reapply:", None, 0.5
-                    )
+                    self.performSelector_withObject_afterDelay_("reapply:", None, 0.5)
                 except Exception:
                     logger.debug("Delayed re-apply failed", exc_info=True)
 

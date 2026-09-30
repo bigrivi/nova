@@ -79,7 +79,9 @@ def test_load_skill_document_requires_frontmatter_block(tmp_path):
 
 def test_skill_service_scans_valid_skills_only(tmp_path):
     skills_dir = tmp_path / "skills"
-    _write_skill(skills_dir, "code-review", name="code-review", description="Review code.")
+    _write_skill(
+        skills_dir, "code-review", name="code-review", description="Review code."
+    )
     (skills_dir / "missing-skill-md").mkdir(parents=True, exist_ok=True)
     bad_dir = skills_dir / "bad-frontmatter"
     bad_dir.mkdir(parents=True, exist_ok=True)
@@ -96,7 +98,9 @@ def test_skill_service_scans_valid_skills_only(tmp_path):
 @pytest.mark.asyncio
 async def test_write_tool_does_not_rescan_skill_catalog_automatically(tmp_path):
     skills_dir = tmp_path / "skills"
-    _write_skill(skills_dir, "code-review", name="code-review", description="Review code.")
+    _write_skill(
+        skills_dir, "code-review", name="code-review", description="Review code."
+    )
     service = SkillService(skills_dir)
     service.scan_skills()
 
@@ -113,7 +117,10 @@ async def test_write_tool_does_not_rescan_skill_catalog_automatically(tmp_path):
     assert result.success is True
     assert [skill.name for skill in service.list_skills()] == ["code-review"]
     service.scan_skills()
-    assert [skill.name for skill in service.list_skills()] == ["code-review", "incident"]
+    assert [skill.name for skill in service.list_skills()] == [
+        "code-review",
+        "incident",
+    ]
 
 
 @pytest.mark.asyncio

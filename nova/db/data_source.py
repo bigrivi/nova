@@ -30,26 +30,38 @@ _PROVIDERS: dict[str, DataSourceProvider] = {}
 _CONFIG = DataSourceConfig()
 
 
-def register_data_source_provider(data_source_type: DataSourceType | str, provider: DataSourceProvider) -> None:
-    key = data_source_type.value if isinstance(
-        data_source_type, DataSourceType) else data_source_type
+def register_data_source_provider(
+    data_source_type: DataSourceType | str, provider: DataSourceProvider
+) -> None:
+    key = (
+        data_source_type.value
+        if isinstance(data_source_type, DataSourceType)
+        else data_source_type
+    )
     _PROVIDERS[key] = provider
 
 
-def get_data_source_provider(data_source_type: DataSourceType | str = DataSourceType.AIO_SQLITE) -> DataSourceProvider:
-    key = data_source_type.value if isinstance(
-        data_source_type, DataSourceType) else data_source_type
+def get_data_source_provider(
+    data_source_type: DataSourceType | str = DataSourceType.AIO_SQLITE,
+) -> DataSourceProvider:
+    key = (
+        data_source_type.value
+        if isinstance(data_source_type, DataSourceType)
+        else data_source_type
+    )
     if key not in _PROVIDERS:
         from nova.db.providers.aiosqlite_provider import AioSqliteDatabaseProvider
 
         if key == DataSourceType.AIO_SQLITE.value:
             register_data_source_provider(
-                DataSourceType.AIO_SQLITE, AioSqliteDatabaseProvider())
+                DataSourceType.AIO_SQLITE, AioSqliteDatabaseProvider()
+            )
         elif key == DataSourceType.IN_MEMORY.value:
             from nova.db.providers.in_memory_provider import InMemoryDatabaseProvider
 
             register_data_source_provider(
-                DataSourceType.IN_MEMORY, InMemoryDatabaseProvider())
+                DataSourceType.IN_MEMORY, InMemoryDatabaseProvider()
+            )
     return _PROVIDERS[key]
 
 

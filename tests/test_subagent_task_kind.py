@@ -35,14 +35,22 @@ async def test_unlimited_kind_bypasses_quota(make_executor) -> None:
     # The shared quota is full now, but subagents ignore it entirely.
     for i in range(3):
         manager.submit(
-            "subagent", {}, session_id="s1", label=f"d{i}",
-            timeout_seconds=None, background=True,
+            "subagent",
+            {},
+            session_id="s1",
+            label=f"d{i}",
+            timeout_seconds=None,
+            background=True,
         )
     # A second shell on the same session still hits the quota.
     with pytest.raises(TaskLimitError):
         manager.submit(
-            "shell", {}, session_id="s1", label="b",
-            timeout_seconds=5, background=True,
+            "shell",
+            {},
+            session_id="s1",
+            label="b",
+            timeout_seconds=5,
+            background=True,
         )
     await manager.shutdown()
 
@@ -61,12 +69,20 @@ async def test_unlimited_kind_runs_without_a_semaphore_slot(make_executor) -> No
     manager.register_executor(make_executor("subagent", sub, unlimited=True))
 
     manager.submit(
-        "shell", {}, session_id="s1", label="hog",
-        timeout_seconds=5, background=True,
+        "shell",
+        {},
+        session_id="s1",
+        label="hog",
+        timeout_seconds=5,
+        background=True,
     )
     task = manager.submit(
-        "subagent", {}, session_id="s1", label="d",
-        timeout_seconds=None, background=True,
+        "subagent",
+        {},
+        session_id="s1",
+        label="d",
+        timeout_seconds=None,
+        background=True,
     )
     await manager.wait(task.task_id, "s1", timeout=2)
     assert started.is_set()
@@ -80,9 +96,7 @@ async def test_completion_listener_fires_for_background_terminal_only(
     manager = BackgroundTaskManager()
     woken: list[tuple[str, str, str]] = []
     manager.set_completion_listener(
-        lambda record: woken.append(
-            (record.session_id, record.task_id, record.status)
-        )
+        lambda record: woken.append((record.session_id, record.task_id, record.status))
     )
 
     async def ok(arguments, context):
@@ -91,8 +105,12 @@ async def test_completion_listener_fires_for_background_terminal_only(
 
     manager.register_executor(make_executor("subagent", ok, unlimited=True))
     task = manager.submit(
-        "subagent", {}, session_id="p1", label="d",
-        timeout_seconds=None, background=True,
+        "subagent",
+        {},
+        session_id="p1",
+        label="d",
+        timeout_seconds=None,
+        background=True,
     )
     await manager.wait(task.task_id, "p1", timeout=2)
 
@@ -110,8 +128,12 @@ async def test_completion_listener_skips_foreground_tasks(make_executor) -> None
 
     manager.register_executor(make_executor("shell", ok))
     task = manager.submit(
-        "shell", {}, session_id="s1", label="fg",
-        timeout_seconds=5, background=False,
+        "shell",
+        {},
+        session_id="s1",
+        label="fg",
+        timeout_seconds=5,
+        background=False,
     )
     await manager.wait(task.task_id, "s1", timeout=2)
 
@@ -135,8 +157,12 @@ async def test_subagent_result_carries_metadata(make_executor) -> None:
 
     manager.register_executor(make_executor("subagent", sub, unlimited=True))
     task = manager.submit(
-        "subagent", {"target": "coder"}, session_id="p1", label="d",
-        timeout_seconds=None, background=True,
+        "subagent",
+        {"target": "coder"},
+        session_id="p1",
+        label="d",
+        timeout_seconds=None,
+        background=True,
     )
     await manager.wait(task.task_id, "p1", timeout=2)
     record = manager.get(task.task_id, "p1")

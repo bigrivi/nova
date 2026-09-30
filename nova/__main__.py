@@ -111,25 +111,49 @@ def main():
         sys.path.insert(0, str(Path(script_path).parent))
         with open(script_path) as f:
             code = f.read()
-        exec(compile(code, script_path, "exec"), {"__name__": "__main__", "__file__": script_path})
+        exec(
+            compile(code, script_path, "exec"),
+            {"__name__": "__main__", "__file__": script_path},
+        )
         sys.exit(0)
     parser = argparse.ArgumentParser(description="Nova agent runtime")
     settings = get_settings()
     provider_names = settings.provider_names or []
-    parser.add_argument("mode", nargs="?", choices=["serve", "web", "tui", "desktop"], default="serve",
-                        help="Run mode: serve (HTTP backend, default), web (backend + browser UI), tui (OpenTUI client), desktop (GUI window)")
+    parser.add_argument(
+        "mode",
+        nargs="?",
+        choices=["serve", "web", "tui", "desktop"],
+        default="serve",
+        help="Run mode: serve (HTTP backend, default), web (backend + browser UI), tui (OpenTUI client), desktop (GUI window)",
+    )
     provider_default = provider_names[0] if provider_names else None
-    parser.add_argument("--provider", "-p", choices=provider_names, default=provider_default,
-                        help="LLM provider alias (default: first configured provider)")
-    parser.add_argument("--model", "-m", default=None,
-                        help="Model name (default: per-agent DB config)")
+    parser.add_argument(
+        "--provider",
+        "-p",
+        choices=provider_names,
+        default=provider_default,
+        help="LLM provider alias (default: first configured provider)",
+    )
+    parser.add_argument(
+        "--model", "-m", default=None, help="Model name (default: per-agent DB config)"
+    )
     from nova.constants import DEFAULT_AGENT_KEY
-    parser.add_argument("--agent", default=DEFAULT_AGENT_KEY,
-                        help=f"Agent key (default: {DEFAULT_AGENT_KEY})")
-    parser.add_argument("--dev", action="store_true",
-                        help="[desktop] Load frontend from Vite dev server (http://localhost:5173) instead of built-in server")
-    parser.add_argument("--no-open", action="store_true",
-                        help="[web] Do not open the browser automatically")
+
+    parser.add_argument(
+        "--agent",
+        default=DEFAULT_AGENT_KEY,
+        help=f"Agent key (default: {DEFAULT_AGENT_KEY})",
+    )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="[desktop] Load frontend from Vite dev server (http://localhost:5173) instead of built-in server",
+    )
+    parser.add_argument(
+        "--no-open",
+        action="store_true",
+        help="[web] Do not open the browser automatically",
+    )
     args = parser.parse_args()
     init_site_packages()
     configure_logging(settings, console=args.mode in ("serve", "web"))

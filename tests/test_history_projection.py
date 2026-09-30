@@ -42,11 +42,17 @@ def test_project_user_visible_history_keeps_only_visible_tool_calls_and_results(
             role="assistant",
             content="",
             tool_calls=[
-                {"id": "call_bash", "name": "bash", "arguments": "{\"command\":\"pwd\"}"},
-                {"id": "call_edit", "name": "edit", "arguments": "{\"filePath\":\"foo.py\"}"},
+                {"id": "call_bash", "name": "bash", "arguments": '{"command":"pwd"}'},
+                {
+                    "id": "call_edit",
+                    "name": "edit",
+                    "arguments": '{"filePath":"foo.py"}',
+                },
             ],
         ),
-        _message(message_id="m3", role="tool", content="/tmp", tool_call_id="call_bash"),
+        _message(
+            message_id="m3", role="tool", content="/tmp", tool_call_id="call_bash"
+        ),
         _message(
             message_id="m4",
             role="tool",
@@ -71,7 +77,7 @@ def test_project_user_visible_history_keeps_only_visible_tool_calls_and_results(
 
     assert [message.id for message in projected] == ["m1", "m2", "m4"]
     assert projected[1].tool_calls == [
-        {"id": "call_edit", "name": "edit", "arguments": "{\"filePath\":\"foo.py\"}"}
+        {"id": "call_edit", "name": "edit", "arguments": '{"filePath":"foo.py"}'}
     ]
     assert projected[2].tool_call_id == "call_edit"
     assert all("summary" not in message.content for message in projected)

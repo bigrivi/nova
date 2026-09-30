@@ -42,7 +42,9 @@ async def write(content: str, filePath: str) -> ToolResult:
         p.write_text(content, encoding="utf-8")
 
         if is_new:
-            lc = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+            lc = content.count("\n") + (
+                1 if content and not content.endswith("\n") else 0
+            )
             return ToolResult(success=True, content=f"Created {filePath} ({lc} lines)")
 
         old_lines = old_content.splitlines(keepends=True)
@@ -51,12 +53,11 @@ async def write(content: str, filePath: str) -> ToolResult:
         if not content.endswith("\n") and new_lines:
             new_lines[-1] += "\n"
 
-        diff = list(difflib.unified_diff(
-            old_lines, new_lines,
-            fromfile=f"a/{p.name}",
-            tofile=f"b/{p.name}",
-            n=3
-        ))
+        diff = list(
+            difflib.unified_diff(
+                old_lines, new_lines, fromfile=f"a/{p.name}", tofile=f"b/{p.name}", n=3
+            )
+        )
 
         if not diff:
             return ToolResult(success=True, content=f"No changes in {filePath}")
@@ -68,7 +69,9 @@ async def write(content: str, filePath: str) -> ToolResult:
         else:
             diff_text = "".join(diff)
 
-        return ToolResult(success=True, content=f"File updated — {filePath}:\n\n{diff_text}")
+        return ToolResult(
+            success=True, content=f"File updated — {filePath}:\n\n{diff_text}"
+        )
 
     except Exception as e:
         return ToolResult(success=False, content=f"Error: {e}")

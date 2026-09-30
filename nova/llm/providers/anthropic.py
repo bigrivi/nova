@@ -79,7 +79,9 @@ def _default_max_output_tokens(model: str) -> int:
 # (major, minor) version at which each gained it. Below this the model strips
 # older thinking blocks server-side, so only the latest turn is worth replaying.
 _THINKING_PRESERVED_FROM = {"opus": (4, 5), "sonnet": (4, 5)}
-_THINKING_MODEL_RE = re.compile(r"claude-(opus|sonnet|haiku)-(\d+)(?:-(\d{1,2})(?=-|$))?")
+_THINKING_MODEL_RE = re.compile(
+    r"claude-(opus|sonnet|haiku)-(\d+)(?:-(\d{1,2})(?=-|$))?"
+)
 
 
 def _preserves_thinking(model: str | None) -> bool:
@@ -149,7 +151,11 @@ def _content_block_index(event: dict) -> int:
 
 def _state_to_tool_call(state: dict) -> ToolCall:
     arguments = state.get("arguments") or state.get("initial_input") or "{}"
-    return ToolCall(id=str(state.get("id", "")), name=str(state.get("name", "")), arguments=str(arguments))
+    return ToolCall(
+        id=str(state.get("id", "")),
+        name=str(state.get("name", "")),
+        arguments=str(arguments),
+    )
 
 
 def _thinking_provider_meta(thinking_blocks: list[dict]) -> dict | None:
@@ -166,7 +172,11 @@ def _thinking_provider_meta(thinking_blocks: list[dict]) -> dict | None:
         block_type = block.get("type")
         if block_type == "thinking":
             block_signature = block.get("signature")
-            if signature is None and isinstance(block_signature, str) and block_signature:
+            if (
+                signature is None
+                and isinstance(block_signature, str)
+                and block_signature
+            ):
                 signature = block_signature
         elif block_type == "redacted_thinking" and block.get("data"):
             redacted_entries.append(str(block["data"]))
@@ -200,13 +210,23 @@ class _AnthropicStreamParser(StreamParser):
 
         if event_type == "message_start":
             start_message = event.get("message", {})
-            usage = start_message.get("usage", {}) if isinstance(start_message, dict) else {}
+            usage = (
+                start_message.get("usage", {})
+                if isinstance(start_message, dict)
+                else {}
+            )
             if isinstance(usage, dict):
                 prompt_tokens = int(usage.get("input_tokens", 0) or 0)
                 raw_cache_read = usage.get("cache_read_input_tokens")
-                acc.cache_read_tokens = int(raw_cache_read) if raw_cache_read is not None else None
-                cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
-                acc.tokens_input = prompt_tokens + (acc.cache_read_tokens or 0) + cache_creation_tokens
+                acc.cache_read_tokens = (
+                    int(raw_cache_read) if raw_cache_read is not None else None
+                )
+                cache_creation_tokens = int(
+                    usage.get("cache_creation_input_tokens", 0) or 0
+                )
+                acc.tokens_input = (
+                    prompt_tokens + (acc.cache_read_tokens or 0) + cache_creation_tokens
+                )
                 if usage.get("output_tokens") is not None:
                     try:
                         acc.tokens_output = int(usage["output_tokens"])
@@ -226,11 +246,21 @@ class _AnthropicStreamParser(StreamParser):
                     acc.add_text(text)
                     yield TextDelta(content=text)
             elif content_block_type == "thinking":
-                self._thinking_state[block_index] = {"thinking": content_block.get("thinking", "") or "", "signature": content_block.get("signature", "") or "", "type": "thinking"}
+                self._thinking_state[block_index] = {
+                    "thinking": content_block.get("thinking", "") or "",
+                    "signature": content_block.get("signature", "") or "",
+                    "type": "thinking",
+                }
             elif content_block_type == "redacted_thinking":
-                self._thinking_state[block_index] = {"type": "redacted_thinking", "data": content_block.get("data", "") or ""}
+                self._thinking_state[block_index] = {
+                    "type": "redacted_thinking",
+                    "data": content_block.get("data", "") or "",
+                }
             elif content_block_type == "tool_use":
-                if len(self._tool_calls) >= _MAX_TOOL_CALLS and block_index not in self._tool_calls:
+                if (
+                    len(self._tool_calls) >= _MAX_TOOL_CALLS
+                    and block_index not in self._tool_calls
+                ):
                     return
                 self._tool_calls[block_index] = {
                     "id": content_block.get("id", f"call_{block_index}"),
@@ -241,9 +271,13 @@ class _AnthropicStreamParser(StreamParser):
                 initial_tool_input = content_block.get("input")
                 if isinstance(initial_tool_input, dict) and initial_tool_input:
                     try:
-                        initial_input_json = json.dumps(initial_tool_input, ensure_ascii=False)
+                        initial_input_json = json.dumps(
+                            initial_tool_input, ensure_ascii=False
+                        )
                         if initial_input_json != "{}":
-                            self._tool_calls[block_index]["initial_input"] = initial_input_json
+                            self._tool_calls[block_index]["initial_input"] = (
+                                initial_input_json
+                            )
                     except Exception:
                         pass
             return
@@ -263,38 +297,74 @@ class _AnthropicStreamParser(StreamParser):
                 thinking_text = delta.get("thinking", "")
                 if thinking_text:
                     if block_index not in self._thinking_state:
-                        self._thinking_state[block_index] = {"thinking": "", "signature": "", "type": "thinking"}
-                    self._thinking_state[block_index]["thinking"] = self._thinking_state[block_index].get("thinking", "") + thinking_text
+                        self._thinking_state[block_index] = {
+                            "thinking": "",
+                            "signature": "",
+                            "type": "thinking",
+                        }
+                    self._thinking_state[block_index]["thinking"] = (
+                        self._thinking_state[block_index].get("thinking", "")
+                        + thinking_text
+                    )
                     yield ReasoningDelta(content=thinking_text)
             elif delta_type == "signature_delta":
                 signature_chunk = delta.get("signature", "")
                 if signature_chunk:
                     if block_index not in self._thinking_state:
-                        self._thinking_state[block_index] = {"thinking": "", "signature": "", "type": "thinking"}
-                    self._thinking_state[block_index]["signature"] = self._thinking_state[block_index].get("signature", "") + signature_chunk
+                        self._thinking_state[block_index] = {
+                            "thinking": "",
+                            "signature": "",
+                            "type": "thinking",
+                        }
+                    self._thinking_state[block_index]["signature"] = (
+                        self._thinking_state[block_index].get("signature", "")
+                        + signature_chunk
+                    )
             elif delta_type == "input_json_delta":
                 partial_json = delta.get("partial_json", "")
                 if partial_json:
                     if block_index not in self._tool_calls:
                         if len(self._tool_calls) >= _MAX_TOOL_CALLS:
                             return
-                        self._tool_calls[block_index] = {"id": f"call_{block_index}", "name": "", "arguments": "", "yielded": False}
+                        self._tool_calls[block_index] = {
+                            "id": f"call_{block_index}",
+                            "name": "",
+                            "arguments": "",
+                            "yielded": False,
+                        }
                     self._tool_calls[block_index]["arguments"] += partial_json
-                    acc.guard_tool_args(len(str(self._tool_calls[block_index]["arguments"])))
+                    acc.guard_tool_args(
+                        len(str(self._tool_calls[block_index]["arguments"]))
+                    )
             return
 
         if event_type == "content_block_stop":
             block_index = _content_block_index(event)
             tool_call_state = self._tool_calls.get(block_index)
-            if tool_call_state is not None and tool_call_state.get("name") and not tool_call_state.get("yielded"):
+            if (
+                tool_call_state is not None
+                and tool_call_state.get("name")
+                and not tool_call_state.get("yielded")
+            ):
                 tool_call_state["yielded"] = True
                 yield _state_to_tool_call(tool_call_state)
             thinking_block = self._thinking_state.get(block_index)
             if thinking_block is not None:
                 if thinking_block.get("type") == "thinking":
-                    self._final_thinking_blocks.append({"type": "thinking", "thinking": thinking_block.get("thinking", ""), "signature": thinking_block.get("signature", "")})
+                    self._final_thinking_blocks.append(
+                        {
+                            "type": "thinking",
+                            "thinking": thinking_block.get("thinking", ""),
+                            "signature": thinking_block.get("signature", ""),
+                        }
+                    )
                 elif thinking_block.get("type") == "redacted_thinking":
-                    self._final_thinking_blocks.append({"type": "redacted_thinking", "data": thinking_block.get("data", "")})
+                    self._final_thinking_blocks.append(
+                        {
+                            "type": "redacted_thinking",
+                            "data": thinking_block.get("data", ""),
+                        }
+                    )
             return
 
         if event_type == "message_delta":
@@ -303,7 +373,9 @@ class _AnthropicStreamParser(StreamParser):
                 stop_reason = delta.get("stop_reason")
                 if stop_reason:
                     self._stop_reason = stop_reason
-            usage = event.get("usage", {}) if isinstance(event.get("usage"), dict) else {}
+            usage = (
+                event.get("usage", {}) if isinstance(event.get("usage"), dict) else {}
+            )
             if isinstance(usage, dict) and usage.get("output_tokens") is not None:
                 try:
                     acc.tokens_output = int(usage["output_tokens"])
@@ -316,10 +388,22 @@ class _AnthropicStreamParser(StreamParser):
             return
 
         if event_type == "error":
-            error_payload = event.get("error", {}) if isinstance(event.get("error"), dict) else {}
-            error_type = error_payload.get("type", "error") if isinstance(error_payload, dict) else "error"
-            error_text = error_payload.get("message", "") if isinstance(error_payload, dict) else ""
-            error_detail = f"{error_type}: {error_text}" if error_text else str(error_type)
+            error_payload = (
+                event.get("error", {}) if isinstance(event.get("error"), dict) else {}
+            )
+            error_type = (
+                error_payload.get("type", "error")
+                if isinstance(error_payload, dict)
+                else "error"
+            )
+            error_text = (
+                error_payload.get("message", "")
+                if isinstance(error_payload, dict)
+                else ""
+            )
+            error_detail = (
+                f"{error_type}: {error_text}" if error_text else str(error_type)
+            )
             log.error("Anthropic stream error event: %s", error_detail)
             self.stopped = True
             yield Error(message=error_detail)
@@ -337,7 +421,11 @@ class _AnthropicStreamParser(StreamParser):
         ]
         # A turn that hit the output-token limit without producing any answer
         # (all budget spent on reasoning) is a failure, not an empty answer.
-        if not acc.content and not final_tool_calls and self._stop_reason == "max_tokens":
+        if (
+            not acc.content
+            and not final_tool_calls
+            and self._stop_reason == "max_tokens"
+        ):
             return output_limit_error("stop_reason=max_tokens")
         return Done(
             content=acc.content,
@@ -426,11 +514,23 @@ class AnthropicProvider(HttpProvider):
             if not isinstance(tool_schema, dict):
                 continue
             # Accept nested {"type":"function","function":{...}} and flat {...}
-            function_payload = tool_schema.get("function") if isinstance(tool_schema.get("function"), dict) else tool_schema
-            tool_name = function_payload.get("name", "") if isinstance(function_payload, dict) else ""
+            function_payload = (
+                tool_schema.get("function")
+                if isinstance(tool_schema.get("function"), dict)
+                else tool_schema
+            )
+            tool_name = (
+                function_payload.get("name", "")
+                if isinstance(function_payload, dict)
+                else ""
+            )
             if not tool_name:
                 continue
-            description = function_payload.get("description", "") if isinstance(function_payload, dict) else ""
+            description = (
+                function_payload.get("description", "")
+                if isinstance(function_payload, dict)
+                else ""
+            )
             input_schema = None
             if isinstance(function_payload, dict):
                 if "input_schema" in function_payload:
@@ -439,18 +539,25 @@ class AnthropicProvider(HttpProvider):
                     input_schema = function_payload["parameters"]
             if not isinstance(input_schema, dict):
                 input_schema = {"type": "object", "properties": {}}
-            anthropic_tools.append({
-                "name": tool_name,
-                "description": description,
-                "input_schema": input_schema,
-            })
+            anthropic_tools.append(
+                {
+                    "name": tool_name,
+                    "description": description,
+                    "input_schema": input_schema,
+                }
+            )
         return anthropic_tools
 
-    def _replay_thinking_blocks(self, get_attr, message: object, model: str | None) -> list[dict]:
+    def _replay_thinking_blocks(
+        self, get_attr, message: object, model: str | None
+    ) -> list[dict]:
         message_model = get_attr(message, "model")
         if message_model and model and str(message_model) != str(model):
-            log.debug("Skipping thinking replay: message model %s differs from request model %s",
-                      message_model, model)
+            log.debug(
+                "Skipping thinking replay: message model %s differs from request model %s",
+                message_model,
+                model,
+            )
             return []
 
         provider_meta = get_attr(message, "provider_meta")
@@ -464,20 +571,26 @@ class AnthropicProvider(HttpProvider):
             # An empty text is still a valid signed block, so the signature - not the
             # text - decides whether the block is sent.
             reasoning_content = get_attr(message, "reasoning_content")
-            blocks.append({
-                "type": "thinking",
-                "thinking": reasoning_content or "",
-                "signature": signature,
-            })
+            blocks.append(
+                {
+                    "type": "thinking",
+                    "thinking": reasoning_content or "",
+                    "signature": signature,
+                }
+            )
 
         redacted_entries = provider_meta.get("redacted_thinking")
         if isinstance(redacted_entries, list):
             for redacted_entry in redacted_entries:
                 if redacted_entry:
-                    blocks.append({"type": "redacted_thinking", "data": str(redacted_entry)})
+                    blocks.append(
+                        {"type": "redacted_thinking", "data": str(redacted_entry)}
+                    )
         return blocks
 
-    def _format_messages(self, messages: list, include_thinking: bool = False, model: str | None = None) -> tuple[list[dict], str]:
+    def _format_messages(
+        self, messages: list, include_thinking: bool = False, model: str | None = None
+    ) -> tuple[list[dict], str]:
         def get_attr(message: object, key: str):
             if isinstance(message, dict):
                 return message.get(key)
@@ -535,10 +648,16 @@ class AnthropicProvider(HttpProvider):
                     blocks.append({"type": "text", "text": str(content)})
                 if images:
                     for image_base64 in images:
-                        blocks.append({
-                            "type": "image",
-                            "source": {"type": "base64", "media_type": "image/png", "data": image_base64},
-                        })
+                        blocks.append(
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": image_base64,
+                                },
+                            }
+                        )
                 if blocks:
                     converted_messages.append({"role": "user", "content": blocks})
                 continue
@@ -552,7 +671,9 @@ class AnthropicProvider(HttpProvider):
                 if include_thinking and (
                     replay_all_thinking or message_index == last_assistant_index
                 ):
-                    blocks.extend(self._replay_thinking_blocks(get_attr, message, model))
+                    blocks.extend(
+                        self._replay_thinking_blocks(get_attr, message, model)
+                    )
 
                 if content:
                     blocks.append({"type": "text", "text": str(content)})
@@ -566,7 +687,9 @@ class AnthropicProvider(HttpProvider):
                         if not tool_name:
                             continue
                         if tool_use_id not in resolved_ids:
-                            log.debug("Dropping tool_use %s not in resolved_ids", tool_use_id)
+                            log.debug(
+                                "Dropping tool_use %s not in resolved_ids", tool_use_id
+                            )
                             continue
                         # tool_use.input must be an object; Nova carries arguments as a JSON string
                         tool_input: dict = {}
@@ -574,18 +697,26 @@ class AnthropicProvider(HttpProvider):
                             try:
                                 parsed = json.loads(tool_arguments)
                             except json.JSONDecodeError:
-                                log.warning("Tool %s arguments is not valid JSON, using {}", tool_name)
+                                log.warning(
+                                    "Tool %s arguments is not valid JSON, using {}",
+                                    tool_name,
+                                )
                             else:
                                 if isinstance(parsed, dict):
                                     tool_input = parsed
                                 else:
-                                    log.warning("Tool %s arguments is not an object, using {}", tool_name)
-                        blocks.append({
-                            "type": "tool_use",
-                            "id": str(tool_use_id),
-                            "name": str(tool_name),
-                            "input": tool_input,
-                        })
+                                    log.warning(
+                                        "Tool %s arguments is not an object, using {}",
+                                        tool_name,
+                                    )
+                        blocks.append(
+                            {
+                                "type": "tool_use",
+                                "id": str(tool_use_id),
+                                "name": str(tool_name),
+                                "input": tool_input,
+                            }
+                        )
                 if blocks:
                     converted_messages.append({"role": "assistant", "content": blocks})
                 continue
@@ -595,21 +726,37 @@ class AnthropicProvider(HttpProvider):
                 if not tool_use_id:
                     continue
                 if tool_use_id not in declared_ids:
-                    log.debug("Dropping tool_result %s not in declared_ids", tool_use_id)
+                    log.debug(
+                        "Dropping tool_result %s not in declared_ids", tool_use_id
+                    )
                     continue
                 tool_result_content: list[dict] = []
                 text = content if content else "(no output)"
                 tool_result_content.append({"type": "text", "text": str(text)})
                 if images:
                     for image_base64 in images:
-                        tool_result_content.append({
-                            "type": "image",
-                            "source": {"type": "base64", "media_type": "image/png", "data": image_base64},
-                        })
-                converted_messages.append({
-                    "role": "user",
-                    "content": [{"type": "tool_result", "tool_use_id": tool_use_id, "content": tool_result_content}],
-                })
+                        tool_result_content.append(
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": image_base64,
+                                },
+                            }
+                        )
+                converted_messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tool_use_id,
+                                "content": tool_result_content,
+                            }
+                        ],
+                    }
+                )
                 continue
 
             # Unknown role: treat as user text
@@ -628,14 +775,17 @@ class AnthropicProvider(HttpProvider):
             leading_message = converted_messages[0]
             content_blocks = leading_message.get("content", [])
             content_blocks = [
-                block for block in content_blocks
+                block
+                for block in content_blocks
                 if block.get("type") not in ("thinking", "redacted_thinking")
             ]
             leading_message["content"] = content_blocks
             if not content_blocks:
                 converted_messages.pop(0)
                 continue
-            has_tool_use = any(block.get("type") == "tool_use" for block in content_blocks)
+            has_tool_use = any(
+                block.get("type") == "tool_use" for block in content_blocks
+            )
             if has_tool_use:
                 for block in content_blocks:
                     if block.get("type") == "tool_use" and block.get("id"):
@@ -649,11 +799,17 @@ class AnthropicProvider(HttpProvider):
             for converted in converted_messages:
                 content_blocks = converted.get("content", [])
                 filtered_blocks = [
-                    block for block in content_blocks
-                    if not (block.get("type") == "tool_result" and str(block.get("tool_use_id", "")) in dropped_tool_use_ids)
+                    block
+                    for block in content_blocks
+                    if not (
+                        block.get("type") == "tool_result"
+                        and str(block.get("tool_use_id", "")) in dropped_tool_use_ids
+                    )
                 ]
                 converted["content"] = filtered_blocks
-            converted_messages = [converted for converted in converted_messages if converted["content"]]
+            converted_messages = [
+                converted for converted in converted_messages if converted["content"]
+            ]
 
         # Merge consecutive same-role messages by concatenating block lists.
         # Mandatory: Anthropic requires strictly alternating user/assistant roles.
@@ -662,18 +818,30 @@ class AnthropicProvider(HttpProvider):
             if merged_messages and merged_messages[-1]["role"] == converted["role"]:
                 merged_messages[-1]["content"].extend(converted["content"])
             else:
-                merged_messages.append({"role": converted["role"], "content": list(converted["content"])})
+                merged_messages.append(
+                    {"role": converted["role"], "content": list(converted["content"])}
+                )
 
         # Anthropic requires tool_result blocks at the beginning of a user message
         for converted in merged_messages:
             if converted["role"] == "user":
-                leading_tool_results = [block for block in converted["content"] if block.get("type") == "tool_result"]
-                trailing_blocks = [block for block in converted["content"] if block.get("type") != "tool_result"]
+                leading_tool_results = [
+                    block
+                    for block in converted["content"]
+                    if block.get("type") == "tool_result"
+                ]
+                trailing_blocks = [
+                    block
+                    for block in converted["content"]
+                    if block.get("type") != "tool_result"
+                ]
                 if leading_tool_results and trailing_blocks:
                     converted["content"] = leading_tool_results + trailing_blocks
 
         # Drop messages whose block list ended up empty
-        merged_messages = [converted for converted in merged_messages if converted["content"]]
+        merged_messages = [
+            converted for converted in merged_messages if converted["content"]
+        ]
 
         # On the final message, if it is assistant, right-strip trailing whitespace
         if merged_messages and merged_messages[-1]["role"] == "assistant":
@@ -692,7 +860,13 @@ class AnthropicProvider(HttpProvider):
         system_text = "\n\n".join(system_parts)
         return merged_messages, system_text
 
-    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] | None = None) -> dict:
+    def _build_body(
+        self,
+        messages: list,
+        model: str,
+        stream: bool = False,
+        tools: list[dict] | None = None,
+    ) -> dict:
         options = dict(self.request_options)
         tools_enabled = options.pop("tools", True)
         max_tokens_from_options = options.pop("max_tokens", None)
@@ -707,7 +881,9 @@ class AnthropicProvider(HttpProvider):
         # Thinking flag determines whether to replay persisted thinking blocks
         include_thinking = "thinking" in options
 
-        formatted_messages, system_text = self._format_messages(messages, include_thinking=include_thinking, model=model)
+        formatted_messages, system_text = self._format_messages(
+            messages, include_thinking=include_thinking, model=model
+        )
 
         # Resolve max_output_tokens: request_options -> override -> default table
         if max_tokens_from_options is not None:
@@ -729,7 +905,9 @@ class AnthropicProvider(HttpProvider):
         # System: message-derived wins when non-empty
         if system_text:
             body["system"] = system_text
-        elif (isinstance(system_from_options, str) and system_from_options) or (isinstance(system_from_options, list) and system_from_options):
+        elif (isinstance(system_from_options, str) and system_from_options) or (
+            isinstance(system_from_options, list) and system_from_options
+        ):
             body["system"] = system_from_options
 
         if stream:
@@ -798,7 +976,9 @@ class AnthropicProvider(HttpProvider):
         headers = self._build_headers(session_id=session_id)
         if stream:
             headers["Accept"] = "text/event-stream"
-        body = self._build_body(messages=messages, model=model, stream=stream, tools=tools)
+        body = self._build_body(
+            messages=messages, model=model, stream=stream, tools=tools
+        )
         return self._endpoint(), headers, body
 
     def _parse_response(self, data: dict) -> Done:
@@ -814,16 +994,30 @@ class AnthropicProvider(HttpProvider):
                 if block_type == "text":
                     text_parts.append(block.get("text", ""))
                 elif block_type == "thinking":
-                    thinking_blocks.append({"type": "thinking", "thinking": block.get("thinking", ""), "signature": block.get("signature", "")})
+                    thinking_blocks.append(
+                        {
+                            "type": "thinking",
+                            "thinking": block.get("thinking", ""),
+                            "signature": block.get("signature", ""),
+                        }
+                    )
                 elif block_type == "redacted_thinking":
-                    thinking_blocks.append({"type": "redacted_thinking", "data": block.get("data", "")})
+                    thinking_blocks.append(
+                        {"type": "redacted_thinking", "data": block.get("data", "")}
+                    )
                 elif block_type == "tool_use":
                     tool_use_id = block.get("id", "")
                     tool_name = block.get("name", "")
                     tool_input = block.get("input", {})
                     if not isinstance(tool_input, dict):
                         tool_input = {}
-                    tool_calls.append(ToolCall(id=str(tool_use_id), name=str(tool_name), arguments=json.dumps(tool_input, ensure_ascii=False)))
+                    tool_calls.append(
+                        ToolCall(
+                            id=str(tool_use_id),
+                            name=str(tool_name),
+                            arguments=json.dumps(tool_input, ensure_ascii=False),
+                        )
+                    )
 
         provider_meta = _thinking_provider_meta(thinking_blocks)
 
@@ -835,9 +1029,15 @@ class AnthropicProvider(HttpProvider):
             # tokens_input is sum of the three input fields (true prompt cost)
             prompt_tokens = int(usage.get("input_tokens", 0) or 0)
             raw_cache_read = usage.get("cache_read_input_tokens")
-            cache_read_tokens = int(raw_cache_read) if raw_cache_read is not None else None
-            cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
-            tokens_input = prompt_tokens + (cache_read_tokens or 0) + cache_creation_tokens
+            cache_read_tokens = (
+                int(raw_cache_read) if raw_cache_read is not None else None
+            )
+            cache_creation_tokens = int(
+                usage.get("cache_creation_input_tokens", 0) or 0
+            )
+            tokens_input = (
+                prompt_tokens + (cache_read_tokens or 0) + cache_creation_tokens
+            )
             if usage.get("output_tokens") is not None:
                 tokens_output = int(usage["output_tokens"])
 
@@ -854,6 +1054,8 @@ class AnthropicProvider(HttpProvider):
         return _AnthropicStreamParser()
 
     async def count_tokens(self, text: str, model: str | None = None) -> int:
-        chinese_chars = sum(1 for character in text if '\u4e00' <= character <= '\u9fff')
+        chinese_chars = sum(
+            1 for character in text if "\u4e00" <= character <= "\u9fff"
+        )
         other_chars = len(text) - chinese_chars
         return int(chinese_chars / 2 + other_chars / 4)

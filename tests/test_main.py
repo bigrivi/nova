@@ -48,7 +48,8 @@ def test_main_defaults_to_serve(monkeypatch, tmp_path):
         lambda **kw: called.update(kw) or sentinel,
     )
     monkeypatch.setattr(
-        nova_main.asyncio, "run", lambda coro: ran.setdefault("coro", coro))
+        nova_main.asyncio, "run", lambda coro: ran.setdefault("coro", coro)
+    )
     monkeypatch.setattr(sys, "argv", ["nova"])
 
     nova_main.main()
@@ -86,7 +87,8 @@ def test_main_web_serves_built_frontend(monkeypatch, tmp_path):
         lambda **kw: called.update(kw) or sentinel,
     )
     monkeypatch.setattr(
-        nova_main.asyncio, "run", lambda coro: ran.setdefault("coro", coro))
+        nova_main.asyncio, "run", lambda coro: ran.setdefault("coro", coro)
+    )
     monkeypatch.setattr(sys, "argv", ["nova", "web", "--no-open"])
 
     nova_main.main()
@@ -155,10 +157,5 @@ def test_main_desktop_dispatch(monkeypatch, tmp_path):
 def test_desktop_window_url_maps_wildcard_host_to_loopback():
     assert desktop_main._window_url("0.0.0.0", 8765) == "http://127.0.0.1:8765"
     assert desktop_main._window_url("::", 8765) == "http://127.0.0.1:8765"
-    assert (
-        desktop_main._window_url("127.0.0.1", 8765) == "http://127.0.0.1:8765"
-    )
-    assert (
-        desktop_main._window_url("192.168.1.28", 8765)
-        == "http://192.168.1.28:8765"
-    )
+    assert desktop_main._window_url("127.0.0.1", 8765) == "http://127.0.0.1:8765"
+    assert desktop_main._window_url("192.168.1.28", 8765) == "http://192.168.1.28:8765"

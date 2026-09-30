@@ -66,11 +66,14 @@ class TestResolveEffortLevels:
         Anthropic has thinking budgets, not efforts; ollama and faker have
         neither, so a level on those is a category error, not a preference.
         """
-        assert resolve_effort_levels(
-            "claude-opus-5",
-            provider_type,
-            {"reasoning_effort_levels": ["low", "high"]},
-        ) == []
+        assert (
+            resolve_effort_levels(
+                "claude-opus-5",
+                provider_type,
+                {"reasoning_effort_levels": ["low", "high"]},
+            )
+            == []
+        )
 
     def test_bare_string_is_accepted_as_one_level(self):
         assert resolve_effort_levels(
@@ -86,9 +89,12 @@ class TestResolveEffortLevels:
 
     @pytest.mark.parametrize("declared", [[], (), None, 42, {"low": 1}])
     def test_a_declaration_of_nothing_means_no_control(self, declared):
-        assert resolve_effort_levels(
-            "gpt-5.5", "openai-compatible", {"reasoning_effort_levels": declared}
-        ) == []
+        assert (
+            resolve_effort_levels(
+                "gpt-5.5", "openai-compatible", {"reasoning_effort_levels": declared}
+            )
+            == []
+        )
 
 
 class TestFitEffort:
@@ -307,13 +313,11 @@ class TestConfiguredDefaultReachesTheWire:
             self._build("openai-compatible", "xhigh", "medium")["reasoning_effort"]
             == "xhigh"
         )
+        assert self._build("openai-response", "xhigh", "medium")["reasoning"] == {
+            "effort": "xhigh"
+        }
         assert (
-            self._build("openai-response", "xhigh", "medium")["reasoning"]
-            == {"effort": "xhigh"}
-        )
-        assert (
-            self._build("openai-compatible", "low", "high")["reasoning_effort"]
-            == "low"
+            self._build("openai-compatible", "low", "high")["reasoning_effort"] == "low"
         )
 
     def test_the_configured_default_applies_when_nothing_was_picked(self):
@@ -326,8 +330,13 @@ class TestConfiguredDefaultReachesTheWire:
         }
 
     def test_the_per_turn_pick_applies_when_config_says_nothing(self):
-        assert self._build("openai-compatible", "xhigh", None)["reasoning_effort"] == "xhigh"
-        assert self._build("openai-response", "xhigh", None)["reasoning"] == {"effort": "xhigh"}
+        assert (
+            self._build("openai-compatible", "xhigh", None)["reasoning_effort"]
+            == "xhigh"
+        )
+        assert self._build("openai-response", "xhigh", None)["reasoning"] == {
+            "effort": "xhigh"
+        }
 
     def test_neither_leaves_the_body_without_a_level(self):
         assert "reasoning_effort" not in self._build("openai-compatible", None, None)
@@ -360,7 +369,9 @@ class TestConfiguredDefaultReachesTheWire:
             "the pick from the composer must reach the wire, not the config default"
         )
 
-    def test_end_to_end_falls_back_to_the_configured_default(self, monkeypatch, tmp_path):
+    def test_end_to_end_falls_back_to_the_configured_default(
+        self, monkeypatch, tmp_path
+    ):
         """Same config, nothing picked: the default is what runs."""
         from nova.app.runtime import build_llm
 

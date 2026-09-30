@@ -158,14 +158,19 @@ async def _download_skill_archive(*, slug: str, base_url: str) -> bytes:
     headers = {"User-Agent": "nova"}
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.get(download_url, params={"slug": slug}, headers=headers)
+            response = await client.get(
+                download_url, params={"slug": slug}, headers=headers
+            )
             response.raise_for_status()
             return response.content
     except httpx.HTTPStatusError as exc:
-        status_code = exc.response.status_code if exc.response is not None else "unknown"
+        status_code = (
+            exc.response.status_code if exc.response is not None else "unknown"
+        )
         if exc.response is not None and exc.response.status_code == 429:
             retry_after_seconds = _parse_retry_after(
-                exc.response.headers.get("Retry-After"))
+                exc.response.headers.get("Retry-After")
+            )
             raise SkillInstallError(
                 f"ClawHub rate limited the download request for '{slug}' with HTTP 429.",
                 code="rate_limited",
@@ -225,7 +230,8 @@ async def install_skill_from_clawhub(
         shutil.copytree(source_root, staged_root)
 
         document = load_skill_document(
-            staged_root / SKILL_FILE_NAME, skills_dir=temp_dir)
+            staged_root / SKILL_FILE_NAME, skills_dir=temp_dir
+        )
         replaced = False
         if target_dir.exists():
             if not target_dir.is_dir():

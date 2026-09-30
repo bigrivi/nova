@@ -51,6 +51,7 @@ async def db():
     await database.connect()
 
     from nova.db import database as db_module
+
     old_db = db_module._db
     db_module._db = database
 
@@ -207,6 +208,7 @@ async def test_breaking_after_stopped_by_user_does_not_raise_generator_exit(db):
         if event == AgentEvent.DONE and _done_reason(data) == "stopped":
             break
 
+
 @pytest.mark.asyncio
 async def test_tool_failure_returns_to_model_context_and_allows_next_iteration(db):
     provider = ScriptedProvider(
@@ -227,7 +229,9 @@ async def test_tool_failure_returns_to_model_context_and_allows_next_iteration(d
     )
 
     async def failing_tool() -> ToolResult:
-        return ToolResult(success=False, content="Search error: Illegal header value b'Bearer '.")
+        return ToolResult(
+            success=False, content="Search error: Illegal header value b'Bearer '."
+        )
 
     agent.register_tool(failing_tool, name="failing_tool")
 
@@ -252,7 +256,9 @@ async def test_tool_failure_returns_to_model_context_and_allows_next_iteration(d
 
 
 @pytest.mark.asyncio
-async def test_done_content_is_preserved_when_provider_returns_error_without_text_delta(db):
+async def test_done_content_is_preserved_when_provider_returns_error_without_text_delta(
+    db,
+):
     provider = ScriptedProvider(
         [
             [

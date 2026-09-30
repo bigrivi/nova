@@ -29,7 +29,12 @@ async def glob(pattern: str, path: str | None = None) -> ToolResult:
         matches = list(search_path.glob(pattern))
         matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         paths = [str(p) for p in matches]
-        return ToolResult(success=True, content=f"Found {len(paths)} files:\n" + "\n".join(paths) if paths else "No files found")
+        return ToolResult(
+            success=True,
+            content=f"Found {len(paths)} files:\n" + "\n".join(paths)
+            if paths
+            else "No files found",
+        )
     except Exception as e:
         return ToolResult(success=False, content=f"Error: {e}")
 

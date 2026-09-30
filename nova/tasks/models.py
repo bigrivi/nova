@@ -149,4 +149,3 @@ class TaskExecutor(Protocol):
     ) -> TaskExecutionResult:
         """Run the task to completion, reporting output through *context*."""
         ...
-

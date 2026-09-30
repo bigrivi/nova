@@ -230,7 +230,9 @@ async def test_search_memory_use_ai_can_select_non_top_keyword_candidate(db):
 
     async def fake_ai_selector(query, candidates, limit):
         assert query == "how should I do code review"
-        return [candidate for candidate in candidates if candidate.key == "review_priority"][:limit]
+        return [
+            candidate for candidate in candidates if candidate.key == "review_priority"
+        ][:limit]
 
     results = await service.search(
         query="how should I do code review",
@@ -303,9 +305,17 @@ def test_memory_ai_selection_messages_prefer_direct_match_rules():
     )
 
     assert len(messages) == 2
-    assert "Prefer memories whose summary or key directly matches" in messages[0].content
-    assert "Use content only as supporting evidence or a tie-breaker" in messages[0].content
-    assert "Prefer specific topical memories over generic writing-style" in messages[0].content
+    assert (
+        "Prefer memories whose summary or key directly matches" in messages[0].content
+    )
+    assert (
+        "Use content only as supporting evidence or a tie-breaker"
+        in messages[0].content
+    )
+    assert (
+        "Prefer specific topical memories over generic writing-style"
+        in messages[0].content
+    )
     assert "key=review_priority" in messages[1].content
     assert "summary: Review should focus on bugs first." in messages[1].content
 
@@ -430,9 +440,7 @@ async def test_agent_injects_current_session_id_into_save_memory(db):
             session_id = data
 
     assert session_id
-    saved = await MemoryService().list_memories(
-        scope="session", session_id=session_id
-    )
+    saved = await MemoryService().list_memories(scope="session", session_id=session_id)
     assert len(saved) == 1
     assert saved[0].key == "active_task"
     assert saved[0].scope == "session"

@@ -39,7 +39,9 @@ async def test_drives_turn_when_parent_free() -> None:
     registry = RequestRegistry()
     service = _FakeChatService(registry, {"agent_key": "coach"})
 
-    started = await start_headless_turn(service, "p1", "[subagent:helper status=done]\nresult", {"from_subagent": True})
+    started = await start_headless_turn(
+        service, "p1", "[subagent:helper status=done]\nresult", {"from_subagent": True}
+    )
 
     assert started is True
     assert len(service.seen_requests) == 1

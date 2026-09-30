@@ -138,7 +138,9 @@ def test_1_3_sparse_output_long_connection_not_parked(monkeypatch, tmp_path) -> 
     app.state.chat_service._agent_event_stream = slow_stream
     client = TestClient(app)
 
-    response = client.post("/api/chat/stream", json={"message": "hi", "session_id": "sess-IDLE"})
+    response = client.post(
+        "/api/chat/stream", json={"message": "hi", "session_id": "sess-IDLE"}
+    )
 
     assert response.status_code == 200
     assert b"data: [DONE]" in response.content
@@ -165,10 +167,15 @@ async def test_active_endpoint_lists_inflight_only(monkeypatch, tmp_path) -> Non
     await registry.register("s-done", object())
     assert await registry.mark_done("s-done") is True
 
-    assert await registry.active_stream_states() == {"s-run": "active", "s-park": "detached"}
+    assert await registry.active_stream_states() == {
+        "s-run": "active",
+        "s-park": "detached",
+    }
 
     client = TestClient(app)
     response = client.get("/api/chat/stream/active")
     assert response.status_code == 200
-    streams = {item["session_id"]: item["status"] for item in response.json()["streams"]}
+    streams = {
+        item["session_id"]: item["status"] for item in response.json()["streams"]
+    }
     assert streams == {"s-run": "active", "s-park": "detached"}

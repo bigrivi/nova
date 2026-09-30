@@ -13,7 +13,9 @@ from nova.tools.registry import ToolRegistry
 log = logging.getLogger(__name__)
 
 
-async def init_mcp_servers(server_configs: dict[str, dict], registry: ToolRegistry) -> list[McpClient]:
+async def init_mcp_servers(
+    server_configs: dict[str, dict], registry: ToolRegistry
+) -> list[McpClient]:
     clients: list[McpClient] = []
     for server_name, config in server_configs.items():
         try:
@@ -29,7 +31,9 @@ async def init_mcp_servers(server_configs: dict[str, dict], registry: ToolRegist
                 tool_func = _build_wrapper(name, client)
                 if name in registry.tools:
                     log.warning("MCP tool '%s' overrides existing tool", name)
-                registry.register_direct(name=name, description=desc, func=tool_func, params_schema=schema)
+                registry.register_direct(
+                    name=name, description=desc, func=tool_func, params_schema=schema
+                )
             clients.append(client)
             log.info("Registered %d MCP tool(s) from '%s'", len(tools), server_name)
         except Exception:
@@ -92,7 +96,8 @@ class MCPManager:
                 return
 
             async def _init_one(
-                server_name: str, config: dict,
+                server_name: str,
+                config: dict,
             ) -> McpClient | None:
                 try:
                     transport = create_transport(config)
@@ -119,14 +124,11 @@ class MCPManager:
                         _PER_SERVER_TIMEOUT,
                     )
                 except Exception:
-                    log.exception(
-                        "Failed to connect MCP server '%s'", server_name
-                    )
+                    log.exception("Failed to connect MCP server '%s'", server_name)
                 return None
 
             tasks = [
-                _init_one(name, config)
-                for name, config in settings.mcp_servers.items()
+                _init_one(name, config) for name, config in settings.mcp_servers.items()
             ]
             results = await asyncio.gather(*tasks)
             self._mcp_clients = [c for c in results if c is not None]

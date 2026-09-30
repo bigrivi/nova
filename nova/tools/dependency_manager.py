@@ -43,7 +43,8 @@ def _is_importable(pkg_name: str) -> bool:
 async def ensure_deps(packages: list[str]) -> None:
     """Install missing packages to ~/.nova/site-packages/ with session-level dedup."""
     missing = [
-        pkg for pkg in packages
+        pkg
+        for pkg in packages
         if pkg not in _installed_in_session and not _is_importable(pkg)
     ]
     if not missing:
@@ -82,7 +83,9 @@ async def _install(packages: list[str]) -> None:
     result = await asyncio.to_thread(
         lambda: subprocess.run(
             cmd,
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
             **spawn_kwargs,
         )
     )
@@ -91,4 +94,3 @@ async def _install(packages: list[str]) -> None:
         raise RuntimeError(
             f"pip install failed for {packages}:\n{result.stderr.strip()}"
         )
-

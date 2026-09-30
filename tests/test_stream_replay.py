@@ -84,7 +84,7 @@ def test_buffer_append_assigns_monotonic_sequence_and_preserves_payload():
     assert sequence == 2
     assert buffer.last_sequence("s") == 2
     assert buffer.last_sequence("other") == 0
-    payload = json.loads(framed.split(b"\n", 1)[1][len(b"data: "):])
+    payload = json.loads(framed.split(b"\n", 1)[1][len(b"data: ") :])
     assert payload == {"type": "text-delta", "id": "t", "delta": "a"}
 
 
@@ -135,12 +135,19 @@ def test_buffer_maxlen_500_enforced():
 async def test_chat_stream_ai_sdk_assigns_monotonic_sequence(monkeypatch, tmp_path):
     app = _make_app(monkeypatch, tmp_path, "home-sdk")
     chat_service = app.state.chat_service
-    chunks = [chunk async for chunk in chat_service.chat_stream_ai_sdk(type("R", (), {"session_id": "sess-R"})())]
+    chunks = [
+        chunk
+        async for chunk in chat_service.chat_stream_ai_sdk(
+            type("R", (), {"session_id": "sess-R"})()
+        )
+    ]
     assert len(chunks) >= 5
     sequences = [int(c.split(b"\n", 1)[0].split(b":")[1]) for c in chunks]
     assert sequences == list(range(1, len(chunks) + 1))
 
-    replayed, last_sequence, resync = chat_service._stream_buffer.replay_since("sess-R", 0)
+    replayed, last_sequence, resync = chat_service._stream_buffer.replay_since(
+        "sess-R", 0
+    )
     assert replayed == chunks and last_sequence == len(chunks) and resync is False
     assert chat_service._stream_buffer.is_done("sess-R") is True
 
@@ -149,7 +156,9 @@ def test_endpoint_replays_resume_cursor_identical_then_status(monkeypatch, tmp_p
     app = _make_app(monkeypatch, tmp_path, "home-ep")
     client = TestClient(app)
 
-    fresh = client.post("/api/chat/stream", json={"message": "hi", "session_id": "sess-E"})
+    fresh = client.post(
+        "/api/chat/stream", json={"message": "hi", "session_id": "sess-E"}
+    )
     assert fresh.status_code == 200
     full = _parse(fresh.content)
     assert [sequence for sequence, _ in full] == list(range(1, len(full) + 1))
@@ -172,7 +181,9 @@ def test_endpoint_unknown_cursor_replays_full_with_resync(monkeypatch, tmp_path)
     app = _make_app(monkeypatch, tmp_path, "home-resync")
     client = TestClient(app)
 
-    fresh = client.post("/api/chat/stream", json={"message": "hi", "session_id": "sess-U"})
+    fresh = client.post(
+        "/api/chat/stream", json={"message": "hi", "session_id": "sess-U"}
+    )
     full = _parse(fresh.content)
 
     resumed = client.post(
@@ -187,7 +198,11 @@ def test_endpoint_unknown_cursor_replays_full_with_resync(monkeypatch, tmp_path)
 @pytest.mark.asyncio
 async def test_detach_continues_to_completion_gapless(monkeypatch, tmp_path):
     script = (
-        [(AgentEvent.SESSION, "sess-D1"), (AgentEvent.TURN_START, None), (AgentEvent.TEXT_START, None)]
+        [
+            (AgentEvent.SESSION, "sess-D1"),
+            (AgentEvent.TURN_START, None),
+            (AgentEvent.TEXT_START, None),
+        ]
         + [(AgentEvent.TEXT_DELTA, f"p{i}") for i in range(6)]
         + [(AgentEvent.TEXT_END, None), (AgentEvent.TURN_END, None)]
         + [(AgentEvent.DONE, {"reason": "", "content": "x"})]
@@ -206,7 +221,12 @@ async def test_detach_continues_to_completion_gapless(monkeypatch, tmp_path):
     await chat_service._request_registry.register("sess-D1", object())
 
     async def _collect():
-        return [chunk async for chunk in chat_service.chat_stream_ai_sdk(SimpleNamespace(session_id="sess-D1"))]
+        return [
+            chunk
+            async for chunk in chat_service.chat_stream_ai_sdk(
+                SimpleNamespace(session_id="sess-D1")
+            )
+        ]
 
     task = asyncio.create_task(_collect())
     deadline = asyncio.get_running_loop().time() + 15
@@ -215,12 +235,16 @@ async def test_detach_continues_to_completion_gapless(monkeypatch, tmp_path):
         await asyncio.sleep(0.02)
     assert await chat_service._request_registry.detach("sess-D1") is True
     assert await chat_service._request_registry.slot_state("sess-D1") == "detached"
-    assert await chat_service._request_registry.try_register("sess-D1", object()) is False
+    assert (
+        await chat_service._request_registry.try_register("sess-D1", object()) is False
+    )
     chunks = await asyncio.wait_for(task, timeout=30)
     assert chunks, "detached producer must run to completion"
     assert b"[DONE]" in chunks[-1]
     assert await chat_service._request_registry.slot_state("sess-D1") == "done"
-    replayed, last_sequence, resync = chat_service._stream_buffer.replay_since("sess-D1", 0)
+    replayed, last_sequence, resync = chat_service._stream_buffer.replay_since(
+        "sess-D1", 0
+    )
     assert resync is False and last_sequence == len(chunks)
     assert replayed == chunks
 
@@ -229,7 +253,9 @@ def test_endpoint_resume_after_detach_replays_gapless(monkeypatch, tmp_path):
     app = _make_app(monkeypatch, tmp_path, "home-resume-detach")
     client = TestClient(app)
 
-    fresh = client.post("/api/chat/stream", json={"message": "hi", "session_id": "sess-E2"})
+    fresh = client.post(
+        "/api/chat/stream", json={"message": "hi", "session_id": "sess-E2"}
+    )
     assert fresh.status_code == 200
     full = _parse(fresh.content)
     assert full[-1][1] == b"data: [DONE]"
@@ -262,7 +288,9 @@ def test_endpoint_idle_stream_emits_ping_heartbeat(monkeypatch, tmp_path):
     app.state.chat_service._agent_event_stream = slow_start
     client = TestClient(app)
 
-    response = client.post("/api/chat/stream", json={"message": "hi", "session_id": "sess-H"})
+    response = client.post(
+        "/api/chat/stream", json={"message": "hi", "session_id": "sess-H"}
+    )
     assert response.status_code == 200
     assert b":ping" in response.content
     assert b"data: [DONE]" in response.content
@@ -296,7 +324,9 @@ def test_live_stream_holds_until_turn_end_despite_stall(monkeypatch, tmp_path):
     app.state.chat_service._agent_event_stream = stalling_stream
     client = TestClient(app)
 
-    response = client.post("/api/chat/stream", json={"message": "hi", "session_id": "sess-STALL"})
+    response = client.post(
+        "/api/chat/stream", json={"message": "hi", "session_id": "sess-STALL"}
+    )
 
     assert response.status_code == 200
     body = response.content
@@ -415,7 +445,11 @@ async def test_registry_reaper_evicts_buffer_with_slot():
 
 def test_endpoint_resume_tails_live_stream(monkeypatch, tmp_path):
     script = (
-        [(AgentEvent.SESSION, "sess-L"), (AgentEvent.TURN_START, None), (AgentEvent.TEXT_START, None)]
+        [
+            (AgentEvent.SESSION, "sess-L"),
+            (AgentEvent.TURN_START, None),
+            (AgentEvent.TEXT_START, None),
+        ]
         + [(AgentEvent.TEXT_DELTA, f"p{i}") for i in range(6)]
         + [(AgentEvent.TEXT_END, None), (AgentEvent.TURN_END, None)]
         + [(AgentEvent.DONE, {"reason": "", "content": "x"})]
@@ -437,7 +471,9 @@ def test_endpoint_resume_tails_live_stream(monkeypatch, tmp_path):
     def run_fresh():
         try:
             client = TestClient(app)
-            response = client.post("/api/chat/stream", json={"message": "hi", "session_id": "sess-L"})
+            response = client.post(
+                "/api/chat/stream", json={"message": "hi", "session_id": "sess-L"}
+            )
             results["fresh"] = (response.status_code, response.content)
         except Exception as error:
             results["fresh"] = error
@@ -456,9 +492,14 @@ def test_endpoint_resume_tails_live_stream(monkeypatch, tmp_path):
     fresh_thread = threading.Thread(target=run_fresh, daemon=True)
     fresh_thread.start()
     deadline = time.monotonic() + 15
-    while chat_service._stream_buffer.last_sequence("sess-L") < 2 and time.monotonic() < deadline:
+    while (
+        chat_service._stream_buffer.last_sequence("sess-L") < 2
+        and time.monotonic() < deadline
+    ):
         time.sleep(0.02)
-    assert chat_service._stream_buffer.last_sequence("sess-L") >= 2, "producer never emitted"
+    assert chat_service._stream_buffer.last_sequence("sess-L") >= 2, (
+        "producer never emitted"
+    )
     resume_thread = threading.Thread(target=run_resume, daemon=True)
     resume_thread.start()
     fresh_thread.join(timeout=60)

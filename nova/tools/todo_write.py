@@ -1,4 +1,3 @@
-
 from nova.llm import ToolResult
 from nova.tools.registry import tool
 
@@ -41,11 +40,19 @@ _MAX_IN_PROGRESS = 1
                 "items": {
                     "type": "object",
                     "properties": {
-                        "content": {"type": "string", "description": "Brief description of the task"},
+                        "content": {
+                            "type": "string",
+                            "description": "Brief description of the task",
+                        },
                         "status": {
                             "type": "string",
                             "description": "Current status: pending, in_progress, completed, cancelled",
-                            "enum": ["pending", "in_progress", "completed", "cancelled"],
+                            "enum": [
+                                "pending",
+                                "in_progress",
+                                "completed",
+                                "cancelled",
+                            ],
                         },
                         "priority": {
                             "type": "string",

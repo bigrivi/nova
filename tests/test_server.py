@@ -41,7 +41,13 @@ class EventStub:
 
 
 class FakeChatService:
-    def __init__(self, chat_payload=None, stream_events=None, stream_chunks=None, interrupt_result=False):
+    def __init__(
+        self,
+        chat_payload=None,
+        stream_events=None,
+        stream_chunks=None,
+        interrupt_result=False,
+    ):
         self._chat_payload = chat_payload
         self._stream_events = stream_events or []
         self._stream_chunks = stream_chunks or []
@@ -139,9 +145,7 @@ def test_session_pinned_endpoint_and_summary(monkeypatch):
             return True
 
     app.state.chat_service = PinnedService()
-    response = client.put(
-        "/api/sessions/session-1/pinned", json={"pinned": True}
-    )
+    response = client.put("/api/sessions/session-1/pinned", json={"pinned": True})
 
     assert response.status_code == 200
     assert response.json() == {
@@ -274,7 +278,10 @@ def test_add_provider_endpoint_updates_config_and_models(monkeypatch, tmp_path):
 
     config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
     assert config_payload["providers"]["openrouter"]["type"] == "openai-compatible"
-    assert config_payload["providers"]["openrouter"]["options"]["base_url"] == "https://openrouter.ai/api/v1"
+    assert (
+        config_payload["providers"]["openrouter"]["options"]["base_url"]
+        == "https://openrouter.ai/api/v1"
+    )
     assert app.state.settings.providers["openrouter"].name == "OpenRouter"
 
 
@@ -439,11 +446,19 @@ def test_add_model_endpoint_updates_config_and_models(monkeypatch, tmp_path):
     )
 
     config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
-    assert config_payload["providers"]["openai"]["models"]["gpt-5.4-mini"]["name"] == "gpt-5.4-mini"
-    assert app.state.settings.providers["openai"].models["gpt-5.4-mini"]["name"] == "gpt-5.4-mini"
+    assert (
+        config_payload["providers"]["openai"]["models"]["gpt-5.4-mini"]["name"]
+        == "gpt-5.4-mini"
+    )
+    assert (
+        app.state.settings.providers["openai"].models["gpt-5.4-mini"]["name"]
+        == "gpt-5.4-mini"
+    )
 
 
-def test_add_model_endpoint_rejects_duplicate_name_within_provider(monkeypatch, tmp_path):
+def test_add_model_endpoint_rejects_duplicate_name_within_provider(
+    monkeypatch, tmp_path
+):
     home = tmp_path / "nova-server-add-model-duplicate"
     home.mkdir(parents=True, exist_ok=True)
     (home / "config.json").write_text(
@@ -486,7 +501,10 @@ def test_add_model_endpoint_rejects_duplicate_name_within_provider(monkeypatch, 
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Model 'gpt-5.4' already exists under provider 'openai'."
+    assert (
+        response.json()["detail"]
+        == "Model 'gpt-5.4' already exists under provider 'openai'."
+    )
 
 
 @pytest.mark.asyncio
@@ -550,7 +568,9 @@ async def test_projects_endpoints_crud_and_resolve(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_session_project_link_keeps_custom_workspace_and_detaches(monkeypatch, tmp_path):
+async def test_session_project_link_keeps_custom_workspace_and_detaches(
+    monkeypatch, tmp_path
+):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     settings = Settings.load_config()
     db = await init_db(DatabaseConfig(path=str(settings.database_path)))
@@ -564,7 +584,9 @@ async def test_session_project_link_keeps_custom_workspace_and_detaches(monkeypa
     second_dir = tmp_path / "other"
     second = client.post("/api/projects", json={"path": str(second_dir)}).json()
 
-    linked = client.put("/api/sessions/sess-1/project", json={"project_id": first["id"]})
+    linked = client.put(
+        "/api/sessions/sess-1/project", json={"project_id": first["id"]}
+    )
     assert linked.status_code == 200
     assert linked.json()["status"] == "project_updated"
 
@@ -577,7 +599,9 @@ async def test_session_project_link_keeps_custom_workspace_and_detaches(monkeypa
     # A hand-picked workspace is never overwritten by a later move.
     custom_dir = tmp_path / "custom"
     await db.set_session_workspace("sess-1", str(custom_dir))
-    moved = client.put("/api/sessions/sess-1/project", json={"project_id": second["id"]})
+    moved = client.put(
+        "/api/sessions/sess-1/project", json={"project_id": second["id"]}
+    )
     assert moved.status_code == 200
     stored = await db.get_session("sess-1")
     assert stored["project_id"] == second["id"]
@@ -585,7 +609,9 @@ async def test_session_project_link_keeps_custom_workspace_and_detaches(monkeypa
 
     unknown = client.put("/api/sessions/sess-1/project", json={"project_id": "nope"})
     assert unknown.status_code == 404
-    missing_session = client.put("/api/sessions/nope/project", json={"project_id": second["id"]})
+    missing_session = client.put(
+        "/api/sessions/nope/project", json={"project_id": second["id"]}
+    )
     assert missing_session.status_code == 404
 
     deleted = client.delete(f"/api/projects/{second['id']}")
@@ -607,7 +633,9 @@ async def test_sessions_endpoint_filters_by_workspace_dir(monkeypatch, tmp_path)
     db = await init_db(DatabaseConfig(path=str(settings.database_path)))
     await db.save_session(Session(id="sess-in", workspace_dir=str(project_dir)))
     await db.save_session(Session(id="sess-in-legacy", workspace_dir=f"{project_dir}/"))
-    await db.save_session(Session(id="sess-other", workspace_dir=str(tmp_path / "other")))
+    await db.save_session(
+        Session(id="sess-other", workspace_dir=str(tmp_path / "other"))
+    )
     await db.save_session(Session(id="sess-none"))
 
     app = create_app(settings=settings)
@@ -913,8 +941,13 @@ def test_chat_stream_endpoint_returns_sse_events(monkeypatch):
     )
     client = TestClient(app)
 
-    with client.stream("POST", "/api/chat/stream", json={"message": "hello"}) as response:
-        body = "".join(chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk for chunk in response.iter_text())
+    with client.stream(
+        "POST", "/api/chat/stream", json={"message": "hello"}
+    ) as response:
+        body = "".join(
+            chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk
+            for chunk in response.iter_text()
+        )
 
     assert response.status_code == 200
     assert '"type":"data-nova-session"' in body
@@ -924,7 +957,7 @@ def test_chat_stream_endpoint_returns_sse_events(monkeypatch):
     assert '"sessionId":"sess-stream"' in body
     assert '"delta":"part-1"' in body
     assert '"delta":"part-2"' in body
-    assert 'data: [DONE]' in body
+    assert "data: [DONE]" in body
 
 
 def test_chat_stream_endpoint_includes_tool_event_fields(monkeypatch):
@@ -941,8 +974,13 @@ def test_chat_stream_endpoint_includes_tool_event_fields(monkeypatch):
     )
     client = TestClient(app)
 
-    with client.stream("POST", "/api/chat/stream", json={"message": "hello"}) as response:
-        body = "".join(chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk for chunk in response.iter_text())
+    with client.stream(
+        "POST", "/api/chat/stream", json={"message": "hello"}
+    ) as response:
+        body = "".join(
+            chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk
+            for chunk in response.iter_text()
+        )
 
     assert response.status_code == 200
     assert '"type":"tool-input-start"' in body
@@ -1175,7 +1213,10 @@ def test_update_provider_name_and_base_url_persists(monkeypatch, tmp_path):
     assert response.status_code == 200
     config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
     assert config_payload["providers"]["openai"]["name"] == "OpenAI Renamed"
-    assert config_payload["providers"]["openai"]["options"]["base_url"] == "https://example.com/v1"
+    assert (
+        config_payload["providers"]["openai"]["options"]["base_url"]
+        == "https://example.com/v1"
+    )
     assert config_payload["providers"]["openai"]["options"]["api_key"] == "sk-test"
     assert app.state.settings.providers["openai"].name == "OpenAI Renamed"
     providers_response = client.get("/api/providers")
@@ -1237,9 +1278,7 @@ def test_delete_provider_removes_it_and_its_models(monkeypatch, tmp_path):
     app = create_app(settings=Settings.load_config())
     client = TestClient(app)
 
-    response = client.post(
-        "/api/config/providers/delete", json={"key": "openai"}
-    )
+    response = client.post("/api/config/providers/delete", json={"key": "openai"})
 
     assert response.status_code == 200
     assert all(item["provider"] != "openai" for item in response.json()["items"])
@@ -1269,7 +1308,10 @@ def test_update_model_label_and_tools(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
-    assert config_payload["providers"]["openai"]["models"]["gpt-5.4"]["name"] == "GPT Fresh"
+    assert (
+        config_payload["providers"]["openai"]["models"]["gpt-5.4"]["name"]
+        == "GPT Fresh"
+    )
     assert config_payload["providers"]["openai"]["models"]["gpt-5.4"]["tools"] is False
 
 
@@ -1298,7 +1340,9 @@ def test_update_model_with_slash_in_key(monkeypatch, tmp_path):
     assert response.status_code == 200
     config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
     assert (
-        config_payload["providers"]["openai"]["models"]["mlx-community/Qwen3.5-27B"]["name"]
+        config_payload["providers"]["openai"]["models"]["mlx-community/Qwen3.5-27B"][
+            "name"
+        ]
         == "Qwen Fresh"
     )
 
@@ -1307,7 +1351,10 @@ def test_delete_model_removes_it(monkeypatch, tmp_path):
     home = tmp_path / "nova-server-delete-model"
     home.mkdir(parents=True, exist_ok=True)
     providers = _openai_providers()
-    providers["openai"]["models"]["gpt-5.4-mini"] = {"name": "gpt-5.4-mini", "tools": True}
+    providers["openai"]["models"]["gpt-5.4-mini"] = {
+        "name": "gpt-5.4-mini",
+        "tools": True,
+    }
     _write_provider_config(home, providers)
     monkeypatch.setenv("NOVA_HOME", str(home))
     app = create_app(settings=Settings.load_config())
@@ -1332,28 +1379,44 @@ def test_update_delete_missing_provider_and_model_return_404(monkeypatch, tmp_pa
     app = create_app(settings=Settings.load_config())
     client = TestClient(app)
 
-    assert client.post(
-        "/api/config/providers/update", json={"key": "missing", "name": "X"}
-    ).status_code == 404
-    assert client.post(
-        "/api/config/providers/delete", json={"key": "missing"}
-    ).status_code == 404
-    assert client.post(
-        "/api/config/models/update",
-        json={"provider": "missing", "model": "gpt-5.4", "label": "X"},
-    ).status_code == 404
-    assert client.post(
-        "/api/config/models/delete",
-        json={"provider": "missing", "model": "gpt-5.4"},
-    ).status_code == 404
-    assert client.post(
-        "/api/config/models/update",
-        json={"provider": "openai", "model": "missing", "label": "X"},
-    ).status_code == 404
-    assert client.post(
-        "/api/config/models/delete",
-        json={"provider": "openai", "model": "missing"},
-    ).status_code == 404
+    assert (
+        client.post(
+            "/api/config/providers/update", json={"key": "missing", "name": "X"}
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post("/api/config/providers/delete", json={"key": "missing"}).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            "/api/config/models/update",
+            json={"provider": "missing", "model": "gpt-5.4", "label": "X"},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            "/api/config/models/delete",
+            json={"provider": "missing", "model": "gpt-5.4"},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            "/api/config/models/update",
+            json={"provider": "openai", "model": "missing", "label": "X"},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            "/api/config/models/delete",
+            json={"provider": "openai", "model": "missing"},
+        ).status_code
+        == 404
+    )
 
 
 def _auth_client(app, client=("192.168.1.50", 40000)):
@@ -1464,9 +1527,7 @@ def test_configured_credentials_requires_both_values(monkeypatch, tmp_path):
 
     assert get_configured_credentials(only_user) is None
 
-    both = _settings_with_server(
-        monkeypatch, tmp_path, "nova-auth-both", _AUTH_SERVER
-    )
+    both = _settings_with_server(monkeypatch, tmp_path, "nova-auth-both", _AUTH_SERVER)
 
     assert get_configured_credentials(both) == ("nova", "s3cret")
 
@@ -1481,9 +1542,7 @@ def test_configured_credentials_ignores_env_vars(monkeypatch, tmp_path):
     assert get_configured_credentials(settings) is None
 
 
-def test_auth_loopback_exempt_requires_loopback_forwarded_for(
-    monkeypatch, tmp_path
-):
+def test_auth_loopback_exempt_requires_loopback_forwarded_for(monkeypatch, tmp_path):
     app = create_app(
         settings=_settings_with_server(
             monkeypatch, tmp_path, "nova-auth-xff", _AUTH_SERVER
@@ -1492,9 +1551,7 @@ def test_auth_loopback_exempt_requires_loopback_forwarded_for(
     client = _auth_client(app, client=("127.0.0.1", 40000))
 
     assert (
-        client.get(
-            "/api/models", headers={"X-Forwarded-For": "127.0.0.1"}
-        ).status_code
+        client.get("/api/models", headers={"X-Forwarded-For": "127.0.0.1"}).status_code
         == 200
     )
     assert (
@@ -1655,7 +1712,10 @@ async def test_agents_subagent_mode_and_multi_parent(monkeypatch, tmp_path):
     client = TestClient(app)
 
     # A second primary to test multi-parent membership.
-    client.post("/api/agents", json={"key": "coach", "name": "Coach", "model": "m1", "provider": "p1"})
+    client.post(
+        "/api/agents",
+        json={"key": "coach", "name": "Coach", "model": "m1", "provider": "p1"},
+    )
 
     created = client.post(
         "/api/agents",
@@ -1674,7 +1734,9 @@ async def test_agents_subagent_mode_and_multi_parent(monkeypatch, tmp_path):
     assert created.json()["parents"] == ["main"]
 
     # A sub-agent can belong to multiple parents.
-    updated = client.put("/api/agents/helper/parents", json={"parents": ["main", "coach"]})
+    updated = client.put(
+        "/api/agents/helper/parents", json={"parents": ["main", "coach"]}
+    )
     assert updated.status_code == 200
 
     fetched = client.get("/api/agents/helper")
@@ -1755,9 +1817,7 @@ async def test_agents_update_validates_and_404s(monkeypatch, tmp_path):
     app = create_app(settings=settings)
     client = TestClient(app)
 
-    assert (
-        client.patch("/api/agents/nope", json={"model": "m"}).status_code == 400
-    )
+    assert client.patch("/api/agents/nope", json={"model": "m"}).status_code == 400
     assert (
         client.patch(
             "/api/agents/nope", json={"model": "m", "provider": "p"}
@@ -1772,9 +1832,7 @@ async def test_agents_update_validates_and_404s(monkeypatch, tmp_path):
         ).status_code
         == 200
     )
-    updated = client.patch(
-        "/api/agents/upd", json={"model": "new", "provider": "p2"}
-    )
+    updated = client.patch("/api/agents/upd", json={"model": "new", "provider": "p2"})
     assert updated.status_code == 200
     assert updated.json()["model"] == "new"
     assert updated.json()["provider"] == "p2"

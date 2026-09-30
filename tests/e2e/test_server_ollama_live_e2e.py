@@ -47,7 +47,10 @@ def _require_live_ollama() -> tuple[str, str]:
         pytest.skip("Set RUN_LIVE_OLLAMA_SERVER_E2E=1 to run live server e2e tests.")
 
     base_url = os.getenv("NOVA_OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL).rstrip("/")
-    model = os.getenv("NOVA_OLLAMA_E2E_MODEL", DEFAULT_OLLAMA_MODEL).strip() or DEFAULT_OLLAMA_MODEL
+    model = (
+        os.getenv("NOVA_OLLAMA_E2E_MODEL", DEFAULT_OLLAMA_MODEL).strip()
+        or DEFAULT_OLLAMA_MODEL
+    )
     tags_url = f"{base_url}/api/tags"
 
     try:
@@ -56,12 +59,20 @@ def _require_live_ollama() -> tuple[str, str]:
         pytest.skip(f"Unable to reach local Ollama at {tags_url}: {exc}")
 
     if response.status_code != 200:
-        pytest.skip(f"Ollama tags endpoint returned HTTP {response.status_code}: {tags_url}")
+        pytest.skip(
+            f"Ollama tags endpoint returned HTTP {response.status_code}: {tags_url}"
+        )
 
     payload = response.json()
-    model_names = {item.get("name", "") for item in payload.get("models", []) if isinstance(item, dict)}
+    model_names = {
+        item.get("name", "")
+        for item in payload.get("models", [])
+        if isinstance(item, dict)
+    }
     if model not in model_names:
-        pytest.skip(f"Configured live model '{model}' is not available in local Ollama.")
+        pytest.skip(
+            f"Configured live model '{model}' is not available in local Ollama."
+        )
 
     return base_url, model
 
@@ -181,13 +192,17 @@ def test_live_server_mode_chat_supports_multi_turn_conversation(live_server_conf
     assert messages_response.status_code == 200
     messages = messages_response.json()["items"]
     assert len(messages) >= 4
-    assert messages[0]["content"] == "My name is MultiTurnNova. Reply with exactly STORED."
+    assert (
+        messages[0]["content"] == "My name is MultiTurnNova. Reply with exactly STORED."
+    )
     assert messages[1]["role"] == "assistant"
     assert messages[2]["content"] == "What is my name? Reply using only the name."
     assert "multiturnnova" in messages[-1]["content"].lower()
 
 
-def test_live_server_mode_chat_stream_emits_sse_events_with_local_ollama(live_server_config):
+def test_live_server_mode_chat_stream_emits_sse_events_with_local_ollama(
+    live_server_config,
+):
     with httpx.stream(
         "POST",
         f"{live_server_config['server_url']}/api/chat/stream",
@@ -202,10 +217,14 @@ def test_live_server_mode_chat_stream_emits_sse_events_with_local_ollama(live_se
     assert "event: response.started" in body
     assert "event: message.delta" in body
     assert "event: response.completed" in body
-    assert '"content":"4"' in body or '"content":"4\\n"' in body or '"delta":"4"' in body
+    assert (
+        '"content":"4"' in body or '"content":"4\\n"' in body or '"delta":"4"' in body
+    )
 
 
-def test_live_server_mode_chat_stream_supports_multi_turn_conversation(live_server_config):
+def test_live_server_mode_chat_stream_supports_multi_turn_conversation(
+    live_server_config,
+):
     with httpx.stream(
         "POST",
         f"{live_server_config['server_url']}/api/chat/stream",
@@ -215,8 +234,12 @@ def test_live_server_mode_chat_stream_supports_multi_turn_conversation(live_serv
         assert first_response.status_code == 200
         first_events = _collect_sse_events(first_response)
 
-    session_event = next(event for event in first_events if event["event"] == "session.started")
-    first_done_event = next(event for event in first_events if event["event"] == "response.completed")
+    session_event = next(
+        event for event in first_events if event["event"] == "session.started"
+    )
+    first_done_event = next(
+        event for event in first_events if event["event"] == "response.completed"
+    )
     session_id = session_event["data"]["session_id"]
     assert session_id
     assert "STORED" in first_done_event["data"]["content"]
@@ -233,7 +256,11 @@ def test_live_server_mode_chat_stream_supports_multi_turn_conversation(live_serv
         assert second_response.status_code == 200
         second_events = _collect_sse_events(second_response)
 
-    second_session_event = next(event for event in second_events if event["event"] == "session.started")
-    second_done_event = next(event for event in second_events if event["event"] == "response.completed")
+    second_session_event = next(
+        event for event in second_events if event["event"] == "session.started"
+    )
+    second_done_event = next(
+        event for event in second_events if event["event"] == "response.completed"
+    )
     assert second_session_event["data"]["session_id"] == session_id
     assert "streamturnnova" in second_done_event["data"]["content"].lower()

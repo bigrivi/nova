@@ -20,7 +20,9 @@ from nova.server.schemas import ChatRequest
 log = logging.getLogger(__name__)
 
 
-async def start_headless_turn(chat_service, parent_id: str, text: str, metadata: dict) -> bool:
+async def start_headless_turn(
+    chat_service, parent_id: str, text: str, metadata: dict
+) -> bool:
     """Start a parent turn seeded with *text*. Return False if the parent is busy."""
     registry = chat_service.request_registry
     data_source = await chat_service._get_data_source()

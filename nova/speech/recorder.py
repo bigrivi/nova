@@ -117,9 +117,7 @@ def _call_on_main_thread(func: Any, *args: Any) -> Any:
     box: dict[str, Any] = {}
     runner = runner_cls.alloc().init()
     runner._call = (func, args, box)
-    runner.performSelectorOnMainThread_withObject_waitUntilDone_(
-        "run:", None, True
-    )
+    runner.performSelectorOnMainThread_withObject_waitUntilDone_("run:", None, True)
     if "error" in box:
         raise box["error"]
     return box.get("value")
@@ -140,12 +138,11 @@ def _make_mac_recorder(path: str) -> Any:
         AVFoundation.AVFormatIDKey: AVFoundation.kAudioFormatMPEG4AAC,
         AVFoundation.AVSampleRateKey: float(_SAMPLE_RATE),
         AVFoundation.AVNumberOfChannelsKey: _CHANNELS,
-        AVFoundation.AVEncoderAudioQualityKey: (
-            AVFoundation.AVAudioQualityHigh
-        ),
+        AVFoundation.AVEncoderAudioQualityKey: (AVFoundation.AVAudioQualityHigh),
     }
-    recorder, error = AVFoundation.AVAudioRecorder.alloc(
-    ).initWithURL_settings_error_(url, settings, None)
+    recorder, error = AVFoundation.AVAudioRecorder.alloc().initWithURL_settings_error_(
+        url, settings, None
+    )
     if recorder is None:
         raise RuntimeError(f"Could not create audio recorder: {error}")
     return recorder
@@ -167,7 +164,8 @@ class MacRecorder:
         if self._recorder is not None:
             raise RuntimeError("Recording already in progress")
         tmp = tempfile.NamedTemporaryFile(
-            suffix=".m4a", prefix="nova-voice-", delete=False)
+            suffix=".m4a", prefix="nova-voice-", delete=False
+        )
         tmp.close()
         recorder = _call_on_main_thread(_make_mac_recorder, tmp.name)
 
@@ -176,8 +174,7 @@ class MacRecorder:
                 raise RuntimeError("Audio recorder refused to prepare")
             if not recorder.record():
                 raise RuntimeError(
-                    "Audio recorder refused to start "
-                    "(microphone permission?)"
+                    "Audio recorder refused to start (microphone permission?)"
                 )
             return True
 
@@ -203,7 +200,6 @@ class MacRecorder:
         _call_on_main_thread(_finish)
         logger.info("Voice recording stopped: %s", path)
         return Path(path)
-
 
 
 class _WaveFormatEx(Structure):
@@ -285,7 +281,8 @@ def _winmm() -> Any:
 
 
 def _typed_dll(
-    name: str, signatures: dict[str, tuple[list[Any], Any]],
+    name: str,
+    signatures: dict[str, tuple[list[Any], Any]],
     use_last_error: bool = False,
 ) -> Any:
     """Load a Windows DLL and pin each listed function's signature."""
@@ -353,15 +350,21 @@ class WindowsRecorder:
         dll, kernel = _winmm()
         handle, event, buffers = self._open_device(dll, kernel)
         tmp = tempfile.NamedTemporaryFile(
-            suffix=".wav", prefix="nova-voice-", delete=False)
+            suffix=".wav", prefix="nova-voice-", delete=False
+        )
         tmp.close()
         self._dll, self._kernel, self._handle, self._event = (
-            dll, kernel, handle, event)
+            dll,
+            kernel,
+            handle,
+            event,
+        )
         self._buffers, self._frames = buffers, []
         self._path = tmp.name
         self._closing.clear()
         self._pump = threading.Thread(
-            target=self._pump_buffers, name="nova-voice-drain", daemon=True)
+            target=self._pump_buffers, name="nova-voice-drain", daemon=True
+        )
         self._pump.start()
         logger.info("Voice recording started: %s", tmp.name)
 
@@ -380,8 +383,12 @@ class WindowsRecorder:
         event = kernel.CreateEventW(None, 0, 0, None)
         handle = c_void_p()
         rc = dll.waveInOpen(
-            ctypes.byref(handle), _WAVE_MAPPER & 0xFFFFFFFF,
-            ctypes.byref(fmt), event or 0, 0, _CALLBACK_EVENT,
+            ctypes.byref(handle),
+            _WAVE_MAPPER & 0xFFFFFFFF,
+            ctypes.byref(fmt),
+            event or 0,
+            0,
+            _CALLBACK_EVENT,
         )
         if rc != _NO_ERROR or not handle:
             kernel.CloseHandle(event or 0)
@@ -393,17 +400,15 @@ class WindowsRecorder:
         try:
             for _ in range(_BUFFER_COUNT):
                 buffer = _WinmmBuffer()
-                rc = dll.waveInPrepareHeader(
-                    handle, ctypes.byref(buffer.header), 0)
+                rc = dll.waveInPrepareHeader(handle, ctypes.byref(buffer.header), 0)
                 if rc != _NO_ERROR:
                     raise RuntimeError(
-                        f"Could not prepare an input buffer (winmm {rc})")
+                        f"Could not prepare an input buffer (winmm {rc})"
+                    )
                 buffers.append(buffer)
-                rc = dll.waveInAddBuffer(
-                    handle, ctypes.byref(buffer.header), 0)
+                rc = dll.waveInAddBuffer(handle, ctypes.byref(buffer.header), 0)
                 if rc != _NO_ERROR:
-                    raise RuntimeError(
-                        f"Could not queue an input buffer (winmm {rc})")
+                    raise RuntimeError(f"Could not queue an input buffer (winmm {rc})")
             rc = dll.waveInStart(handle, 0)
             if rc != _NO_ERROR:
                 raise RuntimeError(f"Could not start recording (winmm {rc})")
@@ -427,10 +432,12 @@ class WindowsRecorder:
                         continue
                     self._frames.append(buffer.take())
                     rc = self._dll.waveInAddBuffer(
-                        self._handle, ctypes.byref(buffer.header), 0)
+                        self._handle, ctypes.byref(buffer.header), 0
+                    )
                     if rc != _NO_ERROR:
                         logger.warning(
-                            "Re-queueing an input buffer failed (winmm %s)", rc)
+                            "Re-queueing an input buffer failed (winmm %s)", rc
+                        )
 
     @staticmethod
     def _close_device(
@@ -445,7 +452,8 @@ class WindowsRecorder:
             dll.waveInReset(handle)
             for buffer in buffers:
                 dll.waveInUnprepareHeader(
-                    handle, ctypes.byref(buffer.header), _WHDR_PREPARED)
+                    handle, ctypes.byref(buffer.header), _WHDR_PREPARED
+                )
         finally:
             dll.waveInClose(handle)
             kernel.CloseHandle(event)
@@ -457,7 +465,11 @@ class WindowsRecorder:
         """
         with self._lock:
             dll, kernel, handle, event = (
-                self._dll, self._kernel, self._handle, self._event)
+                self._dll,
+                self._kernel,
+                self._handle,
+                self._event,
+            )
             buffers, frames, path = self._buffers, self._frames, self._path
             self._dll = self._kernel = self._handle = self._event = None
             self._buffers, self._frames, self._path = [], [], None

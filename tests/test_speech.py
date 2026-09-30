@@ -50,9 +50,7 @@ class _FakeTransport(httpx.AsyncBaseTransport):
         self.requests: list[httpx.Request] = []
         self.bodies: list[bytes] = []
 
-    async def handle_async_request(
-        self, request: httpx.Request
-    ) -> httpx.Response:
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         await request.aread()
         self.requests.append(request)
         self.bodies.append(request.content)
@@ -102,11 +100,10 @@ def test_status_disabled_without_key(monkeypatch, tmp_path) -> None:
     assert service.status()["enabled"] is False
 
 
-def test_status_enabled_with_key_reports_groq_model(
-    monkeypatch, tmp_path
-) -> None:
+def test_status_enabled_with_key_reports_groq_model(monkeypatch, tmp_path) -> None:
     service = SpeechService(
-        _settings_with_key(monkeypatch, tmp_path), recorder=_FakeRecorder())
+        _settings_with_key(monkeypatch, tmp_path), recorder=_FakeRecorder()
+    )
     status = service.status()
     assert status["enabled"] is True
     assert status["provider"] == "groq"
@@ -114,14 +111,13 @@ def test_status_enabled_with_key_reports_groq_model(
     assert status["recording_since_ms"] is None
 
 
-def test_status_reports_take_start_for_a_reloaded_window(
-    monkeypatch, tmp_path
-) -> None:
+def test_status_reports_take_start_for_a_reloaded_window(monkeypatch, tmp_path) -> None:
     """A view that mounts mid-take must be able to resume the clock."""
     import time
 
     service = SpeechService(
-        _settings_with_key(monkeypatch, tmp_path), recorder=_FakeRecorder())
+        _settings_with_key(monkeypatch, tmp_path), recorder=_FakeRecorder()
+    )
     before = int(time.time() * 1000)
     service.start()
     since = service.status()["recording_since_ms"]
@@ -131,9 +127,7 @@ def test_status_reports_take_start_for_a_reloaded_window(
     assert service.status()["recording_since_ms"] is None
 
 
-def test_transcribe_posts_openai_compatible_multipart(
-    monkeypatch, tmp_path
-) -> None:
+def test_transcribe_posts_openai_compatible_multipart(monkeypatch, tmp_path) -> None:
     import nova.speech.client as client_module
 
     settings = _settings_with_key(monkeypatch, tmp_path)
@@ -141,8 +135,7 @@ def test_transcribe_posts_openai_compatible_multipart(
     audio = tmp_path / "take.m4a"
     audio.write_bytes(b"fake-audio-bytes")
 
-    transport = _FakeTransport(
-        httpx.Response(200, json={"text": "你好"}))
+    transport = _FakeTransport(httpx.Response(200, json={"text": "你好"}))
     real_client = httpx.AsyncClient
 
     class _SpyClient(real_client):  # type: ignore[misc]
@@ -175,7 +168,8 @@ def test_transcribe_rejects_bad_key_as_transcription_error(
     audio.write_bytes(b"x")
 
     transport = _FakeTransport(
-        httpx.Response(401, json={"error": {"message": "bad key"}}))
+        httpx.Response(401, json={"error": {"message": "bad key"}})
+    )
     real_client = httpx.AsyncClient
 
     class _SpyClient(real_client):  # type: ignore[misc]
@@ -206,20 +200,18 @@ def test_routes_registered(monkeypatch, tmp_path) -> None:
     assert client.post("/api/speech/cancel").status_code == 409
 
 
-def test_cancel_discards_audio_without_transcribing(
-    monkeypatch, tmp_path
-) -> None:
+def test_cancel_discards_audio_without_transcribing(monkeypatch, tmp_path) -> None:
     """Cancelling a take must not call the provider or leave the file behind."""
     import nova.speech.service as service_module
 
     def _boom(*_args, **_kwargs):
         raise AssertionError("cancel must not transcribe")
 
-    monkeypatch.setattr(service_module.transcribe_client, "transcribe_file",
-                        _boom)
+    monkeypatch.setattr(service_module.transcribe_client, "transcribe_file", _boom)
     recorder = _FakeRecorder()
     service = SpeechService(
-        _settings_with_key(monkeypatch, tmp_path), recorder=recorder)
+        _settings_with_key(monkeypatch, tmp_path), recorder=recorder
+    )
     recorder.start()
 
     assert service.cancel() == {"recording": False}
@@ -233,8 +225,7 @@ def test_service_reports_reason_when_no_recorder(monkeypatch, tmp_path) -> None:
     import nova.speech.service as service_module
 
     def _boom() -> Recorder:
-        raise RuntimeError("native recording is supported on macOS and "
-                           "Windows only")
+        raise RuntimeError("native recording is supported on macOS and Windows only")
 
     monkeypatch.setattr(service_module, "create_recorder", _boom)
     service = SpeechService(_settings_with_key(monkeypatch, tmp_path))
@@ -276,7 +267,8 @@ def test_winmm_buffer_takes_recorded_samples_and_resets() -> None:
     assert int(buffer.header.dwBufferLength) == recorder_module._BUFFER_BYTES
 
     buffer.data.raw = b"\x01\x02\x03\x04" + b"\x00" * (
-        recorder_module._BUFFER_BYTES - 4)
+        recorder_module._BUFFER_BYTES - 4
+    )
     buffer.header.dwBytesRecorded = 4
     buffer.header.dwFlags = recorder_module._HEADER_DONE
 
@@ -294,7 +286,10 @@ def test_windows_recorder_writes_wav_from_frames(tmp_path) -> None:
 
     with wave.open(str(out), "rb") as wav:
         assert (wav.getnchannels(), wav.getsampwidth(), wav.getframerate()) == (
-            1, 2, recorder_module._SAMPLE_RATE)
+            1,
+            2,
+            recorder_module._SAMPLE_RATE,
+        )
         assert wav.readframes(wav.getnframes()) == samples
 
 
@@ -397,7 +392,12 @@ def test_windows_recorder_harvests_buffer_on_event(monkeypatch) -> None:
     path = recorder.stop()
     assert recorder.recording is False
     assert fake.calls[-6:-1] == [
-        "reset", "unprepare", "unprepare", "unprepare", "unprepare"]
+        "reset",
+        "unprepare",
+        "unprepare",
+        "unprepare",
+        "unprepare",
+    ]
     assert fake.calls[-1] == "close"
     assert kernel.closed == [0xBEEF]
     with wave.open(str(path), "rb") as wav:
@@ -432,16 +432,15 @@ def test_windows_recorder_reports_open_failure(monkeypatch) -> None:
 
 def test_create_recorder_rejects_unsupported_platform(monkeypatch) -> None:
     monkeypatch.setattr(sys, "platform", "linux")
-    with pytest.raises(RuntimeError,
-                       match="macOS and Windows only") as excinfo:
+    with pytest.raises(RuntimeError, match="macOS and Windows only") as excinfo:
         recorder_module.create_recorder()
     assert str(excinfo.value) == recorder_module.UNSUPPORTED_PLATFORM
 
 
 def test_create_recorder_picks_platform_implementation(monkeypatch) -> None:
     monkeypatch.setattr(sys, "platform", "win32")
-    assert isinstance(recorder_module.create_recorder(),
-                      recorder_module.WindowsRecorder)
+    assert isinstance(
+        recorder_module.create_recorder(), recorder_module.WindowsRecorder
+    )
     monkeypatch.setattr(sys, "platform", "darwin")
-    assert isinstance(recorder_module.create_recorder(),
-                      recorder_module.MacRecorder)
+    assert isinstance(recorder_module.create_recorder(), recorder_module.MacRecorder)

@@ -55,7 +55,9 @@ class ApprovalManager:
         return req_id
 
     async def wait_with_heartbeat(
-        self, req_id: str, heartbeat_interval: int = 15,
+        self,
+        req_id: str,
+        heartbeat_interval: int = 15,
     ) -> AsyncGenerator[bool | None, None]:
         """Async generator: yields None for each heartbeat tick,
         then yields True if approved, False if rejected."""

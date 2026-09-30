@@ -24,13 +24,42 @@ class _HTMLTextExtractor(HTMLParser):
     def handle_starttag(self, tag: str, attrs) -> None:
         if tag in {"script", "style", "noscript", "iframe", "object", "embed"}:
             self._skip_depth += 1
-        elif tag in {"p", "div", "section", "article", "li", "br", "h1", "h2", "h3", "h4", "h5", "h6"}:
+        elif tag in {
+            "p",
+            "div",
+            "section",
+            "article",
+            "li",
+            "br",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+        }:
             self._parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style", "noscript", "iframe", "object", "embed"} and self._skip_depth > 0:
+        if (
+            tag in {"script", "style", "noscript", "iframe", "object", "embed"}
+            and self._skip_depth > 0
+        ):
             self._skip_depth -= 1
-        elif tag in {"p", "div", "section", "article", "li", "br", "h1", "h2", "h3", "h4", "h5", "h6"}:
+        elif tag in {
+            "p",
+            "div",
+            "section",
+            "article",
+            "li",
+            "br",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+        }:
             self._parts.append("\n")
 
     def handle_data(self, data: str) -> None:
@@ -72,7 +101,10 @@ class _HTMLMarkdownExtractor(HTMLParser):
             self._href_stack.append(href)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style", "noscript", "iframe", "object", "embed"} and self._skip_depth > 0:
+        if (
+            tag in {"script", "style", "noscript", "iframe", "object", "embed"}
+            and self._skip_depth > 0
+        ):
             self._skip_depth -= 1
             return
         if self._skip_depth:
@@ -175,9 +207,13 @@ def _render_content(content: str, content_type: str, format: str) -> str:
         "required": ["url"],
     },
 )
-async def web_fetch(url: str, format: str = "markdown", timeout: float = DEFAULT_TIMEOUT) -> ToolResult:
+async def web_fetch(
+    url: str, format: str = "markdown", timeout: float = DEFAULT_TIMEOUT
+) -> ToolResult:
     if not url.startswith(("http://", "https://")):
-        return ToolResult(success=False, content="URL must start with http:// or https://")
+        return ToolResult(
+            success=False, content="URL must start with http:// or https://"
+        )
 
     timeout = min(max(float(timeout), 1.0), MAX_TIMEOUT)
     headers = {
@@ -189,7 +225,10 @@ async def web_fetch(url: str, format: str = "markdown", timeout: float = DEFAULT
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             response = await client.get(url, headers=headers)
-            if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
+            if (
+                response.status_code == 403
+                and response.headers.get("cf-mitigated") == "challenge"
+            ):
                 response = await client.get(
                     url,
                     headers={**headers, "User-Agent": "nova"},
@@ -198,11 +237,15 @@ async def web_fetch(url: str, format: str = "markdown", timeout: float = DEFAULT
 
             content_length = response.headers.get("content-length")
             if content_length and int(content_length) > MAX_RESPONSE_SIZE:
-                return ToolResult(success=False, content="Response too large (exceeds 5MB limit)")
+                return ToolResult(
+                    success=False, content="Response too large (exceeds 5MB limit)"
+                )
 
             raw = response.content
             if len(raw) > MAX_RESPONSE_SIZE:
-                return ToolResult(success=False, content="Response too large (exceeds 5MB limit)")
+                return ToolResult(
+                    success=False, content="Response too large (exceeds 5MB limit)"
+                )
 
             content_type = response.headers.get("content-type", "")
             content = response.text

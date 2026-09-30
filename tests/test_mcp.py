@@ -112,11 +112,14 @@ class TestStdioTransport:
         transport = StdioTransport(command=sys.executable, args=[mcp_server_path])
         try:
             await transport.connect()
-            result = await transport.send_request("initialize", {
-                "protocolVersion": "2025-03-26",
-                "capabilities": {},
-                "clientInfo": {"name": "test", "version": "0.1.0"},
-            })
+            result = await transport.send_request(
+                "initialize",
+                {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "0.1.0"},
+                },
+            )
             assert result["serverInfo"]["name"] == "test-server"
             assert result["protocolVersion"] == "2025-03-26"
         finally:
@@ -138,7 +141,9 @@ class TestStdioTransport:
         try:
             await transport.connect()
             with pytest.raises(McpError) as excinfo:
-                await transport.send_request("tools/call", {"name": "nonexistent", "arguments": {}})
+                await transport.send_request(
+                    "tools/call", {"name": "nonexistent", "arguments": {}}
+                )
             assert excinfo.value.code == -32601
         finally:
             await transport.close()
@@ -180,7 +185,9 @@ class TestStdioTransportMultipleRequests:
             r2 = await transport.send_request("tools/list")
             assert len(r2["tools"]) == 1
             assert r2["tools"][0]["name"] == "echo"
-            r3 = await transport.send_request("tools/call", {"name": "echo", "arguments": {"text": "hi"}})
+            r3 = await transport.send_request(
+                "tools/call", {"name": "echo", "arguments": {"text": "hi"}}
+            )
             assert r3["content"][0]["text"] == "hi"
         finally:
             await transport.close()
@@ -195,9 +202,13 @@ class TestHttpTransport:
     @pytest.mark.asyncio
     async def test_send_request(self):
         mock_resp = AsyncMock()
-        mock_resp.__aenter__.return_value.json = AsyncMock(return_value={
-            "jsonrpc": "2.0", "id": "1", "result": {"serverInfo": {"name": "http-test"}},
-        })
+        mock_resp.__aenter__.return_value.json = AsyncMock(
+            return_value={
+                "jsonrpc": "2.0",
+                "id": "1",
+                "result": {"serverInfo": {"name": "http-test"}},
+            }
+        )
         session = MagicMock()
         session.post.return_value = mock_resp
 
@@ -209,10 +220,13 @@ class TestHttpTransport:
     @pytest.mark.asyncio
     async def test_send_request_error(self):
         mock_resp = AsyncMock()
-        mock_resp.__aenter__.return_value.json = AsyncMock(return_value={
-            "jsonrpc": "2.0", "id": "1",
-            "error": {"code": -32601, "message": "Unknown method"},
-        })
+        mock_resp.__aenter__.return_value.json = AsyncMock(
+            return_value={
+                "jsonrpc": "2.0",
+                "id": "1",
+                "error": {"code": -32601, "message": "Unknown method"},
+            }
+        )
         session = MagicMock()
         session.post.return_value = mock_resp
 
@@ -271,12 +285,17 @@ class TestMcpClient:
         result = await client.initialize()
         assert result["serverInfo"]["name"] == "svr"
         assert client.is_initialized
-        mock_transport.send_request.assert_awaited_once_with("initialize", {
-            "protocolVersion": "2025-03-26",
-            "capabilities": {},
-            "clientInfo": {"name": "nova", "version": "0.1.0"},
-        })
-        mock_transport.send_notification.assert_awaited_once_with("notifications/initialized")
+        mock_transport.send_request.assert_awaited_once_with(
+            "initialize",
+            {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "nova", "version": "0.1.0"},
+            },
+        )
+        mock_transport.send_notification.assert_awaited_once_with(
+            "notifications/initialized"
+        )
 
     @pytest.mark.asyncio
     async def test_list_tools(self, mock_transport):
@@ -313,10 +332,12 @@ class TestMcpClient:
     @pytest.mark.asyncio
     async def test_call_tool_resource(self, mock_transport):
         mock_transport.send_request.return_value = {
-            "content": [{
-                "type": "resource",
-                "resource": {"uri": "file:///x.txt", "text": "file content"},
-            }],
+            "content": [
+                {
+                    "type": "resource",
+                    "resource": {"uri": "file:///x.txt", "text": "file content"},
+                }
+            ],
         }
         client = McpClient("test", mock_transport)
         result = await client.call_tool("read", {})
@@ -325,10 +346,16 @@ class TestMcpClient:
     @pytest.mark.asyncio
     async def test_call_tool_image_resource(self, mock_transport):
         mock_transport.send_request.return_value = {
-            "content": [{
-                "type": "resource",
-                "resource": {"uri": "file:///img.png", "mimeType": "image/png", "blob": "base64..."},
-            }],
+            "content": [
+                {
+                    "type": "resource",
+                    "resource": {
+                        "uri": "file:///img.png",
+                        "mimeType": "image/png",
+                        "blob": "base64...",
+                    },
+                }
+            ],
         }
         client = McpClient("test", mock_transport)
         result = await client.call_tool("get_img", {})
@@ -368,10 +395,12 @@ class TestInitMcpServers:
         with patch("nova.mcp.manager.McpClient") as MockClient:
             instance = MockClient.return_value
             instance.initialize = AsyncMock()
-            instance.list_tools = AsyncMock(return_value=[
-                _dummy_tool_schema("tool-a"),
-                _dummy_tool_schema("tool-b"),
-            ])
+            instance.list_tools = AsyncMock(
+                return_value=[
+                    _dummy_tool_schema("tool-a"),
+                    _dummy_tool_schema("tool-b"),
+                ]
+            )
             instance.call_tool = AsyncMock()
 
             clients = await init_mcp_servers(configs, registry)
@@ -423,9 +452,15 @@ class TestInitMcpServers:
         with (
             patch.object(StdioTransport, "connect", AsyncMock()),
             patch.object(McpClient, "initialize", AsyncMock()),
-            patch.object(McpClient, "list_tools", AsyncMock(return_value=[
-                _dummy_tool_schema("duplicate"),
-            ])),
+            patch.object(
+                McpClient,
+                "list_tools",
+                AsyncMock(
+                    return_value=[
+                        _dummy_tool_schema("duplicate"),
+                    ]
+                ),
+            ),
         ):
             await init_mcp_servers(configs, registry)
 

@@ -28,7 +28,9 @@ from nova.tools.workspace_context import get_active_workspace
         "required": ["pattern"],
     },
 )
-async def grep(pattern: str, path: str | None = None, include: str | None = None) -> ToolResult:
+async def grep(
+    pattern: str, path: str | None = None, include: str | None = None
+) -> ToolResult:
     try:
         search_path = Path(path) if path else Path(get_active_workspace() or Path.cwd())
         regex = re.compile(pattern)
@@ -47,7 +49,10 @@ async def grep(pattern: str, path: str | None = None, include: str | None = None
 
         if not matches:
             return ToolResult(success=True, content="No matches found")
-        return ToolResult(success=True, content=f"Found {len(matches)} matches:\n" + "\n".join(matches[:100]))
+        return ToolResult(
+            success=True,
+            content=f"Found {len(matches)} matches:\n" + "\n".join(matches[:100]),
+        )
     except re.error as e:
         return ToolResult(success=False, content=f"Invalid regex: {e}")
     except Exception as e:

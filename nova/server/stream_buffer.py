@@ -106,7 +106,9 @@ class StreamBuffer:
             log.info("[RESUME-DBG] append DONE session=%s seq=%s", session_id, sequence)
         session_frames = self._session_frames.get(session_id)
         if session_frames is None:
-            session_frames = self._session_frames[session_id] = deque(maxlen=self._maxlen)
+            session_frames = self._session_frames[session_id] = deque(
+                maxlen=self._maxlen
+            )
         session_frames.append((sequence, framed))
         self._last_access[session_id] = time.monotonic()
         for subscriber_queue in list(self._subscribers.get(session_id, ())):
@@ -225,7 +227,9 @@ class StreamBuffer:
             effective = floor
             resync = True
         result = [
-            event_frame for sequence, event_frame in session_frames if sequence > effective
+            event_frame
+            for sequence, event_frame in session_frames
+            if sequence > effective
         ]
         result_seqs = [
             sequence for sequence, _ in session_frames if sequence > effective
@@ -257,7 +261,9 @@ class StreamBuffer:
         self._subscribers.setdefault(session_id, []).append(subscriber_queue)
         return subscriber_queue
 
-    def unsubscribe(self, session_id: str, subscriber_queue: asyncio.Queue[bytes]) -> None:
+    def unsubscribe(
+        self, session_id: str, subscriber_queue: asyncio.Queue[bytes]
+    ) -> None:
         subscribers = self._subscribers.get(session_id)
         if not subscribers:
             return

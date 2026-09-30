@@ -67,7 +67,9 @@ async def rename_session(
     return SessionActionResponse(status="renamed", session_id=session_id)
 
 
-@router.put("/api/sessions/{session_id}/workspace", response_model=SessionActionResponse)
+@router.put(
+    "/api/sessions/{session_id}/workspace", response_model=SessionActionResponse
+)
 async def set_session_workspace(
     session_id: str,
     body: UpdateSessionWorkspaceRequest,
@@ -97,7 +99,8 @@ async def set_session_route(
     chat_service: ChatService = Depends(get_chat_service),
 ) -> SessionActionResponse:
     updated = await chat_service.set_session_route(
-        session_id, body.provider, body.model, body.reasoning_effort)
+        session_id, body.provider, body.model, body.reasoning_effort
+    )
     if not updated:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return SessionActionResponse(status="route_updated", session_id=session_id)
@@ -136,7 +139,9 @@ async def delete_session(
     chat_service: ChatService = Depends(get_chat_service),
     delete_memories: bool = False,
 ) -> SessionActionResponse:
-    deleted = await chat_service.delete_session(session_id, delete_memories=delete_memories)
+    deleted = await chat_service.delete_session(
+        session_id, delete_memories=delete_memories
+    )
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return SessionActionResponse(status="deleted", session_id=session_id)

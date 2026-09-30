@@ -57,7 +57,9 @@ async def test_guarded_unregister_keeps_newer_reservation():
     registry = RequestRegistry()
     previous_agent, replacement_agent = StubAgent(), StubAgent()
     await registry.register("s1", previous_agent)
-    await registry.register("s1", replacement_agent)  # newer turn overwrote (no guard on register)
+    await registry.register(
+        "s1", replacement_agent
+    )  # newer turn overwrote (no guard on register)
     assert await registry.unregister_if_current("s1", previous_agent) is False
     assert await registry.get("s1") is replacement_agent
     assert await registry.unregister_if_current("s1", replacement_agent) is True

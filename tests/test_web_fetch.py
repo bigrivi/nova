@@ -42,7 +42,7 @@ class MockAsyncClient:
                 headers={"cf-mitigated": "challenge", "content-type": "text/html"},
             )
         return MockResponse(
-            "<html><body><h1>Title</h1><p>Hello <a href=\"https://example.com\">world</a></p></body></html>",
+            '<html><body><h1>Title</h1><p>Hello <a href="https://example.com">world</a></p></body></html>',
             headers={"content-type": "text/html", "content-length": "95"},
         )
 

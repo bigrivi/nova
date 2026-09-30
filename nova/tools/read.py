@@ -30,7 +30,9 @@ from nova.tools.registry import tool
         "required": ["filePath"],
     },
 )
-async def read(filePath: str, offset: int | None = None, limit: int | None = None) -> ToolResult:
+async def read(
+    filePath: str, offset: int | None = None, limit: int | None = None
+) -> ToolResult:
     p = Path(filePath)
 
     if not p.exists():
@@ -43,7 +45,7 @@ async def read(filePath: str, offset: int | None = None, limit: int | None = Non
         lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
 
         start = (offset - 1) if offset else 0
-        chunk = lines[start:start + limit] if limit else lines[start:]
+        chunk = lines[start : start + limit] if limit else lines[start:]
 
         if not chunk:
             return ToolResult(success=True, content="(empty file)")

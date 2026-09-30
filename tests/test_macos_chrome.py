@@ -133,9 +133,7 @@ class _FakeNative:
     RESIZABLE = 8
 
     def __init__(self) -> None:
-        self.mask = (
-            self.TITLED | self.CLOSABLE | self.MINIATURIZABLE | self.RESIZABLE
-        )
+        self.mask = self.TITLED | self.CLOSABLE | self.MINIATURIZABLE | self.RESIZABLE
         self.title: str | None = "Nova"
         self.visibility: int | None = None
         self.shadow: bool | None = None

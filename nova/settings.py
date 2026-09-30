@@ -79,8 +79,10 @@ class CompactionSettings:
 
     output_reserve_tokens: int = 16000  # room kept for the current reply
     summary_reserve_tokens: int = 8000  # room kept for the summarisation request itself
-    snip_max_chars: int = 2000        # Layer 1: trim tool results longer than this
-    snip_tool_output_token_budget: int = 50000  # Layer 1: recent tool output kept verbatim
+    snip_max_chars: int = 2000  # Layer 1: trim tool results longer than this
+    snip_tool_output_token_budget: int = (
+        50000  # Layer 1: recent tool output kept verbatim
+    )
     snip_preserve_last_n_messages: int = 12  # Layer 1: keep last N messages unchanged
     # Layer 2: absolute budget for the recent portion, in estimated message
     # tokens. Character estimates, not provider-billed tokens: the character
@@ -103,16 +105,16 @@ def _default_model_for_provider_type(provider_type: str) -> str:
 
 def _resolve_openai_api_key() -> str:
     return (
-        os.getenv("NOVA_OPENAI_API_KEY")
-        or os.getenv("OPENAI_API_KEY")
-        or ""
+        os.getenv("NOVA_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
     ).strip()
 
 
 def _resolve_ollama_base_url() -> str:
     return (
-        os.getenv("NOVA_OLLAMA_BASE_URL", os.getenv(
-            "OLLAMA_BASE_URL", "http://localhost:11434")).strip()
+        os.getenv(
+            "NOVA_OLLAMA_BASE_URL",
+            os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+        ).strip()
         or "http://localhost:11434"
     )
 
@@ -134,8 +136,9 @@ def _build_default_config_payload() -> dict[str, Any]:
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2,
-                    ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     try:
         # The config file holds provider API keys and the LAN auth password.
         os.chmod(path, 0o600)
@@ -154,11 +157,11 @@ def _load_config_payload(config_path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(config_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"Invalid Nova config JSON at {config_path}: {exc}") from exc
+        raise ValueError(f"Invalid Nova config JSON at {config_path}: {exc}") from exc
     if not isinstance(payload, dict):
         raise ValueError(
-            f"Invalid Nova config at {config_path}: top-level JSON value must be an object")
+            f"Invalid Nova config at {config_path}: top-level JSON value must be an object"
+        )
     return payload
 
 
@@ -171,21 +174,21 @@ def _parse_provider_configs(raw_providers: Any) -> dict[str, ProviderConfig]:
     providers: dict[str, ProviderConfig] = {}
     for key, raw in raw_providers.items():
         if not isinstance(raw, dict):
-            raise ValueError(
-                f"Invalid Nova config: provider '{key}' must be an object")
+            raise ValueError(f"Invalid Nova config: provider '{key}' must be an object")
         provider_type = str(raw.get("type", "")).strip()
         if not provider_type:
-            raise ValueError(
-                f"Invalid Nova config: provider '{key}' is missing 'type'")
+            raise ValueError(f"Invalid Nova config: provider '{key}' is missing 'type'")
         name = str(raw.get("name", key)).strip() or key
         options = raw.get("options") or {}
         raw_models = raw.get("models") or {}
         if not isinstance(options, dict):
             raise ValueError(
-                f"Invalid Nova config: provider '{key}' options must be an object")
+                f"Invalid Nova config: provider '{key}' options must be an object"
+            )
         if not isinstance(raw_models, dict):
             raise ValueError(
-                f"Invalid Nova config: provider '{key}' models must be an object")
+                f"Invalid Nova config: provider '{key}' models must be an object"
+            )
         normalized_options = dict(options)
         normalized_models: dict[str, dict[str, Any]] = {}
         for model_key, model_value in raw_models.items():
@@ -240,8 +243,7 @@ def _parse_transcription_config(raw: Any) -> TranscriptionSettings:
     if raw is None:
         raw = {}
     if not isinstance(raw, dict):
-        raise ValueError(
-            "Invalid Nova config: 'transcription' must be an object")
+        raise ValueError("Invalid Nova config: 'transcription' must be an object")
     api_key = str(raw.get("api_key", "")).strip()
     if not api_key:
         api_key = _resolve_transcription_api_key()
@@ -267,10 +269,14 @@ def _parse_compaction_config(raw: Any) -> CompactionSettings:
         summary_reserve_tokens=int(raw.get("summary_reserve_tokens", 8000)),
         snip_max_chars=int(raw.get("snip_max_chars", 2000)),
         snip_tool_output_token_budget=int(
-            raw.get("snip_tool_output_token_budget", 50000)),
+            raw.get("snip_tool_output_token_budget", 50000)
+        ),
         snip_preserve_last_n_messages=int(
-            raw.get("snip_preserve_last_n_messages",
-                    raw.get("snip_preserve_last_n_turns", 12))),
+            raw.get(
+                "snip_preserve_last_n_messages",
+                raw.get("snip_preserve_last_n_turns", 12),
+            )
+        ),
         summary_keep_tokens=_parse_summary_keep_tokens(raw, default_window),
         max_consecutive_failures=int(raw.get("max_consecutive_failures", 3)),
         default_context_window=default_window,
@@ -360,8 +366,7 @@ class Settings:
     compaction: CompactionSettings = field(default_factory=CompactionSettings)
 
     # Voice-to-text (Groq Whisper by default). Empty api_key disables it.
-    transcription: TranscriptionSettings = field(
-        default_factory=TranscriptionSettings)
+    transcription: TranscriptionSettings = field(default_factory=TranscriptionSettings)
 
     # Runtime config file path.
     config_path: Path | None = None
@@ -385,8 +390,7 @@ class Settings:
         raw_mcp = config_payload.get("mcp_servers")
         mcp_servers = dict(raw_mcp) if isinstance(raw_mcp, dict) else {}
         compaction = _parse_compaction_config(config_payload.get("compaction"))
-        transcription = _parse_transcription_config(
-            config_payload.get("transcription"))
+        transcription = _parse_transcription_config(config_payload.get("transcription"))
         host, port, log_level, auth_user, auth_password = _parse_server_config(
             config_payload.get("server")
         )
@@ -459,16 +463,19 @@ class Settings:
             raise ValueError(f"Unsupported provider: {provider_name}")
         return provider_config
 
-    def get_provider_option(self, provider_name: str, key: str, default: Any = None) -> Any:
+    def get_provider_option(
+        self, provider_name: str, key: str, default: Any = None
+    ) -> Any:
         provider_config = self.get_provider_config(provider_name)
         return provider_config.options.get(key, default)
 
     def get_provider_api_key(self, provider_name: str) -> str:
-        api_key = str(self.get_provider_option(
-            provider_name, "api_key", "")).strip()
+        api_key = str(self.get_provider_option(provider_name, "api_key", "")).strip()
         return api_key
 
-    def get_request_options(self, model_name: str, provider_name: str) -> dict[str, Any]:
+    def get_request_options(
+        self, model_name: str, provider_name: str
+    ) -> dict[str, Any]:
         # extra_body contents are flattened into the request body (OpenAI SDK semantics)
         # rather than sent as a literal "extra_body" field, so vLLM/inferx accepts them;
         # nested dicts are deep-merged so provider and model layer keys compose instead of clobbering.
@@ -480,7 +487,9 @@ class Settings:
         provider_extra = provider_config.options.get("extra_body")
         if isinstance(provider_extra, dict):
             _deep_merge(result, provider_extra)
-        passthrough = {k: v for k, v in model_entry.items() if k not in _INTERNAL_MODEL_KEYS}
+        passthrough = {
+            k: v for k, v in model_entry.items() if k not in _INTERNAL_MODEL_KEYS
+        }
         if passthrough:
             _deep_merge(result, passthrough)
         model_extra = model_entry.get("extra_body")
@@ -511,11 +520,15 @@ class Settings:
             return model_entry
         return {}
 
-    def resolve_model_name(self, model_key: str, provider_name: str | None = None) -> str:
+    def resolve_model_name(
+        self, model_key: str, provider_name: str | None = None
+    ) -> str:
         return resolve_model_name(model_key, self.providers, provider_name)
 
 
-def resolve_model_name(model_key: str, providers: dict, provider_name: str | None = None) -> str:
+def resolve_model_name(
+    model_key: str, providers: dict, provider_name: str | None = None
+) -> str:
     resolved_provider = provider_name or (next(iter(providers)) if providers else "")
     provider_config = providers.get(resolved_provider)
     if provider_config:

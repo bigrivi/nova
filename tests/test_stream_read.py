@@ -100,9 +100,7 @@ class TestTheFreeze:
         async def fail_now() -> bytes:
             raise TimeoutError
 
-        poller = StreamPoller(
-            _Counter(fail_now), None, _trace(), poll_seconds=POLL
-        )
+        poller = StreamPoller(_Counter(fail_now), None, _trace(), poll_seconds=POLL)
         with pytest.raises(StreamTimeout) as caught:
             await poller.next_line()
         assert "total timeout" in str(caught.value)
@@ -121,9 +119,7 @@ class TestTheFreeze:
         async def idle_socket() -> bytes:
             raise SocketTimeoutError("Timeout on reading data from socket")
 
-        poller = StreamPoller(
-            _Counter(idle_socket), None, _trace(), poll_seconds=POLL
-        )
+        poller = StreamPoller(_Counter(idle_socket), None, _trace(), poll_seconds=POLL)
         with pytest.raises(StreamTimeout) as caught:
             await poller.next_line()
         assert "socket read timeout" in str(caught.value)
@@ -244,7 +240,6 @@ class TestAbort:
         poller = StreamPoller(read_line, None, _trace(), poll_seconds=POLL)
         assert await poller.next_line() == b"line\n"
 
-
     @pytest.mark.asyncio
     async def test_abort_is_acted_on_at_once_not_at_the_poll_boundary(self):
         """The abort is raced against the read, so a long poll cannot delay it.
@@ -292,6 +287,7 @@ class TestCleanup:
     @pytest.mark.asyncio
     async def test_no_unretrieved_task_warning_after_a_failed_read(self, caplog):
         """A failed read has to be settled, not left to the garbage collector."""
+
         async def fail_now() -> bytes:
             raise ValueError("boom")
 
@@ -302,7 +298,9 @@ class TestCleanup:
         await asyncio.sleep(0)
 
         complaints = [
-            r.getMessage() for r in caplog.records if "never retrieved" in r.getMessage()
+            r.getMessage()
+            for r in caplog.records
+            if "never retrieved" in r.getMessage()
         ]
         assert not complaints, complaints
         assert poller.pending is False

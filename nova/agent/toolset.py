@@ -81,6 +81,7 @@ class ToolsetBuilder:
 
     def _register_builtin_tools(self) -> None:
         from nova import tools as tools_module
+
         for name in dir(tools_module):
             if name.startswith("_"):
                 continue
@@ -92,6 +93,7 @@ class ToolsetBuilder:
 
     def _register_skill_tools(self) -> None:
         from nova.skills.tools import SkillTools
+
         self.skill_tools = SkillTools(self._skill_service)
         if self._allows("list_skills"):
             self._registry.register(self.skill_tools.list_skills, name="list_skills")
@@ -99,10 +101,12 @@ class ToolsetBuilder:
             self._registry.register(self.skill_tools.load_skill, name="load_skill")
         if self._allows("install_skill"):
             self._registry.register(
-                self.skill_tools.install_skill, name="install_skill")
+                self.skill_tools.install_skill, name="install_skill"
+            )
 
     def _register_delegation(self) -> None:
         from nova.tools.delegate import delegate_to_agent
+
         self._registry.register(delegate_to_agent, name="delegate_to_agent")
 
     async def _register_mcp_tools(self) -> None:
@@ -120,6 +124,7 @@ class ToolsetBuilder:
         )
 
         self._registry.set_behavior(
-            "shell", ShellToolBehavior(self._approval, is_sub_agent=self._is_sub_agent))
+            "shell", ShellToolBehavior(self._approval, is_sub_agent=self._is_sub_agent)
+        )
         self._registry.set_behavior("read_image", ImageReturningToolBehavior())
         self._registry.set_behavior("browser_use", ImageReturningToolBehavior())

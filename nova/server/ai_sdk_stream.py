@@ -237,7 +237,8 @@ class AISDKStreamAdapter:
                             "data": {
                                 "toolName": tool_name,
                                 "toolCallId": tool_call_id,
-                                "message": getattr(result, "content", "") or getattr(result, "error", ""),
+                                "message": getattr(result, "content", "")
+                                or getattr(result, "error", ""),
                             },
                         }
                     )
@@ -245,7 +246,7 @@ class AISDKStreamAdapter:
             return chunks
 
         if event == AgentEvent.APPROVAL_HEARTBEAT:
-            chunks.append(b"data: {\"type\":\"data-nova-heartbeat\"}\n\n")
+            chunks.append(b'data: {"type":"data-nova-heartbeat"}\n\n')
             return chunks
 
         if event == AgentEvent.APPROVAL_RESULT:
@@ -365,12 +366,18 @@ class AISDKStreamAdapter:
             elif content and not self._text_emitted:
                 text_id = f"text_{uuid.uuid4().hex}"
                 if not self._message_started:
-                    chunks.append(encode_ai_sdk_sse({"type": "start", "messageId": self._message_id}))
+                    chunks.append(
+                        encode_ai_sdk_sse(
+                            {"type": "start", "messageId": self._message_id}
+                        )
+                    )
                     self._message_started = True
                 chunks.extend(
                     [
                         encode_ai_sdk_sse({"type": "text-start", "id": text_id}),
-                        encode_ai_sdk_sse({"type": "text-delta", "id": text_id, "delta": content}),
+                        encode_ai_sdk_sse(
+                            {"type": "text-delta", "id": text_id, "delta": content}
+                        ),
                         encode_ai_sdk_sse({"type": "text-end", "id": text_id}),
                     ]
                 )

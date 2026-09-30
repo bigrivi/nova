@@ -42,9 +42,7 @@ class _FakeStreamContent:
         if self._index >= len(self._lines):
             return b""
         line = self._lines[self._index]
-        limit = (
-            max_line_length if max_line_length is not None else self._default_limit
-        )
+        limit = max_line_length if max_line_length is not None else self._default_limit
         if len(line) > limit:
             raise aiohttp.http_exceptions.LineTooLong(line[:100] + b"...", limit)
         self._index += 1
@@ -107,7 +105,9 @@ def _line(payload: dict) -> bytes:
 async def test_chat_stream_handles_line_larger_than_aiohttp_default(monkeypatch):
     lines = [
         _line({"message": {"content": "hi"}, "done": False}),
-        _line({"message": {"content": " there"}, "done": False, "padding": "x" * 200_000}),
+        _line(
+            {"message": {"content": " there"}, "done": False, "padding": "x" * 200_000}
+        ),
         _line({"message": {"content": ""}, "done": True}),
     ]
     assert len(lines[1]) > _AIOHTTP_DEFAULT_LINE_LIMIT

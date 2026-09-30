@@ -75,7 +75,9 @@ class ModelCreateRequest:
 
 
 class ConfigService:
-    def __init__(self, settings: Settings, data_source: DataSourceProtocol | None = None) -> None:
+    def __init__(
+        self, settings: Settings, data_source: DataSourceProtocol | None = None
+    ) -> None:
         if settings.config_path is None:
             raise ConfigValidationError("Nova config path is not available.")
         self._settings = settings
@@ -100,7 +102,11 @@ class ConfigService:
     async def save_agent(self, request: AgentCreateRequest) -> dict:
         data_source = await self._get_data_source()
         now = int(time.time() * 1000)
-        mode = "subagent" if (request.mode == "subagent" or request.parent_ids) else "primary"
+        mode = (
+            "subagent"
+            if (request.mode == "subagent" or request.parent_ids)
+            else "primary"
+        )
         agent = {
             "key": request.key,
             "name": request.name,
@@ -162,9 +168,7 @@ class ConfigService:
         return existing
 
     @staticmethod
-    def _fit_effort(
-        provider: str, model: str, effort: str | None
-    ) -> str | None:
+    def _fit_effort(provider: str, model: str, effort: str | None) -> str | None:
         """Keep *effort* only when the model declares it, else drop it."""
         from nova.llm.reasoning import fit_effort, resolve_effort_levels
         from nova.settings import get_settings
@@ -209,7 +213,9 @@ class ConfigService:
         payload = _load_config_payload(self._config_path)
         providers = payload.setdefault("providers", {})
         if not isinstance(providers, dict):
-            raise ConfigValidationError("Invalid Nova config: 'providers' must be an object.")
+            raise ConfigValidationError(
+                "Invalid Nova config: 'providers' must be an object."
+            )
 
         provider_key = request.key.strip()
         if not provider_key:
@@ -228,14 +234,19 @@ class ConfigService:
         api_key = request.api_key.strip()
 
         if provider_type in {"openai-compatible", "openai-response"} and not base_url:
-            raise ConfigValidationError(f"Base URL is required for {provider_type} providers.")
+            raise ConfigValidationError(
+                f"Base URL is required for {provider_type} providers."
+            )
         if not base_url:
             default_url = _DEFAULT_BASE_URLS.get(provider_type)
             if default_url:
                 base_url = default_url
 
         options: dict[str, Any] = {"base_url": base_url}
-        if provider_type in {"openai-compatible", "openai-response", "anthropic"} and api_key:
+        if (
+            provider_type in {"openai-compatible", "openai-response", "anthropic"}
+            and api_key
+        ):
             options["api_key"] = api_key
 
         providers[provider_key] = {
@@ -251,7 +262,9 @@ class ConfigService:
         payload = _load_config_payload(self._config_path)
         providers = payload.setdefault("providers", {})
         if not isinstance(providers, dict):
-            raise ConfigValidationError("Invalid Nova config: 'providers' must be an object.")
+            raise ConfigValidationError(
+                "Invalid Nova config: 'providers' must be an object."
+            )
 
         provider_key = request.provider.strip()
         provider_payload = providers.get(provider_key)
@@ -290,7 +303,9 @@ class ConfigService:
         payload = _load_config_payload(self._config_path)
         providers = payload.setdefault("providers", {})
         if not isinstance(providers, dict):
-            raise ConfigValidationError("Invalid Nova config: 'providers' must be an object.")
+            raise ConfigValidationError(
+                "Invalid Nova config: 'providers' must be an object."
+            )
 
         provider_key = (key or "").strip()
         provider_payload = providers.get(provider_key)
@@ -341,7 +356,9 @@ class ConfigService:
         payload = _load_config_payload(self._config_path)
         providers = payload.setdefault("providers", {})
         if not isinstance(providers, dict):
-            raise ConfigValidationError("Invalid Nova config: 'providers' must be an object.")
+            raise ConfigValidationError(
+                "Invalid Nova config: 'providers' must be an object."
+            )
 
         provider_key = (key or "").strip()
         if provider_key not in providers:
@@ -361,7 +378,9 @@ class ConfigService:
         payload = _load_config_payload(self._config_path)
         providers = payload.setdefault("providers", {})
         if not isinstance(providers, dict):
-            raise ConfigValidationError("Invalid Nova config: 'providers' must be an object.")
+            raise ConfigValidationError(
+                "Invalid Nova config: 'providers' must be an object."
+            )
 
         provider_key = (provider or "").strip()
         provider_payload = providers.get(provider_key)
@@ -397,7 +416,9 @@ class ConfigService:
         payload = _load_config_payload(self._config_path)
         providers = payload.setdefault("providers", {})
         if not isinstance(providers, dict):
-            raise ConfigValidationError("Invalid Nova config: 'providers' must be an object.")
+            raise ConfigValidationError(
+                "Invalid Nova config: 'providers' must be an object."
+            )
 
         provider_key = (provider or "").strip()
         provider_payload = providers.get(provider_key)

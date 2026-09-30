@@ -13,7 +13,9 @@ class SkillCatalog:
     def replace(self, summaries: list[SkillSummary]) -> None:
         items: dict[str, SkillSummary] = {}
         keys_by_name: dict[str, str] = {}
-        for summary in sorted(summaries, key=lambda item: (item.name.lower(), item.path.lower())):
+        for summary in sorted(
+            summaries, key=lambda item: (item.name.lower(), item.path.lower())
+        ):
             lookup_key = summary.name.lower()
             if lookup_key in keys_by_name:
                 continue
@@ -33,4 +35,3 @@ class SkillCatalog:
         if mapped_name is None:
             return None
         return self._items.get(mapped_name)
-

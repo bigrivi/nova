@@ -99,9 +99,11 @@ async def test_no_title_means_no_write_and_no_broadcast(
 
 @pytest.mark.asyncio
 async def test_a_real_title_is_written_and_broadcast(tmp_path: Path) -> None:
-    async with title_agent(
-        Done(content="排查 Bug", tool_calls=[]), tmp_path
-    ) as (agent, database, titles):
+    async with title_agent(Done(content="排查 Bug", tool_calls=[]), tmp_path) as (
+        agent,
+        database,
+        titles,
+    ):
         session = await agent.session.create_session(
             first_message=FIRST_MESSAGE, agent_key="main"
         )

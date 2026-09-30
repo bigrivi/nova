@@ -68,7 +68,10 @@ async def session_events(
                         queue.get(), timeout=_PING_INTERVAL_SECONDS
                     )
                 except TimeoutError:
-                    if is_server_stopping(http_request) or await http_request.is_disconnected():
+                    if (
+                        is_server_stopping(http_request)
+                        or await http_request.is_disconnected()
+                    ):
                         break
                     yield b": ping\n\n"
                     continue

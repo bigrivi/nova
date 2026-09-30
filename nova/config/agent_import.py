@@ -88,7 +88,7 @@ def parse_agent_markdown(content: str) -> ParsedAgent:
         raise AgentImportError(
             "Agent Markdown must start with a '---' frontmatter block."
         )
-    body = content[match.end():].lstrip("\r\n")
+    body = content[match.end() :].lstrip("\r\n")
 
     scalars: dict[str, str] = {}
     tools: dict[str, bool] = {}
@@ -135,9 +135,7 @@ def parse_agent_markdown(content: str) -> ParsedAgent:
     ]
 
     posture = (
-        "full"
-        if any(tools.get(name) for name in _WRITE_CAPABLE_TOOLS)
-        else "read_only"
+        "full" if any(tools.get(name) for name in _WRITE_CAPABLE_TOOLS) else "read_only"
     )
 
     return ParsedAgent(

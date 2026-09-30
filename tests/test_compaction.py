@@ -73,8 +73,11 @@ class TestSnipOldToolResults:
             MockMessage("5", "tool", "C" * 500),
         ]
         result = snip_old_tool_results(
-            messages, max_chars=2000, preserve_last_n_messages=2,
-            tool_output_token_budget=500)
+            messages,
+            max_chars=2000,
+            preserve_last_n_messages=2,
+            tool_output_token_budget=500,
+        )
 
         assert "chars snipped" in result[0].content
         assert result[1].content == "B" * 100
@@ -86,8 +89,11 @@ class TestSnipOldToolResults:
             MockMessage("2", "tool", "A" * 8000),
         ]
         result = snip_old_tool_results(
-            messages, max_chars=2000, preserve_last_n_messages=2,
-            tool_output_token_budget=50000)
+            messages,
+            max_chars=2000,
+            preserve_last_n_messages=2,
+            tool_output_token_budget=50000,
+        )
 
         assert result[1].content == "A" * 8000
 
@@ -98,9 +104,13 @@ class TestSnipOldToolResults:
             MockMessage("new", "tool", "N" * 20000),
         ]
         result = snip_old_tool_results(
-            messages, max_chars=2000, preserve_last_n_messages=10,
+            messages,
+            max_chars=2000,
+            preserve_last_n_messages=10,
             tool_output_token_budget=estimate_tokens(
-                [MockMessage("probe", "tool", "N" * 20000)]))
+                [MockMessage("probe", "tool", "N" * 20000)]
+            ),
+        )
 
         assert result[1].content == "N" * 20000
         assert "chars snipped" in result[0].content
@@ -109,8 +119,11 @@ class TestSnipOldToolResults:
         content = "HEAD" + "x" * 20000 + "VERDICT-LINE"
         messages = [MockMessage("1", "tool", content)]
         result = snip_old_tool_results(
-            messages, max_chars=2000, preserve_last_n_messages=0,
-            tool_output_token_budget=1)
+            messages,
+            max_chars=2000,
+            preserve_last_n_messages=0,
+            tool_output_token_budget=1,
+        )
 
         assert result[0].content.endswith("VERDICT-LINE")
         assert result[0].content.startswith("HEAD")
@@ -119,8 +132,12 @@ class TestSnipOldToolResults:
         content = "Z" * 20000
         messages = [MockMessage("msg-1", "tool", content)]
         result = snip_old_tool_results(
-            messages, max_chars=2000, preserve_last_n_messages=0,
-            tool_output_token_budget=1, offload_dir=str(tmp_path))
+            messages,
+            max_chars=2000,
+            preserve_last_n_messages=0,
+            tool_output_token_budget=1,
+            offload_dir=str(tmp_path),
+        )
 
         offloaded = tmp_path / "msg-1.txt"
         assert offloaded.exists()
@@ -164,9 +181,7 @@ class TestFindSplitPoint:
         assert 0 <= split < 10
 
     def test_returns_index_not_count(self):
-        messages = [
-            MockMessage(str(i), "user", "x" * 100) for i in range(5)
-        ]
+        messages = [MockMessage(str(i), "user", "x" * 100) for i in range(5)]
         split = find_split_point(messages)
 
         assert isinstance(split, int)
@@ -184,8 +199,7 @@ class TestShouldCompact:
         model_max_tokens = 200_000
         threshold = compaction_threshold(model_max_tokens)
         assert threshold < model_max_tokens, "the reserve must leave headroom"
-        assert should_compact(
-            total_tokens=threshold, model_max_tokens=model_max_tokens)
+        assert should_compact(total_tokens=threshold, model_max_tokens=model_max_tokens)
 
     def test_no_compact_below_threshold(self):
         from nova.agent.compaction import compaction_threshold
@@ -193,7 +207,8 @@ class TestShouldCompact:
         model_max_tokens = 200_000
         threshold = compaction_threshold(model_max_tokens)
         assert not should_compact(
-            total_tokens=threshold - 1, model_max_tokens=model_max_tokens)
+            total_tokens=threshold - 1, model_max_tokens=model_max_tokens
+        )
 
     def test_message_count_alone_never_triggers_compaction(self):
         """A long history of tiny messages must not compact a 1M window."""
@@ -228,6 +243,7 @@ class TestResolveContextLimit:
 
         with patch("nova.settings.get_settings", return_value=mock_settings):
             from nova.settings import get_settings
+
             get_settings.cache_clear()
             result = resolve_context_limit("gemma4:26b", "ollama")
             assert result == 32000
@@ -238,11 +254,14 @@ class TestResolveContextLimit:
 
         mock_settings = MagicMock()
         mock_settings.providers = {
-            "anthropic": MagicMock(models={"claude-3-sonnet": {"context_window": 200000}}),
+            "anthropic": MagicMock(
+                models={"claude-3-sonnet": {"context_window": 200000}}
+            ),
         }
 
         with patch("nova.settings.get_settings", return_value=mock_settings):
             from nova.settings import get_settings
+
             get_settings.cache_clear()
             result = resolve_context_limit("claude-3-sonnet", "anthropic")
             assert result == 200000
@@ -256,6 +275,7 @@ class TestResolveContextLimit:
 
         with patch("nova.settings.get_settings", return_value=mock_settings):
             from nova.settings import get_settings
+
             get_settings.cache_clear()
             result = resolve_context_limit("gpt-4o", "unknown")
             assert result == 128000
@@ -269,6 +289,7 @@ class TestResolveContextLimit:
 
         with patch("nova.settings.get_settings", return_value=mock_settings):
             from nova.settings import get_settings
+
             get_settings.cache_clear()
             result = get_context_limit("gpt-4o", "openai")
             assert result == 200000
@@ -319,7 +340,9 @@ class TestHelperFunctions:
         assert len(_get_tool_calls(msg)) == 1
 
     def test_get_tool_call_ids_from_list(self):
-        msg = MockMessage("1", "assistant", "", tool_calls=[{"id": "call_123"}, {"id": "call_456"}])
+        msg = MockMessage(
+            "1", "assistant", "", tool_calls=[{"id": "call_123"}, {"id": "call_456"}]
+        )
         ids = _get_tool_call_ids(msg)
         assert ids == ["call_123", "call_456"]
 
@@ -354,7 +377,8 @@ class TestForcedCompaction:
 
     def test_force_plans_a_compaction_the_estimate_would_skip(self):
         plan = evaluate_compaction(
-            "s", self._messages(), None, "gpt-4o", "openai", force=True)
+            "s", self._messages(), None, "gpt-4o", "openai", force=True
+        )
         assert plan.over_threshold is True
         assert plan.needs_compaction is True
         assert plan.split_index > 0
@@ -366,7 +390,11 @@ class TestForcedCompaction:
         here would strand the caller with a no-op it already reported.
         """
         plan = evaluate_compaction(
-            "s", [MockMessage("1", "user", "only")], None, "gpt-4o", "openai",
+            "s",
+            [MockMessage("1", "user", "only")],
+            None,
+            "gpt-4o",
+            "openai",
             force=True,
         )
         assert plan.over_threshold is True
@@ -408,12 +436,21 @@ async def test_compact_orphaned_tool_response_is_also_compacted():
         # 4 messages: [0] user, [1] assistant with tool_calls, [2] tool response, [3] user
         await db.add_message(session_id, "user", "search for something")
         await db.add_message(
-            session_id, "assistant", "",
-            tool_calls=[{"id": "call_orphan", "type": "function",
-                         "function": {"name": "web_search", "arguments": '{"q":"test"}'}}],
+            session_id,
+            "assistant",
+            "",
+            tool_calls=[
+                {
+                    "id": "call_orphan",
+                    "type": "function",
+                    "function": {"name": "web_search", "arguments": '{"q":"test"}'},
+                }
+            ],
         )
         await db.add_message(
-            session_id, "tool", "search results here",
+            session_id,
+            "tool",
+            "search results here",
             tool_call_id="call_orphan",
         )
         await db.add_message(session_id, "user", "tell me more")
@@ -435,8 +472,9 @@ async def test_compact_orphaned_tool_response_is_also_compacted():
         # Active messages should NOT include the orphaned tool response
         active = await db.get_messages(session_id)
         for msg in active:
-            assert msg.tool_call_id != "call_orphan", \
+            assert msg.tool_call_id != "call_orphan", (
                 f"orphaned tool response {msg.id} should be compacted"
+            )
 
         # The last user message should still be active
         assert any(m.content == "tell me more" for m in active)
@@ -445,11 +483,14 @@ async def test_compact_orphaned_tool_response_is_also_compacted():
         assert any(m.summary == 1 for m in active)
 
         # All messages (including compacted) — verify tool response IS compacted
-        all_msgs = await db.get_messages(session_id, MessageFilter(include_compacted=True))
+        all_msgs = await db.get_messages(
+            session_id, MessageFilter(include_compacted=True)
+        )
         orphan = [m for m in all_msgs if m.tool_call_id == "call_orphan"]
         assert len(orphan) == 1
-        assert orphan[0].compacted == 1, \
+        assert orphan[0].compacted == 1, (
             f"orphaned tool response should have compacted=1, got {orphan[0].compacted}"
+        )
     finally:
         await db.close()
 
@@ -586,9 +627,12 @@ async def test_summary_is_placed_at_the_compaction_boundary():
         await _seed_compactable_session(db, session_id)
         before = (await db.get_session(session_id))["updated_at"]
 
-        assert await compact(
-            session_id, db, StubSummaryProvider("folded"), "gpt-4o", split_index=2
-        ) is True
+        assert (
+            await compact(
+                session_id, db, StubSummaryProvider("folded"), "gpt-4o", split_index=2
+            )
+            is True
+        )
 
         live = await db.get_messages(session_id)
         summaries = [m for m in live if m.summary == 1]
@@ -614,9 +658,12 @@ async def test_second_compaction_folds_the_previous_summary():
     try:
         session_id = "fold-check"
         await _seed_compactable_session(db, session_id)
-        assert await compact(
-            session_id, db, StubSummaryProvider("first"), "gpt-4o", split_index=2
-        ) is True
+        assert (
+            await compact(
+                session_id, db, StubSummaryProvider("first"), "gpt-4o", split_index=2
+            )
+            is True
+        )
 
         await db.add_message(session_id, "user", "next question " + "z" * 4000)
         await db.add_message(session_id, "assistant", "next answer " + "w" * 4000)
@@ -625,16 +672,20 @@ async def test_second_compaction_folds_the_previous_summary():
         split = find_split_point(live, keep_tokens=1000)
         assert split > 0
         assert any(m.summary == 1 for m in live[:split]), (
-            "the previous summary must fall inside the portion being folded in")
+            "the previous summary must fall inside the portion being folded in"
+        )
 
-        assert await compact(
-            session_id,
-            db,
-            StubSummaryProvider("second"),
-            "gpt-4o",
-            messages=live,
-            split_index=split,
-        ) is True
+        assert (
+            await compact(
+                session_id,
+                db,
+                StubSummaryProvider("second"),
+                "gpt-4o",
+                messages=live,
+                split_index=split,
+            )
+            is True
+        )
 
         final = await db.get_messages(session_id)
         assert len([m for m in final if m.summary == 1]) == 1
@@ -827,9 +878,7 @@ async def test_the_shrink_comes_from_the_history_not_from_the_estimator(monkeypa
 
         for turn in range(6):
             await db.add_message(session_id, "user", f"q{turn} " + "x" * 8_000)
-            await db.add_message(
-                session_id, "assistant", f"a{turn} " + "y" * 8_000
-            )
+            await db.add_message(session_id, "assistant", f"a{turn} " + "y" * 8_000)
 
         live_session = await db.get_session(session_id)
         messages = await db.get_messages(session_id)
@@ -854,9 +903,7 @@ async def test_the_shrink_comes_from_the_history_not_from_the_estimator(monkeypa
         fresh = await db.get_messages(session_id)
         compacted_at = live_session["compacted_at"]
         after_history = estimate_context_tokens(fresh, "gpt-4o", compacted_at)
-        before_like_for_like = estimate_context_tokens(
-            messages, "gpt-4o", compacted_at
-        )
+        before_like_for_like = estimate_context_tokens(messages, "gpt-4o", compacted_at)
 
         removed = before_history - after_history
         assert removed > 0, "compaction freed nothing"
@@ -894,7 +941,9 @@ async def test_compact_aborts_without_writing_when_summary_fails():
         after = await db.get_messages(session_id)
         assert [m.id for m in after] == [m.id for m in before]
         assert not [m for m in after if m.summary == 1]
-        assert not [m for m in after if "Summary generation failed" in (m.content or "")]
+        assert not [
+            m for m in after if "Summary generation failed" in (m.content or "")
+        ]
 
         session = await db.get_session(session_id)
         assert session["compacted_at"] is None
@@ -933,8 +982,9 @@ async def test_a_transient_summary_failure_is_retried_once():
         await _seed_compactable_session(db, session_id)
         provider = FailOnceProvider()
 
-        assert await compact(
-            session_id, db, provider, "gemma4:26b", split_index=2) is True
+        assert (
+            await compact(session_id, db, provider, "gemma4:26b", split_index=2) is True
+        )
         assert provider.attempts == 2, "the failed attempt is retried once"
         after = await db.get_messages(session_id)
         assert [m for m in after if m.summary == 1], "the retry's summary is stored"
@@ -1074,7 +1124,9 @@ class TestContextEstimateAnchor:
 
 class TestNoRepeatedCompaction:
     @pytest.mark.asyncio
-    async def test_a_small_window_does_not_recompact_on_the_next_turn(self, monkeypatch):
+    async def test_a_small_window_does_not_recompact_on_the_next_turn(
+        self, monkeypatch
+    ):
         """After a compaction the kept portion must fall below the threshold.
 
         Capping the kept budget at half the threshold is what stops the total
@@ -1086,7 +1138,8 @@ class TestNoRepeatedCompaction:
         from nova.session.manager import SessionContext
 
         monkeypatch.setattr(
-            "nova.agent.compaction.get_context_limit", lambda model, provider: 8_000)
+            "nova.agent.compaction.get_context_limit", lambda model, provider: 8_000
+        )
 
         db = SqliteRepository(DatabaseConfig(path=":memory:"))
         await db.connect()
@@ -1107,8 +1160,11 @@ class TestNoRepeatedCompaction:
             live_session = await db.get_session(session_id)
             messages = await db.get_messages(session_id)
             async for _ in controller.maybe_compact(
-                messages=messages, session=live_session, db=db,
-                llm=StubSummaryProvider("folded"), emit=emit,
+                messages=messages,
+                session=live_session,
+                db=db,
+                llm=StubSummaryProvider("folded"),
+                emit=emit,
             ):
                 pass
             assert controller.compacted is True, "the oversized history should compact"
@@ -1117,7 +1173,8 @@ class TestNoRepeatedCompaction:
             live_session = await db.get_session(session_id)
             messages = await db.get_messages(session_id)
             assert await controller.plan(messages, live_session, db) is None, (
-                "the compacted history must sit below the threshold")
+                "the compacted history must sit below the threshold"
+            )
         finally:
             await db.close()
 
@@ -1271,8 +1328,9 @@ class TestKeepBudget:
         tool responses can add more. It must not overshoot without bound.
         """
         history = [
-            MockTimedMessage(str(i), "user" if i % 2 == 0 else "assistant",
-                             f"{i} " + "x" * 8000)
+            MockTimedMessage(
+                str(i), "user" if i % 2 == 0 else "assistant", f"{i} " + "x" * 8000
+            )
             for i in range(20)
         ]
         per_message = max(estimate_tokens([message]) for message in history)
@@ -1281,7 +1339,8 @@ class TestKeepBudget:
             assert split > 0, budget
             kept = estimate_tokens(history[split:])
             assert kept <= budget + per_message, (
-                f"budget {budget} kept {kept}, one message is {per_message}")
+                f"budget {budget} kept {kept}, one message is {per_message}"
+            )
 
     def test_retention_does_not_grow_with_the_history(self):
         """The defect this replaces: a ratio made the floor rise with the bloat.
@@ -1291,10 +1350,12 @@ class TestKeepBudget:
         itself grown. Measured on real sessions, the share version kept up to
         4.4x its target; the budget keeps the same amount regardless.
         """
+
         def build(count: int):
             return [
-                MockTimedMessage(str(i), "user" if i % 2 == 0 else "assistant",
-                                 f"{i} " + "x" * 8000)
+                MockTimedMessage(
+                    str(i), "user" if i % 2 == 0 else "assistant", f"{i} " + "x" * 8000
+                )
                 for i in range(count)
             ]
 
@@ -1306,7 +1367,8 @@ class TestKeepBudget:
             kept.append(estimate_tokens(history[split:]))
 
         assert max(kept) - min(kept) <= 2000, (
-            f"retention moved with the history: {kept}")
+            f"retention moved with the history: {kept}"
+        )
 
     def test_a_dominant_first_message_is_still_split(self):
         """A first message that alone outweighs the budget must not block it."""
@@ -1386,10 +1448,12 @@ async def test_chat_stream_loads_messages_once_per_request():
         calls["n"] = 0
         agent2 = Agent(
             config=AgentConfig(model="test-model", max_iterations=3),
-            llm_provider=ScriptedProvider([
-                [ToolCall(id="t1", name="ok_tool", arguments="{}")],
-                [TextDelta(content="done")],
-            ]),
+            llm_provider=ScriptedProvider(
+                [
+                    [ToolCall(id="t1", name="ok_tool", arguments="{}")],
+                    [TextDelta(content="done")],
+                ]
+            ),
         )
 
         async def ok_tool() -> ToolResult:
@@ -1405,8 +1469,17 @@ async def test_chat_stream_loads_messages_once_per_request():
 
 
 class MockUsageMessage(MockTimedMessage):
-    def __init__(self, id, role, content, tokens_input=None, tokens_output=None,
-                 tool_calls=None, tool_call_id=None, time_created=0):
+    def __init__(
+        self,
+        id,
+        role,
+        content,
+        tokens_input=None,
+        tokens_output=None,
+        tool_calls=None,
+        tool_call_id=None,
+        time_created=0,
+    ):
         super().__init__(id, role, content, tool_calls, tool_call_id, time_created)
         self.tokens_input = tokens_input
         self.tokens_output = tokens_output
@@ -1426,8 +1499,14 @@ class TestUsageAnchoredEstimation:
 
         messages = [
             MockUsageMessage("1", "user", "tiny", time_created=1),
-            MockUsageMessage("2", "assistant", "tiny", tokens_input=24_000,
-                             tokens_output=100, time_created=2),
+            MockUsageMessage(
+                "2",
+                "assistant",
+                "tiny",
+                tokens_input=24_000,
+                tokens_output=100,
+                time_created=2,
+            ),
         ]
         assert estimate_context_tokens(messages) == 24_100
 
@@ -1438,8 +1517,14 @@ class TestUsageAnchoredEstimation:
         appended = MockUsageMessage("3", "user", "x" * 4000, time_created=3)
         messages = [
             MockUsageMessage("1", "user", "tiny", time_created=1),
-            MockUsageMessage("2", "assistant", "tiny", tokens_input=24_000,
-                             tokens_output=100, time_created=2),
+            MockUsageMessage(
+                "2",
+                "assistant",
+                "tiny",
+                tokens_input=24_000,
+                tokens_output=100,
+                time_created=2,
+            ),
             appended,
         ]
         expected = 24_100 + estimate_messages_tokens([appended])
@@ -1449,10 +1534,22 @@ class TestUsageAnchoredEstimation:
         from nova.agent.compaction import estimate_context_tokens
 
         messages = [
-            MockUsageMessage("1", "assistant", "a", tokens_input=1_000,
-                             tokens_output=10, time_created=1),
-            MockUsageMessage("2", "assistant", "b", tokens_input=50_000,
-                             tokens_output=20, time_created=2),
+            MockUsageMessage(
+                "1",
+                "assistant",
+                "a",
+                tokens_input=1_000,
+                tokens_output=10,
+                time_created=1,
+            ),
+            MockUsageMessage(
+                "2",
+                "assistant",
+                "b",
+                tokens_input=50_000,
+                tokens_output=20,
+                time_created=2,
+            ),
         ]
         assert estimate_context_tokens(messages) == 50_020
 
@@ -1460,8 +1557,14 @@ class TestUsageAnchoredEstimation:
         """A character-only estimate would drift; the anchor keeps the base exact."""
         from nova.agent.compaction import estimate_context_tokens
 
-        anchor = MockUsageMessage("2", "assistant", "b", tokens_input=100_000,
-                                  tokens_output=50, time_created=2)
+        anchor = MockUsageMessage(
+            "2",
+            "assistant",
+            "b",
+            tokens_input=100_000,
+            tokens_output=50,
+            time_created=2,
+        )
         assert estimate_context_tokens([anchor]) == 100_050
 
     def test_relative_measures_never_use_the_anchor(self):
@@ -1473,16 +1576,28 @@ class TestUsageAnchoredEstimation:
         """
         from nova.llm.tokenizer import estimate_messages_tokens
 
-        anchored = MockUsageMessage("1", "assistant", "b", tokens_input=500_000,
-                                    tokens_output=10, time_created=1)
+        anchored = MockUsageMessage(
+            "1",
+            "assistant",
+            "b",
+            tokens_input=500_000,
+            tokens_output=10,
+            time_created=1,
+        )
         assert estimate_tokens([anchored]) == estimate_messages_tokens([anchored])
         assert estimate_tokens([anchored]) < 1_000
 
     def test_split_point_still_found_when_history_carries_usage(self):
         history = [
             MockUsageMessage("1", "user", "x" * 8000, time_created=1),
-            MockUsageMessage("2", "assistant", "y" * 8000, tokens_input=500_000,
-                             tokens_output=2_000, time_created=2),
+            MockUsageMessage(
+                "2",
+                "assistant",
+                "y" * 8000,
+                tokens_input=500_000,
+                tokens_output=2_000,
+                time_created=2,
+            ),
             MockUsageMessage("3", "user", "z" * 8000, time_created=3),
             MockUsageMessage("4", "assistant", "w" * 8000, time_created=4),
         ]
@@ -1501,8 +1616,13 @@ class TestCompactionSummaryContract:
         try:
             session_id = "continuation-session"
             await _seed_compactable_session(db, session_id)
-            await compact(session_id, db, StubSummaryProvider("state"),
-                          "gemma4:26b", split_index=2)
+            await compact(
+                session_id,
+                db,
+                StubSummaryProvider("state"),
+                "gemma4:26b",
+                split_index=2,
+            )
 
             summaries = [m for m in await db.get_messages(session_id) if m.summary == 1]
             assert CONTINUATION_INSTRUCTION in summaries[0].content
@@ -1535,18 +1655,28 @@ class TestCompactionSummaryContract:
         try:
             session_id = "second-compaction"
             await _seed_compactable_session(db, session_id)
-            await db.add_message(session_id, "assistant",
-                                 "[Previous conversation summary]\nolder state",
-                                 summary=True)
+            await db.add_message(
+                session_id,
+                "assistant",
+                "[Previous conversation summary]\nolder state",
+                summary=True,
+            )
             await db.add_message(session_id, "user", "third question")
             await db.add_message(session_id, "assistant", "third answer")
             messages = await db.get_messages(session_id)
             summary_index = next(
-                index for index, message in enumerate(messages) if message.summary == 1)
+                index for index, message in enumerate(messages) if message.summary == 1
+            )
             llm = PromptCapturingProvider()
 
-            await compact(session_id, db, llm, "gemma4:26b",
-                          messages=messages, split_index=summary_index + 1)
+            await compact(
+                session_id,
+                db,
+                llm,
+                "gemma4:26b",
+                messages=messages,
+                split_index=summary_index + 1,
+            )
 
             assert PREVIOUS_SUMMARY_ANCHOR in llm.prompt
             # The "never call a tool" instruction lives in the system prompt now,
@@ -1562,7 +1692,9 @@ class TestCompactionCircuitBreaker:
         from nova.llm.provider import Done, LLMProvider
 
         class UnusedProvider(LLMProvider):
-            async def chat(self, messages, model="m", stream=False, tools=None, **kwargs):
+            async def chat(
+                self, messages, model="m", stream=False, tools=None, **kwargs
+            ):
                 return Done(content="")
 
             async def chat_stream(self, messages, model="m", tools=None, **kwargs):
@@ -1574,8 +1706,9 @@ class TestCompactionCircuitBreaker:
             def get_max_tokens(self, model):
                 return 128000
 
-        return Agent(config=AgentConfig(model="test-model"),
-                     llm_provider=UnusedProvider())
+        return Agent(
+            config=AgentConfig(model="test-model"), llm_provider=UnusedProvider()
+        )
 
     def test_allows_compaction_until_the_failure_limit(self):
         from nova.settings import get_settings
@@ -1608,7 +1741,8 @@ class TestSummaryLifecycle:
             session_id = "summary-lifecycle"
             await _seed_compactable_session(db, session_id)
             summary = await db.add_message(
-                session_id, "assistant", "old summary", summary=True)
+                session_id, "assistant", "old summary", summary=True
+            )
 
             active_before = await db.get_messages(session_id)
             assert summary.id in [m.id for m in active_before]
@@ -1638,12 +1772,20 @@ class TestSummaryLifecycle:
             await db.add_message(session_id, "assistant", "next answer")
             messages = await db.get_messages(session_id)
             next_user_index = next(
-                index for index, message in enumerate(messages)
-                if message.role == "user" and message.content == "next question")
+                index
+                for index, message in enumerate(messages)
+                if message.role == "user" and message.content == "next question"
+            )
 
             llm._summary = "generation-2"
-            await compact(session_id, db, llm, "gemma4:26b",
-                          messages=messages, split_index=next_user_index)
+            await compact(
+                session_id,
+                db,
+                llm,
+                "gemma4:26b",
+                messages=messages,
+                split_index=next_user_index,
+            )
 
             summaries = [m for m in await db.get_messages(session_id) if m.summary == 1]
             assert len(summaries) == 1, "only the newest summary stays active"
@@ -1670,7 +1812,9 @@ class TestInLoopCompaction:
                 self._index = 0
                 self.summary_calls = 0
 
-            async def chat(self, messages, model="m", stream=False, tools=None, **kwargs):
+            async def chat(
+                self, messages, model="m", stream=False, tools=None, **kwargs
+            ):
                 self.summary_calls += 1
                 return Done(content="mid-request summary")
 
@@ -1738,11 +1882,13 @@ class TestInLoopCompaction:
         from nova.llm.provider import TextDelta, ToolCall
 
         async with self._isolated_store():
-            provider = self._provider([
-                [ToolCall(id="t1", name="bulky_tool", arguments="{}")],
-                [ToolCall(id="t2", name="bulky_tool", arguments="{}")],
-                [TextDelta(content="done")],
-            ])
+            provider = self._provider(
+                [
+                    [ToolCall(id="t1", name="bulky_tool", arguments="{}")],
+                    [ToolCall(id="t2", name="bulky_tool", arguments="{}")],
+                    [TextDelta(content="done")],
+                ]
+            )
             agent = Agent(
                 config=AgentConfig(model="test-model", max_iterations=5),
                 llm_provider=provider,
@@ -1767,9 +1913,11 @@ class TestInLoopCompaction:
             assert tool_messages, "the tool must have run"
             assert any(SNIP_MARKER in (m.content or "") for m in tool_messages), (
                 "an oversized tool result must be trimmed during the request, "
-                "not left to overrun the context window")
+                "not left to overrun the context window"
+            )
             assert provider.summary_calls == 0, (
-                "Layer 1 alone was enough; no summarisation call should be spent")
+                "Layer 1 alone was enough; no summarisation call should be spent"
+            )
 
     @pytest.mark.asyncio
     async def test_layer2_fires_mid_request_when_trimming_is_not_enough(self):
@@ -1780,15 +1928,19 @@ class TestInLoopCompaction:
         from nova.llm.provider import TextDelta, ToolCall
 
         async with self._isolated_store():
-            provider = self._provider([
-                [TextDelta(content="first answer")],
-                # Large enough to cross the threshold for an unknown model: the
-                # default window is 128000 and the reserve leaves 104000, so
-                # 500k ASCII characters is about 125k estimated tokens.
-                [TextDelta(content="X" * 500_000),
-                 ToolCall(id="t1", name="tiny_tool", arguments="{}")],
-                [TextDelta(content="done")],
-            ])
+            provider = self._provider(
+                [
+                    [TextDelta(content="first answer")],
+                    # Large enough to cross the threshold for an unknown model: the
+                    # default window is 128000 and the reserve leaves 104000, so
+                    # 500k ASCII characters is about 125k estimated tokens.
+                    [
+                        TextDelta(content="X" * 500_000),
+                        ToolCall(id="t1", name="tiny_tool", arguments="{}"),
+                    ],
+                    [TextDelta(content="done")],
+                ]
+            )
             agent = Agent(
                 config=AgentConfig(model="test-model", max_iterations=5),
                 llm_provider=provider,
@@ -1805,13 +1957,16 @@ class TestInLoopCompaction:
                     session_id = data
 
             events = []
-            async for event, data in agent.chat_stream("second request", session_id=session_id):
+            async for event, data in agent.chat_stream(
+                "second request", session_id=session_id
+            ):
                 events.append((event, data))
 
             assert len([e for e, _ in events if e == AgentEvent.TURN_START]) >= 2
             assert [e for e, _ in events if e == AgentEvent.COMPACTION_START], (
                 "context that grew past the threshold inside the request must be "
-                "compacted before the next model call")
+                "compacted before the next model call"
+            )
             assert provider.summary_calls >= 1
 
     @pytest.mark.asyncio
@@ -1822,10 +1977,12 @@ class TestInLoopCompaction:
         from nova.llm.provider import TextDelta, ToolCall
 
         async with self._isolated_store():
-            provider = self._provider([
-                [ToolCall(id="t1", name="tiny_tool", arguments="{}")],
-                [TextDelta(content="done")],
-            ])
+            provider = self._provider(
+                [
+                    [ToolCall(id="t1", name="tiny_tool", arguments="{}")],
+                    [TextDelta(content="done")],
+                ]
+            )
             agent = Agent(
                 config=AgentConfig(model="test-model", max_iterations=5),
                 llm_provider=provider,
@@ -1852,10 +2009,12 @@ class TestInLoopCompaction:
         from nova.llm.provider import TextDelta, ToolCall
 
         async with self._isolated_store():
-            provider = self._provider([
-                [ToolCall(id="t1", name="bulky_tool", arguments="{}")],
-                [TextDelta(content="done")],
-            ])
+            provider = self._provider(
+                [
+                    [ToolCall(id="t1", name="bulky_tool", arguments="{}")],
+                    [TextDelta(content="done")],
+                ]
+            )
             agent = Agent(
                 config=AgentConfig(model="test-model", max_iterations=5),
                 llm_provider=provider,
@@ -1880,7 +2039,8 @@ class TestInLoopCompaction:
             stored = await agent.session.get_messages(session_id=session_id)
             tool_messages = [m for m in stored if m.role == "tool"]
             assert any(SNIP_MARKER in (m.content or "") for m in tool_messages), (
-                "the breaker gates the model call, not the trimming that needs no model")
+                "the breaker gates the model call, not the trimming that needs no model"
+            )
 
 
 class TestContextWindowResolution:
@@ -1905,23 +2065,26 @@ class TestContextWindowResolution:
         assert source == "exact"
         assert window == 8192, "gpt-4 is 8k even though the gpt family is larger"
 
-    @pytest.mark.parametrize("model,expected", [
-        ("gpt-4o", 128_000),
-        ("gpt-4o-2024-08-06", 128_000),
-        ("o3-mini", 200_000),
-        ("claude-opus-5", 200_000),
-        ("claude-fable-5", 1_000_000),
-        ("gemini-3-flash", 1_048_576),
-        ("gemini-1.5-pro", 2_097_152),
-        ("muse-spark-1.2-contributor", 1_048_576),
-        ("meta/muse-spark-1.2", 1_048_576),
-        ("deepseek-v4-flash-free", 131_072),
-        ("qwen3.7-plus", 131_072),
-        ("kimi-k2-0905", 262_144),
-        ("grok-4", 262_144),
-        ("llama-4-scout", 1_048_576),
-        ("gemma3:12b", 131_072),
-    ])
+    @pytest.mark.parametrize(
+        "model,expected",
+        [
+            ("gpt-4o", 128_000),
+            ("gpt-4o-2024-08-06", 128_000),
+            ("o3-mini", 200_000),
+            ("claude-opus-5", 200_000),
+            ("claude-fable-5", 1_000_000),
+            ("gemini-3-flash", 1_048_576),
+            ("gemini-1.5-pro", 2_097_152),
+            ("muse-spark-1.2-contributor", 1_048_576),
+            ("meta/muse-spark-1.2", 1_048_576),
+            ("deepseek-v4-flash-free", 131_072),
+            ("qwen3.7-plus", 131_072),
+            ("kimi-k2-0905", 262_144),
+            ("grok-4", 262_144),
+            ("llama-4-scout", 1_048_576),
+            ("gemma3:12b", 131_072),
+        ],
+    )
     def test_family_patterns_cover_mainstream_models(self, model, expected):
         from nova.llm.tokenizer import resolve_context_window
 
@@ -1951,14 +2114,17 @@ class TestContextWindowResolution:
             window, source = resolve_context_window("no-such-model-9000", "x")
         assert (window, source) == (64_000, "default")
 
-    @pytest.mark.parametrize("raw,normalised", [
-        ("meta/muse-spark-1.2", "muse-spark-1.2"),
-        ("gemma4:26b", "gemma4"),
-        ("deepseek-v4-flash-free", "deepseek-v4-flash"),
-        ("claude-sonnet-4-6[1m]", "claude-sonnet-4-6"),
-        ("gpt-4o-2024-08-06", "gpt-4o"),
-        ("  GPT-4O  ", "gpt-4o"),
-    ])
+    @pytest.mark.parametrize(
+        "raw,normalised",
+        [
+            ("meta/muse-spark-1.2", "muse-spark-1.2"),
+            ("gemma4:26b", "gemma4"),
+            ("deepseek-v4-flash-free", "deepseek-v4-flash"),
+            ("claude-sonnet-4-6[1m]", "claude-sonnet-4-6"),
+            ("gpt-4o-2024-08-06", "gpt-4o"),
+            ("  GPT-4O  ", "gpt-4o"),
+        ],
+    )
     def test_model_id_normalisation(self, raw, normalised):
         from nova.llm.tokenizer import normalise_model_id
 
@@ -2109,7 +2275,9 @@ async def test_compact_does_not_touch_reasoning_content_with_provider_meta():
         # split_index=2 keeps the thinking message in the recent (preserved) portion
         assert await compact(session_id, db, llm, "gemma4:26b", split_index=2) is True
 
-        all_messages = await db.get_messages(session_id, MessageFilter(include_compacted=True))
+        all_messages = await db.get_messages(
+            session_id, MessageFilter(include_compacted=True)
+        )
         found = next(m for m in all_messages if m.id == thinking_message.id)
         assert found.reasoning_content == original_reasoning
         assert found.reasoning_content == thinking_text
@@ -2173,31 +2341,45 @@ async def test_compaction_pipeline_never_rewrites_reasoning_content_when_provide
             reasoning_content=thinking_recent_text,
             provider_meta={"thinking_signature": "SIG_RECENT"},
         )
-        await db.add_message(session_id, "tool", "B" * 30000, tool_call_id="call-recent")
+        await db.add_message(
+            session_id, "tool", "B" * 30000, tool_call_id="call-recent"
+        )
         await db.add_message(session_id, "user", "final question")
         await db.add_message(session_id, "assistant", "final answer")
 
         # Snapshot every message that carries a truthy provider_meta before.
-        before_all = await db.get_messages(session_id, MessageFilter(include_compacted=True))
+        before_all = await db.get_messages(
+            session_id, MessageFilter(include_compacted=True)
+        )
         snapshot = [
-            (message.id, message.reasoning_content, copy.deepcopy(message.provider_meta))
+            (
+                message.id,
+                message.reasoning_content,
+                copy.deepcopy(message.provider_meta),
+            )
             for message in before_all
             if message.provider_meta
         ]
-        assert len(snapshot) == 2, "fixture must contain exactly two thinking messages for the guard"
+        assert len(snapshot) == 2, (
+            "fixture must contain exactly two thinking messages for the guard"
+        )
 
         # Layer 1: run snip_old_tool_results over the in-memory history with a
         # budget that forces trimming, and verify the guard holds in-memory.
-        messages_for_snip = await db.get_messages(session_id, MessageFilter(include_compacted=True))
+        messages_for_snip = await db.get_messages(
+            session_id, MessageFilter(include_compacted=True)
+        )
         snip_old_tool_results(
             messages_for_snip,
             max_chars=2000,
             preserve_last_n_messages=0,
             tool_output_token_budget=1,
         )
-        assert any(SNIP_MARKER in (m.content or "") for m in messages_for_snip if m.role == "tool"), (
-            "generic guard fixture is vacuous: no tool output was snipped"
-        )
+        assert any(
+            SNIP_MARKER in (m.content or "")
+            for m in messages_for_snip
+            if m.role == "tool"
+        ), "generic guard fixture is vacuous: no tool output was snipped"
         for message_id, expected_reasoning, expected_meta in snapshot:
             found = next(m for m in messages_for_snip if m.id == message_id)
             assert found.reasoning_content == expected_reasoning, (
@@ -2213,10 +2395,14 @@ async def test_compaction_pipeline_never_rewrites_reasoning_content_when_provide
         llm = StubSummaryProvider("guard summary")
         assert await compact(session_id, db, llm, "gemma4:26b", split_index=4) is True
 
-        after_all = await db.get_messages(session_id, MessageFilter(include_compacted=True))
+        after_all = await db.get_messages(
+            session_id, MessageFilter(include_compacted=True)
+        )
         for message_id, expected_reasoning, expected_meta in snapshot:
             found = next((m for m in after_all if m.id == message_id), None)
-            assert found is not None, f"message {message_id} disappeared after compaction"
+            assert found is not None, (
+                f"message {message_id} disappeared after compaction"
+            )
             assert found.reasoning_content == expected_reasoning, (
                 f"reasoning_content for {message_id} was rewritten by compaction "
                 f"(expected {len(expected_reasoning or '')} chars, got {len(found.reasoning_content or '')})"
@@ -2238,8 +2424,9 @@ class TestSummaryFoldingIsLossless:
         """
         summary_text = "FACT-" + "x" * 3000 + "-TAIL-" + "y" * 2000
         messages = [
-            MockTimedMessage("1", "assistant", summary_text,
-                             time_created=100, summary=1),
+            MockTimedMessage(
+                "1", "assistant", summary_text, time_created=100, summary=1
+            ),
             MockTimedMessage("2", "user", "ordinary follow-up", time_created=200),
         ]
 
@@ -2251,7 +2438,8 @@ class TestSummaryFoldingIsLossless:
         """Ordinary messages keep a cap so one huge paste cannot dominate."""
         huge = "z" * (SUMMARY_MESSAGE_MAX_CHARS + 500)
         rendered = _format_for_summary(
-            [MockTimedMessage("1", "tool", huge, time_created=1)])
+            [MockTimedMessage("1", "tool", huge, time_created=1)]
+        )
 
         assert huge not in rendered
         assert huge[:SUMMARY_MESSAGE_MAX_CHARS] in rendered
@@ -2269,16 +2457,28 @@ class TestForcedCompactionBypassesBreaker:
         from nova.agent import compaction as compaction_module
         from nova.agent.compaction import CompactionController, CompactionPlan
 
-        async def fake_prepare_compaction(session_id, messages, last_compacted_at,
-                                          db, model="gpt-4o", provider="ollama",
-                                          force=False):
+        async def fake_prepare_compaction(
+            session_id,
+            messages,
+            last_compacted_at,
+            db,
+            model="gpt-4o",
+            provider="ollama",
+            force=False,
+        ):
             return CompactionPlan(
-                session_id, 128000, 200000, len(messages),
-                needs_compaction=True, split_index=3, over_threshold=True,
+                session_id,
+                128000,
+                200000,
+                len(messages),
+                needs_compaction=True,
+                split_index=3,
+                over_threshold=True,
             )
 
         monkeypatch.setattr(
-            compaction_module, "prepare_compaction", fake_prepare_compaction)
+            compaction_module, "prepare_compaction", fake_prepare_compaction
+        )
 
         controller = CompactionController(model="gpt-4o", provider="openai")
         controller.consecutive_failures = 99  # breaker open

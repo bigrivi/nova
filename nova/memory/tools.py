@@ -129,7 +129,10 @@ class MemoryTools:
         session_id: str | None = None,
     ) -> ToolResult:
         if has_threats(content):
-            return ToolResult(success=False, content="Memory content rejected — flagged as potential injection.")
+            return ToolResult(
+                success=False,
+                content="Memory content rejected — flagged as potential injection.",
+            )
         try:
             record, created = await self._get_service().save(
                 MemoryWriteRequest(
@@ -147,7 +150,9 @@ class MemoryTools:
             return ToolResult(success=False, content=str(exc), error=str(exc))
 
         action = "created" if created else "updated"
-        return ToolResult(success=True, content=f"Memory {action}.\n{_format_memory(record)}")
+        return ToolResult(
+            success=True, content=f"Memory {action}.\n{_format_memory(record)}"
+        )
 
     @tool(
         name="search_memory",
@@ -212,9 +217,13 @@ class MemoryTools:
             return ToolResult(success=False, content=str(exc), error=str(exc))
 
         if not results:
-            return ToolResult(success=True, content=f"No relevant memories found for query: {query}")
+            return ToolResult(
+                success=True, content=f"No relevant memories found for query: {query}"
+            )
 
-        lines = [f"Found {len(results)} memories. Only use those directly relevant to the current question:"]
+        lines = [
+            f"Found {len(results)} memories. Only use those directly relevant to the current question:"
+        ]
         lines.extend(_format_memory(record) for record in results)
         return ToolResult(success=True, content="\n".join(lines))
 

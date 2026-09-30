@@ -23,7 +23,9 @@ from nova.memory.models import (
 from nova.memory.repository import MemoryRepository
 from nova.settings import get_settings
 
-MemoryAISelector = Callable[[str, list[MemoryRecord], int], Awaitable[list[MemoryRecord]]]
+MemoryAISelector = Callable[
+    [str, list[MemoryRecord], int], Awaitable[list[MemoryRecord]]
+]
 
 MIN_RELEVANCE_SCORE = 5
 
@@ -82,16 +84,23 @@ class MemoryService:
         )
         self._validate_scope_session_pair(filters.scope, filters.session_id)
         candidates = await self.repository.list_memories(filters)
-        ranked = self._rank_records(candidates, normalized_query, limit=self._normalize_limit(limit) * 3)
+        ranked = self._rank_records(
+            candidates, normalized_query, limit=self._normalize_limit(limit) * 3
+        )
         if not use_ai or not ranked:
-            return ranked[:self._normalize_limit(limit)]
+            return ranked[: self._normalize_limit(limit)]
 
         selector = ai_selector or self._select_with_ai
         try:
-            selected = await selector(normalized_query, ranked, self._normalize_limit(limit))
+            selected = await selector(
+                normalized_query, ranked, self._normalize_limit(limit)
+            )
         except Exception:
-            return ranked[:self._normalize_limit(limit)]
-        return selected[:self._normalize_limit(limit)] or ranked[:self._normalize_limit(limit)]
+            return ranked[: self._normalize_limit(limit)]
+        return (
+            selected[: self._normalize_limit(limit)]
+            or ranked[: self._normalize_limit(limit)]
+        )
 
     async def list_memories(
         self,
@@ -230,7 +239,9 @@ class MemoryService:
         text = str(value).strip()
         return text or None
 
-    def _rank_records(self, records: list[MemoryRecord], query: str, limit: int) -> list[MemoryRecord]:
+    def _rank_records(
+        self, records: list[MemoryRecord], query: str, limit: int
+    ) -> list[MemoryRecord]:
         normalized_query = query.strip().lower()
         if not normalized_query:
             return records[:limit]
@@ -265,9 +276,32 @@ class MemoryService:
 
     def _tokenize_query(self, query: str) -> list[str]:
         stop_words = {
-            "the", "and", "for", "with", "that", "this", "from", "into", "about",
-            "please", "answer", "tell", "me", "a", "an", "to", "of", "in", "on",
-            "is", "are", "be", "it", "my", "our", "your",
+            "the",
+            "and",
+            "for",
+            "with",
+            "that",
+            "this",
+            "from",
+            "into",
+            "about",
+            "please",
+            "answer",
+            "tell",
+            "me",
+            "a",
+            "an",
+            "to",
+            "of",
+            "in",
+            "on",
+            "is",
+            "are",
+            "be",
+            "it",
+            "my",
+            "our",
+            "your",
         }
         terms = []
         for term in re.findall(r"[a-z0-9_]+", query.lower()):
@@ -341,20 +375,16 @@ class MemoryService:
 
         system = (
             "You select the most relevant saved memories for a user query.\n"
-            f"Return strict JSON only, with key \"indices\" containing up to {limit} integer indices.\n"
+            f'Return strict JSON only, with key "indices" containing up to {limit} integer indices.\n'
             "Selection rules:\n"
             "1. Prefer memories whose summary or key directly matches the user's current intent.\n"
             "2. Use content only as supporting evidence or a tie-breaker.\n"
             "3. Prefer specific topical memories over generic writing-style or broad project notes.\n"
             "4. Do not select a memory just because it shares generic words with the query.\n"
             "5. Return indices in best-first order.\n"
-            "If none are clearly relevant, return {\"indices\": []}."
+            'If none are clearly relevant, return {"indices": []}.'
         )
-        user_content = (
-            f"Query: {query}\n\n"
-            "Candidates:\n"
-            + "\n\n".join(manifest_lines)
-        )
+        user_content = f"Query: {query}\n\nCandidates:\n" + "\n\n".join(manifest_lines)
         return [
             LLMMessage(role="system", content=system),
             LLMMessage(role="user", content=user_content),

@@ -44,9 +44,7 @@ class CodeRunExecutor(TaskExecutor):
                     success=False, error=f"Script not found: {target}"
                 )
             if not target.is_file():
-                return TaskExecutionResult(
-                    success=False, error=f"Not a file: {target}"
-                )
+                return TaskExecutionResult(success=False, error=f"Not a file: {target}")
         elif code.strip():
             with tempfile.NamedTemporaryFile(
                 mode="w",
@@ -74,9 +72,7 @@ class CodeRunExecutor(TaskExecutor):
         nova_site = str(Path.home() / ".nova" / "site-packages")
         existing_python_path = environment.get("PYTHONPATH")
         environment["PYTHONPATH"] = (
-            f"{nova_site}:{existing_python_path}"
-            if existing_python_path
-            else nova_site
+            f"{nova_site}:{existing_python_path}" if existing_python_path else nova_site
         )
         if getattr(sys, "frozen", False):
             command = [sys.executable, "--_run-code", str(target), *safe_args]

@@ -33,14 +33,17 @@ def test_settings_transcription_defaults_to_disabled_groq(monkeypatch, tmp_path)
 
 def test_settings_transcription_from_config(monkeypatch, tmp_path):
     home = tmp_path / "nova-tx-config"
-    _write_config(home, {
-        "providers": {},
-        "transcription": {
-            "api_key": "gsk-test",
-            "model": "whisper-large-v3",
-            "language": "en",
+    _write_config(
+        home,
+        {
+            "providers": {},
+            "transcription": {
+                "api_key": "gsk-test",
+                "model": "whisper-large-v3",
+                "language": "en",
+            },
         },
-    })
+    )
     monkeypatch.setenv("NOVA_HOME", str(home))
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     settings = Settings.load_config()
@@ -462,7 +465,9 @@ def test_settings_provider_level_extra_body_flattened(monkeypatch, tmp_path):
                     "type": "openai-compatible",
                     "options": {
                         "base_url": "http://openai.local/v1",
-                        "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+                        "extra_body": {
+                            "chat_template_kwargs": {"enable_thinking": False}
+                        },
                     },
                     "models": {
                         "qwen": {"name": "Qwen/Qwen3-27B"},
@@ -490,7 +495,9 @@ def test_settings_model_level_extra_body_flattened(monkeypatch, tmp_path):
                     "models": {
                         "qwen": {
                             "name": "Qwen/Qwen3-27B",
-                            "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+                            "extra_body": {
+                                "chat_template_kwargs": {"enable_thinking": False}
+                            },
                         }
                     },
                 }
@@ -514,12 +521,16 @@ def test_settings_extra_body_model_overrides_provider_same_key(monkeypatch, tmp_
                     "type": "openai-compatible",
                     "options": {
                         "base_url": "http://openai.local/v1",
-                        "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+                        "extra_body": {
+                            "chat_template_kwargs": {"enable_thinking": False}
+                        },
                     },
                     "models": {
                         "qwen": {
                             "name": "Qwen/Qwen3-27B",
-                            "extra_body": {"chat_template_kwargs": {"enable_thinking": True}},
+                            "extra_body": {
+                                "chat_template_kwargs": {"enable_thinking": True}
+                            },
                         }
                     },
                 }
@@ -543,12 +554,16 @@ def test_settings_extra_body_deep_merged_different_nested_keys(monkeypatch, tmp_
                     "type": "openai-compatible",
                     "options": {
                         "base_url": "http://openai.local/v1",
-                        "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+                        "extra_body": {
+                            "chat_template_kwargs": {"enable_thinking": False}
+                        },
                     },
                     "models": {
                         "qwen": {
                             "name": "Qwen/Qwen3-27B",
-                            "extra_body": {"chat_template_kwargs": {"thinking_budget": 512}},
+                            "extra_body": {
+                                "chat_template_kwargs": {"thinking_budget": 512}
+                            },
                         }
                     },
                 }
@@ -562,7 +577,9 @@ def test_settings_extra_body_deep_merged_different_nested_keys(monkeypatch, tmp_
     }
 
 
-def test_settings_plain_model_keys_still_pass_through_with_extra_body(monkeypatch, tmp_path):
+def test_settings_plain_model_keys_still_pass_through_with_extra_body(
+    monkeypatch, tmp_path
+):
     home = tmp_path / "nova-plain-keys-regression-home"
     _write_config(
         home,
@@ -598,7 +615,9 @@ def test_settings_extra_body_never_leaks_as_key(monkeypatch, tmp_path):
                     "type": "openai-compatible",
                     "options": {
                         "base_url": "http://openai.local/v1",
-                        "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+                        "extra_body": {
+                            "chat_template_kwargs": {"enable_thinking": False}
+                        },
                     },
                     "models": {
                         "qwen": {
@@ -724,7 +743,9 @@ async def test_ensure_db_uses_settings_database_path(monkeypatch, tmp_path):
     get_settings.cache_clear()
 
 
-def test_configure_logging_uses_daily_rotation_with_30_day_retention(monkeypatch, tmp_path):
+def test_configure_logging_uses_daily_rotation_with_30_day_retention(
+    monkeypatch, tmp_path
+):
     home = tmp_path / "nova-log-home"
     monkeypatch.setenv("NOVA_HOME", str(home))
     settings = Settings.load_config()

@@ -21,7 +21,9 @@ class StubProvider:
         self.kwargs: list[dict] = []
 
     async def chat_stream(self, messages, model="m", tools=None, **kwargs):
-        self.kwargs.append({"messages": messages, "model": model, "tools": tools, **kwargs})
+        self.kwargs.append(
+            {"messages": messages, "model": model, "tools": tools, **kwargs}
+        )
         if self._delay:
             await asyncio.sleep(self._delay)
         if self._error is not None:

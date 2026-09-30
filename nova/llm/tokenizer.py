@@ -6,20 +6,20 @@ import re
 log = logging.getLogger(__name__)
 
 # Character-to-token ratios by content type
-CHARS_PER_TOKEN_TEXT = 4          # Normal messages
-CHARS_PER_TOKEN_TOOL = 2          # Tool results are more token-dense
-IMAGE_CHAR_ESTIMATE = 8000            # Fixed estimate for images
+CHARS_PER_TOKEN_TEXT = 4  # Normal messages
+CHARS_PER_TOKEN_TOOL = 2  # Tool results are more token-dense
+IMAGE_CHAR_ESTIMATE = 8000  # Fixed estimate for images
 
 # CJK text tokenizes at roughly one token per character, so the Latin-oriented
 # ratios above underestimate Chinese/Japanese/Korean content by 2-4x.
 CHARS_PER_TOKEN_CJK = 1
 
 _CJK_RANGES = (
-    (0x3040, 0x30FF),    # Hiragana + Katakana
-    (0x3400, 0x4DBF),    # CJK Unified Ideographs Extension A
-    (0x4E00, 0x9FFF),    # CJK Unified Ideographs
-    (0xAC00, 0xD7AF),    # Hangul syllables
-    (0xF900, 0xFAFF),    # CJK Compatibility Ideographs
+    (0x3040, 0x30FF),  # Hiragana + Katakana
+    (0x3400, 0x4DBF),  # CJK Unified Ideographs Extension A
+    (0x4E00, 0x9FFF),  # CJK Unified Ideographs
+    (0xAC00, 0xD7AF),  # Hangul syllables
+    (0xF900, 0xFAFF),  # CJK Compatibility Ideographs
     (0x20000, 0x2FA1F),  # CJK Extension B-F
 )
 
@@ -52,7 +52,7 @@ def count_cjk_chars(text: str) -> int:
         start = i * step
         if i == num - 1:
             start = n - window
-        segment = text[start:start + window]
+        segment = text[start : start + window]
         sampled_cjk += len(_CJK_RE.findall(segment))
         sampled_total += len(segment)
     if sampled_total == 0:
@@ -83,7 +83,11 @@ def estimate_message_tokens(message, model: str = "unknown") -> int:
     has_non_text = False
     if isinstance(content, list):
         for block in content:
-            if isinstance(block, dict) and block.get("type") in ["image", "thinking", "toolCall"]:
+            if isinstance(block, dict) and block.get("type") in [
+                "image",
+                "thinking",
+                "toolCall",
+            ]:
                 has_non_text = True
                 break
 
@@ -99,7 +103,7 @@ def estimate_message_tokens(message, model: str = "unknown") -> int:
 
     if isinstance(content, str):
         # Distinguish tool results for estimation
-        is_tool = (role == "tool")
+        is_tool = role == "tool"
         total += estimate_tokens_by_type(content, is_tool_result=is_tool)
     elif isinstance(content, list):
         # Handle multi-part messages (text blocks, images, etc.)
@@ -107,23 +111,22 @@ def estimate_message_tokens(message, model: str = "unknown") -> int:
             if isinstance(block, dict):
                 if block.get("type") == "text":
                     text = block.get("text", "")
-                    is_tool = (role == "tool")
-                    total += estimate_tokens_by_type(text,
-                                                     is_tool_result=is_tool)
+                    is_tool = role == "tool"
+                    total += estimate_tokens_by_type(text, is_tool_result=is_tool)
                 elif block.get("type") == "image":
                     total += IMAGE_CHAR_ESTIMATE // CHARS_PER_TOKEN_TEXT
                 elif block.get("type") == "thinking":
                     thinking = block.get("thinking", "")
                     total += estimate_tokens_by_type(
-                        str(thinking), is_tool_result=False)
+                        str(thinking), is_tool_result=False
+                    )
 
     # Add tool calls tokens
     tool_calls = _get_tool_calls(message)
     for tc in tool_calls:
         if isinstance(tc, dict):
             total += estimate_tokens_by_type(
-                str(tc.get("arguments", {})),
-                is_tool_result=False
+                str(tc.get("arguments", {})), is_tool_result=False
             )
 
     return total
@@ -141,6 +144,7 @@ def _estimate_with_tiktoken(message, model: str):
     """Use tiktoken for OpenAI models if available."""
     try:
         import tiktoken
+
         content = _get_content(message)
         text_to_encode = ""
 
@@ -258,7 +262,12 @@ _FAMILY_CONTEXT_WINDOWS = (
 
 # Suffixes vendors and gateways append without changing the window.
 _STRIPPABLE_SUFFIXES = (
-    "-free", "-contributor", "-preview", "-latest", "-cloud", "-thinking",
+    "-free",
+    "-contributor",
+    "-preview",
+    "-latest",
+    "-cloud",
+    "-thinking",
 )
 
 
@@ -316,6 +325,7 @@ def resolve_context_window(model: str, provider: str) -> tuple[int, str]:
 def _configured_context_window(model: str, provider: str) -> int | None:
     try:
         from nova.settings import get_settings
+
         settings = get_settings()
     except Exception:
         return None
@@ -338,11 +348,15 @@ def _configured_context_window(model: str, provider: str) -> int | None:
 def _default_context_window() -> int:
     try:
         from nova.settings import get_settings
-        configured = getattr(
-            get_settings().compaction, "default_context_window", None)
+
+        configured = getattr(get_settings().compaction, "default_context_window", None)
     except Exception:
         return DEFAULT_CONTEXT_WINDOW
-    if isinstance(configured, int) and not isinstance(configured, bool) and configured > 0:
+    if (
+        isinstance(configured, int)
+        and not isinstance(configured, bool)
+        and configured > 0
+    ):
         return configured
     return DEFAULT_CONTEXT_WINDOW
 
@@ -363,7 +377,12 @@ def resolve_context_limit(model: str, provider: str) -> int:
         log.warning(
             "Unknown context window for model %r (provider %r); assuming %d. "
             "Set providers.%s.models.%s.limit.context in config.json to correct it.",
-            model, provider, window, provider, model)
+            model,
+            provider,
+            window,
+            provider,
+            model,
+        )
     return window
 
 

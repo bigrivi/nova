@@ -34,8 +34,13 @@ class _FakeStreamContent:
 
 
 class _FakeResponse:
-    def __init__(self, *, status: int = 200, json_data: dict | None = None,
-                 lines: list[bytes] | None = None):
+    def __init__(
+        self,
+        *,
+        status: int = 200,
+        json_data: dict | None = None,
+        lines: list[bytes] | None = None,
+    ):
         self.status = status
         self.content_type = "application/json"
         self._json_data = json_data or {}
@@ -193,17 +198,27 @@ def test_tool_result_with_image_keeps_its_role_and_call_id():
     instead, because only user content may hold image parts.
     """
     provider = OpenAIProvider(api_key="k")
-    formatted = provider._format_messages([
-        {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [{"id": "call_1", "type": "function",
-                            "function": {"name": "read_image",
-                                         "arguments": "{}"}}],
-        },
-        {"role": "tool", "content": "Image loaded: shot.png",
-         "tool_call_id": "call_1", "images": ["QUJD"]},
-    ])
+    formatted = provider._format_messages(
+        [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "read_image", "arguments": "{}"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "content": "Image loaded: shot.png",
+                "tool_call_id": "call_1",
+                "images": ["QUJD"],
+            },
+        ]
+    )
 
     assert [m["role"] for m in formatted] == ["assistant", "tool", "user"]
     tool_msg, image_msg = formatted[1], formatted[2]
@@ -211,20 +226,19 @@ def test_tool_result_with_image_keeps_its_role_and_call_id():
     assert tool_msg["name"] == "read_image"
     assert tool_msg["content"] == "Image loaded: shot.png"
     assert image_msg["content"] == [
-        {"type": "image_url",
-         "image_url": {"url": "data:image/png;base64,QUJD"}}
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,QUJD"}}
     ]
     # Nothing may carry a tool_call_id without being a tool turn.
-    assert all(
-        not m.get("tool_call_id") for m in formatted if m["role"] == "user"
-    )
+    assert all(not m.get("tool_call_id") for m in formatted if m["role"] == "user")
 
 
 def test_user_message_with_image_keeps_single_turn():
     provider = OpenAIProvider(api_key="k")
-    formatted = provider._format_messages([
-        {"role": "user", "content": "look", "images": ["QUJD"]},
-    ])
+    formatted = provider._format_messages(
+        [
+            {"role": "user", "content": "look", "images": ["QUJD"]},
+        ]
+    )
 
     assert len(formatted) == 1
     assert formatted[0]["role"] == "user"
@@ -233,10 +247,12 @@ def test_user_message_with_image_keeps_single_turn():
 
 def test_message_without_images_is_untouched():
     provider = OpenAIProvider(api_key="k")
-    formatted = provider._format_messages([
-        {"role": "user", "content": "hi"},
-        {"role": "assistant", "content": "yo"},
-    ])
+    formatted = provider._format_messages(
+        [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "yo"},
+        ]
+    )
 
     assert formatted == [
         {"role": "user", "content": "hi"},

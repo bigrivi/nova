@@ -173,7 +173,9 @@ class ChatService:
         data_source = await self._get_data_source()
         return await data_source.update_session_title(session_id, title)
 
-    async def set_session_workspace(self, session_id: str, workspace_dir: str | None) -> bool:
+    async def set_session_workspace(
+        self, session_id: str, workspace_dir: str | None
+    ) -> bool:
         data_source = await self._get_data_source()
         normalized = _normalize_workspace_dir(workspace_dir)
         return await data_source.set_session_workspace(session_id, normalized)
@@ -195,9 +197,7 @@ class ChatService:
     async def create_project(self, name: str | None, path: str | None) -> dict:
         return await ProjectService(self._data_source).create_project(name, path)
 
-    async def update_project(
-        self, project_id: str, **fields: object
-    ) -> dict | None:
+    async def update_project(self, project_id: str, **fields: object) -> dict | None:
         return await ProjectService(self._data_source).update_project(
             project_id, **fields
         )
@@ -210,7 +210,9 @@ class ChatService:
     ) -> dict:
         return await ProjectService(self._data_source).resolve_for_path(path, name)
 
-    async def delete_session(self, session_id: str, delete_memories: bool = False) -> bool:
+    async def delete_session(
+        self, session_id: str, delete_memories: bool = False
+    ) -> bool:
         data_source = await self._get_data_source()
         owner = await self._request_registry.get(session_id)
         if owner is not None:
@@ -222,7 +224,9 @@ class ChatService:
                         if inspect.isawaitable(result):
                             await result
                     except Exception:
-                        log.exception("delete_session terminate failed for %s", session_id)
+                        log.exception(
+                            "delete_session terminate failed for %s", session_id
+                        )
                 await self._request_registry.unregister(session_id)
             else:
                 await self._request_registry.unregister(session_id)
@@ -302,7 +306,8 @@ class ChatService:
                     model,
                     provider_config.type,
                     provider_config.models.get(model)
-                    if isinstance(provider_config.models, dict) else None,
+                    if isinstance(provider_config.models, dict)
+                    else None,
                 )
                 reasoning_effort = fit_effort(levels, reasoning_effort)
         data_source = await self._get_data_source()
@@ -310,7 +315,9 @@ class ChatService:
             session_id, provider, model, reasoning_effort
         )
 
-    async def get_context(self, session_id: str, provider: str | None = None, model: str | None = None) -> dict:
+    async def get_context(
+        self, session_id: str, provider: str | None = None, model: str | None = None
+    ) -> dict:
         from nova.agent.compaction import estimate_context_tokens, get_context_limit
 
         data_source = await self._get_data_source()
@@ -342,17 +349,26 @@ class ChatService:
             first_provider = next(iter(self._settings.providers.keys()), None)
             if first_provider:
                 provider = provider or first_provider
-                model = model or next(iter(self._settings.providers[first_provider].models.keys()), "gpt-4o")
+                model = model or next(
+                    iter(self._settings.providers[first_provider].models.keys()),
+                    "gpt-4o",
+                )
             else:
                 provider = provider or "ollama"
                 model = model or "gpt-4o"
         used = estimate_context_tokens(
-            raw_messages, model or "unknown",
+            raw_messages,
+            model or "unknown",
             session.get("compacted_at") if session else None,
         )
         limit = get_context_limit(model or "unknown", provider or "ollama")
         percent = int(used / limit * 100) if limit else 0
-        return {"used": used, "limit": limit, "percent": percent, "message_count": len(raw_messages)}
+        return {
+            "used": used,
+            "limit": limit,
+            "percent": percent,
+            "message_count": len(raw_messages),
+        }
 
     async def interrupt(self, session_id: str) -> bool:
         interrupted = await self._request_registry.interrupt(session_id)
@@ -396,7 +412,9 @@ class ChatService:
             raise RuntimeError("Chat finished without a terminal event.")
         return response
 
-    async def chat_stream(self, request: ChatRequest) -> AsyncGenerator[ServerStreamEvent, None]:
+    async def chat_stream(
+        self, request: ChatRequest
+    ) -> AsyncGenerator[ServerStreamEvent, None]:
         """Yield ServerStreamEvents via _map_agent_event.
 
         Independent mapping path from chat_stream_ai_sdk (which uses
@@ -438,9 +456,13 @@ class ChatService:
                     continue
                 yield mapped
         except Exception as exc:
-            yield await emit(ResponseErrorEvent, ResponseErrorEventData, message=str(exc))
+            yield await emit(
+                ResponseErrorEvent, ResponseErrorEventData, message=str(exc)
+            )
 
-    async def chat_stream_ai_sdk(self, request: ChatRequest) -> AsyncGenerator[bytes, None]:
+    async def chat_stream_ai_sdk(
+        self, request: ChatRequest
+    ) -> AsyncGenerator[bytes, None]:
         """Yield framed AI-SDK byte chunks via AISDKStreamAdapter.
 
         Independent mapping path from chat_stream (which uses
@@ -460,20 +482,31 @@ class ChatService:
         try:
             async for event, data in self._agent_event_stream(request):
                 if event == AgentEvent.SESSION and data and not resolved_session_id:
-                    resolved_session_id = data if isinstance(data, str) else resolved_session_id
+                    resolved_session_id = (
+                        data if isinstance(data, str) else resolved_session_id
+                    )
                     if resolved_session_id and not turn_armed:
                         self._stream_buffer.begin_turn(resolved_session_id)
                         turn_armed = True
                 for chunk in adapter.feed(event, data):
                     if resolved_session_id:
                         if fallback_sequence:
-                            self._stream_buffer.ensure_next(resolved_session_id, fallback_sequence)
+                            self._stream_buffer.ensure_next(
+                                resolved_session_id, fallback_sequence
+                            )
                             fallback_sequence = 0
-                        _, framed = self._stream_buffer.append(resolved_session_id, chunk)
+                        _, framed = self._stream_buffer.append(
+                            resolved_session_id, chunk
+                        )
                         yield framed
                     else:
                         fallback_sequence += 1
-                        yield b"id: " + str(fallback_sequence).encode("ascii") + b"\n" + chunk
+                        yield (
+                            b"id: "
+                            + str(fallback_sequence).encode("ascii")
+                            + b"\n"
+                            + chunk
+                        )
         except Exception:
             if turn_armed and resolved_session_id:
                 self._stream_buffer.abort_turn(resolved_session_id)
@@ -541,7 +574,9 @@ class ChatService:
             error_message = data
 
         if agent_event == AgentEvent.SESSION:
-            return await emit(SessionStartedEvent, SessionStartedEventData, session_id=data)
+            return await emit(
+                SessionStartedEvent, SessionStartedEventData, session_id=data
+            )
         if agent_event in (AgentEvent.START, AgentEvent.TURN_END):
             return None
         if agent_event == AgentEvent.TURN_START:

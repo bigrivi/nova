@@ -71,39 +71,46 @@ class TestEstimateMessageTokens:
 
     def test_list_content_with_text(self):
         """Message with list content containing text blocks."""
-        msg = MockMessage("assistant", [
-            {"type": "text", "text": "Hello"},
-            {"type": "text", "text": "World"}
-        ])
+        msg = MockMessage(
+            "assistant",
+            [{"type": "text", "text": "Hello"}, {"type": "text", "text": "World"}],
+        )
         result = estimate_message_tokens(msg, model="gpt-4")
         # "Hello"=5, "World"=5, total=10, /4=2 (int)
         assert result == 2
 
     def test_list_content_with_image(self):
         """Message with image block (fixed 8000 char estimate)."""
-        msg = MockMessage("user", [
-            {"type": "image", "image_url": "..."},
-            {"type": "text", "text": "What's this?"}
-        ])
+        msg = MockMessage(
+            "user",
+            [
+                {"type": "image", "image_url": "..."},
+                {"type": "text", "text": "What's this?"},
+            ],
+        )
         result = estimate_message_tokens(msg, model="gpt-4")
         # text=12/4=3, image=8000//4=2000, total=2003
         assert result >= 2000
 
     def test_list_content_with_thinking(self):
         """Assistant message with thinking block."""
-        msg = MockMessage("assistant", [
-            {"type": "thinking", "thinking": "Let me think..."},
-            {"type": "text", "text": "Hello"}
-        ])
+        msg = MockMessage(
+            "assistant",
+            [
+                {"type": "thinking", "thinking": "Let me think..."},
+                {"type": "text", "text": "Hello"},
+            ],
+        )
         result = estimate_message_tokens(msg, model="gpt-4")
         # thinking=str->15/4=3, text=5/4=1, total=4
         assert result == 4
 
     def test_with_tool_calls(self):
         """Message with tool calls."""
-        msg = MockMessage("assistant", [
-            {"type": "toolCall", "name": "read", "arguments": {"file": "test.py"}}
-        ])
+        msg = MockMessage(
+            "assistant",
+            [{"type": "toolCall", "name": "read", "arguments": {"file": "test.py"}}],
+        )
         # Add tool_calls attribute manually
         msg.tool_calls = [{"name": "read", "arguments": {"file": "test.py"}}]
         result = estimate_message_tokens(msg, model="gpt-4")
@@ -129,7 +136,7 @@ class TestEstimateMessagesTokens:
         messages = [
             MockMessage("user", "Hello"),
             MockMessage("assistant", "Hi there!"),
-            MockMessage("user", "How are you?")
+            MockMessage("user", "How are you?"),
         ]
         result = estimate_messages_tokens(messages, model="gpt-4")
         assert result > 0
@@ -140,7 +147,7 @@ class TestEstimateMessagesTokens:
         messages = [
             MockMessage("user", "A" * 100),
             MockMessage("tool", "B" * 200),  # Tool result uses chars/2
-            MockMessage("assitant", "C" * 50)
+            MockMessage("assitant", "C" * 50),
         ]
         result = estimate_messages_tokens(messages, model="gpt-4")
         # The gpt-4 path uses tiktoken: 13 + 50 + 12. The removed 1.2 pad was
@@ -196,7 +203,8 @@ class TestNoEstimatePadding:
     def test_tool_results_use_their_own_ratio(self):
         """Tool output is denser, so it gets 2 chars per token, not 4."""
         result = estimate_message_tokens(
-            MockMessage("tool", "A" * 100), model="unknown")
+            MockMessage("tool", "A" * 100), model="unknown"
+        )
         assert result == 50
 
 
@@ -231,56 +239,51 @@ class TestProviderAwareContextLimit:
 
     def test_provider_model_joint_lookup(self):
         """Joint provider+model lookup returns correct limit."""
-        mock = self._mock_settings({
-            "ollama": {
-                "models": {
-                    "gemma4:26b": {"limit": {"context": 32000}}
-                }
-            },
-            "openai": {
-                "models": {
-                    "gpt-4o": {"limit": {"context": 128000}}
-                }
+        mock = self._mock_settings(
+            {
+                "ollama": {"models": {"gemma4:26b": {"limit": {"context": 32000}}}},
+                "openai": {"models": {"gpt-4o": {"limit": {"context": 128000}}}},
             }
-        })
+        )
 
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
+
             get_settings.cache_clear()
             result = resolve_context_limit("gemma4:26b", provider="ollama")
             assert result == 32000
 
     def test_provider_model_limit_context_priority(self):
         """limit.context takes priority over context_window."""
-        mock = self._mock_settings({
-            "openai": {
-                "models": {
-                    "gpt-4o": {
-                        "limit": {"context": 200000},
-                        "context_window": 128000
+        mock = self._mock_settings(
+            {
+                "openai": {
+                    "models": {
+                        "gpt-4o": {
+                            "limit": {"context": 200000},
+                            "context_window": 128000,
+                        }
                     }
                 }
             }
-        })
+        )
 
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
+
             get_settings.cache_clear()
             result = resolve_context_limit("gpt-4o", provider="openai")
             assert result == 200000
 
     def test_provider_model_context_window_fallback(self):
         """Falls back to context_window when limit.context missing."""
-        mock = self._mock_settings({
-            "anthropic": {
-                "models": {
-                    "claude-3-5-sonnet": {"context_window": 200000}
-                }
-            }
-        })
+        mock = self._mock_settings(
+            {"anthropic": {"models": {"claude-3-5-sonnet": {"context_window": 200000}}}}
+        )
 
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
+
             get_settings.cache_clear()
             result = resolve_context_limit("claude-3-5-sonnet", provider="anthropic")
             assert result == 200000
@@ -291,21 +294,18 @@ class TestProviderAwareContextLimit:
 
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
+
             get_settings.cache_clear()
             result = resolve_context_limit("gpt-4o", provider="unknown-provider")
             assert result == 128000
 
     def test_unknown_model_falls_back_to_hardcoded(self):
         """Unknown model in known provider falls back to hardcoded defaults."""
-        mock = self._mock_settings({
-            "openai": {
-                "models": {}
-            }
-        })
+        mock = self._mock_settings({"openai": {"models": {}}})
 
         with patch("nova.settings.get_settings", return_value=mock):
             from nova.settings import get_settings
+
             get_settings.cache_clear()
             result = resolve_context_limit("unknown-model", provider="openai")
             assert result == 128000
-

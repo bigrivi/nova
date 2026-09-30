@@ -19,6 +19,7 @@ def tool(
     parameters: dict | None = None,
 ):
     """Tool decorator."""
+
     def decorator(func: Callable) -> Callable:
         tool_name = name or func.__name__
         _tool_metadata[tool_name] = {
@@ -28,12 +29,14 @@ def tool(
             "func": func,
         }
         return func
+
     return decorator
 
 
 @dataclass
 class Tool:
     """Tool definition."""
+
     name: str
     description: str
     func: Callable
@@ -116,17 +119,19 @@ class ToolRegistry:
         """Return all tool schemas for LLM consumption."""
         schemas = []
         for tool in self.tools.values():
-            schemas.append({
-                # "name": tool.name,
-                # "description": tool.description,
-                # "parameters": self._convert_schema(tool.params_schema),
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": self._convert_schema(tool.params_schema)
+            schemas.append(
+                {
+                    # "name": tool.name,
+                    # "description": tool.description,
+                    # "parameters": self._convert_schema(tool.params_schema),
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": self._convert_schema(tool.params_schema),
+                    },
                 }
-            })
+            )
         return schemas
 
     def _convert_schema(self, schema: dict) -> dict:
@@ -137,7 +142,7 @@ class ToolRegistry:
         return {
             "type": "object",
             "properties": schema.get("properties", {}),
-            "required": schema.get("required", [])
+            "required": schema.get("required", []),
         }
 
     async def call(self, name: str, **kwargs) -> dict:

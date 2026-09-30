@@ -235,7 +235,9 @@ class BackgroundTaskManager:
             if len(active) >= self._max_concurrent:
                 raise TaskLimitError("Background task capacity is full")
             if len(session_active) >= self._max_per_session:
-                raise TaskLimitError("This session already has the maximum number of active tasks")
+                raise TaskLimitError(
+                    "This session already has the maximum number of active tasks"
+                )
 
         record = TaskRecord(
             task_id=uuid.uuid4().hex[:12],
@@ -356,7 +358,10 @@ class BackgroundTaskManager:
             if record.status in {"queued", "running"}
         ]
         await asyncio.gather(
-            *(self.cancel(task_id, self._records[task_id].session_id) for task_id in active_ids),
+            *(
+                self.cancel(task_id, self._records[task_id].session_id)
+                for task_id in active_ids
+            ),
             return_exceptions=True,
         )
 
@@ -387,7 +392,9 @@ class BackgroundTaskManager:
                             timeout=record.timeout_seconds,
                         )
                 except TimeoutError:
-                    record.error = f"Task exceeded its {record.timeout_seconds}s runtime limit"
+                    record.error = (
+                        f"Task exceeded its {record.timeout_seconds}s runtime limit"
+                    )
                     self._finish(record, "timed_out")
                     return
                 record.result = result.result

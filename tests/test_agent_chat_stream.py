@@ -57,7 +57,9 @@ class SessionCapturingProvider(ScriptedProvider):
 
     async def chat_stream(self, messages, model="m", tools=None, **kwargs):
         self.seen_session_ids.append(kwargs.get("session_id"))
-        async for item in super().chat_stream(messages, model=model, tools=tools, **kwargs):
+        async for item in super().chat_stream(
+            messages, model=model, tools=tools, **kwargs
+        ):
             yield item
 
 
@@ -111,7 +113,10 @@ class TestBuildUserMessage:
 
     def test_mixed_attachments(self):
         attachments = [
-            {"type": "image", "content": [{"type": "image", "image": "data:image/png;base64,AAA"}]},
+            {
+                "type": "image",
+                "content": [{"type": "image", "image": "data:image/png;base64,AAA"}],
+            },
             {"type": "document", "content": [{"type": "text", "text": "REF"}]},
         ]
         text, images = build_user_message("ask", attachments)
@@ -122,7 +127,10 @@ class TestBuildUserMessage:
 class TestSessionResolution:
     @pytest.mark.asyncio
     async def test_creates_new_session_when_no_id_given(self):
-        async with isolated_agent(ScriptedProvider([[TextDelta(content="hi")]])) as (agent, _db):
+        async with isolated_agent(ScriptedProvider([[TextDelta(content="hi")]])) as (
+            agent,
+            _db,
+        ):
             session_id = None
             async for event, data in agent.chat_stream("first"):
                 if event == AgentEvent.SESSION:
@@ -133,7 +141,10 @@ class TestSessionResolution:
 
     @pytest.mark.asyncio
     async def test_reuses_existing_session_when_id_given(self):
-        async with isolated_agent(ScriptedProvider([[TextDelta(content="hi")]])) as (agent, _db):
+        async with isolated_agent(ScriptedProvider([[TextDelta(content="hi")]])) as (
+            agent,
+            _db,
+        ):
             first_id = None
             async for event, data in agent.chat_stream("first"):
                 if event == AgentEvent.SESSION:
@@ -148,9 +159,14 @@ class TestSessionResolution:
 
     @pytest.mark.asyncio
     async def test_creates_new_session_for_unknown_id(self):
-        async with isolated_agent(ScriptedProvider([[TextDelta(content="hi")]])) as (agent, _db):
+        async with isolated_agent(ScriptedProvider([[TextDelta(content="hi")]])) as (
+            agent,
+            _db,
+        ):
             events = []
-            async for event, data in agent.chat_stream("hello", session_id="no-such-id"):
+            async for event, data in agent.chat_stream(
+                "hello", session_id="no-such-id"
+            ):
                 events.append((event, data))
             assert any(e == AgentEvent.SESSION for e, _ in events)
             session_ids = [d for e, d in events if e == AgentEvent.SESSION]
@@ -160,7 +176,9 @@ class TestSessionResolution:
 class TestChatStreamCorePaths:
     @pytest.mark.asyncio
     async def test_persists_user_and_assistant_messages(self):
-        async with isolated_agent(ScriptedProvider([[TextDelta(content="hello world")]])) as (agent, _db):
+        async with isolated_agent(
+            ScriptedProvider([[TextDelta(content="hello world")]])
+        ) as (agent, _db):
             session_id = None
             async for event, data in agent.chat_stream("question"):
                 if event == AgentEvent.SESSION:
@@ -172,11 +190,14 @@ class TestChatStreamCorePaths:
 
     @pytest.mark.asyncio
     async def test_tool_loop_persists_tool_result(self):
-        provider = ScriptedProvider([
-            [ToolCall(id="call-1", name="echo_tool", arguments='{"text":"hi"}')],
-            [TextDelta(content="done")],
-        ])
+        provider = ScriptedProvider(
+            [
+                [ToolCall(id="call-1", name="echo_tool", arguments='{"text":"hi"}')],
+                [TextDelta(content="done")],
+            ]
+        )
         async with isolated_agent(provider) as (agent, _db):
+
             async def echo_tool(text: str) -> ToolResult:
                 return ToolResult(success=True, content=f"echo:{text}")
 
@@ -195,12 +216,17 @@ class TestChatStreamCorePaths:
 
     @pytest.mark.asyncio
     async def test_requires_input_stops_with_input_required_reason(self):
-        provider = ScriptedProvider([
-            [ToolCall(id="call-1", name="ask_tool", arguments="{}")],
-        ])
+        provider = ScriptedProvider(
+            [
+                [ToolCall(id="call-1", name="ask_tool", arguments="{}")],
+            ]
+        )
         async with isolated_agent(provider) as (agent, _db):
+
             async def ask_tool() -> ToolResult:
-                return ToolResult(success=True, content="need more", requires_input=True)
+                return ToolResult(
+                    success=True, content="need more", requires_input=True
+                )
 
             agent.register_tool(ask_tool, name="ask_tool")
             events = []
@@ -216,10 +242,13 @@ class TestChatStreamCorePaths:
 
     @pytest.mark.asyncio
     async def test_max_iterations_reached_yields_error(self):
-        provider = ScriptedProvider([
-            [ToolCall(id="t1", name="loop_tool", arguments="{}")],
-        ])
+        provider = ScriptedProvider(
+            [
+                [ToolCall(id="t1", name="loop_tool", arguments="{}")],
+            ]
+        )
         async with isolated_agent(provider, max_iterations=2) as (agent, _db):
+
             async def loop_tool() -> ToolResult:
                 return ToolResult(success=True, content="loop")
 
@@ -246,15 +275,26 @@ class TestChatStreamCorePaths:
 class TestApprovalFlow:
     @pytest.mark.asyncio
     async def test_approval_required_pauses_and_rejected_command_stops(self):
-        provider = ScriptedProvider([
-            [ToolCall(id="call-1", name="shell", arguments='{"command":"rm -rf /"}')],
-        ])
+        provider = ScriptedProvider(
+            [
+                [
+                    ToolCall(
+                        id="call-1", name="shell", arguments='{"command":"rm -rf /"}'
+                    )
+                ],
+            ]
+        )
 
         async def fake_before_execute(arguments, turn_context):
             from nova.tools.behavior import PreExecutionCheck
+
             return PreExecutionCheck(
                 allowed=True,
-                approval_request={"id": "req-1", "command": "rm -rf /", "description": "dangerous"},
+                approval_request={
+                    "id": "req-1",
+                    "command": "rm -rf /",
+                    "description": "dangerous",
+                },
             )
 
         async with isolated_agent(provider) as (agent, _db):
@@ -282,7 +322,9 @@ class TestApprovalFlow:
 
             await run()
             assert any(e == AgentEvent.APPROVAL_REQUIRED for e, _ in events)
-            assert any(e == AgentEvent.DONE and d.get("reason") == "stopped" for e, d in events)
+            assert any(
+                e == AgentEvent.DONE and d.get("reason") == "stopped" for e, d in events
+            )
             assert not any(e == AgentEvent.TOOL_RESULT for e, _ in events)
             # A resolution event must accompany the denial so a replayed stream
             # retracts the dialog instead of resurrecting an answered prompt.
@@ -315,6 +357,7 @@ class TestMemoryReviewScheduling:
                 pass
             await asyncio.sleep(0)
             agent._run_memory_review.assert_not_called()
+
 
 class TestProviderMetaRoundTrip:
     @pytest.mark.asyncio
@@ -411,6 +454,7 @@ async def test_e2e_full_chain_multi_turn_with_tools_and_compaction():
     )
 
     async with isolated_agent(provider, max_iterations=5) as (agent, database):
+
         async def echo_tool(text: str = "") -> ToolResult:
             return ToolResult(success=True, content=f"echo:{text}")
 
@@ -435,7 +479,8 @@ async def test_e2e_full_chain_multi_turn_with_tools_and_compaction():
         assert session_id is not None
         assert any(e == AgentEvent.DONE for e, _ in events1)
         assert any(
-            e in (AgentEvent.TOOL_CALL, AgentEvent.TEXT_DELTA, AgentEvent.REASONING_DELTA)
+            e
+            in (AgentEvent.TOOL_CALL, AgentEvent.TEXT_DELTA, AgentEvent.REASONING_DELTA)
             for e, _ in events1
         )
 
@@ -461,11 +506,15 @@ async def test_e2e_full_chain_multi_turn_with_tools_and_compaction():
                     }
                 ],
             )
-            await database.add_message(session_id, "tool", "X" * 8000, tool_call_id=f"call_bulk_{i}")
+            await database.add_message(
+                session_id, "tool", "X" * 8000, tool_call_id=f"call_bulk_{i}"
+            )
 
         # Turn 4: trigger compaction check and continue
         events4 = []
-        async for event, data in agent.chat_stream("请总结一下目前的进展", session_id=session_id):
+        async for event, data in agent.chat_stream(
+            "请总结一下目前的进展", session_id=session_id
+        ):
             events4.append((event, data))
 
         assert any(
@@ -481,12 +530,16 @@ async def test_e2e_full_chain_multi_turn_with_tools_and_compaction():
                 for tool_call in message.tool_calls:
                     if isinstance(tool_call, dict) and tool_call.get("id"):
                         declared.add(tool_call["id"])
-        resolved = {m.tool_call_id for m in messages if m.role == "tool" and m.tool_call_id}
+        resolved = {
+            m.tool_call_id for m in messages if m.role == "tool" and m.tool_call_id
+        }
         dangling = declared - resolved
         assert not dangling, f"Dangling tool calls: {dangling}"
 
         orphan = {
-            m.tool_call_id for m in messages if m.role == "tool" and m.tool_call_id not in declared
+            m.tool_call_id
+            for m in messages
+            if m.role == "tool" and m.tool_call_id not in declared
         }
         assert not orphan, f"Orphan tool messages: {orphan}"
 
@@ -520,8 +573,9 @@ class OverflowProvider(ScriptedProvider):
     turn from a summarisation request.
     """
 
-    def __init__(self, scripts, reject_times: int = 1,
-                 error_text: str = OVERFLOW_ERROR_TEXT):
+    def __init__(
+        self, scripts, reject_times: int = 1, error_text: str = OVERFLOW_ERROR_TEXT
+    ):
         super().__init__(scripts)
         self.reject_times = reject_times
         self.error_text = error_text
@@ -536,7 +590,9 @@ class OverflowProvider(ScriptedProvider):
             await asyncio.sleep(0)
             yield Error(message=self.error_text)
             return
-        async for item in super().chat_stream(messages, model=model, tools=tools, **kwargs):
+        async for item in super().chat_stream(
+            messages, model=model, tools=tools, **kwargs
+        ):
             yield item
 
     async def chat(self, messages, model="m", stream=False, tools=None, **kwargs):
@@ -558,9 +614,11 @@ async def _session_with_history(provider, turns: int = 4):
             session_id = data
     for index in range(turns):
         await database.add_message(
-            session_id, "user", f"question {index} " + "x" * 4000)
+            session_id, "user", f"question {index} " + "x" * 4000
+        )
         await database.add_message(
-            session_id, "assistant", f"answer {index} " + "y" * 4000)
+            session_id, "assistant", f"answer {index} " + "y" * 4000
+        )
     provider.rejections = 0
     provider.summary_calls = 0
     return holder, agent, database, session_id
@@ -596,9 +654,11 @@ class TestOverflowRecovery:
             await holder.__aexit__(None, None, None)
 
         assert _payloads(events, AgentEvent.ERROR) == [], (
-            "the rejection is recovered from, so no error reaches the client")
-        assert [p.get("reason") for p in _payloads(events, AgentEvent.COMPACTION_START)] == [
-            "overflow"]
+            "the rejection is recovered from, so no error reaches the client"
+        )
+        assert [
+            p.get("reason") for p in _payloads(events, AgentEvent.COMPACTION_START)
+        ] == ["overflow"]
         assert provider.rejections == 1, "exactly one request was rejected"
         assert "recovered" in _text(events)
 
@@ -614,7 +674,8 @@ class TestOverflowRecovery:
         kinds = [event for event, _ in events]
         assert AgentEvent.COMPACTION_START in kinds
         assert kinds.index(AgentEvent.COMPACTION_START) < kinds.index(
-            AgentEvent.TEXT_DELTA), "the retry must be the one that produces text"
+            AgentEvent.TEXT_DELTA
+        ), "the retry must be the one that produces text"
         assert AgentEvent.TURN_END in kinds, "the rejected turn is closed out"
         assert kinds.count(AgentEvent.TURN_START) == 2, "the retry opens a turn"
 
@@ -630,15 +691,18 @@ class TestOverflowRecovery:
 
         assert provider.rejections == 2, "one rejection plus exactly one retry"
         assert [p.get("reason") for p in _payloads(events, AgentEvent.ERROR)] == [
-            "llm_error"]
-        assert [p.get("reason") for p in _payloads(events, AgentEvent.COMPACTION_START)] == [
-            "overflow"], "the retry does not compact a second time"
+            "llm_error"
+        ]
+        assert [
+            p.get("reason") for p in _payloads(events, AgentEvent.COMPACTION_START)
+        ] == ["overflow"], "the retry does not compact a second time"
 
     @pytest.mark.asyncio
     async def test_a_rate_limited_request_is_not_retried(self):
         """Throttling is not a size problem; compacting would only double it."""
         provider = OverflowProvider(
-            [[TextDelta(content="ok")]], reject_times=5,
+            [[TextDelta(content="ok")]],
+            reject_times=5,
             error_text=RATE_LIMIT_ERROR_TEXT,
         )
         holder, agent, _db, session_id = await _session_with_history(provider)
@@ -648,9 +712,12 @@ class TestOverflowRecovery:
             await holder.__aexit__(None, None, None)
 
         assert provider.rejections == 1, "no retry"
-        assert _payloads(events, AgentEvent.COMPACTION_START) == [], "no forced compaction"
+        assert _payloads(events, AgentEvent.COMPACTION_START) == [], (
+            "no forced compaction"
+        )
         assert [p.get("reason") for p in _payloads(events, AgentEvent.ERROR)] == [
-            "llm_error"]
+            "llm_error"
+        ]
 
     @pytest.mark.asyncio
     async def test_the_retry_does_not_duplicate_the_user_message(self):
@@ -666,7 +733,8 @@ class TestOverflowRecovery:
         contents = [m.content for m in messages if m.role == "user"]
         assert contents.count(f"only once {PROBE}") == 1
         assert len([m for m in messages if m.summary == 1]) == 1, (
-            "the rejected turn's history is summarised once, not twice")
+            "the rejected turn's history is summarised once, not twice"
+        )
 
     @pytest.mark.asyncio
     async def test_a_later_request_on_the_same_agent_recovers_again(self):
@@ -682,9 +750,11 @@ class TestOverflowRecovery:
             first = await _collect(agent, f"first {PROBE}", session_id)
             for index in range(4):
                 await database.add_message(
-                    session_id, "user", f"more {index} " + "x" * 4000)
+                    session_id, "user", f"more {index} " + "x" * 4000
+                )
                 await database.add_message(
-                    session_id, "assistant", f"reply {index} " + "y" * 4000)
+                    session_id, "assistant", f"reply {index} " + "y" * 4000
+                )
             provider.rejections = 0
             second = await _collect(agent, f"second {PROBE}", session_id)
         finally:
@@ -692,9 +762,11 @@ class TestOverflowRecovery:
 
         assert _payloads(first, AgentEvent.ERROR) == [], "the first request recovers"
         assert _payloads(second, AgentEvent.ERROR) == [], (
-            "the second request must recover too; the latch resets per request")
+            "the second request must recover too; the latch resets per request"
+        )
         assert "ok" in _text(second), (
-            "the retry runs on the second request and produces the model's reply")
+            "the retry runs on the second request and produces the model's reply"
+        )
 
 
 class SummaryDownOverflowProvider(ScriptedProvider):
@@ -709,8 +781,7 @@ class SummaryDownOverflowProvider(ScriptedProvider):
             yield Error(message="summary upstream down")
             return
         carries_probe = any(
-            PROBE in str(getattr(message, "content", "") or "")
-            for message in messages
+            PROBE in str(getattr(message, "content", "") or "") for message in messages
         )
         if carries_probe:
             await asyncio.sleep(0)
@@ -738,5 +809,6 @@ async def test_a_failed_summary_aborts_the_turn_with_an_error():
         await holder.__aexit__(None, None, None)
 
     assert [p.get("reason") for p in _payloads(events, AgentEvent.ERROR)] == [
-        "compaction_error"], "the failure reaches the client as a compaction error"
+        "compaction_error"
+    ], "the failure reaches the client as a compaction error"
     assert "unused" not in _text(events), "the turn is aborted, not continued"

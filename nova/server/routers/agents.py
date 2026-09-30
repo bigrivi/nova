@@ -141,7 +141,9 @@ async def set_agent_parents(
         raise HTTPException(status_code=404, detail=f"Agent '{key}' not found")
     parents = body.get("parents")
     if not isinstance(parents, list) or any(not isinstance(p, str) for p in parents):
-        raise HTTPException(status_code=400, detail="parents must be a list of agent keys")
+        raise HTTPException(
+            status_code=400, detail="parents must be a list of agent keys"
+        )
     if key in parents:
         raise HTTPException(status_code=400, detail="An agent cannot be its own parent")
     await service.set_agent_parents(key, parents)

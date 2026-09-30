@@ -144,7 +144,8 @@ class TurnStreamReader:
 
     def collected_tool_calls(self) -> list:
         return [
-            tool_call for tool_call in self.tool_calls.values()
+            tool_call
+            for tool_call in self.tool_calls.values()
             if hasattr(tool_call, "name") and tool_call.name
         ]
 
@@ -155,12 +156,11 @@ class TurnStreamReader:
 
     def _absorb_done(self, chunk: Any) -> None:
         self.done_content = getattr(chunk, "content", "") or self.done_content
-        self.tokens_input = getattr(
-            chunk, "tokens_input", None) or self.tokens_input
-        self.tokens_output = getattr(
-            chunk, "tokens_output", None) or self.tokens_output
-        self.cache_read_tokens = getattr(
-            chunk, "cache_read_tokens", None) or self.cache_read_tokens
+        self.tokens_input = getattr(chunk, "tokens_input", None) or self.tokens_input
+        self.tokens_output = getattr(chunk, "tokens_output", None) or self.tokens_output
+        self.cache_read_tokens = (
+            getattr(chunk, "cache_read_tokens", None) or self.cache_read_tokens
+        )
         self.provider_meta = getattr(chunk, "provider_meta", None) or self.provider_meta
 
     def _absorb_tool_call(self, chunk: Any) -> None:
@@ -174,6 +174,7 @@ class TurnStreamReader:
             return
         for tool_call in batched:
             identifier = getattr(tool_call, "id", None) or getattr(
-                tool_call, "name", "")
+                tool_call, "name", ""
+            )
             if identifier:
                 self.tool_calls[str(identifier)] = tool_call

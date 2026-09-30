@@ -46,8 +46,9 @@ def _evict_if_needed() -> None:
         _cache.pop(next(iter(_cache)))
 
 
-def run_request_hook(hook_path: str, session_id: str | None,
-                     timeout: int = HOOK_TIMEOUT_S) -> dict[str, str]:
+def run_request_hook(
+    hook_path: str, session_id: str | None, timeout: int = HOOK_TIMEOUT_S
+) -> dict[str, str]:
     """Run the hook once and return its headers. No caching."""
     resolved = resolve_hook_path(hook_path)
     if not resolved:
@@ -60,36 +61,42 @@ def run_request_hook(hook_path: str, session_id: str | None,
             capture_output=True,
             text=True,
             timeout=timeout,
-            **({"start_new_session": True} if sys.platform != "win32"
-               else {"creationflags": subprocess.CREATE_NO_WINDOW}),
+            **(
+                {"start_new_session": True}
+                if sys.platform != "win32"
+                else {"creationflags": subprocess.CREATE_NO_WINDOW}
+            ),
         )
     except FileNotFoundError as e:
         raise RequestHookError(f"request hook not found: {resolved}") from e
     except subprocess.TimeoutExpired as e:
         raise RequestHookError(
-            f"request hook timed out after {timeout}s: {resolved}") from e
+            f"request hook timed out after {timeout}s: {resolved}"
+        ) from e
     except OSError as e:
         raise RequestHookError(f"request hook failed to start: {e}") from e
     if proc.returncode != 0:
         detail = (proc.stderr or "").strip()[-500:]
         raise RequestHookError(
             f"request hook exited {proc.returncode}: {resolved}"
-            + (f": {detail}" if detail else ""))
+            + (f": {detail}" if detail else "")
+        )
     if not (proc.stdout or "").strip():
         raise RequestHookError(f"request hook printed no output: {resolved}")
     try:
         data = json.loads(proc.stdout)
     except ValueError as e:
-        raise RequestHookError(
-            f"request hook output is not JSON: {resolved}") from e
+        raise RequestHookError(f"request hook output is not JSON: {resolved}") from e
     if not isinstance(data, dict) or not isinstance(data.get("headers", {}), dict):
         raise RequestHookError(
-            f"request hook must print {{\"headers\": {{...}}}}: {resolved}")
+            f'request hook must print {{"headers": {{...}}}}: {resolved}'
+        )
     return {str(k): str(v) for k, v in data["headers"].items()}
 
 
-def run_session_hook(hook_path: str, session_id: str | None,
-                     timeout: int = HOOK_TIMEOUT_S) -> dict[str, str]:
+def run_session_hook(
+    hook_path: str, session_id: str | None, timeout: int = HOOK_TIMEOUT_S
+) -> dict[str, str]:
     """Run the hook for a session, returning its headers (cached per session)."""
     resolved = resolve_hook_path(hook_path)
     if not resolved:

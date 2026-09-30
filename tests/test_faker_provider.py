@@ -51,7 +51,8 @@ async def test_faker_stream_emits_text_and_done():
     provider = FakerLLMProvider(seed=1, reasoning_probability=0)
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "Hello"}], model="fake"
         )
     ]
@@ -68,14 +69,13 @@ async def test_faker_stream_can_emit_reasoning_before_text():
     provider = FakerLLMProvider(seed=1, reasoning_probability=1)
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "Hello"}], model="fake"
         )
     ]
 
-    reasoning_deltas = [
-        event for event in events if isinstance(event, ReasoningDelta)
-    ]
+    reasoning_deltas = [event for event in events if isinstance(event, ReasoningDelta)]
     assert reasoning_deltas, "expected at least one ReasoningDelta"
     assert isinstance(events[0], ReasoningDelta)
     assert isinstance(events[-1], Done)
@@ -92,7 +92,8 @@ async def test_faker_stream_honors_abort_event():
     abort_event.set()
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "Hello"}],
             abort_event=abort_event,
         )
@@ -109,7 +110,8 @@ async def test_faker_stream_honors_abort_during_reasoning():
     abort_event.set()
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "Hello"}],
             abort_event=abort_event,
         )
@@ -126,9 +128,8 @@ async def test_faker_provider_can_return_error_event():
 
     response = await provider.chat([{"role": "user", "content": "Hello"}])
     events = [
-        event async for event in provider.chat_stream(
-            [{"role": "user", "content": "Hello"}]
-        )
+        event
+        async for event in provider.chat_stream([{"role": "user", "content": "Hello"}])
     ]
 
     assert isinstance(response, Error)
@@ -174,7 +175,8 @@ async def test_faker_provider_generates_schema_valid_tool_call_without_executing
         tools=tools,
     )
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "inspect the project"}],
             tools=tools,
         )
@@ -200,9 +202,14 @@ async def test_faker_tool_probability_remains_reachable_with_error_probability()
     )
     tools = [{"function": {"name": "read", "parameters": {"type": "object"}}}]
 
-    responses = [await provider.chat([{"role": "user", "content": str(i)}], tools=tools) for i in range(20)]
+    responses = [
+        await provider.chat([{"role": "user", "content": str(i)}], tools=tools)
+        for i in range(20)
+    ]
 
-    assert any(isinstance(response, Done) and response.tool_calls for response in responses)
+    assert any(
+        isinstance(response, Done) and response.tool_calls for response in responses
+    )
 
 
 @pytest.mark.asyncio
@@ -219,7 +226,8 @@ async def test_faker_provider_can_emit_multiple_tool_calls_in_one_turn():
     ]
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "inspect the project"}],
             tools=tools,
         )
@@ -261,7 +269,8 @@ async def test_faker_tool_call_honors_abort_event():
     tools = [{"function": {"name": "read", "parameters": None}}]
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "inspect the project"}],
             tools=tools,
             abort_event=abort_event,
@@ -331,7 +340,12 @@ async def test_faker_tool_call_uses_existing_agent_execution_loop(tmp_path):
     assert AgentEvent.TOOL_CALL in events
     assert AgentEvent.TOOL_RESULT in events
     assert events[-1] == AgentEvent.DONE
-    assert [message.role for message in messages] == ["user", "assistant", "tool", "assistant"]
+    assert [message.role for message in messages] == [
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+    ]
     assert messages[2].content == "simulated file content"
 
 
@@ -359,7 +373,9 @@ async def test_faker_provider_summarizes_tool_result_on_next_turn():
 
 @pytest.mark.asyncio
 async def test_faker_content_driven_tool_call_fires_regardless_of_probability():
-    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    provider = FakerLLMProvider(
+        seed=1, reasoning_probability=0, tool_call_probability=0.0
+    )
     tools = [
         {
             "function": {
@@ -374,7 +390,8 @@ async def test_faker_content_driven_tool_call_fires_regardless_of_probability():
     ]
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "帮我看下 README.md 的文件内容"}],
             tools=tools,
         )
@@ -388,14 +405,33 @@ async def test_faker_content_driven_tool_call_fires_regardless_of_probability():
 
 @pytest.mark.asyncio
 async def test_faker_content_driven_can_trigger_multiple_tools():
-    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    provider = FakerLLMProvider(
+        seed=1, reasoning_probability=0, tool_call_probability=0.0
+    )
     tools = [
-        {"function": {"name": "glob", "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}}}}},
-        {"function": {"name": "shell", "parameters": {"type": "object", "properties": {"command": {"type": "string"}}}}},
+        {
+            "function": {
+                "name": "glob",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"pattern": {"type": "string"}},
+                },
+            }
+        },
+        {
+            "function": {
+                "name": "shell",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"command": {"type": "string"}},
+                },
+            }
+        },
     ]
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "先查找文件，然后运行命令"}],
             tools=tools,
         )
@@ -410,11 +446,14 @@ async def test_faker_content_driven_can_trigger_multiple_tools():
 
 @pytest.mark.asyncio
 async def test_faker_content_driven_skips_unavailable_tools():
-    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    provider = FakerLLMProvider(
+        seed=1, reasoning_probability=0, tool_call_probability=0.0
+    )
     tools = [{"function": {"name": "glob", "parameters": {"type": "object"}}}]
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "读取文件内容"}],
             tools=tools,
         )
@@ -426,7 +465,9 @@ async def test_faker_content_driven_skips_unavailable_tools():
 
 @pytest.mark.asyncio
 async def test_faker_content_driven_extracts_url_for_web_fetch():
-    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    provider = FakerLLMProvider(
+        seed=1, reasoning_probability=0, tool_call_probability=0.0
+    )
     tools = [
         {
             "function": {
@@ -441,7 +482,8 @@ async def test_faker_content_driven_extracts_url_for_web_fetch():
     ]
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "帮我抓取网页 https://example.com/docs"}],
             tools=tools,
         )
@@ -455,7 +497,9 @@ async def test_faker_content_driven_extracts_url_for_web_fetch():
 
 @pytest.mark.asyncio
 async def test_faker_content_driven_does_not_refire_while_summarizing_tool_result():
-    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    provider = FakerLLMProvider(
+        seed=1, reasoning_probability=0, tool_call_probability=0.0
+    )
     tools = [{"function": {"name": "read", "parameters": {"type": "object"}}}]
     messages = [
         {"role": "user", "content": "帮我看下 README.md 的文件内容"},
@@ -471,7 +515,9 @@ async def test_faker_content_driven_does_not_refire_while_summarizing_tool_resul
 
 @pytest.mark.asyncio
 async def test_faker_content_driven_edit_carries_mock_diff_strings():
-    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    provider = FakerLLMProvider(
+        seed=1, reasoning_probability=0, tool_call_probability=0.0
+    )
     tools = [
         {
             "function": {
@@ -490,7 +536,8 @@ async def test_faker_content_driven_edit_carries_mock_diff_strings():
     ]
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "帮我修改文件 app.py"}],
             tools=tools,
         )
@@ -507,7 +554,9 @@ async def test_faker_content_driven_edit_carries_mock_diff_strings():
 
 @pytest.mark.asyncio
 async def test_faker_edit_mock_strings_track_file_extension():
-    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    provider = FakerLLMProvider(
+        seed=1, reasoning_probability=0, tool_call_probability=0.0
+    )
     tools = [
         {
             "function": {
@@ -526,7 +575,8 @@ async def test_faker_edit_mock_strings_track_file_extension():
     ]
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "帮我编辑文件 widget.tsx"}],
             tools=tools,
         )
@@ -540,7 +590,9 @@ async def test_faker_edit_mock_strings_track_file_extension():
 
 @pytest.mark.asyncio
 async def test_faker_content_driven_todo_write_generates_realistic_list():
-    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    provider = FakerLLMProvider(
+        seed=1, reasoning_probability=0, tool_call_probability=0.0
+    )
     tools = [
         {
             "function": {
@@ -556,7 +608,12 @@ async def test_faker_content_driven_todo_write_generates_realistic_list():
                                     "content": {"type": "string"},
                                     "status": {
                                         "type": "string",
-                                        "enum": ["pending", "in_progress", "completed", "cancelled"],
+                                        "enum": [
+                                            "pending",
+                                            "in_progress",
+                                            "completed",
+                                            "cancelled",
+                                        ],
                                     },
                                     "priority": {
                                         "type": "string",
@@ -574,7 +631,8 @@ async def test_faker_content_driven_todo_write_generates_realistic_list():
     ]
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "帮我列一个任务清单"}],
             tools=tools,
         )
@@ -598,14 +656,18 @@ async def test_faker_content_driven_todo_write_generates_realistic_list():
 
 @pytest.mark.asyncio
 async def test_faker_content_driven_ask_user_survey_covers_all_question_types():
-    provider = FakerLLMProvider(seed=1, reasoning_probability=0, tool_call_probability=0.0)
+    provider = FakerLLMProvider(
+        seed=1, reasoning_probability=0, tool_call_probability=0.0
+    )
     tools = [
         {
             "function": {
                 "name": "ask_user",
                 "parameters": {
                     "type": "object",
-                    "properties": {"questions": {"type": "array", "items": {"type": "object"}}},
+                    "properties": {
+                        "questions": {"type": "array", "items": {"type": "object"}}
+                    },
                     "required": ["questions"],
                 },
             }
@@ -613,7 +675,8 @@ async def test_faker_content_driven_ask_user_survey_covers_all_question_types():
     ]
 
     events = [
-        event async for event in provider.chat_stream(
+        event
+        async for event in provider.chat_stream(
             [{"role": "user", "content": "ask me a survey to configure the project"}],
             tools=tools,
         )
@@ -644,9 +707,8 @@ async def test_faker_stream_delay_invokes_sleep_between_chunks(monkeypatch):
     provider = FakerLLMProvider(seed=1, reasoning_probability=1, stream_delay=0.05)
 
     events = [
-        event async for event in provider.chat_stream(
-            [{"role": "user", "content": "Hello"}]
-        )
+        event
+        async for event in provider.chat_stream([{"role": "user", "content": "Hello"}])
     ]
 
     assert any(isinstance(event, ReasoningDelta) for event in events)
@@ -665,9 +727,8 @@ async def test_faker_no_stream_delay_skips_sleep(monkeypatch):
     provider = FakerLLMProvider(seed=1, reasoning_probability=1, stream_delay=0.0)
 
     _ = [
-        event async for event in provider.chat_stream(
-            [{"role": "user", "content": "Hello"}]
-        )
+        event
+        async for event in provider.chat_stream([{"role": "user", "content": "Hello"}])
     ]
 
     assert recorded == []

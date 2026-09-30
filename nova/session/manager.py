@@ -54,7 +54,8 @@ class SessionContext:
 
 
 _current_session: ContextVar[SessionContext | None] = ContextVar(
-    "current_session", default=None)
+    "current_session", default=None
+)
 
 
 class SessionManager(SessionProtocol):
@@ -167,14 +168,14 @@ class SessionManager(SessionProtocol):
                     title=session_data.get("title"),
                     created_at=session_data["created_at"],
                     updated_at=session_data["updated_at"],
-                    metadata=json.loads(session_data["metadata"]) if session_data.get(
-                        "metadata") else {},
+                    metadata=json.loads(session_data["metadata"])
+                    if session_data.get("metadata")
+                    else {},
                     parent_id=session_data.get("parent_id"),
                     workspace_dir=session_data.get("workspace_dir"),
                     project_id=session_data.get("project_id"),
                     summary_goal=session_data.get("summary_goal"),
-                    summary_accomplished=session_data.get(
-                        "summary_accomplished"),
+                    summary_accomplished=session_data.get("summary_accomplished"),
                     summary_remaining=session_data.get("summary_remaining"),
                     compacted_at=session_data.get("compacted_at"),
                     message_count=session_data.get("message_count", 0),
@@ -235,8 +236,9 @@ class SessionManager(SessionProtocol):
         message_ids: list[str],
         session_id: str | None = None,
     ) -> int:
-        sid = session_id or (self.get_current_session(
-        ).id if self.get_current_session() else None)
+        sid = session_id or (
+            self.get_current_session().id if self.get_current_session() else None
+        )
         if not sid or not message_ids:
             return 0
 
@@ -254,8 +256,9 @@ class SessionManager(SessionProtocol):
         session_id: str | None = None,
         limit: int | None = None,
     ) -> list[Message]:
-        sid = session_id or (self.get_current_session(
-        ).id if self.get_current_session() else None)
+        sid = session_id or (
+            self.get_current_session().id if self.get_current_session() else None
+        )
         if not sid:
             return []
         async with self._lock:
@@ -278,7 +281,9 @@ class SessionManager(SessionProtocol):
                     title=session_data.get("title"),
                     created_at=session_data["created_at"],
                     updated_at=session_data["updated_at"],
-                    metadata=json.loads(session_data["metadata"]) if session_data.get("metadata") else {},
+                    metadata=json.loads(session_data["metadata"])
+                    if session_data.get("metadata")
+                    else {},
                     parent_id=session_data.get("parent_id"),
                     workspace_dir=session_data.get("workspace_dir"),
                     project_id=session_data.get("project_id"),
@@ -315,5 +320,6 @@ async def close_session_manager() -> None:
     global _manager
     if _manager is not None:
         from nova.db.database import close_db
+
         await close_db()
         _manager = None

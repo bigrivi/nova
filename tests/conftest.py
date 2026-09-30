@@ -79,9 +79,7 @@ def make_executor():
         ) -> TaskExecutionResult:
             return await self._run(arguments, context)
 
-    def _factory(
-        kind: str, run, *, unlimited: bool = False
-    ) -> TaskExecutor:
+    def _factory(kind: str, run, *, unlimited: bool = False) -> TaskExecutor:
         return _FunctionExecutor(kind, run, unlimited=unlimited)
 
     return _factory

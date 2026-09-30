@@ -177,9 +177,11 @@ def _row_to_message(row_dict: dict[str, Any]) -> Message:
         id=row_dict["id"],
         session_id=row_dict["session_id"],
         role=row_dict["role"],
-        content=(row_dict.get("content")
-                 if row_dict.get("content") is not None
-                 else (row_dict.get("data") or "")),
+        content=(
+            row_dict.get("content")
+            if row_dict.get("content") is not None
+            else (row_dict.get("data") or "")
+        ),
         tool_calls=_parse_tool_calls(row_dict.get("tool_calls")),
         tool_call_id=row_dict.get("tool_call_id"),
         time_created=row_dict["time_created"],
@@ -227,7 +229,9 @@ def _ddl_columns(ddl: str, table: str) -> set[str]:
     names: set[str] = set()
     for line in match.group(1).splitlines():
         name = line.strip().split(" ", 1)[0].strip()
-        if name and not name.startswith(("--", "PRIMARY", "FOREIGN", "UNIQUE", "CHECK")):
+        if name and not name.startswith(
+            ("--", "PRIMARY", "FOREIGN", "UNIQUE", "CHECK")
+        ):
             names.add(name)
     return names
 
@@ -307,7 +311,9 @@ class SqliteRepository(NovaRepository):
                 cursor = await self._conn.execute(f"PRAGMA table_info({table})")
                 existing = {row[1] for row in await cursor.fetchall()}
             except Exception as exception:
-                log.error("Could not inspect table %s for migration: %s", table, exception)
+                log.error(
+                    "Could not inspect table %s for migration: %s", table, exception
+                )
                 continue
             # Every column here also belongs in _DDL, so a fresh database is
             # created with the final shape and this loop only has work to do on
@@ -332,7 +338,10 @@ class SqliteRepository(NovaRepository):
                 except Exception as exception:
                     log.error(
                         "Could not add column %s.%s (%s); writes touching it will fail: %s",
-                        table, column, column_type, exception,
+                        table,
+                        column,
+                        column_type,
+                        exception,
                     )
         await self._migrate_memory_owner_index()
         await self._backfill_projects()
@@ -349,7 +358,9 @@ class SqliteRepository(NovaRepository):
         a different shape, so the old one is dropped explicitly on existing dbs.
         """
         try:
-            await self._conn.execute("DROP INDEX IF EXISTS idx_memories_key_scope_session")
+            await self._conn.execute(
+                "DROP INDEX IF EXISTS idx_memories_key_scope_session"
+            )
             await self._conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_key_scope_owner_session "
                 "ON memories(key, scope, COALESCE(owner_agent_key, ''), COALESCE(session_id, ''))"
@@ -408,7 +419,9 @@ class SqliteRepository(NovaRepository):
                 (marker, now),
             )
         except Exception as exception:
-            log.error("Could not backfill projects from session workspaces: %s", exception)
+            log.error(
+                "Could not backfill projects from session workspaces: %s", exception
+            )
 
     async def _normalize_session_workspaces(self) -> None:
         """One-shot: rewrite stored workspaces into canonical form.
@@ -555,7 +568,9 @@ class SqliteRepository(NovaRepository):
         if self._conn is None:
             await self.connect()
 
-    async def _fetch_messages(self, sql: str, params: tuple[object, ...]) -> list[Message]:
+    async def _fetch_messages(
+        self, sql: str, params: tuple[object, ...]
+    ) -> list[Message]:
         cursor = await self._conn.execute(sql, params)
         rows = await cursor.fetchall()
         return [_row_to_message(dict(row)) for row in rows]
@@ -642,7 +657,9 @@ class SqliteRepository(NovaRepository):
             await self._conn.commit()
             return cursor.rowcount > 0
 
-    async def set_session_workspace(self, session_id: str, workspace_dir: str | None) -> bool:
+    async def set_session_workspace(
+        self, session_id: str, workspace_dir: str | None
+    ) -> bool:
         """Set or clear a session's workspace directory. Returns True if the session exists."""
         await self._ensure_connected()
         async with self._lock:
@@ -687,7 +704,9 @@ class SqliteRepository(NovaRepository):
             await self._conn.commit()
             return cursor.rowcount > 0
 
-    async def set_session_project(self, session_id: str, project_id: str | None) -> bool:
+    async def set_session_project(
+        self, session_id: str, project_id: str | None
+    ) -> bool:
         await self._ensure_connected()
         async with self._lock:
             cursor = await self._conn.execute(
@@ -768,7 +787,9 @@ class SqliteRepository(NovaRepository):
             await self._conn.commit()
             return cursor.rowcount > 0
 
-    async def get_all_sessions(self, limit: int | None = None, agent_key: str | None = None) -> list[dict]:
+    async def get_all_sessions(
+        self, limit: int | None = None, agent_key: str | None = None
+    ) -> list[dict]:
         await self._ensure_connected()
         query = "SELECT * FROM sessions"
         params: list[Any] = []
@@ -783,7 +804,9 @@ class SqliteRepository(NovaRepository):
         rows = await cursor.fetchall()
         return [_row_to_session(row) for row in rows]
 
-    async def get_sessions_by_parent_id(self, parent_id: str, limit: int = 50) -> list[dict]:
+    async def get_sessions_by_parent_id(
+        self, parent_id: str, limit: int = 50
+    ) -> list[dict]:
         """Get all child sessions of a parent session."""
         await self._ensure_connected()
         cursor = await self._conn.execute(
@@ -826,7 +849,9 @@ class SqliteRepository(NovaRepository):
         stamp = now if time_created is None else time_created
 
         images_json = json.dumps(images) if images else None
-        provider_meta_json = json.dumps(provider_meta, ensure_ascii=False) if provider_meta else None
+        provider_meta_json = (
+            json.dumps(provider_meta, ensure_ascii=False) if provider_meta else None
+        )
 
         async with self._lock:
             await self._conn.execute(
@@ -948,7 +973,9 @@ class SqliteRepository(NovaRepository):
             )
             await self._conn.commit()
 
-    async def mark_messages_compacted_by_ids(self, session_id: str, message_ids: list[str]) -> None:
+    async def mark_messages_compacted_by_ids(
+        self, session_id: str, message_ids: list[str]
+    ) -> None:
         await self._ensure_connected()
         if not message_ids:
             return
@@ -960,7 +987,9 @@ class SqliteRepository(NovaRepository):
             )
             await self._conn.commit()
 
-    async def update_session_compacted_at(self, session_id: str, timestamp: int) -> None:
+    async def update_session_compacted_at(
+        self, session_id: str, timestamp: int
+    ) -> None:
         await self._ensure_connected()
         async with self._lock:
             await self._conn.execute(
@@ -1011,7 +1040,6 @@ class SqliteRepository(NovaRepository):
             await self._conn.commit()
             return deleted_count
 
-
     # ── Agent CRUD ──────────────────────────────────────────────────
 
     async def list_agents(self) -> list[dict]:
@@ -1024,7 +1052,8 @@ class SqliteRepository(NovaRepository):
     async def get_agent(self, key: str) -> dict | None:
         await self._ensure_connected()
         cursor = await self._conn.execute(
-            "SELECT * FROM agents WHERE key = ?", (key,),
+            "SELECT * FROM agents WHERE key = ?",
+            (key,),
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
@@ -1158,7 +1187,9 @@ class SqliteRepository(NovaRepository):
                 (key,),
             )
             await self._conn.execute("DELETE FROM sessions WHERE agent_key = ?", (key,))
-            cursor = await self._conn.execute("DELETE FROM agents WHERE key = ?", (key,))
+            cursor = await self._conn.execute(
+                "DELETE FROM agents WHERE key = ?", (key,)
+            )
             await self._conn.commit()
             return cursor.rowcount > 0
 
@@ -1243,14 +1274,18 @@ class SqliteRepository(NovaRepository):
     async def delete_memory_by_id(self, memory_id: str) -> int:
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+            cursor = await self._conn.execute(
+                "DELETE FROM memories WHERE id = ?", (memory_id,)
+            )
             await self._conn.commit()
             return cursor.rowcount or 0
 
     async def delete_memories_by_session(self, session_id: str) -> int:
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute("DELETE FROM memories WHERE session_id = ?", (session_id,))
+            cursor = await self._conn.execute(
+                "DELETE FROM memories WHERE session_id = ?", (session_id,)
+            )
             await self._conn.commit()
             return cursor.rowcount or 0
 

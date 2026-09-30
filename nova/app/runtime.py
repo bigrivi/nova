@@ -66,7 +66,9 @@ def build_llm(
             reasoning_probability=float(options.get("reasoning_probability", 0.25)),
             error_probability=float(options.get("error_probability", 0.0)),
             tool_call_probability=float(options.get("tool_call_probability", 0.0)),
-            continue_tool_probability=float(options.get("continue_tool_probability", 0.35)),
+            continue_tool_probability=float(
+                options.get("continue_tool_probability", 0.35)
+            ),
             max_tool_rounds=int(options.get("max_tool_rounds", 3)),
             max_tool_calls_per_turn=int(options.get("max_tool_calls_per_turn", 2)),
             stream_delay=float(options.get("stream_delay", 0.02)),
@@ -77,8 +79,7 @@ def build_llm(
     elif provider_type == "openai-compatible":
         base_url = str(provider_config.options.get("base_url", "")).strip()
         api_key = str(provider_config.options.get("api_key", "")).strip()
-        user_agent = str(
-            provider_config.options.get("user_agent", "")).strip() or None
+        user_agent = str(provider_config.options.get("user_agent", "")).strip() or None
         model_config = provider_config.models.get(model, {})
         reasoning_field = model_config.get("reasoning_field")
         kwargs = {}
@@ -96,8 +97,7 @@ def build_llm(
     elif provider_type == "openai-response":
         base_url = str(provider_config.options.get("base_url", "")).strip()
         api_key = str(provider_config.options.get("api_key", "")).strip()
-        user_agent = str(
-            provider_config.options.get("user_agent", "")).strip() or None
+        user_agent = str(provider_config.options.get("user_agent", "")).strip() or None
         llm = OpenAIResponsesProvider(
             api_key=api_key,
             base_url=base_url,
@@ -109,14 +109,17 @@ def build_llm(
     elif provider_type == "anthropic":
         base_url = str(provider_config.options.get("base_url", "")).strip()
         api_key = str(provider_config.options.get("api_key", "")).strip()
-        user_agent = str(
-            provider_config.options.get("user_agent", "")).strip() or None
-        anthropic_version = str(
-            provider_config.options.get("anthropic_version", "")).strip() or "2023-06-01"
+        user_agent = str(provider_config.options.get("user_agent", "")).strip() or None
+        anthropic_version = (
+            str(provider_config.options.get("anthropic_version", "")).strip()
+            or "2023-06-01"
+        )
         raw_betas = provider_config.options.get("betas")
-        betas = [
-            str(item).strip() for item in raw_betas if str(item).strip()
-        ] if isinstance(raw_betas, list) else None
+        betas = (
+            [str(item).strip() for item in raw_betas if str(item).strip()]
+            if isinstance(raw_betas, list)
+            else None
+        )
         llm = AnthropicProvider(
             api_key=api_key,
             base_url=base_url,
@@ -164,6 +167,7 @@ def _header_options(options: dict) -> dict:
 async def _agent_dir(agent_key: str) -> Path:
     """Resolve agent workspace dir, consulting DB for custom workspace_dir."""
     from nova.config.service import ConfigService
+
     settings = get_settings()
     try:
         service = ConfigService(settings)
@@ -205,14 +209,20 @@ def _resolve_effort(
         model,
         provider_config.type,
         provider_config.models.get(model)
-        if isinstance(provider_config.models, dict) else None,
+        if isinstance(provider_config.models, dict)
+        else None,
     )
     if not levels:
         return None
 
-    for candidate in (requested, session_effort, agent_effort,
-                      provider_config.models.get(model, {})
-                      if isinstance(provider_config.models, dict) else None):
+    for candidate in (
+        requested,
+        session_effort,
+        agent_effort,
+        provider_config.models.get(model, {})
+        if isinstance(provider_config.models, dict)
+        else None,
+    ):
         if isinstance(candidate, dict):
             candidate = candidate.get("reasoning_effort")
         fitted = fit_effort(levels, candidate)
@@ -250,14 +260,20 @@ async def build_agent(
     # Cache 1: identity files (SOUL/IDENTITY/USER/MEMORY)
     if is_new_session or agent_key not in _identity_cache:
         _identity_cache[agent_key] = PromptConfig(
-            soul_content=(agent_dir / "SOUL.md").read_text(
-                encoding="utf-8") if (agent_dir / "SOUL.md").exists() else "",
-            identity_content=(agent_dir / "IDENTITY.md").read_text(
-                encoding="utf-8").strip() if (agent_dir / "IDENTITY.md").exists() else "",
-            user_content=(agent_dir / "USER.md").read_text(
-                encoding="utf-8") if (agent_dir / "USER.md").exists() else "",
-            memory_content=(agent_dir / "MEMORY.md").read_text(
-                encoding="utf-8") if (agent_dir / "MEMORY.md").exists() else "",
+            soul_content=(agent_dir / "SOUL.md").read_text(encoding="utf-8")
+            if (agent_dir / "SOUL.md").exists()
+            else "",
+            identity_content=(agent_dir / "IDENTITY.md")
+            .read_text(encoding="utf-8")
+            .strip()
+            if (agent_dir / "IDENTITY.md").exists()
+            else "",
+            user_content=(agent_dir / "USER.md").read_text(encoding="utf-8")
+            if (agent_dir / "USER.md").exists()
+            else "",
+            memory_content=(agent_dir / "MEMORY.md").read_text(encoding="utf-8")
+            if (agent_dir / "MEMORY.md").exists()
+            else "",
             workspace_dir=str(agent_dir),
         )
     prompt_config = _identity_cache[agent_key]
@@ -265,6 +281,7 @@ async def build_agent(
     record = None
     try:
         from nova.config.service import ConfigService
+
         record = await ConfigService(settings).get_agent(agent_key)
     except Exception:
         pass
@@ -292,14 +309,10 @@ async def build_agent(
         # resumed conversation run on the model it was run with, instead of
         # silently following the agent to whatever it points at now.
         resolved_provider = (
-            provider
-            or session_route.get("provider")
-            or (record or {}).get("provider")
+            provider or session_route.get("provider") or (record or {}).get("provider")
         )
         resolved_model = (
-            model
-            or session_route.get("model")
-            or (record or {}).get("model")
+            model or session_route.get("model") or (record or {}).get("model")
         )
 
     if not resolved_provider or not resolved_model:
@@ -319,7 +332,9 @@ async def build_agent(
         agent_effort=None if is_sub_agent else (record or {}).get("reasoning_effort"),
     )
 
-    allowed_tools = allowed_tools_for((record or {}).get("posture")) if is_sub_agent else None
+    allowed_tools = (
+        allowed_tools_for((record or {}).get("posture")) if is_sub_agent else None
+    )
 
     # Cache 2: LLMProvider
     llm = llm or build_llm(provider=resolved_provider, model=resolved_model)
@@ -352,7 +367,8 @@ async def build_agent(
         for skill_tool in ("list_skills", "load_skill", "install_skill"):
             if allowed_tools is None or skill_tool in allowed_tools:
                 agent.tool_registry.register(
-                    getattr(agent._skill_tools, skill_tool), name=skill_tool)
+                    getattr(agent._skill_tools, skill_tool), name=skill_tool
+                )
     else:
         await agent.register_all_tools()
         _registry_cache[reg_key] = agent.tool_registry

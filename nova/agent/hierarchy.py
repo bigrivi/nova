@@ -42,7 +42,9 @@ class AgentHierarchy:
 
     async def child_agent_records(self) -> list[dict]:
         store = await self._store()
-        return await self._records(store, await store.get_agent_children(self.agent_key))
+        return await self._records(
+            store, await store.get_agent_children(self.agent_key)
+        )
 
     async def parent_agent_records(self) -> list[dict]:
         store = await self._store()

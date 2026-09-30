@@ -29,10 +29,19 @@ class ToolGuardrails:
     _calls: list[GuardrailObservation] = field(default_factory=list)
     _consecutive_failures: dict[str, int] = field(default_factory=dict)
 
-    _READ_TOOLS = frozenset({
-        "read", "grep", "glob", "web_search", "web_fetch",
-        "list_skills", "search_memory", "list_memories", "get_state",
-    })
+    _READ_TOOLS = frozenset(
+        {
+            "read",
+            "grep",
+            "glob",
+            "web_search",
+            "web_fetch",
+            "list_skills",
+            "search_memory",
+            "list_memories",
+            "get_state",
+        }
+    )
 
     _last_write_index: int = 0
 
@@ -41,7 +50,9 @@ class ToolGuardrails:
         raw = json.dumps(args, sort_keys=True, default=str)
         return hashlib.md5(raw.encode()).hexdigest()[:16]
 
-    def observe(self, tool_name: str, args: dict[str, Any], success: bool) -> GuardrailAction:
+    def observe(
+        self, tool_name: str, args: dict[str, Any], success: bool
+    ) -> GuardrailAction:
         args_hash = self._hash_args(args)
         obs = GuardrailObservation(
             tool_name=tool_name,

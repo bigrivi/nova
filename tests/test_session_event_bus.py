@@ -57,9 +57,7 @@ def test_bus_title_event_is_not_folded_into_state_dedupe() -> None:
     events = []
     while not queue.empty():
         events.append(queue.get_nowait())
-    assert events == [
-        {"type": "title", "session_id": "s1", "title": "A tidy title"}
-    ]
+    assert events == [{"type": "title", "session_id": "s1", "title": "A tidy title"}]
     # The one-shot title event leaves the active set untouched.
     assert bus.snapshot() == []
 
@@ -253,9 +251,7 @@ async def test_create_app_pushes_task_updates_onto_the_event_bus(
     # can swap its "still running" handle for the real result. Running frames
     # stay lean because they are broadcast to every client on each transition.
     assert "output_tail" in mine[-1]["task"]
-    non_terminal = [
-        frame for frame in mine if frame["task"]["status"] != "succeeded"
-    ]
+    non_terminal = [frame for frame in mine if frame["task"]["status"] != "succeeded"]
     assert all("output_tail" not in frame["task"] for frame in non_terminal)
 
 
@@ -314,9 +310,7 @@ def test_events_stream_exits_promptly_when_server_stopping(
     assert elapsed < 15
 
 
-def test_build_uvicorn_config_carries_shutdown_timeout(
-    monkeypatch, tmp_path
-) -> None:
+def test_build_uvicorn_config_carries_shutdown_timeout(monkeypatch, tmp_path) -> None:
     from nova.server import create_app
     from nova.server.app import (
         GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
@@ -392,7 +386,11 @@ def test_inflight_chat_stream_exits_promptly_when_server_stopping(
                 json={"message": "hi", "session_id": "sess-shutdown"},
             ) as response:
                 body = "".join(response.iter_text())
-            results["done"] = (response.status_code, len(body), time.monotonic() - started)
+            results["done"] = (
+                response.status_code,
+                len(body),
+                time.monotonic() - started,
+            )
         except Exception as error:
             results["done"] = error
 

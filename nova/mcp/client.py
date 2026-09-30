@@ -18,16 +18,23 @@ class McpClient:
         self._initialized = False
 
     async def initialize(self) -> dict[str, Any]:
-        result = await self._transport.send_request("initialize", {
-            "protocolVersion": "2025-03-26",
-            "capabilities": {},
-            "clientInfo": {"name": "nova", "version": "0.1.0"},
-        })
+        result = await self._transport.send_request(
+            "initialize",
+            {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "nova", "version": "0.1.0"},
+            },
+        )
         self._capabilities = result.get("capabilities", {})
         self._server_info = result.get("serverInfo", {})
         await self._transport.send_notification("notifications/initialized")
         self._initialized = True
-        log.info("MCP client '%s' connected — server=%s", self.name, self._server_info.get("name", "unknown"))
+        log.info(
+            "MCP client '%s' connected — server=%s",
+            self.name,
+            self._server_info.get("name", "unknown"),
+        )
         return result
 
     async def list_tools(self) -> list[dict[str, Any]]:
@@ -36,10 +43,13 @@ class McpClient:
         return self._tools
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
-        result = await self._transport.send_request("tools/call", {
-            "name": name,
-            "arguments": arguments,
-        })
+        result = await self._transport.send_request(
+            "tools/call",
+            {
+                "name": name,
+                "arguments": arguments,
+            },
+        )
         content = result.get("content", [])
         return self._format_content(content)
 

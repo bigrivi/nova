@@ -51,9 +51,7 @@ def forwarded_for(scope: Scope) -> list[str]:
     return [entry.strip() for entry in raw.split(",") if entry.strip()]
 
 
-def check_basic_auth(
-    authorization: str | None, expected: tuple[str, str]
-) -> bool:
+def check_basic_auth(authorization: str | None, expected: tuple[str, str]) -> bool:
     if not authorization:
         return False
     scheme, _, credentials = authorization.partition(" ")
@@ -81,7 +79,9 @@ class BasicAuthMiddleware:
     @staticmethod
     def _credentials(scope: Scope) -> tuple[str, str] | None:
         app = scope.get("app")
-        state_settings = getattr(app.state, "settings", None) if app is not None else None
+        state_settings = (
+            getattr(app.state, "settings", None) if app is not None else None
+        )
         if isinstance(state_settings, Settings):
             return get_configured_credentials(state_settings)
         return get_configured_credentials()
@@ -106,7 +106,5 @@ class BasicAuthMiddleware:
         if check_basic_auth(raw, credentials):
             await self.app(scope, receive, send)
             return
-        response = JSONResponse(
-            {"detail": "Authentication required"}, status_code=401
-        )
+        response = JSONResponse({"detail": "Authentication required"}, status_code=401)
         await response(scope, receive, send)

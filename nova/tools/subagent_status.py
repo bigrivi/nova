@@ -32,7 +32,9 @@ def _format_record(record) -> str:
             f"- `{target}` (task {record.task_id}): {record.status.upper()} after "
             f"{elapsed:.0f}s — {record.error or 'unknown error'}"
         )
-    return f"- `{target}` (task {record.task_id}): still running ({elapsed:.0f}s so far)."
+    return (
+        f"- `{target}` (task {record.task_id}): still running ({elapsed:.0f}s so far)."
+    )
 
 
 @tool(
@@ -65,7 +67,8 @@ async def subagent_status(target: str | None = None) -> ToolResult:
         parent_id = current_session.id if current_session else None
         if not parent_id:
             return ToolResult(
-                success=False, content="No active session to check sub-agent status for."
+                success=False,
+                content="No active session to check sub-agent status for.",
             )
 
         records = [
@@ -91,7 +94,9 @@ async def subagent_status(target: str | None = None) -> ToolResult:
         )
     except Exception as e:
         log.error("Failed to read sub-agent status: %s", e)
-        return ToolResult(success=False, content=f"Failed to read sub-agent status: {e}")
+        return ToolResult(
+            success=False, content=f"Failed to read sub-agent status: {e}"
+        )
 
 
 TOOL = subagent_status

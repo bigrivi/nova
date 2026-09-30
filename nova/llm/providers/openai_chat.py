@@ -228,7 +228,15 @@ class OpenAIProvider(HttpProvider):
             headers.update(run_request_hook(self._request_hook, session_id))
         return headers
 
-    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] | None = None, session_id: str | None = None, reasoning_effort: str | None = None) -> dict:
+    def _build_body(
+        self,
+        messages: list,
+        model: str,
+        stream: bool = False,
+        tools: list[dict] | None = None,
+        session_id: str | None = None,
+        reasoning_effort: str | None = None,
+    ) -> dict:
         body = {"messages": messages}
         if model:
             body["model"] = model
@@ -309,14 +317,20 @@ class OpenAIProvider(HttpProvider):
 
             if images:
                 image_parts = [
-                    {"type": "image_url",
-                     "image_url": {"url": f"data:image/png;base64,{img}"}}
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{img}"},
+                    }
                     for img in images
                 ]
                 if role == "user":
-                    m = {"role": "user",
-                         "content": [{"type": "text", "text": content or ""},
-                                     *image_parts]}
+                    m = {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": content or ""},
+                            *image_parts,
+                        ],
+                    }
                     trailing = []
                 else:
                     # Only a user turn may carry image parts. Rewriting a tool
@@ -332,7 +346,8 @@ class OpenAIProvider(HttpProvider):
 
             if role == "assistant":
                 rc = getattr(msg, self._reasoning_field, None) or get_attr(
-                    msg, self._reasoning_field)
+                    msg, self._reasoning_field
+                )
                 # DeepSeek thinking mode requires every assistant message in
                 # history to carry this key (empty string is acceptable), else 400
                 m["reasoning_content"] = rc or ""
@@ -402,11 +417,13 @@ class OpenAIProvider(HttpProvider):
         tool_calls = []
         if isinstance(msg.get("tool_calls"), list):
             for tc in msg["tool_calls"]:
-                tool_calls.append(ToolCall(
-                    id=tc.get("id", ""),
-                    name=tc.get("function", {}).get("name", ""),
-                    arguments=tc.get("function", {}).get("arguments", ""),
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.get("id", ""),
+                        name=tc.get("function", {}).get("name", ""),
+                        arguments=tc.get("function", {}).get("arguments", ""),
+                    )
+                )
 
         usage = data.get("usage") if isinstance(data, dict) else None
         cache_read_tokens = _cached_tokens_from_usage(usage)
@@ -422,6 +439,6 @@ class OpenAIProvider(HttpProvider):
         return _OpenAIChatStreamParser(self._reasoning_field)
 
     async def count_tokens(self, text: str, model: str | None = None) -> int:
-        chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+        chinese_chars = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
         other_chars = len(text) - chinese_chars
         return int(chinese_chars / 2 + other_chars / 4)

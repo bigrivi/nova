@@ -56,7 +56,9 @@ class InMemoryRepository(NovaRepository):
             "compacted_at": getattr(session, "compacted_at", None),
             "message_count": getattr(session, "message_count", 0),
             "turn_count": getattr(session, "turn_count", 0),
-            "metadata": json.dumps(getattr(session, "metadata", None)) if getattr(session, "metadata", None) else None,
+            "metadata": json.dumps(getattr(session, "metadata", None))
+            if getattr(session, "metadata", None)
+            else None,
             "provider": getattr(session, "provider", None),
             "model": getattr(session, "model", None),
             "reasoning_effort": getattr(session, "reasoning_effort", None),
@@ -82,7 +84,9 @@ class InMemoryRepository(NovaRepository):
         session["title"] = title
         return True
 
-    async def set_session_workspace(self, session_id: str, workspace_dir: str | None) -> bool:
+    async def set_session_workspace(
+        self, session_id: str, workspace_dir: str | None
+    ) -> bool:
         session = self._sessions.get(session_id)
         if session is None:
             return False
@@ -111,7 +115,9 @@ class InMemoryRepository(NovaRepository):
         session["reasoning_effort"] = reasoning_effort
         return True
 
-    async def set_session_project(self, session_id: str, project_id: str | None) -> bool:
+    async def set_session_project(
+        self, session_id: str, project_id: str | None
+    ) -> bool:
         session = self._sessions.get(session_id)
         if session is None:
             return False
@@ -161,11 +167,15 @@ class InMemoryRepository(NovaRepository):
         if session_id not in self._sessions:
             return False
         del self._sessions[session_id]
-        for message_id in [m.id for m in self._messages.values() if m.session_id == session_id]:
+        for message_id in [
+            m.id for m in self._messages.values() if m.session_id == session_id
+        ]:
             del self._messages[message_id]
         return True
 
-    async def get_all_sessions(self, limit: int | None = None, agent_key: str | None = None) -> list[dict]:
+    async def get_all_sessions(
+        self, limit: int | None = None, agent_key: str | None = None
+    ) -> list[dict]:
         sessions = list(self._sessions.values())
         if agent_key:
             sessions = [s for s in sessions if s["agent_key"] == agent_key]
@@ -174,12 +184,16 @@ class InMemoryRepository(NovaRepository):
             return [dict(session) for session in sessions]
         return [dict(session) for session in sessions[:limit]]
 
-    async def get_sessions_by_parent_id(self, parent_id: str, limit: int = 50) -> list[dict]:
+    async def get_sessions_by_parent_id(
+        self, parent_id: str, limit: int = 50
+    ) -> list[dict]:
         sessions = [s for s in self._sessions.values() if s["parent_id"] == parent_id]
         sessions.sort(key=lambda item: item["created_at"], reverse=True)
         return [dict(session) for session in sessions[:limit]]
 
-    async def add_message(self, session_id: str, role: str, content: str, **kwargs: Any) -> Message:
+    async def add_message(
+        self, session_id: str, role: str, content: str, **kwargs: Any
+    ) -> Message:
         now = int(time.time() * 1000)
         stamp = kwargs.get("time_created")
         message = Message(
@@ -212,7 +226,9 @@ class InMemoryRepository(NovaRepository):
             session["message_count"] += 1
         return message
 
-    async def get_messages(self, session_id: str, msg_filter: MessageFilter | None = None) -> list[Message]:
+    async def get_messages(
+        self, session_id: str, msg_filter: MessageFilter | None = None
+    ) -> list[Message]:
         filter_value = msg_filter or MessageFilter()
         messages = [m for m in self._messages.values() if m.session_id == session_id]
         messages.sort(key=lambda message: message.time_created)
@@ -223,11 +239,13 @@ class InMemoryRepository(NovaRepository):
         if filter_value.only_non_summary:
             messages = [m for m in messages if m.summary == 0]
         if filter_value.limit is not None:
-            messages = messages[:filter_value.limit]
+            messages = messages[: filter_value.limit]
         return messages
 
     async def compress_messages(self, session_id: str, target_count: int = 50) -> None:
-        messages = await self.get_messages(session_id, MessageFilter(include_compacted=True))
+        messages = await self.get_messages(
+            session_id, MessageFilter(include_compacted=True)
+        )
         if len(messages) <= target_count:
             return
         delete_count = len(messages) - target_count
@@ -239,16 +257,24 @@ class InMemoryRepository(NovaRepository):
 
     async def mark_messages_compacted(self, session_id: str) -> None:
         for message in self._messages.values():
-            if message.session_id == session_id and message.compacted == 0 and message.summary == 0:
+            if (
+                message.session_id == session_id
+                and message.compacted == 0
+                and message.summary == 0
+            ):
                 message.compacted = 1
 
-    async def mark_messages_compacted_by_ids(self, session_id: str, message_ids: list[str]) -> None:
+    async def mark_messages_compacted_by_ids(
+        self, session_id: str, message_ids: list[str]
+    ) -> None:
         for message_id in message_ids:
             message = self._messages.get(message_id)
             if message and message.session_id == session_id:
                 message.compacted = 1
 
-    async def update_session_compacted_at(self, session_id: str, timestamp: int) -> None:
+    async def update_session_compacted_at(
+        self, session_id: str, timestamp: int
+    ) -> None:
         if session_id in self._sessions:
             self._sessions[session_id]["compacted_at"] = timestamp
 
@@ -259,7 +285,11 @@ class InMemoryRepository(NovaRepository):
             message.data = content
 
     async def delete_messages(self, session_id: str, message_ids: list[str]) -> int:
-        selected = [m for m in self._messages.values() if m.session_id == session_id and m.id in message_ids]
+        selected = [
+            m
+            for m in self._messages.values()
+            if m.session_id == session_id and m.id in message_ids
+        ]
         for message in selected:
             del self._messages[message.id]
         session = self._sessions.get(session_id)
@@ -269,7 +299,10 @@ class InMemoryRepository(NovaRepository):
         return len(selected)
 
     async def list_agents(self) -> list[dict]:
-        return sorted((dict(agent) for agent in self._agents.values()), key=lambda item: item["name"])
+        return sorted(
+            (dict(agent) for agent in self._agents.values()),
+            key=lambda item: item["name"],
+        )
 
     async def get_agent(self, key: str) -> dict[str, Any] | None:
         agent = self._agents.get(key)
@@ -279,8 +312,12 @@ class InMemoryRepository(NovaRepository):
         self._agents[agent["key"]] = dict(agent)
 
     async def get_child_agents(self, parent_key: str) -> list[dict]:
-        child_keys = {child for child, parent in self._agent_parents if parent == parent_key}
-        return [agent for agent in await self.list_agents() if agent["key"] in child_keys]
+        child_keys = {
+            child for child, parent in self._agent_parents if parent == parent_key
+        }
+        return [
+            agent for agent in await self.list_agents() if agent["key"] in child_keys
+        ]
 
     async def get_agent_parents(self, child_key: str) -> list[str]:
         return [parent for child, parent in self._agent_parents if child == child_key]
@@ -289,7 +326,11 @@ class InMemoryRepository(NovaRepository):
         return [child for child, parent in self._agent_parents if parent == parent_key]
 
     async def set_agent_parents(self, child_key: str, parent_keys: list[str]) -> None:
-        self._agent_parents = {(child, parent) for child, parent in self._agent_parents if child != child_key}
+        self._agent_parents = {
+            (child, parent)
+            for child, parent in self._agent_parents
+            if child != child_key
+        }
         self._agent_parents.update((child_key, parent) for parent in parent_keys)
 
     async def add_agent_parent(self, child_key: str, parent_key: str) -> None:
@@ -302,8 +343,14 @@ class InMemoryRepository(NovaRepository):
         if key not in self._agents:
             return False
         del self._agents[key]
-        self._agent_parents = {(child, parent) for child, parent in self._agent_parents if child != key and parent != key}
-        for session_id in [s["id"] for s in self._sessions.values() if s["agent_key"] == key]:
+        self._agent_parents = {
+            (child, parent)
+            for child, parent in self._agent_parents
+            if child != key and parent != key
+        }
+        for session_id in [
+            s["id"] for s in self._sessions.values() if s["agent_key"] == key
+        ]:
             await self.delete_session(session_id)
         return True
 
@@ -347,29 +394,41 @@ class InMemoryRepository(NovaRepository):
         if filters.memory_type:
             memories = [m for m in memories if m["memory_type"] == filters.memory_type]
         if filters.session_id:
-            memories = [m for m in memories if m["scope"] != "session" or m["session_id"] == filters.session_id]
+            memories = [
+                m
+                for m in memories
+                if m["scope"] != "session" or m["session_id"] == filters.session_id
+            ]
         owner_agent_key = getattr(filters, "owner_agent_key", None)
         if owner_agent_key:
             memories = [
-                m for m in memories
-                if m.get("owner_agent_key") is None or m.get("owner_agent_key") == owner_agent_key
+                m
+                for m in memories
+                if m.get("owner_agent_key") is None
+                or m.get("owner_agent_key") == owner_agent_key
             ]
         else:
             memories = [m for m in memories if m.get("owner_agent_key") is None]
         memories.sort(key=lambda item: item["updated_at"], reverse=True)
-        return [dict(memory) for memory in memories[:filters.limit]]
+        return [dict(memory) for memory in memories[: filters.limit]]
 
     async def delete_memory_by_id(self, memory_id: str) -> int:
         return 1 if self._memories.pop(memory_id, None) is not None else 0
 
     async def delete_memories_by_session(self, session_id: str) -> int:
-        ids = [key for key, memory in self._memories.items() if memory["session_id"] == session_id]
+        ids = [
+            key
+            for key, memory in self._memories.items()
+            if memory["session_id"] == session_id
+        ]
         for memory_id in ids:
             del self._memories[memory_id]
         return len(ids)
 
     async def list_memories_by_session(self, session_id: str) -> list[dict]:
-        memories = [dict(m) for m in self._memories.values() if m["session_id"] == session_id]
+        memories = [
+            dict(m) for m in self._memories.values() if m["session_id"] == session_id
+        ]
         memories.sort(key=lambda item: item["updated_at"], reverse=True)
         return memories
 
@@ -385,4 +444,6 @@ class InMemoryRepository(NovaRepository):
 
     @staticmethod
     def _milliseconds(value: Any) -> int:
-        return int(value.timestamp() * 1000) if hasattr(value, "timestamp") else int(value)
+        return (
+            int(value.timestamp() * 1000) if hasattr(value, "timestamp") else int(value)
+        )

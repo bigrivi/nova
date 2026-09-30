@@ -13,9 +13,7 @@ from pathlib import Path
 
 import pytest
 
-INDEX_CSS = (
-    Path(__file__).resolve().parent.parent / "frontend" / "src" / "index.css"
-)
+INDEX_CSS = Path(__file__).resolve().parent.parent / "frontend" / "src" / "index.css"
 
 # Tokens a theme overrides to change presentation (weight, size, spacing,
 # shadow, scrollbars) rather than colour.
@@ -42,9 +40,7 @@ PRESENTATION_TOKENS = (
 def _block_properties(selector: str) -> list[str]:
     """Return the custom properties declared inside a CSS block."""
     css = INDEX_CSS.read_text(encoding="utf-8")
-    match = re.search(
-        rf"(?:^|\n){re.escape(selector)}\s*\{{([^}}]*)\}}", css
-    )
+    match = re.search(rf"(?:^|\n){re.escape(selector)}\s*\{{([^}}]*)\}}", css)
     if match is None:
         raise AssertionError(f"theme block {selector} not found in index.css")
     return re.findall(r"^\s*(--[a-z0-9-]+)\s*:", match.group(1), re.MULTILINE)
@@ -88,9 +84,7 @@ def test_components_do_not_branch_on_theme_for_presentation() -> None:
             continue
         text = path.read_text(encoding="utf-8")
         offenders.extend(
-            f"{path.name}: {variant}"
-            for variant in banned
-            if variant in text
+            f"{path.name}: {variant}" for variant in banned if variant in text
         )
 
     assert offenders == []
@@ -116,7 +110,8 @@ def test_base_layer_declares_an_interactive_cursor() -> None:
     body = base.group(1)
 
     assert re.search(r"button:not\(:disabled\)", body), (
-        "base layer must make enabled buttons show a pointer")
+        "base layer must make enabled buttons show a pointer"
+    )
     assert "@apply cursor-pointer" in body
     # Utilities must keep winning, or read-only chips would start lying.
     assert re.search(r"@layer utilities", css) or "cursor-default" in css

@@ -64,12 +64,14 @@ class ToolResult:
 @dataclass
 class ChatEvent:
     """Base class for chat events."""
+
     type: str
 
 
 @dataclass
 class TextDelta(ChatEvent):
     """Streaming text chunk."""
+
     type: str = "text_delta"
     content: str = ""
 
@@ -77,6 +79,7 @@ class TextDelta(ChatEvent):
 @dataclass
 class ToolCall(ChatEvent):
     """Tool call event."""
+
     type: str = "tool_call"
     id: str = ""
     name: str = ""
@@ -113,6 +116,7 @@ class Done(ChatEvent):
 @dataclass
 class ReasoningDelta(ChatEvent):
     """Reasoning/thinking content chunk."""
+
     type: str = "reasoning_delta"
     content: str = ""
 
@@ -128,6 +132,7 @@ class Error(ChatEvent):
     not care may ignore both - the defaults keep the event meaning exactly what
     it meant before.
     """
+
     type: str = "error"
     message: str = ""
     content: str = ""
@@ -147,7 +152,7 @@ class LLMProvider(ABC):
         model: str = "gpt-4o",
         stream: bool = False,
         tools: list[dict] | None = None,
-        **kwargs
+        **kwargs,
     ) -> Done:
         """Run a non-streaming chat request and return the full response."""
         pass
@@ -160,7 +165,7 @@ class LLMProvider(ABC):
         tools: list[dict] | None = None,
         abort_event: asyncio.Event | None = None,
         timeout: int | None = None,
-        **kwargs
+        **kwargs,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         pass
 

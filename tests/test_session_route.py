@@ -83,13 +83,15 @@ async def get_route(client, session_id):
 @pytest.mark.asyncio
 class TestRouteEndpoint:
     async def test_route_round_trips(self, client, session_id):
-        assert (await put_route(
-            client,
-            session_id,
-            provider="gw",
-            model="gpt-5.5",
-            reasoning_effort="high",
-        )).status_code == 200
+        assert (
+            await put_route(
+                client,
+                session_id,
+                provider="gw",
+                model="gpt-5.5",
+                reasoning_effort="high",
+            )
+        ).status_code == 200
 
         body = (await get_route(client, session_id)).json()
         assert body == {
@@ -113,7 +115,9 @@ class TestRouteEndpoint:
         )
         assert (await get_route(client, session_id)).json()["reasoning_effort"] is None
 
-    async def test_a_model_that_declares_nothing_records_no_level(self, client, session_id):
+    async def test_a_model_that_declares_nothing_records_no_level(
+        self, client, session_id
+    ):
         await put_route(
             client,
             session_id,
@@ -125,7 +129,9 @@ class TestRouteEndpoint:
         assert body["model"] == "plain-model"
         assert body["reasoning_effort"] is None
 
-    async def test_an_unknown_provider_keeps_the_level_unfiltered(self, client, session_id):
+    async def test_an_unknown_provider_keeps_the_level_unfiltered(
+        self, client, session_id
+    ):
         """A provider the settings do not know cannot be validated.
 
         Dropping the level there would silently discard a legitimate choice for
@@ -139,7 +145,9 @@ class TestRouteEndpoint:
             model="gpt-5.5",
             reasoning_effort="high",
         )
-        assert (await get_route(client, session_id)).json()["reasoning_effort"] == "high"
+        assert (await get_route(client, session_id)).json()[
+            "reasoning_effort"
+        ] == "high"
 
     async def test_a_level_without_a_model_is_rejected(self, client, session_id):
         """The write replaces the whole route, so half a route is not a route.
@@ -187,9 +195,9 @@ class TestRouteEndpoint:
 
     async def test_missing_session_is_a_404(self, client):
         assert (await get_route(client, "no-such-session")).status_code == 404
-        assert (await put_route(
-            client, "no-such-session", provider="gw", model="gpt-5.5"
-        )).status_code == 404
+        assert (
+            await put_route(client, "no-such-session", provider="gw", model="gpt-5.5")
+        ).status_code == 404
 
     async def test_a_session_keeps_its_own_route(self, client, session_id):
         """Two conversations on the same model run at different levels."""
@@ -339,7 +347,9 @@ class TestAgentDefault:
         )
         assert response.status_code == 200
         assert response.json()["reasoning_effort"] == "high"
-        assert (await client.get("/api/agents/main")).json()["reasoning_effort"] == "high"
+        assert (await client.get("/api/agents/main")).json()[
+            "reasoning_effort"
+        ] == "high"
 
     async def test_an_undeclared_level_is_dropped_on_write(self, client):
         """Same rule as the session route: never store what the model refuses."""
@@ -366,7 +376,9 @@ class TestAgentDefault:
             "/api/agents/main",
             json={"provider": "gw", "model": "gpt-5.5", "reasoning_effort": "low"},
         )
-        await client.patch("/api/agents/main", json={"provider": "gw", "model": "gpt-5.5"})
+        await client.patch(
+            "/api/agents/main", json={"provider": "gw", "model": "gpt-5.5"}
+        )
 
         agent = (await client.get("/api/agents/main")).json()
         assert agent["reasoning_effort"] == "low"
@@ -383,7 +395,9 @@ class TestAgentDefault:
         )
         assert (await client.get("/api/agents/main")).json()["reasoning_effort"] is None
 
-    async def test_the_agent_and_a_session_hold_their_own_level(self, client, session_id):
+    async def test_the_agent_and_a_session_hold_their_own_level(
+        self, client, session_id
+    ):
         """A default is not a lock: the conversation still picks its own."""
         await client.patch(
             "/api/agents/main",
@@ -392,8 +406,12 @@ class TestAgentDefault:
         await put_route(
             client, session_id, provider="gw", model="gpt-5.5", reasoning_effort="high"
         )
-        assert (await client.get("/api/agents/main")).json()["reasoning_effort"] == "low"
-        assert (await get_route(client, session_id)).json()["reasoning_effort"] == "high"
+        assert (await client.get("/api/agents/main")).json()[
+            "reasoning_effort"
+        ] == "low"
+        assert (await get_route(client, session_id)).json()[
+            "reasoning_effort"
+        ] == "high"
 
     async def test_an_unknown_agent_is_a_404(self, client):
         response = await client.patch(
@@ -459,7 +477,9 @@ class TestEffortPrecedence:
         from nova.app.runtime import _resolve_effort
 
         settings = SimpleNamespace(
-            providers={"gw": SimpleNamespace(type="openai-compatible", models={"m": {}})}
+            providers={
+                "gw": SimpleNamespace(type="openai-compatible", models={"m": {}})
+            }
         )
         assert (
             _resolve_effort(

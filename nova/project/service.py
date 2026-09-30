@@ -52,13 +52,17 @@ class ProjectService:
         )
         await data_source.save_project(project)
         stored = await data_source.get_project(project.id)
-        return stored if stored is not None else {
-            "id": project.id,
-            "name": project.name,
-            "path": project.path,
-            "created_at": project.created_at,
-            "updated_at": project.updated_at,
-        }
+        return (
+            stored
+            if stored is not None
+            else {
+                "id": project.id,
+                "name": project.name,
+                "path": project.path,
+                "created_at": project.created_at,
+                "updated_at": project.updated_at,
+            }
+        )
 
     async def update_project(
         self,
@@ -137,8 +141,6 @@ class ProjectService:
 
         current_workspace = session.get("workspace_dir")
         next_path = project.get("path") if project else None
-        if next_path and (
-            not current_workspace or current_workspace == previous_path
-        ):
+        if next_path and (not current_workspace or current_workspace == previous_path):
             await data_source.set_session_workspace(session_id, next_path)
         return updated

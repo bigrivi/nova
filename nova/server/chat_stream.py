@@ -41,7 +41,6 @@ CHAT_STREAM_SSE_RESPONSE_EXAMPLE = (
 )
 
 
-
 def split_sequence_id_prefix(chunk: bytes) -> tuple[bytes, bytes]:
     if chunk.startswith(b"id:"):
         line, sep, rest = chunk.partition(b"\n")
@@ -71,7 +70,7 @@ def extract_session_id_from_chunk(chunk: bytes) -> str | None:
     if not rest.startswith(b"data: "):
         return None
     try:
-        payload = json.loads(rest[len(b"data: "):].strip())
+        payload = json.loads(rest[len(b"data: ") :].strip())
     except (ValueError, UnicodeDecodeError):
         return None
     if isinstance(payload, dict):
@@ -89,7 +88,7 @@ def normalize_session_chunk_for_session(chunk: bytes, session_id: str | None) ->
     prefix, rest = split_sequence_id_prefix(chunk)
     if not rest.startswith(b"data: "):
         return chunk
-    raw = rest[len(b"data: "):].strip()
+    raw = rest[len(b"data: ") :].strip()
     if raw == b"[DONE]":
         return chunk
     try:
@@ -103,7 +102,9 @@ def normalize_session_chunk_for_session(chunk: bytes, session_id: str | None) ->
         if not isinstance(data, dict) or "sessionId" not in data:
             return chunk
         data["sessionId"] = session_id
-        rewritten = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        rewritten = json.dumps(
+            payload, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
         return prefix + b"data: " + rewritten + b"\n\n"
     return chunk
 
@@ -129,16 +130,17 @@ async def park_detached_stream_session(registry: Any, session_id: str | None) ->
         log.exception("park stream failed for %s", session_id)
 
 
-
-def resolve_stream_dependencies(http_request: Request) -> tuple[ChatService, RequestRegistry, StreamBuffer]:
-    chat_service:ChatService = http_request.app.state.chat_service
+def resolve_stream_dependencies(
+    http_request: Request,
+) -> tuple[ChatService, RequestRegistry, StreamBuffer]:
+    chat_service: ChatService = http_request.app.state.chat_service
     # Prefer the public ChatService interface (2.1); fall back to the legacy
     # private attributes so lightweight test stubs without the properties
     # keep working.
-    request_registry:RequestRegistry = getattr(chat_service, "request_registry", None)
+    request_registry: RequestRegistry = getattr(chat_service, "request_registry", None)
     if request_registry is None:
         request_registry = getattr(chat_service, "_request_registry", None)
-    service_stream_buffer:StreamBuffer = getattr(chat_service, "stream_buffer", None)
+    service_stream_buffer: StreamBuffer = getattr(chat_service, "stream_buffer", None)
     if service_stream_buffer is None:
         service_stream_buffer = getattr(chat_service, "_stream_buffer", None)
     if service_stream_buffer is not None:
@@ -235,7 +237,9 @@ class ChatStreamOrchestrator:
                                 parse_sequence(event_frame),
                                 session_id,
                             )
-                        yield normalize_session_chunk_for_session(event_frame, session_id)
+                        yield normalize_session_chunk_for_session(
+                            event_frame, session_id
+                        )
                     if not follow:
                         log.info(
                             "[RESUME-DBG] resume RETURN after replay (not follow) "
@@ -320,7 +324,9 @@ class ChatStreamOrchestrator:
                     detail="Session is busy: another request is already running for this session. Wait for it to finish before sending another message.",
                 )
 
-        owns_buffer = service_stream_buffer is not None and buffer is service_stream_buffer
+        owns_buffer = (
+            service_stream_buffer is not None and buffer is service_stream_buffer
+        )
 
         async def event_stream():
             stream_queue: asyncio.Queue[bytes | None] = asyncio.Queue(
@@ -333,14 +339,23 @@ class ChatStreamOrchestrator:
                 try:
                     async for chunk in chat_service.chat_stream_ai_sdk(chat_request):
                         if stream_session_id is None:
-                            stream_session_id = extract_session_id_from_chunk(chunk) or stream_session_id
-                        if not owns_buffer and buffer is not None and stream_session_id is not None:
+                            stream_session_id = (
+                                extract_session_id_from_chunk(chunk)
+                                or stream_session_id
+                            )
+                        if (
+                            not owns_buffer
+                            and buffer is not None
+                            and stream_session_id is not None
+                        ):
                             _, chunk = buffer.append(
                                 stream_session_id, split_sequence_id_prefix(chunk)[1]
                             )
                         try:
                             stream_queue.put_nowait(
-                                normalize_session_chunk_for_session(chunk, stream_session_id)
+                                normalize_session_chunk_for_session(
+                                    chunk, stream_session_id
+                                )
                             )
                         except asyncio.QueueFull:
                             continue
@@ -371,8 +386,13 @@ class ChatStreamOrchestrator:
                         # provider "stream ended before response.completed" error)
                         # instead of a connection that closes mid-turn. Only a
                         # client disconnect or a server shutdown parks it early.
-                        if is_server_stopping(http_request) or await http_request.is_disconnected():
-                            await park_detached_stream_session(registry, stream_session_id)
+                        if (
+                            is_server_stopping(http_request)
+                            or await http_request.is_disconnected()
+                        ):
+                            await park_detached_stream_session(
+                                registry, stream_session_id
+                            )
                             break
                         yield stream_module.STREAM_SSE_PING_BYTES
                         continue

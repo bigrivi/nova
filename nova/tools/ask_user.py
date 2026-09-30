@@ -101,16 +101,18 @@ async def ask_user(questions: list[dict]) -> ToolResult:
                     desc = str(opt.get("description", "")).strip()
                     if label:
                         options.append({"label": label, "description": desc})
-        cleaned.append({
-            "id": qid,
-            "header": header,
-            "question": question,
-            "input_type": input_type,
-            "options": options,
-            "multiple": bool(q.get("multiple", False)),
-            "required": bool(q.get("required", True)),
-            "default": str(q.get("default", "")),
-        })
+        cleaned.append(
+            {
+                "id": qid,
+                "header": header,
+                "question": question,
+                "input_type": input_type,
+                "options": options,
+                "multiple": bool(q.get("multiple", False)),
+                "required": bool(q.get("required", True)),
+                "default": str(q.get("default", "")),
+            }
+        )
 
     payload = {"questions": cleaned}
     return ToolResult(

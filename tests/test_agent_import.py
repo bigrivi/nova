@@ -69,7 +69,9 @@ def test_defaults_when_minimal() -> None:
 
 
 def test_parses_optional_name_field() -> None:
-    parsed = parse_agent_markdown("---\nname: UI Designer\nmode: subagent\n---\nBody.\n")
+    parsed = parse_agent_markdown(
+        "---\nname: UI Designer\nmode: subagent\n---\nBody.\n"
+    )
     assert parsed.name == "UI Designer"
 
 

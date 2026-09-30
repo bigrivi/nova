@@ -16,7 +16,9 @@ from nova.session.models import MessageFilter, Session
 @pytest_asyncio.fixture(params=["sqlite", "memory"])
 async def repository(request: pytest.FixtureRequest, tmp_path: Path):
     if request.param == "sqlite":
-        repository = SqliteRepository(DatabaseConfig(path=str(tmp_path / "contract.db")))
+        repository = SqliteRepository(
+            DatabaseConfig(path=str(tmp_path / "contract.db"))
+        )
     else:
         repository = InMemoryRepository()
     await repository.connect()
@@ -25,7 +27,9 @@ async def repository(request: pytest.FixtureRequest, tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_session_delete_cascades_messages_and_preserves_missing_result(repository):
+async def test_session_delete_cascades_messages_and_preserves_missing_result(
+    repository,
+):
     await repository.save_session(Session(id="session-1"))
     await repository.add_message("session-1", "user", "hello")
 
@@ -35,7 +39,12 @@ async def test_session_delete_cascades_messages_and_preserves_missing_result(rep
     assert deleted is True
     assert missing is False
     assert await repository.get_session("session-1") is None
-    assert await repository.get_messages("session-1", MessageFilter(include_compacted=True)) == []
+    assert (
+        await repository.get_messages(
+            "session-1", MessageFilter(include_compacted=True)
+        )
+        == []
+    )
 
 
 @pytest.mark.asyncio
@@ -70,8 +79,12 @@ async def test_session_pinned_round_trips_and_updates(repository):
 
 @pytest.mark.asyncio
 async def test_projects_round_trip_and_detach_sessions(repository):
-    await repository.save_project(Project(id="project-1", name="paoku", path="/tmp/paoku"))
-    await repository.save_project(Project(id="project-2", name="paoku-copy", path="/tmp/paoku"))
+    await repository.save_project(
+        Project(id="project-1", name="paoku", path="/tmp/paoku")
+    )
+    await repository.save_project(
+        Project(id="project-2", name="paoku-copy", path="/tmp/paoku")
+    )
     await repository.save_session(
         Session(id="session-1", project_id="project-1", workspace_dir="/tmp/paoku")
     )
@@ -91,7 +104,11 @@ async def test_projects_round_trip_and_detach_sessions(repository):
     session = await repository.get_session("session-1")
     assert session is not None
     assert session["project_id"] == "project-1"
-    listed = [item for item in await repository.get_all_sessions() if item["id"] == "session-1"]
+    listed = [
+        item
+        for item in await repository.get_all_sessions()
+        if item["id"] == "session-1"
+    ]
     assert listed[0]["project_id"] == "project-1"
 
     assert await repository.delete_project("project-1") is True
@@ -171,7 +188,9 @@ async def test_delete_messages_returns_count_and_updates_session(repository):
     first = await repository.add_message("session-3", "user", "first")
     second = await repository.add_message("session-3", "assistant", "second")
 
-    deleted = await repository.delete_messages("session-3", [first.id, "missing", second.id])
+    deleted = await repository.delete_messages(
+        "session-3", [first.id, "missing", second.id]
+    )
     session = await repository.get_session("session-3")
 
     assert deleted == 2
@@ -197,7 +216,9 @@ async def test_parent_sessions_and_agent_parent_replacement_match_contract(repos
 
 @pytest.mark.asyncio
 async def test_agent_delete_cascades_owned_sessions_and_parent_edges(repository):
-    await repository.save_agent({"key": "child", "name": "Child", "model": "m", "provider": "p"})
+    await repository.save_agent(
+        {"key": "child", "name": "Child", "model": "m", "provider": "p"}
+    )
     await repository.add_agent_parent("child", "main")
     await repository.save_session(Session(id="agent-session", agent_key="child"))
     await repository.add_message("agent-session", "user", "owned")
@@ -238,7 +259,9 @@ async def test_memory_filters_and_deletes_match_contract(repository):
     filtered = await repository.list_memories(
         MemorySearchFilters(scope="all", session_id="session-4", limit=1)
     )
-    deleted = await repository.delete_memory_by_key("session-rule", "session", "session-4")
+    deleted = await repository.delete_memory_by_key(
+        "session-rule", "session", "session-4"
+    )
 
     assert len(filtered) == 1
     assert deleted == 1
@@ -258,7 +281,9 @@ async def test_provider_meta_and_model_round_trip(repository):
     assert created.provider_meta == {"thinking_signature": "SIG123"}
     assert created.model == "claude-sonnet-4-5"
 
-    messages = await repository.get_messages("session-meta", MessageFilter(include_compacted=True))
+    messages = await repository.get_messages(
+        "session-meta", MessageFilter(include_compacted=True)
+    )
     assert len(messages) == 1
     stored = messages[0]
     assert stored.provider_meta == {"thinking_signature": "SIG123"}
@@ -272,7 +297,9 @@ async def test_provider_meta_none_round_trips_as_none(repository):
     created = await repository.add_message("session-meta-none", "assistant", "no meta")
     assert created.provider_meta is None
 
-    messages = await repository.get_messages("session-meta-none", MessageFilter(include_compacted=True))
+    messages = await repository.get_messages(
+        "session-meta-none", MessageFilter(include_compacted=True)
+    )
     stored = messages[0]
     assert stored.provider_meta is None
 
@@ -287,7 +314,9 @@ async def test_provider_meta_non_ascii_round_trips(repository):
         provider_meta={"thinking_signature": "签名"},
         model="claude-sonnet-4-5",
     )
-    messages = await repository.get_messages("session-meta-unicode", MessageFilter(include_compacted=True))
+    messages = await repository.get_messages(
+        "session-meta-unicode", MessageFilter(include_compacted=True)
+    )
     stored = messages[0]
     assert stored.provider_meta == {"thinking_signature": "签名"}
     assert created.provider_meta == {"thinking_signature": "签名"}

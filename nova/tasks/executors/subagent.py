@@ -43,17 +43,13 @@ class SubagentExecutor(TaskExecutor):
         workspace = arguments.get("workspace")
         workspace = str(workspace) if workspace else None
         parent_session_id = arguments.get("parent_session_id")
-        parent_session_id = (
-            str(parent_session_id) if parent_session_id else None
-        )
+        parent_session_id = str(parent_session_id) if parent_session_id else None
 
         SPAWN_DEPTH.set(depth)
         context.set_metadata("target", target)
 
         session_manager = get_session_manager()
-        sub_agent = await build_agent(
-            agent_key=target, is_sub_agent=True, depth=depth
-        )
+        sub_agent = await build_agent(agent_key=target, is_sub_agent=True, depth=depth)
         session = await session_manager.create_session(
             persist=True,
             first_message=task_message,

@@ -50,14 +50,17 @@ def _record(task_id, target, status, session="p1", result="", error=None):
 
 def _wire(monkeypatch, records):
     import nova.tools.subagent_status as mod
+
     monkeypatch.setattr(
         mod, "get_session_manager", lambda: _FakeSessionManager("p1"), raising=False
     )
     import nova.session.manager as sm_mod
+
     monkeypatch.setattr(
         sm_mod, "get_session_manager", lambda: _FakeSessionManager("p1")
     )
     import nova.tasks.manager as tm_mod
+
     monkeypatch.setattr(
         tm_mod, "get_background_task_manager", lambda: _FakeTaskManager(records)
     )

@@ -41,9 +41,7 @@ async def test_generated_title_replaces_the_derived_default() -> None:
     session.title = default_session_title("帮我看看这个 bug")
     await store_session(repository, session)
 
-    applied = await manager.apply_generated_title(
-        session.id, "排查 Bug", session.title
-    )
+    applied = await manager.apply_generated_title(session.id, "排查 Bug", session.title)
 
     assert applied is True
     stored = await repository.get_session(session.id)
@@ -59,9 +57,7 @@ async def test_user_rename_is_never_clobbered() -> None:
     session.title = "用户自己起的名字"
     await store_session(repository, session)
 
-    applied = await manager.apply_generated_title(
-        session.id, "LLM 生成的名字", derived
-    )
+    applied = await manager.apply_generated_title(session.id, "LLM 生成的名字", derived)
 
     assert applied is False
     stored = await repository.get_session(session.id)

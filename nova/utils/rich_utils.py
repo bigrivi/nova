@@ -3,12 +3,14 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.theme import Theme
 
-theme = Theme({
-    "info": "cyan",
-    "warning": "yellow",
-    "error": "bold red",
-    "success": "bold green",
-})
+theme = Theme(
+    {
+        "info": "cyan",
+        "warning": "yellow",
+        "error": "bold red",
+        "success": "bold green",
+    }
+)
 
 console = Console(theme=theme)
 

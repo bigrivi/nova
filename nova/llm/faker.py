@@ -20,6 +20,7 @@ from nova.llm.provider import (
 
 log = logging.getLogger(__name__)
 
+
 class FakerLLMProvider(LLMProvider):
     _GREETING_REPLIES = (
         "你好！今天想从什么开始？",
@@ -64,40 +65,242 @@ class FakerLLMProvider(LLMProvider):
     # Iteration order is load-bearing: it defines multi-tool emission order.
     # Keywords match case-insensitively as substrings of the user message.
     _TOOL_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-        ("read", ("读取文件", "读取内容", "查看文件", "看看文件", "看下文件", "看一下文件",
-                  "文件内容", "打开文件", "读一下", "read file", "read the file", "open the file", "cat ")),
-        ("read_image", ("看图", "识别图片", "读取图片", "图片内容", "分析图片", "截图内容",
-                        "read image", "read the image", "look at the image", "analyze image", "analyse image")),
-        ("write", ("写入文件", "创建文件", "新建文件", "生成文件", "保存到文件", "写一个文件",
-                   "write a file", "write to file", "create a file", "create file", "new file")),
-        ("edit", ("编辑文件", "修改文件", "改一下文件", "替换内容", "编辑代码",
-                  "edit the file", "edit file", "modify the file", "replace in")),
-        ("glob", ("查找文件", "找文件", "列出文件", "文件列表", "匹配文件",
-                  "find files", "list files", "glob")),
-        ("grep", ("搜索代码", "搜索内容", "查找关键字", "全局搜索", "在代码里找",
-                  "grep", "search for", "search the code", "search in files", "find the text")),
-        ("shell", ("运行命令", "执行命令", "跑一下命令", "终端执行", "命令行",
-                   "run command", "run the command", "execute command", "shell command", "terminal")),
-        ("code_run", ("运行代码", "执行代码", "跑一段代码", "运行脚本", "执行脚本", "跑一下这段",
-                      "run code", "run the code", "execute code", "run the script", "run python")),
-        ("web_search", ("搜索网络", "上网搜", "网上搜索", "联网搜索", "搜一下网络",
-                        "search the web", "web search", "search online", "google")),
-        ("web_fetch", ("抓取网页", "获取网页", "打开网址", "访问链接", "读取网页", "下载网页",
-                       "fetch url", "fetch the page", "open url", "download page")),
-        ("browser_use", ("用浏览器", "浏览器操作", "自动化浏览", "打开浏览器", "网页点击",
-                         "browser", "navigate to", "browse the page")),
-        ("todo_write", ("待办", "任务清单", "任务列表", "计划列表", "todo", "task list", "track tasks")),
-        ("ask_user", ("问我", "问我问题", "询问我", "需要我确认", "让我选择", "让我确认",
-                      "问卷", "调查", "多问题", "多个问题",
-                      "ask me", "ask me a question", "confirm with me", "clarify with me",
-                      "let me choose", "survey", "questionnaire", "quiz",
-                      "multi-question", "multi question", "multiple questions")),
-        ("delegate_to_agent", ("委派", "交给子代理", "分派任务", "delegate", "sub agent", "hand off to")),
-        ("save_memory", ("记住", "记下来", "保存记忆", "存到记忆", "remember this", "save to memory", "memorize")),
-        ("search_memory", ("回忆", "搜索记忆", "查一下记忆", "recall", "search memory", "what do you remember")),
+        (
+            "read",
+            (
+                "读取文件",
+                "读取内容",
+                "查看文件",
+                "看看文件",
+                "看下文件",
+                "看一下文件",
+                "文件内容",
+                "打开文件",
+                "读一下",
+                "read file",
+                "read the file",
+                "open the file",
+                "cat ",
+            ),
+        ),
+        (
+            "read_image",
+            (
+                "看图",
+                "识别图片",
+                "读取图片",
+                "图片内容",
+                "分析图片",
+                "截图内容",
+                "read image",
+                "read the image",
+                "look at the image",
+                "analyze image",
+                "analyse image",
+            ),
+        ),
+        (
+            "write",
+            (
+                "写入文件",
+                "创建文件",
+                "新建文件",
+                "生成文件",
+                "保存到文件",
+                "写一个文件",
+                "write a file",
+                "write to file",
+                "create a file",
+                "create file",
+                "new file",
+            ),
+        ),
+        (
+            "edit",
+            (
+                "编辑文件",
+                "修改文件",
+                "改一下文件",
+                "替换内容",
+                "编辑代码",
+                "edit the file",
+                "edit file",
+                "modify the file",
+                "replace in",
+            ),
+        ),
+        (
+            "glob",
+            (
+                "查找文件",
+                "找文件",
+                "列出文件",
+                "文件列表",
+                "匹配文件",
+                "find files",
+                "list files",
+                "glob",
+            ),
+        ),
+        (
+            "grep",
+            (
+                "搜索代码",
+                "搜索内容",
+                "查找关键字",
+                "全局搜索",
+                "在代码里找",
+                "grep",
+                "search for",
+                "search the code",
+                "search in files",
+                "find the text",
+            ),
+        ),
+        (
+            "shell",
+            (
+                "运行命令",
+                "执行命令",
+                "跑一下命令",
+                "终端执行",
+                "命令行",
+                "run command",
+                "run the command",
+                "execute command",
+                "shell command",
+                "terminal",
+            ),
+        ),
+        (
+            "code_run",
+            (
+                "运行代码",
+                "执行代码",
+                "跑一段代码",
+                "运行脚本",
+                "执行脚本",
+                "跑一下这段",
+                "run code",
+                "run the code",
+                "execute code",
+                "run the script",
+                "run python",
+            ),
+        ),
+        (
+            "web_search",
+            (
+                "搜索网络",
+                "上网搜",
+                "网上搜索",
+                "联网搜索",
+                "搜一下网络",
+                "search the web",
+                "web search",
+                "search online",
+                "google",
+            ),
+        ),
+        (
+            "web_fetch",
+            (
+                "抓取网页",
+                "获取网页",
+                "打开网址",
+                "访问链接",
+                "读取网页",
+                "下载网页",
+                "fetch url",
+                "fetch the page",
+                "open url",
+                "download page",
+            ),
+        ),
+        (
+            "browser_use",
+            (
+                "用浏览器",
+                "浏览器操作",
+                "自动化浏览",
+                "打开浏览器",
+                "网页点击",
+                "browser",
+                "navigate to",
+                "browse the page",
+            ),
+        ),
+        (
+            "todo_write",
+            (
+                "待办",
+                "任务清单",
+                "任务列表",
+                "计划列表",
+                "todo",
+                "task list",
+                "track tasks",
+            ),
+        ),
+        (
+            "ask_user",
+            (
+                "问我",
+                "问我问题",
+                "询问我",
+                "需要我确认",
+                "让我选择",
+                "让我确认",
+                "问卷",
+                "调查",
+                "多问题",
+                "多个问题",
+                "ask me",
+                "ask me a question",
+                "confirm with me",
+                "clarify with me",
+                "let me choose",
+                "survey",
+                "questionnaire",
+                "quiz",
+                "multi-question",
+                "multi question",
+                "multiple questions",
+            ),
+        ),
+        (
+            "delegate_to_agent",
+            ("委派", "交给子代理", "分派任务", "delegate", "sub agent", "hand off to"),
+        ),
+        (
+            "save_memory",
+            (
+                "记住",
+                "记下来",
+                "保存记忆",
+                "存到记忆",
+                "remember this",
+                "save to memory",
+                "memorize",
+            ),
+        ),
+        (
+            "search_memory",
+            (
+                "回忆",
+                "搜索记忆",
+                "查一下记忆",
+                "recall",
+                "search memory",
+                "what do you remember",
+            ),
+        ),
         ("list_memories", ("列出记忆", "所有记忆", "全部记忆", "list memories")),
         ("delete_memory", ("删除记忆", "忘掉", "清除记忆", "delete memory", "forget")),
-        ("list_skills", ("列出技能", "有哪些技能", "查看技能", "list skills", "available skills")),
+        (
+            "list_skills",
+            ("列出技能", "有哪些技能", "查看技能", "list skills", "available skills"),
+        ),
         ("load_skill", ("加载技能", "使用技能", "载入技能", "load skill", "use skill")),
         ("install_skill", ("安装技能", "install skill", "install the skill")),
     )
@@ -203,7 +406,11 @@ class FakerLLMProvider(LLMProvider):
             return None
         tool_result = self._latest_tool_result(messages)
         if tool_result is not None:
-            template_pool = self._FAILURE_REPLIES if self._looks_like_failure(tool_result) else self._TOOL_SUMMARY_REPLIES
+            template_pool = (
+                self._FAILURE_REPLIES
+                if self._looks_like_failure(tool_result)
+                else self._TOOL_SUMMARY_REPLIES
+            )
             template = rng.choice(template_pool)
             if "{result}" in template:
                 return template.format(result=self._compact_result(tool_result))
@@ -253,7 +460,13 @@ class FakerLLMProvider(LLMProvider):
             parameters = function.get("parameters", {})
             arguments = self._generate_arguments(name, parameters)
             call_id = f"call_fake_{rng.randrange(1_000_000_000):09d}"
-            calls.append(ToolCall(id=call_id, name=name, arguments=json.dumps(arguments, ensure_ascii=False)))
+            calls.append(
+                ToolCall(
+                    id=call_id,
+                    name=name,
+                    arguments=json.dumps(arguments, ensure_ascii=False),
+                )
+            )
         return calls
 
     @staticmethod
@@ -291,10 +504,14 @@ class FakerLLMProvider(LLMProvider):
         parameters = function.get("parameters", {})
         arguments = self._contextual_arguments(name, message, parameters, rng)
         call_id = f"call_fake_{rng.randrange(1_000_000_000):09d}"
-        return ToolCall(id=call_id, name=name, arguments=json.dumps(arguments, ensure_ascii=False))
+        return ToolCall(
+            id=call_id, name=name, arguments=json.dumps(arguments, ensure_ascii=False)
+        )
 
     @classmethod
-    def _contextual_arguments(cls, name: str, message: str, schema, rng: random.Random) -> dict:
+    def _contextual_arguments(
+        cls, name: str, message: str, schema, rng: random.Random
+    ) -> dict:
         base = dict(cls._generate_arguments(name, schema))
         if not isinstance(schema, dict):
             return base
@@ -315,7 +532,9 @@ class FakerLLMProvider(LLMProvider):
                 if field in properties:
                     base[field] = query
         if name == "edit":
-            old_string, new_string = cls._mock_edit_strings(str(base.get("filePath") or path))
+            old_string, new_string = cls._mock_edit_strings(
+                str(base.get("filePath") or path)
+            )
             if "oldString" in properties:
                 base["oldString"] = old_string
             if "newString" in properties:
@@ -341,11 +560,13 @@ class FakerLLMProvider(LLMProvider):
                 status = "in_progress"
             else:
                 status = "pending"
-            todos.append({
-                "content": pool[pool_index],
-                "status": status,
-                "priority": priorities[position % len(priorities)],
-            })
+            todos.append(
+                {
+                    "content": pool[pool_index],
+                    "status": status,
+                    "priority": priorities[position % len(priorities)],
+                }
+            )
         return todos
 
     @classmethod
@@ -353,7 +574,16 @@ class FakerLLMProvider(LLMProvider):
         hay = message.lower()
         has_cjk = any("\u4e00" <= c <= "\u9fff" for c in message)
 
-        def q(qid, header, question, input_type, options=None, multiple=False, required=True, default=""):
+        def q(
+            qid,
+            header,
+            question,
+            input_type,
+            options=None,
+            multiple=False,
+            required=True,
+            default="",
+        ):
             return {
                 "id": qid,
                 "header": header,
@@ -365,70 +595,295 @@ class FakerLLMProvider(LLMProvider):
                 "default": default,
             }
 
-        if any(k in hay for k in ("问卷", "调查", "多问题", "多个问题", "survey",
-                                  "questionnaire", "quiz", "multi-question",
-                                  "multi question", "multiple questions")):
+        if any(
+            k in hay
+            for k in (
+                "问卷",
+                "调查",
+                "多问题",
+                "多个问题",
+                "survey",
+                "questionnaire",
+                "quiz",
+                "multi-question",
+                "multi question",
+                "multiple questions",
+            )
+        ):
             return [
-                q("q0", "姓名" if has_cjk else "Name",
-                  "请输入你的姓名" if has_cjk else "What is your name?", "text"),
-                q("q1", "技术栈" if has_cjk else "Tech Stack",
-                  "请选择主要技术栈" if has_cjk else "Pick your primary stack", "select",
-                  [{"label": "Python", "description": "后端与数据" if has_cjk else "Backend and data"},
-                   {"label": "TypeScript", "description": "前端与全栈" if has_cjk else "Frontend and full-stack"},
-                   {"label": "Go", "description": "服务与基础设施" if has_cjk else "Services and infra"}]),
-                q("q2", "功能" if has_cjk else "Features",
-                  "选择需要的功能（可多选）" if has_cjk else "Select the features you need (multiple)", "select",
-                  [{"label": "认证" if has_cjk else "Auth", "description": "登录与权限" if has_cjk else "Login and access"},
-                   {"label": "搜索" if has_cjk else "Search", "description": "全文检索" if has_cjk else "Full-text search"},
-                   {"label": "计费" if has_cjk else "Billing", "description": "订阅与支付" if has_cjk else "Subscriptions and payments"}],
-                  multiple=True),
-                q("q3", "备注" if has_cjk else "Notes",
-                  "补充说明" if has_cjk else "Anything else?", "textarea",
-                  default="背景：\n目标：" if has_cjk else "Background:\nGoal:"),
+                q(
+                    "q0",
+                    "姓名" if has_cjk else "Name",
+                    "请输入你的姓名" if has_cjk else "What is your name?",
+                    "text",
+                ),
+                q(
+                    "q1",
+                    "技术栈" if has_cjk else "Tech Stack",
+                    "请选择主要技术栈" if has_cjk else "Pick your primary stack",
+                    "select",
+                    [
+                        {
+                            "label": "Python",
+                            "description": "后端与数据"
+                            if has_cjk
+                            else "Backend and data",
+                        },
+                        {
+                            "label": "TypeScript",
+                            "description": "前端与全栈"
+                            if has_cjk
+                            else "Frontend and full-stack",
+                        },
+                        {
+                            "label": "Go",
+                            "description": "服务与基础设施"
+                            if has_cjk
+                            else "Services and infra",
+                        },
+                    ],
+                ),
+                q(
+                    "q2",
+                    "功能" if has_cjk else "Features",
+                    "选择需要的功能（可多选）"
+                    if has_cjk
+                    else "Select the features you need (multiple)",
+                    "select",
+                    [
+                        {
+                            "label": "认证" if has_cjk else "Auth",
+                            "description": "登录与权限"
+                            if has_cjk
+                            else "Login and access",
+                        },
+                        {
+                            "label": "搜索" if has_cjk else "Search",
+                            "description": "全文检索"
+                            if has_cjk
+                            else "Full-text search",
+                        },
+                        {
+                            "label": "计费" if has_cjk else "Billing",
+                            "description": "订阅与支付"
+                            if has_cjk
+                            else "Subscriptions and payments",
+                        },
+                    ],
+                    multiple=True,
+                ),
+                q(
+                    "q3",
+                    "备注" if has_cjk else "Notes",
+                    "补充说明" if has_cjk else "Anything else?",
+                    "textarea",
+                    default="背景：\n目标：" if has_cjk else "Background:\nGoal:",
+                ),
             ]
         if any(k in hay for k in ("天气", "城市", "weather", "city")):
             pool = [
                 [q("q0", "当前城市", "请告诉我你想查询哪座城市的天气？", "text")],
-                [q("q0", "Current City", "Which city's weather would you like to check?", "text")] if not has_cjk else None,
-                [q("q0", "出行城市", "请输入出发城市", "text"), q("q1", "出行日期", "请输入出行日期（YYYY-MM-DD）", "text")],
+                [
+                    q(
+                        "q0",
+                        "Current City",
+                        "Which city's weather would you like to check?",
+                        "text",
+                    )
+                ]
+                if not has_cjk
+                else None,
+                [
+                    q("q0", "出行城市", "请输入出发城市", "text"),
+                    q("q1", "出行日期", "请输入出行日期（YYYY-MM-DD）", "text"),
+                ],
             ]
             pool = [p for p in pool if p]
             return rng.choice(pool)
         if any(k in hay for k in ("主题", "颜色", "深色", "浅色", "theme", "color")):
-            return [q("q0", "主题偏好" if has_cjk else "Theme", "你更喜欢哪种主题？" if has_cjk else "Which theme do you prefer?", "select",
-                     [{"label": "深色", "description": "适合夜间护眼"}, {"label": "浅色", "description": "适合日间办公"}, {"label": "跟随系统", "description": "自动跟随系统设置"}] if has_cjk else
-                     [{"label": "Dark", "description": "Easy on eyes at night"}, {"label": "Light", "description": "Bright for daytime"}, {"label": "System", "description": "Follow OS setting"}])]
+            return [
+                q(
+                    "q0",
+                    "主题偏好" if has_cjk else "Theme",
+                    "你更喜欢哪种主题？" if has_cjk else "Which theme do you prefer?",
+                    "select",
+                    [
+                        {"label": "深色", "description": "适合夜间护眼"},
+                        {"label": "浅色", "description": "适合日间办公"},
+                        {"label": "跟随系统", "description": "自动跟随系统设置"},
+                    ]
+                    if has_cjk
+                    else [
+                        {"label": "Dark", "description": "Easy on eyes at night"},
+                        {"label": "Light", "description": "Bright for daytime"},
+                        {"label": "System", "description": "Follow OS setting"},
+                    ],
+                )
+            ]
         if any(k in hay for k in ("语言", "language", "locale")):
-            return [q("q0", "语言偏好", "请选择你偏好的界面语言", "select",
-                     [{"label": "中文", "description": "简体中文"}, {"label": "English", "description": "English"}, {"label": "日本語", "description": "Japanese"}])]
+            return [
+                q(
+                    "q0",
+                    "语言偏好",
+                    "请选择你偏好的界面语言",
+                    "select",
+                    [
+                        {"label": "中文", "description": "简体中文"},
+                        {"label": "English", "description": "English"},
+                        {"label": "日本語", "description": "Japanese"},
+                    ],
+                )
+            ]
         if any(k in hay for k in ("部署", "发布", "上线", "deploy", "release")):
-            return [q("q0", "确认部署" if has_cjk else "Confirm Deploy", "是否确认将当前变更部署到生产环境？此操作不可撤销。" if has_cjk else "Confirm deploying current changes to production? This cannot be undone.", "select",
-                     [{"label": "是" if has_cjk else "Yes", "description": ""}, {"label": "否" if has_cjk else "No", "description": ""}])]
+            return [
+                q(
+                    "q0",
+                    "确认部署" if has_cjk else "Confirm Deploy",
+                    "是否确认将当前变更部署到生产环境？此操作不可撤销。"
+                    if has_cjk
+                    else "Confirm deploying current changes to production? This cannot be undone.",
+                    "select",
+                    [
+                        {"label": "是" if has_cjk else "Yes", "description": ""},
+                        {"label": "否" if has_cjk else "No", "description": ""},
+                    ],
+                )
+            ]
         if any(k in hay for k in ("删除", "delete", "移除", "remove")):
-            return [q("q0", "确认删除" if has_cjk else "Confirm Delete", "是否确认删除该文件？删除后可在回收站找回。" if has_cjk else "Are you sure you want to delete this file? You can restore from trash.", "select",
-                     [{"label": "是" if has_cjk else "Yes", "description": ""}, {"label": "否" if has_cjk else "No", "description": ""}])]
+            return [
+                q(
+                    "q0",
+                    "确认删除" if has_cjk else "Confirm Delete",
+                    "是否确认删除该文件？删除后可在回收站找回。"
+                    if has_cjk
+                    else "Are you sure you want to delete this file? You can restore from trash.",
+                    "select",
+                    [
+                        {"label": "是" if has_cjk else "Yes", "description": ""},
+                        {"label": "否" if has_cjk else "No", "description": ""},
+                    ],
+                )
+            ]
         if any(k in hay for k in ("路径", "文件路径", "path")):
-            return [q("q0", "文件路径" if has_cjk else "File Path", "请输入目标文件的完整路径" if has_cjk else "Please enter the full file path", "text")]
+            return [
+                q(
+                    "q0",
+                    "文件路径" if has_cjk else "File Path",
+                    "请输入目标文件的完整路径"
+                    if has_cjk
+                    else "Please enter the full file path",
+                    "text",
+                )
+            ]
         if any(k in hay for k in ("邮箱", "email", "mail")):
             return [q("q0", "联系邮箱", "请输入你的联系邮箱以便接收通知", "text")]
         if any(k in hay for k in ("框架", "framework", "vue", "react", "angular")):
-            return [q("q0", "技术栈" if has_cjk else "Tech Stack", "请选择你感兴趣的技术栈（可多选）" if has_cjk else "Select the tech stacks you are interested in (multiple)", "select",
-                     [{"label": "React", "description": "Facebook 开源框架"}, {"label": "Vue", "description": "渐进式框架"}, {"label": "Svelte", "description": "编译时框架"}, {"label": "Angular", "description": "Google 企业级框架"}],
-                     multiple=True)]
+            return [
+                q(
+                    "q0",
+                    "技术栈" if has_cjk else "Tech Stack",
+                    "请选择你感兴趣的技术栈（可多选）"
+                    if has_cjk
+                    else "Select the tech stacks you are interested in (multiple)",
+                    "select",
+                    [
+                        {"label": "React", "description": "Facebook 开源框架"},
+                        {"label": "Vue", "description": "渐进式框架"},
+                        {"label": "Svelte", "description": "编译时框架"},
+                        {"label": "Angular", "description": "Google 企业级框架"},
+                    ],
+                    multiple=True,
+                )
+            ]
         if any(k in hay for k in ("需求", "描述", "背景", "textarea", "详细", "多行")):
-            return [q("q0", "需求描述" if has_cjk else "Requirements", "请详细描述你的需求或背景信息" if has_cjk else "Please describe your requirements in detail", "textarea", default="背景：\n目标：\n约束：" if has_cjk else "Background:\nGoals:\nConstraints:")]
+            return [
+                q(
+                    "q0",
+                    "需求描述" if has_cjk else "Requirements",
+                    "请详细描述你的需求或背景信息"
+                    if has_cjk
+                    else "Please describe your requirements in detail",
+                    "textarea",
+                    default="背景：\n目标：\n约束："
+                    if has_cjk
+                    else "Background:\nGoals:\nConstraints:",
+                )
+            ]
 
         fallbacks = [
-            [q("q0", "联系邮箱" if has_cjk else "Email", "请输入你的联系邮箱" if has_cjk else "Please enter your email", "text")],
-            [q("q0", "主题偏好" if has_cjk else "Theme", "你更喜欢哪种主题？" if has_cjk else "Which theme do you prefer?", "select",
-               [{"label": "深色", "description": "夜间模式"}, {"label": "浅色", "description": "日间模式"}] if has_cjk else [{"label": "Dark", "description": "Night"}, {"label": "Light", "description": "Day"}])],
-            [q("q0", "确认操作" if has_cjk else "Confirm", "是否继续执行该操作？" if has_cjk else "Do you want to continue?", "select",
-               [{"label": "是" if has_cjk else "Yes", "description": ""}, {"label": "否" if has_cjk else "No", "description": ""}])],
-            [q("q0", "补充信息" if has_cjk else "Details", "请补充更多背景信息" if has_cjk else "Please provide more details", "textarea", default="请在此输入..." if has_cjk else "Enter details here...")],
-            [q("q0", "当前城市" if has_cjk else "City", "请告诉我你想查询哪座城市的天气？" if has_cjk else "Which city?", "text"),
-             q("q1", "出行日期" if has_cjk else "Date", "请输入日期 YYYY-MM-DD" if has_cjk else "Enter date YYYY-MM-DD", "text")],
-            [q("q0", "通知方式" if has_cjk else "Notification", "你希望通过哪种方式接收通知？", "select",
-               [{"label": "邮件", "description": "发送到邮箱"}, {"label": "站内信", "description": "站内消息"}, {"label": "短信", "description": "手机短信"}])],
+            [
+                q(
+                    "q0",
+                    "联系邮箱" if has_cjk else "Email",
+                    "请输入你的联系邮箱" if has_cjk else "Please enter your email",
+                    "text",
+                )
+            ],
+            [
+                q(
+                    "q0",
+                    "主题偏好" if has_cjk else "Theme",
+                    "你更喜欢哪种主题？" if has_cjk else "Which theme do you prefer?",
+                    "select",
+                    [
+                        {"label": "深色", "description": "夜间模式"},
+                        {"label": "浅色", "description": "日间模式"},
+                    ]
+                    if has_cjk
+                    else [
+                        {"label": "Dark", "description": "Night"},
+                        {"label": "Light", "description": "Day"},
+                    ],
+                )
+            ],
+            [
+                q(
+                    "q0",
+                    "确认操作" if has_cjk else "Confirm",
+                    "是否继续执行该操作？" if has_cjk else "Do you want to continue?",
+                    "select",
+                    [
+                        {"label": "是" if has_cjk else "Yes", "description": ""},
+                        {"label": "否" if has_cjk else "No", "description": ""},
+                    ],
+                )
+            ],
+            [
+                q(
+                    "q0",
+                    "补充信息" if has_cjk else "Details",
+                    "请补充更多背景信息" if has_cjk else "Please provide more details",
+                    "textarea",
+                    default="请在此输入..." if has_cjk else "Enter details here...",
+                )
+            ],
+            [
+                q(
+                    "q0",
+                    "当前城市" if has_cjk else "City",
+                    "请告诉我你想查询哪座城市的天气？" if has_cjk else "Which city?",
+                    "text",
+                ),
+                q(
+                    "q1",
+                    "出行日期" if has_cjk else "Date",
+                    "请输入日期 YYYY-MM-DD" if has_cjk else "Enter date YYYY-MM-DD",
+                    "text",
+                ),
+            ],
+            [
+                q(
+                    "q0",
+                    "通知方式" if has_cjk else "Notification",
+                    "你希望通过哪种方式接收通知？",
+                    "select",
+                    [
+                        {"label": "邮件", "description": "发送到邮箱"},
+                        {"label": "站内信", "description": "站内消息"},
+                        {"label": "短信", "description": "手机短信"},
+                    ],
+                )
+            ],
         ]
         return rng.choice(fallbacks)
 
@@ -437,7 +892,7 @@ class FakerLLMProvider(LLMProvider):
         if file_hint.lower().endswith((".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")):
             return (
                 'function greet(name) {\n  return "hi";\n}',
-                'function greet(name) {\n  return `hi ${name}`;\n}',
+                "function greet(name) {\n  return `hi ${name}`;\n}",
             )
         return (
             'def greet(name):\n    return "hi"',
@@ -490,8 +945,11 @@ class FakerLLMProvider(LLMProvider):
     @classmethod
     def _latest_user_message(cls, messages: list) -> str:
         return next(
-            (cls._message_content(message) for message in reversed(messages)
-             if cls._message_role(message) == "user"),
+            (
+                cls._message_content(message)
+                for message in reversed(messages)
+                if cls._message_role(message) == "user"
+            ),
             "",
         )
 
@@ -503,7 +961,10 @@ class FakerLLMProvider(LLMProvider):
     @staticmethod
     def _looks_like_failure(result: str) -> bool:
         normalized = result.lower()
-        return any(marker in normalized for marker in ("error", "failed", "failure", "错误", "失败"))
+        return any(
+            marker in normalized
+            for marker in ("error", "failed", "failure", "错误", "失败")
+        )
 
     @staticmethod
     def _compact_result(result: str) -> str:
@@ -587,9 +1048,17 @@ class FakerLLMProvider(LLMProvider):
 
     @staticmethod
     def _message_role(message) -> str:
-        return message.get("role", "") if isinstance(message, dict) else getattr(message, "role", "")
+        return (
+            message.get("role", "")
+            if isinstance(message, dict)
+            else getattr(message, "role", "")
+        )
 
     @staticmethod
     def _message_content(message) -> str:
-        content = message.get("content", "") if isinstance(message, dict) else getattr(message, "content", "")
+        content = (
+            message.get("content", "")
+            if isinstance(message, dict)
+            else getattr(message, "content", "")
+        )
         return content if isinstance(content, str) else str(content)

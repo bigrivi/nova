@@ -21,7 +21,9 @@ def _is_within(root: Path, path: Path) -> bool:
 class SkillService:
     def __init__(self, skills_dir: Path, fallback_dir: Path | None = None) -> None:
         self.skills_dir = skills_dir.expanduser().resolve()
-        self.fallback_dir = fallback_dir.expanduser().resolve() if fallback_dir else None
+        self.fallback_dir = (
+            fallback_dir.expanduser().resolve() if fallback_dir else None
+        )
         self.catalog = SkillCatalog()
 
     def _scan_one(self, directory: Path) -> list[SkillSummary]:

@@ -91,7 +91,9 @@ def _build_body(
         )
     if name == "openai_response":
         input_data = provider._format_input(messages)
-        return provider._build_body(input_data, model, tools=tools, session_id=session_id)
+        return provider._build_body(
+            input_data, model, tools=tools, session_id=session_id
+        )
     raise ValueError(f"unknown provider: {name}")
 
 
@@ -138,9 +140,13 @@ def _content_units(name: str, body: dict) -> list[str]:
             content = clean.get("content")
             if isinstance(content, list):
                 for block in content:
-                    units.append(json.dumps({"role": role, "block": block}, sort_keys=True))
+                    units.append(
+                        json.dumps({"role": role, "block": block}, sort_keys=True)
+                    )
             else:
-                units.append(json.dumps({"role": role, "content": content}, sort_keys=True))
+                units.append(
+                    json.dumps({"role": role, "content": content}, sort_keys=True)
+                )
         return units
     if name == "openai":
         units = []
@@ -151,7 +157,10 @@ def _content_units(name: str, body: dict) -> list[str]:
             if isinstance(content, list):
                 for block in content:
                     units.append(
-                        json.dumps({"role": message.get("role"), "block": block}, sort_keys=True)
+                        json.dumps(
+                            {"role": message.get("role"), "block": block},
+                            sort_keys=True,
+                        )
                     )
             else:
                 units.append(json.dumps(message, sort_keys=True))
@@ -160,7 +169,10 @@ def _content_units(name: str, body: dict) -> list[str]:
         units = [json.dumps(tool, sort_keys=True) for tool in body.get("tools") or []]
         data = body.get("input", [])
         if isinstance(data, str):
-            return [*units, json.dumps({"type": "input_text", "text": data}, sort_keys=True)]
+            return [
+                *units,
+                json.dumps({"type": "input_text", "text": data}, sort_keys=True),
+            ]
         return units + [json.dumps(item, sort_keys=True) for item in data]
     raise ValueError(f"unknown provider: {name}")
 
@@ -203,7 +215,9 @@ def _build_conversation_turns(num_turns: int, model: str) -> list[list[Message]]
     history: list[Message] = [Message(role="system", content=_FROZEN_SYSTEM)]
     turns: list[list[Message]] = []
     for turn_index in range(num_turns):
-        history.append(Message(role="user", content=f"user request number {turn_index}"))
+        history.append(
+            Message(role="user", content=f"user request number {turn_index}")
+        )
         turns.append(copy.deepcopy(history))
         history.append(
             Message(
@@ -212,14 +226,24 @@ def _build_conversation_turns(num_turns: int, model: str) -> list[list[Message]]
                 reasoning_content=f"thinking about {turn_index}",
                 provider_meta={"thinking_signature": f"SIG{turn_index}"},
                 model=model,
-                tool_calls=[{"id": f"toolu_{turn_index}", "name": "read", "arguments": "{}"}],
+                tool_calls=[
+                    {"id": f"toolu_{turn_index}", "name": "read", "arguments": "{}"}
+                ],
             )
         )
-        history.append(Message(role="tool", tool_call_id=f"toolu_{turn_index}", content=f"file {turn_index} contents"))
+        history.append(
+            Message(
+                role="tool",
+                tool_call_id=f"toolu_{turn_index}",
+                content=f"file {turn_index} contents",
+            )
+        )
     return turns
 
 
-def _hit_rates(provider_name: str, num_turns: int, model: str | None = None) -> list[float]:
+def _hit_rates(
+    provider_name: str, num_turns: int, model: str | None = None
+) -> list[float]:
     """Cache hit rate per turn for a frozen-system multi-turn conversation."""
     model = model or _PROVIDER_MODELS[provider_name]
     provider = _make_provider(provider_name)
@@ -238,7 +262,9 @@ def _hit_rates(provider_name: str, num_turns: int, model: str | None = None) -> 
     return rates
 
 
-def _prefix_coverage(provider_name: str, num_turns: int, model: str | None = None) -> list[float]:
+def _prefix_coverage(
+    provider_name: str, num_turns: int, model: str | None = None
+) -> list[float]:
     """Per-turn fraction of the *previous* turn's cache entry still reused.
 
     A value of 1.0 means the current request's prefix reaches the entire entry
@@ -256,7 +282,9 @@ def _prefix_coverage(provider_name: str, num_turns: int, model: str | None = Non
     coverage: list[float] = []
     written_units: list[str] = []
     for messages in turns:
-        units = _content_units(provider_name, _build_body(provider_name, provider, messages, model))
+        units = _content_units(
+            provider_name, _build_body(provider_name, provider, messages, model)
+        )
         if written_units:
             cached = _common_prefix_len(written_units, units)
             coverage.append(cached / len(written_units))
@@ -269,7 +297,9 @@ def test_frozen_system_prefix_is_byte_identical_every_turn(provider_name: str):
     model = _PROVIDER_MODELS[provider_name]
     provider = _make_provider(provider_name)
     systems = [
-        _system_portion(provider_name, _build_body(provider_name, provider, messages, model))
+        _system_portion(
+            provider_name, _build_body(provider_name, provider, messages, model)
+        )
         for messages in _build_conversation_turns(5, model=model)
     ]
     assert all(system == systems[0] for system in systems)
@@ -282,7 +312,9 @@ def test_each_turn_strictly_extends_the_previous_prefix(provider_name: str):
     turns = _build_conversation_turns(5, model=model)
     previous_units: list[str] = []
     for messages in turns:
-        units = _content_units(provider_name, _build_body(provider_name, provider, messages, model))
+        units = _content_units(
+            provider_name, _build_body(provider_name, provider, messages, model)
+        )
         # Every unit of the previous turn reappears unchanged as this turn's prefix.
         assert units[: len(previous_units)] == previous_units
         previous_units = units
@@ -305,16 +337,28 @@ def test_hit_rate_climbs_and_dominates(provider_name: str):
 
 
 _SAMPLE_TOOLS = [
-    {"type": "function", "function": {
-        "name": "read",
-        "description": "Read a file",
-        "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
-    }},
-    {"type": "function", "function": {
-        "name": "shell",
-        "description": "Run a shell command",
-        "parameters": {"type": "object", "properties": {"command": {"type": "string"}}},
-    }},
+    {
+        "type": "function",
+        "function": {
+            "name": "read",
+            "description": "Read a file",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "shell",
+            "description": "Run a shell command",
+            "parameters": {
+                "type": "object",
+                "properties": {"command": {"type": "string"}},
+            },
+        },
+    },
 ]
 
 
@@ -347,7 +391,10 @@ def test_tools_head_of_prefix_stable_across_turns(provider_name: str):
 def test_preserving_model_never_mutates_the_cached_prefix():
     # Every turn's prefix reaches the whole entry the previous turn wrote: the
     # replayed thinking keeps all history byte-stable, so nothing truncates.
-    assert all(coverage == 1.0 for coverage in _prefix_coverage("anthropic", 6, model="claude-opus-4-8"))
+    assert all(
+        coverage == 1.0
+        for coverage in _prefix_coverage("anthropic", 6, model="claude-opus-4-8")
+    )
 
 
 def test_legacy_model_truncates_the_cached_prefix_once_history_has_thinking():
@@ -364,7 +411,9 @@ def test_legacy_model_truncates_the_cached_prefix_once_history_has_thinking():
 def test_openai_chat_build_body_sets_prompt_cache_key_from_session():
     provider = OpenAIProvider()
     body = provider._build_body(
-        [{"role": "user", "content": "hi"}], model="gpt-5", session_id="ses_abc",
+        [{"role": "user", "content": "hi"}],
+        model="gpt-5",
+        session_id="ses_abc",
     )
     assert body["prompt_cache_key"] == "ses_abc"
 
@@ -379,7 +428,9 @@ def test_openai_chat_build_body_prompt_caching_disabled():
     # Gateways that reject the unknown field can opt out via request_options.
     provider = OpenAIProvider(request_options={"prompt_caching": False})
     body = provider._build_body(
-        [{"role": "user", "content": "hi"}], model="gpt-5", session_id="ses_abc",
+        [{"role": "user", "content": "hi"}],
+        model="gpt-5",
+        session_id="ses_abc",
     )
     assert "prompt_cache_key" not in body
 
@@ -388,7 +439,9 @@ def test_openai_chat_build_body_cache_flag_not_leaked_into_body_params():
     # prompt_caching is consumed, never forwarded as an API param.
     provider = OpenAIProvider(request_options={"prompt_caching": True})
     body = provider._build_body(
-        [{"role": "user", "content": "hi"}], model="gpt-5", session_id="ses_abc",
+        [{"role": "user", "content": "hi"}],
+        model="gpt-5",
+        session_id="ses_abc",
     )
     assert "prompt_caching" not in body
     assert body["prompt_cache_key"] == "ses_abc"
@@ -397,6 +450,7 @@ def test_openai_chat_build_body_cache_flag_not_leaked_into_body_params():
 # ---------------------------------------------------------------------------
 # Seam test: the real agent chain, not synthetic messages
 # ---------------------------------------------------------------------------
+
 
 @contextlib.asynccontextmanager
 async def _isolated_agent(provider: LLMProvider, **agent_kwargs):
@@ -462,10 +516,15 @@ async def test_real_agent_chain_prefix_stable_across_turns(provider_name: str):
     """
     model = _PROVIDER_MODELS[provider_name]
     scripts = [
-        [ReasoningDelta(content="thinking one"), TextDelta(content="answer one"),
-         Done(content="answer one", provider_meta={"thinking_signature": "SIG0"})],
-        [TextDelta(content="answer two"),
-         Done(content="answer two", provider_meta={"thinking_signature": "SIG1"})],
+        [
+            ReasoningDelta(content="thinking one"),
+            TextDelta(content="answer one"),
+            Done(content="answer one", provider_meta={"thinking_signature": "SIG0"}),
+        ],
+        [
+            TextDelta(content="answer two"),
+            Done(content="answer two", provider_meta={"thinking_signature": "SIG1"}),
+        ],
     ]
     capturer = _CapturingProvider(scripts)
     async with _isolated_agent(capturer, model=model) as (agent, database):
@@ -476,8 +535,13 @@ async def test_real_agent_chain_prefix_stable_across_turns(provider_name: str):
         assert session_id
 
         record, created = await MemoryService(data_source=database).save(
-            MemoryWriteRequest(key="seam-probe", content="probe value",
-                               summary="probe", scope="user", memory_type="fact")
+            MemoryWriteRequest(
+                key="seam-probe",
+                content="probe value",
+                summary="probe",
+                scope="user",
+                memory_type="fact",
+            )
         )
         assert created and record.key == "seam-probe"
 
@@ -504,11 +568,17 @@ async def test_real_agent_chain_prefix_stable_across_turns(provider_name: str):
 
     real = _make_provider(provider_name)
     body1 = _build_body(
-        provider_name, real, capturer.seen_messages[0], model,
+        provider_name,
+        real,
+        capturer.seen_messages[0],
+        model,
         tools=capturer.seen_tools[0],
     )
     body2 = _build_body(
-        provider_name, real, capturer.seen_messages[1], model,
+        provider_name,
+        real,
+        capturer.seen_messages[1],
+        model,
         tools=capturer.seen_tools[1],
     )
     # The memory write between turns must not rebuild the system prompt.
@@ -523,6 +593,7 @@ async def test_real_agent_chain_prefix_stable_across_turns(provider_name: str):
 # ---------------------------------------------------------------------------
 # Cache-hit observability: Done -> reader -> per-turn log
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_reader_absorbs_cache_read_tokens():

@@ -87,8 +87,7 @@ def test_builtin_executors_declare_distinct_protocol_kinds() -> None:
     assert len(kinds) == len(set(kinds))
     assert {"shell", "code_run", "subagent"} <= set(kinds)
     assert all(
-        isinstance(e, TaskExecutor) and e.kind.strip()
-        for e in BUILTIN_EXECUTORS
+        isinstance(e, TaskExecutor) and e.kind.strip() for e in BUILTIN_EXECUTORS
     )
 
 

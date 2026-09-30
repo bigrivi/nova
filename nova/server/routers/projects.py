@@ -19,7 +19,9 @@ router = APIRouter()
 
 
 @router.get("/api/projects", response_model=ProjectListResponse)
-async def projects(chat_service: ChatService = Depends(get_chat_service)) -> ProjectListResponse:
+async def projects(
+    chat_service: ChatService = Depends(get_chat_service),
+) -> ProjectListResponse:
     items = await chat_service.list_projects()
     return ProjectListResponse(items=[ProjectRecord(**item) for item in items])
 

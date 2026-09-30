@@ -50,9 +50,7 @@ async def test_same_key_under_agent_scope_does_not_collide(service):
     alice_record, alice_created = await service.save(
         _agent_request("name", "Alice", "alice")
     )
-    bob_record, bob_created = await service.save(
-        _agent_request("name", "Bob", "bob")
-    )
+    bob_record, bob_created = await service.save(_agent_request("name", "Bob", "bob"))
 
     assert alice_created is True
     assert bob_created is True

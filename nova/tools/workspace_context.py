@@ -11,9 +11,7 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 
-_active_workspace: ContextVar[str | None] = ContextVar(
-    "active_workspace", default=None
-)
+_active_workspace: ContextVar[str | None] = ContextVar("active_workspace", default=None)
 
 
 def set_active_workspace(path: str | None) -> None:

@@ -158,10 +158,6 @@ async def test_generate_returns_none_on_empty_output() -> None:
 async def test_generate_times_out_and_keeps_the_default_title(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "nova.agent.title_generator.TITLE_CALL_TIMEOUT_SECONDS", 0.01
-    )
-    provider = StubProvider(
-        result=Done(content="Too late", tool_calls=[]), delay=5
-    )
+    monkeypatch.setattr("nova.agent.title_generator.TITLE_CALL_TIMEOUT_SECONDS", 0.01)
+    provider = StubProvider(result=Done(content="Too late", tool_calls=[]), delay=5)
     assert await generate_session_title(provider, "hi", "test-model") is None

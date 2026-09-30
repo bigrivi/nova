@@ -140,7 +140,8 @@ class ShellToolBehavior(DefaultToolBehavior):
                     ),
                 )
             req_id = self._approval.pre_request(
-                cmd, desc, timeout=0, session_id=ctx.session_id)
+                cmd, desc, timeout=0, session_id=ctx.session_id
+            )
             if req_id:
                 return PreExecutionCheck(
                     approval_request={

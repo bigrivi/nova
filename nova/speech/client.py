@@ -42,16 +42,13 @@ async def transcribe_file(
     if response.status_code == 401:
         raise RuntimeError("Transcription provider rejected the API key (401)")
     if response.status_code == 429:
-        raise RuntimeError(
-            "Transcription provider rate-limited the request (429)")
+        raise RuntimeError("Transcription provider rate-limited the request (429)")
     if response.status_code >= 400:
-        raise RuntimeError(
-            f"Transcription provider answered {response.status_code}")
+        raise RuntimeError(f"Transcription provider answered {response.status_code}")
     try:
         text = response.json().get("text", "")
     except ValueError as exc:
-        raise RuntimeError(
-            "Transcription provider returned non-JSON") from exc
+        raise RuntimeError("Transcription provider returned non-JSON") from exc
     if not isinstance(text, str):
         raise RuntimeError("Transcription provider returned no text")
     return text.strip()

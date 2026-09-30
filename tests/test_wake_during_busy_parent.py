@@ -29,9 +29,7 @@ async def test_completion_during_busy_parent_wakes_after_free() -> None:
         await registry.mark_done(parent_id)
         return True
 
-    scheduler = WakeScheduler(
-        start_turn=start_turn, wait_free=registry.wait_free
-    )
+    scheduler = WakeScheduler(start_turn=start_turn, wait_free=registry.wait_free)
 
     parent_owner = object()
     assert await registry.try_register("p1", parent_owner) is True
@@ -61,9 +59,7 @@ async def test_completion_while_idle_starts_immediately() -> None:
         await registry.mark_done(parent_id)
         return True
 
-    scheduler = WakeScheduler(
-        start_turn=start_turn, wait_free=registry.wait_free
-    )
+    scheduler = WakeScheduler(start_turn=start_turn, wait_free=registry.wait_free)
     scheduler.enqueue("p1", "job1", "r")
     await asyncio.sleep(0.05)
 
@@ -82,9 +78,7 @@ async def test_two_completions_during_busy_parent_coalesce() -> None:
         await registry.mark_done(parent_id)
         return True
 
-    scheduler = WakeScheduler(
-        start_turn=start_turn, wait_free=registry.wait_free
-    )
+    scheduler = WakeScheduler(start_turn=start_turn, wait_free=registry.wait_free)
     assert await registry.try_register("p1", object()) is True
     scheduler.enqueue("p1", "job1", "first")
     scheduler.enqueue("p1", "job2", "second")

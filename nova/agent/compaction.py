@@ -60,6 +60,7 @@ def estimate_tokens(messages: list, model: str = "unknown") -> int:
     subset would appear to weigh as much as the whole prompt.
     """
     from nova.llm.tokenizer import estimate_messages_tokens
+
     return estimate_messages_tokens(messages, model)
 
 
@@ -103,14 +104,15 @@ def estimate_context_tokens(
         return estimate_tokens(messages, model)
 
     anchor_message = messages[anchor_index]
-    anchor_output_tokens = (
-        _get_tokens_output(anchor_message)
-        or estimate_tokens([anchor_message], model)
+    anchor_output_tokens = _get_tokens_output(anchor_message) or estimate_tokens(
+        [anchor_message], model
     )
-    appended_after_anchor = messages[anchor_index + 1:]
-    return (anchor_prompt_tokens
-            + anchor_output_tokens
-            + estimate_tokens(appended_after_anchor, model))
+    appended_after_anchor = messages[anchor_index + 1 :]
+    return (
+        anchor_prompt_tokens
+        + anchor_output_tokens
+        + estimate_tokens(appended_after_anchor, model)
+    )
 
 
 def get_context_limit(model: str, provider: str) -> int:
@@ -119,6 +121,7 @@ def get_context_limit(model: str, provider: str) -> int:
     Thin wrapper kept so compaction callers need not reach into the tokenizer.
     """
     from nova.llm.tokenizer import resolve_context_limit
+
     return resolve_context_limit(model, provider)
 
 
@@ -161,14 +164,12 @@ def snip_old_tool_results(
             spent_tokens += tokens
             continue
 
-        offload_path = _offload_tool_output(
-            offload_dir, _get_msg_id(message), content)
+        offload_path = _offload_tool_output(offload_dir, _get_msg_id(message), content)
         head = content[: max_chars // 4]
-        tail = content[-(max_chars * 3 // 4):]
+        tail = content[-(max_chars * 3 // 4) :]
         omitted = len(content) - len(head) - len(tail)
         pointer = f" Full output: {offload_path}" if offload_path else ""
-        new_content = (
-            f"{head}\n[... {omitted} {SNIP_MARKER} ...{pointer}]\n{tail}")
+        new_content = f"{head}\n[... {omitted} {SNIP_MARKER} ...{pointer}]\n{tail}"
         if isinstance(message, dict):
             message["content"] = new_content
         else:
@@ -274,9 +275,7 @@ def _first_safe_boundary(messages: list, target: int) -> int:
     return 0
 
 
-NEW_SUMMARY_ANCHOR = (
-    "Generate a new summary from the transcript below."
-)
+NEW_SUMMARY_ANCHOR = "Generate a new summary from the transcript below."
 
 PREVIOUS_SUMMARY_ANCHOR = (
     "The transcript below already contains an earlier summary. You MUST fold "
@@ -384,8 +383,11 @@ def evaluate_compaction(
     # kept portion plus the summary must leave room below the threshold, or the
     # next call would find the total already over it and compact on every turn.
     keep_tokens = min(comp.summary_keep_tokens, threshold // 2)
-    split_index = find_split_point(
-        messages, keep_tokens=keep_tokens, force=force) if over_threshold else 0
+    split_index = (
+        find_split_point(messages, keep_tokens=keep_tokens, force=force)
+        if over_threshold
+        else 0
+    )
     return CompactionPlan(
         session_id,
         model_max_tokens,
@@ -412,7 +414,8 @@ async def prepare_compaction(
     stays consistent with what was written back to the database.
     """
     plan = evaluate_compaction(
-        session_id, messages, last_compacted_at, model, provider, force=force)
+        session_id, messages, last_compacted_at, model, provider, force=force
+    )
     if not plan.over_threshold:
         return plan
 
@@ -422,7 +425,8 @@ async def prepare_compaction(
     # defence left.
     await snip_tool_results_in_db(db, session_id, messages)
     return evaluate_compaction(
-        session_id, messages, last_compacted_at, model, provider, force=force)
+        session_id, messages, last_compacted_at, model, provider, force=force
+    )
 
 
 async def run_compaction_plan(
@@ -451,7 +455,9 @@ async def run_compaction_plan(
     )
 
 
-async def snip_tool_results_in_db(db: DataSourceProtocol, session_id: str, messages: list) -> None:
+async def snip_tool_results_in_db(
+    db: DataSourceProtocol, session_id: str, messages: list
+) -> None:
     """Layer 1: trim old tool results stored in the database."""
     settings = get_settings()
     comp = settings.compaction
@@ -495,12 +501,16 @@ async def compact(
 
     before_tokens = estimate_tokens(messages)
     comp = get_settings().compaction
-    split = split_index if split_index is not None else find_split_point(
-        messages,
-        keep_tokens=min(
-            comp.summary_keep_tokens,
-            compaction_threshold(get_context_limit(model, provider)) // 2,
-        ),
+    split = (
+        split_index
+        if split_index is not None
+        else find_split_point(
+            messages,
+            keep_tokens=min(
+                comp.summary_keep_tokens,
+                compaction_threshold(get_context_limit(model, provider)) // 2,
+            ),
+        )
     )
     if split <= 0:
         return False
@@ -509,7 +519,9 @@ async def compact(
     recent = messages[split:]
     old_text = _format_for_summary(old)
 
-    log.info(f"[Compaction] session={session_id}, before={len(messages)} msgs, {before_tokens} tokens, split at={split}")
+    log.info(
+        f"[Compaction] session={session_id}, before={len(messages)} msgs, {before_tokens} tokens, split at={split}"
+    )
 
     summary = await _generate_summary(
         old_text,
@@ -521,9 +533,9 @@ async def compact(
     )
     if summary is None:
         log.warning(
-            "[Compaction] session=%s aborted: summary generation failed", session_id)
-        raise CompactionError(
-            f"summary generation failed for session {session_id}")
+            "[Compaction] session=%s aborted: summary generation failed", session_id
+        )
+        raise CompactionError(f"summary generation failed for session {session_id}")
 
     now_ms = int(time.time() * 1000)
     # The summary stands in for the history it replaces, so it is stamped at
@@ -532,14 +544,13 @@ async def compact(
     # inside the portion it folds in - keeping exactly one summary instead of
     # piling a new one beside it - and it is not counted as growth since the
     # last compaction. Session updated_at is untouched (see add_message).
-    boundary_ms = (
-        min(_get_time_created(m) for m in recent) - 1 if recent else now_ms
-    )
+    boundary_ms = min(_get_time_created(m) for m in recent) - 1 if recent else now_ms
     await db.add_message(
         session_id=session_id,
         role="assistant",
-        content=(f"[Previous conversation summary]\n{summary}\n\n"
-                 f"{CONTINUATION_INSTRUCTION}"),
+        content=(
+            f"[Previous conversation summary]\n{summary}\n\n{CONTINUATION_INSTRUCTION}"
+        ),
         summary=True,
         time_created=boundary_ms,
     )
@@ -558,14 +569,18 @@ async def compact(
             orphan_ids.append(_get_msg_id(m))
 
     if orphan_ids:
-        log.info("[Compaction] also compacting %d orphaned tool responses", len(orphan_ids))
+        log.info(
+            "[Compaction] also compacting %d orphaned tool responses", len(orphan_ids)
+        )
 
     old_ids = [_get_msg_id(m) for m in old]
     await db.mark_messages_compacted_by_ids(session_id, old_ids + orphan_ids)
     await db.update_session_compacted_at(session_id, now_ms)
 
     after_tokens = estimate_tokens(recent)
-    log.info(f"[Compaction] session={session_id}, compacted={len(old)} msgs, after={len(recent)+1} msgs, {after_tokens} tokens")
+    log.info(
+        f"[Compaction] session={session_id}, compacted={len(old)} msgs, after={len(recent) + 1} msgs, {after_tokens} tokens"
+    )
     return True
 
 
@@ -645,8 +660,8 @@ async def _generate_summary(
     prompt = SUMMARY_PROMPT_TEMPLATE.format(
         conversation=conversation,
         anchor_instruction=(
-            PREVIOUS_SUMMARY_ANCHOR if has_previous_summary
-            else NEW_SUMMARY_ANCHOR),
+            PREVIOUS_SUMMARY_ANCHOR if has_previous_summary else NEW_SUMMARY_ANCHOR
+        ),
     )
     for attempt in ("first", "retry"):
         emitted = False
@@ -813,7 +828,8 @@ class CompactionController:
             return True
         log.warning(
             "Auto-compaction disabled for this agent after %d consecutive failures",
-            self.consecutive_failures)
+            self.consecutive_failures,
+        )
         return False
 
     async def plan(
@@ -866,8 +882,7 @@ class CompactionController:
             _set_session_compacted_at(session, int(time.time() * 1000))
             return
         self.consecutive_failures += 1
-        log.warning("Compaction failed (%d consecutive)",
-                    self.consecutive_failures)
+        log.warning("Compaction failed (%d consecutive)", self.consecutive_failures)
 
     async def maybe_compact(
         self,
@@ -900,8 +915,7 @@ class CompactionController:
             # summarisation request), so a raw-window denominator shows the bar
             # short of full at the very moment compaction fires. Deriving it from
             # compaction_threshold keeps the figure and the trigger in lockstep.
-            limit = compaction_threshold(
-                get_context_limit(self.model, self.provider))
+            limit = compaction_threshold(get_context_limit(self.model, self.provider))
             percent = int(used / limit * 100) if limit else 0
             ctx_payload = {"used": used, "limit": limit, "percent": percent}
             await emit(AgentEvent.CONTEXT_UPDATE, ctx_payload)
@@ -965,11 +979,19 @@ class CompactionController:
             try:
                 fresh = await db.get_messages(_get_session_id(session))
                 used_after = estimate_context_tokens(
-                    fresh, self.model, _get_session_compacted_at(session))
+                    fresh, self.model, _get_session_compacted_at(session)
+                )
                 limit_after = compaction_threshold(
-                    get_context_limit(self.model, self.provider))
-                percent_after = int(used_after / limit_after * 100) if limit_after else 0
-                ctx_after = {"used": used_after, "limit": limit_after, "percent": percent_after}
+                    get_context_limit(self.model, self.provider)
+                )
+                percent_after = (
+                    int(used_after / limit_after * 100) if limit_after else 0
+                )
+                ctx_after = {
+                    "used": used_after,
+                    "limit": limit_after,
+                    "percent": percent_after,
+                }
                 await emit(AgentEvent.CONTEXT_UPDATE, ctx_after)
                 yield AgentEvent.CONTEXT_UPDATE, ctx_after
             except Exception:

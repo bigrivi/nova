@@ -48,10 +48,14 @@ def _is_within(root: Path, path: Path) -> bool:
         return False
 
 
-def _parse_frontmatter(raw_content: str, fallback_name: str) -> tuple[dict[str, object], str]:
+def _parse_frontmatter(
+    raw_content: str, fallback_name: str
+) -> tuple[dict[str, object], str]:
     match = _FRONTMATTER_RE.match(raw_content)
     if match is None:
-        raise SkillParseError("SKILL.md must start with a frontmatter block delimited by ---")
+        raise SkillParseError(
+            "SKILL.md must start with a frontmatter block delimited by ---"
+        )
 
     parsed: dict[str, object] = {
         "name": fallback_name,
@@ -79,7 +83,7 @@ def _parse_frontmatter(raw_content: str, fallback_name: str) -> tuple[dict[str, 
         elif key == "allowed-tools":
             parsed["allowed_tools"] = _parse_allowed_tools(value)
 
-    body_content = raw_content[match.end():].lstrip("\r\n")
+    body_content = raw_content[match.end() :].lstrip("\r\n")
     return parsed, body_content
 
 
@@ -87,14 +91,18 @@ def load_skill_document(skill_md_path: Path, skills_dir: Path) -> SkillDocument:
     skill_path = skill_md_path.resolve()
     root = skills_dir.resolve()
     if not _is_within(root, skill_path):
-        raise SkillParseError(f"Skill file is outside skills directory: {skill_md_path}")
+        raise SkillParseError(
+            f"Skill file is outside skills directory: {skill_md_path}"
+        )
     if not skill_path.exists():
         raise SkillParseError(f"Skill file not found: {skill_md_path}")
     if skill_path.name != SKILL_FILE_NAME:
         raise SkillParseError(f"Unexpected skill file name: {skill_md_path}")
 
     raw_content = skill_path.read_text(encoding="utf-8", errors="replace")
-    parsed, body_content = _parse_frontmatter(raw_content, fallback_name=skill_path.parent.name)
+    parsed, body_content = _parse_frontmatter(
+        raw_content, fallback_name=skill_path.parent.name
+    )
     return SkillDocument(
         name=str(parsed["name"]),
         description=str(parsed["description"]),
@@ -145,4 +153,3 @@ def scan_skills_dir(skills_dir: Path) -> list[SkillSummary]:
         )
 
     return summaries
-

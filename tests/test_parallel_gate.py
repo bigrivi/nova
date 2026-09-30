@@ -127,9 +127,7 @@ async def test_fifty_idle_sessions_evict_without_residual_growth():
             await request_registry.register(session_identifier, IdleAgent())
             stream_buffer.append(session_identifier, b'data: {"t":1}\n\n')
         assert await request_registry.size() == 50
-        evicted_identifiers = await request_registry.evict_idle(
-            now=base_time + 3601.0
-        )
+        evicted_identifiers = await request_registry.evict_idle(now=base_time + 3601.0)
         assert len(evicted_identifiers) == 50
         assert await request_registry.size() == 0
         for session_index in range(50):
@@ -161,9 +159,7 @@ class PerSessionSlowStreamService:
         yield b"data: [DONE]\n\n"
 
 
-def test_five_parallel_sessions_complete_in_single_session_time(
-    monkeypatch, tmp_path
-):
+def test_five_parallel_sessions_complete_in_single_session_time(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-gate-parallel"))
     app = create_app(settings=get_settings())
     app.state.chat_service = PerSessionSlowStreamService()
@@ -180,9 +176,7 @@ def test_five_parallel_sessions_complete_in_single_session_time(
                 json={"message": "hello", "session_id": session_identifier},
             ) as response:
                 body_text = "".join(
-                    chunk.decode("utf-8")
-                    if isinstance(chunk, bytes)
-                    else chunk
+                    chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk
                     for chunk in response.iter_text()
                 )
             stream_results[session_identifier] = (response.status_code, body_text)
@@ -200,9 +194,9 @@ def test_five_parallel_sessions_complete_in_single_session_time(
         stream_thread.join(timeout=60)
     wall_time = time.monotonic() - started_at
 
-    assert all(
-        not stream_thread.is_alive() for stream_thread in stream_threads
-    ), "parallel stream threads hung"
+    assert all(not stream_thread.is_alive() for stream_thread in stream_threads), (
+        "parallel stream threads hung"
+    )
     failures = {
         session_identifier: repr(outcome)
         for session_identifier, outcome in stream_results.items()
@@ -212,9 +206,9 @@ def test_five_parallel_sessions_complete_in_single_session_time(
     for session_identifier in session_identifiers:
         status_code, body_text = stream_results[session_identifier]
         assert status_code == 200, f"{session_identifier} status={status_code}"
-        assert (
-            f'"sessionId":"{session_identifier}"' in body_text
-        ), f"{session_identifier} body missing own echo: {body_text!r}"
+        assert f'"sessionId":"{session_identifier}"' in body_text, (
+            f"{session_identifier} body missing own echo: {body_text!r}"
+        )
         assert body_text.rstrip().endswith("data: [DONE]")
     # Sequential service would take ~5s (5 x ~1s of paced sleeps); concurrent
     # completion must land near single-session time with wide margin for CI.

@@ -35,9 +35,7 @@ async def background_task_list(session_id: str = "") -> ToolResult:
         "required": ["task_id"],
     },
 )
-async def background_task_status(
-    task_id: str, session_id: str = ""
-) -> ToolResult:
+async def background_task_status(task_id: str, session_id: str = "") -> ToolResult:
     """Return a task's state when it belongs to the current session."""
     task = get_background_task_manager().get(task_id, session_id)
     if task is None:
@@ -57,9 +55,7 @@ async def background_task_status(
         "required": ["task_id"],
     },
 )
-async def background_task_logs(
-    task_id: str, session_id: str = ""
-) -> ToolResult:
+async def background_task_logs(task_id: str, session_id: str = "") -> ToolResult:
     """Return bounded output and state for an owned task."""
     task = get_background_task_manager().get(task_id, session_id)
     if task is None:
@@ -87,9 +83,7 @@ async def background_task_logs(
         "required": ["task_id"],
     },
 )
-async def background_task_cancel(
-    task_id: str, session_id: str = ""
-) -> ToolResult:
+async def background_task_cancel(task_id: str, session_id: str = "") -> ToolResult:
     """Cancel an active task if it belongs to the current session."""
     cancelled = await get_background_task_manager().cancel(task_id, session_id)
     if not cancelled:

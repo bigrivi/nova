@@ -128,18 +128,24 @@ class PromptBuilder:
         parts = []
         settings = get_settings()
 
-        available_skills_section = self._build_available_skills_section(available_skills)
+        available_skills_section = self._build_available_skills_section(
+            available_skills
+        )
 
         identity = self.config.identity_content or DEFAULT_AGENT_IDENTITY
-        parts.append(self.SYSTEM_PROMPT_TEMPLATE.format(
-            identity=identity,
-            available_skills=available_skills_section,
-            date=date or datetime.now().astimezone().strftime("%Y-%m-%d %A"),
-            home=settings.home,
-            workspace_dir=workspace_override or self.config.workspace_dir or str(settings.workspace_dir),
-            platform=self._get_platform(),
-            shell=get_shell_label(),
-        ))
+        parts.append(
+            self.SYSTEM_PROMPT_TEMPLATE.format(
+                identity=identity,
+                available_skills=available_skills_section,
+                date=date or datetime.now().astimezone().strftime("%Y-%m-%d %A"),
+                home=settings.home,
+                workspace_dir=workspace_override
+                or self.config.workspace_dir
+                or str(settings.workspace_dir),
+                platform=self._get_platform(),
+                shell=get_shell_label(),
+            )
+        )
 
         if self.config.subagent_roster:
             parts.append(
@@ -162,19 +168,27 @@ class PromptBuilder:
 
         if self.config.user_content:
             if has_threats(self.config.user_content):
-                parts.append("## User\n\n[User profile omitted — content flagged as potential injection]")
+                parts.append(
+                    "## User\n\n[User profile omitted — content flagged as potential injection]"
+                )
             else:
                 parts.append(f"## User\n\n{self.config.user_content}")
 
         if self.config.memory_index:
             if has_threats(self.config.memory_index):
-                parts.append("## Memory Index\n\n[Index omitted — content flagged as potential injection]\n\nListed memories exist but may be unrelated to the current question. Only query and use them when the current topic is directly related.")
+                parts.append(
+                    "## Memory Index\n\n[Index omitted — content flagged as potential injection]\n\nListed memories exist but may be unrelated to the current question. Only query and use them when the current topic is directly related."
+                )
             else:
-                parts.append(f"## Memory Index\n\n{self.config.memory_index}\n\nListed memories exist but may be unrelated to the current question. Only query and use them when the current topic is directly related.")
+                parts.append(
+                    f"## Memory Index\n\n{self.config.memory_index}\n\nListed memories exist but may be unrelated to the current question. Only query and use them when the current topic is directly related."
+                )
 
         if self.config.memory_content:
             if has_threats(self.config.memory_content):
-                parts.append("## Long-Term Memory\n\n[Memory omitted — content flagged as potential injection]")
+                parts.append(
+                    "## Long-Term Memory\n\n[Memory omitted — content flagged as potential injection]"
+                )
             else:
                 parts.append(f"## Long-Term Memory\n\n{self.config.memory_content}")
 
@@ -182,16 +196,24 @@ class PromptBuilder:
 
     def _get_platform(self) -> str:
         import platform
+
         return platform.system()
 
-    def _build_available_skills_section(self, available_skills: list[Any] | None) -> str:
+    def _build_available_skills_section(
+        self, available_skills: list[Any] | None
+    ) -> str:
         if not available_skills:
             return "- No skills currently installed in the runtime catalog."
 
         lines = []
         for skill in available_skills:
             name = str(getattr(skill, "name", "") or "").strip() or "unknown-skill"
-            description = str(getattr(skill, "description", "") or "").strip() or "(no description)"
+            description = (
+                str(getattr(skill, "description", "") or "").strip()
+                or "(no description)"
+            )
             lines.append(f"- {name}: {description}")
-        lines.append("- If one of these matches the task, call `load_skill` with the exact skill name before using it.")
+        lines.append(
+            "- If one of these matches the task, call `load_skill` with the exact skill name before using it."
+        )
         return "\n".join(lines)

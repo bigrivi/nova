@@ -283,9 +283,7 @@ class HttpProvider(LLMProvider):
         )
         connector, session = self._open_session()
         try:
-            resp = await self._post_with_retry(
-                session, url, headers, body, abort_event
-            )
+            resp = await self._post_with_retry(session, url, headers, body, abort_event)
             if resp is None:
                 return Done(content="", tool_calls=[], aborted=True)
             async with resp:

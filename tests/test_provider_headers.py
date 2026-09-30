@@ -73,9 +73,7 @@ def test_no_hook_no_hook_headers():
 
 
 def test_hook_failure_modes(tmp_path):
-    failing = _write_hook(
-        tmp_path, "failing.py", "import sys; sys.exit(3)\n"
-    )
+    failing = _write_hook(tmp_path, "failing.py", "import sys; sys.exit(3)\n")
     with pytest.raises(RequestHookError):
         OpenAIProvider(request_hook=failing)._build_headers(session_id="s")
 

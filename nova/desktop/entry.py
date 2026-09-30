@@ -31,7 +31,10 @@ def main() -> None:
         sys.path.insert(0, str(Path(script_path).parent))
         with open(script_path) as f:
             code = f.read()
-        exec(compile(code, script_path, "exec"), {"__name__": "__main__", "__file__": script_path})
+        exec(
+            compile(code, script_path, "exec"),
+            {"__name__": "__main__", "__file__": script_path},
+        )
         sys.exit(0)
 
     dist = os.environ.get("NOVA_FRONTEND_DIST") or _resolve_frontend_dist()

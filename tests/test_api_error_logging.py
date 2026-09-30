@@ -36,9 +36,7 @@ def client():
     return TestClient(app, raise_server_exceptions=False)
 
 
-def test_unhandled_exception_returns_generic_500_with_traceback_logged(
-    client, caplog
-):
+def test_unhandled_exception_returns_generic_500_with_traceback_logged(client, caplog):
     with caplog.at_level(logging.ERROR, logger="nova.server.error_logging"):
         response = client.get("/boom")
 
@@ -54,9 +52,7 @@ def test_unhandled_exception_returns_generic_500_with_traceback_logged(
     assert errors[0].exc_info[0] is ValueError
 
 
-def test_http_exception_keeps_its_response_and_is_logged_as_warning(
-    client, caplog
-):
+def test_http_exception_keeps_its_response_and_is_logged_as_warning(client, caplog):
     with caplog.at_level(logging.WARNING, logger="nova.server.error_logging"):
         response = client.get("/reject")
 
@@ -64,12 +60,12 @@ def test_http_exception_keeps_its_response_and_is_logged_as_warning(
     assert response.status_code == 409
     assert response.json() == {"detail": "Agent 'x' already exists"}
 
-    assert any(
-        "GET /reject -> 409" in r.getMessage() for r in caplog.records
-    ), [r.getMessage() for r in caplog.records]
-    assert not any(
-        r.levelno >= logging.ERROR for r in caplog.records
-    ), "a client error must not log at error level"
+    assert any("GET /reject -> 409" in r.getMessage() for r in caplog.records), [
+        r.getMessage() for r in caplog.records
+    ]
+    assert not any(r.levelno >= logging.ERROR for r in caplog.records), (
+        "a client error must not log at error level"
+    )
 
 
 def test_successful_requests_stay_silent(client, caplog):

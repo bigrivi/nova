@@ -59,9 +59,7 @@ class StreamParser(ABC):
         self.stopped = False
 
     @abstractmethod
-    def feed(
-        self, event: dict, acc: StreamAccumulator
-    ) -> Iterable[ChatStreamEvent]:
+    def feed(self, event: dict, acc: StreamAccumulator) -> Iterable[ChatStreamEvent]:
         """Handle one decoded event, yielding any Nova events it produces.
 
         Args:

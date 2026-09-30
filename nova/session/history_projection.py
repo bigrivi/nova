@@ -58,9 +58,8 @@ def project_user_visible_history(messages: list[Message]) -> list[Message]:
             continue
 
         if message.role == "tool":
-            if (
-                _is_snipped_tool_message(message)
-                or not _is_visible_tool_result(message, visible_tool_call_ids)
+            if _is_snipped_tool_message(message) or not _is_visible_tool_result(
+                message, visible_tool_call_ids
             ):
                 continue
             projected.append(message)

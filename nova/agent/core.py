@@ -40,8 +40,6 @@ from nova.tools.registry import ToolRegistry
 log = logging.getLogger(__name__)
 
 
-
-
 @dataclass
 class AgentConfig:
     # Model key as defined in config.json (e.g., "my-gemma")
@@ -79,8 +77,7 @@ def build_user_message(
         elif attachment.get("type") == "document":
             for content_part in attachment.get("content", []):
                 if content_part.get("type") == "text":
-                    message_text = content_part.get(
-                        "text", "") + "\n\n" + message_text
+                    message_text = content_part.get("text", "") + "\n\n" + message_text
     return message_text, image_data
 
 
@@ -125,7 +122,8 @@ class Agent:
         self._skill_service = self._build_skill_service(agent_key, agent_dir)
         self._skill_service.scan_skills()
         self._prompt_builder = PromptBuilder(
-            prompt_config or PromptConfig.from_agent_dir(agent_dir))
+            prompt_config or PromptConfig.from_agent_dir(agent_dir)
+        )
 
         self._abort_event = asyncio.Event()
         self._base_system_prompt: str | None = None
@@ -133,7 +131,8 @@ class Agent:
         self._last_user_input: str = ""
         self._skill_tools: Any = None
         self._compaction = CompactionController(
-            model=self.config.model, provider=self.config.provider)
+            model=self.config.model, provider=self.config.provider
+        )
 
         self._turns_since_review = 0
         # One compact-and-retry per user request. A second overflow means the
@@ -156,7 +155,9 @@ class Agent:
         self._abort_event.set()
         log.info("Agent interrupted")
 
-    def resolve_approval(self, approval_request_id: str, approved: bool, remember: bool = False) -> bool:
+    def resolve_approval(
+        self, approval_request_id: str, approved: bool, remember: bool = False
+    ) -> bool:
         """Resolve a pending approval request (called from server route)."""
         return self._approval.resolve(approval_request_id, approved, remember)
 
@@ -216,22 +217,31 @@ class Agent:
         for loaded_message in loaded_messages:
             if loaded_message.role == "assistant" and loaded_message.tool_calls:
                 for tool_call in loaded_message.tool_calls:
-                    tool_call_identifier = tool_call.get(
-                        "id") if isinstance(tool_call, dict) else None
+                    tool_call_identifier = (
+                        tool_call.get("id") if isinstance(tool_call, dict) else None
+                    )
                     if tool_call_identifier:
                         declared_tool_call_ids.add(tool_call_identifier)
 
         converted_messages: list[LLMMessage] = []
         for loaded_message in loaded_messages:
-            if loaded_message.role == "tool" and loaded_message.tool_call_id not in declared_tool_call_ids:
+            if (
+                loaded_message.role == "tool"
+                and loaded_message.tool_call_id not in declared_tool_call_ids
+            ):
                 continue
             llm_message = LLMMessage(
-                role=loaded_message.role, content=loaded_message.content)
+                role=loaded_message.role, content=loaded_message.content
+            )
             if loaded_message.tool_calls:
                 llm_message.tool_calls = [
-                    tool_call for tool_call in loaded_message.tool_calls
-                    if (isinstance(tool_call, dict) and tool_call.get("id")
-                        and tool_call["id"] in resolved_tool_call_ids)
+                    tool_call
+                    for tool_call in loaded_message.tool_calls
+                    if (
+                        isinstance(tool_call, dict)
+                        and tool_call.get("id")
+                        and tool_call["id"] in resolved_tool_call_ids
+                    )
                 ]
             if loaded_message.tool_call_id:
                 llm_message.tool_call_id = loaded_message.tool_call_id
@@ -246,7 +256,9 @@ class Agent:
             converted_messages.append(llm_message)
         return converted_messages
 
-    async def _build_messages(self, loaded_messages: list | None = None) -> list[LLMMessage]:
+    async def _build_messages(
+        self, loaded_messages: list | None = None
+    ) -> list[LLMMessage]:
         session = self.session.get_current_session()
 
         if self._base_system_prompt is None:
@@ -256,7 +268,10 @@ class Agent:
 
         if loaded_messages is None:
             loaded_messages = await self.session.get_messages()
-        return [LLMMessage(role="system", content=self._base_system_prompt), *self._convert_to_llm_messages(loaded_messages)]
+        return [
+            LLMMessage(role="system", content=self._base_system_prompt),
+            *self._convert_to_llm_messages(loaded_messages),
+        ]
 
     async def _emit_approval(self, data: dict) -> None:
         await self._emit(AgentEvent.APPROVAL_REQUIRED, data)
@@ -279,7 +294,9 @@ class Agent:
             turn_count=turn_count,
         )
         async for event, data in reader.consume(
-            await self._start_completion_stream(turn_count, tool_schemas, loaded_messages)
+            await self._start_completion_stream(
+                turn_count, tool_schemas, loaded_messages
+            )
         ):
             if event == AgentEvent.ERROR:
                 # Persist before handing the error out. The consumer treats an
@@ -296,13 +313,16 @@ class Agent:
             yield AgentEvent.DONE, stop_payload
             return
         log.info(
-            f"[Turn {turn_count}] After LLM loop: accumulated_content={len(reader.content)}, tool_calls={len(reader.tool_calls)}")
+            f"[Turn {turn_count}] After LLM loop: accumulated_content={len(reader.content)}, tool_calls={len(reader.tool_calls)}"
+        )
 
         tool_calls = self._executable_tool_calls(
-            reader.collected_tool_calls(), turn_count)
+            reader.collected_tool_calls(), turn_count
+        )
         for tool_call in tool_calls:
             log.info(
-                f"[Turn {turn_count}] Calling tool: {tool_call.name}({tool_call.arguments})")
+                f"[Turn {turn_count}] Calling tool: {tool_call.name}({tool_call.arguments})"
+            )
         await self._persist_assistant_message(reader, tool_calls, group_id)
 
         if not tool_calls:
@@ -329,7 +349,8 @@ class Agent:
         current_session = self.session.get_current_session()
         session_id = current_session.id if current_session else None
         log.info(
-            f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}, timeout={getattr(self.llm, 'timeout_seconds', None)}")
+            f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}, timeout={getattr(self.llm, 'timeout_seconds', None)}"
+        )
         return self.llm.chat_stream(
             messages=messages,
             model=self.config.model,
@@ -378,7 +399,8 @@ class Agent:
         self._overflow_recovered = True
         self._compaction.force_next = True
         log.warning(
-            "Provider rejected the request as too large; compacting and retrying once")
+            "Provider rejected the request as too large; compacting and retrying once"
+        )
         return True
 
     def _executable_tool_calls(self, tool_calls: list, turn_count: int) -> list:
@@ -435,9 +457,12 @@ class Agent:
             role="assistant",
             content=reader.final_content,
             tool_calls=[
-                tool_call.model_dump() if hasattr(tool_call, "model_dump") else tool_call
+                tool_call.model_dump()
+                if hasattr(tool_call, "model_dump")
+                else tool_call
                 for tool_call in tool_calls
-            ] or None,
+            ]
+            or None,
             reasoning_content=reader.reasoning or None,
             group_id=group_id,
             reasoning_elapsed_ms=reader.reasoning_elapsed_ms,
@@ -505,9 +530,7 @@ class Agent:
         """
         if self.is_sub_agent or self._on_title_updated is None:
             return
-        asyncio.create_task(
-            self._generate_title_in_background(session, first_message)
-        )
+        asyncio.create_task(self._generate_title_in_background(session, first_message))
 
     async def _generate_title_in_background(
         self, session: SessionContext, first_message: str
@@ -570,7 +593,8 @@ class Agent:
         self._overflow_recovered = False
 
         current_session = await self._resolve_session(
-            session_id, user_input, workspace_dir, project_id)
+            session_id, user_input, workspace_dir, project_id
+        )
         session_id = current_session.id if current_session else ""
         self._apply_active_workspace(current_session)
 
@@ -598,7 +622,9 @@ class Agent:
             variant=message_variant,
         )
 
-        tool_schemas = self.tool_registry.get_schema() if self.tool_registry.tools else None
+        tool_schemas = (
+            self.tool_registry.get_schema() if self.tool_registry.tools else None
+        )
 
         data_source = self._data_source or await get_default_data_source()
         session_messages = await self.session.get_messages()
@@ -696,8 +722,7 @@ class Agent:
                 yield AgentEvent.DONE, done_payload
                 return
 
-        error_payload = _error_payload(
-            "max_iterations", "Maximum iterations reached")
+        error_payload = _error_payload("max_iterations", "Maximum iterations reached")
         await self._emit(AgentEvent.ERROR, error_payload)
         log.warning(f"[Turn {turn_count}] Maximum iterations reached")
         yield AgentEvent.ERROR, error_payload
@@ -732,6 +757,7 @@ class Agent:
         try:
             from nova.memory.context import build_memory_index_for_system
             from nova.memory.service import MemoryService
+
             self._prompt_builder.config.memory_index = (
                 await build_memory_index_for_system(
                     service=MemoryService(data_source=self._data_source),
@@ -762,7 +788,9 @@ class Agent:
             key = child.get("key")
             if not key:
                 continue
-            access = "read-only" if child.get("posture") == "read_only" else "full access"
+            access = (
+                "read-only" if child.get("posture") == "read_only" else "full access"
+            )
             description = (child.get("description") or "").strip() or "(no description)"
             lines.append(f"- `{key}` ({access}): {description}")
         self._prompt_builder.config.subagent_roster = "\n".join(lines)

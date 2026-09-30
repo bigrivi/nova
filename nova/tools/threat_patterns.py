@@ -41,12 +41,14 @@ def scan_text(text: str, categories: list[str] | None = None) -> list[dict[str, 
                 start = max(0, match.start() - 30)
                 end = min(len(text), match.end() + 30)
                 context = text[start:end]
-                results.append({
-                    "category": cat,
-                    "pattern": pattern,
-                    "match": match.group()[:80],
-                    "context": context,
-                })
+                results.append(
+                    {
+                        "category": cat,
+                        "pattern": pattern,
+                        "match": match.group()[:80],
+                        "context": context,
+                    }
+                )
     return results
 
 

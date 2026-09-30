@@ -71,9 +71,7 @@ def _wire(monkeypatch, agent, session_manager):
 
     _build_agent.kwargs = None
     monkeypatch.setattr(runtime_mod, "build_agent", _build_agent)
-    monkeypatch.setattr(
-        session_mod, "get_session_manager", lambda: session_manager
-    )
+    monkeypatch.setattr(session_mod, "get_session_manager", lambda: session_manager)
     return _build_agent
 
 
@@ -91,11 +89,13 @@ def _args(**overrides):
 
 @pytest.mark.asyncio
 async def test_completes_and_reports_child_session(monkeypatch) -> None:
-    agent = _FakeAgent([
-        (AgentEvent.TEXT_DELTA, "part one "),
-        (AgentEvent.TEXT_DELTA, "part two"),
-        (AgentEvent.DONE, {"reason": "completed", "content": "part one part two"}),
-    ])
+    agent = _FakeAgent(
+        [
+            (AgentEvent.TEXT_DELTA, "part one "),
+            (AgentEvent.TEXT_DELTA, "part two"),
+            (AgentEvent.DONE, {"reason": "completed", "content": "part one part two"}),
+        ]
+    )
     sessions = _FakeSessionManager()
     _wire(monkeypatch, agent, sessions)
     context = _RecordingContext()
@@ -147,7 +147,9 @@ async def test_child_agent_is_built_as_a_sub_agent(monkeypatch) -> None:
     await SubagentExecutor().execute(_args(depth=3), _RecordingContext())
 
     assert build_agent.kwargs == {
-        "agent_key": "coder", "is_sub_agent": True, "depth": 3
+        "agent_key": "coder",
+        "is_sub_agent": True,
+        "depth": 3,
     }
 
 
@@ -155,11 +157,13 @@ async def test_child_agent_is_built_as_a_sub_agent(monkeypatch) -> None:
 async def test_text_deltas_accumulate_when_done_carries_no_content(
     monkeypatch,
 ) -> None:
-    agent = _FakeAgent([
-        (AgentEvent.TEXT_DELTA, "hello "),
-        (AgentEvent.TEXT_DELTA, "world"),
-        (AgentEvent.DONE, {"reason": "completed"}),
-    ])
+    agent = _FakeAgent(
+        [
+            (AgentEvent.TEXT_DELTA, "hello "),
+            (AgentEvent.TEXT_DELTA, "world"),
+            (AgentEvent.DONE, {"reason": "completed"}),
+        ]
+    )
     _wire(monkeypatch, agent, _FakeSessionManager())
 
     result = await SubagentExecutor().execute(_args(), _RecordingContext())
@@ -170,10 +174,12 @@ async def test_text_deltas_accumulate_when_done_carries_no_content(
 
 @pytest.mark.asyncio
 async def test_non_completed_reason_is_a_failure(monkeypatch) -> None:
-    agent = _FakeAgent([
-        (AgentEvent.TEXT_DELTA, "partial"),
-        (AgentEvent.DONE, {"reason": "stopped", "content": "partial"}),
-    ])
+    agent = _FakeAgent(
+        [
+            (AgentEvent.TEXT_DELTA, "partial"),
+            (AgentEvent.DONE, {"reason": "stopped", "content": "partial"}),
+        ]
+    )
     _wire(monkeypatch, agent, _FakeSessionManager())
 
     result = await SubagentExecutor().execute(_args(), _RecordingContext())
@@ -185,10 +191,12 @@ async def test_non_completed_reason_is_a_failure(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_error_event_is_a_failure(monkeypatch) -> None:
-    agent = _FakeAgent([
-        (AgentEvent.TEXT_DELTA, "before boom"),
-        (AgentEvent.ERROR, "provider exploded"),
-    ])
+    agent = _FakeAgent(
+        [
+            (AgentEvent.TEXT_DELTA, "before boom"),
+            (AgentEvent.ERROR, "provider exploded"),
+        ]
+    )
     _wire(monkeypatch, agent, _FakeSessionManager())
 
     result = await SubagentExecutor().execute(_args(), _RecordingContext())
@@ -210,9 +218,7 @@ async def test_cancellation_propagates(monkeypatch) -> None:
             yield AgentEvent.DONE, {}  # pragma: no cover
 
     _wire(monkeypatch, _HangingAgent(), _FakeSessionManager())
-    task = asyncio.create_task(
-        SubagentExecutor().execute(_args(), _RecordingContext())
-    )
+    task = asyncio.create_task(SubagentExecutor().execute(_args(), _RecordingContext()))
     await asyncio.wait_for(started.wait(), timeout=2)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):

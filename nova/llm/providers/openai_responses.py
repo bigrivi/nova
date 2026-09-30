@@ -49,14 +49,22 @@ def _collect_tool_calls(tool_calls_by_index: dict[int, dict]) -> list[ToolCall]:
     gateways that deliver a tool call whole instead of in deltas.
     """
     emitted = [
-        ToolCall(id=str(v["id"]), name=str(v["name"]), arguments=str(v.get("arguments") or "{}"))
+        ToolCall(
+            id=str(v["id"]),
+            name=str(v["name"]),
+            arguments=str(v.get("arguments") or "{}"),
+        )
         for _, v in sorted(tool_calls_by_index.items())
         if v.get("name") and v.get("emitted")
     ]
     if emitted:
         return emitted
     return [
-        ToolCall(id=str(v["id"]), name=str(v["name"]), arguments=str(v.get("arguments") or "{}"))
+        ToolCall(
+            id=str(v["id"]),
+            name=str(v["name"]),
+            arguments=str(v.get("arguments") or "{}"),
+        )
         for _, v in sorted(tool_calls_by_index.items())
         if v.get("name")
     ]
@@ -90,7 +98,11 @@ class _ResponsesStreamParser(StreamParser):
                 acc.tokens_input = usage.get("input_tokens")
                 acc.tokens_output = usage.get("output_tokens")
                 input_details = usage.get("input_tokens_details", {})
-                cached = input_details.get("cached_tokens") if isinstance(input_details, dict) else None
+                cached = (
+                    input_details.get("cached_tokens")
+                    if isinstance(input_details, dict)
+                    else None
+                )
                 if cached is not None:
                     acc.cache_read_tokens = int(cached)
             self._saw_completed = True
@@ -138,7 +150,9 @@ class _ResponsesStreamParser(StreamParser):
                 self._tool_calls[output_index]["arguments"] = (
                     self._tool_calls[output_index].get("arguments", "") + event["delta"]
                 )
-                acc.guard_tool_args(len(str(self._tool_calls[output_index].get("arguments", ""))))
+                acc.guard_tool_args(
+                    len(str(self._tool_calls[output_index].get("arguments", "")))
+                )
             return
         if event_type == "response.output_item.added":
             item = event.get("item", {})
@@ -165,14 +179,22 @@ class _ResponsesStreamParser(StreamParser):
                     call_state["name"] = item["name"]
                 if call_state.get("name") and not call_state.get("emitted"):
                     call_state["emitted"] = True
-                    yield ToolCall(id=str(call_state["id"]), name=str(call_state["name"]), arguments=str(call_state["arguments"] or "{}"))
+                    yield ToolCall(
+                        id=str(call_state["id"]),
+                        name=str(call_state["name"]),
+                        arguments=str(call_state["arguments"] or "{}"),
+                    )
             return
         if event_type == "response.function_call_arguments.done":
             output_index = event.get("output_index", 0)
             call_state = self._tool_calls.get(output_index)
             if call_state and call_state.get("name") and not call_state.get("emitted"):
                 call_state["emitted"] = True
-                yield ToolCall(id=str(call_state["id"]), name=str(call_state["name"]), arguments=str(call_state.get("arguments") or "{}"))
+                yield ToolCall(
+                    id=str(call_state["id"]),
+                    name=str(call_state["name"]),
+                    arguments=str(call_state.get("arguments") or "{}"),
+                )
             return
 
         # unknown -> ignore
@@ -264,11 +286,29 @@ class OpenAIResponsesProvider(HttpProvider):
         # Responses API: input can be string or array. We always use array for conversation history.
         result: list[dict] = []
         for msg in messages:
-            role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
-            content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
-            images = msg.get("images") if isinstance(msg, dict) else getattr(msg, "images", None)
-            tool_calls = msg.get("tool_calls") if isinstance(msg, dict) else getattr(msg, "tool_calls", None)
-            tool_call_id = msg.get("tool_call_id") if isinstance(msg, dict) else getattr(msg, "tool_call_id", None)
+            role = (
+                msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
+            )
+            content = (
+                msg.get("content")
+                if isinstance(msg, dict)
+                else getattr(msg, "content", None)
+            )
+            images = (
+                msg.get("images")
+                if isinstance(msg, dict)
+                else getattr(msg, "images", None)
+            )
+            tool_calls = (
+                msg.get("tool_calls")
+                if isinstance(msg, dict)
+                else getattr(msg, "tool_calls", None)
+            )
+            tool_call_id = (
+                msg.get("tool_call_id")
+                if isinstance(msg, dict)
+                else getattr(msg, "tool_call_id", None)
+            )
 
             if role is None:
                 continue
@@ -281,17 +321,23 @@ class OpenAIResponsesProvider(HttpProvider):
                 if images:
                     output: object = [
                         {"type": "input_text", "text": content or ""},
-                        *({"type": "input_image",
-                           "image_url": f"data:image/png;base64,{img}"}
-                          for img in images),
+                        *(
+                            {
+                                "type": "input_image",
+                                "image_url": f"data:image/png;base64,{img}",
+                            }
+                            for img in images
+                        ),
                     ]
                 else:
                     output = content or ""
-                result.append({
-                    "type": "function_call_output",
-                    "call_id": tool_call_id,
-                    "output": output,
-                })
+                result.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": tool_call_id,
+                        "output": output,
+                    }
+                )
                 continue
 
             # Assistant with tool_calls -> emit function_call items
@@ -311,12 +357,16 @@ class OpenAIResponsesProvider(HttpProvider):
                     else:
                         name = tc.get("name", "")
                         args = tc.get("arguments", "")
-                    result.append({
-                        "type": "function_call",
-                        "call_id": tc_id,
-                        "name": name,
-                        "arguments": args if isinstance(args, str) else json.dumps(args, ensure_ascii=False),
-                    })
+                    result.append(
+                        {
+                            "type": "function_call",
+                            "call_id": tc_id,
+                            "name": name,
+                            "arguments": args
+                            if isinstance(args, str)
+                            else json.dumps(args, ensure_ascii=False),
+                        }
+                    )
                 continue
 
             # Regular message (system/user/assistant)
@@ -324,10 +374,12 @@ class OpenAIResponsesProvider(HttpProvider):
                 # Responses API supports image input via content parts
                 content_parts = [{"type": "input_text", "text": content or ""}]
                 for img in images:
-                    content_parts.append({
-                        "type": "input_image",
-                        "image_url": f"data:image/png;base64,{img}",
-                    })
+                    content_parts.append(
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:image/png;base64,{img}",
+                        }
+                    )
                 result.append({"role": role, "content": content_parts})
             else:
                 result.append({"role": role, "content": content or ""})
@@ -335,7 +387,15 @@ class OpenAIResponsesProvider(HttpProvider):
         # If single user message, Zen also accepts string input; keep array for consistency
         return result
 
-    def _build_body(self, input_data: list | str, model: str, stream: bool = False, tools: list[dict] | None = None, session_id: str | None = None, reasoning_effort: str | None = None) -> dict:
+    def _build_body(
+        self,
+        input_data: list | str,
+        model: str,
+        stream: bool = False,
+        tools: list[dict] | None = None,
+        session_id: str | None = None,
+        reasoning_effort: str | None = None,
+    ) -> dict:
         body: dict = {"model": model, "input": input_data}
         if stream:
             body["stream"] = True
@@ -360,12 +420,16 @@ class OpenAIResponsesProvider(HttpProvider):
                 name = func.get("name", "")
                 if not name:
                     continue
-                responses_tools.append({
-                    "type": "function",
-                    "name": name,
-                    "description": func.get("description", ""),
-                    "parameters": func.get("parameters", {"type": "object", "properties": {}}),
-                })
+                responses_tools.append(
+                    {
+                        "type": "function",
+                        "name": name,
+                        "description": func.get("description", ""),
+                        "parameters": func.get(
+                            "parameters", {"type": "object", "properties": {}}
+                        ),
+                    }
+                )
             if responses_tools:
                 body["tools"] = responses_tools
 
@@ -390,7 +454,14 @@ class OpenAIResponsesProvider(HttpProvider):
         reasoning_effort: str | None,
     ) -> tuple[str, dict[str, str], dict]:
         input_data = self._format_input(messages)
-        body = self._build_body(input_data, model, stream=stream, tools=tools, session_id=session_id, reasoning_effort=reasoning_effort)
+        body = self._build_body(
+            input_data,
+            model,
+            stream=stream,
+            tools=tools,
+            session_id=session_id,
+            reasoning_effort=reasoning_effort,
+        )
         headers = self._build_headers(session_id=session_id)
         if stream:
             headers["Accept"] = "text/event-stream"
@@ -403,7 +474,9 @@ class OpenAIResponsesProvider(HttpProvider):
         return _ResponsesStreamParser(self)
 
     def _parse_output_to_done(self, response_body: dict) -> Done:
-        output = response_body.get("output", []) if isinstance(response_body, dict) else []
+        output = (
+            response_body.get("output", []) if isinstance(response_body, dict) else []
+        )
         text_parts: list[str] = []
         tool_calls: list[ToolCall] = []
         for item in output:
@@ -415,17 +488,29 @@ class OpenAIResponsesProvider(HttpProvider):
                     if isinstance(part, dict) and part.get("type") == "output_text":
                         text_parts.append(part.get("text", ""))
             elif item_type == "function_call":
-                tool_calls.append(ToolCall(
-                    id=item.get("call_id", item.get("id", "")),
-                    name=item.get("name", ""),
-                    arguments=item.get("arguments", "{}") if isinstance(item.get("arguments"), str) else json.dumps(item.get("arguments"), ensure_ascii=False),
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=item.get("call_id", item.get("id", "")),
+                        name=item.get("name", ""),
+                        arguments=item.get("arguments", "{}")
+                        if isinstance(item.get("arguments"), str)
+                        else json.dumps(item.get("arguments"), ensure_ascii=False),
+                    )
+                )
             # reasoning type is ignored (encrypted)
 
         content = "".join(text_parts)
-        usage = response_body.get("usage", {}) if isinstance(response_body, dict) else {}
-        input_details = usage.get("input_tokens_details", {}) if isinstance(usage, dict) else {}
-        cached = input_details.get("cached_tokens") if isinstance(input_details, dict) else None
+        usage = (
+            response_body.get("usage", {}) if isinstance(response_body, dict) else {}
+        )
+        input_details = (
+            usage.get("input_tokens_details", {}) if isinstance(usage, dict) else {}
+        )
+        cached = (
+            input_details.get("cached_tokens")
+            if isinstance(input_details, dict)
+            else None
+        )
         return Done(
             content=content,
             tool_calls=tool_calls,
@@ -455,9 +540,7 @@ class OpenAIResponsesProvider(HttpProvider):
         if content:
             # Report the size, do not claim it survived: the text travels on
             # this event, but whether anything keeps it is up to the consumer.
-            message = (
-                f"{message}; {len(content)} characters had already arrived"
-            )
+            message = f"{message}; {len(content)} characters had already arrived"
         return Error(
             message=message,
             content=content,
@@ -491,9 +574,13 @@ class OpenAIResponsesProvider(HttpProvider):
             parts.append(f"[{code}]")
         if detail:
             parts.append(str(detail))
-        return " ".join(parts) if len(parts) > 1 else f"{event_type} (no detail from server)"
+        return (
+            " ".join(parts)
+            if len(parts) > 1
+            else f"{event_type} (no detail from server)"
+        )
 
     async def count_tokens(self, text: str, model: str | None = None) -> int:
-        chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+        chinese_chars = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
         other_chars = len(text) - chinese_chars
         return int(chinese_chars / 2 + other_chars / 4)

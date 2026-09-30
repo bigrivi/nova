@@ -70,9 +70,7 @@ class StreamTrace:
 
     def opened(self) -> None:
         """Note that the request succeeded and the read loop is starting."""
-        log.info(
-            "Stream open provider=%s model=%s", self._provider, self._model
-        )
+        log.info("Stream open provider=%s model=%s", self._provider, self._model)
 
     def line(self, raw: bytes | bytearray | str) -> None:
         """Record one line delivered by the peer.
@@ -133,9 +131,7 @@ class StreamTrace:
             detail,
         )
         log.info("Stream head provider=%s lines=%r", self._provider, self._head)
-        log.info(
-            "Stream tail provider=%s lines=%r", self._provider, list(self._tail)
-        )
+        log.info("Stream tail provider=%s lines=%r", self._provider, list(self._tail))
 
     def _beat(self) -> None:
         """Log the running counts once per beat so a hung turn stays visible."""

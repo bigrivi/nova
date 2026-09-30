@@ -60,7 +60,9 @@ class _FakeDataSource:
 class _FakeAgent:
     """Emits one clean turn (SESSION..DONE) whose text identifies the turn."""
 
-    def __init__(self, session_id: str, text: str, *, raise_after_text: bool = False) -> None:
+    def __init__(
+        self, session_id: str, text: str, *, raise_after_text: bool = False
+    ) -> None:
         self._session_id = session_id
         self._text = text
         self._raise_after_text = raise_after_text
@@ -147,7 +149,10 @@ async def test_autowake_resume_returns_only_latest_turn(monkeypatch, tmp_path):
 
     # Turn 2: the sub-agent completion auto-wakes the parent.
     started = await start_headless_turn(
-        service, SESSION_ID, "[subagent:explore status=done]\nreport", {"from_subagent": True}
+        service,
+        SESSION_ID,
+        "[subagent:explore status=done]\nreport",
+        {"from_subagent": True},
     )
     assert started is True
     assert buffer.last_sequence(SESSION_ID) > first_last
@@ -157,11 +162,15 @@ async def test_autowake_resume_returns_only_latest_turn(monkeypatch, tmp_path):
     body = _decode(frames)
     assert "NEW_TURN_ANSWER" in body
     assert "OLD_TURN_ANSWER" not in body, "resume leaked the finished previous turn"
-    assert body.count("[DONE]") == 1, f"expected a single [DONE], got {body.count('[DONE]')}"
+    assert body.count("[DONE]") == 1, (
+        f"expected a single [DONE], got {body.count('[DONE]')}"
+    )
 
 
 @pytest.mark.asyncio
-async def test_autowake_resume_single_turn_when_wake_races_completion(monkeypatch, tmp_path):
+async def test_autowake_resume_single_turn_when_wake_races_completion(
+    monkeypatch, tmp_path
+):
     """Drive turn 1 and the auto-wake through the WakeScheduler concurrently.
 
     The scheduler tries to start the wake while turn 1 still holds the slot,
@@ -188,7 +197,9 @@ async def test_autowake_resume_single_turn_when_wake_races_completion(monkeypatc
     turn1 = asyncio.create_task(
         _drain(
             service.chat_stream_ai_sdk(
-                ChatRequest(session_id=SESSION_ID, message="is it done?", agent_key="main")
+                ChatRequest(
+                    session_id=SESSION_ID, message="is it done?", agent_key="main"
+                )
             )
         )
     )
@@ -206,7 +217,9 @@ async def test_autowake_resume_single_turn_when_wake_races_completion(monkeypatc
     body = _decode(frames)
     assert "NEW_TURN_ANSWER" in body
     assert "OLD_TURN_ANSWER" not in body, "resume leaked the finished previous turn"
-    assert body.count("[DONE]") == 1, f"expected a single [DONE], got {body.count('[DONE]')}"
+    assert body.count("[DONE]") == 1, (
+        f"expected a single [DONE], got {body.count('[DONE]')}"
+    )
 
 
 @pytest.mark.asyncio
@@ -242,7 +255,10 @@ async def test_resume_in_arm_window_skips_finished_turn(monkeypatch, tmp_path):
     assert resync is True
 
     started = await start_headless_turn(
-        service, SESSION_ID, "[subagent:explore status=done]\nreport", {"from_subagent": True}
+        service,
+        SESSION_ID,
+        "[subagent:explore status=done]\nreport",
+        {"from_subagent": True},
     )
     assert started is True
 
@@ -250,11 +266,15 @@ async def test_resume_in_arm_window_skips_finished_turn(monkeypatch, tmp_path):
     body = _decode(frames)
     assert "NEW_TURN_ANSWER" in body
     assert "OLD_TURN_ANSWER" not in body, "resume leaked the finished previous turn"
-    assert body.count("[DONE]") == 1, f"expected a single [DONE], got {body.count('[DONE]')}"
+    assert body.count("[DONE]") == 1, (
+        f"expected a single [DONE], got {body.count('[DONE]')}"
+    )
 
 
 @pytest.mark.asyncio
-async def test_autowake_resume_ignores_previous_turn_that_errored(monkeypatch, tmp_path):
+async def test_autowake_resume_ignores_previous_turn_that_errored(
+    monkeypatch, tmp_path
+):
     """A turn 1 that raises never marks the buffer done; the next turn's
     boundary must still exclude it from a cursor-0 resume."""
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
@@ -271,12 +291,17 @@ async def test_autowake_resume_ignores_previous_turn_that_errored(monkeypatch, t
     with pytest.raises(RuntimeError):
         await _drain(
             service.chat_stream_ai_sdk(
-                ChatRequest(session_id=SESSION_ID, message="is it done?", agent_key="main")
+                ChatRequest(
+                    session_id=SESSION_ID, message="is it done?", agent_key="main"
+                )
             )
         )
 
     started = await start_headless_turn(
-        service, SESSION_ID, "[subagent:explore status=done]\nreport", {"from_subagent": True}
+        service,
+        SESSION_ID,
+        "[subagent:explore status=done]\nreport",
+        {"from_subagent": True},
     )
     assert started is True
 
@@ -300,7 +325,9 @@ async def test_turn_failing_before_first_append_aborts_cleanly(monkeypatch, tmp_
         await _drain(
             service.chat_stream_ai_sdk(
                 ChatRequest(
-                    session_id=SESSION_ID, message="__raise_immediately__", agent_key="main"
+                    session_id=SESSION_ID,
+                    message="__raise_immediately__",
+                    agent_key="main",
                 )
             )
         )

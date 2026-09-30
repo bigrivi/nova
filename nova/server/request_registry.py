@@ -332,7 +332,9 @@ class RequestRegistry:
                     try:
                         discard(session_id)
                     except Exception:
-                        log.exception("cap-eviction buffer discard failed for %s", session_id)
+                        log.exception(
+                            "cap-eviction buffer discard failed for %s", session_id
+                        )
         return evicted
 
     async def evict_idle(self, now: float | None = None) -> list[str]:
@@ -350,7 +352,9 @@ class RequestRegistry:
         buffer = self._stream_buffer
         for session_id, slot in candidates:
             stale_idle = (current - slot.last_access) > IDLE_TTL
-            stale_done = slot.state == DONE and (current - slot.last_access) > TERMINAL_TTL
+            stale_done = (
+                slot.state == DONE and (current - slot.last_access) > TERMINAL_TTL
+            )
             if not (stale_idle or stale_done):
                 continue
             lock = await self._session_lock(session_id)
@@ -378,7 +382,9 @@ class RequestRegistry:
                         try:
                             discard(session_id)
                         except Exception:
-                            log.exception("eviction buffer discard failed for %s", session_id)
+                            log.exception(
+                                "eviction buffer discard failed for %s", session_id
+                            )
         if buffer is not None:
             sweep = getattr(buffer, "evict_idle", None)
             if sweep is not None:

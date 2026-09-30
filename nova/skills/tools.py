@@ -35,7 +35,11 @@ class SkillTools:
             lines.append(f"  path: {skill.path}")
             if skill.compatibility:
                 lines.append(f"  compatibility: {skill.compatibility}")
-            allowed = ", ".join(skill.allowed_tools) if skill.allowed_tools else "(not specified)"
+            allowed = (
+                ", ".join(skill.allowed_tools)
+                if skill.allowed_tools
+                else "(not specified)"
+            )
             lines.append(f"  allowed_tools: {allowed}")
         return ToolResult(success=True, content="\n".join(lines))
 
@@ -61,10 +65,8 @@ class SkillTools:
         try:
             skill = self._skill_service.load_skill(skill_name)
         except KeyError:
-            available_names = [
-                item.name for item in self._skill_service.list_skills()]
-            suggestion = ", ".join(
-                available_names) if available_names else "(none)"
+            available_names = [item.name for item in self._skill_service.list_skills()]
+            suggestion = ", ".join(available_names) if available_names else "(none)"
             return ToolResult(
                 success=False,
                 content=f"Skill not found: {skill_name}. Available skills: {suggestion}",
@@ -78,7 +80,9 @@ class SkillTools:
         ]
         if skill.compatibility:
             lines.append(f"Compatibility: {skill.compatibility}")
-        allowed = ", ".join(skill.allowed_tools) if skill.allowed_tools else "(not specified)"
+        allowed = (
+            ", ".join(skill.allowed_tools) if skill.allowed_tools else "(not specified)"
+        )
         lines.append(f"Allowed tools: {allowed}")
         lines.append("")
         lines.append("Full SKILL.md:")
@@ -116,8 +120,11 @@ class SkillTools:
     )
     async def install_skill(self, skill_ref: str, force: bool = False) -> ToolResult:
         from nova.skills.installer import SkillInstallError
+
         try:
-            result = await self._skill_service.install_from_clawhub(skill_ref, force=force)
+            result = await self._skill_service.install_from_clawhub(
+                skill_ref, force=force
+            )
         except SkillInstallError as exc:
             payload = {
                 "status": "error",

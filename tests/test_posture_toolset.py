@@ -36,8 +36,17 @@ async def test_read_only_posture_excludes_write_tools() -> None:
 
     assert "read" in names
     assert "grep" in names
-    for denied in ("write", "edit", "shell", "code_run", "delegate_to_agent", "install_skill"):
-        assert denied not in names, f"{denied} must not be registered for read-only posture"
+    for denied in (
+        "write",
+        "edit",
+        "shell",
+        "code_run",
+        "delegate_to_agent",
+        "install_skill",
+    ):
+        assert denied not in names, (
+            f"{denied} must not be registered for read-only posture"
+        )
 
 
 @pytest.mark.asyncio

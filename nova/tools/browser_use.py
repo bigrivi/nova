@@ -82,9 +82,13 @@ def _detect_system_browser() -> str | None:
 
 def _detect_system_profile() -> str:
     if sys.platform == "darwin":
-        return str(Path.home() / "Library" / "Application Support" / "Google" / "Chrome")
+        return str(
+            Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
+        )
     if sys.platform == "win32":
-        return str(Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data")
+        return str(
+            Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data"
+        )
     return str(Path.home() / ".config" / "google-chrome")
 
 
@@ -99,7 +103,9 @@ def _seed_profile(target: str):
         if os.path.exists(src):
             try:
                 if os.path.isdir(src):
-                    shutil.copytree(src, os.path.join(dst_default, name), dirs_exist_ok=True)
+                    shutil.copytree(
+                        src, os.path.join(dst_default, name), dirs_exist_ok=True
+                    )
                 else:
                     shutil.copy2(src, os.path.join(dst_default, name))
             except Exception:
@@ -117,6 +123,7 @@ async def _ensure_browser():
             await _cleanup()
 
     from nova.tools.dependency_manager import ensure_deps
+
     await ensure_deps(["playwright"])
     from playwright.async_api import async_playwright
 
@@ -162,12 +169,24 @@ def _invalidate_cache():
             "action": {
                 "type": "string",
                 "enum": [
-                    "go_to_url", "click_element", "input_text",
-                    "scroll_down", "scroll_up", "scroll_to_text",
-                    "send_keys", "get_dropdown_options", "select_dropdown_option",
-                    "go_back", "web_search", "wait", "extract_content",
-                    "switch_tab", "open_tab", "close_tab",
-                    "get_state", "cleanup",
+                    "go_to_url",
+                    "click_element",
+                    "input_text",
+                    "scroll_down",
+                    "scroll_up",
+                    "scroll_to_text",
+                    "send_keys",
+                    "get_dropdown_options",
+                    "select_dropdown_option",
+                    "go_back",
+                    "web_search",
+                    "wait",
+                    "extract_content",
+                    "switch_tab",
+                    "open_tab",
+                    "close_tab",
+                    "get_state",
+                    "cleanup",
                 ],
                 "description": (
                     "The browser action to perform. "
@@ -290,7 +309,9 @@ async def browser_use(
                 return ToolResult(error="Index required for click_element")
             elements = await _get_clickable_elements(page)
             if index < 0 or index >= len(elements):
-                return ToolResult(error=f"Invalid index {index}, max {len(elements) - 1}")
+                return ToolResult(
+                    error=f"Invalid index {index}, max {len(elements) - 1}"
+                )
             await page.locator(f"xpath={elements[index]['xpath']}").first.click()
 
         elif action == "input_text":
@@ -326,7 +347,8 @@ async def browser_use(
             elements = await _get_clickable_elements(page)
             if index < 0 or index >= len(elements):
                 return ToolResult(error=f"Invalid index {index}")
-            options = await page.evaluate("""
+            options = await page.evaluate(
+                """
                 (xpath) => {
                     const el = document.evaluate(xpath, document, null,
                         XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
@@ -335,29 +357,45 @@ async def browser_use(
                         text: o.text, value: o.value, index: o.index
                     }));
                 }
-            """, elements[index]["xpath"])
-            return ToolResult(content=json.dumps({"text": f"Dropdown options: {json.dumps(options, ensure_ascii=False)}"}, ensure_ascii=False))
+            """,
+                elements[index]["xpath"],
+            )
+            return ToolResult(
+                content=json.dumps(
+                    {
+                        "text": f"Dropdown options: {json.dumps(options, ensure_ascii=False)}"
+                    },
+                    ensure_ascii=False,
+                )
+            )
 
         elif action == "select_dropdown_option":
             if index is None or text is None:
-                return ToolResult(error="Index and text required for select_dropdown_option")
+                return ToolResult(
+                    error="Index and text required for select_dropdown_option"
+                )
             elements = await _get_clickable_elements(page)
             if index < 0 or index >= len(elements):
                 return ToolResult(error=f"Invalid index {index}")
-            await page.locator(f"xpath={elements[index]['xpath']}").first.select_option(label=text)
+            await page.locator(f"xpath={elements[index]['xpath']}").first.select_option(
+                label=text
+            )
 
         elif action == "web_search":
             if not query:
                 return ToolResult(error="Query required for web_search")
-            result = await web_search_tool(query=query, fetch_content=True, num_results=1)
+            result = await web_search_tool(
+                query=query, fetch_content=True, num_results=1
+            )
             if not result.success or not result.content:
                 return ToolResult(error="Search returned no results")
             try:
                 search_data = json.loads(result.content)
                 urls = search_data.get("results", [])
                 if urls:
-                    first_url = urls[0].get("url", "") if isinstance(
-                        urls[0], dict) else urls[0]
+                    first_url = (
+                        urls[0].get("url", "") if isinstance(urls[0], dict) else urls[0]
+                    )
                     if first_url:
                         await page.goto(first_url, wait_until="load")
                         _invalidate_cache()
@@ -369,11 +407,16 @@ async def browser_use(
             await asyncio.sleep(seconds_to_wait)
 
         elif action == "extract_content":
-            log.info("extract_content goal=%s selector=%s keep_attrs=%s",
-                      goal, selector, keep_attrs)
+            log.info(
+                "extract_content goal=%s selector=%s keep_attrs=%s",
+                goal,
+                selector,
+                keep_attrs,
+            )
             if not goal:
                 return ToolResult(error="Goal required for extract_content")
             import markdownify
+
             full_html = await page.content()
             narrowed = ""
             if selector:
@@ -390,7 +433,9 @@ async def browser_use(
                     ).first.evaluate("el => el.outerHTML", timeout=3000)
                 except Exception:
                     pass
-            raw_html = f"<html><body>{narrowed}</body></html>" if narrowed else full_html
+            raw_html = (
+                f"<html><body>{narrowed}</body></html>" if narrowed else full_html
+            )
             resource_section = ""
             if keep_attrs:
                 attr_patterns = "|".join(
@@ -416,7 +461,9 @@ async def browser_use(
             raw_content = markdownify.markdownify(raw_html) + resource_section
             content_trunc = raw_content[:8000]
             if ctx is None:
-                return ToolResult(success=False, error="ToolContext not available for LLM extraction")
+                return ToolResult(
+                    success=False, error="ToolContext not available for LLM extraction"
+                )
             text = await stream_text_once(
                 ctx.llm,
                 messages=[
@@ -439,7 +486,9 @@ async def browser_use(
                 return ToolResult(error="Tab ID required for switch_tab")
             pages = _context.pages
             if tab_id < 0 or tab_id >= len(pages):
-                return ToolResult(error=f"Invalid tab ID {tab_id}, open tabs: {len(pages)}")
+                return ToolResult(
+                    error=f"Invalid tab ID {tab_id}, open tabs: {len(pages)}"
+                )
             _page = pages[tab_id]
             await _page.bring_to_front()
 
@@ -463,13 +512,20 @@ async def browser_use(
 
         _invalidate_cache()
         state = await _get_state(include_screenshot=False)
-        return ToolResult(content=json.dumps({
-            "text": _format_state_text(state),
-        }, ensure_ascii=False))
+        return ToolResult(
+            content=json.dumps(
+                {
+                    "text": _format_state_text(state),
+                },
+                ensure_ascii=False,
+            )
+        )
 
     except Exception as e:
         log.exception("Browser action '%s' failed", action)
-        return ToolResult(success=False, error=f"Browser action '{action}' failed: {e!s}")
+        return ToolResult(
+            success=False, error=f"Browser action '{action}' failed: {e!s}"
+        )
 
 
 async def _get_clickable_elements(page) -> list[dict]:
@@ -550,9 +606,7 @@ async def _get_state(include_screenshot: bool = False) -> dict:
     }
 
     if include_screenshot:
-        screenshot = await _page.screenshot(
-            full_page=False, type="jpeg", quality=85
-        )
+        screenshot = await _page.screenshot(full_page=False, type="jpeg", quality=85)
         state["screenshot"] = base64.b64encode(screenshot).decode("utf-8")
         state["screenshot_mime"] = "image/jpeg"
 
@@ -571,8 +625,7 @@ def _format_state_text(state: dict) -> str:
         f"(total {si['total_height']}px)"
     )
     if state["interactive_elements"]:
-        lines.append(
-            f"\nInteractive elements:\n{state['interactive_elements']}")
+        lines.append(f"\nInteractive elements:\n{state['interactive_elements']}")
     return "\n".join(lines)
 
 

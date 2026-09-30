@@ -15,9 +15,7 @@ def _manager(request: Request) -> BackgroundTaskManager:
     return request.app.state.background_task_manager
 
 
-def _task_payload(
-    task: TaskRecord, include_output: bool = False
-) -> dict[str, object]:
+def _task_payload(task: TaskRecord, include_output: bool = False) -> dict[str, object]:
     payload = task.to_dict(include_output=False)
     payload["output_preview"] = task.output_tail[-1200:] if include_output else ""
     return payload

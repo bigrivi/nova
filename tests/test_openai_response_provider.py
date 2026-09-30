@@ -42,9 +42,7 @@ class _FakeStreamContent:
         if self._index >= len(self._lines):
             return b""
         line = self._lines[self._index]
-        limit = (
-            max_line_length if max_line_length is not None else self._default_limit
-        )
+        limit = max_line_length if max_line_length is not None else self._default_limit
         if len(line) > limit:
             raise aiohttp.http_exceptions.LineTooLong(line[:100] + b"...", limit)
         self._index += 1
@@ -314,7 +312,9 @@ async def test_a_normal_turn_still_produces_text_tool_call_and_done(monkeypatch)
 def test_build_body_sets_prompt_cache_key_from_session():
     provider = OpenAIResponsesProvider(api_key="k")
     body = provider._build_body(
-        [{"role": "user", "content": "hi"}], model="gpt-5", session_id="ses_abc",
+        [{"role": "user", "content": "hi"}],
+        model="gpt-5",
+        session_id="ses_abc",
     )
     assert body["prompt_cache_key"] == "ses_abc"
 
@@ -334,7 +334,9 @@ async def test_chat_stream_sends_prompt_cache_key(monkeypatch):
     _ = [
         event
         async for event in provider.chat_stream(
-            [Message(role="user", content="hi")], model="gpt-5", session_id="ses_stream",
+            [Message(role="user", content="hi")],
+            model="gpt-5",
+            session_id="ses_stream",
         )
     ]
 
@@ -343,28 +345,32 @@ async def test_chat_stream_sends_prompt_cache_key(monkeypatch):
 
 def test_parse_output_to_done_reads_cached_tokens():
     provider = OpenAIResponsesProvider(api_key="k")
-    done = provider._parse_output_to_done({
-        "output": [
-            {"type": "message", "content": [{"type": "output_text", "text": "hi"}]}
-        ],
-        "usage": {
-            "input_tokens": 100,
-            "output_tokens": 5,
-            "input_tokens_details": {"cached_tokens": 60},
-        },
-    })
+    done = provider._parse_output_to_done(
+        {
+            "output": [
+                {"type": "message", "content": [{"type": "output_text", "text": "hi"}]}
+            ],
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 5,
+                "input_tokens_details": {"cached_tokens": 60},
+            },
+        }
+    )
     assert isinstance(done, Done)
     assert done.cache_read_tokens == 60
 
 
 def test_parse_output_to_done_cached_absent_is_none():
     provider = OpenAIResponsesProvider(api_key="k")
-    done = provider._parse_output_to_done({
-        "output": [
-            {"type": "message", "content": [{"type": "output_text", "text": "hi"}]}
-        ],
-        "usage": {"input_tokens": 100, "output_tokens": 5},
-    })
+    done = provider._parse_output_to_done(
+        {
+            "output": [
+                {"type": "message", "content": [{"type": "output_text", "text": "hi"}]}
+            ],
+            "usage": {"input_tokens": 100, "output_tokens": 5},
+        }
+    )
     assert isinstance(done, Done)
     assert done.cache_read_tokens is None
 
@@ -423,30 +429,41 @@ def test_tool_result_with_image_keeps_the_image():
     rides along instead of leaving the model blind to what the tool saw.
     """
     provider = OpenAIResponsesProvider(api_key="k")
-    items = provider._format_input([
-        {"role": "tool", "content": "Image loaded: shot.png",
-         "tool_call_id": "call_1", "images": ["QUJD"]},
-    ])
+    items = provider._format_input(
+        [
+            {
+                "role": "tool",
+                "content": "Image loaded: shot.png",
+                "tool_call_id": "call_1",
+                "images": ["QUJD"],
+            },
+        ]
+    )
 
-    assert items == [{
-        "type": "function_call_output",
-        "call_id": "call_1",
-        "output": [
-            {"type": "input_text", "text": "Image loaded: shot.png"},
-            {"type": "input_image",
-             "image_url": "data:image/png;base64,QUJD"},
-        ],
-    }]
+    assert items == [
+        {
+            "type": "function_call_output",
+            "call_id": "call_1",
+            "output": [
+                {"type": "input_text", "text": "Image loaded: shot.png"},
+                {"type": "input_image", "image_url": "data:image/png;base64,QUJD"},
+            ],
+        }
+    ]
 
 
 def test_tool_result_without_image_stays_a_plain_string():
     provider = OpenAIResponsesProvider(api_key="k")
-    items = provider._format_input([
-        {"role": "tool", "content": "done", "tool_call_id": "call_1"},
-    ])
+    items = provider._format_input(
+        [
+            {"role": "tool", "content": "done", "tool_call_id": "call_1"},
+        ]
+    )
 
-    assert items == [{
-        "type": "function_call_output",
-        "call_id": "call_1",
-        "output": "done",
-    }]
+    assert items == [
+        {
+            "type": "function_call_output",
+            "call_id": "call_1",
+            "output": "done",
+        }
+    ]

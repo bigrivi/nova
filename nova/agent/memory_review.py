@@ -37,14 +37,13 @@ REVIEW_PROMPT_HEADER = (
     "- key: short unique identifier (snake_case)\n"
     "- content: the full fact text\n"
     "- summary: 1-line summary\n"
-    "- scope: \"user\" or \"project\" or \"session\"\n"
-    "- memory_type: \"fact\" or \"preference\" or \"decision\" or \"context\"\n"
+    '- scope: "user" or "project" or "session"\n'
+    '- memory_type: "fact" or "preference" or "decision" or "context"\n'
     "- tags: list of keywords\n\n"
     "Conversation:\n"
 )
 REVIEW_PROMPT_FOOTER = (
-    "\n\nReturn ONLY valid JSON array. If nothing worth saving, "
-    "return []."
+    "\n\nReturn ONLY valid JSON array. If nothing worth saving, return []."
 )
 
 
@@ -103,9 +102,11 @@ class MemoryReviewer:
                 content = content[:TOOL_CONTENT_CHARS]
             if content:
                 lines.append(f"[{role}]: {content}")
-        return (REVIEW_PROMPT_HEADER
-                + "\n".join(lines[-MESSAGES_SAMPLED:])
-                + REVIEW_PROMPT_FOOTER)
+        return (
+            REVIEW_PROMPT_HEADER
+            + "\n".join(lines[-MESSAGES_SAMPLED:])
+            + REVIEW_PROMPT_FOOTER
+        )
 
     async def _save(self, facts: list[dict]) -> int:
         from nova.memory.models import MemoryWriteRequest
@@ -118,15 +119,17 @@ class MemoryReviewer:
         saved = 0
         for fact in facts:
             try:
-                _, created = await service.save(MemoryWriteRequest(
-                    key=fact.get("key", "auto-review"),
-                    content=fact.get("content", ""),
-                    summary=fact.get("summary", ""),
-                    scope=fact.get("scope", "user"),
-                    memory_type=fact.get("memory_type", "fact"),
-                    tags=fact.get("tags", []),
-                    session_id=session_id,
-                ))
+                _, created = await service.save(
+                    MemoryWriteRequest(
+                        key=fact.get("key", "auto-review"),
+                        content=fact.get("content", ""),
+                        summary=fact.get("summary", ""),
+                        scope=fact.get("scope", "user"),
+                        memory_type=fact.get("memory_type", "fact"),
+                        tags=fact.get("tags", []),
+                        session_id=session_id,
+                    )
+                )
                 if created:
                     saved += 1
             except Exception as error:
@@ -155,7 +158,7 @@ def parse_review_facts(content: str) -> list[dict]:
         if array_start == -1 or array_end == -1 or array_end <= array_start:
             return []
         try:
-            parsed = json.loads(text[array_start:array_end + 1])
+            parsed = json.loads(text[array_start : array_end + 1])
         except json.JSONDecodeError:
             return []
     return parsed if isinstance(parsed, list) else []
