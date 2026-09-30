@@ -9,6 +9,7 @@ from nova.tasks.manager import (
 from nova.tasks.models import (
     TaskExecutionContext,
     TaskExecutionResult,
+    TaskExecutor,
     TaskRecord,
     TaskStatus,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "BackgroundTaskManager",
     "TaskExecutionContext",
     "TaskExecutionResult",
+    "TaskExecutor",
     "TaskLimitError",
     "TaskRecord",
     "TaskStatus",

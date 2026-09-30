@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Literal, Protocol, runtime_checkable
 
 TaskStatus = Literal[
     "queued",
@@ -34,7 +35,8 @@ class TaskRecord:
     created_at_ms: int = field(default_factory=lambda: int(time.time() * 1000))
     started_at_ms: int | None = None
     finished_at_ms: int | None = None
-    timeout_seconds: int = 120
+    #: ``None`` means the executor runs unbounded (used by sub-agent tasks).
+    timeout_seconds: int | None = 120
     exit_code: int | None = None
     output_tail: str = ""
     output_bytes: int = 0
@@ -44,6 +46,8 @@ class TaskRecord:
     progress: float | None = None
     progress_message: str | None = None
     last_activity_at_ms: int | None = None
+    #: Executor-set side channel (e.g. a sub-agent's child_session_id/target).
+    metadata: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self, include_output: bool = True) -> dict[str, object]:
         """Return a JSON-serializable task snapshot.
@@ -66,6 +70,7 @@ class TaskRecord:
             "finished_at_ms": self.finished_at_ms,
             "timeout_seconds": self.timeout_seconds,
             "exit_code": self.exit_code,
+            "metadata": dict(self.metadata),
             "output_bytes": self.output_bytes,
             "output_truncated": self.output_truncated,
             "result": self.result,
@@ -100,5 +105,48 @@ class TaskExecutionContext(Protocol):
         self, progress: float | None, message: str | None = None
     ) -> None:
         """Update optional progress and its human-readable message."""
+        ...
+
+    def set_metadata(self, key: str, value: object) -> None:
+        """Attach an executor-specific value to the task's public snapshot."""
+        ...
+
+
+@runtime_checkable
+class TaskExecutor(Protocol):
+    """One kind of background work the manager can run.
+
+    Implementations subclass this explicitly, declare the ``kind`` callers
+    submit against, and inherit ``unlimited = False`` unless their work sits
+    outside the shared concurrency and timeout budgets (sub-agents do: their
+    fan-out is bounded by spawn depth instead). Adding a kind is a new module
+    that subclasses this plus one entry in
+    ``nova.tasks.executors.BUILTIN_EXECUTORS``.
+
+    Example:
+        class SleepExecutor(TaskExecutor):
+            kind = "sleep"
+
+            async def execute(
+                self,
+                arguments: Mapping[str, object],
+                context: TaskExecutionContext,
+            ) -> TaskExecutionResult:
+                await asyncio.sleep(float(arguments["seconds"]))
+                return TaskExecutionResult(success=True)
+    """
+
+    #: Stable identifier callers submit against.
+    kind: str
+
+    #: Skip the global semaphore, the per-session quota, and the timeout.
+    unlimited: bool = False
+
+    async def execute(
+        self,
+        arguments: Mapping[str, object],
+        context: TaskExecutionContext,
+    ) -> TaskExecutionResult:
+        """Run the task to completion, reporting output through *context*."""
         ...
 

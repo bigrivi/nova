@@ -16,18 +16,24 @@ from nova.tools.registry import tool
 log = logging.getLogger(__name__)
 
 
-def _format_job(job) -> str:
-    elapsed = (
-        (job.finished_at or int(time.time() * 1000)) - job.created_at
-    ) / 1000
-    if job.status == "completed":
-        return f"- `{job.target}` (job {job.job_id}): completed in {elapsed:.0f}s — result was delivered as a later message."
-    if job.status == "error":
+def _target_of(record) -> str:
+    target = record.metadata.get("target") if record.metadata else None
+    return str(target) if target else record.label
+
+
+def _format_record(record) -> str:
+    created = record.created_at_ms
+    end = record.finished_at_ms or int(time.time() * 1000)
+    elapsed = max(0, end - created) / 1000
+    target = _target_of(record)
+    if record.status == "succeeded":
+        return f"- `{target}` (task {record.task_id}): completed in {elapsed:.0f}s — result was delivered as a later message."
+    if record.status in {"failed", "timed_out", "cancelled", "interrupted"}:
         return (
-            f"- `{job.target}` (job {job.job_id}): FAILED after {elapsed:.0f}s — "
-            f"{job.error or 'unknown error'}"
+            f"- `{target}` (task {record.task_id}): {record.status.upper()} after "
+            f"{elapsed:.0f}s — {record.error or 'unknown error'}"
         )
-    return f"- `{job.target}` (job {job.job_id}): still running ({elapsed:.0f}s so far)."
+    return f"- `{target}` (task {record.task_id}): still running ({elapsed:.0f}s so far)."
 
 
 @tool(
@@ -53,8 +59,8 @@ def _format_job(job) -> str:
 async def subagent_status(target: Optional[str] = None) -> ToolResult:
     """Report the status of this session's delegated sub-agent jobs."""
     try:
-        from nova.agent.subagent_jobs import get_subagent_job_manager
         from nova.session.manager import get_session_manager
+        from nova.tasks.manager import get_background_task_manager
 
         current_session = get_session_manager().get_current_session()
         parent_id = current_session.id if current_session else None
@@ -63,21 +69,26 @@ async def subagent_status(target: Optional[str] = None) -> ToolResult:
                 success=False, content="No active session to check sub-agent status for."
             )
 
-        jobs = get_subagent_job_manager().list_for_parent(parent_id)
+        records = [
+            record
+            for record in get_background_task_manager().list_for_session(parent_id)
+            if record.kind == "subagent"
+        ]
         if target:
-            jobs = [job for job in jobs if job.target == target]
+            records = [r for r in records if _target_of(r) == target]
 
-        if not jobs:
+        if not records:
             scope = f"'{target}'" if target else "this session"
             return ToolResult(
                 success=True,
                 content=f"No delegated sub-agent tasks found for {scope}.",
             )
 
-        jobs.sort(key=lambda job: job.created_at)
+        records.sort(key=lambda record: record.created_at_ms)
         return ToolResult(
             success=True,
-            content="Delegated sub-agent tasks:\n" + "\n".join(_format_job(job) for job in jobs),
+            content="Delegated sub-agent tasks:\n"
+            + "\n".join(_format_record(record) for record in records),
         )
     except Exception as e:
         log.error("Failed to read sub-agent status: %s", e)

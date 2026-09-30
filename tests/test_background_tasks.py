@@ -7,18 +7,16 @@ from collections.abc import Mapping
 
 import pytest
 
-from nova.tasks.executors import execute_code_run, execute_shell
-from nova.tasks.manager import (
-    BackgroundTaskManager,
-    TaskExecutionContext,
-    TaskExecutionResult,
-    TaskLimitError,
-)
+from nova.tasks.executors import CodeRunExecutor, ShellExecutor
+from nova.tasks.manager import BackgroundTaskManager, TaskLimitError
+from nova.tasks.models import TaskExecutionContext, TaskExecutionResult
 from nova.tools.registry import ToolRegistry
 
 
 @pytest.mark.asyncio
-async def test_manager_runs_registered_executor_and_tracks_output() -> None:
+async def test_manager_runs_registered_executor_and_tracks_output(
+    make_executor,
+) -> None:
     """Registered executors should run and expose bounded task output."""
     manager = BackgroundTaskManager(max_output_chars=32)
 
@@ -28,7 +26,7 @@ async def test_manager_runs_registered_executor_and_tracks_output() -> None:
         context.write_output(str(arguments["output"]))
         return TaskExecutionResult(success=True, result="done", exit_code=0)
 
-    manager.register_executor("example", executor)
+    manager.register_executor(make_executor("example", executor))
     task = manager.submit(
         "example",
         {"output": "executor output"},
@@ -51,7 +49,9 @@ async def test_manager_runs_registered_executor_and_tracks_output() -> None:
 
 
 @pytest.mark.asyncio
-async def test_manager_cancels_task_and_enforces_session_ownership() -> None:
+async def test_manager_cancels_task_and_enforces_session_ownership(
+    make_executor,
+) -> None:
     """Cancellation should stop work and task IDs should be session-scoped."""
     manager = BackgroundTaskManager(max_per_session=1)
     started = asyncio.Event()
@@ -63,7 +63,7 @@ async def test_manager_cancels_task_and_enforces_session_ownership() -> None:
         await asyncio.Event().wait()
         return TaskExecutionResult(success=True)
 
-    manager.register_executor("wait", executor)
+    manager.register_executor(make_executor("wait", executor))
     task = manager.submit(
         "wait",
         {},
@@ -94,7 +94,9 @@ async def test_manager_cancels_task_and_enforces_session_ownership() -> None:
 
 
 @pytest.mark.asyncio
-async def test_manager_marks_runtime_limit_and_bounds_output() -> None:
+async def test_manager_marks_runtime_limit_and_bounds_output(
+    make_executor,
+) -> None:
     """Runtime limits should terminate executors and retain only output tail."""
     manager = BackgroundTaskManager(max_output_chars=8)
 
@@ -105,7 +107,7 @@ async def test_manager_marks_runtime_limit_and_bounds_output() -> None:
         await asyncio.sleep(1)
         return TaskExecutionResult(success=True)
 
-    manager.register_executor("slow", executor)
+    manager.register_executor(make_executor("slow", executor))
     task = manager.submit(
         "slow",
         {},
@@ -134,7 +136,7 @@ async def test_shell_promotes_long_foreground_command_to_background(
     shell_tool = shell_module.shell
 
     manager = BackgroundTaskManager()
-    manager.register_executor("shell", execute_shell)
+    manager.register_executor(ShellExecutor())
     monkeypatch.setattr(shell_module, "get_background_task_manager", lambda: manager)
     monkeypatch.setattr(shell_module, "DEFAULT_FOREGROUND_WAIT_SECONDS", 0.1)
     command = f"{shlex.quote(sys.executable)} -c 'while True: pass'"
@@ -167,7 +169,7 @@ async def test_shell_short_command_stays_on_foreground_path(
     shell_module = importlib.import_module("nova.tools.shell")
     shell_tool = shell_module.shell
     manager = BackgroundTaskManager()
-    manager.register_executor("shell", execute_shell)
+    manager.register_executor(ShellExecutor())
     monkeypatch.setattr(shell_module, "get_background_task_manager", lambda: manager)
     python_code = 'print("fast")'
     command = f"{shlex.quote(sys.executable)} -c {shlex.quote(python_code)}"
@@ -185,7 +187,7 @@ async def test_shell_short_command_stays_on_foreground_path(
 async def test_code_run_executor_uses_generic_task_runtime() -> None:
     """Inline Python should use the same state and output contract as shell."""
     manager = BackgroundTaskManager()
-    manager.register_executor("code_run", execute_code_run)
+    manager.register_executor(CodeRunExecutor())
     task = manager.submit(
         "code_run",
         {"code": "print('background code')", "args": []},

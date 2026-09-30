@@ -1,8 +1,9 @@
 """Delegate tool - hand a task to one of your sub-agents, asynchronously.
 
-The tool returns immediately with a job handle: the sub-agent runs in the
-background (``SubAgentJobManager``) and its result is delivered back to this
-conversation as a later turn (auto-wake). The model must not wait or poll.
+The tool returns immediately with a task handle: the sub-agent runs in the
+background (as a ``subagent`` task on the shared BackgroundTaskManager) and its
+result is delivered back to this conversation as a later turn (auto-wake). The
+model must not wait or poll.
 """
 
 import logging
@@ -54,9 +55,9 @@ async def delegate_to_agent(
 ) -> ToolResult:
     """Fire *task* to sub-agent *target* in the background and return a handle."""
     try:
-        from nova.agent.subagent_jobs import get_subagent_job_manager
         from nova.db import get_default_data_source
         from nova.session.manager import get_session_manager
+        from nova.tasks.manager import get_background_task_manager
 
         # Root agent is depth 0; refuse a spawn that would recurse past the ceiling.
         child_depth = SPAWN_DEPTH.get() + 1
@@ -69,11 +70,6 @@ async def delegate_to_agent(
                 ),
             )
 
-        session_manager = get_session_manager()
-        current_session = session_manager.get_current_session()
-        parent_session_id = current_session.id if current_session else None
-        parent_workspace = current_session.workspace_dir if current_session else None
-
         data_source = await get_default_data_source()
         if await data_source.get_agent(target) is None:
             return ToolResult(
@@ -84,19 +80,39 @@ async def delegate_to_agent(
                 ),
             )
 
-        job = get_subagent_job_manager().start(
-            target=target,
-            task=task,
-            context=context,
-            parent_session_id=parent_session_id,
-            parent_workspace=parent_workspace,
-            child_depth=child_depth,
+        session_manager = get_session_manager()
+        current_session = session_manager.get_current_session()
+        parent_session_id = current_session.id if current_session else None
+        parent_workspace = current_session.workspace_dir if current_session else None
+        if not parent_session_id:
+            return ToolResult(
+                success=False,
+                content="Cannot delegate without an active session.",
+            )
+
+        task_message = task
+        if context:
+            task_message = f"{task}\n\nAdditional context:\n{context}"
+
+        record = get_background_task_manager().submit(
+            "subagent",
+            {
+                "target": target,
+                "task_message": task_message,
+                "depth": child_depth,
+                "workspace": parent_workspace,
+                "parent_session_id": parent_session_id,
+            },
+            session_id=parent_session_id,
+            label=f"delegate:{target}",
+            timeout_seconds=None,
+            background=True,
         )
-        log.info("Delegation to '%s' started as job %s", target, job.job_id)
+        log.info("Delegation to '%s' started as task %s", target, record.task_id)
         return ToolResult(
             success=True,
             content=(
-                f"Sub-agent '{target}' started in the background (job {job.job_id}). "
+                f"Sub-agent '{target}' started in the background (task {record.task_id}). "
                 "You will be notified with its result as a later message. "
                 "Do not wait or poll; continue with other work or end your response."
             ),

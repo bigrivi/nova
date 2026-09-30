@@ -3,25 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 
 from nova.tasks.models import (
     TERMINAL_STATUSES,
-    TaskExecutionContext,
-    TaskExecutionResult,
+    TaskExecutor,
     TaskRecord,
     TaskStatus,
 )
 
 log = logging.getLogger(__name__)
-
-type TaskExecutor = Callable[
-    [Mapping[str, object], TaskExecutionContext], Awaitable[TaskExecutionResult]
-]
 
 DEFAULT_MAX_CONCURRENT = 4
 DEFAULT_MAX_PER_SESSION = 2
@@ -33,6 +29,16 @@ DEFAULT_FOREGROUND_WAIT_SECONDS = 10
 
 class TaskLimitError(RuntimeError):
     """Raised when task concurrency or per-session quotas are exhausted."""
+
+
+@contextlib.asynccontextmanager
+async def _maybe(semaphore: asyncio.Semaphore, skip: bool):
+    """Acquire ``semaphore`` unless ``skip``; a no-op gate for unlimited kinds."""
+    if skip:
+        yield
+        return
+    async with semaphore:
+        yield
 
 
 class _ExecutionContext:
@@ -65,6 +71,9 @@ class _ExecutionContext:
         self._record.progress_message = message
         self._record.last_activity_at_ms = int(time.time() * 1000)
 
+    def set_metadata(self, key: str, value: object) -> None:
+        self._record.metadata[key] = value
+
 
 class BackgroundTaskManager:
     """Run registered task executors with bounded lifetime and output.
@@ -91,11 +100,13 @@ class BackgroundTaskManager:
         self._retention_ms = max(1, retention_seconds) * 1000
         self._max_retained_tasks = max(1, max_retained_tasks)
         self._executors: dict[str, TaskExecutor] = {}
+        self._unlimited_kinds: set[str] = set()
         self._records: dict[str, TaskRecord] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._completion_events: dict[str, asyncio.Event] = {}
         self._semaphore = asyncio.Semaphore(self._max_concurrent)
         self._listener: Callable[[TaskRecord], None] | None = None
+        self._completion_listener: Callable[[TaskRecord], None] | None = None
 
     def set_listener(self, listener: Callable[[TaskRecord], None] | None) -> None:
         """Register a callback fired with a snapshot after every state change.
@@ -106,6 +117,17 @@ class BackgroundTaskManager:
         """
         self._listener = listener
 
+    def set_completion_listener(
+        self, listener: Callable[[TaskRecord], None] | None
+    ) -> None:
+        """Register a callback fired once, when a task reaches a terminal state.
+
+        Separate from ``set_listener`` (which fires on every transition): this
+        drives the parent auto-wake, so it must see each task settle exactly
+        once. A raising listener is logged, never propagated.
+        """
+        self._completion_listener = listener
+
     def _notify(self, record: TaskRecord) -> None:
         listener = self._listener
         if listener is None:
@@ -114,6 +136,18 @@ class BackgroundTaskManager:
             listener(self._snapshot(record))
         except Exception:
             log.exception("Background task listener failed for %s", record.task_id)
+
+    def _notify_complete(self, record: TaskRecord) -> None:
+        listener = self._completion_listener
+        if listener is None:
+            return
+        try:
+            listener(self._snapshot(record))
+        except Exception:
+            log.exception(
+                "Background task completion listener failed for %s",
+                record.task_id,
+            )
 
     def list_all(self) -> list[TaskRecord]:
         """Every retained task snapshot, oldest first, for a client resync."""
@@ -125,20 +159,34 @@ class BackgroundTaskManager:
             )
         ]
 
-    def register_executor(self, kind: str, executor: TaskExecutor) -> None:
+    def register_executor(self, executor: TaskExecutor) -> None:
         """Register or replace the executor used for a task kind.
 
         Args:
-            kind: Stable, non-empty task kind identifier.
-            executor: Async implementation that performs the task.
+            executor: A ``TaskExecutor`` implementation. It supplies its own
+                ``kind`` and budget policy; an executor declaring
+                ``unlimited = True`` bypasses the global concurrency
+                semaphore and the per-session quota, and runs without a
+                timeout.
 
         Raises:
-            ValueError: If ``kind`` is empty.
+            TypeError: If the object does not implement ``TaskExecutor``.
+            ValueError: If the executor's ``kind`` is empty.
         """
-        normalized_kind = kind.strip()
-        if not normalized_kind:
-            raise ValueError("Task kind must not be empty")
-        self._executors[normalized_kind] = executor
+        if not isinstance(executor, TaskExecutor):
+            raise TypeError(
+                f"{type(executor).__name__} does not implement TaskExecutor"
+            )
+        # getattr defaults so an incomplete implementation is rejected here
+        # rather than failing mid-task once a caller submits work.
+        kind = str(getattr(executor, "kind", "") or "").strip()
+        if not kind:
+            raise ValueError("TaskExecutor.kind must not be empty")
+        self._executors[kind] = executor
+        if getattr(executor, "unlimited", False):
+            self._unlimited_kinds.add(kind)
+        else:
+            self._unlimited_kinds.discard(kind)
 
     def submit(
         self,
@@ -147,7 +195,7 @@ class BackgroundTaskManager:
         *,
         session_id: str,
         label: str,
-        timeout_seconds: int,
+        timeout_seconds: int | None,
         background: bool,
     ) -> TaskRecord:
         """Schedule a task and return its initial state.
@@ -157,7 +205,8 @@ class BackgroundTaskManager:
             arguments: Executor-specific, validated arguments.
             session_id: Owning conversation session.
             label: Short user-facing task description.
-            timeout_seconds: Maximum executor runtime after it starts.
+            timeout_seconds: Maximum executor runtime after it starts; ``None``
+                for an unbounded run (unlimited kinds only).
             background: Whether the task is already detached from foreground.
 
         Returns:
@@ -171,18 +220,22 @@ class BackgroundTaskManager:
         if executor is None:
             raise KeyError(f"No executor registered for task kind '{kind}'")
         self._evict_stale()
-        active = [
-            record
-            for record in self._records.values()
-            if record.status in {"queued", "running"}
-        ]
-        session_active = [
-            record for record in active if record.session_id == session_id
-        ]
-        if len(active) >= self._max_concurrent:
-            raise TaskLimitError("Background task capacity is full")
-        if len(session_active) >= self._max_per_session:
-            raise TaskLimitError("This session already has the maximum number of active tasks")
+        # Unlimited kinds (sub-agents) neither count against nor are blocked by
+        # the shell/code_run quotas: their fan-out is bounded by spawn depth.
+        if kind not in self._unlimited_kinds:
+            active = [
+                record
+                for record in self._records.values()
+                if record.status in {"queued", "running"}
+                and record.kind not in self._unlimited_kinds
+            ]
+            session_active = [
+                record for record in active if record.session_id == session_id
+            ]
+            if len(active) >= self._max_concurrent:
+                raise TaskLimitError("Background task capacity is full")
+            if len(session_active) >= self._max_per_session:
+                raise TaskLimitError("This session already has the maximum number of active tasks")
 
         record = TaskRecord(
             task_id=uuid.uuid4().hex[:12],
@@ -190,7 +243,9 @@ class BackgroundTaskManager:
             session_id=session_id,
             label=label.strip()[:200] or kind,
             background=background,
-            timeout_seconds=max(1, timeout_seconds),
+            timeout_seconds=(
+                None if timeout_seconds is None else max(1, timeout_seconds)
+            ),
         )
         self._records[record.task_id] = record
         completion_event = asyncio.Event()
@@ -311,8 +366,11 @@ class BackgroundTaskManager:
         executor: TaskExecutor,
         arguments: Mapping[str, object],
     ) -> None:
+        # Unlimited kinds skip the shared semaphore, so a nested delegation can
+        # never deadlock waiting on a slot a parent already holds.
+        unlimited = record.kind in self._unlimited_kinds
         try:
-            async with self._semaphore:
+            async with _maybe(self._semaphore, unlimited):
                 if record.status != "queued":
                     return
                 record.status = "running"
@@ -321,10 +379,13 @@ class BackgroundTaskManager:
                 self._notify(record)
                 context = _ExecutionContext(record, self._max_output_chars)
                 try:
-                    result = await asyncio.wait_for(
-                        executor(arguments, context),
-                        timeout=record.timeout_seconds,
-                    )
+                    if record.timeout_seconds is None:
+                        result = await executor.execute(arguments, context)
+                    else:
+                        result = await asyncio.wait_for(
+                            executor.execute(arguments, context),
+                            timeout=record.timeout_seconds,
+                        )
                 except TimeoutError:
                     record.error = f"Task exceeded its {record.timeout_seconds}s runtime limit"
                     self._finish(record, "timed_out")
@@ -356,6 +417,7 @@ class BackgroundTaskManager:
         if completion_event is not None:
             completion_event.set()
         self._notify(record)
+        self._notify_complete(record)
         self._evict_stale()
 
     def _owned_record(self, task_id: str, session_id: str) -> TaskRecord | None:
@@ -403,11 +465,11 @@ def get_background_task_manager() -> BackgroundTaskManager:
     """Return the process-wide manager with built-in executor adapters."""
     global _manager
     if _manager is None:
-        from nova.tasks.executors import execute_code_run, execute_shell
+        from nova.tasks.executors import BUILTIN_EXECUTORS
 
         manager = BackgroundTaskManager()
-        manager.register_executor("shell", execute_shell)
-        manager.register_executor("code_run", execute_code_run)
+        for executor in BUILTIN_EXECUTORS:
+            manager.register_executor(executor)
         _manager = manager
     return _manager
 

@@ -143,10 +143,12 @@ async def test_bus_reflects_registry_transitions_end_to_end() -> None:
 
 
 @pytest.mark.asyncio
-async def test_bus_reflects_task_transitions_end_to_end() -> None:
+async def test_bus_reflects_task_transitions_end_to_end(
+    make_executor,
+) -> None:
     """Task lifecycle reaches subscribers, so clients never poll /api/tasks."""
-    from nova.tasks.manager import (
-        BackgroundTaskManager,
+    from nova.tasks.manager import BackgroundTaskManager
+    from nova.tasks.models import (
         TaskExecutionContext,
         TaskExecutionResult,
     )
@@ -163,7 +165,7 @@ async def test_bus_reflects_task_transitions_end_to_end() -> None:
     ) -> TaskExecutionResult:
         return TaskExecutionResult(success=True, result="ok", exit_code=0)
 
-    manager.register_executor("example", executor)
+    manager.register_executor(make_executor("example", executor))
     task = manager.submit(
         "example",
         {},
@@ -207,16 +209,21 @@ def test_close_all_wakes_subscribers_with_sentinel() -> None:
 
 @pytest.mark.asyncio
 async def test_create_app_pushes_task_updates_onto_the_event_bus(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, make_executor
 ) -> None:
     """The app must wire task lifecycle to the bus, else clients would poll."""
     from nova.server import create_app
     from nova.settings import get_settings
-    from nova.tasks.manager import TaskExecutionContext, TaskExecutionResult
+    from nova.tasks.models import TaskExecutionContext, TaskExecutionResult
 
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     app = create_app(settings=get_settings())
     manager = app.state.background_task_manager
+    # This test asserts that task frames reach the bus, not that they wake a
+    # turn. Left wired, the completed background task starts a real headless
+    # turn whose data-source worker thread outlives this test's event loop and
+    # hangs whatever runs next.
+    manager.set_completion_listener(None)
     queue = app.state.session_event_bus.subscribe()
 
     async def executor(
@@ -224,7 +231,7 @@ async def test_create_app_pushes_task_updates_onto_the_event_bus(
     ) -> TaskExecutionResult:
         return TaskExecutionResult(success=True, result="ok", exit_code=0)
 
-    manager.register_executor("wiring-check", executor)
+    manager.register_executor(make_executor("wiring-check", executor))
     task = manager.submit(
         "wiring-check",
         {},

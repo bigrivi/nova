@@ -1,10 +1,12 @@
-"""subagent_status reports delegated background jobs for the current session."""
+"""subagent_status reports delegated ``subagent`` tasks for the current session."""
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
-from nova.agent.subagent_jobs import COMPLETED, ERROR, RUNNING, SubAgentJob, SubAgentJobManager
+from nova.tasks.models import TaskRecord
 from nova.tools.subagent_status import subagent_status
 
 
@@ -21,65 +23,90 @@ class _FakeSessionManager:
         return self._session
 
 
-def _job(job_id, target, status, parent="p1", result="", error=None):
-    job = SubAgentJob(
-        job_id=job_id, parent_session_id=parent, target=target, task="t", depth=1
+class _FakeTaskManager:
+    def __init__(self, records: list[TaskRecord]) -> None:
+        self._records = records
+
+    def list_for_session(self, session_id: str) -> list[TaskRecord]:
+        return [r for r in self._records if r.session_id == session_id]
+
+
+def _record(task_id, target, status, session="p1", result="", error=None):
+    now = int(time.time() * 1000)
+    return TaskRecord(
+        task_id=task_id,
+        kind="subagent",
+        session_id=session,
+        label=f"delegate:{target}",
+        status=status,
+        background=True,
+        created_at_ms=now - 3000,
+        finished_at_ms=now if status != "running" else None,
+        result=result,
+        error=error,
+        metadata={"target": target},
     )
-    job.status = status
-    job.result = result
-    job.error = error
-    job.finished_at = job.created_at + 3000
-    return job
+
+
+def _wire(monkeypatch, records):
+    import nova.tools.subagent_status as mod
+    monkeypatch.setattr(
+        mod, "get_session_manager", lambda: _FakeSessionManager("p1"), raising=False
+    )
+    import nova.session.manager as sm_mod
+    monkeypatch.setattr(
+        sm_mod, "get_session_manager", lambda: _FakeSessionManager("p1")
+    )
+    import nova.tasks.manager as tm_mod
+    monkeypatch.setattr(
+        tm_mod, "get_background_task_manager", lambda: _FakeTaskManager(records)
+    )
 
 
 @pytest.mark.asyncio
-async def test_reports_no_jobs(monkeypatch) -> None:
-    manager = SubAgentJobManager()
-    import nova.agent.subagent_jobs as jobs_mod
-    monkeypatch.setattr(jobs_mod, "get_subagent_job_manager", lambda: manager)
-    import nova.session.manager as sm_mod
-    monkeypatch.setattr(sm_mod, "get_session_manager", lambda: _FakeSessionManager("p1"))
-
+async def test_reports_no_tasks(monkeypatch) -> None:
+    _wire(monkeypatch, [])
     result = await subagent_status()
-
     assert result.success is True
     assert "No delegated sub-agent tasks" in result.content
 
 
 @pytest.mark.asyncio
-async def test_reports_running_and_done_and_error(monkeypatch) -> None:
-    manager = SubAgentJobManager()
-    manager._jobs["j1"] = _job("j1", "explore", RUNNING)
-    manager._jobs["j2"] = _job("j2", "coder", COMPLETED, result="done")
-    manager._jobs["j3"] = _job("j3", "test", ERROR, error="HTTP 429")
-    manager._jobs["j4"] = _job("j4", "other", RUNNING, parent="p-other")
-
-    import nova.agent.subagent_jobs as jobs_mod
-    monkeypatch.setattr(jobs_mod, "get_subagent_job_manager", lambda: manager)
-    import nova.session.manager as sm_mod
-    monkeypatch.setattr(sm_mod, "get_session_manager", lambda: _FakeSessionManager("p1"))
-
+async def test_reports_running_done_and_error(monkeypatch) -> None:
+    _wire(
+        monkeypatch,
+        [
+            _record("t1", "coder", "running"),
+            _record("t2", "writer", "succeeded", result="ok"),
+            _record("t3", "tester", "failed", error="boom"),
+        ],
+    )
     result = await subagent_status()
-
     assert result.success is True
-    assert "`explore`" in result.content and "still running" in result.content
-    assert "`coder`" in result.content and "completed" in result.content
-    assert "`test`" in result.content and "FAILED" in result.content and "HTTP 429" in result.content
-    assert "`other`" not in result.content  # scoped to the current session
+    assert "`coder`" in result.content and "still running" in result.content
+    assert "`writer`" in result.content and "completed" in result.content
+    assert "`tester`" in result.content and "boom" in result.content
 
 
 @pytest.mark.asyncio
 async def test_filters_by_target(monkeypatch) -> None:
-    manager = SubAgentJobManager()
-    manager._jobs["j1"] = _job("j1", "explore", RUNNING)
-    manager._jobs["j2"] = _job("j2", "coder", RUNNING)
+    _wire(
+        monkeypatch,
+        [
+            _record("t1", "coder", "running"),
+            _record("t2", "writer", "succeeded"),
+        ],
+    )
+    result = await subagent_status(target="writer")
+    assert "`writer`" in result.content
+    assert "`coder`" not in result.content
 
-    import nova.agent.subagent_jobs as jobs_mod
-    monkeypatch.setattr(jobs_mod, "get_subagent_job_manager", lambda: manager)
-    import nova.session.manager as sm_mod
-    monkeypatch.setattr(sm_mod, "get_session_manager", lambda: _FakeSessionManager("p1"))
 
-    result = await subagent_status(target="coder")
-
-    assert "`coder`" in result.content
-    assert "`explore`" not in result.content
+@pytest.mark.asyncio
+async def test_ignores_non_subagent_tasks(monkeypatch) -> None:
+    shell = _record("s1", "ignored", "succeeded")
+    shell.kind = "shell"
+    shell.metadata = {}
+    _wire(monkeypatch, [shell])
+    result = await subagent_status()
+    assert "No delegated sub-agent tasks" in result.content

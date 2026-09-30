@@ -51,14 +51,20 @@ def build_uvicorn_config(app: FastAPI, settings: Settings) -> uvicorn.Config:
     )
 
 
-def _wire_subagent_autowake(app: FastAPI) -> None:
-    """Connect the sub-agent job manager to the parent auto-wake path."""
-    from nova.agent.subagent_jobs import get_subagent_job_manager
+def _wire_task_autowake(app: FastAPI) -> None:
+    """Wake a session when one of its background tasks finishes.
+
+    Every background task (sub-agent, shell, code_run) routes its terminal
+    result back into the owning conversation as a coalesced headless turn, so
+    the model is notified instead of having to poll.
+    """
     from nova.server.headless_turn import start_headless_turn
     from nova.server.wake_scheduler import WakeScheduler
+    from nova.tasks.models import TERMINAL_STATUSES
 
     chat_service = app.state.chat_service
     registry = app.state.request_registry
+    task_manager = app.state.background_task_manager
 
     async def _start_turn(parent_id: str, text: str, metadata: dict) -> bool:
         return await start_headless_turn(chat_service, parent_id, text, metadata)
@@ -69,16 +75,29 @@ def _wire_subagent_autowake(app: FastAPI) -> None:
     scheduler = WakeScheduler(start_turn=_start_turn, wait_free=_wait_free)
     app.state.wake_scheduler = scheduler
 
-    def _wrap(job) -> str:
-        status = "done" if job.status == "completed" else "error"
-        body = job.result if job.status == "completed" else (job.error or "")
-        return f"[subagent:{job.target} status={status}]\n{body}"
+    def _wrap(record) -> str:
+        done = record.status == "succeeded"
+        body = (record.output_tail or record.result or "").strip() if done else (
+            record.error or ""
+        )
+        if record.kind == "subagent":
+            target = record.metadata.get("target", "?")
+            return f"[subagent:{target} status={'done' if done else 'error'}]\n{body}"
+        exit_note = (
+            f" exit={record.exit_code}" if record.exit_code is not None else ""
+        )
+        return f"[background {record.label} status={record.status}{exit_note}]\n{body}"
 
-    async def _on_complete(job) -> None:
-        if job.parent_session_id:
-            scheduler.enqueue(job.parent_session_id, job.job_id, _wrap(job))
+    def _on_complete(record) -> None:
+        # Foreground results already returned to the model synchronously; only
+        # detached (background) tasks need a wake.
+        if not record.background or record.status not in TERMINAL_STATUSES:
+            return
+        if not record.session_id:
+            return
+        scheduler.enqueue(record.session_id, record.task_id, _wrap(record))
 
-    get_subagent_job_manager().set_completion_callback(_on_complete)
+    task_manager.set_completion_listener(_on_complete)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -134,7 +153,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from nova.speech.service import SpeechService
 
     app.state.speech_service = SpeechService(settings)
-    _wire_subagent_autowake(app)
+    _wire_task_autowake(app)
 
     for module in (
         health,

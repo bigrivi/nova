@@ -2,11 +2,12 @@
 Shared pytest fixtures
 """
 
+from collections.abc import Mapping
+
 import pytest
 
-
-from nova.settings import get_settings
 from nova.llm import OllamaProvider
+from nova.settings import get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +33,58 @@ def _reset_session_manager():
     session_manager_module._manager = None
     yield
     session_manager_module._manager = previous
+
+
+@pytest.fixture(autouse=True)
+def _reset_background_task_manager():
+    """Drop the process-global BackgroundTaskManager between tests.
+
+    The manager binds an asyncio.Semaphore to whichever loop first runs a
+    task, and each pytest-asyncio test gets a fresh loop, so a singleton
+    shared across tests can carry a semaphore bound to a closed loop. Same
+    isolation rationale as _reset_session_manager above.
+    """
+    from nova.tasks import manager as task_manager_module
+
+    previous = task_manager_module._manager
+    task_manager_module._manager = None
+    yield
+    task_manager_module._manager = previous
+
+
+@pytest.fixture
+def make_executor():
+    """Return a factory that wraps a coroutine function as a TaskExecutor.
+
+    Lets a test register a one-off kind without writing a class:
+
+        manager.register_executor(make_executor("example", run))
+    """
+    from nova.tasks.models import (
+        TaskExecutionContext,
+        TaskExecutionResult,
+        TaskExecutor,
+    )
+
+    class _FunctionExecutor(TaskExecutor):
+        def __init__(self, kind: str, run, *, unlimited: bool) -> None:
+            self.kind = kind
+            self.unlimited = unlimited
+            self._run = run
+
+        async def execute(
+            self,
+            arguments: Mapping[str, object],
+            context: TaskExecutionContext,
+        ) -> TaskExecutionResult:
+            return await self._run(arguments, context)
+
+    def _factory(
+        kind: str, run, *, unlimited: bool = False
+    ) -> TaskExecutor:
+        return _FunctionExecutor(kind, run, unlimited=unlimited)
+
+    return _factory
 
 
 @pytest.fixture
