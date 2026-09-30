@@ -4,7 +4,6 @@ import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import {
     CheckIcon,
     ChevronLeftIcon,
-    LoaderIcon,
     MessageSquareQuoteIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -107,7 +106,7 @@ function normalizeAskUserQuestions(value: unknown): AskUserQuestion[] | null {
 // ── Component ───────────────────────────────────────────────────────
 
 export const AskUserTool: ToolCallMessagePartComponent = (props) => {
-    const { args, argsText, result, status, resume } = props;
+    const { args, argsText, result, resume } = props;
     const { t } = useTranslation();
 
     const questions =
@@ -128,7 +127,6 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
     const [submitted, setSubmitted] = useState(false);
 
     const isWizard = (questions?.length ?? 0) > 1;
-    const isRunning = status?.type === "running";
     const confirmStep = questions ? questions.length : 0;
     const isReview = activeStep === confirmStep;
 
@@ -455,11 +453,7 @@ export const AskUserTool: ToolCallMessagePartComponent = (props) => {
         <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-4 text-sm text-sky-950">
             <div className="flex items-start gap-3">
                 <div className="mt-0.5 rounded-full bg-sky-100 p-2 text-sky-700">
-                    {isRunning ? (
-                        <LoaderIcon className="size-4 animate-spin" />
-                    ) : (
-                        <MessageSquareQuoteIcon className="size-4" />
-                    )}
+                    <MessageSquareQuoteIcon className="size-4" />
                 </div>
 
                 <div className="min-w-0 flex-1 space-y-4">
