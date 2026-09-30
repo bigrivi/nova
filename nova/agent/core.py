@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import uuid
 from collections.abc import AsyncGenerator, Callable, Coroutine
@@ -324,6 +325,7 @@ class Agent:
         tool_calls = self._executable_tool_calls(
             reader.collected_tool_calls(), turn_count
         )
+        self._normalize_tool_arguments(tool_calls)
         for tool_call in tool_calls:
             log.info(
                 f"[Turn {turn_count}] Calling tool: {tool_call.name}({tool_call.arguments})"
@@ -407,6 +409,40 @@ class Agent:
             "Provider rejected the request as too large; compacting and retrying once"
         )
         return True
+
+    def _normalize_tool_arguments(self, tool_calls: list) -> None:
+        """Repair model-supplied tool arguments in place, before they are used.
+
+        Runs ahead of persisting the assistant message and ahead of announcing
+        the call, so the stored record, the announcement a client renders, and
+        the value the tool receives are all the same thing. A tool that quietly
+        fills in a missing field would otherwise publish that repair only in its
+        result, leaving the two frames describing one call differently -- which
+        is how a question whose id the model omitted ended up announced without
+        one and impossible to map an answer back to.
+        """
+        for tool_call in tool_calls:
+            name = getattr(tool_call, "name", None)
+            raw = getattr(tool_call, "arguments", None)
+            if not name or not isinstance(raw, str) or not raw:
+                continue
+            try:
+                arguments = json.loads(raw)
+            except json.JSONDecodeError:
+                continue  # reported where the unparsable call is dropped
+            if not isinstance(arguments, dict):
+                continue
+            try:
+                normalized = self.tool_registry.behavior_for(name).normalize_input(
+                    arguments
+                )
+            except Exception:
+                log.exception(
+                    "normalize_input failed for tool %s; keeping raw arguments", name
+                )
+                continue
+            if normalized != arguments:
+                tool_call.arguments = json.dumps(normalized, ensure_ascii=False)
 
     def _executable_tool_calls(self, tool_calls: list, turn_count: int) -> list:
         executable = []

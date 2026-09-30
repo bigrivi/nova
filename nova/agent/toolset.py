@@ -118,6 +118,7 @@ class ToolsetBuilder:
             log.exception("Failed to initialize MCP servers")
 
     def _register_behaviors(self) -> None:
+        from nova.tools.ask_user import AskUserToolBehavior
         from nova.tools.behavior import (
             ImageReturningToolBehavior,
             ShellToolBehavior,
@@ -128,3 +129,4 @@ class ToolsetBuilder:
         )
         self._registry.set_behavior("read_image", ImageReturningToolBehavior())
         self._registry.set_behavior("browser_use", ImageReturningToolBehavior())
+        self._registry.set_behavior("ask_user", AskUserToolBehavior())

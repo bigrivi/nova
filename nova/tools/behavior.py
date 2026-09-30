@@ -57,6 +57,20 @@ class ToolBehavior(Protocol):
     tools remain fully backward-compatible without any behaviour class.
     """
 
+    def normalize_input(self, args: dict) -> dict:
+        """Repair a model-supplied argument set before it is announced.
+
+        Runs before the call is announced, persisted, or executed, so a repaired
+        value is the same one in all three. Without it a tool that silently
+        fills in a missing field (ask_user numbering questions whose id the
+        model omitted) publishes that repair only in its result, and the
+        announcement the client actually renders disagrees with it.
+
+        Implementations return the argument set to use; the default is
+        unchanged.
+        """
+        ...
+
     async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
         """Called *before* the tool function is invoked.
 
@@ -87,6 +101,9 @@ class ToolBehavior(Protocol):
 
 class DefaultToolBehavior:
     """Default no-op behaviour — safe for every tool."""
+
+    def normalize_input(self, args: dict) -> dict:
+        return args
 
     async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
         return PreExecutionCheck()
