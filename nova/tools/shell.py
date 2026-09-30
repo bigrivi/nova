@@ -9,10 +9,11 @@ import re
 
 from nova.llm import ToolResult
 from nova.tasks.manager import (
-    DEFAULT_FOREGROUND_WAIT_SECONDS,
     TaskLimitError,
     get_background_task_manager,
+    resolve_foreground_wait,
 )
+from nova.tasks.models import TERMINAL_STATUSES
 from nova.tools.registry import tool
 from nova.tools.shell_utils import normalize_path
 from nova.tools.task_results import background_task_result, completed_task_result
@@ -499,16 +500,54 @@ def _redact_for_label(text: str, limit: int = 80) -> str:
     return text[:limit]
 
 
-MAX_TIMEOUT_SECONDS = 600
+def _coerce_timeout(value: object) -> int | None:
+    """Read a model-supplied timeout, or None when there is no usable one.
+
+    A model can send a string, a null, or a bool for an integer parameter, and
+    int() raises on all three shapes it cannot take. Returning None lets the
+    caller apply its own default instead of failing the whole tool call.
+
+    Args:
+        value: The raw argument as received from the model.
+
+    Returns:
+        The timeout in seconds, or None when absent or unusable.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        log.warning("Ignoring boolean timeout=%r", value)
+        return None
+    try:
+        return int(value)  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        log.warning("Ignoring non-numeric timeout=%r", value)
+        return None
+
+
+# Deliberately not manager.DEFAULT_FOREGROUND_WAIT_SECONDS: that one is shared
+# with code_run, and 10s pushes ordinary work (npm install, pytest, cargo
+# build, docker build, a cold go build) into the background, where the model
+# has to spend extra turns on status and logs before it can answer. 60s covers
+# most of those outright, while still bounding how long a turn blocks on a
+# command that is stuck waiting for input. Detaching is not a stall: the caller
+# resumes as soon as the handle comes back, so this only sets how long the
+# model's turn waits before it gets one.
+SHELL_FOREGROUND_WAIT_SECONDS = 60
+MAX_FOREGROUND_WAIT_SECONDS = 120
 
 
 @tool(
     name="shell",
     description=(
-        "Run a shell command. Keep short commands in the foreground. Set "
-        "run_in_background=true for long-running work, servers, or watchers; "
-        "foreground commands still return as background tasks after 10 seconds. "
-        "Use background_task_status/logs/cancel to manage them."
+        "Run a shell command. Short commands run in the foreground and return "
+        "their output. A command still running after "
+        f"{SHELL_FOREGROUND_WAIT_SECONDS}s (see foreground_wait_seconds), or "
+        "started with run_in_background=true, becomes a background task and "
+        "returns a task_id instead of output: read it with background_task_logs, "
+        "check it with background_task_status, stop it with background_task_cancel. "
+        "Use run_in_background for servers, watchers and long jobs. Never add "
+        "'&', 'nohup' or 'disown' yourself; that breaks logs and cancellation."
     ),
     parameters={
         "type": "object",
@@ -519,28 +558,39 @@ MAX_TIMEOUT_SECONDS = 600
             },
             "timeout": {
                 "type": "integer",
-                "description": "Maximum runtime in seconds (default: 120, max: 600)",
-                "default": 120,
+                "description": (
+                    "Total runtime limit in seconds. Only applies with "
+                    "run_in_background=true: omit it for no limit, and zero or "
+                    "less means no limit. Foreground commands are bounded by "
+                    "foreground_wait_seconds instead."
+                ),
+            },
+            "foreground_wait_seconds": {
+                "type": "integer",
+                "description": (
+                    "Seconds to wait for the result before the command moves to the "
+                    f"background (default {SHELL_FOREGROUND_WAIT_SECONDS}, max "
+                    f"{MAX_FOREGROUND_WAIT_SECONDS}). Raise it for slow commands such "
+                    "as tests or builds. Not a runtime limit; ignored with "
+                    "run_in_background."
+                ),
             },
             "run_in_background": {
                 "type": "boolean",
-                "description": "Start as a background task instead of waiting for output",
+                "description": (
+                    "Return a task_id immediately. Use for servers, watchers, and any process "
+                    "that does not exit on its own (e.g. a `while True` loop) or is expected "
+                    f"to run over {SHELL_FOREGROUND_WAIT_SECONDS}s."
+                ),
                 "default": False,
             },
             "description": {
                 "type": "string",
                 "description": (
-                    "Clear, concise description of what this command does in active voice. "
-                    'Never use words like "complex" or "risk" in the description - just describe what it does.\n\n'
-                    "For simple commands (git, npm, standard CLI tools), keep it brief (5-10 words):\n"
-                    '- ls \u2192 "List files in current directory"\n'
-                    '- git status \u2192 "Show working tree status"\n'
-                    '- npm install \u2192 "Install package dependencies"\n\n'
-                    "For commands that are harder to parse at a glance (piped commands, obscure flags, etc.), "
-                    "add enough context to clarify what it does:\n"
-                    '- find . -name "*.tmp" -exec rm {} \\; \u2192 "Find and delete all .tmp files recursively"\n'
-                    '- git reset --hard origin/main \u2192 "Discard all local changes and match remote main"\n'
-                    "- curl -s url | jq '.data[]' \u2192 \"Fetch JSON from URL and extract data array elements\""
+                    "Short active-voice summary of what the command does, e.g. "
+                    '"Show working tree status". For piped or obscure commands add '
+                    "enough context to make it clear, e.g. "
+                    '"Find and delete all .tmp files recursively".'
                 ),
             },
         },
@@ -549,24 +599,66 @@ MAX_TIMEOUT_SECONDS = 600
 )
 async def shell(
     command: str,
-    timeout: int = 120,
+    timeout: int | None = None,
     description: str = "",
     run_in_background: bool = False,
     session_id: str = "",
+    foreground_wait_seconds: int | None = None,
 ) -> ToolResult:
     """Execute a shell command, retaining long work as a managed task.
+
+    Both paths submit to the background task manager. A foreground command
+    blocks for up to *foreground_wait_seconds* and then detaches, so a caller
+    that gets a task_id back is not necessarily looking at work that started.
+    Detaching is not a wait: the caller resumes as soon as the handle is
+    returned, so a long command delays the round without blocking the session.
+
+    Args:
+        command: The shell command line to execute.
+        timeout: Total runtime limit in seconds. It applies only to
+            ``run_in_background``: ``None``, zero, a negative value or an
+            unparseable one means no limit at all, which is what a server needs,
+            and a positive value is used exactly as given, uncapped. A
+            foreground command has no runtime limit of its own -- it is bounded
+            by *foreground_wait_seconds*, and a detached one is unbounded.
+        description: Short description used as the task label. Redacted before
+            it is used, so a credential pasted into it does not reach the task
+            list or the logs.
+        run_in_background: Return a task_id immediately instead of waiting.
+        session_id: Owning conversation, injected by the caller. Task ids are
+            scoped to it, so a command cannot be inspected or cancelled from
+            another session.
+        foreground_wait_seconds: How long to wait before detaching. Ignored
+            when *run_in_background* is set, and capped by *timeout* when the
+            task has a limit.
 
     Security checks are performed by ShellToolBehavior before this function.
     """
     manager = get_background_task_manager()
     cwd = normalize_path(get_active_workspace() or os.getcwd())
-    normalized_timeout = max(1, min(timeout, MAX_TIMEOUT_SECONDS))
+    coerced = _coerce_timeout(timeout)
+    # A foreground command's only bound is foreground_wait_seconds: once that
+    # elapses it detaches, and a detached task is unbounded. Giving the
+    # foreground a runtime limit as well would be a second number for the same
+    # wall clock, and the smaller of the two would always win, so the
+    # parameter means nothing there. It is passed through as given and is
+    # therefore only meaningful with run_in_background.
+    normalized_timeout = None if coerced is None or coerced <= 0 else coerced
+    # The label reaches the task list, the log, and the model, and a command
+    # can carry a credential, so it is redacted whichever field supplies it.
+    label = _redact_for_label(description or command)
+    wait_seconds = resolve_foreground_wait(
+        foreground_wait_seconds,
+        normalized_timeout,
+        default=SHELL_FOREGROUND_WAIT_SECONDS,
+        maximum=MAX_FOREGROUND_WAIT_SECONDS,
+    )
     try:
         task = manager.submit(
             "shell",
             {"command": command, "cwd": cwd},
             session_id=session_id,
-            label=description or command[:80],
+            label=label,
             timeout_seconds=normalized_timeout,
             background=run_in_background,
         )
@@ -576,7 +668,7 @@ async def shell(
             completed = await manager.wait(
                 task.task_id,
                 session_id,
-                timeout=DEFAULT_FOREGROUND_WAIT_SECONDS,
+                timeout=wait_seconds,
             )
         except asyncio.CancelledError:
             await manager.cancel(task.task_id, session_id)
@@ -587,15 +679,28 @@ async def shell(
                 return ToolResult(
                     success=False, content="Background task could not be retained"
                 )
+            # The command can finish in the gap between wait() timing out and
+            # mark_background() running. Reporting that as "still running"
+            # hands back a task_id for work that is already over, and the model
+            # spends extra turns polling a finished task.
+            if detached.status in TERMINAL_STATUSES:
+                return completed_task_result(detached)
+            if detached.status == "queued":
+                return background_task_result(
+                    detached,
+                    "Command is queued and has not started yet (waiting for a "
+                    "free task slot). Check it with background_task_status.",
+                )
             return background_task_result(
                 detached,
-                f"Command is still running after {DEFAULT_FOREGROUND_WAIT_SECONDS}s; it continues in the background.",
+                f"Command is still running after {wait_seconds}s; it continues in the background.",
             )
         return completed_task_result(completed)
-    except (TaskLimitError, KeyError) as error:
+    except TaskLimitError as error:
+        # Only the quota is a normal outcome to report back. A KeyError from
+        # submit() means no executor is registered for "shell", which is a
+        # wiring bug and must not be dressed up as a tool result.
         return ToolResult(success=False, content=str(error))
-    except asyncio.CancelledError:
-        raise
 
 
 TOOL = shell

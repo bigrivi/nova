@@ -138,7 +138,9 @@ async def test_shell_promotes_long_foreground_command_to_background(
     manager = BackgroundTaskManager()
     manager.register_executor(ShellExecutor())
     monkeypatch.setattr(shell_module, "get_background_task_manager", lambda: manager)
-    monkeypatch.setattr(shell_module, "DEFAULT_FOREGROUND_WAIT_SECONDS", 0.1)
+    # The wait is a module constant so the promotion threshold can be cut to
+    # something a test can outrun; the shipped value is asserted separately.
+    monkeypatch.setattr(shell_module, "SHELL_FOREGROUND_WAIT_SECONDS", 0.1)
     command = f"{shlex.quote(sys.executable)} -c 'while True: pass'"
 
     result = await shell_tool(
