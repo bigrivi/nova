@@ -328,7 +328,7 @@ class TestProviderMetaRoundTrip:
                 if event == AgentEvent.SESSION:
                     session_id = data
             messages = await agent.session.get_messages(session_id=session_id)
-            assistant_message = [m for m in messages if m.role == "assistant"][0]
+            assistant_message = next(m for m in messages if m.role == "assistant")
             assert assistant_message.provider_meta == {"thinking_signature": "SIG123"}
             assert assistant_message.model == "test-model"
 
@@ -359,7 +359,7 @@ class TestProviderMetaRoundTrip:
                 if event == AgentEvent.SESSION:
                     session_id = data
             messages = await agent.session.get_messages(session_id=session_id)
-            assistant_message = [m for m in messages if m.role == "assistant"][0]
+            assistant_message = next(m for m in messages if m.role == "assistant")
             assert assistant_message.provider_meta is None
 
     @pytest.mark.asyncio

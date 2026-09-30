@@ -66,7 +66,7 @@ class FakeAgent:
     def __init__(self, events):
         self._events = events
 
-    async def chat_stream(self, user_input: str, session_id: str = None):
+    async def chat_stream(self, user_input: str, session_id: str | None = None):
         for event in self._events:
             yield event
 

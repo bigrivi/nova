@@ -16,7 +16,7 @@ class SessionProtocol(Protocol):
         self,
         *,
         persist: bool = True,
-        first_message: str = None,
+        first_message: str | None = None,
         agent_key: str = ...,
         metadata: dict | None = None,
     ) -> SessionContext: ...

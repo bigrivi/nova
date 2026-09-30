@@ -119,7 +119,7 @@ class OllamaProvider(HttpProvider):
         self.request_options = dict(request_options or {})
         self.timeout_seconds = timeout_seconds
 
-    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] = None) -> dict:
+    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] | None = None) -> dict:
         body = {"model": model, "messages": messages, "stream": stream}
         opts = dict(self.request_options)
         config_tools = opts.pop("tools", True)
@@ -222,5 +222,5 @@ class OllamaProvider(HttpProvider):
     def _new_parser(self, model: str) -> StreamParser:
         return _OllamaStreamParser()
 
-    async def count_tokens(self, text: str, model: str = None) -> int:
+    async def count_tokens(self, text: str, model: str | None = None) -> int:
         return len(text) // 4

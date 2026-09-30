@@ -77,7 +77,7 @@ class SessionManager(SessionProtocol):
         self,
         metadata: dict | None = None,
         persist: bool = True,
-        first_message: str = None,
+        first_message: str | None = None,
         agent_key: str = DEFAULT_AGENT_KEY,
         parent_id: str | None = None,
         workspace_dir: str | None = None,
@@ -99,7 +99,7 @@ class SessionManager(SessionProtocol):
         parent_session_id: str,
         agent_key: str = DEFAULT_AGENT_KEY,
         metadata: dict | None = None,
-        first_message: str = None,
+        first_message: str | None = None,
     ) -> SessionContext:
         """Create a child session linked to a parent session."""
         return await self.create_session(
@@ -110,7 +110,7 @@ class SessionManager(SessionProtocol):
             parent_id=parent_session_id,
         )
 
-    def _generate_title(self, user_message: str = None) -> str:
+    def _generate_title(self, user_message: str | None = None) -> str:
         """Generate a session title from the user's message."""
         return default_session_title(user_message)
 

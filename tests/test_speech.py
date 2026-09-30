@@ -411,7 +411,7 @@ def test_windows_recorder_harvests_buffer_on_event(monkeypatch) -> None:
 
 def test_windows_recorder_stops_without_any_signal(monkeypatch) -> None:
     """Stopping early must still capture partial data, not an empty file."""
-    fake, _kernel = _fake_winmm(monkeypatch)
+    _fake, _kernel = _fake_winmm(monkeypatch)
     recorder = recorder_module.WindowsRecorder()
     recorder.start()
     # Nothing was ever flagged done: waveInReset does that on the way out.
@@ -422,7 +422,7 @@ def test_windows_recorder_stops_without_any_signal(monkeypatch) -> None:
 
 
 def test_windows_recorder_reports_open_failure(monkeypatch) -> None:
-    fake, kernel = _fake_winmm(monkeypatch, open_error=5)
+    _fake, kernel = _fake_winmm(monkeypatch, open_error=5)
     recorder = recorder_module.WindowsRecorder()
     with pytest.raises(RuntimeError, match="winmm error 5"):
         recorder.start()

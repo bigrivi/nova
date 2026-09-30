@@ -475,7 +475,7 @@ class StubSummaryProvider:
         yield TextDelta(content=self._summary[midpoint:])
         yield Done(content=self._summary)
 
-    async def count_tokens(self, text: str, model: str = None) -> int:
+    async def count_tokens(self, text: str, model: str | None = None) -> int:
         return len(text)
 
     def get_max_tokens(self, model: str) -> int:

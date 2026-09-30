@@ -256,8 +256,7 @@ class Agent:
 
         if loaded_messages is None:
             loaded_messages = await self.session.get_messages()
-        return [LLMMessage(
-            role="system", content=self._base_system_prompt)] + self._convert_to_llm_messages(loaded_messages)
+        return [LLMMessage(role="system", content=self._base_system_prompt), *self._convert_to_llm_messages(loaded_messages)]
 
     async def _emit_approval(self, data: dict) -> None:
         await self._emit(AgentEvent.APPROVAL_REQUIRED, data)
@@ -703,7 +702,7 @@ class Agent:
         log.warning(f"[Turn {turn_count}] Maximum iterations reached")
         yield AgentEvent.ERROR, error_payload
 
-    def register_tool(self, func: Callable, name: str = None) -> None:
+    def register_tool(self, func: Callable, name: str | None = None) -> None:
         self.tool_registry.register(func, name)
 
     async def register_all_tools(self) -> None:

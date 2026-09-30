@@ -14,9 +14,9 @@ _tool_metadata: dict = {}
 
 
 def tool(
-    name: str = None,
+    name: str | None = None,
     description: str = "",
-    parameters: dict = None,
+    parameters: dict | None = None,
 ):
     """Tool decorator."""
     def decorator(func: Callable) -> Callable:
@@ -53,7 +53,7 @@ class ToolRegistry:
             self.tools: dict[str, Tool] = {}
             self._behaviors: dict[str, Any] = {}
 
-    def register(self, func: Callable, name: str = None) -> None:
+    def register(self, func: Callable, name: str | None = None) -> None:
         """Register a tool function using decorator metadata."""
         tool_name = name or func.__name__
         metadata = _tool_metadata.get(tool_name, {})

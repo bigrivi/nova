@@ -85,7 +85,7 @@ class MemoryRepository:
             key=row["key"],
             scope=row["scope"],
             session_id=row["session_id"],
-            owner_agent_key=row["owner_agent_key"] if "owner_agent_key" in row.keys() else None,
+            owner_agent_key=row["owner_agent_key"] if "owner_agent_key" in row else None,
             memory_type=row["memory_type"],
             content=row["content"],
             summary=row["summary"],

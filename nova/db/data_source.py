@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Protocol
 
 from nova.db.repository import NovaRepository
 
 
-class DataSourceType(str, Enum):
+class DataSourceType(StrEnum):
     AIO_SQLITE = "aiosqlite"
     IN_MEMORY = "in_memory"
 

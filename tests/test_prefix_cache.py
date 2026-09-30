@@ -44,6 +44,7 @@ from nova.llm.tokenizer import estimate_tokens_by_type
 from nova.memory.models import MemoryWriteRequest
 from nova.memory.service import MemoryService
 from nova.session import manager as session_manager_module
+import itertools
 
 _PROVIDERS = ("anthropic", "openai", "openai_response")
 
@@ -159,7 +160,7 @@ def _content_units(name: str, body: dict) -> list[str]:
         units = [json.dumps(tool, sort_keys=True) for tool in body.get("tools") or []]
         data = body.get("input", [])
         if isinstance(data, str):
-            return units + [json.dumps({"type": "input_text", "text": data}, sort_keys=True)]
+            return [*units, json.dumps({"type": "input_text", "text": data}, sort_keys=True)]
         return units + [json.dumps(item, sort_keys=True) for item in data]
     raise ValueError(f"unknown provider: {name}")
 
@@ -179,7 +180,7 @@ def _system_portion(name: str, body: dict) -> str:
 
 def _common_prefix_len(earlier: list[str], later: list[str]) -> int:
     count = 0
-    for left, right in zip(earlier, later):
+    for left, right in zip(earlier, later, strict=False):
         if left != right:
             break
         count += 1
@@ -297,7 +298,7 @@ def test_first_turn_is_a_full_cache_miss(provider_name: str):
 def test_hit_rate_climbs_and_dominates(provider_name: str):
     rates = _hit_rates(provider_name, 6)
     # Monotonic non-decreasing: each turn reuses at least as much as the last.
-    assert all(later >= earlier for earlier, later in zip(rates, rates[1:]))
+    assert all(later >= earlier for earlier, later in itertools.pairwise(rates))
     # By the final turn the vast majority of input is served from cache; only
     # the single newest turn's blocks are processed fresh.
     assert rates[-1] > 0.85

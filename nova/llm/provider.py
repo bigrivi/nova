@@ -146,7 +146,7 @@ class LLMProvider(ABC):
         messages: list,
         model: str = "gpt-4o",
         stream: bool = False,
-        tools: list[dict] = None,
+        tools: list[dict] | None = None,
         **kwargs
     ) -> Done:
         """Run a non-streaming chat request and return the full response."""
@@ -157,7 +157,7 @@ class LLMProvider(ABC):
         self,
         messages: list,
         model: str = "gpt-4o",
-        tools: list[dict] = None,
+        tools: list[dict] | None = None,
         abort_event: asyncio.Event | None = None,
         timeout: int | None = None,
         **kwargs
@@ -165,6 +165,6 @@ class LLMProvider(ABC):
         pass
 
     @abstractmethod
-    async def count_tokens(self, text: str, model: str = None) -> int:
+    async def count_tokens(self, text: str, model: str | None = None) -> int:
         """Estimate token usage."""
         pass

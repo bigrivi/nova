@@ -38,7 +38,7 @@ class ScriptedProvider(LLMProvider):
             await asyncio.sleep(0)
             yield item
 
-    async def count_tokens(self, text: str, model: str = None) -> int:
+    async def count_tokens(self, text: str, model: str | None = None) -> int:
         return len(text)
 
     def get_max_tokens(self, model: str) -> int:

@@ -344,7 +344,7 @@ class MemoryToolFlowProvider(LLMProvider):
         yield TextDelta(content="You prefer concise answers.")
         yield Done(content="You prefer concise answers.", tool_calls=[])
 
-    async def count_tokens(self, text: str, model: str = None) -> int:
+    async def count_tokens(self, text: str, model: str | None = None) -> int:
         return len(text)
 
     def get_max_tokens(self, model: str) -> int:
@@ -409,7 +409,7 @@ class SaveSessionMemoryProvider(LLMProvider):
         yield TextDelta(content="Done.")
         yield Done(content="Done.", tool_calls=[])
 
-    async def count_tokens(self, text: str, model: str = None) -> int:
+    async def count_tokens(self, text: str, model: str | None = None) -> int:
         return len(text)
 
     def get_max_tokens(self, model: str) -> int:

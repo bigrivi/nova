@@ -228,7 +228,7 @@ class OpenAIProvider(HttpProvider):
             headers.update(run_request_hook(self._request_hook, session_id))
         return headers
 
-    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] = None, session_id: str | None = None, reasoning_effort: str | None = None) -> dict:
+    def _build_body(self, messages: list, model: str, stream: bool = False, tools: list[dict] | None = None, session_id: str | None = None, reasoning_effort: str | None = None) -> dict:
         body = {"messages": messages}
         if model:
             body["model"] = model
@@ -421,7 +421,7 @@ class OpenAIProvider(HttpProvider):
     def _new_parser(self, model: str) -> StreamParser:
         return _OpenAIChatStreamParser(self._reasoning_field)
 
-    async def count_tokens(self, text: str, model: str = None) -> int:
+    async def count_tokens(self, text: str, model: str | None = None) -> int:
         chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
         other_chars = len(text) - chinese_chars
         return int(chinese_chars / 2 + other_chars / 4)

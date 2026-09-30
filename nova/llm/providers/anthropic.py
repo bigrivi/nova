@@ -853,7 +853,7 @@ class AnthropicProvider(HttpProvider):
     def _new_parser(self, model: str) -> StreamParser:
         return _AnthropicStreamParser()
 
-    async def count_tokens(self, text: str, model: str = None) -> int:
+    async def count_tokens(self, text: str, model: str | None = None) -> int:
         chinese_chars = sum(1 for character in text if '\u4e00' <= character <= '\u9fff')
         other_chars = len(text) - chinese_chars
         return int(chinese_chars / 2 + other_chars / 4)

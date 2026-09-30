@@ -389,7 +389,7 @@ class ApprovalRequiredEvent(StreamEvent):
     data: ApprovalRequiredEventData
 
 
-ServerStreamEvent: TypeAlias = (
+type ServerStreamEvent = (
     SessionStartedEvent
     | ResponseStartedEvent
     | MessageDeltaEvent

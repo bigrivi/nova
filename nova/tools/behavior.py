@@ -126,7 +126,7 @@ class ShellToolBehavior(DefaultToolBehavior):
             return PreExecutionCheck(allowed=False, reject_reason=hdesc)
 
         # --- dangerous check → pre-approval ----------------------------
-        dangerous, ddesc = is_dangerous(cmd)
+        dangerous, _ddesc = is_dangerous(cmd)
         if dangerous:
             # A background sub-agent has no client to surface an approval
             # prompt to, so fail closed rather than hang or auto-run.
