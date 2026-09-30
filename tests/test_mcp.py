@@ -390,10 +390,6 @@ class TestInitMcpServers:
             "good2": {"command": "python3", "args": ["-c", "pass"]},
         }
 
-        good_calls = 0
-        original_init = McpClient.__init__
-        original_connect = StdioTransport.connect
-
         async def mock_connect(self):
             if self._command == "nonexistent_cmd_xyz":
                 raise FileNotFoundError("no such command")

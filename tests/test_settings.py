@@ -372,7 +372,7 @@ def test_existing_config_is_not_overwritten(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_PROVIDER", "ollama")
     monkeypatch.setenv("NOVA_MODEL", "gemma4:26b")
 
-    settings = Settings.load_config()
+    Settings.load_config()
 
     assert json.loads(config_path.read_text(encoding="utf-8")) == original_payload
 

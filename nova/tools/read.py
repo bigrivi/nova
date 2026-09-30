@@ -48,7 +48,9 @@ async def read(filePath: str, offset: int | None = None, limit: int | None = Non
         if not chunk:
             return ToolResult(success=True, content="(empty file)")
 
-        content = "".join(f"{start + i + 1:6}\t{l}\n" for i, l in enumerate(chunk))
+        content = "".join(
+            f"{start + i + 1:6}\t{line}\n" for i, line in enumerate(chunk)
+        )
         return ToolResult(success=True, content=content)
 
     except Exception as e:

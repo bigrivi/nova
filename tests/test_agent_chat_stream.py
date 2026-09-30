@@ -19,6 +19,7 @@ from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite_repository import SqliteRepository
 from nova.llm import ToolResult
+from nova.llm.faker import FakerLLMProvider
 from nova.llm.provider import Done, Error, LLMProvider, TextDelta, ToolCall
 from nova.session import manager as session_manager_module
 
@@ -264,7 +265,6 @@ class TestApprovalFlow:
             from nova.tools.behavior import ShellToolBehavior
 
             behavior = ShellToolBehavior(agent._approval)
-            original_before = behavior.before_execute
 
             async def patched_before(arguments, ctx):
                 return await fake_before_execute(arguments, ctx)
@@ -392,9 +392,6 @@ class TestProviderMetaRoundTrip:
                 "thinking_signature": "SIG_TOOL"
             }
             assert assistant_with_tools[0].model == "test-model"
-
-
-from nova.llm.faker import FakerLLMProvider
 
 
 @pytest.mark.asyncio

@@ -42,7 +42,15 @@ def run_desktop(settings: Settings | None = None, dev: bool = False) -> None:
         url = _window_url(server.host, server.port)
         print(f"[desktop] Backend ready at {url}")
 
-    window = webview.create_window("Nova", url=url, width=1200, height=800, min_size=(800, 600), resizable=True, text_select=True)
+    webview.create_window(
+        "Nova",
+        url=url,
+        width=1200,
+        height=800,
+        min_size=(800, 600),
+        resizable=True,
+        text_select=True,
+    )
     wire_hidden_titlebar()
 
     try:

@@ -2156,7 +2156,7 @@ async def test_compaction_pipeline_never_rewrites_reasoning_content_when_provide
         # outputs that guarantee Layer 1 has something to trim.
         await db.add_message(session_id, "user", "start " + "x" * 4000)
         thinking_old_text = "R" * 10000
-        thinking_old = await db.add_message(
+        await db.add_message(
             session_id,
             "assistant",
             "old thinking answer",
@@ -2166,7 +2166,7 @@ async def test_compaction_pipeline_never_rewrites_reasoning_content_when_provide
         await db.add_message(session_id, "tool", "A" * 30000, tool_call_id="call-old")
         await db.add_message(session_id, "user", "middle question")
         thinking_recent_text = "S" * 12000
-        thinking_recent = await db.add_message(
+        await db.add_message(
             session_id,
             "assistant",
             "recent thinking answer",

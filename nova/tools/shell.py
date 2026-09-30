@@ -192,7 +192,8 @@ def is_dangerous(command: str) -> tuple[bool, str]:
 
 
 # ── Backward compat alias ──────────────────────────────────────────
-is_dangerous_bool = lambda cmd: is_hardline(cmd)[0] or is_dangerous(cmd)[0]
+def is_dangerous_bool(cmd: str) -> bool:
+    return is_hardline(cmd)[0] or is_dangerous(cmd)[0]
 
 
 MAX_TIMEOUT_SECONDS = 600

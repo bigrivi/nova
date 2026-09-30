@@ -12,12 +12,12 @@ from typing import TYPE_CHECKING, Optional
 from nova.llm import Message, ToolResult
 from nova.llm.oneshot import stream_text_once
 from nova.tools.registry import tool
+from nova.tools.web_search import TOOL as web_search_tool
 
 if TYPE_CHECKING:
     from nova.tools.context import ToolContext
 
 log = logging.getLogger(__name__)
-from nova.tools.web_search import TOOL as web_search_tool
 
 EXTRACT_SYSTEM_PROMPT = (
     "You are a web content extractor. Extract the information relevant to the "
