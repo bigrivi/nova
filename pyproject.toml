@@ -63,3 +63,39 @@ include = ["nova*"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "strict"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "RUF",   # ruff-specific
+    "ASYNC", # flake8-async
+    "DTZ",   # flake8-datetimez
+]
+ignore = [
+    # FastAPI declares dependencies in default values (Depends, Query, Body).
+    "B008",
+    # The formatter owns line length; only unbreakable strings land here.
+    "E501",
+    # A swallowed exception is deliberate in provider call sites and teardown
+    # paths, which must degrade rather than crash.
+    "SIM105",
+    # The faker and the title generator emit Chinese text, so fullwidth
+    # punctuation in their string literals is the point, not a typo.
+    "RUF001",
+    # Every provider exposes a timeout argument; that is the contract, not an
+    # async API mistake.
+    "ASYNC109",
+    # Path.resolve() and friends are microsecond-scale, not the blocking
+    # syscalls this rule is meant to catch.
+    "ASYNC240",
+]
