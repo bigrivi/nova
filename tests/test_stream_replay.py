@@ -138,7 +138,14 @@ async def test_chat_stream_ai_sdk_assigns_monotonic_sequence(monkeypatch, tmp_pa
     chunks = [
         chunk
         async for chunk in chat_service.chat_stream_ai_sdk(
-            type("R", (), {"session_id": "sess-R"})()
+            # A stand-in for ChatRequest has to carry message and metadata: the
+            # first is the turn's prompt, the second the injected-message
+            # marker, and both are read before the agent is ever consulted.
+            type(
+                "R",
+                (),
+                {"session_id": "sess-R", "message": "hi", "metadata": {}},
+            )()
         )
     ]
     assert len(chunks) >= 5
@@ -224,7 +231,7 @@ async def test_detach_continues_to_completion_gapless(monkeypatch, tmp_path):
         return [
             chunk
             async for chunk in chat_service.chat_stream_ai_sdk(
-                SimpleNamespace(session_id="sess-D1")
+                SimpleNamespace(session_id="sess-D1", message="hi", metadata={})
             )
         ]
 

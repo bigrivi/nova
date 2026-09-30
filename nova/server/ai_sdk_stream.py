@@ -63,13 +63,51 @@ def _parse_tool_output(result: Any) -> Any:
 
 
 class AISDKStreamAdapter:
-    def __init__(self) -> None:
+    """Turn agent events into AI SDK UI SSE frames.
+
+    Args:
+        wake_variant: Set when the server injected this turn's user message
+            rather than the user sending it (a sub-agent completion). The
+            message is persisted with this variant, but nothing in the AI SDK
+            protocol carries a user message, so a client that attaches to the
+            live turn would show a bare reply with nothing above it. The frame
+            emitted here is what lets the renderer put the chip back.
+        wake_text: The injected user message, verbatim.
+    """
+
+    def __init__(self, wake_variant: str | None = None, wake_text: str = "") -> None:
         self._message_started = False
         self._step_started = False
         self._active_text_id: str | None = None
         self._active_reasoning_id: str | None = None
         self._message_id = f"msg_{uuid.uuid4().hex}"
         self._text_emitted = False
+        self._wake_variant = wake_variant
+        self._wake_text = wake_text
+        self._wake_sent = False
+
+    def _wake_frame(self) -> list[bytes]:
+        """The injected-message frame, emitted at most once per turn.
+
+        A turn can run several steps (a tool call resumes the loop), so the
+        latch keeps a later TURN_START from repeating a message the client has
+        already inserted.
+        """
+        if self._wake_sent or not self._wake_variant or not self._wake_text:
+            return []
+        self._wake_sent = True
+        return [
+            encode_ai_sdk_sse(
+                {
+                    "type": "data-nova-wake",
+                    "data": {
+                        "variant": self._wake_variant,
+                        "text": self._wake_text,
+                        "messageId": self._message_id,
+                    },
+                }
+            )
+        ]
 
     def _close_open_parts(self) -> list[bytes]:
         chunks: list[bytes] = []
@@ -99,6 +137,9 @@ class AISDKStreamAdapter:
 
         if event == AgentEvent.TURN_START:
             if not self._message_started:
+                # Before the assistant's own start frame, so the client can
+                # place the injected message above the reply it introduces.
+                chunks.extend(self._wake_frame())
                 chunks.append(
                     encode_ai_sdk_sse(
                         {

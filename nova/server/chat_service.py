@@ -66,6 +66,17 @@ def _normalize_workspace_dir(workspace_dir: str | None) -> str | None:
         return workspace_dir.strip()
 
 
+def _injected_message_variant(request: ChatRequest) -> str | None:
+    """Tag a turn whose user message the server wrote, not the user.
+
+    A sub-agent completion arrives as a headless turn seeded with the child's
+    result. Both the persisted message and the live frame read this one
+    function, so the chip a live client renders cannot drift from the one it
+    renders after a reload.
+    """
+    return "subagent" if request.metadata.get("from_subagent") else None
+
+
 class ChatService:
     def __init__(
         self,
@@ -469,7 +480,10 @@ class ChatService:
         _map_agent_event): when adding a new AgentEvent type, update both
         paths to avoid drift.
         """
-        adapter = AISDKStreamAdapter()
+        adapter = AISDKStreamAdapter(
+            wake_variant=_injected_message_variant(request),
+            wake_text=request.message,
+        )
         resolved_session_id = request.session_id
         fallback_sequence = 0
         # Arm this turn's boundary up front so a stale cursor-0 resume returns
@@ -538,7 +552,7 @@ class ChatService:
             project = await ProjectService(self._data_source).get_project(project_id)
             if project and project.get("path"):
                 workspace_dir = project["path"]
-        message_variant = "subagent" if request.metadata.get("from_subagent") else None
+        message_variant = _injected_message_variant(request)
         try:
             async for event, data in agent.chat_stream(
                 request.message,
