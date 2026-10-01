@@ -199,6 +199,49 @@ describe("narration before the tool call it explains", () => {
     );
   });
 
+  it("sends a todo_write plan as a readable bubble", async () => {
+    // The regression: `describeToolCall` returns "" for this payload, so the
+    // bubble read "→ todo_write" and the plan was nowhere in the conversation.
+    const h = await harness();
+
+    const bubbles = await h.turn([
+      frame("data-nova-session", { data: { sessionId: "sess-1" } }),
+      frame("start"),
+      frame("start-step"),
+      frame("tool-input-available", {
+        toolName: "todo_write",
+        input: {
+          todos: [
+            { content: "分析 CSV", status: "in_progress", priority: "high" },
+            { content: "画图", status: "pending", priority: "medium" },
+          ],
+        },
+      }),
+      frame("tool-output-available", { toolName: "todo_write" }),
+      frame("finish-step"),
+      frame("start-step"),
+      frame("text-start", { id: "t" }),
+      frame("text-delta", { id: "t", delta: "分析完了，人最多的是北京。" }),
+      frame("text-end", { id: "t" }),
+      frame("finish-step"),
+      frame("finish"),
+      frame("[DONE]"),
+    ]);
+
+    const plan = bubbles.find((bubble) => bubble.includes("计划："));
+    assert.ok(plan, `no plan reached the user: ${JSON.stringify(bubbles)}`);
+    assert.match(plan, /\[>\] 分析 CSV/);
+    assert.match(plan, /\[ \] 画图/);
+    assert.ok(
+      bubbles.every((bubble) => !bubble.includes("→ todo_write")),
+      `the plan must not also appear as a bare tool line: ${JSON.stringify(bubbles)}`,
+    );
+    assert.ok(
+      bubbles.some((bubble) => bubble.includes("人最多的是北京")),
+      "the answer still arrives after the plan",
+    );
+  });
+
   it("says nothing extra when a turn has no narration at all", async () => {
     const h = await harness();
     const noNarration = CAPTURED.filter(

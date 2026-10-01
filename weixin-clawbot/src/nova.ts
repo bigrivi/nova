@@ -329,6 +329,65 @@ export function describeAskUser(input: unknown): readonly string[] {
   return lines;
 }
 
+/** One entry of a `todo_write` payload. */
+interface TodoItem {
+  readonly content: string;
+  readonly status: string;
+  readonly priority: string;
+}
+
+/** A status glyph, so the plan is scannable without reading every word. */
+const TODO_MARKERS: Readonly<Record<string, string>> = {
+  completed: "[x]",
+  in_progress: "[>]",
+  cancelled: "[-]",
+  pending: "[ ]",
+};
+
+/**
+ * Summarise a `todo_write` call as a plan.
+ *
+ * The call replaces the whole list every time, so it is the plan rather than a
+ * step: what the agent is about to do is the one thing a user watching a long
+ * turn most wants to see. Rendered as its own bubble for the same reason the
+ * questions are -- it is the payload, not a log line about a payload.
+ */
+export function describeTodoWrite(input: unknown): readonly string[] {
+  if (typeof input !== "object" || input === null) {
+    return [];
+  }
+  const raw = (input as Record<string, unknown>)["todos"];
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return [];
+  }
+  const items: TodoItem[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const record = entry as Record<string, unknown>;
+    const content =
+      typeof record["content"] === "string" ? record["content"].trim() : "";
+    if (content === "") {
+      continue;
+    }
+    const status =
+      typeof record["status"] === "string" ? record["status"].trim() : "pending";
+    items.push({
+      content,
+      status: TODO_MARKERS[status] === undefined ? "pending" : status,
+      priority:
+        typeof record["priority"] === "string" ? record["priority"].trim() : "",
+    });
+  }
+  if (items.length === 0) {
+    return [];
+  }
+  return items.map(
+    (item) => `${TODO_MARKERS[item.status]} ${item.content}`,
+  );
+}
+
 /**
  * Summarise a tool call for one chat line: what the tool acted on.
  *

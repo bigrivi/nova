@@ -20,6 +20,7 @@ import {
     describeToolCall,
     type NovaAgentSummary,
     describeAskUser,
+    describeTodoWrite,
     type NovaAttachment,
     type NovaLike,
 } from "./nova.js";
@@ -834,6 +835,23 @@ export class WeixinNovaAgent implements Agent {
                             );
                             break;
                         }
+
+                        // The plan, rendered. A long turn's todo list is what the
+                        // user is watching to judge whether it is going the right
+                        // way, and `describeToolCall` cannot summarise it: the
+                        // payload is a list of objects, so it produces a bare
+                        // "→ todo_write" with the plan nowhere in it.
+                        const plan =
+                            tool === "todo_write" ? describeTodoWrite(input) : [];
+                        if (plan.length > 0) {
+                            await reporter.flush();
+                            await this.send(
+                                ["计划：", "", ...plan].join("\n"),
+                                state,
+                            );
+                            break;
+                        }
+
                         const summary = describeToolCall(tool, input);
                         reporter.note(
                             `→ ${tool}${summary ? ` ${summary}` : ""}`,
