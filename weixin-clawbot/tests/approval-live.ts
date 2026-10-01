@@ -24,11 +24,13 @@ import { error, info, setLogLevel } from "../src/log.js";
 import {
   frameDataString,
   NovaClient,
+  type NovaAgentSummary,
   type NovaChatRequest,
   type NovaFrame,
   type NovaLike,
 } from "../src/nova.js";
 import { ApprovalRegistry, parseApprovalReply } from "../src/approvals.js";
+import { PRIMARY_AGENTS } from "./fixtures.js";
 import { SessionStore } from "../src/sessions.js";
 import { ensureOutbox, listOutbox } from "../src/outbox.js";
 
@@ -76,6 +78,10 @@ class CannedNova implements NovaLike {
   }
 
   async ping(): Promise<void> {}
+
+  async listAgents(): Promise<readonly NovaAgentSummary[]> {
+    return PRIMARY_AGENTS;
+  }
 }
 
 /**
@@ -119,6 +125,10 @@ class BlockingNova implements NovaLike {
   }
 
   async ping(): Promise<void> {}
+
+  async listAgents(): Promise<readonly NovaAgentSummary[]> {
+    return PRIMARY_AGENTS;
+  }
 }
 
 /** Paths a test needs pinned instead of the ambient defaults. */
@@ -293,9 +303,11 @@ async function main(): Promise<void> {
   );
   info("/send refusal verified:", refused.text);
 
-  // A file the agent drops in the outbox goes out at the end of the turn.
-  await writeFile(join(outbox, "deliverable.txt"), "payload", "utf8");
+  // A file the agent drops in the outbox goes out at the end of the turn. It has
+  // to appear *during* the turn: a turn only claims files written after it
+  // started, so anything already sitting there belongs to an earlier one.
   await files.agent.chat({ conversationId: "c4", text: "make me a file" });
+  await writeFile(join(outbox, "deliverable.txt"), "payload", "utf8");
   await files.agent.whenIdle();
   assert.ok(
     files.bubbles.some((line) => line.includes("deliverable.txt")),

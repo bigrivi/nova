@@ -156,7 +156,7 @@ async function main(): Promise<void> {
     bubbles.length > 0,
     "the agent must push output for a detached turn",
   );
-  const bound = store.sessionFor("smoke-conv");
+  const bound = store.sessionFor("main/smoke-conv");
   assert.ok(bound, "the agent must bind the conversation to a Nova session");
   assert.notEqual(
     bound,
@@ -167,7 +167,11 @@ async function main(): Promise<void> {
   // The binding must survive a restart, and the next turn must land in it.
   const reopened = new SessionStore(isolated.statePath);
   await reopened.load();
-  assert.equal(reopened.sessionFor("smoke-conv"), bound, "binding must persist");
+  assert.equal(
+    reopened.sessionFor("main/smoke-conv"),
+    bound,
+    "binding must persist",
+  );
 
   const status = await agent.chat({ conversationId: "smoke-conv", text: "/status" });
   assert.match(status.text ?? "", /会话/);

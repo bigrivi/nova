@@ -214,6 +214,22 @@ describe("outbox", () => {
     );
   });
 
+  it("skips subdirectories, which are the per-agent outboxes", async () => {
+    // The per-agent outboxes live inside the base one, so a directory here is
+    // structure the bridge made. Listing it would make every turn try to send a
+    // folder and tell the user the file was refused.
+    const base = await mkdtemp(join(tmpdir(), "nova-outbox-subdir-"));
+    await mkdir(join(base, "writing-coach"), { recursive: true });
+    await makeFile(base, "report.pdf");
+
+    const files = await listOutbox(base);
+
+    assert.deepEqual(
+      files.map((path) => path.split("/").pop()),
+      ["report.pdf"],
+    );
+  });
+
   it("returns nothing when the directory does not exist", async () => {
     const base = await mkdtemp(join(tmpdir(), "nova-outbox-missing-"));
     assert.deepEqual(await listOutbox(join(base, "absent")), []);

@@ -438,7 +438,29 @@ describe("SessionStore", () => {
     const second = new SessionStore(statePath);
     await second.load();
     assert.equal(second.sessionFor("conv1"), "sess1");
-    assert.equal(second.conversationFor("sess1"), "conv1");
+  });
+
+  it("resolves a namespaced key after a reload", async () => {
+    // The store is keyed by `<agentKey>/<conversationId>` because one file holds
+    // one agent but a bridge may still be asked about others. The namespace is
+    // part of the key and must survive a load untouched: an earlier version
+    // stripped it as a legacy leftover, which silently unresolvable every
+    // session on the first restart after upgrading.
+    const dir = await mkdtemp(join(tmpdir(), "nova-sessions-ns-"));
+    const statePath = join(dir, "sessions.writing-coach.json");
+
+    const first = new SessionStore(statePath);
+    await first.load();
+    await first.bind("writing-coach/user-1", "sess-1");
+
+    const second = new SessionStore(statePath);
+    await second.load();
+    assert.equal(second.sessionFor("writing-coach/user-1"), "sess-1");
+    assert.equal(
+      second.sessionFor("user-1"),
+      undefined,
+      "the bare id must not resolve; the namespace is the point",
+    );
   });
 
   it("starts empty when the state file is absent", async () => {

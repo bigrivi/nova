@@ -172,10 +172,24 @@ export async function listOutbox(dir: string): Promise<readonly string[]> {
     error("outbox unreadable", dir, String(cause));
     return [];
   }
-  return entries
+  const paths = entries
     .filter((name) => !name.startsWith("."))
     .sort()
     .map((name) => join(dir, name));
+  // Directories are structure, not deliverables. The per-agent outboxes are
+  // subdirectories of the base one, so listing them would have every turn
+  // report "not a regular file" for a folder it created itself.
+  const sendable: string[] = [];
+  for (const path of paths) {
+    try {
+      if ((await stat(path)).isFile()) {
+        sendable.push(path);
+      }
+    } catch {
+      // Raced with a delete; nothing left to send.
+    }
+  }
+  return sendable;
 }
 
 /** Remove a file from the outbox after it has been sent. */

@@ -14,7 +14,13 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { WeixinNovaAgent } from "../src/agent.js";
 import { loadConfig } from "../src/config.js";
-import type { NovaChatRequest, NovaFrame, NovaLike } from "../src/nova.js";
+import type {
+  NovaAgentSummary,
+  NovaChatRequest,
+  NovaFrame,
+  NovaLike,
+} from "../src/nova.js";
+import { PRIMARY_AGENTS } from "./fixtures.js";
 import { SessionStore } from "../src/sessions.js";
 import type { ChatResponse } from "weixin-agent-sdk";
 
@@ -61,6 +67,10 @@ class ControlledNova implements NovaLike {
     return true;
   }
   async ping(): Promise<void> {}
+
+  async listAgents(): Promise<readonly NovaAgentSummary[]> {
+    return PRIMARY_AGENTS;
+  }
 }
 
 /** Build an agent whose WeChat output is captured instead of sent. */

@@ -10,7 +10,7 @@
 import type { Agent, Bot, ChatRequest, ChatResponse } from "weixin-agent-sdk";
 import { ApprovalRegistry, parseApprovalReply } from "./approvals.js";
 import type { KeepAwake } from "./awake.js";
-import type { BridgeConfig } from "./config.js";
+import { configForAgent, type BridgeConfig } from "./config.js";
 import * as log from "./log.js";
 import {
     frameData,
@@ -18,16 +18,20 @@ import {
     frameString,
     imageAttachmentFromFile,
     describeToolCall,
+    type NovaAgentSummary,
     type NovaAttachment,
     type NovaLike,
 } from "./nova.js";
 import {
     consumeOutboxFile,
+    ensureOutbox,
     explainRefusal,
     listOutbox,
     resolveSendable
 } from "./outbox.js";
 import { ProgressReporter, type SendFn } from "./reporter.js";
+import { turnKey, TurnGate } from "./turn-gate.js";
+import type { CurrentAgentStore } from "./current-agent.js";
 import type { SessionStore } from "./sessions.js";
 
 /** Commands handled without touching Nova. */
@@ -36,6 +40,8 @@ const COMMANDS: Readonly<Record<string, string>> = {
         "Nova 微信桥接",
         "",
         "/status 当前会话状态",
+        "/agent 列出可切换的 agent",
+        "/agent <序号> 切换到第 N 个",
         "/stop 中断正在运行的任务",
         "/send <绝对路径> 发送文件到微信",
         "/clear 清除会话映射（SDK 内置）",
@@ -55,6 +61,10 @@ const COMMANDS: Readonly<Record<string, string>> = {
 /** Upper bound on how far apart still-working notices can drift. */
 const STILL_WORKING_MAX_GAP_MS = 120_000;
 
+/** Reply for a sender outside `NOVA_ALLOWED_SENDERS`. */
+const SENDER_REJECTED =
+    "这个助手是私人的，暂不接受陌生人的请求。";
+
 /** Human-readable file size for a chat bubble. */
 function formatBytes(bytes: number): string {
     if (bytes < 1024) {
@@ -70,26 +80,86 @@ function formatBytes(bytes: number): string {
 interface TurnState {
     /** Aborts the in-flight stream; `/stop` triggers it. */
     readonly controller: AbortController;
+    /** Gate key: namespaced, so two agents never collide on one conversation. */
+    readonly key: string;
+    /**
+     * The agent this turn runs under, captured at admission.
+     *
+     * `/agent` is refused while a turn holds the gate, so this cannot change
+     * underneath the run -- but capturing it means the store, the outbox and the
+     * request all agree even if that guard is ever relaxed.
+     */
+    readonly agentKey: string;
     /** Session the turn is bound to, once known. */
     sessionId: string | undefined;
     /** Set when Nova reports the turn was interrupted or dropped. */
     cancelled: boolean;
     /** Whether anything at all has been pushed for this turn yet. */
     spoke: boolean;
+    /**
+     * Outbox contents when the turn began.
+     *
+     * Only files that appear after this point belong to this turn. Without it an
+     * interrupted turn leaves its files behind -- `/stop` returns before the
+     * drain runs -- and the next sender would inherit them.
+     */
+    readonly outboxBaseline: ReadonlySet<string>;
     startedAt: number;
 }
 
 export class WeixinNovaAgent implements Agent {
-    private readonly turns = new Map<string, TurnState>();
+    /**
+     * Namespace for this agent's conversations.
+     *
+     * Every bot reports the same `conversationId` for the same WeChat user --
+     * it is the sender's `ilink_user_id` -- so without a per-agent prefix two
+     * bots would fight over one Nova session and blend two personas' history
+     * into it.
+     */
+    private readonly namespace: string;
+    private readonly gate: TurnGate;
     private readonly approvals = new ApprovalRegistry();
+    /** This agent's running turns, so `/stop` and `/status` can find them. */
+    private readonly turns = new Map<string, TurnState>();
     private keepAwake: KeepAwake | null = null;
+    /** Which agent each conversation selected with `/agent`. */
+    private readonly currentAgents: CurrentAgentStore | null;
+
+    /**
+     * Which agent a conversation is talking to.
+     *
+     * WeChat allows one ClawBot per account, so this is chosen in-band with
+     * `/agent` rather than by which bot received the message.
+     */
+    private currentAgent(conversationId: string): string {
+        if (this.config.onlyAgent !== undefined) {
+            return this.config.onlyAgent;
+        }
+        return this.currentAgents?.get(conversationId) ?? this.namespace;
+    }
+
+    /** Namespace a conversation under an agent, isolating its state. */
+    private key(agentKey: string, conversationId: string): string {
+        return turnKey(agentKey, conversationId);
+    }
+
+    /** The outbox for an agent, so two agents cannot pick up each other's files. */
+    private outboxFor(agentKey: string): string {
+        return configForAgent(this.config, agentKey).outboxDir;
+    }
 
     constructor(
         private readonly config: BridgeConfig,
         private readonly nova: NovaLike,
         private readonly sessions: SessionStore,
         private bot: Bot | null = null,
-    ) {}
+        gate?: TurnGate,
+        options: { readonly currentAgents?: CurrentAgentStore } = {},
+    ) {
+        this.namespace = config.agentKey;
+        this.gate = gate ?? new TurnGate();
+        this.currentAgents = options.currentAgents ?? null;
+    }
 
     /** Adopt the bot once `start()` has returned it, enabling proactive sends. */
     attachBot(bot: Bot): void {
@@ -108,7 +178,7 @@ export class WeixinNovaAgent implements Agent {
      * (tests, shutdown) await this instead of racing a timer.
      */
     async whenIdle(): Promise<void> {
-        while (this.turns.size > 0) {
+        while (this.gate.holder() !== null) {
             await new Promise((resolve) => {
                 setTimeout(resolve, 50);
             });
@@ -123,11 +193,21 @@ export class WeixinNovaAgent implements Agent {
      * unreachable, so the turn runs detached and pushes its own output.
      */
     async chat(request: ChatRequest): Promise<ChatResponse> {
-        const conversationId = request.conversationId;
+        const rawId = request.conversationId;
         const text = request.text.trim();
 
         if (text.startsWith("/")) {
-            return await this.handleCommand(conversationId, text);
+            return await this.handleCommand(rawId, text);
+        }
+
+        const agentKey = this.currentAgent(rawId);
+        const conversationId = this.key(agentKey, rawId);
+
+        // The allowlist is keyed on the raw id: that is the `ilink_user_id` the
+        // operator reads off `/status`, not a namespaced internal key.
+        if (!this.isAllowedSender(rawId)) {
+            log.warn("sender rejected", rawId, `agent=${agentKey}`);
+            return { text: SENDER_REJECTED };
         }
 
         if (this.approvals.has(conversationId)) {
@@ -137,24 +217,52 @@ export class WeixinNovaAgent implements Agent {
             }
         }
 
-        const running = this.turns.get(conversationId);
-        if (running !== undefined) {
+        const gate = this.gate.acquire(conversationId);
+        if (!gate.acquired) {
             return {
-                text: [
-                    "还有一个任务在跑。",
-                    "",
-                    "· `/stop` 中断它",
-                    "· 等它结束再发下一条",
-                ].join("\n"),
+                text: gate.mine
+                    ? [
+                        "还有一个任务在跑。",
+                        "",
+                        "· `/stop` 中断它",
+                        "· 等它结束再发下一条",
+                    ].join("\n")
+                    : [
+                        "现在有另一个任务在跑，本次请求没有执行。",
+                        "",
+                        "等它结束后再发一次。",
+                    ].join("\n"),
             };
         }
+        return await this.startTurn(
+            rawId,
+            agentKey,
+            conversationId,
+            gate.controller,
+            request,
+        );
+    }
 
-        return await this.startTurn(conversationId, request);
+    /**
+     * Whether `conversationId` may drive Nova.
+     *
+     * An empty allowlist admits everyone, which is the single-user default. Once
+     * `NOVA_ALLOWED_SENDERS` is set, a stranger is refused with a fixed reply and
+     * never reaches the agent: that is the difference between someone asking your
+     * agent a question and someone running tools on your machine.
+     */
+    private isAllowedSender(conversationId: string): boolean {
+        if (this.config.allowedSenders.length === 0) {
+            return true;
+        }
+        return this.config.allowedSenders.includes(conversationId);
     }
 
     /** Clear the conversation's Nova binding, as requested by the SDK. */
-    clearSession(conversationId: string): void {
-        this.stopTurn(conversationId);
+    clearSession(rawId: string): void {
+        const agentKey = this.currentAgent(rawId);
+        const conversationId = this.key(agentKey, rawId);
+        this.stopTurn(rawId);
         this.approvals.clear(conversationId);
         void this.sessions.forget(conversationId);
         log.info("session cleared", conversationId);
@@ -225,13 +333,133 @@ export class WeixinNovaAgent implements Agent {
             return this.stopTurn(conversationId);
         }
         if (command === "/status") {
-            return { text: this.describeStatus(conversationId) };
+            return { text: await this.describeStatus(conversationId) };
+        }
+        if (command === "/agent") {
+            return await this.agentCommand(conversationId, text);
         }
         if (command === "/send") {
             return await this.sendFileCommand(text);
         }
         // /echo, /toggle-debug and /clear are consumed by the SDK before here.
         return { text: `未知命令 ${command}，发送 /help 查看可用命令。` };
+    }
+
+    /**
+     * `/agent [序号或名字]`: list the switchable agents, or switch to one.
+     *
+     * WeChat allows a single ClawBot per account, so the agent is chosen in-band
+     * rather than by which bot received the message. Each agent keeps its own
+     * session store and outbox, so switching is the same as opening a separate
+     * conversation with that agent, and switching back resumes it.
+     *
+     * An index is accepted because the keys are long and typing one into a chat
+     * bubble is unpleasant. It resolves against a key-sorted list rather than
+     * Nova's response order, so renaming an agent cannot silently redirect an
+     * index to a different agent.
+     */
+    private async agentCommand(
+        rawId: string,
+        text: string,
+    ): Promise<ChatResponse> {
+        if (this.config.onlyAgent !== undefined) {
+            return {
+                text: `这个桥接固定在 ${this.config.onlyAgent}，不切换 agent。`,
+            };
+        }
+        const store = this.currentAgents;
+        if (store === null) {
+            return { text: "这个桥接没有配置 agent 切换。" };
+        }
+
+        const target = text.split(/\s+/).slice(1).join(" ").trim();
+        let agents: readonly NovaAgentSummary[];
+        try {
+            agents = await this.nova.listAgents();
+        } catch (error) {
+            log.warn("agent list failed", String(error));
+            return { text: `读不到 agent 列表：${String(error)}` };
+        }
+        if (agents.length === 0) {
+            return { text: "Nova 没有可用的主类型 agent。" };
+        }
+
+        // Ordered by key, not by Nova's response order. Nova sorts by display
+        // name, so renaming an agent would shift every index and silently send
+        // the user to a different one; a key is unique and does not move.
+        const ordered = [...agents].sort((a, b) => a.key.localeCompare(b.key));
+        const current = this.currentAgent(rawId);
+
+        if (target === "") {
+            const lines = ordered.map((agent, index) => {
+                const mark = agent.key === current ? "  <- 当前" : "";
+                // An agent with no provider is misconfigured; listing it plainly
+                // beats an empty pair of brackets.
+                const detail =
+                    agent.provider === null || agent.provider === ""
+                        ? agent.name
+                        : `${agent.name}（${agent.provider}）`;
+                return `${index + 1}. ${agent.key}  ${detail}${mark}`;
+            });
+            return {
+                text: [
+                    "可切换的 agent：",
+                    "",
+                    ...lines,
+                    "",
+                    "切换：/agent <序号>",
+                ].join("\n"),
+            };
+        }
+
+        // A bare number is an index. Agent keys may contain digits but never
+        // start with one in practice, and preferring the index keeps `/agent 1`
+        // from being ambiguous with a hypothetical key called "1".
+        const resolved = /^\d+$/.test(target)
+            ? ordered[Number(target) - 1]
+            : ordered.find((agent) => agent.key === target);
+        if (resolved === undefined) {
+            return {
+                text: /^\d+$/.test(target)
+                    ? `没有第 ${target} 个 agent，共 ${ordered.length} 个。发送 /agent 看名单。`
+                    : `没有名为 ${target} 的主类型 agent。发送 /agent 看名单，或用序号切换。`,
+            };
+        }
+        const targetKey = resolved.key;
+        if (!/^[A-Za-z0-9._-]+$/.test(targetKey)) {
+            return {
+                text: `agent 名字 ${targetKey} 不合法，只能用字母、数字、. _ -`,
+            };
+        }
+        if (targetKey === current) {
+            return { text: `已经在跟 ${targetKey} 说话了。` };
+        }
+
+        // Checked before the gate: a turn waiting on an approval still holds the
+        // gate, and "还有一个任务在跑" would send the user to `/stop`, throwing
+        // away work that only needs a `y`.
+        if (this.approvals.has(this.key(current, rawId))) {
+            return { text: "有一个审批还没回复，先回复 y 或 n 再切换。" };
+        }
+        // Otherwise a live turn means switching now would move the user's pending
+        // answer to an agent that has no idea what it is about.
+        if (this.gate.holder() !== null) {
+            return { text: "还有一个任务在跑，先 /stop 或等它结束再切换。" };
+        }
+
+        // Created here rather than at startup: an agent becomes reachable the
+        // moment it is selected, and that is the first time anything can be
+        // dropped into its outbox.
+        await ensureOutbox(this.outboxFor(targetKey));
+        await store.set(rawId, targetKey);
+        log.info("agent switched", rawId, `${current} -> ${targetKey}`);
+        return {
+            // The key is echoed even when an index was typed, so a miscounted
+            // index is visible before the next message goes to the wrong agent.
+            text: `已切换到 ${targetKey}。${
+                targetKey === this.namespace ? "" : "它有独立的会话记录。"
+            }`,
+        };
     }
 
     /** Roots a file may live under to be sendable. */
@@ -289,9 +517,15 @@ export class WeixinNovaAgent implements Agent {
      * directory, with no need to phrase a request the bridge has to parse out of
      * prose.
      */
-    private async drainOutbox(): Promise<void> {
-        const dir = this.config.outboxDir;
+    private async drainOutbox(state: TurnState): Promise<void> {
+        const dir = this.outboxFor(state.agentKey);
         for (const path of await listOutbox(dir)) {
+            if (state.outboxBaseline.has(path)) {
+                // Produced before this turn started -- by an interrupted turn, most
+                // likely. It belongs to whoever made it, not to this sender.
+                log.warn("outbox file left from an earlier turn", path);
+                continue;
+            }
             const resolution = await resolveSendable(
                 path,
                 this.allowedRoots(),
@@ -319,9 +553,10 @@ export class WeixinNovaAgent implements Agent {
     }
 
     /** Cancel the running turn, if any, and report what happened. */
-    private stopTurn(conversationId: string): ChatResponse {
-        const running = this.turns.get(conversationId);
+    private stopTurn(rawId: string): ChatResponse {
+        const conversationId = this.key(this.currentAgent(rawId), rawId);
         this.approvals.clear(conversationId);
+        const running = this.turns.get(conversationId);
         if (running === undefined) {
             return { text: "当前没有正在运行的任务。" };
         }
@@ -339,21 +574,29 @@ export class WeixinNovaAgent implements Agent {
     }
 
     /** Render the current turn and binding state for `/status`. */
-    private describeStatus(conversationId: string): string {
+    private describeStatus(rawId: string): string {
+        const agentKey = this.currentAgent(rawId);
+        const conversationId = this.key(agentKey, rawId);
         const running = this.turns.get(conversationId);
         const sessionId = this.sessions.sessionFor(conversationId);
+        const holder = this.gate.holder();
         const lines = [
+            `Agent ${agentKey}`,
+            `发送者 ${rawId}`,
             `会话 ${sessionId ?? "未建立"}`,
             `工作区 ${this.config.workspaceDir}`,
-            `Agent ${this.config.agentKey}`,
         ];
-        if (running === undefined) {
-            lines.push("状态 空闲");
-        } else {
+        if (running !== undefined) {
             const seconds = Math.round((Date.now() - running.startedAt) / 1000);
             lines.push(
                 `状态 运行中 ${seconds}s${running.cancelled ? "（中断中）" : ""}`,
             );
+        } else if (holder !== null) {
+            // The agents share one workspace, so another turn is this user's
+            // business too: it is running their code on the same files.
+            lines.push(`状态 被 ${holder} 占用`);
+        } else {
+            lines.push("状态 空闲");
         }
         if (this.approvals.has(conversationId)) {
             lines.push("审批 等待回复 y/n");
@@ -400,17 +643,27 @@ export class WeixinNovaAgent implements Agent {
      * this message) and progress plus the final answer are pushed afterwards.
      */
     private async startTurn(
+        rawId: string,
+        agentKey: string,
         conversationId: string,
+        controller: AbortController,
         request: ChatRequest,
     ): Promise<ChatResponse> {
         const state: TurnState = {
-            controller: new AbortController(),
+            controller,
+            key: conversationId,
+            agentKey,
             sessionId: this.sessions.sessionFor(conversationId),
             cancelled: false,
             spoke: false,
+            outboxBaseline: new Set(await listOutbox(this.outboxFor(agentKey))),
             startedAt: Date.now(),
         };
         this.turns.set(conversationId, state);
+        log.info(
+            `turn started agent=${agentKey} sender=${rawId} ` +
+                `session=${state.sessionId ?? "new"} workspace=${this.config.workspaceDir}`,
+        );
 
         const attachments = await this.collectAttachments(request);
         const droppedMedia =
@@ -488,6 +741,7 @@ export class WeixinNovaAgent implements Agent {
             for await (const frame of this.nova.streamChat(
                 {
                     message,
+                    agentKey: state.agentKey,
                     ...(state.sessionId !== undefined
                         ? { sessionId: state.sessionId }
                         : {}),
@@ -604,7 +858,10 @@ export class WeixinNovaAgent implements Agent {
         } finally {
             stopNudges();
             await reporter.close();
-            this.turns.delete(conversationId);
+            if (this.turns.get(state.key) === state) {
+                this.turns.delete(state.key);
+            }
+            this.gate.release(state.key);
         }
 
         if (state.cancelled) {
@@ -614,7 +871,7 @@ export class WeixinNovaAgent implements Agent {
         if (failure !== null) {
             await this.send(`执行出错：${failure}`, state);
             // A failed turn may still have produced deliverables worth delivering.
-            await this.drainOutbox();
+            await this.drainOutbox(state);
             return;
         }
         const trimmed = answer.trim();
@@ -625,6 +882,6 @@ export class WeixinNovaAgent implements Agent {
         }
         // Whatever the agent dropped in the outbox goes out after the answer, so a
         // delivered file is the last thing the user sees.
-        await this.drainOutbox();
+        await this.drainOutbox(state);
     }
 }

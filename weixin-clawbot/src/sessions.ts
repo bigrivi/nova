@@ -1,12 +1,17 @@
 /**
- * Persistent `conversationId -> sessionId` bindings.
+ * Persistent `<agentKey>/<conversationId> -> sessionId` bindings.
  *
  * A WeChat conversation is long-lived and addressable, so its Nova session must
  * survive bridge restarts. The mapping is written on every new binding, which
  * happens at most once per conversation, and read on every turn.
+ *
+ * Both halves of the key are load-bearing: one agent serves every sender, so the
+ * conversation half keeps senders apart, and every sender reaches every agent
+ * under the same `conversationId`, so the agent half keeps two personas from
+ * reading each other's history.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import * as log from "./log.js";
 
@@ -16,16 +21,8 @@ interface StoreFile {
   readonly bindings: Record<string, string>;
 }
 
-/**
- * Two-way map between WeChat conversations and Nova sessions.
- *
- * One session may back several conversations (a user restarting from `/clear`
- * before the old session is dropped), so the reverse index is rebuilt on load
- * rather than stored.
- */
 export class SessionStore {
   private readonly byConversation = new Map<string, string>();
-  private readonly bySession = new Map<string, string>();
   private loaded = false;
 
   constructor(private readonly statePath: string) {}
@@ -63,26 +60,14 @@ export class SessionStore {
     }
   }
 
-  /** Record a binding in both directions. */
+  /** Record a binding. */
   private index(conversationId: string, sessionId: string): void {
     this.byConversation.set(conversationId, sessionId);
-    this.bySession.set(sessionId, conversationId);
   }
 
   /** The Nova session bound to `conversationId`, if any. */
   sessionFor(conversationId: string): string | undefined {
     return this.byConversation.get(conversationId);
-  }
-
-  /**
-   * The conversation bound to `sessionId`.
-   *
-   * Nova mints the real session id on the first turn, so the bridge learns it
-   * from the stream rather than choosing it. This is how an incoming message is
-   * routed to the right conversation when sessions are reused.
-   */
-  conversationFor(sessionId: string): string | undefined {
-    return this.bySession.get(sessionId);
   }
 
   /** Learn a conversation's session id and persist the binding. */
@@ -103,10 +88,6 @@ export class SessionStore {
     if (!this.byConversation.delete(conversationId)) {
       return;
     }
-    const sessionId = this.byConversation.get(conversationId);
-    if (sessionId !== undefined) {
-      this.bySession.delete(sessionId);
-    }
     await this.persist();
   }
 
@@ -119,7 +100,6 @@ export class SessionStore {
     await mkdir(dirname(this.statePath), { recursive: true });
     const temporary = `${this.statePath}.tmp`;
     await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-    const { rename } = await import("node:fs/promises");
     await rename(temporary, this.statePath);
     log.debug("session state persisted", `${this.byConversation.size} binding(s)`);
   }

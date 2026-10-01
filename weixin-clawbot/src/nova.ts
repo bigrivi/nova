@@ -20,8 +20,25 @@ export interface NovaFrame {
   readonly payload: Record<string, unknown>;
 }
 
+/** An agent as `/api/agents` reports it. */
+export interface NovaAgentSummary {
+  readonly key: string;
+  readonly name: string;
+  readonly mode: string;
+  readonly posture: string | null;
+  readonly provider: string | null;
+  readonly model: string | null;
+}
+
 /** Body for `POST /api/chat/stream`. */
 export interface NovaChatRequest {
+  /**
+   * Which Nova agent runs this turn.
+   *
+   * Per request rather than per process: a chat surface switches agents with
+   * `/agent`, and that must not need a restart.
+   */
+  readonly agentKey?: string | undefined;
   readonly sessionId?: string | undefined;
   readonly message: string;
   readonly attachments?: readonly NovaAttachment[];
@@ -350,6 +367,7 @@ export interface NovaLike {
   ): Promise<void>;
   interrupt(sessionId: string): Promise<boolean>;
   ping(): Promise<void>;
+  listAgents(): Promise<readonly NovaAgentSummary[]>;
 }
 
 /** Client for the subset of Nova's HTTP surface a chat surface needs. */
@@ -370,6 +388,47 @@ export class NovaClient implements NovaLike {
       headers["authorization"] = `Basic ${encoded}`;
     }
     return headers;
+  }
+
+  /**
+   * List the agents a chat surface may switch to.
+   *
+   * Only `mode: "primary"` is eligible. Nova applies an agent's `posture` only
+   * when `is_sub_agent` is true, and the HTTP chat path is always primary -- so
+   * offering a `read_only` sub-agent here would hand it the full toolset while
+   * claiming it was restricted.
+   */
+  async listAgents(): Promise<readonly NovaAgentSummary[]> {
+    const response = await fetch(`${this.config.novaBaseUrl}/api/agents`, {
+      headers: this.headers("application/json"),
+    });
+    if (!response.ok) {
+      throw new NovaHttpError(response.status, await response.text());
+    }
+    const parsed: unknown = await response.json();
+    const items =
+      typeof parsed === "object" && parsed !== null
+        ? (parsed as Record<string, unknown>)["items"]
+        : null;
+    if (!Array.isArray(items)) {
+      return [];
+    }
+    return items
+      .filter(
+        (item): item is Record<string, unknown> =>
+          typeof item === "object" && item !== null,
+      )
+      .filter((item) => item["mode"] === "primary")
+      .map((item) => ({
+        key: typeof item["key"] === "string" ? item["key"] : "",
+        name: typeof item["name"] === "string" ? item["name"] : "",
+        mode: "primary",
+        posture: typeof item["posture"] === "string" ? item["posture"] : null,
+        provider:
+          typeof item["provider"] === "string" ? item["provider"] : null,
+        model: typeof item["model"] === "string" ? item["model"] : null,
+      }))
+      .filter((agent) => agent.key !== "");
   }
 
   /** Check that Nova is reachable and configured with at least one provider. */
@@ -395,7 +454,9 @@ export class NovaClient implements NovaLike {
   ): AsyncGenerator<NovaFrame> {
     const body: Record<string, unknown> = {
       message: request.message,
-      agent_key: this.config.agentKey,
+      // Per request, so `/agent` can switch without a restart. Falling back to
+      // the configured agent keeps the single-agent case working unchanged.
+      agent_key: request.agentKey ?? this.config.agentKey,
       workspace_dir: this.config.workspaceDir,
     };
     if (request.sessionId !== undefined) {

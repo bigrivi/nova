@@ -60,14 +60,44 @@ NOVA_AGENT_KEY=weixin npm start
 
 `NOVA_AGENT_KEY` names a record in Nova's agents table. The bridge sends no
 provider or model of its own, so that record supplies them; an unknown key fails
-the turn with `Agent '<key>' has no configured provider/model`.
+the turn with `Agent '<key>' has no configured provider/model`. It is also the
+agent a conversation *starts* on, and setting it pins the bridge to that one
+persona.
 
-What a dedicated key does **not** do is restrict the toolset. `build_agent`
-applies an agent record's `posture` only when `is_sub_agent` is true, so marking
-`weixin` as `read_only` would not stop it running shell commands. Sessions created
-before an agent's model changed also keep running on the model they started with
-(request beats session beats agent), which is why switching models later does not
-retroactively move an in-flight conversation.
+### Several agents on one bot
+
+WeChat allows one ClawBot per account. A second QR does not add a bot, it replaces
+the first -- the protocol returns `binded_redirect`, and the superseded bot's
+token is rejected with `errcode -14` from then on. So the agent is selected
+in-band instead:
+
+```
+/agent                  # list them, numbered, marking the current one
+/agent 8                # switch to the 8th
+```
+
+Indices resolve against a key-sorted list rather than Nova's response order, which
+is sorted by display name -- otherwise renaming an agent would shift every index
+and silently redirect the user somewhere else. The switch reply names the key it
+landed on, so a miscount is caught before a message goes to the wrong agent. A
+key is still accepted as an argument.
+
+Each agent is reached under the same `conversationId` (the sender's
+`ilink_user_id`), so the agent half of the session key is what stops two personas
+sharing one Nova session and reading each other's history. The outbox cannot be
+shared for the same reason, and stays a subdirectory per agent. Switching back
+resumes the earlier agent where it left off.
+
+Two things are deliberately not offered. Sub-agents are excluded, because
+`build_agent` applies a record's `posture` only when `is_sub_agent` is true, so a
+`read_only` sub-agent reached over the primary chat path would hold the full
+toolset while claiming to be restricted. And a switch is refused while a turn is
+running or an approval is unanswered, since both would move the user's pending
+answer to an agent with no idea what it is about.
+
+Sessions created before an agent's model changed keep running on the model they
+started with (request beats session beats agent), which is why switching models
+later does not retroactively move an in-flight conversation.
 
 Configuration keys are documented in
 [`weixin-clawbot/README.md`](../../weixin-clawbot/README.md).
@@ -140,8 +170,14 @@ the agent running.
 ## Session mapping
 
 A WeChat conversation is long-lived, so its Nova session has to outlive the
-bridge. `conversationId -> sessionId` is persisted to
-`~/.nova/weixin-bridge/sessions.json`.
+bridge. The mapping is persisted to `~/.nova/weixin-bridge/sessions.json`, keyed
+by `<agentKey>/<conversationId>` -- both halves, because one agent serves every
+sender and each sender needs a session of their own.
+
+One file is enough: the key already partitions the agents, so a file per agent
+held a single entry apiece. Any `sessions.<name>.json` left by an earlier
+per-agent layout is folded in and removed at startup, the shared file winning any
+collision because it is what the running bridge writes.
 
 The mapping cannot be derived. `Agent._resolve_session` reuses a supplied
 `session_id` only when that session already exists and mints a fresh id
@@ -198,6 +234,43 @@ assertions cannot override, and only Apple's documented conditions -- AC power
 plus an external display and input devices -- keep a closed lid awake. Long-term
 unattended use belongs on a machine that does not sleep.
 
+## Several senders
+
+ClawBot is one person's entry in one WeChat account, and there is no way to share
+it: the bot is not in the contact list, cannot be forwarded, and the protocol has
+no group chat or third-party subscriber. Whoever scans the QR code is the only
+sender, so the QR code is the access control -- `NOVA_ALLOWED_SENDERS` is defence
+in depth, not the primary gate.
+
+State is keyed per sender regardless. `conversationId` is the sender's
+`ilink_user_id`, every piece of state is keyed by it, and each sender would get
+its own Nova session, so their conversations stay reviewable in Nova's session
+list rather than merged into one.
+
+One asymmetry is worth knowing before that day comes. Inbound messages are
+addressed to whoever sent them -- the SDK replies to `from_user_id` -- but
+`Bot.sendMessage()` targets the user id captured at login, because the `Bot`
+instance holds it as a private field with no per-call override. This bridge runs
+its turns detached and pushes every answer that way, so a second sender's reply
+would land on the account that scanned. The context tokens the SDK needs to route
+correctly are already stored per `(accountId, userId)`, so the gap is in that one
+abstraction rather than in the protocol.
+
+Two properties keep that safe, both aimed at the outbox, which an agent writes
+into without knowing which conversation it serves:
+
+- **One turn at a time.** Overlapping turns would let one sender's drain pick up
+  another's file and delete it, and the agents share one workspace besides. Turns
+  are serialised across conversations, and a second sender is turned away instead
+  of queued.
+- **A turn claims only what appeared after it started.** `/stop` returns before
+  the drain runs, so an interrupted turn leaves its file behind; the next sender
+  must not inherit it, and nothing is deleted that was not sent.
+
+`NOVA_ALLOWED_SENDERS` closes the larger door: whoever can message the bot can
+otherwise drive tools on the machine and approve their own dangerous commands. An
+unlisted sender gets a fixed reply without reaching the agent at all.
+
 ## Limits worth knowing
 
 - **Proactive push expires.** `sendMessage` requires a `context_token`, which
@@ -212,5 +285,13 @@ unattended use belongs on a machine that does not sleep.
   render it intact.
 - **Everything transits Tencent.** Messages and media (AES-128-ECB) pass through
   Tencent's iLink service. Keep sensitive work elsewhere.
-- **Single account.** The SDK's `login` overwrites the previous account, and a
-  failed session (`errcode -14`) puts the SDK into a one-hour cooldown.
+- **One ClawBot per WeChat account.** A WeChat product limit, not a bridge one: a
+  new scan replaces the previous bot, and its token stops working immediately. Use
+  `/agent` to reach a second Nova agent, not a second scan. A failed session
+  (`errcode -14`) also puts the SDK into a one-hour cooldown, which restarting the
+  bridge clears.
+- **Not shareable.** One bot is one person's entry, reachable only through the QR
+  code. There is no group chat and no third-party subscription in the protocol, so
+  "let my friends use my agent" is not something the bridge can offer -- and if
+  the protocol ever adds one, proactive replies would still need routing per
+  sender rather than to the scanning account.

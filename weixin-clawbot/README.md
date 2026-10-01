@@ -32,7 +32,7 @@ npm run login
 
 `npm start` also scans on its own when no account is stored, so the separate
 login step is only for keeping the QR prompt out of the message-loop terminal, or
-for rebinding a different account.
+for binding another bot.
 
 Once bound, start the bridge and send a message to the ClawBot contact in
 WeChat:
@@ -41,19 +41,51 @@ WeChat:
 npm start
 ```
 
-To bind a different account (the SDK stores one per state directory, so a new
-scan replaces the previous one):
+### One bot, many agents
+
+WeChat allows **one ClawBot per account**. Scanning a second QR does not add a
+bot -- it replaces the first, and the superseded bot's token is rejected from that
+moment on (`errcode -14`). So there is one bot, and the Nova agent is chosen
+in-band:
+
+```
+/agent                  # list the agents you can talk to
+/agent 8                # switch to the 8th one
+```
+
+The list is numbered and sorted by agent key, so an index does not move when you
+rename an agent. The reply always names the key it switched to, so a miscounted
+index is visible before you send anything to the wrong agent. Keys still work as
+arguments if you would rather be explicit.
+
+Every agent reachable this way keeps its own session and its own outbox, so
+switching is the same as opening a separate conversation with that agent, and
+switching back resumes it. Only `mode: "primary"` agents are offered: Nova
+applies an agent's `posture` only to sub-agents, so a `read_only` one reached
+over the chat path would hold the full toolset while claiming to be restricted.
+
+The agent a conversation starts on is `NOVA_AGENT_KEY`. Setting it also *pins*
+the bridge to that agent, and `/agent` switches are refused:
 
 ```bash
-NOVA_BRIDGE_FORCE_LOGIN=1 npm run login
+NOVA_AGENT_KEY=writing-coach npm start
 ```
+
+The bound bot id lives in `~/.nova/weixin-bridge/account.json`, and binding never
+deletes an existing account. Upgrading from a per-agent binding file: the bridge
+notices it, says so, and starts anyway on whichever bot the SDK still has -- run
+`npm run login` once to pin the right one. That matters because the SDK's own `logout()` wipes
+*every* stored account and its account index is rewritten per scan. The bridge
+passes the bound id to `start()` explicitly and repairs the index afterwards, so
+neither behaviour can strand a working bot.
 
 ## Commands
 
 | Command | Effect |
 |---|---|
 | `/help` | What you can do |
-| `/status` | Session id, workspace, whether a turn is running |
+| `/agent [序号\|名字]` | List the switchable agents, or switch to one |
+| `/status` | Current agent, session id, workspace, whether a turn is running |
 | `/stop` | Interrupt the running turn |
 | `/send <path>` | Send a file to WeChat |
 | `/echo <text>` | SDK built-in, echoes without involving Nova |
@@ -78,16 +110,19 @@ All optional. The defaults suit a local `nova serve`.
 | Variable | Default | Meaning |
 |---|---|---|
 | `NOVA_BASE_URL` | `http://127.0.0.1:8765` | Nova HTTP base URL |
-| `NOVA_AGENT_KEY` | `main` | Agent that runs WeChat turns |
+| `NOVA_AGENT_KEY` | `main` | Agent a conversation starts on; setting it also pins the bridge and refuses `/agent` switches |
 | `NOVA_WORKSPACE_DIR` | bridge's cwd | Workspace root for those turns |
 | `NOVA_PROGRESS_INTERVAL_MS` | `4000` | Minimum gap between progress bubbles |
 | `NOVA_STILL_WORKING_MS` | `8000` | Silence before a turn is reported as still running |
 | `NOVA_MAX_TEXT_CHARS` | `2000` | Reply length before it spills to a file |
-| `NOVA_BRIDGE_STATE` | `~/.nova/weixin-bridge/sessions.json` | conversationId -> sessionId map |
+| `NOVA_BRIDGE_STATE` | `~/.nova/weixin-bridge/sessions.json` | `<agentKey>/<conversationId>` -> sessionId |
+| `NOVA_BRIDGE_ACCOUNT` | next to `NOVA_BRIDGE_STATE` | the bound bot id |
+| `NOVA_BRIDGE_CURRENT` | next to `NOVA_BRIDGE_STATE` | which agent each conversation selected |
 | `NOVA_BRIDGE_SPILL_DIR` | `~/.nova/weixin-bridge/out` | Where long replies are written |
 | `NOVA_BRIDGE_OUTBOX` | `~/.nova/weixin-bridge/outbox` | Drop files here to have them sent |
 | `NOVA_SEND_ROOTS` | unset | Extra directories files may be sent from (`:`-separated, `~` allowed) |
 | `NOVA_MAX_FILE_MB` | `100` | Largest file that may be sent |
+| `NOVA_ALLOWED_SENDERS` | unset | `:`-separated WeChat user ids allowed to drive Nova; empty admits everyone |
 | `NOVA_BRIDGE_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `NOVA_KEEP_AWAKE` | unset | `1` holds a macOS idle-sleep assertion for the bridge's lifetime |
 | `NOVA_AUTH_USER` / `NOVA_AUTH_PASSWORD` | unset | Only needed when Nova is not on loopback |
@@ -146,6 +181,35 @@ rounds per turn and models often say something before calling a tool, so the
 bridge resets the accumulator on `start-step`; the earlier remarks stay visible
 as progress but never end up spliced into the reply.
 
+## Several senders
+
+ClawBot is one person's entry in one WeChat account, so out of the box there is
+exactly one sender: whoever scanned the QR code. There is no second way in --
+the bot is not in the contact list, cannot be forwarded, and has no group chat --
+so the QR code *is* the access control.
+
+State is keyed per sender anyway, so the day ClawBot grows group chats the
+separation is already there. Each sender gets their own Nova session, and
+`conversationId` is the sender's `ilink_user_id`, which `/status` prints.
+
+**One turn at a time.** Turns are serialised process-wide, because every agent
+here runs in the same workspace -- two concurrent turns would edit the same files.
+Serialising also makes outbox attribution unambiguous, and a second message is
+turned away rather than queued. The cost is that two senders cannot work
+simultaneously, which is the right trade for one machine and one workspace.
+
+**`NOVA_ALLOWED_SENDERS`.** This does not widen who can reach the bot -- nothing
+does, short of the QR code. It narrows who may *drive* Nova once a message
+arrives, which matters if the bot is ever reachable more than one way. An
+unlisted sender gets a fixed reply without ever reaching the agent:
+
+```bash
+NOVA_ALLOWED_SENDERS=ilink_user_a:ilink_user_b npm start
+```
+
+An id is whatever `/status` shows as `发送者`. Leaving it unset keeps the
+single-user default of admitting everyone.
+
 ## Sending files
 
 Two ways, and neither needs the model to cooperate on phrasing.
@@ -165,6 +229,10 @@ its persona file (`~/.nova/agents/<key>/SOUL.md`) or a skill:
 
 Long replies already work this way: past `NOVA_MAX_TEXT_CHARS` the text is
 written to `NOVA_BRIDGE_SPILL_DIR` and attached instead of truncated.
+
+A turn only claims files that appeared after it started, and never deletes one it
+did not send. `/stop` returns before the drain runs, so an interrupted turn leaves
+its file behind -- it stays there rather than being handed to the next sender.
 
 ### What may leave the machine
 
@@ -268,6 +336,8 @@ run the bridge on a machine that does not sleep.
 - **Images only.** Nova's `build_user_message` reads `image` and `document`
   attachment types; everything else is dropped rather than guessed at. Documents
   would need the bridge to extract text itself.
-- **Single account.** The SDK's `login` overwrites the previous account.
+- **One ClawBot per WeChat account.** Not a bridge limitation: WeChat replaces the
+  bot when a new QR is scanned, and rejects the old bot's token immediately
+  afterwards. Multiple agents are reached with `/agent` instead.
 - **Everything transits Tencent.** Messages and media (AES-128-ECB) go through
   Tencent's iLink service, so keep sensitive work off this path.
