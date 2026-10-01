@@ -116,6 +116,7 @@ class ScriptedNova implements NovaLike {
 
 interface Harness {
   readonly agent: WeixinNovaAgent;
+  readonly config: BridgeConfig;
   readonly current: CurrentAgentStore;
   readonly sessions: SessionStore;
   readonly nova: ScriptedNova;
@@ -136,6 +137,7 @@ async function harness(
   await mkdir(outbox, { recursive: true });
   const config: BridgeConfig = {
     ...loadConfig(),
+    novaHome: join(dir, "home"),
     statePath: join(dir, "sessions.json"),
     currentAgentPath: join(dir, "current.json"),
     spillDir: join(dir, "out"),
@@ -165,6 +167,7 @@ async function harness(
 
   return {
     agent,
+    config,
     current,
     nova,
     outbox,
@@ -230,6 +233,53 @@ describe("/agent", () => {
     const keys = [...listed.matchAll(/^\d+\. (\S+)/gm)].map((m) => m[1]);
 
     assert.deepEqual(keys, ["main", "writing-coach"], "sorted by key, not by name");
+  });
+
+  it("scopes the send allowlist to the selected agent's workspace", async () => {
+    // A file one agent produced must not be sendable because another agent's
+    // workspace happens to contain it, so `/send` resolves against the current
+    // agent rather than one bridge-wide root.
+    const h = await harness(new ScriptedNova());
+    const mainFile = join(h.config.novaHome, "agents", "main", "notes.md");
+    const coachFile = join(
+      h.config.novaHome,
+      "agents",
+      "writing-coach",
+      "notes.md",
+    );
+    await mkdir(join(h.config.novaHome, "agents", "main"), { recursive: true });
+    await mkdir(join(h.config.novaHome, "agents", "writing-coach"), {
+      recursive: true,
+    });
+    await writeFile(mainFile, "main 的笔记", "utf8");
+    await writeFile(coachFile, "教练的笔记", "utf8");
+
+    const asMain = await h.say(SENDER, "/send " + mainFile);
+    assert.match(asMain, /已发送 notes\.md/, "main may send its own file");
+
+    await h.say(SENDER, "/agent 2");
+    const asCoach = await h.say(SENDER, "/send " + mainFile);
+    assert.match(
+      asCoach,
+      /不在允许发送的目录内/,
+      `main's file must not be sendable by the coach: ${asCoach}`,
+    );
+    const coachOwn = await h.say(SENDER, "/send " + coachFile);
+    assert.match(coachOwn, /已发送 notes\.md/, "the coach may send its own");
+  });
+
+  it("reports the workspace the selected agent actually runs in", async () => {
+    const h = await harness(new ScriptedNova());
+
+    assert.match(
+      await h.say(SENDER, "/status"),
+      new RegExp(`工作区 ${h.config.novaHome}/agents/main`),
+    );
+    await h.say(SENDER, "/agent 2");
+    assert.match(
+      await h.say(SENDER, "/status"),
+      new RegExp(`工作区 ${h.config.novaHome}/agents/writing-coach`),
+    );
   });
 
   it("creates the switched agent's outbox so it can be written to", async () => {

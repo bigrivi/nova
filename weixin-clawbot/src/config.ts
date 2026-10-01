@@ -18,8 +18,18 @@ export interface BridgeConfig {
    * are kept apart underneath it.
    */
   readonly agentKey: string;
-  /** Workspace root handed to Nova; defaults to the bridge's working directory. */
-  readonly workspaceDir: string;
+  /**
+   * Override the workspace Nova runs the agent in, or `undefined` to let it
+   * decide.
+   *
+   * Unset is the right default: Nova resolves a workspace per agent -- the
+   * agent's own `workspace_dir`, else `<nova home>/agents/<key>`. Always sending
+   * a value overrode that and pointed every agent at one shared directory, which
+   * is neither the agent's own nor anything it was configured to use.
+   */
+  readonly workspaceDir: string | undefined;
+  /** Nova's home, as `NOVA_HOME` or `~/.nova`. */
+  readonly novaHome: string;
   /** Minimum gap between progress bubbles. WeChat cannot edit a sent message. */
   readonly progressIntervalMs: number;
   /** Cap on a single reply before the overflow spills into a file attachment. */
@@ -58,7 +68,7 @@ export interface BridgeConfig {
   /**
    * Extra directories files may be sent from.
    *
-   * Deliberately separate from `workspaceDir`: widening what can leave the
+   * Deliberately separate from the workspace: widening what can leave the
    * machine must not widen what the agent itself can read or write.
    */
   readonly sendRoots: readonly string[];
@@ -152,7 +162,8 @@ export function loadConfig(): BridgeConfig {
   const config: BridgeConfig = {
     novaBaseUrl,
     agentKey: readString("NOVA_AGENT_KEY", "main"),
-    workspaceDir: readString("NOVA_WORKSPACE_DIR", process.cwd()),
+    workspaceDir: process.env.NOVA_WORKSPACE_DIR?.trim() || undefined,
+    novaHome: readString("NOVA_HOME", join(homedir(), ".nova")),
     progressIntervalMs: readPositiveInt("NOVA_PROGRESS_INTERVAL_MS", 4000),
     maxTextChars: readPositiveInt("NOVA_MAX_TEXT_CHARS", 4000),
     currentAgentPath: readString(
@@ -204,4 +215,27 @@ export function configForAgent(
     agentKey,
     outboxDir: `${base.outboxDir.replace(/\/$/, "")}/${scoped}`,
   };
+}
+
+/**
+ * Where Nova runs `agentKey` when nothing overrides it.
+ *
+ * Mirrors Nova's own resolution (`_agent_dir` in `nova/app/runtime.py`): the
+ * agent record's `workspace_dir` if it has one, else `<nova home>/agents/<key>`.
+ * Needed because the bridge has to know which files a turn may send -- Nova
+ * exposes a setter for a session's workspace but no getter for the resolved
+ * value, so the rule has to be repeated here.
+ */
+export function agentWorkspaceDir(
+  home: string,
+  agentKey: string,
+  configured?: string | null,
+): string {
+  const override = configured?.trim();
+  if (override !== undefined && override !== "") {
+    return override.startsWith("~")
+      ? join(homedir(), override.slice(1))
+      : override;
+  }
+  return join(home, "agents", agentKey);
 }

@@ -28,6 +28,8 @@ export interface NovaAgentSummary {
   readonly posture: string | null;
   readonly provider: string | null;
   readonly model: string | null;
+  /** The agent's own workspace, or `null` when it uses the default. */
+  readonly workspaceDir: string | null;
 }
 
 /** Body for `POST /api/chat/stream`. */
@@ -543,6 +545,37 @@ export interface NovaLike {
   listAgents(): Promise<readonly NovaAgentSummary[]>;
 }
 
+/**
+ * Build the `POST /api/chat/stream` body for one turn.
+ *
+ * `workspace_dir` is included only when the operator set one. Omitting it is the
+ * default and the point: Nova resolves a workspace per agent -- the agent's own
+ * `workspace_dir`, else `<nova home>/agents/<key>` -- and always sending a value
+ * overrode that, so every agent ran in one shared directory and a workspace
+ * configured in Nova was ignored.
+ */
+export function buildChatBody(
+  config: BridgeConfig,
+  request: NovaChatRequest,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    message: request.message,
+    // Per request, so `/agent` can switch without a restart. Falling back to
+    // the configured agent keeps the single-agent case working unchanged.
+    agent_key: request.agentKey ?? config.agentKey,
+  };
+  if (config.workspaceDir !== undefined) {
+    body["workspace_dir"] = config.workspaceDir;
+  }
+  if (request.sessionId !== undefined) {
+    body["session_id"] = request.sessionId;
+  }
+  if (request.attachments !== undefined && request.attachments.length > 0) {
+    body["attachments"] = request.attachments;
+  }
+  return body;
+}
+
 /** Client for the subset of Nova's HTTP surface a chat surface needs. */
 export class NovaClient implements NovaLike {
   constructor(private readonly config: BridgeConfig) {}
@@ -600,6 +633,11 @@ export class NovaClient implements NovaLike {
         provider:
           typeof item["provider"] === "string" ? item["provider"] : null,
         model: typeof item["model"] === "string" ? item["model"] : null,
+        workspaceDir:
+          typeof item["workspace_dir"] === "string" &&
+          item["workspace_dir"].trim() !== ""
+            ? item["workspace_dir"]
+            : null,
       }))
       .filter((agent) => agent.key !== "");
   }
@@ -625,19 +663,7 @@ export class NovaClient implements NovaLike {
     request: NovaChatRequest,
     signal?: AbortSignal,
   ): AsyncGenerator<NovaFrame> {
-    const body: Record<string, unknown> = {
-      message: request.message,
-      // Per request, so `/agent` can switch without a restart. Falling back to
-      // the configured agent keeps the single-agent case working unchanged.
-      agent_key: request.agentKey ?? this.config.agentKey,
-      workspace_dir: this.config.workspaceDir,
-    };
-    if (request.sessionId !== undefined) {
-      body["session_id"] = request.sessionId;
-    }
-    if (request.attachments !== undefined && request.attachments.length > 0) {
-      body["attachments"] = request.attachments;
-    }
+    const body = buildChatBody(this.config, request);
     if (request.resumeFromSeq !== undefined) {
       body["resume_from_seq"] = request.resumeFromSeq;
     }

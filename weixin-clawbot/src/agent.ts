@@ -10,7 +10,7 @@
 import type { Agent, Bot, ChatRequest, ChatResponse } from "weixin-agent-sdk";
 import { ApprovalRegistry, parseApprovalReply } from "./approvals.js";
 import type { KeepAwake } from "./awake.js";
-import { configForAgent, type BridgeConfig } from "./config.js";
+import { agentWorkspaceDir, configForAgent, type BridgeConfig } from "./config.js";
 import * as log from "./log.js";
 import {
     frameData,
@@ -146,6 +146,16 @@ export class WeixinNovaAgent implements Agent {
     private readonly currentAgents: CurrentAgentStore | null;
 
     /**
+     * Each agent's configured workspace, from the last `/api/agents` read.
+     *
+     * `null` means "uses the default", which is what every agent has unless
+     * someone sets one. Refreshed whenever the agent list is fetched; a
+     * workspace changed in Nova mid-session needs a restart, which is a fine
+     * trade for a send allowlist rather than the resolution Nova relies on.
+     */
+    private readonly workspaces = new Map<string, string | null>();
+
+    /**
      * Which agent a conversation is talking to.
      *
      * WeChat allows one ClawBot per account, so this is chosen in-band with
@@ -166,6 +176,33 @@ export class WeixinNovaAgent implements Agent {
     /** The outbox for an agent, so two agents cannot pick up each other's files. */
     private outboxFor(agentKey: string): string {
         return configForAgent(this.config, agentKey).outboxDir;
+    }
+
+    /**
+     * Where Nova will run this agent, which is also which files a turn may send.
+     *
+     * Resolved the way Nova resolves it, so the two agree: an explicit
+     * `NOVA_WORKSPACE_DIR` wins, else the agent's own `workspace_dir`, else
+     * `<nova home>/agents/<key>`.
+     */
+    private workspaceFor(agentKey: string): string {
+        return (
+            this.config.workspaceDir ??
+            agentWorkspaceDir(
+                this.config.novaHome,
+                agentKey,
+                this.workspaces.get(agentKey),
+            )
+        );
+    }
+
+    /** Record every agent's configured workspace from an `/api/agents` read. */
+    private rememberWorkspaces(
+        agents: readonly NovaAgentSummary[],
+    ): void {
+        for (const agent of agents) {
+            this.workspaces.set(agent.key, agent.workspaceDir);
+        }
     }
 
     constructor(
@@ -359,7 +396,10 @@ export class WeixinNovaAgent implements Agent {
             return await this.agentCommand(conversationId, text);
         }
         if (command === "/send") {
-            return await this.sendFileCommand(text);
+            return await this.sendFileCommand(
+                this.currentAgent(conversationId),
+                text,
+            );
         }
         // /echo, /toggle-debug and /clear are consumed by the SDK before here.
         return { text: `未知命令 ${command}，发送 /help 查看可用命令。` };
@@ -396,6 +436,7 @@ export class WeixinNovaAgent implements Agent {
         let agents: readonly NovaAgentSummary[];
         try {
             agents = await this.nova.listAgents();
+            this.rememberWorkspaces(agents);
         } catch (error) {
             log.warn("agent list failed", String(error));
             return { text: `读不到 agent 列表：${String(error)}` };
@@ -482,22 +523,30 @@ export class WeixinNovaAgent implements Agent {
         };
     }
 
-    /** Roots a file may live under to be sendable. */
-    private allowedRoots(): readonly string[] {
+    /**
+     * Roots a file may live under to be sendable.
+     *
+     * The workspace is per agent, so this is too: a file one agent produced must
+     * not be sendable because another agent's workspace happens to contain it.
+     */
+    private allowedRoots(agentKey: string): readonly string[] {
         return [
-            this.config.workspaceDir,
-            this.config.outboxDir,
+            this.workspaceFor(agentKey),
+            this.outboxFor(agentKey),
             this.config.spillDir,
             ...this.config.sendRoots,
         ];
     }
 
     /** `/send <path>`: validate, upload, and report what happened. */
-    private async sendFileCommand(text: string): Promise<ChatResponse> {
+    private async sendFileCommand(
+        agentKey: string,
+        text: string,
+    ): Promise<ChatResponse> {
         const argument = text.split(/\s+/).slice(1).join(" ").trim();
         const resolution = await resolveSendable(
             argument,
-            this.allowedRoots(),
+            this.allowedRoots(agentKey),
             this.config.maxFileBytes,
         );
         if (!resolution.ok) {
@@ -548,7 +597,7 @@ export class WeixinNovaAgent implements Agent {
             }
             const resolution = await resolveSendable(
                 path,
-                this.allowedRoots(),
+                this.allowedRoots(state.agentKey),
                 this.config.maxFileBytes,
             );
             if (!resolution.ok) {
@@ -604,7 +653,7 @@ export class WeixinNovaAgent implements Agent {
             `Agent ${agentKey}`,
             `发送者 ${rawId}`,
             `会话 ${sessionId ?? "未建立"}`,
-            `工作区 ${this.config.workspaceDir}`,
+            `工作区 ${this.workspaceFor(agentKey)}`,
         ];
         if (running !== undefined) {
             const seconds = Math.round((Date.now() - running.startedAt) / 1000);
@@ -684,7 +733,8 @@ export class WeixinNovaAgent implements Agent {
         this.turns.set(conversationId, state);
         log.info(
             `turn started agent=${agentKey} sender=${rawId} ` +
-                `session=${state.sessionId ?? "new"} workspace=${this.config.workspaceDir}`,
+                `session=${state.sessionId ?? "new"} ` +
+                `workspace=${this.workspaceFor(agentKey)}`,
         );
 
         const attachments = await this.collectAttachments(request);

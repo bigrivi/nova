@@ -128,7 +128,12 @@ async function main(): Promise<void> {
       ` sessions=${config.statePath} outbox=${config.outboxDir}` +
       (config.onlyAgent === undefined ? "" : ` (pinned to ${config.onlyAgent})`),
   );
-  info("bridge ready", `workspace=${config.workspaceDir}`);
+  info(
+    "bridge ready",
+    config.workspaceDir === undefined
+      ? "workspaces resolved per agent by Nova"
+      : `workspace=${config.workspaceDir}`,
+  );
   if (config.onlyAgent !== undefined) {
     info("NOVA_AGENT_KEY is pinned, so /agent switches are refused");
   }

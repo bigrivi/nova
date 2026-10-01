@@ -17,6 +17,9 @@ export const PRIMARY_AGENTS: readonly NovaAgentSummary[] = [
     posture: null,
     provider: "anthropic",
     model: "claude-sonnet-4",
+    // No agent configures one, which is what makes the default the interesting
+    // case rather than the exception.
+    workspaceDir: null,
   },
   {
     key: "writing-coach",
@@ -25,6 +28,7 @@ export const PRIMARY_AGENTS: readonly NovaAgentSummary[] = [
     posture: null,
     provider: "anthropic",
     model: "claude-sonnet-4",
+    workspaceDir: null,
   },
 ];
 
