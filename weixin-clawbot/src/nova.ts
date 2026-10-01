@@ -216,6 +216,120 @@ function describeUnlistedTool(
 }
 
 /**
+ * Drop a `1.` / `1、` / `1)` prefix the model wrote into the question text.
+ *
+ * Only a leading run of digits followed by one separator character, so a genuine
+ * question that starts with a number ("2026 年的预算？") is left alone.
+ */
+function stripLeadingNumber(text: string): string {
+  return text.replace(/^\d{1,2}[.、)）]\s*/, "");
+}
+
+/** One question as `ask_user` announced it. */
+interface AskUserQuestion {
+  readonly header: string;
+  readonly question: string;
+  readonly inputType: string;
+  readonly options: readonly { readonly label: string; readonly description: string }[];
+  readonly required: boolean;
+  readonly default: string;
+}
+
+/**
+ * Render the questions an `ask_user` call is asking.
+ *
+ * These arrive on the tool's `tool-input-available` frame, not on
+ * `data-nova-input-required` -- that frame only says "User input required" and
+ * carries no questions at all, so a bridge that reads it has nothing to show the
+ * user. The turn is paused until the next message, which the SDK delivers as an
+ * ordinary message on the same session, so the answer needs no special handling:
+ * rendering the questions is the whole of the client side.
+ *
+ * Returns nothing when the payload is not the documented shape, so a provider
+ * that sends something else degrades to the generic tool line rather than
+ * printing `[object Object]`.
+ */
+export function describeAskUser(input: unknown): readonly string[] {
+  if (typeof input !== "object" || input === null) {
+    return [];
+  }
+  const raw = (input as Record<string, unknown>)["questions"];
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return [];
+  }
+
+  const questions: AskUserQuestion[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const record = entry as Record<string, unknown>;
+    const text = typeof record["question"] === "string" ? record["question"] : "";
+    const header =
+      typeof record["header"] === "string" ? record["header"].trim() : "";
+    // Models often number the question inside `question` themselves, and the
+    // bridge adds its own. Left alone the user reads "1. 【城市】1. 你在哪？",
+    // and the reply they type then looks like it belongs to a different question.
+    const body = stripLeadingNumber(text.trim()) || header;
+    if (body === "") {
+      continue;
+    }
+    const options = Array.isArray(record["options"])
+      ? record["options"]
+          .filter(
+            (option): option is Record<string, unknown> =>
+              typeof option === "object" && option !== null,
+          )
+          .map((option) => ({
+            label:
+              typeof option["label"] === "string" ? option["label"].trim() : "",
+            description:
+              typeof option["description"] === "string"
+                ? option["description"].trim()
+                : "",
+          }))
+          .filter((option) => option.label !== "")
+      : [];
+    questions.push({
+      // A header is a short label, so it is only worth showing when it says
+      // something the question does not.
+      header: text.trim() ? header : "",
+      question: body,
+      inputType:
+        typeof record["input_type"] === "string" ? record["input_type"] : "text",
+      options,
+      required: record["required"] !== false,
+      default: typeof record["default"] === "string" ? record["default"] : "",
+    });
+  }
+  if (questions.length === 0) {
+    return [];
+  }
+
+  const lines: string[] = [];
+  questions.forEach((question, index) => {
+    const label = question.header !== "" ? `【${question.header}】` : "";
+    const optional = question.required ? "" : "（可选）";
+    lines.push(`${index + 1}. ${label}${question.question}${optional}`);
+    if (question.inputType === "select") {
+      // Deliberately unnumbered. A numbered option ("2.2", "b)") invites an
+      // answer that quotes the number back, and the model then reads it as the
+      // user pointing at a rendered line rather than choosing -- it reports "you
+      // sent the template number, not an answer". Naming the choice is what
+      // people do anyway, and it is what the model matches on.
+      for (const option of question.options) {
+        const detail =
+          option.description !== "" ? ` —— ${option.description}` : "";
+        lines.push(`   ${option.label}${detail}`);
+      }
+    } else if (question.default !== "") {
+      lines.push(`   （默认：${question.default}）`);
+    }
+  });
+  return lines;
+}
+
+/**
  * Summarise a tool call for one chat line: what the tool acted on.
  *
  * A listed tool contributes only its primary argument, or nothing: for a `read`

@@ -19,6 +19,7 @@ import {
     imageAttachmentFromFile,
     describeToolCall,
     type NovaAgentSummary,
+    describeAskUser,
     type NovaAttachment,
     type NovaLike,
 } from "./nova.js";
@@ -96,6 +97,24 @@ interface TurnState {
     cancelled: boolean;
     /** Whether anything at all has been pushed for this turn yet. */
     spoke: boolean;
+    /**
+     * Narration already pushed as progress for the current round.
+     *
+     * The model says what it is about to do before it does it, and that has to
+     * reach the user ahead of the tool line -- otherwise the tool calls appear
+     * unexplained. Kept rather than cleared, so a turn that narrates and then
+     * ends still has something to close on; compared against the current answer
+     * so the closing line does not repeat what was already shown.
+     */
+    narrated: string | null;
+    /**
+     * Whether the turn paused to ask the user something.
+     *
+     * `ask_user` ends the turn with no answer of its own, so without this the
+     * closing line would claim the task finished having returned nothing, right
+     * after asking a question that looks unanswered.
+     */
+    awaitingInput: boolean;
     /**
      * Outbox contents when the turn began.
      *
@@ -656,6 +675,8 @@ export class WeixinNovaAgent implements Agent {
             sessionId: this.sessions.sessionFor(conversationId),
             cancelled: false,
             spoke: false,
+            narrated: null,
+            awaitingInput: false,
             outboxBaseline: new Set(await listOutbox(this.outboxFor(agentKey))),
             startedAt: Date.now(),
         };
@@ -770,13 +791,50 @@ export class WeixinNovaAgent implements Agent {
                         // one survives. DONE's own content is not an option: the
                         // SSE adapter sends it only when nothing was streamed.
                         answer = "";
+                        state.narrated = null;
                         break;
                     case "tool-input-available": {
                         const tool = frameString(frame, "toolName");
-                        const summary = describeToolCall(
-                            tool,
-                            (frame.payload["input"] as unknown) ?? "",
-                        );
+                        const input = (frame.payload["input"] as unknown) ?? "";
+
+                        // Whatever the model said before calling the tool is the
+                        // user being told what is about to happen, so it goes out
+                        // ahead of the tool line rather than being dropped when
+                        // the next step resets the answer.
+                        const narration = answer.trim();
+                        if (narration !== "" && narration !== state.narrated) {
+                            reporter.note(narration);
+                            state.narrated = narration;
+                        }
+
+                        // The questions are the point of the call, so they go out
+                        // as their own bubble immediately rather than waiting on
+                        // the progress interval: the turn is about to stop and
+                        // this is the one thing the user has to act on.
+                        const questions =
+                            tool === "ask_user" ? describeAskUser(input) : [];
+                        // Counting the numbered lines rather than the questions:
+                        // the renderer interleaves option lines under each one, so
+                        // the bubbles are not a question count.
+                        const questionCount = questions.filter((line) =>
+                            /^\d+\. /.test(line),
+                        ).length;
+                        if (questions.length > 0) {
+                            state.awaitingInput = true;
+                            await reporter.flush();
+                            await this.send(
+                                [
+                                    "需要你回答：",
+                                    "",
+                                    ...questions,
+                                    "",
+                                    `共 ${questionCount} 题，按题号回复即可，选项直接写名字，比如「1 马鞍山」「2 减脂」。`,
+                                ].join("\n"),
+                                state,
+                            );
+                            break;
+                        }
+                        const summary = describeToolCall(tool, input);
                         reporter.note(
                             `→ ${tool}${summary ? ` ${summary}` : ""}`,
                         );
@@ -833,7 +891,9 @@ export class WeixinNovaAgent implements Agent {
                         this.approvals.clear(conversationId);
                         break;
                     case "data-nova-input-required":
-                        reporter.note("等待你的输入");
+                        // Carries no questions -- only "User input required" --
+                        // so it is a signal, not something to render.
+                        state.awaitingInput = true;
                         break;
                     case "abort":
                         state.cancelled = true;
@@ -875,6 +935,17 @@ export class WeixinNovaAgent implements Agent {
             return;
         }
         const trimmed = answer.trim();
+        if (trimmed !== "" && trimmed === state.narrated) {
+            // Already shown ahead of the tool call and nothing followed it.
+            // Reporting "没有返回内容" would be wrong here: the turn said what it
+            // was doing and the stream ended on the tool result.
+            return;
+        }
+        if (state.awaitingInput && !trimmed) {
+            // Nothing to report: the turn stopped to wait for the user, and the
+            // questions have already been sent.
+            return;
+        }
         if (!trimmed) {
             await this.send("任务结束，但没有返回内容。", state);
         } else {
