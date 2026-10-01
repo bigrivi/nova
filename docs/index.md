@@ -52,6 +52,7 @@ execute code, browse the web, search files, run shell commands, and more.
 - [MCP Integration](advanced/mcp.md) -- connect MCP servers
 - [Context Compaction](advanced/compaction.md) -- two-layer compaction and tuning keys
 - [Security Model](advanced/security.md) -- shell approval, threat detection, tool guardrails
+- [WeChat ClawBot](advanced/wechat-clawbot.md) -- drive Nova from a WeChat conversation
 
 ## Troubleshooting
 
