@@ -129,9 +129,17 @@ class ShellToolBehavior(DefaultToolBehavior):
     3. Trigger pre-execution approval for dangerous commands.
     """
 
-    def __init__(self, approval_manager: Any, is_sub_agent: bool = False) -> None:
+    def __init__(
+        self,
+        approval_manager: Any,
+        is_sub_agent: bool = False,
+        reviewer: Any = None,
+    ) -> None:
         self._approval = approval_manager
         self._is_sub_agent = is_sub_agent
+        # A model second opinion on flagged commands. None means every flag reaches
+        # the user, which is the pre-review behaviour.
+        self._reviewer = reviewer
 
     async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
         cmd = args.get("command", "")
@@ -152,8 +160,11 @@ class ShellToolBehavior(DefaultToolBehavior):
 
         # --- dangerous check → pre-approval ----------------------------
         if decision.needs_approval:
-            # A background sub-agent has no client to surface an approval
-            # prompt to, so fail closed rather than hang or auto-run.
+            # A background sub-agent has no client to surface an approval prompt
+            # to, so fail closed rather than hang or auto-run. This is checked
+            # before the reviewer because it is a statement about the channel,
+            # not about the command: there is nobody to ask, so no amount of
+            # model confidence makes running it the right answer.
             if self._is_sub_agent:
                 log.info("Dangerous command denied for sub-agent: %s", cmd)
                 return PreExecutionCheck(
@@ -163,6 +174,15 @@ class ShellToolBehavior(DefaultToolBehavior):
                         "with no approval channel, so it cannot run commands that need approval."
                     ),
                 )
+            # A model gets to look before the user is interrupted. It can only
+            # clear the command: `deny` still asks, because a model reading a
+            # shell string is not a security boundary, and `escalate` -- every
+            # failure lands there -- asks as before.
+            if self._reviewer is not None:
+                verdict = await self._reviewer(cmd, decision.description)
+                if verdict == "approve":
+                    log.info("cleared by review: %s", cmd[:120])
+                    return PreExecutionCheck()
             req_id = self._approval.pre_request(
                 cmd, desc, timeout=0, session_id=ctx.session_id, rule=decision.rule
             )

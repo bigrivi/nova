@@ -115,6 +115,37 @@ never softened.
 
 With no workspace in scope nothing is exempted.
 
+## Model review
+
+`shell_review` on the agent config puts a model in front of the approval
+prompt. A command the rules flag is shown to the model first, and a confident
+`approve` clears it.
+
+```
+AgentConfig(..., shell_review=True)
+```
+
+Three outcomes, not two:
+
+| Verdict | Effect |
+|---|---|
+| `approve` | The command runs without interrupting you |
+| `deny` | **You are still asked.** The model cannot refuse on its own |
+| `escalate` | You are asked, as before |
+
+`escalate` is the point. A binary approve/deny would force the model to be
+confident about something a regex could not decide; `escalate` is how it says "I
+do not know". Every failure lands there too -- no provider, a timeout, output it
+cannot parse -- because failing open on a safety judgement is the wrong
+direction.
+
+The reviewer sits behind the rules, not in front of them, so a command nothing
+flags costs nothing.
+
+It is off by default. A review is a model call on the approval path, and a
+reviewer that waves through a command you would have refused is a worse failure
+than a prompt.
+
 ## Timeouts
 
 Shell commands have a configurable timeout (default: 120s). Long-running

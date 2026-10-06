@@ -41,6 +41,7 @@ class ToolsetBuilder:
         is_sub_agent: bool,
         allowed_tools: frozenset[str] | None = None,
         agent_key: str | None = None,
+        reviewer: Any = None,
     ) -> None:
         self._registry = registry
         self._skill_service = skill_service
@@ -48,6 +49,8 @@ class ToolsetBuilder:
         self._is_sub_agent = is_sub_agent
         self._allowed_tools = allowed_tools
         self._agent_key = agent_key
+        # Model second opinion on flagged shell commands; None disables it.
+        self._reviewer = reviewer
         self.skill_tools: Any = None
         self.memory_tools: Any = None
 
@@ -125,7 +128,10 @@ class ToolsetBuilder:
         )
 
         self._registry.set_behavior(
-            "shell", ShellToolBehavior(self._approval, is_sub_agent=self._is_sub_agent)
+            "shell",
+            ShellToolBehavior(
+                self._approval, is_sub_agent=self._is_sub_agent, reviewer=self._reviewer
+            ),
         )
         self._registry.set_behavior("read_image", ImageReturningToolBehavior())
         self._registry.set_behavior("browser_use", ImageReturningToolBehavior())

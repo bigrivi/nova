@@ -54,6 +54,12 @@ class AgentConfig:
     # Reasoning level for this run. None means "whatever the model config
     # declares", which is also what a provider that has no such concept gets.
     reasoning_effort: str | None = None
+    # Ask a model to review shell commands the rules flagged, instead of
+    # interrupting the user for every one. None or False leaves every flag
+    # reaching the user, which is the default: a review costs a model call, and
+    # a reviewer that waves through a command the user would have refused is a
+    # worse failure than a prompt.
+    shell_review: bool = False
 
 
 def build_user_message(
@@ -778,6 +784,11 @@ class Agent:
         self.tool_registry.register(func, name)
 
     async def register_all_tools(self) -> None:
+        reviewer = None
+        if self.config.shell_review and not self.is_sub_agent:
+            from nova.tools.shell_review import build_reviewer
+
+            reviewer = build_reviewer(self.llm, self.config.model)
         builder = ToolsetBuilder(
             registry=self.tool_registry,
             skill_service=self._skill_service,
@@ -785,6 +796,7 @@ class Agent:
             is_sub_agent=self.is_sub_agent,
             allowed_tools=self.allowed_tools,
             agent_key=self.agent_key,
+            reviewer=reviewer,
         )
         await builder.build()
         self._skill_tools = builder.skill_tools
