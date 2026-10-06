@@ -16,8 +16,7 @@ import json
 
 import pytest
 
-from nova.tools.shell import Decision
-from nova.tools.shell_policy import RuleSet, load_rule_set
+from nova.tools.shell_policy import Decision, RuleSet, load_rule_set
 
 
 def _write(path, payload) -> None:

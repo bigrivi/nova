@@ -31,6 +31,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from nova.tools.shell_scope import is_bounded
+
 log = logging.getLogger(__name__)
 
 
@@ -91,7 +93,14 @@ class RuleSet:
             ask=[Rule(p, d) for p, d in DANGEROUS_PATTERNS],
         )
 
-    def classify(self, command: str) -> Decision:
+    def classify(self, command: str, workspace: str | None = None) -> Decision:
+        """Decide what to do with *command*.
+
+        Args:
+            command: The command line.
+            workspace: Boundary for the workspace-scoped exemption. None means
+                unknown, which is the same as no exemption at all.
+        """
         text = command.strip()
         for rule in self.block:
             if rule.matches(text):
@@ -99,6 +108,11 @@ class RuleSet:
         for rule in self.allow:
             if rule.matches(text):
                 return Decision("allow", rule.description, rule.description)
+        if is_bounded(text, workspace):
+            # Scoped to the mutator, not to a rule: an allowed decision carries
+            # no rule, because there is no pattern to grant -- the bound came
+            # from where the paths pointed.
+            return Decision("allow")
         for rule in self.ask:
             if rule.matches(text):
                 return Decision("ask", rule.description, rule.description)

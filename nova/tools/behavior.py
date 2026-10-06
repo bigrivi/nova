@@ -16,7 +16,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from nova.tools.shell import classify
+from nova.tools.shell_policy import default_rule_set
+from nova.tools.workspace_context import get_active_workspace
 
 log = logging.getLogger(__name__)
 
@@ -139,7 +140,10 @@ class ShellToolBehavior(DefaultToolBehavior):
         # One pass gives both the verdict and the rule that produced it, so the
         # approval request can carry a grant identity instead of making the
         # caller re-derive which pattern fired.
-        decision = classify(cmd)
+        # The workspace comes from the tool's own context rather than the turn:
+        # the shell already resolves its cwd against it, so the boundary here has
+        # to be the same one.
+        decision = default_rule_set().classify(cmd, get_active_workspace())
 
         # --- hardline check -------------------------------------------
         if decision.effect == "block":

@@ -6,8 +6,6 @@ import asyncio
 import logging
 import os
 import re
-from dataclasses import dataclass
-from typing import Literal
 
 from nova.llm import ToolResult
 from nova.tasks.manager import (
@@ -17,6 +15,7 @@ from nova.tasks.manager import (
 )
 from nova.tasks.models import TERMINAL_STATUSES
 from nova.tools.registry import tool
+from nova.tools.shell_policy import RuleSet
 from nova.tools.shell_utils import normalize_path
 from nova.tools.task_results import background_task_result, completed_task_result
 from nova.tools.workspace_context import get_active_workspace
@@ -455,66 +454,24 @@ DANGEROUS_PATTERNS: list[tuple[re.Pattern, str]] = [
 ]
 
 # ── Detection helpers ──────────────────────────────────────────────
-
-
-@dataclass(frozen=True)
-class Decision:
-    """What the rule set says about one command.
-
-    A command matching nothing is ``allowed``: the patterns are a list of things
-    to stop, not a list of things to permit, so silence means no rule fired rather
-    than that the command was vouched for.
-
-    ``rule`` identifies which pattern matched, and is what an approval grant is
-    recorded against. It is the pattern's description rather than the command
-    text, because an agent that embeds a URL or a temp path in its commands never
-    repeats a command verbatim -- a grant keyed on the text could never be hit
-    twice. That makes the description an identifier, so rewording one invalidates
-    grants made under the old wording; the alternative was 51 separate ids whose
-    only job was to differ from prose that already exists.
-    """
-
-    effect: Literal["allow", "ask", "block"]
-    rule: str = ""
-    description: str = ""
-
-    @property
-    def allowed(self) -> bool:
-        return self.effect == "allow"
-
-    @property
-    def needs_approval(self) -> bool:
-        return self.effect == "ask"
-
-
-def classify(command: str) -> Decision:
-    """Decide what to do with *command*, honouring the configured rule set.
-
-    Delegates to `shell_policy` so there is one decision path rather than one
-    here and one there. The import is inside the function because
-    `shell_policy` reads the pattern lists above.
-    """
-    from nova.tools.shell_policy import default_rule_set
-
-    return default_rule_set().classify(command)
+#
+# The decision itself lives in `shell_policy`, which owns the rule set and the
+# config file. These two stay because they answer a narrower question -- "does
+# this pattern list match at all?" -- without needing a workspace, which is what
+# the pattern tests and the flood probe want.
 
 
 def is_hardline(command: str) -> tuple[bool, str]:
-    """Check if a command matches the unconditional hardline blocklist.
-
-    Returns (True, description) if blocked, (False, "") if not.
-    """
-    decision = classify(command)
-    return decision.effect == "block", decision.description if decision.effect == "block" else ""
+    """Whether *command* matches the unconditional blocklist."""
+    decision = RuleSet.defaults().classify(command)
+    blocked = decision.effect == "block"
+    return blocked, decision.description if blocked else ""
 
 
 def is_dangerous(command: str) -> tuple[bool, str]:
-    """Check if a command requires user approval.
-
-    Returns (True, description) if dangerous, (False, "") if safe. A blocked
-    command reports False here: it never reaches the approval flow.
-    """
-    decision = classify(command)
+    """Whether *command* needs approval. A blocked command reports False:
+    it never reaches the approval flow."""
+    decision = RuleSet.defaults().classify(command)
     if decision.effect != "ask":
         return False, ""
     return True, decision.description
@@ -522,7 +479,7 @@ def is_dangerous(command: str) -> tuple[bool, str]:
 
 # ── Backward compat alias ──────────────────────────────────────────
 def is_dangerous_bool(cmd: str) -> bool:
-    return classify(cmd).effect != "allow"
+    return RuleSet.defaults().classify(cmd).effect != "allow"
 
 
 # A task label is shown in the task list, written into log lines and returned

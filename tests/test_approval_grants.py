@@ -13,7 +13,7 @@ key identifies the rule that fired rather than the text that tripped it.
 from __future__ import annotations
 
 from nova.tools.approval import ApprovalManager
-from nova.tools.shell import classify
+from nova.tools.shell_policy import default_rule_set
 
 
 def _decide(manager: ApprovalManager, command: str, session: str = "s1") -> str | None:
@@ -22,7 +22,7 @@ def _decide(manager: ApprovalManager, command: str, session: str = "s1") -> str 
     Mirrors what ShellToolBehavior does, so the rule identity travels with the
     request instead of the test inventing one.
     """
-    decision = classify(command)
+    decision = default_rule_set().classify(command)
     if not decision.needs_approval:
         return ""
     return manager.pre_request(

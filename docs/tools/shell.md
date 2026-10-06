@@ -90,6 +90,31 @@ keyed on the text could never be hit twice.
 The grant covers that rule for the rest of the session and does not carry to
 other sessions.
 
+## Workspace scope
+
+Codex splits the two questions: a sandbox decides what the agent *can* do, and
+approval only decides when it must stop at the boundary. Nova has no sandbox, so
+the boundary half is approximated: a command that only mutates files under the
+workspace runs without asking.
+
+The covered commands are the ones whose arguments are paths and which do nothing
+else -- `mkdir`, `touch`, `cp`, `mv`, `rm`, `rmdir`, `ln`, `install` -- and only
+when **every** path they name resolves inside the workspace.
+
+```text
+rm -rf ~/project/build          allowed  (inside)
+rm -rf ~/other/build            asked    (outside)
+rm -rf ~/project/build && ...   asked    (chaining is not analysed)
+rm -rf ~/project/*              asked    (wildcards expand at runtime)
+rm -rf "$TARGET"                asked    (paths are not knowable)
+```
+
+Anything the analysis cannot bound falls through to the ordinary rules, so the
+worst case is a prompt rather than an unattended command. A blocked command is
+never softened.
+
+With no workspace in scope nothing is exempted.
+
 ## Timeouts
 
 Shell commands have a configurable timeout (default: 120s). Long-running
