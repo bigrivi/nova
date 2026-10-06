@@ -1125,13 +1125,16 @@ def test_approve_returns_404_for_unknown_request(monkeypatch, tmp_path):
 def test_remember_allowlist_is_scoped_per_session():
     manager = get_approval_manager()
     command = "uniq-remember-cmd-7f3a"
+    # A grant names the rule, not the command text -- see ApprovalManager -- so
+    # the check has to carry one.
+    rule = "uniq-remember-rule-7f3a"
 
-    request_id = manager.pre_request(command, session_id="session-A")
+    request_id = manager.pre_request(command, session_id="session-A", rule=rule)
     assert request_id != ""
     assert manager.resolve(request_id, approved=True, remember=True) is True
 
-    assert manager.pre_request(command, session_id="session-A") == ""
-    assert manager.pre_request(command, session_id="session-B") != ""
+    assert manager.pre_request(command, session_id="session-A", rule=rule) == ""
+    assert manager.pre_request(command, session_id="session-B", rule=rule) != ""
 
 
 @pytest.mark.asyncio

@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from nova.tools.shell import is_dangerous, is_hardline
+from nova.tools.shell import classify
 
 log = logging.getLogger(__name__)
 
@@ -136,15 +136,18 @@ class ShellToolBehavior(DefaultToolBehavior):
         cmd = args.get("command", "")
         desc = args.get("description", "") or cmd[:80]
 
+        # One pass gives both the verdict and the rule that produced it, so the
+        # approval request can carry a grant identity instead of making the
+        # caller re-derive which pattern fired.
+        decision = classify(cmd)
+
         # --- hardline check -------------------------------------------
-        blocked, hdesc = is_hardline(cmd)
-        if blocked:
-            log.info("Hardline command rejected: %s (%s)", cmd, hdesc)
-            return PreExecutionCheck(allowed=False, reject_reason=hdesc)
+        if decision.effect == "block":
+            log.info("Hardline command rejected: %s (%s)", cmd, decision.description)
+            return PreExecutionCheck(allowed=False, reject_reason=decision.description)
 
         # --- dangerous check → pre-approval ----------------------------
-        dangerous, _ddesc = is_dangerous(cmd)
-        if dangerous:
+        if decision.needs_approval:
             # A background sub-agent has no client to surface an approval
             # prompt to, so fail closed rather than hang or auto-run.
             if self._is_sub_agent:
@@ -157,7 +160,7 @@ class ShellToolBehavior(DefaultToolBehavior):
                     ),
                 )
             req_id = self._approval.pre_request(
-                cmd, desc, timeout=0, session_id=ctx.session_id
+                cmd, desc, timeout=0, session_id=ctx.session_id, rule=decision.rule
             )
             if req_id:
                 return PreExecutionCheck(

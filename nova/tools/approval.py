@@ -19,14 +19,27 @@ class ApprovalRequest:
     expires_at: float
     approved: bool | None = None
     session_id: str = ""
+    # Which rule asked. This is what a grant is recorded against, so it must be
+    # the rule's identity and not the command text -- see ApprovalManager.
+    rule: str = ""
 
 
 class ApprovalManager:
+    """Tracks pending approvals and the grants made from them.
+
+    A grant names a *rule*, not a command. The earlier code stored the command
+    text, which made "always allow" inert for exactly the commands that most need
+    it: an agent that interpolates a URL, a timestamp or a temp path never repeats
+    itself, so the stored string was never seen again. Keying on the rule that
+    fired means approving one command approves that shape of command, which is
+    what the user was already being told happened.
+    """
+
     def __init__(self, default_timeout: int = 60):
         self._default_timeout = default_timeout
         self._pending: dict[str, ApprovalRequest] = {}
         self._events: dict[str, asyncio.Event] = {}
-        self._allow_lists: dict[str, set[str]] = {}
+        self._grants: dict[str, set[str]] = {}
 
     def pre_request(
         self,
@@ -34,10 +47,18 @@ class ApprovalManager:
         description: str = "",
         timeout: int | None = None,
         session_id: str = "",
+        rule: str = "",
     ) -> str:
         """Create a pending approval request and return its id (non-blocking).
-        timeout=0 means wait indefinitely (used by wait_with_heartbeat)."""
-        if command in self._allow_lists.get(session_id, ()):
+
+        timeout=0 means wait indefinitely (used by wait_with_heartbeat).
+
+        Returns "" when the session already holds a grant for *rule*. With no rule
+        supplied there is nothing to match on, so the command is always asked --
+        that path is the tool asserting a danger without naming the rule, and
+        guessing which rule it meant would silently widen the grant.
+        """
+        if rule and rule in self._grants.get(session_id, ()):
             return ""
 
         deadline = time.monotonic() + (timeout or self._default_timeout)
@@ -50,6 +71,7 @@ class ApprovalManager:
             created_at=time.monotonic(),
             expires_at=deadline,
             session_id=session_id,
+            rule=rule,
         )
         self._events[req_id] = asyncio.Event()
         return req_id
@@ -102,15 +124,21 @@ class ApprovalManager:
         if req is None:
             return False
         req.approved = approved
-        if approved and remember:
-            self._allow_lists.setdefault(req.session_id, set()).add(req.command)
+        if approved and remember and req.rule:
+            self._grants.setdefault(req.session_id, set()).add(req.rule)
         event = self._events.get(req_id)
         if event:
             event.set()
         return True
 
-    def add_to_allowlist(self, command: str, session_id: str = "") -> None:
-        self._allow_lists.setdefault(session_id, set()).add(command)
+    def add_to_allowlist(self, rule: str, session_id: str = "") -> None:
+        """Grant *rule* for a session without an approval round-trip."""
+        if rule:
+            self._grants.setdefault(session_id, set()).add(rule)
+
+    def allowlist_for(self, session_id: str) -> set[str]:
+        """The rules granted to *session_id*."""
+        return set(self._grants.get(session_id, ()))
 
     def get_pending(self) -> list[ApprovalRequest]:
         return [r for r in self._pending.values() if r.approved is None]

@@ -6,6 +6,8 @@ import asyncio
 import logging
 import os
 import re
+from dataclasses import dataclass
+from typing import Literal
 
 from nova.llm import ToolResult
 from nova.tasks.manager import (
@@ -455,40 +457,79 @@ DANGEROUS_PATTERNS: list[tuple[re.Pattern, str]] = [
 # ── Detection helpers ──────────────────────────────────────────────
 
 
+@dataclass(frozen=True)
+class Decision:
+    """What the rule set says about one command.
+
+    A command matching nothing is ``allowed``: the patterns are a list of things
+    to stop, not a list of things to permit, so silence means no rule fired rather
+    than that the command was vouched for.
+
+    ``rule`` identifies which pattern matched, and is what an approval grant is
+    recorded against. It is the pattern's description rather than the command
+    text, because an agent that embeds a URL or a temp path in its commands never
+    repeats a command verbatim -- a grant keyed on the text could never be hit
+    twice. That makes the description an identifier, so rewording one invalidates
+    grants made under the old wording; the alternative was 51 separate ids whose
+    only job was to differ from prose that already exists.
+    """
+
+    effect: Literal["allow", "ask", "block"]
+    rule: str = ""
+    description: str = ""
+
+    @property
+    def allowed(self) -> bool:
+        return self.effect == "allow"
+
+    @property
+    def needs_approval(self) -> bool:
+        return self.effect == "ask"
+
+
+def classify(command: str) -> Decision:
+    """Decide what to do with *command*.
+
+    Blocked rules are checked first and a match is final: a rule the user can
+    approve away must not be shadowed by the preference order the other way round.
+    """
+    # Not lowercased: every pattern carries re.IGNORECASE, and folding here would
+    # collapse the case that carries the meaning -- `git branch -d` is a normal
+    # delete, `git branch -D` is the forced one.
+    cmd = command.strip()
+    for pattern_re, description in HARDLINE_PATTERNS:
+        if pattern_re.search(cmd):
+            return Decision(effect="block", rule=description, description=description)
+    for pattern_re, description in DANGEROUS_PATTERNS:
+        if pattern_re.search(cmd):
+            return Decision(effect="ask", rule=description, description=description)
+    return Decision(effect="allow")
+
+
 def is_hardline(command: str) -> tuple[bool, str]:
     """Check if a command matches the unconditional hardline blocklist.
 
     Returns (True, description) if blocked, (False, "") if not.
     """
-    # Not lowercased: every pattern carries re.IGNORECASE, and folding here
-    # would collapse the case that carries the meaning -- `git branch -d` is a
-    # normal delete, `git branch -D` is the forced one.
-    cmd = command.strip()
-    for pattern_re, description in HARDLINE_PATTERNS:
-        if pattern_re.search(cmd):
-            return (True, description)
-    return (False, "")
+    decision = classify(command)
+    return decision.effect == "block", decision.description if decision.effect == "block" else ""
 
 
 def is_dangerous(command: str) -> tuple[bool, str]:
     """Check if a command requires user approval.
 
-    Runs after is_hardline() and only on non-hardline commands.
-    Returns (True, description) if dangerous, (False, "") if safe.
+    Returns (True, description) if dangerous, (False, "") if safe. A blocked
+    command reports False here: it never reaches the approval flow.
     """
-    cmd = command.strip()
-    is_hl, _ = is_hardline(cmd)
-    if is_hl:
-        return (False, "")
-    for pattern_re, description in DANGEROUS_PATTERNS:
-        if pattern_re.search(cmd):
-            return (True, description)
-    return (False, "")
+    decision = classify(command)
+    if decision.effect != "ask":
+        return False, ""
+    return True, decision.description
 
 
 # ── Backward compat alias ──────────────────────────────────────────
 def is_dangerous_bool(cmd: str) -> bool:
-    return is_hardline(cmd)[0] or is_dangerous(cmd)[0]
+    return classify(cmd).effect != "allow"
 
 
 # A task label is shown in the task list, written into log lines and returned
