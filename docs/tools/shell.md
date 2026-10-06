@@ -115,6 +115,47 @@ never softened.
 
 With no workspace in scope nothing is exempted.
 
+## Tool permissions
+
+The shell is not the only thing that can act on your machine. `write` edits
+files, `web_fetch` sends a request, and an MCP tool does whatever its server
+decides -- all of which ran without a prompt until the `tools` block existed.
+
+The same `permissions.json` carries it:
+
+```json
+{
+  "tools": {
+    "*": "ask",
+    "read": "allow",
+    "edit": "deny",
+    "web_fetch": "ask",
+    "mcp__github__*": "deny"
+  }
+}
+```
+
+| Effect | Result |
+|---|---|
+| `allow` | Runs without interrupting you (the default when unconfigured) |
+| `ask` | Pauses the turn and asks |
+| `deny` | The tool is not registered, so the model never sees it |
+
+Resolution is most-specific-wins with `*` as the fallback, so the example above
+asks about everything except reads, refuses edits, and refuses one MCP server
+entirely.
+
+`deny` removes the tool at registration rather than refusing it at dispatch. A
+tool in the schema is a tool the model will try; refusing it when called still
+spends a round trip and still gives a prompt injection something to aim at.
+
+The shell is excluded -- it decides against its own rule set, and layering the
+tool policy on as well would only duplicate the decision.
+
+A malformed `tools` block leaves everything allowed. Failing closed here would
+disable the agent's tools outright, which is worse than not applying what was
+asked for.
+
 ## Model review
 
 `shell_review` on the agent config puts a model in front of the approval

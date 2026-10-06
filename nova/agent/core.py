@@ -789,6 +789,9 @@ class Agent:
             from nova.tools.shell_review import build_reviewer
 
             reviewer = build_reviewer(self.llm, self.config.model)
+        from nova.tools.shell_policy import default_config_path
+        from nova.tools.tool_policy import load_tool_policy
+
         builder = ToolsetBuilder(
             registry=self.tool_registry,
             skill_service=self._skill_service,
@@ -797,6 +800,7 @@ class Agent:
             allowed_tools=self.allowed_tools,
             agent_key=self.agent_key,
             reviewer=reviewer,
+            tool_policy=load_tool_policy(default_config_path()),
         )
         await builder.build()
         self._skill_tools = builder.skill_tools

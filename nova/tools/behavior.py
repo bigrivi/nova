@@ -199,6 +199,57 @@ class ShellToolBehavior(DefaultToolBehavior):
         return PreExecutionCheck()
 
 
+class PolicyToolBehavior(DefaultToolBehavior):
+    """Gate one tool by its configured effect.
+
+    The shell is not special-cased here: it keeps its pattern rules and simply
+    never reaches this class, because `ToolsetBuilder` registers
+    `ShellToolBehavior` for it. Everything else gets the tool axis, which is where
+    the gap was -- `write` edits files and `web_fetch` sends requests without ever
+    asking.
+
+    A grant is keyed on ``tool:<name>``, so one approval covers the shape of work
+    rather than one exact argument set, and is per session like every other grant.
+    """
+
+    def __init__(self, tool_name: str, policy: Any, approval_manager: Any) -> None:
+        self._tool = tool_name
+        self._policy = policy
+        self._approval = approval_manager
+
+    async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
+        effect = self._policy.effect_for(self._tool)
+        if effect == "allow":
+            return PreExecutionCheck()
+        if effect == "deny":
+            log.info("Tool denied by policy: %s", self._tool)
+            return PreExecutionCheck(
+                allowed=False,
+                reject_reason=(
+                    f"{self._tool} is denied by the tool permissions in "
+                    "permissions.json."
+                ),
+            )
+        req_id = self._approval.pre_request(
+            args.get("description", "") or self._tool,
+            f"{self._tool} call",
+            timeout=0,
+            session_id=ctx.session_id,
+            rule=f"tool:{self._tool}",
+        )
+        if not req_id:
+            return PreExecutionCheck()
+        return PreExecutionCheck(
+            approval_request={
+                "id": req_id,
+                "type": "tool",
+                "toolName": self._tool,
+                "command": self._tool,
+                "description": f"{self._tool} call",
+            }
+        )
+
+
 class ImageReturningToolBehavior(DefaultToolBehavior):
     """Behaviour for tools whose JSON result carries ``images`` and
     ``text`` fields (e.g. ``read_image``, ``browser_use``)."""

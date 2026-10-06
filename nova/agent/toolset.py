@@ -42,6 +42,7 @@ class ToolsetBuilder:
         allowed_tools: frozenset[str] | None = None,
         agent_key: str | None = None,
         reviewer: Any = None,
+        tool_policy: Any = None,
     ) -> None:
         self._registry = registry
         self._skill_service = skill_service
@@ -51,6 +52,8 @@ class ToolsetBuilder:
         self._agent_key = agent_key
         # Model second opinion on flagged shell commands; None disables it.
         self._reviewer = reviewer
+        # Per-tool allow/ask/deny; an empty policy allows everything.
+        self._tool_policy = tool_policy
         self.skill_tools: Any = None
         self.memory_tools: Any = None
 
@@ -65,6 +68,28 @@ class ToolsetBuilder:
             self._register_delegation()
             await self._register_mcp_tools()
         self._register_behaviors()
+        self._register_tool_policies()
+
+    def _register_tool_policies(self) -> None:
+        """Give every registered tool the policy behaviour, except the shell.
+
+        The shell already decides itself against its rule set; layering the tool
+        policy on as well would only duplicate the decision. Denied tools are
+        unregistered rather than left to be refused at dispatch, so they never
+        reach the model's schema and cannot be asked for at all -- Claude Code's
+        documented behaviour for a bare deny.
+        """
+        from nova.tools.behavior import PolicyToolBehavior
+        from nova.tools.tool_policy import ToolPolicy
+
+        policy = self._tool_policy if self._tool_policy is not None else ToolPolicy()
+        for name in [tool.name for tool in self._registry.list_tools()]:
+            if name == "shell" or not self._allows(name):
+                continue
+            if policy.effect_for(name) == "deny":
+                self._registry.unregister(name)
+                continue
+            self._registry.set_behavior(name, PolicyToolBehavior(name, policy, self._approval))
 
     def _register_memory_tools(self) -> None:
         """Register memory tools bound to this agent's key.
