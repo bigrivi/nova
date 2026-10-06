@@ -277,14 +277,47 @@ DANGEROUS_PATTERNS: list[tuple[re.Pattern, str]] = [
         re.compile(r"\b(bash|sh|zsh|ksh)\s+-[^\s]*c\b", re.IGNORECASE),
         "shell command via -c/-lc flag",
     ),
-    # Script execution (-e/-c flag)
+    # An interpreter whose code arrives from the network, as an argument rather
+    # than on stdin: `python3 -c "$(curl ...)"`. The pipe form is covered by the
+    # rule below.
+    #
+    # This used to be a bare `interpreter -c` match, which asked for approval on
+    # every script the agent wrote itself -- in one WeChat session, 13 of 27
+    # shell calls, all local work: reading a JSON file the agent had just
+    # written, or extracting a value before a curl. The rule was for the injection
+    # path, so the network half is what has to be present.
     (
-        re.compile(r"\b(python[23]?|perl|ruby|node)\s+-[ec](\s+|$)", re.IGNORECASE),
-        "script execution via -e/-c flag",
+        re.compile(
+            r"\b(?:python[23]?|perl|ruby|node)\s+-[ec]\s*"
+            # `-c "$(...)"` or `-c '$(...)'`: a subshell feeding the flag. The
+            # closing quote is optional so an unterminated one still matches.
+            r"[\"']?\$\(\s*(?:\w+\s+)*\b(?:curl|wget)\b",
+            re.IGNORECASE,
+        ),
+        "interpreter -c with remotely fetched code",
+    ),
+    # The same trick spelled out inline rather than through a subshell, which is
+    # the form the argument form above cannot see because there is no `$(`.
+    (
+        re.compile(
+            r"\b(?:python[23]?|perl|ruby|node)\s+-[ec]\s+[\"']?[^\n]*?"
+            r"\b(?:urlopen|requests\.get|urllib\.request\.urlopen)\s*\("
+            r"[\"'][^\"']*https?://",
+            re.IGNORECASE,
+        ),
+        "interpreter -c fetching code over the network",
     ),
     # Pipe remote content to an interpreter. The target side covers the common
     # shells, sudo-prefixed shells, and the script interpreters; the trailing
     # boundary stops `| shuf` and friends from matching on the prefix alone.
+    #
+    # `python -m <formatter>` is carved out: those modules read stdin and print it
+    # back rather than evaluating it, so `curl ... | python -m json.tool` is the
+    # same operation as `curl ... | jq .`, which was always allowed. Matching the
+    # interpreter name without the flag made the two inconsistent -- and it was
+    # the remaining source of approvals in a real session. Only `-m` with a listed
+    # formatter counts; `-m http.server` and a bare `python3` still match, since
+    # in those the piped bytes are the program.
     (
         re.compile(
             r"\b(curl|wget)\b[^\n]*\|[^\n]*?"
@@ -292,7 +325,12 @@ DANGEROUS_PATTERNS: list[tuple[re.Pattern, str]] = [
             r"(?:[/\w]*/)?(?:ba|da|k|c|a|z|fi)?sh\b"
             r"|\b(curl|wget)\b[^\n]*\|[^\n]*?"
             r"(?:sudo\s+(?:-[^\s]+\s+)*)?"
+            # A `-m <formatter>` target is not an interpreter invocation. The negative
+            # lookahead sits after the module name, so it excludes exactly that
+            # module and leaves every other flag combination matching.
             r"(?:python[23]?|node|perl|ruby)\b"
+            r"(?!\s*-m\s+(?:json\.tool|base64|html|json|xml|csv|tokenize"
+            r"|difflib|pprint|tabulate)\b)"
             r"(?=\s|$|[;&|)])",
             re.IGNORECASE,
         ),
