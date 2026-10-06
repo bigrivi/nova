@@ -488,22 +488,15 @@ class Decision:
 
 
 def classify(command: str) -> Decision:
-    """Decide what to do with *command*.
+    """Decide what to do with *command*, honouring the configured rule set.
 
-    Blocked rules are checked first and a match is final: a rule the user can
-    approve away must not be shadowed by the preference order the other way round.
+    Delegates to `shell_policy` so there is one decision path rather than one
+    here and one there. The import is inside the function because
+    `shell_policy` reads the pattern lists above.
     """
-    # Not lowercased: every pattern carries re.IGNORECASE, and folding here would
-    # collapse the case that carries the meaning -- `git branch -d` is a normal
-    # delete, `git branch -D` is the forced one.
-    cmd = command.strip()
-    for pattern_re, description in HARDLINE_PATTERNS:
-        if pattern_re.search(cmd):
-            return Decision(effect="block", rule=description, description=description)
-    for pattern_re, description in DANGEROUS_PATTERNS:
-        if pattern_re.search(cmd):
-            return Decision(effect="ask", rule=description, description=description)
-    return Decision(effect="allow")
+    from nova.tools.shell_policy import default_rule_set
+
+    return default_rule_set().classify(command)
 
 
 def is_hardline(command: str) -> tuple[bool, str]:

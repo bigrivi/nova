@@ -42,6 +42,54 @@ Commands that are never allowed:
 - fork bombs, `kill -1`
 - `shutdown`, `reboot`, `poweroff`
 
+## Configuring the rules
+
+The tiers above are the defaults. `~/.nova/permissions.json` (or the path in
+`NOVA_SHELL_RULES`) adjusts them without editing source:
+
+```json
+{
+  "allow": ["git push *", "killall *", "docker compose *"],
+  "disable": ["git force push (rewrites remote history)"],
+  "ask": [
+    { "match": "\\bnpm\\s+publish\\b", "description": "publishes a package" }
+  ]
+}
+```
+
+| Key | Shape | Effect |
+|---|---|---|
+| `allow` | list of prefixes | Pre-approve every command starting with the prefix. `*` is the only wildcard; everything else is literal. |
+| `disable` | list of rule descriptions | Switch off a built-in rule. The name is the reason a prompt shows. |
+| `ask` | list of `{match, description}` | Add a rule. `match` is a Python regular expression, `description` is what an approval prompt shows. |
+
+The lists are consulted in a fixed order and the first match wins:
+
+```text
+block  ->  allow  ->  ask  ->  allow (no rule matched)
+```
+
+`allow` sits above `ask` so you can pre-approve something the defaults flag.
+`block` sits above both: a rule that exists because nothing may undo it must not
+be reachably waived, so no config can allow `rm -rf /`.
+
+Two things to know:
+
+- **A malformed entry is skipped, not fatal.** A bad regular expression or the
+  wrong JSON shape is logged and ignored, and the rest of the file still applies.
+  A typo in a security file must not leave the agent unable to run anything.
+- **The file is read once per process.** Edits take effect on restart.
+
+## Approvals
+
+A dangerous command pauses the turn and asks. Approving with "always" records a
+grant against **the rule that fired**, not the command text -- an agent that
+interpolates a URL or a temp path never repeats a command verbatim, so a grant
+keyed on the text could never be hit twice.
+
+The grant covers that rule for the rest of the session and does not carry to
+other sessions.
+
 ## Timeouts
 
 Shell commands have a configurable timeout (default: 120s). Long-running
