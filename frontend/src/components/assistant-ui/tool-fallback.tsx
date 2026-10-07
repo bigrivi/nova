@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { errorTextFromResult } from "@/lib/tool-result";
+import { readToolOutcome } from "@/lib/tool-outcome";
 import {
     readBackgroundTaskEnvelope,
     readBackgroundTaskReference,
@@ -160,21 +161,11 @@ function ToolFallbackTrigger({
     backgroundState?: NovaBackgroundTaskStatus | null;
 }) {
     const statusType = status?.type ?? "complete";
-    // A detached background task keeps living after the tool call returns its
-    // handle (status "complete"), so the dot follows the task's own state when
-    // there is one: spinner while it runs, check/cross once it settles.
-    const taskRunning =
-        backgroundState === "queued" || backgroundState === "running";
-    const taskFailed =
-        backgroundState === "failed" || backgroundState === "timed_out";
-    const taskCancelled = backgroundState === "cancelled";
-    const isRunning = statusType === "running" || taskRunning;
-    const isCancelled =
-        (status?.type === "incomplete" && status.reason === "cancelled") ||
-        taskCancelled;
-    const statusError =
-        status?.type === "incomplete" && !isCancelled && status.error != null;
-    const errored = (isError === true || statusError || taskFailed) && !taskRunning;
+    const { isRunning, isCancelled, errored } = readToolOutcome(
+        status,
+        isError,
+        backgroundState ?? null,
+    );
     const paramSummary = getParamSummary(argsText);
 
     return (
@@ -446,11 +437,9 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
     isError,
 }) => {
     const { t } = useTranslation();
-    const isCancelled =
-        status?.type === "incomplete" && status.reason === "cancelled";
-    const errored =
-        isError === true ||
-        (status?.type === "incomplete" && !isCancelled && status.error != null);
+    // Part status only: the detached task is deliberately excluded here so the
+    // result block stays rendered for a task that later fails.
+    const { isCancelled, errored } = readToolOutcome(status, isError, null);
     const errorMessage = errored ? errorTextFromResult(result) : null;
     const backgroundTask = readBackgroundTaskReference(argsText, result);
     const trackedTask = useBackgroundTaskStore((state) =>

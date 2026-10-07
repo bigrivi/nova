@@ -16,6 +16,10 @@ import {
     createTimelineGroupBy,
     readPartElapsedMs,
 } from "@/lib/timeline-grouping";
+import { readBackgroundTaskReference } from "@/lib/background-task";
+import { readToolOutcome } from "@/lib/tool-outcome";
+import { useBackgroundTaskStore } from "@/stores/background-task-store";
+import type { NovaBackgroundTaskStatus } from "@/types/nova";
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
 import { ChevronDownIcon, FileText } from "lucide-react";
 import { memo, useMemo, useState, type FC } from "react";
@@ -261,6 +265,61 @@ const AssistantMessage: FC<{ name: string; agentKey: string | null }> = ({
             0,
         );
 
+    // A detached background task can fail after its tool call already returned
+    // a handle, so the card header needs the live task state, not just the
+    // part. Subscribed per message by task id: selecting the whole map would
+    // re-render every message in the thread on any task update.
+    const backgroundTaskIds = useMemo(() => {
+        const ids = new Set<string>();
+        for (const part of parts) {
+            if (part.type !== "tool-call") continue;
+            const taskId = readBackgroundTaskReference(
+                part.argsText,
+                part.result,
+            )?.taskId;
+            if (taskId) ids.add(taskId);
+        }
+        return [...ids];
+    }, [parts]);
+
+    const backgroundTaskStatuses = useBackgroundTaskStore(
+        useShallow((state) =>
+            backgroundTaskIds.map(
+                (id) => state.tasksById[id]?.status ?? null,
+            ),
+        ),
+    );
+
+    const erroredToolIndices = useMemo(() => {
+        const stateByTaskId = new Map<string, NovaBackgroundTaskStatus | null>(
+            backgroundTaskIds.map((id, i) => [id, backgroundTaskStatuses[i]]),
+        );
+        const failed = new Set<number>();
+        parts.forEach((part, index) => {
+            if (part.type !== "tool-call") return;
+            const taskId = readBackgroundTaskReference(
+                part.argsText,
+                part.result,
+            )?.taskId;
+            const backgroundState = taskId
+                ? (stateByTaskId.get(taskId) ?? null)
+                : null;
+            if (
+                readToolOutcome(part.status, part.isError, backgroundState)
+                    .errored
+            ) {
+                failed.add(index);
+            }
+        });
+        return failed;
+    }, [parts, backgroundTaskIds, backgroundTaskStatuses]);
+
+    const countErroredTools = (indices: readonly number[]) =>
+        indices.reduce(
+            (total, index) => (erroredToolIndices.has(index) ? total + 1 : total),
+            0,
+        );
+
     const segmentElapsedMs = (indices: readonly number[]): number | null => {
         let total = 0;
         let hasElapsed = false;
@@ -318,6 +377,9 @@ const AssistantMessage: FC<{ name: string; agentKey: string | null }> = ({
                                         count={countVisibleTools(
                                             groupIndices(part),
                                         )}
+                                        erroredCount={countErroredTools(
+                                            groupIndices(part),
+                                        )}
                                     >
                                         {children}
                                     </ToolGroup>
@@ -327,6 +389,9 @@ const AssistantMessage: FC<{ name: string; agentKey: string | null }> = ({
                                     <ToolGroup
                                         variant="standalone"
                                         count={countVisibleTools(
+                                            groupIndices(part),
+                                        )}
+                                        erroredCount={countErroredTools(
                                             groupIndices(part),
                                         )}
                                     >
