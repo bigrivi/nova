@@ -130,12 +130,19 @@ class Error(ChatEvent):
     dropping it silently loses work the user watched appear. Consumers that do
     not care may ignore both - the defaults keep the event meaning exactly what
     it meant before.
+
+    ``provider_meta`` carries the same opaque per-turn state ``Done`` does. It
+    matters most on a turn that failed *after* reasoning: Anthropic's thinking
+    signature and redacted-thinking blocks have to be replayed on later turns of
+    the same conversation, so a turn reported as an error must not be the
+    reason that state goes missing.
     """
 
     type: str = "error"
     message: str = ""
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
+    provider_meta: dict | None = None
 
 
 ChatStreamEvent = TextDelta | ReasoningDelta | ToolCall | Done | Error

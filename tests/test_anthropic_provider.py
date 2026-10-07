@@ -1092,7 +1092,10 @@ async def test_chat_stream_thinking(monkeypatch):
     assert reasoning[0].content == "hmm"
     assert reasoning[1].content == " yes"
     assert not any(isinstance(event, TextDelta) for event in collected)
-    assert isinstance(collected[-1], Done)
+    # This stream reasons and then ends without answering or calling a tool.
+    # That used to be reported as Done, which is what left users staring at a
+    # blank reply; it is an Error now. The reasoning above is still delivered.
+    assert isinstance(collected[-1], Error)
 
 
 @pytest.mark.asyncio
@@ -1361,10 +1364,13 @@ async def test_chat_stream_provider_meta_redacted_thinking(monkeypatch):
             [Message(role="user", content="hi")], model="claude-sonnet-4-5"
         )
     ]
-    done = collected[-1]
-    assert isinstance(done, Done)
-    assert done.provider_meta is not None
-    assert done.provider_meta["redacted_thinking"] == ["<data>"]
+    final = collected[-1]
+    # Nothing but thinking and no answer, so this turn is an error rather than a
+    # blank reply -- but the redacted-thinking state still has to survive, since
+    # a later turn replays it.
+    assert isinstance(final, Error)
+    assert final.provider_meta is not None
+    assert final.provider_meta["redacted_thinking"] == ["<data>"]
 
 
 def test_format_messages_rehydrates_thinking_signature():
@@ -1916,3 +1922,257 @@ async def test_chat_stream_max_tokens_with_partial_answer_is_done(monkeypatch):
     done = collected[-1]
     assert isinstance(done, Done)
     assert done.content == "partial"
+
+
+# ---------------------------------------------------------------------------
+# Truncated streams: EOF before message_stop
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_eof_before_message_stop_is_error(monkeypatch):
+    """A relay that closes mid-turn must not look like a finished answer.
+
+    Observed against a third-party Anthropic relay that stalls for many
+    seconds after the thinking block and then closes the connection. Without
+    this, the turn reported Done with no content and the user saw "the
+    thinking stopped and the call just ended".
+    """
+    events = [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 10}}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "thinking_delta", "thinking": "I should fetch that."},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "signature_delta", "signature": "abc"},
+        },
+        # No content_block_stop, no message_delta, no message_stop.
+    ]
+    _install_fake(monkeypatch, _FakeResponse(status=200, sse_lines=_sse_lines(events)))
+    provider = AnthropicProvider(api_key="k")
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-opus-4-8"
+        )
+    ]
+    final = collected[-1]
+    assert isinstance(final, Error)
+    assert "message_stop" in final.message
+    assert "No answer text had arrived" in final.message
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_truncated_keeps_the_recovered_answer(monkeypatch):
+    """Text that did arrive stays on the Error so the work is not lost."""
+    events = [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 10}}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "half an ans"},
+        },
+        # Cut off here.
+    ]
+    _install_fake(monkeypatch, _FakeResponse(status=200, sse_lines=_sse_lines(events)))
+    provider = AnthropicProvider(api_key="k")
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-opus-4-8"
+        )
+    ]
+    final = collected[-1]
+    assert isinstance(final, Error)
+    assert final.content == "half an ans"
+    assert "11 chars of answer text were recovered" in final.message
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_truncated_keeps_the_recovered_tool_call(monkeypatch):
+    """A tool call that was fully streamed survives the truncation."""
+    events = [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 10}}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "tool_use", "id": "tu_1", "name": "web_fetch"},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {
+                "type": "input_json_delta",
+                "partial_json": '{"url": "https://x/"}',
+            },
+        },
+        # Cut off before content_block_stop for the tool block.
+    ]
+    _install_fake(monkeypatch, _FakeResponse(status=200, sse_lines=_sse_lines(events)))
+    provider = AnthropicProvider(api_key="k")
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-opus-4-8"
+        )
+    ]
+    final = collected[-1]
+    assert isinstance(final, Error)
+    assert [call.name for call in final.tool_calls] == ["web_fetch"]
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_complete_stream_is_still_done(monkeypatch):
+    """The normal path must be untouched by the truncation guard."""
+    events = [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 10}}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "full answer"},
+        },
+        {"type": "content_block_stop", "index": 0},
+        {"type": "message_delta", "delta": {"stop_reason": "end_turn"}},
+        {"type": "message_stop"},
+    ]
+    _install_fake(monkeypatch, _FakeResponse(status=200, sse_lines=_sse_lines(events)))
+    provider = AnthropicProvider(api_key="k")
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-opus-4-8"
+        )
+    ]
+    final = collected[-1]
+    assert isinstance(final, Done)
+    assert final.content == "full answer"
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_end_turn_after_thinking_with_no_answer_is_error(monkeypatch):
+    """The reported failure: reasoning closes, turn ends, nothing was produced.
+
+    The gateway delivers a complete, well-formed stream -- thinking block
+    closed, stop_reason=end_turn, message_stop present -- so nothing marks the
+    turn as failed. But the model announced the tool call it intended to make
+    inside its thinking and never emitted it, leaving no answer text and no tool
+    call. Reporting Done here is what showed the user a blank reply.
+    """
+    events = [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 10}}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {
+                "type": "thinking_delta",
+                "thinking": "I'll handle the research myself using web_fetch.",
+            },
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "signature_delta", "signature": "abc"},
+        },
+        {"type": "content_block_stop", "index": 0},
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn"},
+            "usage": {"output_tokens": 229},
+        },
+        {"type": "message_stop"},
+    ]
+    _install_fake(monkeypatch, _FakeResponse(status=200, sse_lines=_sse_lines(events)))
+    provider = AnthropicProvider(api_key="k")
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-opus-4-8"
+        )
+    ]
+    final = collected[-1]
+    assert isinstance(final, Error)
+    assert "stop_reason=end_turn" in final.message
+    assert "without answering or calling a tool" in final.message
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_end_turn_with_no_thinking_is_error(monkeypatch):
+    """Same guard without a reasoning block: still an empty turn, still an error."""
+    events = [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 10}}},
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn"},
+            "usage": {"output_tokens": 4},
+        },
+        {"type": "message_stop"},
+    ]
+    _install_fake(monkeypatch, _FakeResponse(status=200, sse_lines=_sse_lines(events)))
+    provider = AnthropicProvider(api_key="k")
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-opus-4-8"
+        )
+    ]
+    assert isinstance(collected[-1], Error)
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_refusal_with_text_is_still_done(monkeypatch):
+    """A refusal that carries text is an answer, not an empty turn."""
+    events = [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 10}}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "I can't help with that."},
+        },
+        {"type": "content_block_stop", "index": 0},
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "refusal"},
+            "usage": {"output_tokens": 8},
+        },
+        {"type": "message_stop"},
+    ]
+    _install_fake(monkeypatch, _FakeResponse(status=200, sse_lines=_sse_lines(events)))
+    provider = AnthropicProvider(api_key="k")
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-opus-4-8"
+        )
+    ]
+    final = collected[-1]
+    assert isinstance(final, Done)
+    assert final.content == "I can't help with that."

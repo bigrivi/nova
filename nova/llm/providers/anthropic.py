@@ -21,7 +21,11 @@ from nova.llm.provider import (
     ToolCall,
 )
 from nova.llm.request_hook import run_request_hook, run_session_hook
-from nova.llm.stream_driver import StreamParser, output_limit_error
+from nova.llm.stream_driver import (
+    StreamParser,
+    no_answer_error,
+    output_limit_error,
+)
 from nova.llm.tokenizer import normalise_model_id
 
 # Re-exported so a single source of truth for the retry policy is observable on
@@ -58,6 +62,7 @@ _MODEL_MAX_OUTPUT_TOKENS = (
     ("claude-haiku-4", 64000),
 )
 _DEFAULT_MAX_OUTPUT_TOKENS = 8192
+
 
 # Prompt-cache breakpoint lifetimes Anthropic accepts. 5m is the API default
 # (implied by omitting the ttl field); Nova defaults to 1h so conversations
@@ -412,6 +417,38 @@ class _AnthropicStreamParser(StreamParser):
         # ping / unknown -> ignore
         return
 
+    def on_eof(self, acc: StreamAccumulator):
+        # message_stop is this protocol's terminal event, so reaching the end of
+        # the transport without it means the response was cut short -- observed
+        # with a relaying gateway that stalls for many seconds after the
+        # thinking block and then closes. Reporting that as a normal end
+        # produced a successful turn with no answer, which the user sees as
+        # "the thinking stopped and the call just ended".
+        recovered = [
+            _state_to_tool_call(state)
+            for _index, state in sorted(self._tool_calls.items())
+            if state.get("name")
+        ]
+        if not self.finished:
+            detail = (
+                f" {len(acc.content)} chars of answer text were recovered."
+                if acc.content
+                else " No answer text had arrived."
+            )
+            yield Error(
+                message=(
+                    "the response stream ended before Anthropic's message_stop "
+                    "event, so the answer was cut off part-way - the upstream "
+                    f"provider or a relaying gateway closed the connection."
+                    f"{detail}"
+                ),
+                content=acc.content,
+                tool_calls=recovered,
+                provider_meta=_thinking_provider_meta(self._final_thinking_blocks),
+            )
+            return
+        yield self.build_done(acc)
+
     def build_done(self, acc: StreamAccumulator) -> Done | Error:
         provider_meta = _thinking_provider_meta(self._final_thinking_blocks)
         final_tool_calls = [
@@ -419,14 +456,26 @@ class _AnthropicStreamParser(StreamParser):
             for _index, tool_call_state in sorted(self._tool_calls.items())
             if tool_call_state.get("name")
         ]
-        # A turn that hit the output-token limit without producing any answer
-        # (all budget spent on reasoning) is a failure, not an empty answer.
-        if (
-            not acc.content
-            and not final_tool_calls
-            and self._stop_reason == "max_tokens"
-        ):
-            return output_limit_error("stop_reason=max_tokens")
+        # A turn that produced neither answer text nor a tool call is a failure
+        # whatever the wire said about ending: reporting it as Done is what
+        # leaves the user looking at a blank reply. Two shapes reach here, both
+        # observed on a relaying gateway driving Claude Opus 4.8:
+        #
+        # * stop_reason=max_tokens - the whole budget went into reasoning
+        #   (handled by output_limit_error, which names that cause), and
+        # * stop_reason=end_turn with a reasoning effort enabled - the model
+        #   closes its thinking block announcing the tool call it intends to
+        #   make, never emits that tool_use block, and ends the turn. Nothing
+        #   is wrong with the transport; there is simply no answer.
+        if not acc.content and not final_tool_calls:
+            if self._stop_reason == "max_tokens":
+                error = output_limit_error("stop_reason=max_tokens")
+            else:
+                error = no_answer_error(self._stop_reason or "end_turn")
+            # The turn produced no answer, but it did reason. Keep the thinking
+            # state so a later turn can still replay it.
+            error.provider_meta = provider_meta
+            return error
         return Done(
             content=acc.content,
             tool_calls=final_tool_calls,

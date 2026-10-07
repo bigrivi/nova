@@ -38,6 +38,29 @@ def output_limit_error(reason: str) -> Error:
     )
 
 
+def no_answer_error(reason: str) -> Error:
+    """Error for a turn that ended without any answer and without any tool call.
+
+    A reasoning model can close its thinking block, announce the tool call it
+    means to make, and end the turn without ever emitting it. That produces no
+    answer text and no tool call, which is a turn that did nothing -- but it
+    arrives as a clean ``end_turn``, so nothing marks it as a failure and the
+    user just sees a blank reply. Naming the stop reason tells them what the
+    provider actually said.
+
+    Args:
+        reason: The wire-level stop reason, named in the message.
+    """
+    return Error(
+        message=(
+            "the model ended its turn after reasoning without answering or "
+            f"calling a tool (stop_reason={reason}); it announced what it "
+            "intended to do but produced nothing - try again, or use a "
+            "provider or model that completes its tool calls"
+        )
+    )
+
+
 class StreamParser(ABC):
     """Translates one wire format's events into Nova stream events.
 
