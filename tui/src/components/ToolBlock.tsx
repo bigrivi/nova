@@ -252,10 +252,20 @@ function summarizeOutput(
         case "glob":
         case "grep":
             return `Found ${lines.length} matches`;
-        case "web_search":
+        case "web_search": {
+            // Search returns ranked metadata as JSON, so report what it found
+            // rather than counting lines of a payload the reader cannot use.
+            try {
+                const parsed = JSON.parse(text) as { results?: unknown };
+                if (Array.isArray(parsed.results))
+                    return `Found ${parsed.results.length} result${parsed.results.length === 1 ? "" : "s"}`;
+            } catch {
+                // Not the expected shape; fall back to the generic summary.
+            }
             return lines.length === 1
                 ? truncate(lines[0]!, 80)
                 : `${lines.length} lines`;
+        }
         case "todo_write": {
             // Prefer structured args — one vivid line per task, not an aggregated count.
             const argTodos = todosFromArgs(args);

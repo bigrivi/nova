@@ -1,5 +1,6 @@
 import json
 import sys
+import time
 
 import nova.__main__ as nova_main
 from nova.desktop import main as desktop_main
@@ -159,3 +160,53 @@ def test_desktop_window_url_maps_wildcard_host_to_loopback():
     assert desktop_main._window_url("::", 8765) == "http://127.0.0.1:8765"
     assert desktop_main._window_url("127.0.0.1", 8765) == "http://127.0.0.1:8765"
     assert desktop_main._window_url("192.168.1.28", 8765) == "http://192.168.1.28:8765"
+
+
+def test_main_websearch_stats_prints_a_table_and_starts_nothing(
+    monkeypatch, tmp_path, capsys
+):
+    home = tmp_path / "nova-main-ws-stats"
+    _write_config(home, {"providers": {}})
+    usage = home / "logs" / "web_search_usage.jsonl"
+    usage.parent.mkdir(parents=True)
+    usage.write_text(
+        json.dumps({"ts": time.time(), "backend": "exa", "outcome": "ok"})
+        + "\n"
+        + json.dumps(
+            {
+                "ts": time.time(),
+                "backend": "keenable",
+                "outcome": "rate_limited",
+                "remaining": 12,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def boom(**kwargs):
+        raise AssertionError("websearch-stats must not start the server")
+
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    monkeypatch.setattr(nova_main, "run_server", boom)
+    monkeypatch.setattr(sys, "argv", ["nova", "websearch-stats", "--days", "7"])
+
+    nova_main.main()
+
+    printed = capsys.readouterr().err
+    assert "exa" in printed
+    assert "keenable" in printed
+    assert "quota_low" in printed
+    assert "12" in printed
+
+
+def test_main_websearch_stats_reports_an_empty_log(monkeypatch, tmp_path, capsys):
+    home = tmp_path / "nova-main-ws-empty"
+    _write_config(home, {"providers": {}})
+
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    monkeypatch.setattr(sys, "argv", ["nova", "websearch-stats"])
+
+    nova_main.main()
+
+    assert "No web_search usage recorded yet" in capsys.readouterr().err

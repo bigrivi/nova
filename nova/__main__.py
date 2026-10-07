@@ -63,6 +63,17 @@ def _open_browser_when_ready(url: str) -> None:
     threading.Thread(target=worker, daemon=True).start()
 
 
+def _print_web_search_stats(days: int) -> None:
+    """Print recorded web_search backend usage, newest day first.
+
+    Args:
+        days: How many days of history to summarise.
+    """
+    from nova.tools.web_search import usage_report
+
+    print(usage_report(days), file=sys.stderr)
+
+
 def _web_settings(settings: Settings, project_root: Path) -> Settings:
     """Resolve the frontend dist and return settings that serve it."""
     dist_dir = settings.frontend_dist_path
@@ -122,9 +133,15 @@ def main():
     parser.add_argument(
         "mode",
         nargs="?",
-        choices=["serve", "web", "tui", "desktop"],
+        choices=["serve", "web", "tui", "desktop", "websearch-stats"],
         default="serve",
-        help="Run mode: serve (HTTP backend, default), web (backend + browser UI), tui (OpenTUI client), desktop (GUI window)",
+        help="Run mode: serve (HTTP backend, default), web (backend + browser UI), tui (OpenTUI client), desktop (GUI window), websearch-stats (summarise web_search backend usage)",
+    )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="[websearch-stats] Days of history to summarise",
     )
     provider_default = provider_names[0] if provider_names else None
     parser.add_argument(
@@ -159,6 +176,9 @@ def main():
     configure_logging(settings, console=args.mode in ("serve", "web"))
 
     try:
+        if args.mode == "websearch-stats":
+            _print_web_search_stats(args.days)
+            return
         if args.mode == "tui":
             _run_tui()
             return

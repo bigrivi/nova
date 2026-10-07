@@ -73,6 +73,45 @@ class TranscriptionSettings:
         return bool(self.api_key.strip())
 
 
+WEB_SEARCH_PROVIDERS = ("auto", "exa", "parallel", "keenable")
+
+
+@dataclass(frozen=True)
+class WebSearchSettings:
+    """Web search backend selection, overridable via config.json ``web_search``.
+
+    Search is a baseline capability, so every backend is usable keyless and a
+    key is an optional upgrade that raises the caller's rate ceiling rather
+    than a prerequisite. ``provider`` pins a single backend; ``auto`` spreads
+    calls across the ring so one backend's free allowance is not the ceiling
+    for the whole agent.
+    """
+
+    provider: str = "auto"
+    exa_api_key: str = field(default="", repr=False)
+    parallel_api_key: str = field(default="", repr=False)
+    keenable_api_key: str = field(default="", repr=False)
+
+
+@dataclass(frozen=True)
+class ApprovalReviewSettings:
+    """Model second opinion on actions a permission rule flagged.
+
+    Off by default. A review costs a model call on the approval path, and a
+    reviewer that waves through an action the user would have refused is a worse
+    failure than a prompt.
+
+    ``provider``/``model`` are optional and default to the agent's own, which is
+    the obvious first setting. Point them at something smaller when the agent runs
+    a large model: the reviewer only has to answer one word, and spending the
+    agent's budget on it is the wrong end of the trade.
+    """
+
+    enabled: bool = False
+    provider: str = ""
+    model: str = ""
+
+
 @dataclass(frozen=True)
 class CompactionSettings:
     """Context compaction thresholds, overridable via config.json ``compaction`` block."""
@@ -258,6 +297,48 @@ def _parse_transcription_config(raw: Any) -> TranscriptionSettings:
     )
 
 
+def _parse_web_search_config(raw: Any) -> WebSearchSettings:
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid Nova config: 'web_search' must be an object")
+    provider = str(raw.get("provider", "auto")).strip().lower() or "auto"
+    if provider not in WEB_SEARCH_PROVIDERS:
+        allowed = ", ".join(WEB_SEARCH_PROVIDERS)
+        raise ValueError(
+            f"Invalid Nova config: 'web_search.provider' must be one of {allowed}"
+        )
+    return WebSearchSettings(
+        provider=provider,
+        exa_api_key=str(raw.get("exa_api_key", "")).strip()
+        or os.getenv("NOVA_EXA_API_KEY", "").strip()
+        or os.getenv("EXA_API_KEY", "").strip(),
+        parallel_api_key=str(raw.get("parallel_api_key", "")).strip()
+        or os.getenv("NOVA_PARALLEL_API_KEY", "").strip()
+        or os.getenv("PARALLEL_API_KEY", "").strip(),
+        keenable_api_key=str(raw.get("keenable_api_key", "")).strip()
+        or os.getenv("NOVA_KEENABLE_API_KEY", "").strip()
+        or os.getenv("KEENABLE_API_KEY", "").strip(),
+    )
+
+
+def _parse_approval_review_config(raw: Any) -> ApprovalReviewSettings:
+    if raw is None:
+        return ApprovalReviewSettings()
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid Nova config: 'approval_review' must be an object")
+    enabled = raw.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError(
+            "Invalid Nova config: 'approval_review.enabled' must be a boolean"
+        )
+    return ApprovalReviewSettings(
+        enabled=enabled,
+        provider=str(raw.get("provider", "")).strip(),
+        model=str(raw.get("model", "")).strip(),
+    )
+
+
 def _parse_compaction_config(raw: Any) -> CompactionSettings:
     if raw is None:
         return CompactionSettings()
@@ -368,6 +449,14 @@ class Settings:
     # Voice-to-text (Groq Whisper by default). Empty api_key disables it.
     transcription: TranscriptionSettings = field(default_factory=TranscriptionSettings)
 
+    # Web search backends. Keys optional; keyless works out of the box.
+    web_search: WebSearchSettings = field(default_factory=WebSearchSettings)
+
+    # Model second opinion on flagged actions. Off unless configured.
+    approval_review: ApprovalReviewSettings = field(
+        default_factory=ApprovalReviewSettings
+    )
+
     # Runtime config file path.
     config_path: Path | None = None
 
@@ -389,8 +478,12 @@ class Settings:
         providers = _parse_provider_configs(config_payload.get("providers"))
         raw_mcp = config_payload.get("mcp_servers")
         mcp_servers = dict(raw_mcp) if isinstance(raw_mcp, dict) else {}
+        approval_review = _parse_approval_review_config(
+            config_payload.get("approval_review")
+        )
         compaction = _parse_compaction_config(config_payload.get("compaction"))
         transcription = _parse_transcription_config(config_payload.get("transcription"))
+        web_search = _parse_web_search_config(config_payload.get("web_search"))
         host, port, log_level, auth_user, auth_password = _parse_server_config(
             config_payload.get("server")
         )
@@ -410,6 +503,8 @@ class Settings:
             mcp_servers=mcp_servers,
             compaction=compaction,
             transcription=transcription,
+            web_search=web_search,
+            approval_review=approval_review,
             auth_user=auth_user,
             auth_password=auth_password,
         )

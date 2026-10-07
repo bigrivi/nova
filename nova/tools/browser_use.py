@@ -384,9 +384,9 @@ async def browser_use(
         elif action == "web_search":
             if not query:
                 return ToolResult(error="Query required for web_search")
-            result = await web_search_tool(
-                query=query, fetch_content=True, num_results=1
-            )
+            # Search returns metadata only, so one result is enough to get a URL
+            # to navigate to; the page itself is read by the browser from here.
+            result = await web_search_tool(query=query, limit=1)
             if not result.success or not result.content:
                 return ToolResult(error="Search returned no results")
             try:
