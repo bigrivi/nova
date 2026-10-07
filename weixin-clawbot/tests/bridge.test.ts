@@ -185,7 +185,7 @@ describe("describeToolCall", () => {
   });
 
   it("names the argument each remaining tool acts on", () => {
-    assert.equal(describeToolCall("web_search", { query: "nova agent", num_results: 8 }), "nova agent");
+    assert.equal(describeToolCall("web_search", { query: "nova agent", limit: 8 }), "nova agent");
     assert.equal(describeToolCall("web_fetch", { url: "https://x.dev", timeout: 20 }), "https://x.dev");
     assert.equal(describeToolCall("delegate_to_agent", { target: "explore", task: "find", context: "c" }), "explore");
     assert.equal(describeToolCall("subagent_status", { target: "explore" }), "explore");
