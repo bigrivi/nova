@@ -1,5 +1,6 @@
 import type { ThreadMessageLike } from "@assistant-ui/react";
 
+import type { ApprovalPending } from "../stores/approval-store";
 import type { NovaStreamEvent } from "../types/nova";
 import { DEFAULT_AGENT_KEY, DRAFT_THREAD_ID } from "./nova-constants";
 import { createOptimisticSessionTitle } from "./thread-messages";
@@ -84,23 +85,16 @@ export interface StreamEngineDeps {
         appendCompactionDelta: (delta: string) => void;
     };
     approval: {
+        /**
+         * `ApprovalPending` rather than a copy of it. This was an inline
+         * structural type, so adding `toolName` to the store left this file
+         * describing an older shape and every consumer stopped compiling.
+         */
         setPendingForSession: (
             sessionId: string,
-            pending: {
-                sessionId: string;
-                requestId: string;
-                command: string;
-                description: string;
-            } | null,
+            pending: ApprovalPending | null,
         ) => void;
-        setPending: (
-            pending: {
-                sessionId: string;
-                requestId: string;
-                command: string;
-                description: string;
-            } | null,
-        ) => void;
+        setPending: (pending: ApprovalPending | null) => void;
         clearPendingForSession: (sessionId: string) => void;
     };
     todo: { setActive: (input: unknown) => void };
