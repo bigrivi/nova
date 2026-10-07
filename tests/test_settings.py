@@ -793,3 +793,84 @@ def test_configure_logging_console_adds_stream_handler(monkeypatch, tmp_path):
         root.handlers.clear()
         root.handlers.extend(original_handlers)
         root.setLevel(original_level)
+
+
+def test_settings_web_search_defaults_to_keyless_auto(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "nova-tx-ws-default"))
+    names = (
+        "EXA_API_KEY",
+        "PARALLEL_API_KEY",
+        "KEENABLE_API_KEY",
+        "NOVA_EXA_API_KEY",
+        "NOVA_PARALLEL_API_KEY",
+        "NOVA_KEENABLE_API_KEY",
+    )
+    for name in names:
+        monkeypatch.delenv(name, raising=False)
+    settings = Settings.load_config()
+
+    assert settings.web_search.provider == "auto"
+    assert settings.web_search.exa_api_key == ""
+    assert settings.web_search.parallel_api_key == ""
+    assert settings.web_search.keenable_api_key == ""
+
+
+def test_settings_web_search_from_config(monkeypatch, tmp_path):
+    home = tmp_path / "nova-tx-ws-config"
+    _write_config(
+        home,
+        {
+            "providers": {},
+            "web_search": {"provider": "parallel", "parallel_api_key": "par-key"},
+        },
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    settings = Settings.load_config()
+
+    assert settings.web_search.provider == "parallel"
+    assert settings.web_search.parallel_api_key == "par-key"
+    assert settings.web_search.exa_api_key == ""
+
+
+def test_settings_web_search_keys_fall_back_to_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "nova-tx-ws-env"))
+    monkeypatch.setenv("EXA_API_KEY", "env-exa")
+    monkeypatch.setenv("PARALLEL_API_KEY", "env-parallel")
+    monkeypatch.setenv("KEENABLE_API_KEY", "env-keenable")
+
+    settings = Settings.load_config()
+
+    assert settings.web_search.exa_api_key == "env-exa"
+    assert settings.web_search.parallel_api_key == "env-parallel"
+    assert settings.web_search.keenable_api_key == "env-keenable"
+
+
+def test_settings_web_search_accepts_keenable_as_a_pinned_provider(
+    monkeypatch, tmp_path
+):
+    home = tmp_path / "nova-tx-ws-keenable"
+    _write_config(home, {"providers": {}, "web_search": {"provider": "keenable"}})
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    settings = Settings.load_config()
+
+    assert settings.web_search.provider == "keenable"
+
+
+def test_settings_web_search_rejects_unknown_provider(monkeypatch, tmp_path):
+    home = tmp_path / "nova-tx-ws-bad"
+    _write_config(home, {"providers": {}, "web_search": {"provider": "bing"}})
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    with pytest.raises(ValueError, match=r"web_search\.provider"):
+        Settings.load_config()
+
+
+def test_settings_web_search_rejects_non_object_block(monkeypatch, tmp_path):
+    home = tmp_path / "nova-tx-ws-shape"
+    _write_config(home, {"providers": {}, "web_search": "exa"})
+    monkeypatch.setenv("NOVA_HOME", str(home))
+
+    with pytest.raises(ValueError, match="'web_search' must be an object"):
+        Settings.load_config()
