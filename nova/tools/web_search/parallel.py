@@ -23,7 +23,7 @@ from typing import Any
 
 from nova.settings import get_settings
 from nova.tools.web_search.base import (
-    SearchBackend,
+    McpBackend,
     SearchBackendError,
     SearchHit,
     hits_to_rows,
@@ -42,7 +42,7 @@ DESCRIPTION_LIMIT = 240
 PROCESS_SESSION_ID = uuid.uuid4().hex
 
 
-class ParallelBackend(SearchBackend):
+class ParallelBackend(McpBackend):
     """Parallel's hosted MCP server; structured JSON hits."""
 
     name = "parallel"

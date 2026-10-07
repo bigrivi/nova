@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+import regex
 
 #: Shown when every backend answered but none matched. Not a failure: the
 #: search ran, there was just nothing to report.
@@ -128,44 +129,164 @@ class SearchBackend:
     """One search endpoint and its request/response dialect.
 
     A backend owns its endpoint, its credentials, and how it shapes a query and
-    renders a reply. Subclass the pieces that actually differ and inherit the
-    rest: :meth:`request` and :meth:`parse` already implement the hosted MCP
-    protocol, so an MCP backend only supplies a name, a URL, a tool name, its
-    arguments, and its result rendering. A backend speaking plain REST
-    overrides both instead.
+    renders a reply. This class holds only what every dialect shares; the wire
+    protocol lives one level down, in :class:`McpBackend` or :class:`RestBackend`.
+
+    The split matters because a method that only one protocol has is not part of
+    this contract. A REST backend has no MCP tool name, and an MCP backend has no
+    plain HTTP body to post -- declaring either here would leave every subclass
+    carrying methods it can only raise from.
     """
 
     #: Short name used for routing, log lines, and usage records.
     name = ""
     #: Endpoint this backend posts to.
     url = ""
-    #: Remote MCP tool name; unused by non-MCP backends.
-    tool_name = ""
     #: Characters of description to keep per result. Backends differ because
     #: their payloads differ: a provider that curates its own highlights can
     #: afford more than one that ships raw page text.
-    description_limit: int = 0
+    #:
+    #: Intentionally has no default. Every backend must state its own budget,
+    #: because the only sensible fallback -- keep everything -- is the one that
+    #: defeats metadata-only search. Reading the attribute is how usage
+    #: accounting sizes the field, so a backend that left it unset would report
+    #: a budget it was not applying.
+    description_limit: int
 
     def api_key(self) -> str:
         """Return this backend's optional key, empty when running keyless."""
         raise NotImplementedError
 
-    def auth_headers(self, key: str) -> dict[str, str]:
-        """Return headers that authenticate *key* against this backend."""
+    def describe_error(self, response: httpx.Response) -> str | None:
+        """Explain a failed request from the body, when the body explains it.
+
+        A backend that answers a rejection with a structured body -- an error
+        code and a message naming what was wrong -- can say far more than a
+        status line can. The transport calls this instead of parsing the
+        failure, so without an override the reason is lost even though the
+        backend received it.
+
+        Args:
+            response: The failed HTTP response, status already known to be 4xx
+                or 5xx.
+
+        Returns:
+            The reason as a short phrase, or None to let the transport report
+            the status on its own. Never raises: this runs while another
+            failure is already being reported.
+        """
+        return None
+
+    def request(self, query: str, num_results: int) -> SearchRequest:
+        """Build the request to send.
+
+        Args:
+            query: The search query.
+            num_results: Requested result count.
+
+        Returns:
+            The request, carrying a credential only when one is configured.
+        """
         raise NotImplementedError
 
-    def request_arguments(self, query: str, num_results: int) -> dict[str, Any]:
-        """Build the ``tools/call`` arguments for this backend."""
-        raise NotImplementedError
-
-    def rows(self, text: str, limit: int) -> list[SearchHit]:
-        """Parse this backend's payload into result rows.
+    def parse(self, response: httpx.Response, limit: int) -> list[SearchHit]:
+        """Decode a successful response into result rows.
 
         Search deliberately does not return page content. A result row carries
         only what the model needs to decide whether a page is worth fetching:
         a title, a URL, a short description, and the ranking position that lets
-        an answer cite "the third result". Page content is ``web_fetch``'s
-        job.
+        an answer cite "the third result". Page content is ``web_fetch``'s job.
+
+        Args:
+            response: The HTTP response.
+            limit: Maximum rows to return.
+
+        Returns:
+            The result rows, possibly empty when nothing matched.
+        """
+        raise NotImplementedError
+
+
+class RestBackend(SearchBackend):
+    """A backend reached by posting JSON and reading JSON back.
+
+    There is no envelope to unwrap, so :meth:`parse` decodes the body directly.
+    A subclass supplies its own body, headers, and row rendering. How a
+    credential is attached is left to :meth:`request` rather than declared here,
+    because a REST backend may authenticate by header, by query parameter, or
+    not at all.
+    """
+
+    def parse(self, response: httpx.Response, limit: int) -> list[SearchHit]:
+        """Decode a JSON body into result rows.
+
+        Args:
+            response: The HTTP response.
+            limit: Maximum rows to return.
+
+        Returns:
+            The result rows.
+
+        Raises:
+            SearchBackendError: If the body is not JSON.
+        """
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise SearchBackendError(
+                f"{self.name} returned a response that is not JSON", "payload"
+            ) from exc
+        return self.rows_from_payload(payload, limit)
+
+    def rows_from_payload(self, payload: Any, limit: int = 0) -> list[SearchHit]:
+        """Build result rows from an already-decoded body.
+
+        Args:
+            payload: Decoded response body.
+            limit: Maximum rows to return.
+
+        Returns:
+            The result rows.
+        """
+        raise NotImplementedError
+
+
+class McpBackend(SearchBackend):
+    """A backend reached through a hosted MCP server.
+
+    Supplies everything the JSON-RPC ``tools/call`` exchange needs, so a subclass
+    only states its endpoint, its tool name, its arguments, and how to read the
+    payload it answers with.
+    """
+
+    #: Remote MCP tool name.
+    tool_name = ""
+
+    def auth_headers(self, key: str) -> dict[str, str]:
+        """Return headers that authenticate *key* against this backend.
+
+        Args:
+            key: The backend's API key.
+
+        Returns:
+            Headers carrying the credential.
+        """
+        raise NotImplementedError
+
+    def request_arguments(self, query: str, num_results: int) -> dict[str, Any]:
+        """Build the ``tools/call`` arguments for this backend.
+
+        Args:
+            query: The search query.
+            num_results: Requested result count.
+
+        Returns:
+            Arguments for the named tool.
+        """
+        raise NotImplementedError
+
+    def rows(self, text: str, limit: int) -> list[SearchHit]:
+        """Parse the payload text out of a reply into result rows.
 
         Args:
             text: The payload text extracted from the response envelope.
@@ -178,7 +299,7 @@ class SearchBackend:
         raise NotImplementedError
 
     def request(self, query: str, num_results: int) -> SearchRequest:
-        """Build the JSON-RPC request for a hosted MCP backend.
+        """Build the JSON-RPC request for the hosted MCP server.
 
         Args:
             query: The search query.
@@ -275,6 +396,22 @@ def extract_mcp_text(payload: str) -> str:
     return ""
 
 
+#: Splits text into user-perceived characters. An emoji built from several code
+#: points -- a ZWJ family, a skin tone, a flag -- is one cluster, so cutting on
+#: these boundaries leaves no half-drawn glyph behind.
+_GRAPHEME = regex.compile(r"\X")
+
+#: How much of a broken-off final word is tolerated before the cut retreats to
+#: the space before it. Roughly a short word, so the budget is not spent
+#: recovering from a cut that landed inside a long word anyway.
+_MAX_TRAILING_FRAGMENT = 12
+
+#: Appended when a description was cut, so the model can tell a truncated
+#: summary from a complete one instead of reading a clipped sentence as the
+#: provider's full opinion.
+TRUNCATION_MARK = "…"
+
+
 def coerce_description(value: Any, limit: int) -> str:
     """Normalise a backend's description field into bounded plain text.
 
@@ -285,12 +422,23 @@ def coerce_description(value: Any, limit: int) -> str:
     belongs to the caller, so a provider that sends megabytes of excerpt cannot
     spend the context window.
 
+    Cutting happens on a grapheme-cluster boundary rather than a code point.
+    A code point can be a lone half of what a reader sees as one character: a
+    family emoji, a skin-toned thumb, a flag, an accented letter. Slicing
+    between those leaves a broken glyph at the end of the description, which
+    the model then reads as part of the text. Where the cluster boundary falls
+    near a word boundary the cut moves back to the space, so the summary does
+    not end mid-word; CJK text has no such spaces and is cut at the cluster.
+
     Args:
         value: The raw field, which may be a string, a list of strings, or None.
-        limit: Maximum characters to keep; the text is cut, not rounded.
+        limit: Maximum characters to keep, including the truncation mark. A
+            non-positive value keeps all of it, which is why every backend has
+            to declare a positive budget rather than relying on a default.
 
     Returns:
-        Bounded single-line text, empty when there is nothing usable.
+        Bounded single-line text, empty when there is nothing usable. Cut text
+        ends in :data:`TRUNCATION_MARK`.
     """
     if isinstance(value, list):
         parts = [str(part).strip() for part in value if str(part).strip()]
@@ -300,9 +448,59 @@ def coerce_description(value: Any, limit: int) -> str:
     else:
         text = str(value)
     text = " ".join(text.split())
-    if limit > 0:
-        text = text[:limit]
-    return text.strip()
+    if limit <= 0:
+        return text
+    return _truncate(text, limit).strip()
+
+
+def _truncate(text: str, limit: int) -> str:
+    """Cut *text* to *limit* characters without breaking a grapheme cluster.
+
+    Args:
+        text: Single-line text, already whitespace-collapsed.
+        limit: Maximum characters including the truncation mark.
+
+    Returns:
+        The text, cut at a cluster boundary and marked when anything was
+        dropped. The mark costs one of the budget's characters, so a result is
+        never longer than *limit*.
+    """
+    if len(text) <= limit:
+        return text
+    if limit <= len(TRUNCATION_MARK):
+        # Too small to keep any text and still say it was cut. Dropping the
+        # mark here would report a fragment as if it were whole, so the budget
+        # is honoured instead and the caller sees a bare prefix.
+        return text[:limit]
+    # Leave room for the mark: it is information about the cut, so a summary
+    # that used the whole budget silently would misrepresent what was dropped.
+    budget = limit - len(TRUNCATION_MARK)
+    clusters = _GRAPHEME.findall(text[: budget + 1])
+    kept = "".join(clusters)
+    if len(kept) > budget:
+        # The cluster straddles the boundary; drop it rather than split it.
+        kept = "".join(clusters[:-1])
+    return _retreat_to_word_boundary(kept) + TRUNCATION_MARK
+
+
+def _retreat_to_word_boundary(text: str) -> str:
+    """Move a cut back to the last space, when one is close enough to matter.
+
+    Only Latin-script spacing counts as a word boundary: CJK text is written
+    without spaces, so there is nothing to retreat to and the cluster boundary
+    already stands.
+
+    Args:
+        text: The cut text, which may end mid-word.
+
+    Returns:
+        The text ending at a space, or unchanged when no space appears in the
+        final stretch.
+    """
+    head, sep, tail = text.rpartition(" ")
+    if sep and len(tail) <= _MAX_TRAILING_FRAGMENT:
+        return head
+    return text
 
 
 def hits_to_rows(
@@ -327,7 +525,7 @@ def hits_to_rows(
     Returns:
         The rows, in the order the backend ranked them.
     """
-    budget = getattr(backend, "description_limit", 0)
+    budget = backend.description_limit
     rows: list[SearchHit] = []
     for hit in hits:
         if not isinstance(hit, dict):

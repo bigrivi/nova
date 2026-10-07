@@ -23,7 +23,7 @@ import httpx
 
 from nova.settings import get_settings
 from nova.tools.web_search.base import (
-    SearchBackend,
+    RestBackend,
     SearchBackendError,
     SearchHit,
     SearchRequest,
@@ -37,7 +37,7 @@ from nova.tools.web_search.base import (
 DESCRIPTION_LIMIT = 320
 
 
-class KeenableBackend(SearchBackend):
+class KeenableBackend(RestBackend):
     """Keenable's public REST search; keyless and quota-reporting."""
 
     name = "keenable"
@@ -77,33 +77,38 @@ class KeenableBackend(SearchBackend):
             url = self.url
         return SearchRequest(url, headers, {"query": query, "mode": self.search_mode})
 
-    def parse(self, response: httpx.Response, limit: int) -> list[SearchHit]:
-        """Decode Keenable's directly returned JSON.
+    def describe_error(self, response: httpx.Response) -> str | None:
+        """Explain a rejection from the body Keenable sent alongside the 4xx.
+
+        Keenable reports what was wrong in the body -- an ``error`` code and a
+        human-readable ``message`` -- and naming it is the difference between
+        "HTTP 400" and "`query` is required". The transport calls this instead
+        of parsing the failure, so the body is read here rather than in
+        :meth:`parse`, which a rejected request never reaches.
 
         Args:
-            response: The HTTP response.
-            limit: Maximum rows to return.
+            response: The failed HTTP response.
 
         Returns:
-            The result rows.
-
-        Raises:
-            SearchBackendError: If the body is not JSON.
+            The reason, or None when the body carries nothing usable or is not
+            JSON at all, in which case the transport reports the status alone.
         """
         try:
             payload = response.json()
-        except ValueError as exc:
-            raise SearchBackendError(
-                f"{self.name} returned a response that is not JSON", "payload"
-            ) from exc
-        return self.rows_from_payload(payload, limit)
+        except ValueError:
+            return None
+        if not isinstance(payload, dict) or not payload.get("error"):
+            return None
+        return _rejection_detail(payload)
 
     def rows_from_payload(self, payload: Any, limit: int = 0) -> list[SearchHit]:
         """Build result rows from an already-decoded Keenable payload.
 
         Keenable reports a rejected request in the body alongside a 4xx status,
-        carrying an ``error`` code and a human-readable ``message``; both are
-        surfaced so a bad parameter is not reported as a bare HTTP failure.
+        carrying an ``error`` code and a human-readable ``message``. The body
+        reached by a rejected request is read by :meth:`describe_error` instead;
+        this path stays for a 200 whose body turns out to hold an error, which
+        is what a proxy in front of Keenable can produce.
 
         Args:
             payload: Decoded response body.
@@ -117,9 +122,22 @@ class KeenableBackend(SearchBackend):
         """
         reject_non_object(self.name, payload)
         if payload.get("error"):
-            detail = payload.get("message") or payload["error"]
             raise SearchBackendError(
-                f"{self.name} rejected the request: {detail}", "http"
+                f"{self.name} rejected the request: {_rejection_detail(payload)}",
+                "http",
             )
         hits = require_hit_list(self.name, payload)
         return hits_to_rows(self, hits, limit, ("description", "snippet"))
+
+
+def _rejection_detail(payload: dict) -> str:
+    """Return the human-readable half of a rejection, falling back to its code.
+
+    Args:
+        payload: A decoded body carrying ``error`` and optionally ``message``.
+
+    Returns:
+        The message when present, otherwise the error code. Both are short, so
+        neither needs bounding.
+    """
+    return str(payload.get("message") or payload["error"])

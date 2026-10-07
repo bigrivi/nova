@@ -13,9 +13,11 @@ parts:
 * A backend is never the ceiling. Rotation is per call, not per session, so a
   chatty conversation cannot drain one free allowance on its own.
 * An empty match is not a failure. A backend that answers with nothing is asked
-  again elsewhere, because a peer may know pages its index does not carry. Only
-  a real failure is reported, and it names every backend it tried so a rate
-  limit can be told apart from a network fault.
+  again elsewhere, because a peer may know pages its index does not carry. A
+  failed response is reported as such, and it names every backend it tried so a
+  rate limit can be told apart from a network fault -- but only when no backend
+  answered at all. Once one has, the search ran and has an answer, and any
+  backends that failed alongside it are named in a successful reply.
 
 Layout: `base.py` is the backend contract and the shapes backends share,
 `transport.py` is the one HTTP call and the one place failures are classified,
@@ -157,9 +159,11 @@ async def web_search(query: str, limit: int = DEFAULT_LIMIT) -> ToolResult:
         limit: Maximum results to return; clamped to the supported range.
 
     Returns:
-        A successful result carrying ranked result metadata as JSON, a
-        successful result reporting that nothing matched, or a failed result
-        describing every backend that was tried.
+        A successful result carrying ranked result metadata as JSON, or a
+        successful result reporting that nothing matched -- with any backends
+        that failed alongside it named, since their indexes may hold pages the
+        ring could not reach. A failed result, naming every backend it tried,
+        only when no backend answered.
     """
     count = resolve_limit(limit)
     failures: list[str] = []
@@ -184,18 +188,25 @@ async def web_search(query: str, limit: int = DEFAULT_LIMIT) -> ToolResult:
             record_usage(backend.name, OUTCOME_EMPTY, outcome.quota_remaining)
             searched_any = True
 
+    if searched_any:
+        # A backend answered and reported no match, so the search did run and
+        # did have an answer: reporting a failure here would claim otherwise, and
+        # a caller reading it would look for a broken backend instead of a query
+        # with nothing behind it. Backends that did fail are still named, since
+        # one of them may hold the pages this ring could not reach.
+        content = (
+            f"{EMPTY_RESULT_MESSAGE}. Try a different query, a broader one, "
+            "or drop site: or filetype: operators."
+        )
+        if failures:
+            content += f" {len(failures)} of the backends tried failed: " + "; ".join(
+                failures
+            )
+        return ToolResult(success=True, content=content)
     if failures:
         detail = "; ".join(failures)
         LOGGER.warning("web_search failed: %s", detail)
         return ToolResult(success=False, content=f"Search error: {detail}")
-    if searched_any:
-        return ToolResult(
-            success=True,
-            content=(
-                f"{EMPTY_RESULT_MESSAGE}. Try a different query, a broader one, "
-                "or drop site: or filetype: operators."
-            ),
-        )
     return ToolResult(
         success=False, content="Search error: no search backend available"
     )

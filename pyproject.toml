@@ -26,6 +26,9 @@ dependencies = [
     "aiosqlite",
     "fastapi>=0.141.1",
     "httpx",
+    # Grapheme-cluster segmentation for truncating text at a character boundary.
+    # Already present transitively via tiktoken, but relied on directly here.
+    "regex",
     "rich",
     "uvicorn",
     "tiktoken",
@@ -98,4 +101,9 @@ ignore = [
     # Path.resolve() and friends are microsecond-scale, not the blocking
     # syscalls this rule is meant to catch.
     "ASYNC240",
+]
+
+[dependency-groups]
+dev = [
+    "types-regex>=2026.9.29.20261005",
 ]

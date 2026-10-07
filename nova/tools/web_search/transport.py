@@ -64,8 +64,17 @@ async def call_backend(
             "rate_limited",
         )
     if response.status_code >= 400:
+        # A backend that reports a rejection in the body knows more about what
+        # went wrong than the status line does -- Keenable names the missing
+        # parameter. Ask it before falling back to the status, and let a body
+        # it cannot explain fall through rather than replace a clear status with
+        # an unclear one.
+        detail = backend.describe_error(response)
         raise SearchBackendError(
-            f"{backend.name} returned HTTP {response.status_code}", "http"
+            f"{backend.name} returned HTTP {response.status_code}: {detail}"
+            if detail
+            else f"{backend.name} returned HTTP {response.status_code}",
+            "http",
         )
 
     remaining = quota_remaining(response)
