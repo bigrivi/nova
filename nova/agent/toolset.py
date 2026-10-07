@@ -83,13 +83,33 @@ class ToolsetBuilder:
         from nova.tools.tool_policy import ToolPolicy
 
         policy = self._tool_policy if self._tool_policy is not None else ToolPolicy()
-        for name in [tool.name for tool in self._registry.list_tools()]:
+        for tool in list(self._registry.list_tools()):
+            name = tool.name
             if name == "shell" or not self._allows(name):
                 continue
             if policy.effect_for(name) == "deny":
                 self._registry.unregister(name)
                 continue
-            self._registry.set_behavior(name, PolicyToolBehavior(name, policy, self._approval))
+            # Wraps whatever behaviour the tool already had. Binding a bare
+            # PolicyToolBehavior instead would discard ``read_image``'s image
+            # extraction and ``ask_user``'s question numbering, because both live
+            # in the behaviour this pass runs after ``_register_behaviors``.
+            inner = (
+                self._registry.behavior_for(name)
+                if self._registry.has_behavior(name)
+                else None
+            )
+            self._registry.set_behavior(
+                name,
+                PolicyToolBehavior(
+                    name,
+                    policy,
+                    self._approval,
+                    self._reviewer,
+                    inner,
+                    tool.description,
+                ),
+            )
 
     def _register_memory_tools(self) -> None:
         """Register memory tools bound to this agent's key.

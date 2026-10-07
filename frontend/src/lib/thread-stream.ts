@@ -275,6 +275,13 @@ export type ApprovalRequest = {
     requestId: string;
     command: string;
     description: string;
+    /**
+     * Which tool is asking. The server sends this on both axes, and the tool axis
+     * is not hypothetical: `{"tools": {"web_fetch": "ask"}}` produces a request
+     * whose `command` is a tool, not a shell line. Dropping it here left the
+     * dialog labelling every approval "Shell Command".
+     */
+    toolName: string;
 };
 
 export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest {
@@ -282,6 +289,7 @@ export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest 
         requestId: String(event.data?.requestId || ""),
         command: String(event.data?.command || ""),
         description: String(event.data?.description || ""),
+        toolName: String(event.data?.toolName || "shell"),
     };
 }
 

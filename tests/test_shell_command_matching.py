@@ -12,7 +12,11 @@ import importlib
 
 import pytest
 
+# The decision interface, plus the two internals these tests pin directly:
+# the pattern tables (data) and the label redactor (tool implementation).
 shell = importlib.import_module("nova.tools.shell")
+patterns = importlib.import_module("nova.tools.shell.patterns")
+tool = importlib.import_module("nova.tools.shell.tool")
 
 
 @pytest.mark.parametrize(
@@ -92,7 +96,7 @@ def test_sudo_privilege_flag_matches_in_any_case(command: str) -> None:
     ],
 )
 def test_ordinary_commands_stay_allowed(command: str) -> None:
-    assert shell.is_dangerous_bool(command) is False, command
+    assert shell.is_dangerous(command)[0] is False, command
 
 
 @pytest.mark.parametrize(
@@ -109,7 +113,7 @@ def test_ordinary_commands_stay_allowed(command: str) -> None:
 )
 def test_label_redaction_removes_credentials(command: str, expected: str) -> None:
     """A label reaches the task list, the log and the model."""
-    redacted = shell._redact_for_label(command, 200)
+    redacted = tool._redact_for_label(command, 200)
     assert expected in redacted, redacted
     for secret in ("sk-abc123", "ghp_secretvalue", "hunter2", "user:pw"):
         assert secret not in redacted
@@ -120,8 +124,8 @@ def test_label_redaction_removes_credentials(command: str, expected: str) -> Non
     ["pytest tests/", "git log --oneline", "npm install --save-dev typescript"],
 )
 def test_label_redaction_leaves_ordinary_commands_alone(command: str) -> None:
-    assert shell._redact_for_label(command, 80) == command
+    assert tool._redact_for_label(command, 80) == command
 
 
 def test_label_redaction_truncates() -> None:
-    assert len(shell._redact_for_label("x" * 500, 80)) == 80
+    assert len(tool._redact_for_label("x" * 500, 80)) == 80

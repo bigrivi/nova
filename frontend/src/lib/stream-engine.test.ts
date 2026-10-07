@@ -134,6 +134,7 @@ describe("handleStreamEvent control frames", () => {
             requestId: "r",
             command: "c",
             description: "d",
+            toolName: "shell",
         });
         expect(deps.approval.setPending).toHaveBeenCalledTimes(1);
     });

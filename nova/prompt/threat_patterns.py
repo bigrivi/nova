@@ -1,3 +1,22 @@
+"""Untrusted text arriving from outside, checked before it becomes context.
+
+Two things read this, and both ask the same question at different moments. The
+prompt builder screens each block it is about to assemble -- user profile, memory
+index, memory content -- and replaces a flagged one with a placeholder. The memory
+tool screens content at write time and refuses it outright. Catching it on the way
+in and again on the way out is deliberate: a store written before this existed is
+still a store the builder has to distrust.
+
+It lived in ``nova/tools/``, which was filing it by adjacency -- it has nothing to
+do with tools. The concern it belongs to is the prompt boundary, so that is where
+it lives.
+
+Pattern matching, not understanding. It catches the shapes of an injection attempt
+("ignore all previous instructions", "you are no longer bound") and misses
+everything subtler, which is why a hit omits the content and a miss is not a
+guarantee. It is a cheap filter in front of the model, not a defence on its own.
+"""
+
 from __future__ import annotations
 
 import re

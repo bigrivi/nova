@@ -22,7 +22,7 @@ from nova.tasks.manager import BackgroundTaskManager
 from nova.tasks.models import TaskRecord, TaskStatus
 from nova.tools.registry import _tool_metadata
 
-shell_module = importlib.import_module("nova.tools.shell")
+shell_module = importlib.import_module("nova.tools.shell.tool")
 
 
 class Wired(NamedTuple):
@@ -33,7 +33,7 @@ class Wired(NamedTuple):
 
 
 def _wire(monkeypatch: pytest.MonkeyPatch) -> Wired:
-    module = importlib.import_module("nova.tools.shell")
+    module = importlib.import_module("nova.tools.shell.tool")
     manager = BackgroundTaskManager()
     manager.register_executor(ShellExecutor())
     monkeypatch.setattr(module, "get_background_task_manager", lambda: manager)
@@ -109,7 +109,7 @@ def _snapshot(status: str) -> TaskRecord:
 
 
 def _stub_tool(monkeypatch: pytest.MonkeyPatch, detached: Any):
-    module = importlib.import_module("nova.tools.shell")
+    module = importlib.import_module("nova.tools.shell.tool")
     stub = _StubManager(detached)
     monkeypatch.setattr(module, "get_background_task_manager", lambda: stub)
     return module, stub

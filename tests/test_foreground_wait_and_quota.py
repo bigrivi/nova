@@ -44,7 +44,11 @@ def _wire(monkeypatch: pytest.MonkeyPatch, name: str, executor: Any, **limits: i
     list_for_session only reports detached tasks, so the submitted timeout is
     captured at the submit call instead of read back off a finished record.
     """
-    module = importlib.import_module(f"nova.tools.{name}")
+    # The shell's task-manager dependency lives in `shell.tool`; the package
+    # `nova.tools.shell` is the decision interface and does not re-export it.
+    module = importlib.import_module(
+        "nova.tools.shell.tool" if name == "shell" else f"nova.tools.{name}"
+    )
     manager = BackgroundTaskManager(**limits)
     manager.register_executor(executor)
     monkeypatch.setattr(module, "get_background_task_manager", lambda: manager)
@@ -282,7 +286,7 @@ async def test_detach_message_reports_the_effective_wait(
     make_shell, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The prompt the model reads must carry this call's wait, not the default."""
-    module = importlib.import_module("nova.tools.shell")
+    module = importlib.import_module("nova.tools.shell.tool")
     monkeypatch.setattr(module, "SHELL_FOREGROUND_WAIT_SECONDS", 1)
     wired = make_shell()
 

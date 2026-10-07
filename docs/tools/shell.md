@@ -44,16 +44,19 @@ Commands that are never allowed:
 
 ## Configuring the rules
 
-The tiers above are the defaults. `~/.nova/permissions.json` (or the path in
-`NOVA_SHELL_RULES`) adjusts them without editing source:
+The tiers above are the defaults. They are adjusted in `~/.nova/permissions.json`,
+which is created on first run with every key present and documented, so there is a
+file to read and edit:
 
 ```json
 {
-  "allow": ["git push *", "killall *", "docker compose *"],
-  "disable": ["git force push (rewrites remote history)"],
-  "ask": [
-    { "match": "\\bnpm\\s+publish\\b", "description": "publishes a package" }
-  ]
+  "shell": {
+    "allow": ["git push *", "killall *", "docker compose *"],
+    "disable": ["git force push (rewrites remote history)"],
+    "ask": [
+      { "match": "\\bnpm\\s+publish\\b", "description": "publishes a package" }
+    ]
+  }
 }
 ```
 
@@ -66,19 +69,24 @@ The tiers above are the defaults. `~/.nova/permissions.json` (or the path in
 The lists are consulted in a fixed order and the first match wins:
 
 ```text
-block  ->  allow  ->  ask  ->  allow (no rule matched)
+block  ->  allow  ->  workspace scope  ->  ask  ->  allow (no rule matched)
 ```
 
 `allow` sits above `ask` so you can pre-approve something the defaults flag.
 `block` sits above both: a rule that exists because nothing may undo it must not
 be reachably waived, so no config can allow `rm -rf /`.
 
-Two things to know:
+Four things to know:
 
 - **A malformed entry is skipped, not fatal.** A bad regular expression or the
   wrong JSON shape is logged and ignored, and the rest of the file still applies.
   A typo in a security file must not leave the agent unable to run anything.
 - **The file is read once per process.** Edits take effect on restart.
+- **The shipped default allows everything.** The built-in rules still apply, but
+  nothing is pre-approved and no tool is gated until you add a key.
+- **`disable` takes out a whole concept.** Two rules can share a description --
+  `pkill -9` and `killall -9` are both "force kill processes" -- so disabling that
+  description removes both, and one remembered approval covers both.
 
 ## Approvals
 
@@ -88,7 +96,17 @@ interpolates a URL or a temp path never repeats a command verbatim, so a grant
 keyed on the text could never be hit twice.
 
 The grant covers that rule for the rest of the session and does not carry to
-other sessions.
+other sessions. It is also **not** recorded when the session cannot be identified:
+there would be nothing to scope it to, and a grant that applies to every
+unidentified context is an authorisation you never gave. The cost is one extra
+prompt.
+
+Grants live in memory. They do not survive a restart, so an "always allow" has
+to be granted again after Nova comes back up.
+
+A prompt never expires on its own. It holds the turn open, with a heartbeat every
+15 seconds to keep the connection alive, until you answer it -- auto-denying
+because you were slow would be the wrong way to fail.
 
 ## Workspace scope
 
@@ -103,11 +121,16 @@ when **every** path they name resolves inside the workspace.
 
 ```text
 rm -rf ~/project/build          allowed  (inside)
+rm -rf build/output             allowed  (relative, resolved against the workspace)
 rm -rf ~/other/build            asked    (outside)
 rm -rf ~/project/build && ...   asked    (chaining is not analysed)
 rm -rf ~/project/*              asked    (wildcards expand at runtime)
 rm -rf "$TARGET"                asked    (paths are not knowable)
 ```
+
+A relative path is resolved against the workspace, because that is the directory
+the shell runs in -- not against the daemon's working directory, which on a server
+is wherever it happened to start.
 
 Anything the analysis cannot bound falls through to the ordinary rules, so the
 worst case is a prompt rather than an unattended command. A blocked command is
@@ -141,9 +164,12 @@ The same `permissions.json` carries it:
 | `ask` | Pauses the turn and asks |
 | `deny` | The tool is not registered, so the model never sees it |
 
-Resolution is most-specific-wins with `*` as the fallback, so the example above
-asks about everything except reads, refuses edits, and refuses one MCP server
-entirely.
+Resolution takes the **longest** matching name, so the outcome does not depend on
+the order the keys happen to be written in: an exact name beats a namespace, and
+among namespaces the longer prefix wins. Only a trailing `*` makes a name a
+namespace, so `"read"` denies `read` and not `read_file`. `*` is the fallback, so
+the example above asks about everything except reads, refuses edits, and refuses
+one MCP server entirely.
 
 `deny` removes the tool at registration rather than refusing it at dispatch. A
 tool in the schema is a tool the model will try; refusing it when called still
@@ -158,19 +184,41 @@ asked for.
 
 ## Model review
 
-`shell_review` on the agent config puts a model in front of the approval
-prompt. A command the rules flag is shown to the model first, and a confident
-`approve` clears it.
+The `approval_review` block in `config.json` puts a model in front of the
+approval prompt. An action the rules flag is shown to the model first, and a
+confident `approve` clears it.
 
+```json
+{
+  "approval_review": { "enabled": true }
+}
 ```
-AgentConfig(..., shell_review=True)
+
+`provider` and `model` are optional and default to the agent's own. Point them
+somewhere smaller when the agent runs a large model -- the reviewer only has to
+answer one word, and spending the agent's budget on it is the wrong end of the
+trade:
+
+```json
+{
+  "approval_review": {
+    "enabled": true,
+    "provider": "opencode_zen_free",
+    "model": "space-bunny-free"
+  }
+}
 ```
+
+Unlike `permissions.json`, a malformed value here fails at startup rather than
+being ignored: `"enabled": "true"` read silently as "off" would look like the
+feature not working, and read as "on" would put a model in front of the approval
+path unasked.
 
 Three outcomes, not two:
 
 | Verdict | Effect |
 |---|---|
-| `approve` | The command runs without interrupting you |
+| `approve` | The action runs without interrupting you |
 | `deny` | **You are still asked.** The model cannot refuse on its own |
 | `escalate` | You are asked, as before |
 
@@ -184,8 +232,16 @@ The reviewer sits behind the rules, not in front of them, so a command nothing
 flags costs nothing.
 
 It is off by default. A review is a model call on the approval path, and a
-reviewer that waves through a command you would have refused is a worse failure
+reviewer that waves through something you would have refused is a worse failure
 than a prompt.
+
+A reviewer that fails -- no provider, a timeout, a crash -- asks you, exactly as
+`escalate` does. An exception is not an approval.
+
+The same reviewer covers tools set to `ask` in the `tools` block, so enabling it
+removes prompts from both axes. A blocked command is never reviewed, and a
+sub-agent is never reviewed -- it has nothing to ask on, which is checked before
+the reviewer for that reason.
 
 ## Timeouts
 

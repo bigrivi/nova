@@ -9,10 +9,15 @@ from __future__ import annotations
 
 import importlib
 import re
+from collections import Counter
 
 import pytest
 
+# The decision interface, plus the two internals these tests pin directly:
+# the pattern tables (data) and the label redactor (tool implementation).
 shell = importlib.import_module("nova.tools.shell")
+patterns = importlib.import_module("nova.tools.shell.patterns")
+tool = importlib.import_module("nova.tools.shell.tool")
 
 FORK_BOMB = ":(){ :|:& };:"
 
@@ -196,7 +201,7 @@ def test_hardline_wins_over_dangerous(command: str) -> None:
     ],
 )
 def test_dangerous_flags(command: str) -> None:
-    assert shell.is_dangerous_bool(command) is True, command
+    assert shell.is_dangerous(command)[0] is True, command
 
 
 @pytest.mark.parametrize(
@@ -223,7 +228,7 @@ def test_dangerous_flags(command: str) -> None:
     ],
 )
 def test_dangerous_allows(command: str) -> None:
-    assert shell.is_dangerous_bool(command) is False, command
+    assert shell.is_dangerous(command)[0] is False, command
 
 
 # ── interpreter -c/-e: only dangerous when the code arrives from the network ──
@@ -253,7 +258,7 @@ def test_dangerous_allows(command: str) -> None:
     ],
 )
 def test_local_interpreter_invocation_is_allowed(command: str) -> None:
-    assert shell.is_dangerous_bool(command) is False, command
+    assert shell.is_dangerous(command)[0] is False, command
 
 
 @pytest.mark.parametrize(
@@ -278,7 +283,7 @@ def test_local_interpreter_invocation_is_allowed(command: str) -> None:
     ],
 )
 def test_remote_code_reaching_an_interpreter_is_still_dangerous(command: str) -> None:
-    assert shell.is_dangerous_bool(command) is True, command
+    assert shell.is_dangerous(command)[0] is True, command
 
 
 # ── piping data into a formatter is not piping it into an interpreter ──
@@ -302,7 +307,7 @@ def test_remote_code_reaching_an_interpreter_is_still_dangerous(command: str) ->
     ],
 )
 def test_piping_remote_data_into_a_formatter_is_allowed(command: str) -> None:
-    assert shell.is_dangerous_bool(command) is False, command
+    assert shell.is_dangerous(command)[0] is False, command
 
 
 @pytest.mark.parametrize(
@@ -320,7 +325,7 @@ def test_piping_remote_data_into_a_formatter_is_allowed(command: str) -> None:
 def test_piping_remote_content_into_an_interpreter_is_still_dangerous(
     command: str,
 ) -> None:
-    assert shell.is_dangerous_bool(command) is True, command
+    assert shell.is_dangerous(command)[0] is True, command
 
 
 # ── case handling and the public helpers ─────────────────────────────
@@ -331,7 +336,7 @@ def test_piping_remote_content_into_an_interpreter_is_still_dangerous(
     ["GIT RESET --HARD", "DROP TABLE x", "DELETE FROM t", "TRUNCATE TABLE t"],
 )
 def test_case_insensitive_rules_still_fire(command: str) -> None:
-    assert shell.is_dangerous_bool(command) is True, command
+    assert shell.is_dangerous(command)[0] is True, command
 
 
 @pytest.mark.parametrize(
@@ -346,7 +351,7 @@ def test_hardline_is_case_insensitive(command: str) -> None:
     "command", ["SUDO -s", "GIT BRANCH -D foo", "GIT PUSH --FORCE"]
 )
 def test_dangerous_is_case_insensitive(command: str) -> None:
-    assert shell.is_dangerous_bool(command) is True, command
+    assert shell.is_dangerous(command)[0] is True, command
 
 
 def test_every_lettered_rule_handles_case() -> None:
@@ -359,7 +364,7 @@ def test_every_lettered_rule_handles_case() -> None:
     offenders = [
         description
         for compiled, description in (
-            list(shell.HARDLINE_PATTERNS) + list(shell.DANGEROUS_PATTERNS)
+            list(patterns.HARDLINE_PATTERNS) + list(patterns.DANGEROUS_PATTERNS)
         )
         if re.search(r"[a-zA-Z]", compiled.pattern)
         and "(?i:" not in compiled.pattern
@@ -368,15 +373,35 @@ def test_every_lettered_rule_handles_case() -> None:
     assert not offenders, f"missing case handling: {offenders}"
 
 
-def test_is_dangerous_bool_agrees_with_the_two_lists() -> None:
+def test_the_two_layers_are_disjoint_and_cover_their_tables() -> None:
+    """``block`` and ``ask`` must not overlap, and each reports its own table.
+
+    ``is_dangerous`` answers "does a human have to decide", which is false for a
+    blocked command -- it is refused outright rather than put to a vote. So a
+    command matching the blocklist has to show up as hardline and *not* as
+    dangerous, or a caller counting prompts would count a refusal as one.
+    """
     for command in ("rm -rf /", "git push --force", "pytest tests/"):
-        expected = shell.is_hardline(command)[0] or shell.is_dangerous(command)[0]
-        assert shell.is_dangerous_bool(command) is expected, command
+        blocked = shell.is_hardline(command)[0]
+        flagged = shell.is_dangerous(command)[0]
+        assert not (blocked and flagged), command
+
+    # Every rule carries a description, because that text is the grant identity:
+    # an approval remembered against one rule is looked up by this string.
+    for table in (patterns.HARDLINE_PATTERNS, patterns.DANGEROUS_PATTERNS):
+        assert all(description for _pattern, description in table)
+
+    # Sharing a description is deliberate, not a collision. `pkill -9` and
+    # `killall -9` are one concept, so one remembered approval covers both -- which
+    # is the point of keying grants on the description rather than the pattern.
+    # The cost is that `disable` takes both out together, which is also correct.
+    shared = [d for d, n in Counter(d for _p, d in table).items() if n > 1]
+    assert shared == ["force kill processes"], shared
 
 
 def test_kill_all_processes_rule_is_the_only_kill_minus_one_rule() -> None:
     """The dangerous-layer duplicate was unreachable and has been removed."""
-    descriptions = [d for _p, d in shell.DANGEROUS_PATTERNS]
+    descriptions = [d for _p, d in patterns.DANGEROUS_PATTERNS]
     assert "force kill all processes" not in descriptions
 
 
@@ -398,21 +423,21 @@ def test_kill_all_processes_rule_is_the_only_kill_minus_one_rule() -> None:
     ],
 )
 def test_label_redaction_removes_the_secret(command: str, secret: str) -> None:
-    assert secret not in shell._redact_for_label(command, 200)
+    assert secret not in tool._redact_for_label(command, 200)
 
 
 @pytest.mark.parametrize(
     "command", ["ls -la", "echo tokenizer=x", "echo secretary=x", "git log"]
 )
 def test_label_redaction_leaves_ordinary_commands_alone(command: str) -> None:
-    assert shell._redact_for_label(command, 80) == command
+    assert tool._redact_for_label(command, 80) == command
 
 
 def test_label_redaction_truncates_to_eighty() -> None:
-    assert len(shell._redact_for_label("x" * 500, 80)) == 80
+    assert len(tool._redact_for_label("x" * 500, 80)) == 80
 
 
 def test_label_redacts_before_truncating() -> None:
     """A secret past the cut would survive if truncation ran first."""
     command = "echo " + ("a" * 200) + " TOKEN=leaked"
-    assert "leaked" not in shell._redact_for_label(command, 80)
+    assert "leaked" not in tool._redact_for_label(command, 80)

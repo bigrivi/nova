@@ -339,13 +339,30 @@ async def build_agent(
     # Cache 2: LLMProvider
     llm = llm or build_llm(provider=resolved_provider, model=resolved_model)
 
+    # A reviewer that shares the agent's model spends the agent's budget to answer
+    # one word, so it can be pointed at a smaller one. None keeps the previous
+    # behaviour of using the agent's own provider.
+    review = get_settings().approval_review
+    review_llm = None
+    review_model = ""
+    if review.enabled:
+        review_model = review.model or resolved_model
+        if review.provider or review.model:
+            review_llm = build_llm(
+                provider=review.provider or resolved_provider,
+                model=review_model,
+            )
+
     agent = Agent(
         config=AgentConfig(
             model=resolved_model,
             provider=resolved_provider,
             reasoning_effort=resolved_effort,
+            shell_review=review.enabled,
         ),
         llm_provider=llm,
+        review_llm=review_llm,
+        review_model=review_model,
         agent_key=agent_key,
         agent_dir=agent_dir,
         is_sub_agent=is_sub_agent,

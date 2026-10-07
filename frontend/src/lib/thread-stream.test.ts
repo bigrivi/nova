@@ -374,9 +374,47 @@ describe("event extractors", () => {
         expect(
             extractApprovalRequest({
                 type: "data-nova-approval-required",
-                data: { requestId: "r", command: "c", description: "d" },
+                data: {
+                    requestId: "r",
+                    command: "c",
+                    description: "d",
+                    toolName: "shell",
+                },
             }),
-        ).toEqual({ requestId: "r", command: "c", description: "d" });
+        ).toEqual({
+            requestId: "r",
+            command: "c",
+            description: "d",
+            toolName: "shell",
+        });
+    });
+
+    it("carries the tool name so a tool approval is not labelled a shell command", () => {
+        // `{"tools": {"web_fetch": "ask"}}` reaches the same dialog. Without
+        // toolName the store could not tell the two apart and every approval was
+        // titled "Shell Command".
+        expect(
+            extractApprovalRequest({
+                type: "data-nova-approval-required",
+                data: {
+                    requestId: "r2",
+                    command: "Fetch a URL",
+                    description: "Fetch a URL",
+                    toolName: "web_fetch",
+                },
+            }).toolName,
+        ).toBe("web_fetch");
+    });
+
+    it("defaults to shell when a replayed frame predates toolName", () => {
+        // Older persisted events have no toolName; empty is treated as shell by
+        // the dialog, so the fallback has to agree with it.
+        expect(
+            extractApprovalRequest({
+                type: "data-nova-approval-required",
+                data: { requestId: "r3", command: "ls", description: "" },
+            }).toolName,
+        ).toBe("shell");
     });
 });
 

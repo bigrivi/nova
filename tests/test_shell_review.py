@@ -12,7 +12,7 @@ import asyncio
 import pytest
 
 from nova.llm.provider import Done, TextDelta
-from nova.tools.shell_review import build_reviewer, parse_verdict
+from nova.tools.approval_review import build_reviewer, parse_verdict
 
 
 class FakeProvider:

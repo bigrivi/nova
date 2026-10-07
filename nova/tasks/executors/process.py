@@ -3,11 +3,30 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
 import subprocess
 import sys
 
 from nova.tasks.models import TaskExecutionContext, TaskExecutionResult
-from nova.tools.shell_utils import kill_process_tree
+
+
+def kill_process_tree(pid: int):
+    """Kill a process and its children cross-platform."""
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    else:
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
 
 
 async def run_process(

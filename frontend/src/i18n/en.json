@@ -220,6 +220,7 @@
     "reasoning.compacting": "Compacting conversation history…",
     "dialog.close": "Close",
     "approval.title": "Shell Command",
+    "approval.toolTitle": "Tool call: {{tool}}",
     "approval.approve": "Approve",
     "approval.remember": "Approve & Remember",
     "approval.reject": "Reject",

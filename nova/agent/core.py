@@ -54,11 +54,10 @@ class AgentConfig:
     # Reasoning level for this run. None means "whatever the model config
     # declares", which is also what a provider that has no such concept gets.
     reasoning_effort: str | None = None
-    # Ask a model to review shell commands the rules flagged, instead of
-    # interrupting the user for every one. None or False leaves every flag
-    # reaching the user, which is the default: a review costs a model call, and
-    # a reviewer that waves through a command the user would have refused is a
-    # worse failure than a prompt.
+    # Ask a model to review actions the rules flagged, instead of interrupting
+    # the user for every one. Off by default: a review costs a model call, and a
+    # reviewer that waves through something the user would have refused is a worse
+    # failure than a prompt. Set from the ``approval_review`` block in config.json.
     shell_review: bool = False
 
 
@@ -93,6 +92,8 @@ class Agent:
         self,
         config: AgentConfig | None = None,
         llm_provider: LLMProvider | None = None,
+        review_llm: LLMProvider | None = None,
+        review_model: str = "",
         session_manager: SessionProtocol | None = None,
         agent_key: str = DEFAULT_AGENT_KEY,
         agent_dir: Path | None = None,
@@ -107,6 +108,10 @@ class Agent:
         self.config = config or AgentConfig()
         self.agent_key = agent_key
         self.llm = llm_provider
+        # Optional separate provider for the permission reviewer. None means "use
+        # the agent's own", which is the default and the previous behaviour.
+        self._review_llm = review_llm
+        self._review_model = review_model
         self.session = session_manager or get_session_manager()
         self._data_source = data_source
         self._on_title_updated = on_title_updated
@@ -784,13 +789,21 @@ class Agent:
         self.tool_registry.register(func, name)
 
     async def register_all_tools(self) -> None:
+        from nova.tools.approval_review import build_reviewer
+        from nova.tools.permissions import ensure_permissions_file, permissions_path
+        from nova.tools.tool_policy import load_tool_policy
+
+        # Written once per launch, before any tool call can consult it.
+        ensure_permissions_file(permissions_path().parent)
+
+        # One reviewer serves both axes: the shell consults it for a flagged
+        # command, and any tool set to `ask` consults it before interrupting.
         reviewer = None
         if self.config.shell_review and not self.is_sub_agent:
-            from nova.tools.shell_review import build_reviewer
-
-            reviewer = build_reviewer(self.llm, self.config.model)
-        from nova.tools.shell_policy import default_config_path
-        from nova.tools.tool_policy import load_tool_policy
+            reviewer = build_reviewer(
+                self._review_llm or self.llm,
+                self._review_model or self.config.model,
+            )
 
         builder = ToolsetBuilder(
             registry=self.tool_registry,
@@ -800,7 +813,7 @@ class Agent:
             allowed_tools=self.allowed_tools,
             agent_key=self.agent_key,
             reviewer=reviewer,
-            tool_policy=load_tool_policy(default_config_path()),
+            tool_policy=load_tool_policy(permissions_path()),
         )
         await builder.build()
         self._skill_tools = builder.skill_tools

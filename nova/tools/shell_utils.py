@@ -1,13 +1,22 @@
-"""
-Shell utilities - shell detection, command building, path translation.
+"""How to invoke a shell: detect it, build its argv, translate a path.
+
+Shared rather than owned. ``tasks.executors.shell`` uses all three, and so does the
+shell tool -- which does not spawn anything itself, but hands a resolved ``cwd``
+down to that executor. Two callers that must agree on where a command runs is the
+reason this is one module: the workspace exemption is judged against the workspace
+while the command executes against this cwd, and those only agree if both sides
+derive it the same way.
+
+``get_shell_label`` is the odd one out, used only by the prompt builder to describe
+the environment to the model. It stays because it is a four-line wrapper over
+``detect_shell``; moving it would mean importing the detection from here anyway,
+under a second name, for no gain in the import graph.
 """
 
 import functools
 import os
 import re
 import shutil
-import signal
-import subprocess
 import sys
 
 
@@ -105,24 +114,6 @@ def normalize_path(path: str) -> str:
     )
 
     return path
-
-
-def kill_process_tree(pid: int):
-    """Kill a process and its children cross-platform."""
-    if sys.platform == "win32":
-        subprocess.run(
-            ["taskkill", "/F", "/T", "/PID", str(pid)],
-            capture_output=True,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-    else:
-        try:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
 
 
 def get_shell_label() -> str:

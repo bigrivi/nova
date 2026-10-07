@@ -13,7 +13,7 @@ key identifies the rule that fired rather than the text that tripped it.
 from __future__ import annotations
 
 from nova.tools.approval import ApprovalManager
-from nova.tools.shell_policy import default_rule_set
+from nova.tools.shell.policy import default_rule_set
 
 
 def _decide(manager: ApprovalManager, command: str, session: str = "s1") -> str | None:

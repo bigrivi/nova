@@ -5,6 +5,8 @@ export type ApprovalPending = {
     requestId: string;
     command: string;
     description: string;
+    /** Which tool is asking. Empty means the shell, for older replays. */
+    toolName: string;
 };
 
 interface ApprovalStore {

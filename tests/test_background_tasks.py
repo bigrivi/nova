@@ -132,7 +132,7 @@ async def test_shell_promotes_long_foreground_command_to_background(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An infinite Python loop should return a task handle and remain cancellable."""
-    shell_module = importlib.import_module("nova.tools.shell")
+    shell_module = importlib.import_module("nova.tools.shell.tool")
     shell_tool = shell_module.shell
 
     manager = BackgroundTaskManager()
@@ -168,7 +168,7 @@ async def test_shell_short_command_stays_on_foreground_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Short commands should return output without creating a background handle."""
-    shell_module = importlib.import_module("nova.tools.shell")
+    shell_module = importlib.import_module("nova.tools.shell.tool")
     shell_tool = shell_module.shell
     manager = BackgroundTaskManager()
     manager.register_executor(ShellExecutor())

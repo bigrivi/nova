@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
@@ -15,13 +14,22 @@ class ApprovalRequest:
     id: str
     command: str
     description: str
-    created_at: float
-    expires_at: float
     approved: bool | None = None
     session_id: str = ""
     # Which rule asked. This is what a grant is recorded against, so it must be
     # the rule's identity and not the command text -- see ApprovalManager.
     rule: str = ""
+
+    # There were ``created_at``/``expires_at`` fields and a ``default_timeout=60``
+    # here. Nothing ever read them: ``wait_with_heartbeat`` waits on an
+    # ``asyncio.Event`` and has no deadline, so ``timeout=0`` only *appeared* to mean
+    # "wait forever" because ``0 or 60`` picked the default and the default was
+    # never applied. The code implied a timeout that did not exist, and
+    # ``timeout=0`` read as deliberate while being an accident of `or``.
+    #
+    # Removing it is also the correct behaviour, not a retreat: an approval the
+    # user did not answer should wait, not expire. A timeout here would silently
+    # deny commands the user was still reading.
 
 
 class ApprovalManager:
@@ -35,8 +43,7 @@ class ApprovalManager:
     what the user was already being told happened.
     """
 
-    def __init__(self, default_timeout: int = 60):
-        self._default_timeout = default_timeout
+    def __init__(self) -> None:
         self._pending: dict[str, ApprovalRequest] = {}
         self._events: dict[str, asyncio.Event] = {}
         self._grants: dict[str, set[str]] = {}
@@ -45,31 +52,27 @@ class ApprovalManager:
         self,
         command: str,
         description: str = "",
-        timeout: int | None = None,
         session_id: str = "",
         rule: str = "",
     ) -> str:
         """Create a pending approval request and return its id (non-blocking).
 
-        timeout=0 means wait indefinitely (used by wait_with_heartbeat).
-
         Returns "" when the session already holds a grant for *rule*. With no rule
         supplied there is nothing to match on, so the command is always asked --
         that path is the tool asserting a danger without naming the rule, and
         guessing which rule it meant would silently widen the grant.
+
+        The request never expires. Waiting is the point: an unanswered prompt
+        should hold the turn open, not quietly deny the command.
         """
         if rule and rule in self._grants.get(session_id, ()):
             return ""
 
-        deadline = time.monotonic() + (timeout or self._default_timeout)
         req_id = uuid.uuid4().hex[:12]
-
         self._pending[req_id] = ApprovalRequest(
             id=req_id,
             command=command,
             description=description,
-            created_at=time.monotonic(),
-            expires_at=deadline,
             session_id=session_id,
             rule=rule,
         )
@@ -100,11 +103,21 @@ class ApprovalManager:
                 req = self._pending.get(req_id)
                 if req is None or req.approved is None:
                     continue
+                # Drop it before yielding, not only in `finally`. A consumer that
+                # `break`s out of the loop leaves the generator suspended, so the
+                # `finally` waits on garbage collection -- and "a second resolve
+                # returns False" is what makes a replayed approve a 404 at the
+                # endpoint. Relying on refcounts for that is not a guarantee.
+                self._discard(req_id)
                 yield req.approved
                 return
         finally:
-            self._pending.pop(req_id, None)
-            self._events.pop(req_id, None)
+            # Covers the abandoned case: the consumer walked away without a verdict.
+            self._discard(req_id)
+
+    def _discard(self, req_id: str) -> None:
+        self._pending.pop(req_id, None)
+        self._events.pop(req_id, None)
 
     def get_session_id_for_request(self, request_id: str) -> str | None:
         """Return the owning session_id for a pending approval request.
@@ -124,7 +137,7 @@ class ApprovalManager:
         if req is None:
             return False
         req.approved = approved
-        if approved and remember and req.rule:
+        if approved and remember and req.rule and req.session_id:
             self._grants.setdefault(req.session_id, set()).add(req.rule)
         event = self._events.get(req_id)
         if event:
@@ -132,8 +145,16 @@ class ApprovalManager:
         return True
 
     def add_to_allowlist(self, rule: str, session_id: str = "") -> None:
-        """Grant *rule* for a session without an approval round-trip."""
-        if rule:
+        """Grant *rule* for a session without an approval round-trip.
+
+        A grant with no session is dropped rather than filed under the empty
+        string. ``ToolInvoker`` falls back to ``""`` when it cannot resolve a
+        session, so storing it there would make every id-less context share one
+        set of grants -- and an approval the user gave in one turn would silently
+        authorise the same rule in another. Losing the grant only costs a repeat
+        prompt; the alternative widens an authorisation the user never scoped.
+        """
+        if rule and session_id:
             self._grants.setdefault(session_id, set()).add(rule)
 
     def allowlist_for(self, session_id: str) -> set[str]:

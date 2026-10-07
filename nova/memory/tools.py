@@ -13,8 +13,8 @@ from __future__ import annotations
 from nova.llm import ToolResult
 from nova.memory.models import MemoryWriteRequest
 from nova.memory.service import MemoryService
+from nova.prompt.threat_patterns import has_threats
 from nova.tools.registry import tool
-from nova.tools.threat_patterns import has_threats
 
 
 def _format_memory(record) -> str:

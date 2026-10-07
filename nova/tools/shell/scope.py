@@ -3,7 +3,7 @@
 Pure text analysis, no I/O: given a command and a workspace, say whether every
 path it can touch is under that workspace. It answers for the small set of
 commands whose arguments *are* paths -- `mkdir`, `touch`, `cp`, `mv`, `rm`,
-`rmdir`, `ln` -- and refuses to answer for anything else.
+`rmdir`, `ln`, `install` -- and refuses to answer for anything else.
 
 The refusal is the design. Anything with chaining, substitution, a wildcard, a
 privileged prefix or a workspace of "unknown" comes back as not-bounded, and the
@@ -14,7 +14,6 @@ prompt.
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
@@ -84,13 +83,17 @@ def is_bounded(command: str, workspace: str | None) -> bool:
 def _inside(candidate: str, root: Path) -> bool:
     """Whether *candidate* resolves to something under *root*.
 
-    Relative paths resolve against the process cwd, which is the session's
-    working directory for the shell tool -- the same base the command itself will
-    use.
+    A relative path resolves against *root*, not the process working directory.
+    The shell runs with ``cwd = get_active_workspace() or os.getcwd()``
+    (``nova/tools/shell/tool.py``), so on a server -- where the cwd is whatever
+    the daemon happened to start in -- resolving against ``os.getcwd()`` judged
+    every relative path against the wrong root and quietly withheld the
+    exemption. Relative paths are the common case in a command line, so the
+    exemption was effectively off outside a terminal started in the workspace.
     """
     path = Path(candidate).expanduser()
     if not path.is_absolute():
-        path = Path(os.getcwd()) / path
+        path = root / path
     try:
         return path.resolve().is_relative_to(root)
     except OSError:

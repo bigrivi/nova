@@ -16,7 +16,7 @@ import json
 
 import pytest
 
-from nova.tools.shell_policy import Decision, RuleSet, load_rule_set
+from nova.tools.shell.policy import Decision, RuleSet, load_rule_set
 
 
 def _write(path, payload) -> None:
@@ -35,7 +35,7 @@ def test_without_a_config_the_builtin_rules_apply(tmp_path) -> None:
 
 
 def test_the_default_rule_set_is_the_python_one() -> None:
-    from nova.tools.shell import DANGEROUS_PATTERNS, HARDLINE_PATTERNS
+    from nova.tools.shell.patterns import DANGEROUS_PATTERNS, HARDLINE_PATTERNS
 
     rules = RuleSet.defaults()
 
@@ -56,6 +56,32 @@ def test_an_allow_prefix_skips_approval(tmp_path) -> None:
     assert rules.classify("chmod 777 f").needs_approval, (
         "a narrower allow must not widen anything else"
     )
+
+
+def test_an_allow_prefix_ignores_case(tmp_path) -> None:
+    """The built-in rules are case-insensitive, so the override has to be too.
+
+    ``git push *`` used to compile case-sensitively while ``ask`` entries and
+    every built-in rule compiled with IGNORECASE. The effect was an allow entry
+    that looked right and silently failed to cover the very command it was written
+    for: ``GIT PUSH --FORCE origin main`` still asked.
+    """
+    config = tmp_path / "permissions.json"
+    _write(config, {"allow": ["git push *"]})
+
+    rules = load_rule_set(config)
+
+    assert rules.classify("GIT PUSH --FORCE origin main").allowed
+    assert rules.classify("Git Push --force origin main").allowed
+
+
+def test_a_blocked_command_stays_blocked_whatever_the_case(tmp_path) -> None:
+    config = tmp_path / "permissions.json"
+    _write(config, {"allow": ["rm -rf *", "RM -RF *"]})
+
+    rules = load_rule_set(config)
+
+    assert rules.classify("RM -RF /").effect == "block"
 
 
 def test_allow_takes_precedence_over_an_ask_rule(tmp_path) -> None:

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from nova.tools.shell_policy import RuleSet
+from nova.tools.shell.policy import RuleSet
 
 WS = "/Users/andy/project"
 

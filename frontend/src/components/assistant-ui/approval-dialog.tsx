@@ -12,6 +12,15 @@ export const ApprovalDialog = () => {
 
     if (!pending) return null;
 
+    // A tool-axis approval is not a shell line. The server sends toolName on both
+    // axes, and `{"tools": {"web_fetch": "ask"}}` genuinely reaches this dialog --
+    // labelling it "Shell Command" with the tool name in the code block told the
+    // user nothing about what they were authorising.
+    const isShell = !pending.toolName || pending.toolName === "shell";
+    const title = isShell
+        ? t("approval.title")
+        : t("approval.toolTitle", { tool: pending.toolName });
+
     const handleApprove = async (remember: boolean) => {
         await approveCommand({
             sessionId: pending.sessionId,
@@ -41,13 +50,19 @@ export const ApprovalDialog = () => {
                 </div>
                 <div className="min-w-0 flex-1 space-y-3">
                     <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
-                        {t("approval.title")}
+                        {title}
                     </div>
-                    {pending.description && (
-                        <div className="whitespace-pre-wrap text-sm leading-6">
-                            {pending.description}
-                        </div>
-                    )}
+                    {/*
+                     * The description and the command are the same string for a
+                     * tool approval, so rendering both would print the tool's
+                     * doc twice.
+                     */}
+                    {pending.description &&
+                        pending.description !== pending.command && (
+                            <div className="whitespace-pre-wrap text-sm leading-6">
+                                {pending.description}
+                            </div>
+                        )}
                     <pre className="overflow-x-auto rounded-xl border border-amber-200 bg-card/80 px-3 py-2 text-xs text-slate-700">
                         {pending.command}
                     </pre>

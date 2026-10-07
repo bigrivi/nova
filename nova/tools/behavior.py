@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from nova.tools.shell_policy import default_rule_set
+from nova.tools.shell import decide
 from nova.tools.workspace_context import get_active_workspace
 
 log = logging.getLogger(__name__)
@@ -122,11 +122,12 @@ class DefaultToolBehavior:
 class ShellToolBehavior(DefaultToolBehavior):
     """Behaviour for the ``shell`` tool.
 
-    Responsibilities:
-    1. Reject hardline commands outright.
-    2. Inject approval-manager dependencies into *args* so the shell
-       tool function can perform runtime allowlist checks.
-    3. Trigger pre-execution approval for dangerous commands.
+    All it does is translate a verdict into the dispatch protocol: refused means
+    ``allowed=False``, needs-a-human means an approval request, everything else
+    runs. The ordering of the checks, the workspace exemption, the reviewer and
+    the grant identity belong to :func:`nova.tools.shell.decide` -- this class
+    used to hold that knowledge, which meant every caller of the approval path
+    had to know it too.
     """
 
     def __init__(
@@ -145,46 +146,24 @@ class ShellToolBehavior(DefaultToolBehavior):
         cmd = args.get("command", "")
         desc = args.get("description", "") or cmd[:80]
 
-        # One pass gives both the verdict and the rule that produced it, so the
-        # approval request can carry a grant identity instead of making the
-        # caller re-derive which pattern fired.
         # The workspace comes from the tool's own context rather than the turn:
-        # the shell already resolves its cwd against it, so the boundary here has
-        # to be the same one.
-        decision = default_rule_set().classify(cmd, get_active_workspace())
+        # the shell already resolves its cwd against it, so the boundary has to be
+        # the same one.
+        verdict = await decide(
+            cmd,
+            get_active_workspace(),
+            reviewer=self._reviewer,
+            is_sub_agent=self._is_sub_agent,
+        )
 
-        # --- hardline check -------------------------------------------
-        if decision.effect == "block":
-            log.info("Hardline command rejected: %s (%s)", cmd, decision.description)
-            return PreExecutionCheck(allowed=False, reject_reason=decision.description)
+        if verdict.effect == "block":
+            return PreExecutionCheck(allowed=False, reject_reason=verdict.reason)
 
-        # --- dangerous check → pre-approval ----------------------------
-        if decision.needs_approval:
-            # A background sub-agent has no client to surface an approval prompt
-            # to, so fail closed rather than hang or auto-run. This is checked
-            # before the reviewer because it is a statement about the channel,
-            # not about the command: there is nobody to ask, so no amount of
-            # model confidence makes running it the right answer.
-            if self._is_sub_agent:
-                log.info("Dangerous command denied for sub-agent: %s", cmd)
-                return PreExecutionCheck(
-                    allowed=False,
-                    reject_reason=(
-                        "Dangerous command denied: a sub-agent runs in the background "
-                        "with no approval channel, so it cannot run commands that need approval."
-                    ),
-                )
-            # A model gets to look before the user is interrupted. It can only
-            # clear the command: `deny` still asks, because a model reading a
-            # shell string is not a security boundary, and `escalate` -- every
-            # failure lands there -- asks as before.
-            if self._reviewer is not None:
-                verdict = await self._reviewer(cmd, decision.description)
-                if verdict == "approve":
-                    log.info("cleared by review: %s", cmd[:120])
-                    return PreExecutionCheck()
+        if verdict.needs_approval:
+            # An empty id means the session already granted this rule, so
+            # `pre_request` declines to create a request and nothing is asked.
             req_id = self._approval.pre_request(
-                cmd, desc, timeout=0, session_id=ctx.session_id, rule=decision.rule
+                cmd, desc, session_id=ctx.session_id, rule=verdict.rule
             )
             if req_id:
                 return PreExecutionCheck(
@@ -210,14 +189,72 @@ class PolicyToolBehavior(DefaultToolBehavior):
 
     A grant is keyed on ``tool:<name>``, so one approval covers the shape of work
     rather than one exact argument set, and is per session like every other grant.
+
+    The optional reviewer is the same one the shell uses. It lives beside the
+    approval channel rather than inside the shell package because it is not
+    shell-specific: any tool set to ``ask`` can be reviewed, and with two callers
+    the seam is real rather than a speculative abstraction. As with the shell, an
+    ``approve`` clears the call and nothing else -- ``deny`` still asks, since a
+    model reading a call is not a security boundary.
     """
 
-    def __init__(self, tool_name: str, policy: Any, approval_manager: Any) -> None:
+    def __init__(
+        self,
+        tool_name: str,
+        policy: Any,
+        approval_manager: Any,
+        reviewer: Any = None,
+        inner: Any = None,
+        tool_description: str = "",
+    ) -> None:
         self._tool = tool_name
         self._policy = policy
         self._approval = approval_manager
+        self._reviewer = reviewer
+        # The tool's own description, shown in the approval prompt. Without it the
+        # prompt says "read call", which names the tool but not what it does --
+        # and a dialog whose whole job is to let someone decide cannot ask them to
+        # decide from a tool name.
+        self._tool_description = tool_description
+        # The behaviour this tool already had, if any. The policy is a gate laid
+        # over it, never a replacement: ``read_image`` and `browser_use` return
+        # images through ``postprocess``, and ``ask_user`` numbers its questions
+        # in ``normalize_input`` so a client can map an answer back to the question.
+        # Overwriting those with the default silently dropped the images and the
+        # numbering -- no error, just missing data.
+        self._inner = inner if inner is not None else DefaultToolBehavior()
+
+    def normalize_input(self, args: dict) -> dict:
+        return self._inner.normalize_input(args)
+
+    def postprocess(self, raw_content: str) -> tuple[str, list | None]:
+        return self._inner.postprocess(raw_content)
+
+    def on_success(self, ctx: TurnContext) -> None:
+        self._inner.on_success(ctx)
+
+    async def _cleared(self, subject: str, reason: str) -> bool:
+        """Whether the reviewer approved, treating any failure as "ask the user".
+
+        Same reasoning as the shell: a reviewer that raises has produced no
+        verdict, and on the approval path an absent verdict means escalate.
+        """
+        assert self._reviewer is not None
+        try:
+            return await self._reviewer(subject, reason) == "approve"
+        except Exception as exc:
+            log.warning(
+                "review failed for %s %s (%s); asking the user", self._tool, subject[:60], exc
+            )
+            return False
 
     async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
+        # The tool's own check runs first and unconditionally, so gating a tool
+        # never skips a hook it depends on. Its rejection wins over the policy.
+        inner = await self._inner.before_execute(args, ctx)
+        if not inner.allowed:
+            return inner
+
         effect = self._policy.effect_for(self._tool)
         if effect == "allow":
             return PreExecutionCheck()
@@ -230,10 +267,19 @@ class PolicyToolBehavior(DefaultToolBehavior):
                     "permissions.json."
                 ),
             )
+
+        # Two different strings, doing two different jobs. `summary` is what the
+        # dialog shows and why it is asking; `subject` is what the model would
+        # have called it, which is what a reviewer reads.
+        summary = self._tool_description or f"{self._tool} call"
+        subject = args.get("description", "") or summary
+        if self._reviewer is not None and await self._cleared(subject, summary):
+            log.info("cleared by review: %s %s", self._tool, subject[:80])
+            return PreExecutionCheck()
+
         req_id = self._approval.pre_request(
-            args.get("description", "") or self._tool,
-            f"{self._tool} call",
-            timeout=0,
+            subject,
+            summary,
             session_id=ctx.session_id,
             rule=f"tool:{self._tool}",
         )
@@ -244,8 +290,10 @@ class PolicyToolBehavior(DefaultToolBehavior):
                 "id": req_id,
                 "type": "tool",
                 "toolName": self._tool,
-                "command": self._tool,
-                "description": f"{self._tool} call",
+                # Not the tool name: the dialog already shows that, and a `<pre>`
+                # reading "read" tells the user nothing they can act on.
+                "command": summary,
+                "description": summary,
             }
         )
 

@@ -7,6 +7,7 @@ const ghost = (sessionId: string): ApprovalPending => ({
     requestId: "req-1",
     command: "rm -rf /tmp/x",
     description: "delete",
+    toolName: "shell",
 });
 
 beforeEach(() => {

@@ -78,6 +78,16 @@ class ToolRegistry:
 
         return self._behaviors.get(name, DefaultToolBehavior())
 
+    def has_behavior(self, name: str) -> bool:
+        """Whether *name* has a behaviour bound, as opposed to the no-op default.
+
+        ``behavior_for`` cannot answer this: it hands back a fresh
+        ``DefaultToolBehavior()`` for an unbound tool, so a caller that wrapped
+        "whatever behaviour this tool has" would wrap the default and discard the
+        real one.
+        """
+        return name in self._behaviors
+
     def register_by_metadata(self, tool_name: str) -> bool:
         """Register a tool from global metadata."""
         metadata = _tool_metadata.get(tool_name)
