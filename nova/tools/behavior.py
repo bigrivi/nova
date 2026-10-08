@@ -160,17 +160,19 @@ class ShellToolBehavior(DefaultToolBehavior):
             return PreExecutionCheck(allowed=False, reject_reason=verdict.reason)
 
         if verdict.needs_approval:
-            # An empty id means the session already granted this rule, so
-            # `pre_request` declines to create a request and nothing is asked.
-            # A reviewer that declined is asked about anyway: passing no rule is
-            # the existing "always ask" path, and it also means `remember` has
-            # nothing to store, so the dialog is told not to offer it.
+            # An empty id means the session already granted this rule and
+            # family, so `pre_request` declines to create a request and nothing is
+            # asked. A reviewer that declined is asked about anyway: passing no
+            # rule is the existing "always ask" path, and it also means
+            # `remember` has nothing to store, so the dialog is told not to offer
+            # it.
             rememberable = not verdict.review_declined
             req_id = self._approval.pre_request(
                 cmd,
                 desc,
                 session_id=ctx.session_id,
                 rule=verdict.rule if rememberable else "",
+                family=verdict.family if rememberable else "",
             )
             if req_id:
                 return PreExecutionCheck(
@@ -180,6 +182,7 @@ class ShellToolBehavior(DefaultToolBehavior):
                         "command": cmd,
                         "description": desc,
                         "rememberable": rememberable,
+                        "family": verdict.family if rememberable else "",
                     }
                 )
 

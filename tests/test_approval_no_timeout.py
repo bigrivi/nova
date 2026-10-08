@@ -30,7 +30,15 @@ def test_the_request_carries_no_dead_timestamps() -> None:
 
     assert "expires_at" not in fields, "written and never read"
     assert "created_at" not in fields, "written and never read"
-    assert fields == {"id", "command", "description", "approved", "session_id", "rule"}
+    assert fields == {
+        "id",
+        "command",
+        "description",
+        "approved",
+        "session_id",
+        "rule",
+        "family",
+    }
 
 
 def test_pre_request_takes_no_timeout() -> None:

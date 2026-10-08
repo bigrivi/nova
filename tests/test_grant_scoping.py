@@ -33,7 +33,7 @@ def test_an_unrelated_session_gets_nothing() -> None:
     manager = _manager_with_grant("session-a")
 
     assert manager.allowlist_for("session-b") == set()
-    assert manager.allowlist_for("session-a") == {"tool:web_fetch"}
+    assert manager.allowlist_for("session-a") == {("tool:web_fetch", "")}
 
 
 def test_remembering_during_resolution_also_requires_a_session() -> None:
@@ -58,14 +58,14 @@ def test_remembering_during_resolution_also_requires_a_session() -> None:
 def test_two_sessions_do_not_share_a_grant() -> None:
     manager = _manager_with_grant("session-a")
 
-    assert "tool:web_fetch" not in manager.allowlist_for("session-b")
+    assert ("tool:web_fetch", "") not in manager.allowlist_for("session-b")
 
 
 def test_the_granting_session_keeps_working() -> None:
     """Isolation is only worth having if the intended session still benefits."""
     manager = _manager_with_grant("session-a")
 
-    assert manager.allowlist_for("session-a") == {"tool:web_fetch"}
+    assert manager.allowlist_for("session-a") == {("tool:web_fetch", "")}
     assert manager.pre_request("x", "", session_id="session-a", rule="tool:web_fetch") == ""
 
 

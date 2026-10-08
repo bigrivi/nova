@@ -143,7 +143,10 @@ async def test_a_tool_grant_covers_later_calls_of_the_same_tool() -> None:
     second = await behavior.before_execute({"url": "https://b.example"}, _ctx())
 
     assert second.approval_request is None
-    assert manager.allowlist_for("s1") == {"tool:web_fetch"}
+    assert manager.allowlist_for("s1") == {("tool:web_fetch", "")}, (
+        "the tool axis keys on the tool alone: there is no command line to read a"
+        " family out of, and the tool name is the whole of the identity"
+    )
 
 
 @pytest.mark.asyncio

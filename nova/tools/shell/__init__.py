@@ -42,7 +42,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
 
+from nova.tools.shell.arity import command_family
 from nova.tools.shell.policy import Decision, RuleSet, default_rule_set
+from nova.tools.shell.scan import scan
 from nova.tools.shell.scope import is_bounded
 from nova.tools.shell.tool import TOOL
 
@@ -69,12 +71,18 @@ class Verdict:
             Load-bearing rather than informational: the caller must ask the user
             even when a grant already covers ``rule``. Consulted only when
             ``effect`` is ``ask``.
+        family: The command family a grant covers -- ``git push *``. Empty when
+            the command names no family. Narrower than ``rule`` on purpose: one
+            rule can cover several commands that are not interchangeable, and
+            approving one of them should not authorise the rest. OpenCode keys
+            saved approvals the same way, off a prefix table.
     """
 
     effect: Effect
     reason: str = ""
     rule: str = ""
     review_declined: bool = False
+    family: str = ""
 
     @property
     def runs(self) -> bool:
@@ -93,6 +101,29 @@ def classify(command: str, workspace: str | None = None) -> Decision:
     matches without involving a model or a session.
     """
     return default_rule_set().classify(command, workspace)
+
+
+def family_of(command: str) -> str:
+    """The command family a grant for *command* should cover.
+
+    Every command in a compound line gets a family, because the grant is per
+    command and the family is what narrows it. The lines join with a space rather
+    than a separator so a family is never mistaken for a command the model could
+    have written.
+
+    A line the scanner could not read falls back to the whole line as one family:
+    too wide, but the alternative is a family that names nothing and silently
+    stops matching.
+    """
+    result = scan(command)
+    if result is None or not result.usable:
+        return command_family(command)
+    families = [
+        family
+        for family in (command_family(text) for text in result.command_texts())
+        if family
+    ]
+    return " ".join(dict.fromkeys(families))
 
 
 async def decide(
@@ -118,13 +149,14 @@ async def decide(
         one shape to handle rather than two.
     """
     decision = classify(command, workspace)
+    family = family_of(command)
 
     if decision.effect == "block":
         log.info("Hardline command rejected: %s (%s)", command, decision.description)
-        return Verdict("block", decision.description, decision.rule)
+        return Verdict("block", decision.description, decision.rule, family=family)
 
     if not decision.needs_approval:
-        return Verdict("allow", decision.description, decision.rule)
+        return Verdict("allow", decision.description, decision.rule, family=family)
 
     # The channel check precedes the reviewer. A sub-agent has nothing to ask on,
     # so a cleared command would still be a command no human saw -- and getting
@@ -136,6 +168,7 @@ async def decide(
             "Dangerous command denied: a sub-agent runs in the background with no "
             "approval channel, so it cannot run commands that need approval.",
             decision.rule,
+            family=family,
         )
 
     if reviewer is not None:
@@ -149,16 +182,22 @@ async def decide(
             verdict = "escalate"
         if verdict == "approve":
             log.info("cleared by review: %s", command[:120])
-            return Verdict("allow", decision.description, decision.rule)
+            return Verdict("allow", decision.description, decision.rule, family=family)
         log.info("review returned %r; asking the user: %s", verdict, command[:120])
         # Flagged so the caller cannot answer *this* prompt with a grant. A
         # remembered approval is recorded against `rule`, and the command the
         # reviewer declined matches that same rule by definition -- so without
         # the flag the refusal is silently overruled by an approval the user gave
         # to some other command wearing the same rule.
-        return Verdict("ask", decision.description, decision.rule, review_declined=True)
+        return Verdict(
+            "ask",
+            decision.description,
+            decision.rule,
+            review_declined=True,
+            family=family,
+        )
 
-    return Verdict("ask", decision.description, decision.rule)
+    return Verdict("ask", decision.description, decision.rule, family=family)
 
 
 def is_hardline(command: str) -> tuple[bool, str]:

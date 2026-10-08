@@ -19,6 +19,10 @@ class ApprovalRequest:
     # Which rule asked. This is what a grant is recorded against, so it must be
     # the rule's identity and not the command text -- see ApprovalManager.
     rule: str = ""
+    # Which command family within that rule, e.g. "git push *". Empty when the
+    # line could not be read into families, which is also what makes the grant
+    # cover the whole rule.
+    family: str = ""
 
     # There were ``created_at``/``expires_at`` fields and a ``default_timeout=60``
     # here. Nothing ever read them: ``wait_with_heartbeat`` waits on an
@@ -35,18 +39,28 @@ class ApprovalRequest:
 class ApprovalManager:
     """Tracks pending approvals and the grants made from them.
 
-    A grant names a *rule*, not a command. The earlier code stored the command
-    text, which made "always allow" inert for exactly the commands that most need
-    it: an agent that interpolates a URL, a timestamp or a temp path never repeats
-    itself, so the stored string was never seen again. Keying on the rule that
-    fired means approving one command approves that shape of command, which is
-    what the user was already being told happened.
+    A grant names a *rule* and a *command family*, never a command. The earliest
+    version stored the command text, which made "always allow" inert for exactly
+    the commands that most need it: an agent that interpolates a URL, a timestamp
+    or a temp path never repeats itself, so the stored string was never seen
+    again.
+
+    The rule alone is too wide in the other direction. One rule can cover commands
+    that are not interchangeable -- `git force push` and `git clean -fd` are both
+    "destructive git" but a user allowing one has not agreed to the other -- so
+    the family narrows it to the command the user actually saw. The prefix table
+    behind the family comes from OpenCode's, which encodes the same convention:
+    `git push` and `git checkout` are different commands however alike their
+    rules are.
+
+    A request with no family is still grantable by rule alone, so an unparsable
+    command line keeps working rather than becoming unrememberable.
     """
 
     def __init__(self) -> None:
         self._pending: dict[str, ApprovalRequest] = {}
         self._events: dict[str, asyncio.Event] = {}
-        self._grants: dict[str, set[str]] = {}
+        self._grants: dict[str, set[tuple[str, str]]] = {}
 
     def pre_request(
         self,
@@ -54,18 +68,26 @@ class ApprovalManager:
         description: str = "",
         session_id: str = "",
         rule: str = "",
+        family: str = "",
     ) -> str:
         """Create a pending approval request and return its id (non-blocking).
 
-        Returns "" when the session already holds a grant for *rule*. With no rule
-        supplied there is nothing to match on, so the command is always asked --
-        that path is the tool asserting a danger without naming the rule, and
-        guessing which rule it meant would silently widen the grant.
+        Returns "" when the session already holds a grant covering this *rule* and
+        *family*. With no rule supplied there is nothing to match on, so the
+        command is always asked -- that path is the tool asserting a danger
+        without naming the rule, and guessing which rule it meant would silently
+        widen the grant.
+
+        A grant stored with no family covers every command under its rule. That is
+        deliberate, and it is the wide direction: it only happens when the command
+        line could not be read into a family, where a grant too wide costs one
+        prompt and a family that does not match costs a grant that silently never
+        applies.
 
         The request never expires. Waiting is the point: an unanswered prompt
         should hold the turn open, not quietly deny the command.
         """
-        if rule and rule in self._grants.get(session_id, ()):
+        if rule and self._granted(rule, family, session_id):
             return ""
 
         req_id = uuid.uuid4().hex[:12]
@@ -75,9 +97,19 @@ class ApprovalManager:
             description=description,
             session_id=session_id,
             rule=rule,
+            family=family,
         )
         self._events[req_id] = asyncio.Event()
         return req_id
+
+    def _granted(self, rule: str, family: str, session_id: str) -> bool:
+        """Whether the session holds a grant covering this rule and family."""
+        for granted_rule, granted_family in self._grants.get(session_id, ()):
+            if granted_rule == rule and (
+                not granted_family or not family or granted_family == family
+            ):
+                return True
+        return False
 
     async def wait_with_heartbeat(
         self,
@@ -138,14 +170,19 @@ class ApprovalManager:
             return False
         req.approved = approved
         if approved and remember and req.rule and req.session_id:
-            self._grants.setdefault(req.session_id, set()).add(req.rule)
+            self._grant(req.rule, req.family, req.session_id)
         event = self._events.get(req_id)
         if event:
             event.set()
         return True
 
-    def add_to_allowlist(self, rule: str, session_id: str = "") -> None:
-        """Grant *rule* for a session without an approval round-trip.
+    def _grant(self, rule: str, family: str, session_id: str) -> None:
+        self._grants.setdefault(session_id, set()).add((rule, family))
+
+    def add_to_allowlist(
+        self, rule: str, session_id: str = "", family: str = ""
+    ) -> None:
+        """Grant *rule* (optionally narrowed to *family*) without a round-trip.
 
         A grant with no session is dropped rather than filed under the empty
         string. ``ToolInvoker`` falls back to ``""`` when it cannot resolve a
@@ -155,10 +192,10 @@ class ApprovalManager:
         prompt; the alternative widens an authorisation the user never scoped.
         """
         if rule and session_id:
-            self._grants.setdefault(session_id, set()).add(rule)
+            self._grant(rule, family, session_id)
 
-    def allowlist_for(self, session_id: str) -> set[str]:
-        """The rules granted to *session_id*."""
+    def allowlist_for(self, session_id: str) -> set[tuple[str, str]]:
+        """The (rule, family) pairs granted to *session_id*."""
         return set(self._grants.get(session_id, ()))
 
     def get_pending(self) -> list[ApprovalRequest]:
