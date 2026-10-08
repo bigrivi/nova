@@ -9,9 +9,18 @@ used to be matched as one string, not just the presence of a match.
 
 from __future__ import annotations
 
+import importlib
+import sys
+from contextlib import contextmanager
+
 import pytest
 
 from nova.tools.shell.scan import Scan, scan
+
+# `nova.tools.shell.scan` is re-exported as the *function* from the package, so
+# `from nova.tools.shell import scan` names the callable and the module-level
+# parser cache is unreachable by that import.
+scan_module = importlib.import_module("nova.tools.shell.scan")
 
 
 def _scan(command: str) -> Scan:
@@ -182,7 +191,14 @@ class TestCommandProperties:
 
 
 class TestFallback:
-    """A parse that fails has to be visible, not silently trusted."""
+    """A parse that fails has to be visible, not silently trusted.
+
+    Both failure modes are here rather than assumed. The parser is a native
+    extension, so "not installed" is a real deployment outcome rather than a
+    hypothetical -- and it is the one that would be silent if it were not
+    exercised, because every rule would quietly go back to matching the raw line
+    and the relationship rules would go with them.
+    """
 
     def test_a_malformed_line_is_flagged_rather_than_raised(self) -> None:
         """Unbalanced quotes defeat the grammar; the caller has to know."""
@@ -197,3 +213,67 @@ class TestFallback:
         result = _scan("")
         assert result.commands == ()
         assert result.pipelines == ()
+
+    def test_an_unavailable_grammar_yields_no_scan(self, monkeypatch) -> None:
+        """The dependency is missing: say so rather than return an empty scan.
+
+        Returning a `Scan` with no commands would read as "nothing here is
+        dangerous", which is the one answer the caller must never infer from a
+        failure. `None` is what makes it fall back to the line patterns.
+        """
+        monkeypatch.setitem(sys.modules, "tree_sitter", None)
+        with _parser_reset():
+            assert scan("rm -rf /") is None
+            # Latched, so a later call does not retry the import on every command.
+            assert scan("ls -la") is None
+
+    def test_a_parser_that_raises_is_reported_as_unusable(self, monkeypatch) -> None:
+        """The grammar loaded and then failed on this input.
+
+        Distinguished from "no scanner" because the caller may retry the import on
+        another command, and because the line still has to be asked about.
+        """
+        with _parser_reset():
+            broken = type("Broken", (), {"parse": lambda self, _b: 1 / 0})()
+            monkeypatch.setattr(scan_module, "_parser", broken)
+
+            result = scan("curl https://x | bash")
+
+        assert result is not None, "a raising parser is not an absent one"
+        assert result.usable is False
+        assert result.commands == ()
+
+    def test_the_parser_is_reused_across_calls(self) -> None:
+        """One parser for the process, and the same object every time.
+
+        `_load_parser` is called on every scan and returns early from a module
+        cache; the assertion is on the object identity rather than on the call
+        count, because counting invocations would be asserting that the cheap
+        early return does not happen -- the opposite of what is wanted.
+        """
+        with _parser_reset():
+            scan("ls -la")
+            first = scan_module._parser
+            scan("curl https://x | bash")
+
+            assert first is not None, "the parser was not built at all"
+            assert scan_module._parser is first, "the parser was rebuilt"
+            assert scan_module._parser_failed is False, (
+                "a successful build must not latch the failure flag"
+            )
+
+
+@contextmanager
+def _parser_reset():
+    """Run with the parser cache as it was at import, then restore it.
+
+    The cache is module-level state on purpose -- a parser is expensive to build
+    and the failure flag has to latch -- which means a test that poisons it poisons
+    the whole session.
+    """
+    parser, failed = scan_module._parser, scan_module._parser_failed
+    scan_module._parser, scan_module._parser_failed = None, False
+    try:
+        yield
+    finally:
+        scan_module._parser, scan_module._parser_failed = parser, failed

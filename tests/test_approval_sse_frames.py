@@ -145,6 +145,103 @@ async def test_approval_resolved_retracts_a_replayed_prompt(monkeypatch, tmp_pat
     )
 
 
+# ── rememberable: the field that hides a button which would do nothing ──
+#
+# A reviewer that declined leaves the request with no grant identity, so
+# "Approve & Remember" stores nothing and the same command is asked again. The
+# dialog hides the button on that signal, which means a dropped field here is not a
+# missing key but a button that silently does nothing.
+#
+# Both serializers are asserted because `chat_stream` and `chat_stream_ai_sdk` are
+# separate mappings and its own docstring asks for both to be kept in step. The
+# field was added to each on its own commit and neither was under test.
+
+
+def _approval_frames_via_ai_sdk(chunks: list[bytes]) -> list[dict]:
+    return [
+        part
+        for part in _parts(b"".join(chunks))
+        if part["type"] == "data-nova-approval-required"
+    ]
+
+
+def _approval_frames_via_chat_stream(events) -> list[dict]:
+    return [e for e in events if type(e).__name__ == "ApprovalRequiredEvent"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rememberable", [True, False])
+@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
+async def test_the_frame_carries_rememberable(
+    monkeypatch, tmp_path, rememberable, path
+):
+    script = [
+        *APPROVAL_SCRIPT[:-1],
+        (
+            AgentEvent.APPROVAL_REQUIRED,
+            {**APPROVAL_SCRIPT[-1][1], "rememberable": rememberable},
+        ),
+        (AgentEvent.DONE, {"reason": "", "content": "done"}),
+    ]
+    app = _make_app(
+        monkeypatch, tmp_path, f"home-rememberable-{path}-{rememberable}", script=script
+    )
+    request = type(
+        "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
+    )()
+
+    if path == "ai_sdk":
+        chunks = [
+            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        ]
+        frames = _approval_frames_via_ai_sdk(chunks)
+        data = frames[0]["data"] if frames else {}
+    else:
+        events = [e async for e in app.state.chat_service.chat_stream(request)]
+        frames = _approval_frames_via_chat_stream(events)
+        data = frames[0].data.model_dump() if frames else {}
+
+    assert frames, f"no approval frame on the {path} path"
+    assert data["rememberable"] is rememberable, (
+        f"the {path} path dropped or inverted rememberable"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
+async def test_a_frame_without_the_field_defaults_to_rememberable(
+    monkeypatch, tmp_path, path
+):
+    """A replayed or older frame has no such key, and the safe reading is yes.
+
+    Defaulting to false would hide the button on every prompt from a server that
+    predates the field, with nothing in the frame to explain why.
+    """
+    app = _make_app(
+        monkeypatch,
+        tmp_path,
+        f"home-rememberable-default-{path}",
+        script=[
+            *APPROVAL_SCRIPT,
+            (AgentEvent.DONE, {"reason": "", "content": "done"}),
+        ],
+    )
+    request = type(
+        "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
+    )()
+
+    if path == "ai_sdk":
+        chunks = [
+            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        ]
+        data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
+    else:
+        events = [e async for e in app.state.chat_service.chat_stream(request)]
+        data = _approval_frames_via_chat_stream(events)[0].data.model_dump()
+
+    assert data["rememberable"] is True
+
+
 @pytest.mark.asyncio
 async def test_stream_stays_open_while_awaiting_approval(monkeypatch, tmp_path):
     """The turn blocks on approval, so the SSE body must not close beforehand.
