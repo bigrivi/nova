@@ -26,6 +26,12 @@ dependencies = [
     "aiosqlite",
     "fastapi>=0.141.1",
     "httpx",
+    # Shell grammar, so a compound command can be split into the commands it
+    # actually runs instead of being matched as one string. A regex cannot tell
+    # `curl x && make | python3 f` from `curl x | python3 f`: the pipe belongs to
+    # `make` in the first and to `curl` in the second, and only the parse knows.
+    "tree-sitter>=0.26",
+    "tree-sitter-bash>=0.25",
     # Grapheme-cluster segmentation for truncating text at a character boundary.
     # Already present transitively via tiktoken, but relied on directly here.
     "regex",
