@@ -387,6 +387,7 @@ describe("event extractors", () => {
             description: "d",
             toolName: "shell",
             rememberable: true,
+            family: "",
         });
     });
 
@@ -416,6 +417,31 @@ describe("event extractors", () => {
                 data: { requestId: "r3", command: "ls", description: "" },
             }).toolName,
         ).toBe("shell");
+    });
+
+    it("carries the command family so the dialog can name the grant", () => {
+        // The button promises to remember something; without the family the user
+        // is approving a scope they cannot see.
+        expect(
+            extractApprovalRequest({
+                type: "data-nova-approval-required",
+                data: {
+                    requestId: "r5",
+                    command: "git push --force origin main",
+                    description: "push",
+                    family: "git push *",
+                },
+            }).family,
+        ).toBe("git push *");
+    });
+
+    it("has no family on a frame from a server that predates the field", () => {
+        expect(
+            extractApprovalRequest({
+                type: "data-nova-approval-required",
+                data: { requestId: "r6", command: "rm -rf ~/x", description: "" },
+            }).family,
+        ).toBe("");
     });
 
     it("reports remembering as unavailable when the reviewer declined", () => {

@@ -223,6 +223,7 @@
     "approval.toolTitle": "Tool call: {{tool}}",
     "approval.approve": "Approve",
     "approval.remember": "Approve & Remember",
+    "approval.rememberFamily": "Remember {{family}}",
     "approval.reject": "Reject",
     "threadList.moreActions": "More actions",
     "threadList.rename": "Rename",

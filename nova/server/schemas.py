@@ -330,6 +330,12 @@ class ApprovalRequiredEventData(BaseStreamEventData):
     #: remember it: nothing would be stored, and the next occurrence is reviewed
     #: again. Defaulted so older frames stay loadable.
     rememberable: bool = True
+    #: The command family an "Approve & Remember" would cover, e.g. "git push *".
+    #: Empty when there is nothing to name -- an unreadable command line, a tool
+    #: call, or a declined review. Sent so the client can show what it is about to
+    #: authorise; a remembered approval keyed on something the user never sees is
+    #: an approval of unknown width.
+    family: str = ""
 
 
 class ApproveRequest(BaseModel):

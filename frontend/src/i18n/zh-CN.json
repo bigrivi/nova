@@ -222,6 +222,7 @@
     "approval.toolTitle": "工具调用：{{tool}}",
     "approval.approve": "批准",
     "approval.remember": "批准并记住",
+    "approval.rememberFamily": "记住 {{family}}",
     "approval.reject": "拒绝",
     "threadList.moreActions": "更多操作",
     "threadList.rename": "重命名",

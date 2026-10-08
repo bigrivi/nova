@@ -12,6 +12,11 @@ export type ApprovalPending = {
      * dialog hides "remember" rather than offering a decision that is dropped.
      */
     rememberable: boolean;
+    /**
+     * What "Approve & Remember" would cover, e.g. `git push *`. Empty when there
+     * is nothing to name, which is also when the button is hidden.
+     */
+    family: string;
 };
 
 interface ApprovalStore {

@@ -9,6 +9,7 @@ const ghost = (sessionId: string): ApprovalPending => ({
     description: "delete",
     toolName: "shell",
     rememberable: true,
+    family: "rm *",
 });
 
 beforeEach(() => {

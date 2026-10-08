@@ -243,6 +243,71 @@ async def test_a_frame_without_the_field_defaults_to_rememberable(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
+async def test_the_frame_carries_the_family(monkeypatch, tmp_path, path):
+    """What "Approve & Remember" would cover.
+
+    The grant is keyed on the rule and this together, and the rule's description is
+    wording the user never sees -- so without the family in the frame the button is
+    an approval of unknown width, and the field `before_execute` computes goes
+    nowhere at all.
+    """
+    script = [
+        *APPROVAL_SCRIPT[:-1],
+        (
+            AgentEvent.APPROVAL_REQUIRED,
+            {**APPROVAL_SCRIPT[-1][1], "family": "git push *"},
+        ),
+        (AgentEvent.DONE, {"reason": "", "content": "done"}),
+    ]
+    app = _make_app(monkeypatch, tmp_path, f"home-family-{path}", script=script)
+    request = type(
+        "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
+    )()
+
+    if path == "ai_sdk":
+        chunks = [
+            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        ]
+        data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
+    else:
+        events = [e async for e in app.state.chat_service.chat_stream(request)]
+        data = _approval_frames_via_chat_stream(events)[0].data.model_dump()
+
+    assert data["family"] == "git push *", f"the {path} path dropped the family"
+
+
+@pytest.mark.asyncio
+async def test_a_frame_without_a_family_sends_an_empty_one(monkeypatch, tmp_path):
+    """A tool call, a declined review or an unreadable line has no family.
+
+    Sent explicitly rather than omitted, because the dialog renders the line on a
+    non-empty family, and a missing key would be indistinguishable from a dropped
+    field -- the same ambiguity that let `rememberable` go untested.
+    """
+    app = _make_app(
+        monkeypatch,
+        tmp_path,
+        "home-family-absent",
+        script=[
+            *APPROVAL_SCRIPT,
+            (AgentEvent.DONE, {"reason": "", "content": "done"}),
+        ],
+    )
+    request = type(
+        "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
+    )()
+    chunks = [
+        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+    ]
+
+    data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
+
+    assert data["family"] == ""
+    assert data["rememberable"] is True
+
+
+@pytest.mark.asyncio
 async def test_stream_stays_open_while_awaiting_approval(monkeypatch, tmp_path):
     """The turn blocks on approval, so the SSE body must not close beforehand.
 

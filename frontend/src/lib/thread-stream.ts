@@ -288,6 +288,13 @@ export type ApprovalRequest = {
      * would be offering a button that does nothing.
      */
     rememberable: boolean;
+    /**
+     * The command family "Approve & Remember" would cover, e.g. `git push *`.
+     * Empty when there is nothing to name. Shown in the dialog so the button is
+     * not an approval of unknown width -- the grant is keyed on this and the rule
+     * together, and the rule description is wording the user never sees.
+     */
+    family: string;
 };
 
 export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest {
@@ -298,6 +305,7 @@ export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest 
         toolName: String(event.data?.toolName || "shell"),
         // Absent on frames from older servers, where remembering still worked.
         rememberable: event.data?.rememberable !== false,
+        family: String(event.data?.family || ""),
     };
 }
 

@@ -66,6 +66,20 @@ export const ApprovalDialog = () => {
                     <pre className="overflow-x-auto rounded-xl border border-amber-200 bg-card/80 px-3 py-2 text-xs text-slate-700">
                         {pending.command}
                     </pre>
+                    {/*
+                      * What "Approve & Remember" will cover. The grant is keyed on
+                      * the rule and this together, and the rule's description is
+                      * wording the user never sees, so without this line the button
+                      * is an approval of unknown width. Only shown when there is a
+                      * family, which is also the only case where the button appears.
+                      */}
+                    {pending.rememberable && pending.family && (
+                        <div className="font-mono text-xs text-amber-800">
+                            {t("approval.rememberFamily", {
+                                family: pending.family,
+                            })}
+                        </div>
+                    )}
                     <div className="flex items-center gap-2">
                         <button
                             type="button"

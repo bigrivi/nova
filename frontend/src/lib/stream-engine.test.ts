@@ -136,6 +136,7 @@ describe("handleStreamEvent control frames", () => {
             description: "d",
             toolName: "shell",
             rememberable: true,
+            family: "",
         });
         expect(deps.approval.setPending).toHaveBeenCalledTimes(1);
     });
