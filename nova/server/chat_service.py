@@ -661,6 +661,7 @@ class ChatService:
                 description=data.get("description", ""),
                 rememberable=data.get("rememberable", True),
                 family=data.get("family", ""),
+                script_scoped=bool(data.get("digest", "")),
             )
         if agent_event == AgentEvent.ERROR:
             return await emit(

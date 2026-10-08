@@ -10,6 +10,7 @@ const ghost = (sessionId: string): ApprovalPending => ({
     toolName: "shell",
     rememberable: true,
     family: "rm *",
+    scriptScoped: false,
 });
 
 beforeEach(() => {

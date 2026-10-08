@@ -223,6 +223,7 @@
     "approval.approve": "批准",
     "approval.remember": "批准并记住",
     "approval.rememberFamily": "记住 {{family}}",
+    "approval.rememberScript": "只记住上面这段脚本",
     "approval.reject": "拒绝",
     "threadList.moreActions": "更多操作",
     "threadList.rename": "重命名",

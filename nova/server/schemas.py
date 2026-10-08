@@ -323,6 +323,8 @@ class ResponseErrorEventData(BaseStreamEventData):
 
 
 class ApprovalRequiredEventData(BaseStreamEventData):
+    model_config = {"populate_by_name": True}
+
     request_id: str
     command: str
     description: str
@@ -336,6 +338,19 @@ class ApprovalRequiredEventData(BaseStreamEventData):
     #: authorise; a remembered approval keyed on something the user never sees is
     #: an approval of unknown width.
     family: str = ""
+    #: Whether the command's inline script is part of the key, which is what makes
+    #: "Approve & Remember" mean "remember this script" rather than "remember every
+    #: `python3 -c` in this family". The digest itself is not sent: it is a hash the
+    #: user cannot act on, and the command they can read is already on screen above
+    #: it. Sent as presence rather than as the value, so the client renders a scope
+    #: and never has to decide what a hash means.
+    #:
+    #: Aliased to camelCase, because that is what the client reads. Every other
+    #: field in this class is one word, so snake_case and camelCase coincide and
+    #: nobody ever noticed that this serializer does not convert -- `model_dump()`
+    #: hands out Python field names. This one is two words on both sides and would
+    #: have gone out as `script_scoped`, which the client reads as `undefined`.
+    script_scoped: bool = Field(default=False, serialization_alias="scriptScoped")
 
 
 class ApproveRequest(BaseModel):
@@ -415,5 +430,8 @@ type ServerStreamEvent = (
 
 def stream_event_data_to_dict(data: BaseModel | dict[str, Any]) -> dict[str, Any]:
     if isinstance(data, BaseModel):
-        return data.model_dump()
+        # by_alias is a no-op for every event that declares no alias, and is what
+        # sends the two-word fields this schema aliases. Not converting is how a
+        # serialized field ends up named something no reader looks for.
+        return data.model_dump(by_alias=True)
     return data

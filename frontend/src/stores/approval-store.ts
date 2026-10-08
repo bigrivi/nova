@@ -17,6 +17,12 @@ export type ApprovalPending = {
      * is nothing to name, which is also when the button is hidden.
      */
     family: string;
+    /**
+     * Whether remembering would cover this inline script rather than the whole
+     * family. Chosen over showing the digest: the hash is not something a user
+     * can act on, and the script it stands for is the command on screen.
+     */
+    scriptScoped: boolean;
 };
 
 interface ApprovalStore {

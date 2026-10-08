@@ -137,6 +137,7 @@ describe("handleStreamEvent control frames", () => {
             toolName: "shell",
             rememberable: true,
             family: "",
+            scriptScoped: false,
         });
         expect(deps.approval.setPending).toHaveBeenCalledTimes(1);
     });

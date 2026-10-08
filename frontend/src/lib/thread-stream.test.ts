@@ -388,6 +388,7 @@ describe("event extractors", () => {
             toolName: "shell",
             rememberable: true,
             family: "",
+            scriptScoped: false,
         });
     });
 
@@ -442,6 +443,34 @@ describe("event extractors", () => {
                 data: { requestId: "r6", command: "rm -rf ~/x", description: "" },
             }).family,
         ).toBe("");
+    });
+
+    it("reports the approval as scoped to the inline script when the server says so", () => {
+        // The grant keys on the script text, so the button means "only this".
+        // Printing the hash instead would show the user something unreadable.
+        expect(
+            extractApprovalRequest({
+                type: "data-nova-approval-required",
+                data: {
+                    requestId: "r7",
+                    command: 'curl x | python3 -c "exec(sys.stdin.read())"',
+                    description: "",
+                    family: "curl * python3 *",
+                    scriptScoped: true,
+                },
+            }).scriptScoped,
+        ).toBe(true);
+    });
+
+    it("is not script-scoped on a frame from a server that predates the field", () => {
+        // Absent is false, so the dialog falls back to naming the family --
+        // which is what such a server would actually remember.
+        expect(
+            extractApprovalRequest({
+                type: "data-nova-approval-required",
+                data: { requestId: "r8", command: "rm -rf ~/x", description: "" },
+            }).scriptScoped,
+        ).toBe(false);
     });
 
     it("reports remembering as unavailable when the reviewer declined", () => {

@@ -23,6 +23,10 @@ class ApprovalRequest:
     # line could not be read into families, which is also what makes the grant
     # cover the whole rule.
     family: str = ""
+    # Which inline script within that family. Empty when the line carries no
+    # readable `-c` literal, which is also what makes the grant cover the whole
+    # family.
+    digest: str = ""
 
     # There were ``created_at``/``expires_at`` fields and a ``default_timeout=60``
     # here. Nothing ever read them: ``wait_with_heartbeat`` waits on an
@@ -39,11 +43,11 @@ class ApprovalRequest:
 class ApprovalManager:
     """Tracks pending approvals and the grants made from them.
 
-    A grant names a *rule* and a *command family*, never a command. The earliest
-    version stored the command text, which made "always allow" inert for exactly
-    the commands that most need it: an agent that interpolates a URL, a timestamp
-    or a temp path never repeats itself, so the stored string was never seen
-    again.
+    A grant names a *rule*, a *command family* and an *inline script*, never a
+    command. The earliest version stored the command text, which made "always
+    allow" inert for exactly the commands that most need it: an agent that
+    interpolates a URL, a timestamp or a temp path never repeats itself, so the
+    stored string was never seen again.
 
     The rule alone is too wide in the other direction. One rule can cover commands
     that are not interchangeable -- `git force push` and `git clean -fd` are both
@@ -53,14 +57,28 @@ class ApprovalManager:
     `git push` and `git checkout` are different commands however alike their
     rules are.
 
-    A request with no family is still grantable by rule alone, so an unparsable
-    command line keeps working rather than becoming unrememberable.
+    The family is still not exact for a piped interpreter, because a family names
+    a program and not what the program is told to do. `curl … | python3 -c
+    "exec(sys.stdin.read())"` and a base64 loader are both `curl * python3 *` under
+    the same rule, so a grant for the first used to authorise the second -- the
+    user approving something they never saw. The digest narrows the key to the
+    script that was read, and it is the third part because the script is the only
+    part that comes from the command text rather than from a table of conventions.
+
+    Each level is optional and each level absent is wider, never narrower: no rule
+    means nothing to match, no family means the whole rule, no digest means the
+    whole family. A request that cannot fill one of them therefore still works
+    rather than becoming unrememberable, and a grant recorded without a digest
+    keeps exactly the width it always had.
+
+    Grants live in memory for the life of the process, so widening the key only
+    costs approvals made earlier in the same run. There is nothing to migrate.
     """
 
     def __init__(self) -> None:
         self._pending: dict[str, ApprovalRequest] = {}
         self._events: dict[str, asyncio.Event] = {}
-        self._grants: dict[str, set[tuple[str, str]]] = {}
+        self._grants: dict[str, set[tuple[str, str, str]]] = {}
 
     def pre_request(
         self,
@@ -69,12 +87,13 @@ class ApprovalManager:
         session_id: str = "",
         rule: str = "",
         family: str = "",
+        digest: str = "",
     ) -> str:
         """Create a pending approval request and return its id (non-blocking).
 
-        Returns "" when the session already holds a grant covering this *rule* and
-        *family*. With no rule supplied there is nothing to match on, so the
-        command is always asked -- that path is the tool asserting a danger
+        Returns "" when the session already holds a grant covering this *rule*,
+        *family* and *digest*. With no rule supplied there is nothing to match on,
+        so the command is always asked -- that path is the tool asserting a danger
         without naming the rule, and guessing which rule it meant would silently
         widen the grant.
 
@@ -84,10 +103,18 @@ class ApprovalManager:
         prompt and a family that does not match costs a grant that silently never
         applies.
 
+        A grant stored with a digest does **not** answer for a command whose own
+        digest is absent. That is the opposite of the family rule above, and it is
+        deliberate. The family is unreadable only for a line the grammar could not
+        parse, which is rare, whereas an absent digest is the ordinary case for
+        every command carrying no inline script. Letting a script-specific approval
+        cover one of those would run `python3 -m http.server` on the strength of
+        someone having read an unrelated `-c` script.
+
         The request never expires. Waiting is the point: an unanswered prompt
         should hold the turn open, not quietly deny the command.
         """
-        if rule and self._granted(rule, family, session_id):
+        if rule and self._granted(rule, family, digest, session_id):
             return ""
 
         req_id = uuid.uuid4().hex[:12]
@@ -98,17 +125,44 @@ class ApprovalManager:
             session_id=session_id,
             rule=rule,
             family=family,
+            digest=digest,
         )
         self._events[req_id] = asyncio.Event()
         return req_id
 
-    def _granted(self, rule: str, family: str, session_id: str) -> bool:
-        """Whether the session holds a grant covering this rule and family."""
-        for granted_rule, granted_family in self._grants.get(session_id, ()):
-            if granted_rule == rule and (
-                not granted_family or not family or granted_family == family
-            ):
-                return True
+    def _granted(self, rule: str, family: str, digest: str, session_id: str) -> bool:
+        """Whether the session holds a grant covering this rule, family and script.
+
+        The two narrowing parts match on equality or absence *on the granted side
+        only*, so a grant made without them keeps the width it had. Requiring a
+        digest to be present on both sides would invalidate every existing grant on
+        its first use, which is the opposite failure: a user who approved something
+        would be asked again for the identical command.
+        """
+        for granted_rule, granted_family, granted_digest in self._grants.get(
+            session_id, ()
+        ):
+            if granted_rule != rule:
+                continue
+            if granted_family and family and granted_family != family:
+                continue
+            # Asymmetric on purpose, and the asymmetry is the whole reason this
+            # level exists. `granted_digest and granted_digest != digest` rather
+            # than the family shape above: a grant that names a script covers that
+            # script and nothing else, including nothing at all.
+            #
+            # The family clause tolerates a missing family on either side because
+            # a missing *family* means the grammar could not read the line, which
+            # is rare. A missing *digest* is the ordinary shape of every command
+            # with no inline script, so tolerating it would let one approved `-c`
+            # script authorise `python3 -m http.server`.
+            #
+            # The reverse stays wide: a grant recorded without a digest -- one made
+            # before this level existed, or for a command with no script -- still
+            # covers the family, which is what it always did.
+            if granted_digest and granted_digest != digest:
+                continue
+            return True
         return False
 
     async def wait_with_heartbeat(
@@ -170,19 +224,19 @@ class ApprovalManager:
             return False
         req.approved = approved
         if approved and remember and req.rule and req.session_id:
-            self._grant(req.rule, req.family, req.session_id)
+            self._grant(req.rule, req.family, req.digest, req.session_id)
         event = self._events.get(req_id)
         if event:
             event.set()
         return True
 
-    def _grant(self, rule: str, family: str, session_id: str) -> None:
-        self._grants.setdefault(session_id, set()).add((rule, family))
+    def _grant(self, rule: str, family: str, digest: str, session_id: str) -> None:
+        self._grants.setdefault(session_id, set()).add((rule, family, digest))
 
     def add_to_allowlist(
-        self, rule: str, session_id: str = "", family: str = ""
+        self, rule: str, session_id: str = "", family: str = "", digest: str = ""
     ) -> None:
-        """Grant *rule* (optionally narrowed to *family*) without a round-trip.
+        """Grant *rule* (optionally narrowed to *family* and *script*) directly.
 
         A grant with no session is dropped rather than filed under the empty
         string. ``ToolInvoker`` falls back to ``""`` when it cannot resolve a
@@ -192,10 +246,10 @@ class ApprovalManager:
         prompt; the alternative widens an authorisation the user never scoped.
         """
         if rule and session_id:
-            self._grant(rule, family, session_id)
+            self._grant(rule, family, digest, session_id)
 
-    def allowlist_for(self, session_id: str) -> set[tuple[str, str]]:
-        """The (rule, family) pairs granted to *session_id*."""
+    def allowlist_for(self, session_id: str) -> set[tuple[str, str, str]]:
+        """The (rule, family, digest) triples granted to *session_id*."""
         return set(self._grants.get(session_id, ()))
 
     def get_pending(self) -> list[ApprovalRequest]:

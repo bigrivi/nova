@@ -38,6 +38,7 @@ def test_the_request_carries_no_dead_timestamps() -> None:
         "session_id",
         "rule",
         "family",
+        "digest",
     }
 
 

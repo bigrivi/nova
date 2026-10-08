@@ -91,18 +91,35 @@ Four things to know:
 ## Approvals
 
 A dangerous command pauses the turn and asks. Approving with "always" records a
-grant against **the rule that fired**, not the command text -- an agent that
-interpolates a URL or a temp path never repeats a command verbatim, so a grant
-keyed on the text could never be hit twice.
+grant against three things: **the rule that fired**, **the command family**, and
+**the inline script** when there is one.
 
-The grant covers that rule for the rest of the session and does not carry to
-other sessions. It is also **not** recorded when the session cannot be identified:
+The rule alone is too wide -- one rule covers commands that are not
+interchangeable -- so the family narrows it to the command you were shown, using
+the same prefix table OpenCode uses: `git push *` and `git checkout *` are
+different families however alike their rules are.
+
+The family names a program, not what the program is told to do, which is still
+too wide for a piped interpreter. Every `curl … | python3 -c "…"` is the family
+`curl * python3 *`, so a grant for one script used to authorise any other under
+the same rule -- including one that runs what it downloaded. The script is
+therefore part of the key, and "always" means "remember this script". The dialog
+says so above the buttons.
+
+The grant covers that key for the rest of the session and does not carry to other
+sessions. It is also **not** recorded when the session cannot be identified:
 there would be nothing to scope it to, and a grant that applies to every
 unidentified context is an authorisation you never gave. The cost is one extra
 prompt.
 
 Grants live in memory. They do not survive a restart, so an "always allow" has
 to be granted again after Nova comes back up.
+
+Before reaching for a pipeline, prefer a purpose-built tool when one fits:
+`web_fetch` reads a page and `jq` filters JSON, and neither triggers a rule. An
+inline script that turns fetched bytes into code does -- and that is the shape
+worth avoiding rather than answering. A pipeline that merely parses JSON with
+`json.load` is already allowed, so the habit matters more than the prompt does.
 
 A prompt never expires on its own. It holds the turn open, with a heartbeat every
 15 seconds to keep the connection alive, until you answer it -- auto-denying

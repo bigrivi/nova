@@ -224,6 +224,7 @@
     "approval.approve": "Approve",
     "approval.remember": "Approve & Remember",
     "approval.rememberFamily": "Remember {{family}}",
+    "approval.rememberScript": "Remember only the script above",
     "approval.reject": "Reject",
     "threadList.moreActions": "More actions",
     "threadList.rename": "Rename",

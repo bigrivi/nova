@@ -295,6 +295,13 @@ export type ApprovalRequest = {
      * together, and the rule description is wording the user never sees.
      */
     family: string;
+    /**
+     * Whether the approval would be remembered as "this inline script" rather
+     * than "every command in this family". The digest itself never crosses the
+     * wire: it is a hash the user cannot act on, and the script it identifies is
+     * already on screen in `command` directly above the button.
+     */
+    scriptScoped: boolean;
 };
 
 export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest {
@@ -306,6 +313,9 @@ export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest 
         // Absent on frames from older servers, where remembering still worked.
         rememberable: event.data?.rememberable !== false,
         family: String(event.data?.family || ""),
+        // Absent on frames from a server predating the script-scoped key,
+        // where remembering still covered the whole family.
+        scriptScoped: event.data?.scriptScoped === true,
     };
 }
 

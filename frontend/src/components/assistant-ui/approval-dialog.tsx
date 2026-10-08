@@ -3,6 +3,7 @@
 import { ShieldAlertIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { approvalScope } from "@/lib/approval-scope";
 import { approveCommand } from "@/lib/nova-api";
 import { useApprovalStore } from "@/stores/approval-store";
 
@@ -16,6 +17,7 @@ export const ApprovalDialog = () => {
     // axes, and `{"tools": {"web_fetch": "ask"}}` genuinely reaches this dialog --
     // labelling it "Shell Command" with the tool name in the code block told the
     // user nothing about what they were authorising.
+    const scope = approvalScope(pending);
     const isShell = !pending.toolName || pending.toolName === "shell";
     const title = isShell
         ? t("approval.title")
@@ -68,16 +70,20 @@ export const ApprovalDialog = () => {
                     </pre>
                     {/*
                       * What "Approve & Remember" will cover. The grant is keyed on
-                      * the rule and this together, and the rule's description is
-                      * wording the user never sees, so without this line the button
-                      * is an approval of unknown width. Only shown when there is a
-                      * family, which is also the only case where the button appears.
+                      * the rule, the family and -- when the command has a readable
+                      * inline script -- the script itself. The rule's description is
+                      * wording the user never sees, so without this line the button is
+                      * an approval of unknown width.
+                      *
+                      * The script case names the script rather than printing its hash:
+                      * the script is the `command` directly above, and the whole point
+                      * of the narrower key is that only that text would be remembered.
                       */}
-                    {pending.rememberable && pending.family && (
+                    {scope && (
                         <div className="font-mono text-xs text-amber-800">
-                            {t("approval.rememberFamily", {
-                                family: pending.family,
-                            })}
+                            {scope.key === "approval.rememberScript"
+                                ? t(scope.key)
+                                : t(scope.key, { family: scope.family })}
                         </div>
                     )}
                     <div className="flex items-center gap-2">

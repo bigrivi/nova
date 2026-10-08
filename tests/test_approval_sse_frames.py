@@ -20,6 +20,8 @@ from fastapi.testclient import TestClient
 from nova.agent import AgentEvent
 from nova.db.database import close_db
 from nova.server import create_app
+from nova.server.schemas import ApprovalRequiredEvent, ApprovalRequiredEventData
+from nova.server.sse import encode_sse
 from nova.settings import get_settings
 from nova.tools.approval import get_approval_manager
 
@@ -305,6 +307,39 @@ async def test_a_frame_without_a_family_sends_an_empty_one(monkeypatch, tmp_path
 
     assert data["family"] == ""
     assert data["rememberable"] is True
+
+
+def test_the_scope_flag_survives_serialisation() -> None:
+    """Read off the wire, not out of the model.
+
+    `family` is one word, so `model_dump()` hands out a key the client already
+    reads by accident. `scriptScoped` is two words on both sides and this
+    serializer does not convert case -- it emits Python field names -- so the
+    value went out as `script_scoped`, which the client reads as `undefined`.
+
+    That is invisible to a `.model_dump()` assertion, which is exactly what the
+    frame tests use everywhere else. Encoding the real frame is the only way to
+    see it, so this is the one test in the file that does.
+    """
+    frame = encode_sse(
+        ApprovalRequiredEvent(
+            data=ApprovalRequiredEventData(
+                sequence=1,
+                request_id="r-scope",
+                command='curl x | python3 -c "exec(sys.stdin.read())"',
+                description="d",
+                family="curl * python3 *",
+                script_scoped=True,
+            )
+        )
+    )
+
+    payload = frame.split("data: ", 1)[1].strip()
+    on_the_wire = json.loads(payload)
+
+    assert on_the_wire["scriptScoped"] is True, on_the_wire
+    # And the value the client reads it from is present, not swallowed by the alias.
+    assert on_the_wire["family"] == "curl * python3 *"
 
 
 @pytest.mark.asyncio

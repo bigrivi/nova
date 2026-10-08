@@ -121,7 +121,12 @@ MAX_FOREGROUND_WAIT_SECONDS = 120
         "returns a task_id instead of output: read it with background_task_logs, "
         "check it with background_task_status, stop it with background_task_cancel. "
         "Use run_in_background for servers, watchers and long jobs. Never add "
-        "'&', 'nohup' or 'disown' yourself; that breaks logs and cancellation."
+        "'&', 'nohup' or 'disown' yourself; that breaks logs and cancellation. "
+        "Prefer a purpose-built tool over a pipeline when one fits: read a web page "
+        "with web_fetch rather than curl, and filter JSON with jq rather than piping "
+        "into an interpreter. Neither asks the user for anything, while an inline "
+        "script that turns fetched bytes into code does -- and that is the one shape "
+        "where a prompt is worth avoiding rather than answering."
     ),
     parameters={
         "type": "object",
