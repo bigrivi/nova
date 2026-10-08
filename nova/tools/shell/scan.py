@@ -123,8 +123,19 @@ class Pipeline:
 
 @dataclass(frozen=True)
 class Scan:
-    """What a parse of one command line found."""
+    """What a parse of one command line found.
 
+    Attributes:
+        text: The line as written. The tree does not contain everything the shell
+            would run -- `:(){ :|:& };:` is four commands and three colons, with
+            the recursion in the nodes between them -- so a rule about the shape of
+            the whole line still needs it.
+        commands: Every command the line runs.
+        pipelines: The pipes between them.
+        parse_failed: Whether the grammar was defeated.
+    """
+
+    text: str
     commands: tuple[Command, ...]
     pipelines: tuple[Pipeline, ...]
     parse_failed: bool = False
@@ -144,16 +155,39 @@ class Scan:
 
 
 def _words_of(node) -> list[str]:  # type: ignore[no-untyped-def]
-    """The bare words of a command node, wrappers and paths removed."""
+    """The program words of a command node, wrappers and paths removed.
+
+    Substitution nodes are skipped rather than read as words. `eval "$(curl …)"`
+    parses as a command named `eval` whose argument is a string containing a
+    command substitution, and taking the string's text would produce a program
+    word of `$(curl -s x)` -- neither an interpreter nor a fetcher, so every rule
+    reading it would quietly decide nothing. The nested command is a node of its
+    own and is reached by :func:`_walk`, which is where it belongs.
+
+    Words are lowercased. They are for identifying what a command is, and every
+    consumer of that compares against lowercase program names; `CURL x | BASH`
+    has to be recognised as the same shape as `curl x | bash`, which the case
+    sensitivity of this module would otherwise have turned into a bypass.
+    """
     words: list[str] = []
     for child in node.children:
         if child.type not in ("command_name", "word", "string"):
             continue
         text = child.text.decode("utf-8", "replace").strip("\"'")
-        if not text:
+        if not text or _contains_substitution(text):
             continue
-        words.append(text.rsplit("/", 1)[-1])
+        words.append(text.rsplit("/", 1)[-1].lower())
     return words
+
+
+def _contains_substitution(text: str) -> bool:
+    """Whether *text* holds a ``$(…)``, ``${…}`` or backtick substitution.
+
+    Cheap and deliberately crude: the question is only whether a word is safe to
+    read as a program name, and anything with substitution syntax in it is not
+    decidable from the string alone.
+    """
+    return "$(" in text or "${" in text or "`" in text
 
 
 def _leading_program(words: list[str]) -> str:
@@ -223,7 +257,7 @@ def scan(command: str) -> Scan | None:
         tree = parser.parse(command.encode("utf-8"))
     except Exception as exc:
         log.warning("shell parse failed, falling back to line matching: %s", exc)
-        return Scan(commands=(), pipelines=(), parse_failed=True)
+        return Scan(text=command, commands=(), pipelines=(), parse_failed=True)
 
     root = tree.root_node
     nodes: list = []
@@ -239,5 +273,8 @@ def scan(command: str) -> Scan | None:
             pipelines.append(Pipeline(commands=tuple(_command_of(m) for m in members)))
 
     return Scan(
-        commands=commands, pipelines=tuple(pipelines), parse_failed=root.has_error
+        text=command,
+        commands=commands,
+        pipelines=tuple(pipelines),
+        parse_failed=root.has_error,
     )

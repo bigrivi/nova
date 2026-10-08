@@ -141,9 +141,11 @@ HARDLINE_PATTERNS: list[tuple[re.Pattern, str]] = [
         ),
         "redirect to raw block device",
     ),
-    # Fork bomb
+    # Fork bomb. A function definition is neither a pipeline nor a single command:
+    # the recursion is spread across four of them, so the judgement is in
+    # `compound.py` and only the identity lives here.
     (
-        re.compile(r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:", re.IGNORECASE),
+        re.compile(r"(?!)"),
         "fork bomb",
     ),
     # kill every process. -1 has to be the final operand: `kill -1 1234` is a
@@ -183,13 +185,17 @@ HARDLINE_PATTERNS: list[tuple[re.Pattern, str]] = [
     #
     # The trailing boundary keeps `| shuf` from matching on the prefix, and the
     # optional path lets `/usr/bin/bash` through the same door.
+    # Remote content becoming a program. `curl ... | sh` hands the network's bytes
+    # straight to a shell, and unlike the interpreter case there is no script to
+    # look at first -- `sh` evaluates whatever arrives. Blocked rather than asked,
+    # because asking cannot help either: the user would be approving bytes neither
+    # they nor a reviewer can read. Fetching the script and reading it before
+    # running it is the same operation with the inspection restored.
+    #
+    # Judged in `compound.py` like the three above it; blocked because it names
+    # itself from the block list.
     (
-        re.compile(
-            r"\b(?:curl|wget)\b[^\n]*\|[^\n]*?"
-            r"(?:sudo\s+(?:-[^\s]+\s+)*)?"
-            r"(?:[/\w]*/)?(?:ba|da|k|c|a|z|fi)?sh\b",
-            re.IGNORECASE,
-        ),
+        re.compile(r"(?!)"),
         "pipe remote content to a shell",
     ),
 ]
@@ -325,49 +331,35 @@ DANGEROUS_PATTERNS: list[tuple[re.Pattern, str]] = [
         ),
         "interpreter -c fetching code over the network",
     ),
-    # Pipe remote content to a script interpreter. The shell target is not here:
-    # `curl ... | bash` is blocked outright, because the bytes run with nothing to
-    # read first. What is left is the case someone can actually judge -- the
-    # interpreter is named and its inline code (`-c`, `-e`, `-`) is visible to the
-    # reviewer and to the user.
+    # ── relationship rules: answered from the parse, not from the line ──
     #
-    # `python -m <formatter>` is carved out: those modules read stdin and print it
-    # back rather than evaluating it, so `curl ... | python -m json.tool` is the
-    # same operation as `curl ... | jq .`, which was always allowed. Matching the
-    # interpreter name without the flag made the two inconsistent -- and it was
-    # the remaining source of approvals in a real session. Only `-m` with a listed
-    # formatter counts; `-m http.server` and a bare `python3` still match, since
-    # in those the piped bytes are the program.
+    # The entries below carry a pattern that cannot match. They exist so that
+    # `RuleSet` still knows the name, the effect and the grant identity of each
+    # relationship rule, and so that `disable` and the witness tables keep working
+    # against one list. The judgement is `compound.py`.
+    #
+    # These used to be regexes over the whole line, which was the wrong unit.
+    # `curl|wget … | … python3` matches any line containing all three substrings, so
+    # `curl https://api/status && uptime | python3 -c 'print(1)'` tripped it with
+    # the pipe belonging to `uptime` and the curl's output going to the terminal.
+    # Five of six realistic benign commands were flagged for that reason alone.
+    #
+    # `process substitution from remote content` is retired. It named
+    # `bash <(curl …)`, which the parse now reports as `pipe remote content to a
+    # shell` alongside `curl … | bash` -- the same act refused under one name, so a
+    # remembered approval covers both spellings instead of one of them. An identity
+    # nothing reports is worse than no identity: it sits in the rule count and in
+    # `disable` while nothing can ever answer to it.
+    #
+    # `python -m <formatter>` is still carved out, in `compound.py`: those modules
+    # read stdin and print it back rather than evaluating it, so `curl ... |
+    # python -m json.tool` is the same operation as `curl ... | jq .`.
     (
-        re.compile(
-            r"\b(?:curl|wget)\b[^\n]*\|[^\n]*?"
-            r"(?:sudo\s+(?:-[^\s]+\s+)*)?"
-            # A `-m <formatter>` target is not an interpreter invocation. The negative
-            # lookahead sits after the module name, so it excludes exactly that
-            # module and leaves every other flag combination matching.
-            r"(?:python[23]?|node|perl|ruby)\b"
-            r"(?!\s*-m\s+(?:json\.tool|base64|html|json|xml|csv|tokenize"
-            r"|difflib|pprint|tabulate)\b)"
-            r"(?=\s|$|[;&|)])",
-            re.IGNORECASE,
-        ),
+        re.compile(r"(?!)"),  # unreachable; the judgement is in compound.py
         "pipe remote content to an interpreter",
     ),
-    # Process substitution and eval: the payload never appears literally on the
-    # command line, so the `|`-based rule above cannot see it.
     (
-        re.compile(
-            r"(?:\b(?:ba|da|k|c|a|z|fi)?sh|source|\.)\s*<\("
-            r"[^\n]*\b(curl|wget)\b",
-            re.IGNORECASE,
-        ),
-        "process substitution from remote content",
-    ),
-    (
-        re.compile(
-            r"\b(?:eval|source|\.)\s+[\"']?\$\(\s*(?:\w+\s+)*\b(curl|wget)\b",
-            re.IGNORECASE,
-        ),
+        re.compile(r"(?!)"),
         "eval of remote content",
     ),
     # diskutil wipes whole volumes on macOS.

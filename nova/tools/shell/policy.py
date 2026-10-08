@@ -36,7 +36,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from nova.tools.permissions import load_permissions, permissions_path
+from nova.tools.shell import compound as compound_rules
 from nova.tools.shell.patterns import DANGEROUS_PATTERNS, HARDLINE_PATTERNS
+from nova.tools.shell.scan import scan
 from nova.tools.shell.scope import is_bounded
 
 log = logging.getLogger(__name__)
@@ -115,6 +117,19 @@ class RuleSet:
         for rule in self.block:
             if rule.matches(text):
                 return Decision("block", rule.description, rule.description)
+
+        # The relationship rules are consulted here, before `allow` and before the
+        # workspace exemption, because they read the parse rather than the string.
+        # A pattern that ran the whole line would have answered for them, and the
+        # order they sat in is the order they keep: nothing may be allowed around
+        # them by a narrower rule or by an exemption.
+        parsed = scan(text)
+        if parsed is not None and parsed.usable:
+            compound = compound_rules.classify(parsed)
+            if compound.matched:
+                effect = "block" if self._blocked(compound.rule) else "ask"
+                return Decision(effect, compound.rule, compound.rule)
+
         for rule in self.allow:
             if rule.matches(text):
                 return Decision("allow", rule.description, rule.description)
@@ -128,10 +143,24 @@ class RuleSet:
                 return Decision("ask", rule.description, rule.description)
         return Decision("allow")
 
+    def _blocked(self, description: str) -> bool:
+        """Whether *description* is a block rule rather than an ask rule.
+
+        The compound rules are asked in one place but answered as either effect,
+        and the split lives with the patterns that name them -- otherwise a
+        `disable` entry or a `allow` entry for one of these would apply to only
+        half of it.
+        """
+        return any(rule.description == description for rule in self.block)
+
 
 def _to_rule(pattern: str, description: str) -> Rule | None:
     """Compile one configured pattern, or None if it cannot be used."""
-    if not isinstance(pattern, str) or not isinstance(description, str) or not description:
+    if (
+        not isinstance(pattern, str)
+        or not isinstance(description, str)
+        or not description
+    ):
         return None
     try:
         return Rule(re.compile(pattern, re.IGNORECASE), description)
@@ -164,7 +193,11 @@ def _prefix_rule(prefix: str) -> Rule | None:
 
 
 def _str_list(value: object) -> list[str]:
-    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+    return (
+        [item for item in value if isinstance(item, str)]
+        if isinstance(value, list)
+        else []
+    )
 
 
 def apply_config(rules: RuleSet, payload: object) -> RuleSet:
