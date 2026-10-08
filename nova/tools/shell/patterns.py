@@ -1,6 +1,6 @@
 """The command patterns, and nothing else.
 
-Fifty-one regexes describing which commands block outright and which need a
+Fifty-two regexes describing which commands block outright and which need a
 human. They were filed inside the shell tool, which then had to be imported
 back to reach them: `shell` imports the policy module at module scope to
 delegate its own `classify`, and the policy module imported `shell` inside
@@ -174,6 +174,24 @@ HARDLINE_PATTERNS: list[tuple[re.Pattern, str]] = [
         re.compile(_CMDPOS + r"telinit\s+[06]\b", re.IGNORECASE),
         "telinit 0/6 (shutdown/reboot)",
     ),
+    # Remote content becoming a program. `curl ... | sh` hands the network's
+    # bytes straight to a shell, and unlike the interpreter case there is no
+    # script to look at first -- `sh` evaluates whatever arrives. Blocked rather
+    # than asked, because asking cannot help either: the user would be approving
+    # bytes neither they nor a reviewer can read. Fetching the script and reading
+    # it before running it is the same operation with the inspection restored.
+    #
+    # The trailing boundary keeps `| shuf` from matching on the prefix, and the
+    # optional path lets `/usr/bin/bash` through the same door.
+    (
+        re.compile(
+            r"\b(?:curl|wget)\b[^\n]*\|[^\n]*?"
+            r"(?:sudo\s+(?:-[^\s]+\s+)*)?"
+            r"(?:[/\w]*/)?(?:ba|da|k|c|a|z|fi)?sh\b",
+            re.IGNORECASE,
+        ),
+        "pipe remote content to a shell",
+    ),
 ]
 
 # ── Dangerous patterns (require user approval) ─────────────────────
@@ -307,9 +325,11 @@ DANGEROUS_PATTERNS: list[tuple[re.Pattern, str]] = [
         ),
         "interpreter -c fetching code over the network",
     ),
-    # Pipe remote content to an interpreter. The target side covers the common
-    # shells, sudo-prefixed shells, and the script interpreters; the trailing
-    # boundary stops `| shuf` and friends from matching on the prefix alone.
+    # Pipe remote content to a script interpreter. The shell target is not here:
+    # `curl ... | bash` is blocked outright, because the bytes run with nothing to
+    # read first. What is left is the case someone can actually judge -- the
+    # interpreter is named and its inline code (`-c`, `-e`, `-`) is visible to the
+    # reviewer and to the user.
     #
     # `python -m <formatter>` is carved out: those modules read stdin and print it
     # back rather than evaluating it, so `curl ... | python -m json.tool` is the
@@ -320,10 +340,7 @@ DANGEROUS_PATTERNS: list[tuple[re.Pattern, str]] = [
     # in those the piped bytes are the program.
     (
         re.compile(
-            r"\b(curl|wget)\b[^\n]*\|[^\n]*?"
-            r"(?:sudo\s+(?:-[^\s]+\s+)*)?"
-            r"(?:[/\w]*/)?(?:ba|da|k|c|a|z|fi)?sh\b"
-            r"|\b(curl|wget)\b[^\n]*\|[^\n]*?"
+            r"\b(?:curl|wget)\b[^\n]*\|[^\n]*?"
             r"(?:sudo\s+(?:-[^\s]+\s+)*)?"
             # A `-m <formatter>` target is not an interpreter invocation. The negative
             # lookahead sits after the module name, so it excludes exactly that
