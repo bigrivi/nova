@@ -282,6 +282,12 @@ export type ApprovalRequest = {
      * dialog labelling every approval "Shell Command".
      */
     toolName: string;
+    /**
+     * Whether "remember" would actually do anything. A reviewer that declined
+     * forces the prompt on every occurrence, so offering to store the decision
+     * would be offering a button that does nothing.
+     */
+    rememberable: boolean;
 };
 
 export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest {
@@ -290,6 +296,8 @@ export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest 
         command: String(event.data?.command || ""),
         description: String(event.data?.description || ""),
         toolName: String(event.data?.toolName || "shell"),
+        // Absent on frames from older servers, where remembering still worked.
+        rememberable: event.data?.rememberable !== false,
     };
 }
 

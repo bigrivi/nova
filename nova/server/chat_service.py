@@ -659,6 +659,7 @@ class ChatService:
                 request_id=data.get("id", ""),
                 command=data.get("command", ""),
                 description=data.get("description", ""),
+                rememberable=data.get("rememberable", True),
             )
         if agent_event == AgentEvent.ERROR:
             return await emit(

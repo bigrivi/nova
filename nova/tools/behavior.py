@@ -162,8 +162,15 @@ class ShellToolBehavior(DefaultToolBehavior):
         if verdict.needs_approval:
             # An empty id means the session already granted this rule, so
             # `pre_request` declines to create a request and nothing is asked.
+            # A reviewer that declined is asked about anyway: passing no rule is
+            # the existing "always ask" path, and it also means `remember` has
+            # nothing to store, so the dialog is told not to offer it.
+            rememberable = not verdict.review_declined
             req_id = self._approval.pre_request(
-                cmd, desc, session_id=ctx.session_id, rule=verdict.rule
+                cmd,
+                desc,
+                session_id=ctx.session_id,
+                rule=verdict.rule if rememberable else "",
             )
             if req_id:
                 return PreExecutionCheck(
@@ -172,6 +179,7 @@ class ShellToolBehavior(DefaultToolBehavior):
                         "type": "shell",
                         "command": cmd,
                         "description": desc,
+                        "rememberable": rememberable,
                     }
                 )
 
@@ -244,7 +252,10 @@ class PolicyToolBehavior(DefaultToolBehavior):
             return await self._reviewer(subject, reason) == "approve"
         except Exception as exc:
             log.warning(
-                "review failed for %s %s (%s); asking the user", self._tool, subject[:60], exc
+                "review failed for %s %s (%s); asking the user",
+                self._tool,
+                subject[:60],
+                exc,
             )
             return False
 
@@ -273,15 +284,22 @@ class PolicyToolBehavior(DefaultToolBehavior):
         # have called it, which is what a reviewer reads.
         summary = self._tool_description or f"{self._tool} call"
         subject = args.get("description", "") or summary
-        if self._reviewer is not None and await self._cleared(subject, summary):
-            log.info("cleared by review: %s %s", self._tool, subject[:80])
-            return PreExecutionCheck()
+        # A deferral is not a clearance, and it is not answerable by a grant
+        # either -- `tool:{name}` is a rule like any other, so an approval the
+        # user gave for this tool would otherwise run the call the reviewer just
+        # refused to clear.
+        rememberable = True
+        if self._reviewer is not None:
+            if await self._cleared(subject, summary):
+                log.info("cleared by review: %s %s", self._tool, subject[:80])
+                return PreExecutionCheck()
+            rememberable = False
 
         req_id = self._approval.pre_request(
             subject,
             summary,
             session_id=ctx.session_id,
-            rule=f"tool:{self._tool}",
+            rule=f"tool:{self._tool}" if rememberable else "",
         )
         if not req_id:
             return PreExecutionCheck()
@@ -294,6 +312,7 @@ class PolicyToolBehavior(DefaultToolBehavior):
                 # reading "read" tells the user nothing they can act on.
                 "command": summary,
                 "description": summary,
+                "rememberable": rememberable,
             }
         )
 

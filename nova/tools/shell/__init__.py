@@ -24,6 +24,11 @@ inherited from the parts:
 * A *sub-agent* cannot be granted anything, because it has no channel to ask
   on. That check precedes the reviewer: it is a statement about the channel, not
   about the command, and model confidence does not create a missing channel.
+* A reviewer that *declined* cannot be answered by a grant, because the grant
+  and the refusal share an identity. ``Verdict.review_declined`` carries that
+  out; the caller drops the grant identity from the request so the prompt is
+  unavoidable. Failing to do so turns "deny still goes to the human" into a
+  promise about the first occurrence only.
 
 Layout: `patterns.py` is data, `policy.py` is the rule engine, `scope.py` is
 path analysis, `tool.py` is the tool itself. None of them is meant to be
@@ -60,11 +65,16 @@ class Verdict:
             remembered approval is keyed on, so it must be stable: it is the
             pattern's description, which means rewording a rule retires the
             grants made under the old wording.
+        review_declined: A reviewer saw this command and would not clear it.
+            Load-bearing rather than informational: the caller must ask the user
+            even when a grant already covers ``rule``. Consulted only when
+            ``effect`` is ``ask``.
     """
 
     effect: Effect
     reason: str = ""
     rule: str = ""
+    review_declined: bool = False
 
     @property
     def runs(self) -> bool:
@@ -141,6 +151,12 @@ async def decide(
             log.info("cleared by review: %s", command[:120])
             return Verdict("allow", decision.description, decision.rule)
         log.info("review returned %r; asking the user: %s", verdict, command[:120])
+        # Flagged so the caller cannot answer *this* prompt with a grant. A
+        # remembered approval is recorded against `rule`, and the command the
+        # reviewer declined matches that same rule by definition -- so without
+        # the flag the refusal is silently overruled by an approval the user gave
+        # to some other command wearing the same rule.
+        return Verdict("ask", decision.description, decision.rule, review_declined=True)
 
     return Verdict("ask", decision.description, decision.rule)
 

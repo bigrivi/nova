@@ -7,6 +7,11 @@ export type ApprovalPending = {
     description: string;
     /** Which tool is asking. Empty means the shell, for older replays. */
     toolName: string;
+    /**
+     * False when a reviewer declined this action: the prompt will recur, so the
+     * dialog hides "remember" rather than offering a decision that is dropped.
+     */
+    rememberable: boolean;
 };
 
 interface ApprovalStore {

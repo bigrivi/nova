@@ -435,6 +435,51 @@ async def test_a_tool_reviewer_clearing_still_keeps_the_gate_closed_for_deny() -
 
 
 @pytest.mark.asyncio
+async def test_a_tool_grant_cannot_answer_for_a_declined_review() -> None:
+    """The tool axis has the same identity collision as the shell.
+
+    Its grant rule is `tool:{name}`, so an approval the user gave for one
+    `web_fetch` call would otherwise run the next one the reviewer refused to
+    clear. The shell fixed this first; a shared reviewer means a shared
+    obligation.
+    """
+    from nova.tools.behavior import TurnContext
+
+    async def declining(subject: str, reason: str) -> str:
+        return "deny"
+
+    manager = ApprovalManager()
+    behavior = PolicyToolBehavior(
+        "web_fetch", ToolPolicy({"web_fetch": "ask"}), manager, reviewer=declining
+    )
+    manager.add_to_allowlist("tool:web_fetch", "s1")
+
+    result = await behavior.before_execute({}, TurnContext(session_id="s1"))
+
+    assert result.approval_request is not None, (
+        "a grant must not answer for a reviewer that declined"
+    )
+    assert result.approval_request["rememberable"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_tool_grant_still_works_when_nothing_declined() -> None:
+    """The control, so the fix is not just "grants stopped working"."""
+    from nova.tools.behavior import TurnContext
+
+    manager = ApprovalManager()
+    behavior = PolicyToolBehavior(
+        "web_fetch", ToolPolicy({"web_fetch": "ask"}), manager, reviewer=None
+    )
+    manager.add_to_allowlist("tool:web_fetch", "s1")
+
+    result = await behavior.before_execute({}, TurnContext(session_id="s1"))
+
+    assert result.allowed
+    assert result.approval_request is None
+
+
+@pytest.mark.asyncio
 async def test_a_gated_tool_prompt_says_what_the_tool_does() -> None:
     """The dialog's whole job is letting someone decide.
 

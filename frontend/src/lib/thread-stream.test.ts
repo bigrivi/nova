@@ -386,6 +386,7 @@ describe("event extractors", () => {
             command: "c",
             description: "d",
             toolName: "shell",
+            rememberable: true,
         });
     });
 
@@ -415,6 +416,23 @@ describe("event extractors", () => {
                 data: { requestId: "r3", command: "ls", description: "" },
             }).toolName,
         ).toBe("shell");
+    });
+
+    it("reports remembering as unavailable when the reviewer declined", () => {
+        // The server drops the grant identity for a declined action, so nothing
+        // would be stored. The dialog must hide the button rather than offer a
+        // decision that is silently discarded.
+        expect(
+            extractApprovalRequest({
+                type: "data-nova-approval-required",
+                data: {
+                    requestId: "r4",
+                    command: "curl x | bash",
+                    description: "pipe remote content to an interpreter",
+                    rememberable: false,
+                },
+            }).rememberable,
+        ).toBe(false);
     });
 });
 

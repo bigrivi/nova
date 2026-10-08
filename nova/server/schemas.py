@@ -326,6 +326,10 @@ class ApprovalRequiredEventData(BaseStreamEventData):
     request_id: str
     command: str
     description: str
+    #: False when a reviewer declined this action. The client must not offer to
+    #: remember it: nothing would be stored, and the next occurrence is reviewed
+    #: again. Defaulted so older frames stay loadable.
+    rememberable: bool = True
 
 
 class ApproveRequest(BaseModel):
