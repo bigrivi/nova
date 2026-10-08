@@ -75,6 +75,16 @@ class Command:
         program: The leading program word with any path stripped, wrappers and
             flags skipped where that is unambiguous. Best effort, for display.
         programs: Every program word in the command, for classification.
+        argv: The words after the program name, in order.
+        literal_script: The source of a ``-c`` script when the command is exactly
+            ``<python> -c <literal>`` and the literal carries no expansion.
+
+            Non-None is the claim that the text here is what the shell will hand
+            to the interpreter. That claim is why the tree is consulted rather
+            than the text: ``python3 -c "$(curl x)"`` also has a ``-c`` and a
+            script-shaped argument, but the shell substitutes into it before
+            Python ever sees it, so anything proved about this string would be
+            proved about the wrong one.
 
     ``program`` alone cannot be trusted to identify what runs. Whether a wrapper
     flag takes a value is not decidable from the line: ``sudo -S rm`` passes a
@@ -88,6 +98,8 @@ class Command:
     text: str
     program: str
     programs: frozenset[str]
+    argv: tuple[str, ...] = ()
+    literal_script: str | None = None
 
     @property
     def fetches(self) -> bool:
@@ -227,14 +239,98 @@ def _walk(node, kind: str, out: list) -> None:  # type: ignore[no-untyped-def]
         _walk(child, kind, out)
 
 
+def _string_literal(node) -> str | None:  # type: ignore[no-untyped-def]
+    """The value of a quoting node, or None when the shell would alter it.
+
+    A single-quoted word is literal by definition. A double-quoted one is literal
+    only when its children are nothing but content -- a ``$VAR``, a ``$(...)`` or a
+    backtick anywhere inside means the interpreter receives a different string than
+    the one written here, and a proof about the written one proves nothing.
+    """
+    if node.type == "raw_string":
+        # `node.text` is bytes; this module speaks str everywhere else, so
+        # decode in both branches rather than leaking the difference to the
+        # caller. "replace" matches what the rest of this module already does
+        # with node text.
+        text = node.text.decode("utf-8", "replace")
+        return text[1:-1] if len(text) >= 2 else None
+    if node.type == "string":
+        children = [child for child in node.children if child.is_named]
+        if not children or any(child.type != "string_content" for child in children):
+            return None
+        # `node.text` is bytes; this module speaks str everywhere else, so
+        # decode in both branches rather than leaking the difference to the
+        # caller. "replace" matches what the rest of this module already does
+        # with node text.
+        text = node.text.decode("utf-8", "replace")
+        return text[1:-1] if len(text) >= 2 else None
+    return None
+
+
 def _command_of(node) -> Command:  # type: ignore[no-untyped-def]
     """Read one command node into a :class:`Command`."""
     words = _words_of(node)
+    argv = _argv_of(node)
     return Command(
         text=_text_of(node),
         program=_leading_program(words),
         programs=frozenset(word for word in words if word),
+        argv=argv,
+        literal_script=_literal_script(node, argv),
     )
+
+
+def _argv_of(node) -> tuple[str, ...]:  # type: ignore[no-untyped-def]
+    """The words after the program name, in order.
+
+    A quoted word contributes its value when the shell would pass that value
+    through unchanged, and its raw text when it would not. Both halves matter:
+    the first is what makes a single-quoted script comparable to a
+    double-quoted one, and the second is what keeps an expanded argument
+    visible rather than silently dropped, so a caller reasoning about the
+    command can see that something changed.
+
+    Only the literal half is trusted as source code, and only
+    :func:`_literal_script` treats it that way.
+    """
+    seen_name = False
+    argv: list[str] = []
+    for child in node.children:
+        if child.type in ("command_name", "command_name_expr"):
+            seen_name = True
+            continue
+        if not seen_name or child.type not in ("word", "string", "raw_string"):
+            continue
+        if child.type == "word":
+            argv.append(child.text.decode("utf-8", "replace"))
+            continue
+        value = _string_literal(child)
+        argv.append(
+            value if value is not None else child.text.decode("utf-8", "replace")
+        )
+    return tuple(argv)
+
+
+def _literal_script(node, argv: tuple[str, ...]) -> str | None:  # type: ignore[no-untyped-def]
+    """The ``-c`` script when it is a literal, else None.
+
+    The shape is exactly ``<prog> -c <script>`` with nothing else. A second flag
+    changes what the interpreter does with the source -- ``-O`` drops assertions, ``-W``
+    changes warning behaviour -- and an argument after the script becomes
+    ``sys.argv[0]``, so neither is accepted here rather than reasoned about.
+    """
+    if len(argv) != 2 or argv[0] != "-c":
+        return None
+    for child in node.children:
+        if child.type not in ("string", "raw_string"):
+            continue
+        value = _string_literal(child)
+        # Matching argv[1] is what ties the value to the slot the interpreter
+        # will read: a node that fails the literal test returns None above and
+        # is skipped, so an expanded argument can never be reported as source.
+        if value is not None and value == argv[1]:
+            return value
+    return None
 
 
 def scan(command: str) -> Scan | None:

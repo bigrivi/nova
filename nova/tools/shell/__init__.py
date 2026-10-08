@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from nova.tools.shell.arity import command_family
+from nova.tools.shell.inline_script import script_digest
 from nova.tools.shell.policy import Decision, RuleSet, default_rule_set
 from nova.tools.shell.scan import scan
 from nova.tools.shell.scope import is_bounded
@@ -76,6 +77,19 @@ class Verdict:
             rule can cover several commands that are not interchangeable, and
             approving one of them should not authorise the rest. OpenCode keys
             saved approvals the same way, off a prefix table.
+        digest: The inline script a grant covers, as a short hash. Empty when the
+            line carries no readable ``-c`` literal.
+
+            The narrowest part of the key, and the only one derived from the text
+            the user reads. ``curl … | python3 -c "exec(sys.stdin.read())"`` and a
+            base64 loader share a rule *and* a family -- both are ``curl * python3
+            *`` -- so without this a user approving the first also authorised the
+            second. That is the user approving something they never saw.
+
+            Keying on the script makes approval exact and costs a prompt per new
+            script, which is the right trade: the user is approving code, and two
+            scripts that differ are not interchangeable. Existing grants recorded
+            without a digest keep working and stay as wide as they were.
     """
 
     effect: Effect
@@ -83,6 +97,7 @@ class Verdict:
     rule: str = ""
     review_declined: bool = False
     family: str = ""
+    digest: str = ""
 
     @property
     def runs(self) -> bool:
@@ -126,6 +141,38 @@ def family_of(command: str) -> str:
     return " ".join(dict.fromkeys(families))
 
 
+def digest_of(command: str) -> str:
+    """The identity of the inline script a grant for *command* should be keyed on.
+
+    Sits beside :func:`family_of` because it answers the same question from the same
+    parse, and for the same reason: a grant has to be keyed on something the agent
+    repeats, and the script is what the user actually reads and approves.
+
+    Empty when the line carries no readable ``-c`` literal -- ``python3 -m
+    http.server``, ``python3 -``, a command substitution, an extra flag. Those fall
+    back to the ``(rule, family)`` key, which is the same behaviour they had before
+    this existed, and the direction is the safe one: a command whose script could
+    not be read is not one a script-specific grant should be spending credit on.
+
+    Every literal on the line is folded in, not just the first. A line can carry
+    two (``curl x | python3 -c 'a' | python3 -c 'b'``), and keying on one of them
+    would let the other change without invalidating the approval.
+    """
+    result = scan(command)
+    if result is None or not result.usable:
+        return ""
+    scripts = [
+        command.literal_script
+        for command in result.commands
+        if command.literal_script is not None
+    ]
+    if not scripts:
+        return ""
+    # NUL-joined rather than newline-joined: it cannot occur inside a script, so no
+    # pair of scripts can be concatenated into a third pair's key.
+    return script_digest("\0".join(scripts))
+
+
 async def decide(
     command: str,
     workspace: str | None = None,
@@ -150,6 +197,7 @@ async def decide(
     """
     decision = classify(command, workspace)
     family = family_of(command)
+    digest = digest_of(command)
 
     if decision.effect == "block":
         log.info("Hardline command rejected: %s (%s)", command, decision.description)
@@ -197,7 +245,9 @@ async def decide(
             family=family,
         )
 
-    return Verdict("ask", decision.description, decision.rule, family=family)
+    return Verdict(
+        "ask", decision.description, decision.rule, family=family, digest=digest
+    )
 
 
 def is_hardline(command: str) -> tuple[bool, str]:

@@ -24,10 +24,13 @@ moved.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 
+from nova.tools.shell import inline_script
 from nova.tools.shell.scan import Command, Scan
+from nova.tools.workspace_context import get_active_workspace
 
 #: ``python3 -m json.tool`` reads stdin and prints it back; it does not evaluate it.
 #: Same reasoning as the regex carve-out this replaces, kept as data so the two
@@ -57,6 +60,11 @@ _FORMATTER_FLAG = re.compile(r"^-m\s*(\S+)$|^--module[= ](\S+)$")
 _SHELL_PROGRAMS = frozenset(
     {"sh", "bash", "zsh", "ksh", "dash", "csh", "tcsh", "ash", "fish"}
 )
+
+#: The interpreters :mod:`nova.tools.shell.inline_script` can reason about. Every
+#: other interpreter keeps asking: proving a Node or a Perl script inert needs a
+#: subset written for that language, and until one exists the answer is unknown.
+_PYTHON_PROGRAMS = frozenset({"python", "python2", "python3"})
 
 #: `:(){ :|:& };:` -- a function that recurses through a pipe into the background.
 #: Read from the line, because the parse cannot describe it: see
@@ -109,16 +117,69 @@ def _runs_a_formatter(command: Command) -> bool:
     return False
 
 
+def _runs_inert_inline_script(command: Command) -> bool:
+    """Whether *command*'s inline script can only treat its input as data.
+
+    ``curl … | python3 -c "import json,sys; print(json.load(sys.stdin))"`` reads a
+    forecast; ``curl … | python3 -c "exec(sys.stdin.read())"`` runs whatever came
+    back. Same rule, same command family, and the difference is the script text, so
+    the shape cannot separate them. It can: the script is a literal on the command
+    line and :func:`~nova.tools.shell.inline_script.is_inert` parses it.
+
+    Everything that would make that proof a proof about the wrong program has to be
+    excluded first, and each exclusion is a place the exemption would otherwise be
+    false:
+
+    * Not Python, or no ``-c`` literal. :attr:`~Command.literal_script` is only set
+      for exactly ``<prog> -c <literal>``; a ``$(...)``, a ``$VAR`` or an extra flag
+      leaves it None, because the shell would hand Python a different string than
+      the one written.
+    * An environment prefix. ``PYTHONPATH=/tmp/x python3 -c "import json"`` parses
+      to the same ``-c <literal>``, and ``PYTHONPATH`` puts a directory ahead of
+      both the standard library and the working directory, which is exactly what the
+      shadowing check inside ``is_inert`` looks at in the working directory. A
+      prefix is therefore a way to choose which ``json`` gets imported, and the
+      answer stops being knowable.
+    * A shadowed module, and a workspace that shadows one. Checked inside
+      ``is_inert``, against the same directory the shell runs in.
+    """
+    if not (command.programs & _PYTHON_PROGRAMS):
+        return False
+    if command.literal_script is None:
+        return False
+    if _has_env_prefix(command.text):
+        return False
+    return inline_script.is_inert(
+        command.literal_script, cwd=get_active_workspace() or os.getcwd()
+    )
+
+
+def _has_env_prefix(text: str) -> bool:
+    """Whether the command assigns an environment variable before running.
+
+    Read from the text rather than from the parse because the assignment is a
+    sibling of the command, and the question this answers is whether the
+    interpreter inherits something: by the time ``-c`` is reached the assignment has
+    already happened either way, so its presence is what decides it.
+    """
+    head = text.split(None, 1)
+    return bool(head) and "=" in head[0] and not head[0].startswith("-")
+
+
 def _is_code_sink(command: Command) -> bool:
     """Whether this command executes what it is handed.
 
     A formatter is excluded, and so is a fetcher on the same line: `curl … | tee f
     | python3 -` has python3 as a sink and `tee` as an intermediate, and the tee
-    is not one.
+    is not one. An interpreter running a provably inert inline script is excluded
+    for the same reason and by the same argument: the rule exists because fetched
+    bytes would become code, and here they provably do not.
     """
     if command.fetches:
         return False
     if _runs_a_formatter(command):
+        return False
+    if _runs_inert_inline_script(command):
         return False
     return command.interprets
 

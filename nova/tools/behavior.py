@@ -173,6 +173,7 @@ class ShellToolBehavior(DefaultToolBehavior):
                 session_id=ctx.session_id,
                 rule=verdict.rule if rememberable else "",
                 family=verdict.family if rememberable else "",
+                digest=verdict.digest if rememberable else "",
             )
             if req_id:
                 return PreExecutionCheck(
@@ -183,6 +184,7 @@ class ShellToolBehavior(DefaultToolBehavior):
                         "description": desc,
                         "rememberable": rememberable,
                         "family": verdict.family if rememberable else "",
+                        "digest": verdict.digest if rememberable else "",
                     }
                 )
 
