@@ -302,6 +302,12 @@ export type ApprovalRequest = {
      * already on screen in `command` directly above the button.
      */
     scriptScoped: boolean;
+    /**
+     * The workspace the tool path was judged against, so the dialog can name
+     * the boundary. Empty when none is active, which the dialog reports rather
+     * than leaving blank.
+     */
+    workspace: string;
 };
 
 export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest {
@@ -316,6 +322,8 @@ export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest 
         // Absent on frames from a server predating the script-scoped key,
         // where remembering still covered the whole family.
         scriptScoped: event.data?.scriptScoped === true,
+        // Absent on frames from a server predating the workspace field.
+        workspace: String(event.data?.workspace || ""),
     };
 }
 

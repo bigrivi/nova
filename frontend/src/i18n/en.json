@@ -225,6 +225,8 @@
     "approval.remember": "Approve & Remember",
     "approval.rememberFamily": "Remember {{family}}",
     "approval.rememberScript": "Remember only the script above",
+    "approval.workspace": "Workspace: {{path}}",
+    "approval.workspaceNone": "No workspace is active, so no path can be judged in or out",
     "approval.reject": "Reject",
     "threadList.moreActions": "More actions",
     "threadList.rename": "Rename",

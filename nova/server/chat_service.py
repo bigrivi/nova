@@ -97,6 +97,22 @@ class ChatService:
     def settings(self) -> Settings:
         return self._settings
 
+    async def _active_workspace(self) -> str:
+        """The workspace the tool axis is currently judging paths against.
+
+        Read per approval rather than cached: the context is set once per turn
+        from the session, so a long-lived service outlives several workspaces
+        and a value captured at construction would name the wrong boundary.
+
+        Returns:
+            The workspace directory, or an empty string when none is active --
+            which is the case where every path is undecidable, so the dialog
+            shows that rather than showing nothing.
+        """
+        from nova.tools.workspace_context import get_active_workspace
+
+        return get_active_workspace() or ""
+
     def update_settings(self, settings: Settings) -> None:
         """Swap in reloaded settings without discarding live streaming state.
 
@@ -662,6 +678,7 @@ class ChatService:
                 rememberable=data.get("rememberable", True),
                 family=data.get("family", ""),
                 script_scoped=bool(data.get("digest", "")),
+                workspace=await self._active_workspace(),
             )
         if agent_event == AgentEvent.ERROR:
             return await emit(

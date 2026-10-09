@@ -86,6 +86,29 @@ export const ApprovalDialog = () => {
                                 : t(scope.key, { family: scope.family })}
                         </div>
                     )}
+                    {/*
+                      * The boundary the tool axis judged the path against.
+                      *
+                      * It has to be shown rather than inferred: an in-workspace
+                      * read is silent, so the prompt for an out-of-workspace one
+                      * is the only place the boundary can appear. Without it, a
+                      * read inside a project the user selected has no visible
+                      * explanation, and the natural reading is "the tool is
+                      * broken" rather than "this path is outside where you are".
+                      *
+                      * Shown for tool approvals only. The shell resolves paths
+                      * through its own rules, and this line would name a
+                      * workspace that the shell never consulted.
+                      */}
+                    {!isShell && (
+                        <div className="font-mono text-xs text-amber-800">
+                            {pending.workspace
+                                ? t("approval.workspace", {
+                                      path: pending.workspace,
+                                  })
+                                : t("approval.workspaceNone")}
+                        </div>
+                    )}
                     <div className="flex items-center gap-2">
                         <button
                             type="button"

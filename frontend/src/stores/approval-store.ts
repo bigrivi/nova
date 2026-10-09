@@ -23,6 +23,13 @@ export type ApprovalPending = {
      * can act on, and the script it stands for is the command on screen.
      */
     scriptScoped: boolean;
+    /**
+     * The workspace the tool path was judged against. Empty means none is
+     * active, which is the case where every path is undecidable and prompts --
+     * so the dialog distinguishes it from "inside, nothing to report" instead of
+     * showing nothing in both cases.
+     */
+    workspace: string;
 };
 
 interface ApprovalStore {

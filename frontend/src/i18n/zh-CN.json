@@ -224,6 +224,8 @@
     "approval.remember": "批准并记住",
     "approval.rememberFamily": "记住 {{family}}",
     "approval.rememberScript": "只记住上面这段脚本",
+    "approval.workspace": "当前工作区：{{path}}",
+    "approval.workspaceNone": "当前没有工作区，任何路径都无法判定是否越界",
     "approval.reject": "拒绝",
     "threadList.moreActions": "更多操作",
     "threadList.rename": "重命名",

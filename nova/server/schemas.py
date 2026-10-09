@@ -351,6 +351,12 @@ class ApprovalRequiredEventData(BaseStreamEventData):
     #: hands out Python field names. This one is two words on both sides and would
     #: have gone out as `script_scoped`, which the client reads as `undefined`.
     script_scoped: bool = Field(default=False, serialization_alias="scriptScoped")
+    #: The workspace the tool axis judged the path against. Sent because the
+    #: boundary is otherwise invisible: a read inside it is silent, and a read
+    #: outside it prompts with no indication of where "inside" was. Empty when
+    #: no workspace is active, which is itself worth showing -- that is the case
+    #: where every path is undecidable and therefore asked about.
+    workspace: str = ""
 
 
 class ApproveRequest(BaseModel):

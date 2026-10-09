@@ -342,6 +342,55 @@ def test_the_scope_flag_survives_serialisation() -> None:
     assert on_the_wire["family"] == "curl * python3 *"
 
 
+def test_the_workspace_reaches_the_wire_under_the_name_the_client_reads() -> None:
+    """Same reason as the frame above, and the same one-word trap does not apply.
+
+    The dialog can only show the boundary it is given, and an empty string is
+    the value that means "no workspace" -- indistinguishable from a field that
+    never arrived. So the two are asserted separately: present-and-empty against
+    absent.
+    """
+    frame = encode_sse(
+        ApprovalRequiredEvent(
+            data=ApprovalRequiredEventData(
+                sequence=1,
+                request_id="r-ws",
+                command="/etc/hosts",
+                description="d",
+                workspace="/Users/andy/project",
+            )
+        )
+    )
+
+    on_the_wire = json.loads(frame.split("data: ", 1)[1].strip())
+
+    assert on_the_wire["workspace"] == "/Users/andy/project", on_the_wire
+
+
+def test_a_frame_with_no_workspace_says_so_rather_than_omitting_it() -> None:
+    """The undecidable case is the one worth explaining.
+
+    With no workspace every path is asked about, and that is the behaviour most
+    likely to look like a fault. The client distinguishes it by the key being
+    present and empty; a missing key would read the same but mean "old server".
+    """
+    frame = encode_sse(
+        ApprovalRequiredEvent(
+            data=ApprovalRequiredEventData(
+                sequence=1,
+                request_id="r-nows",
+                command="/etc/hosts",
+                description="d",
+            )
+        )
+    )
+
+    on_the_wire = json.loads(frame.split("data: ", 1)[1].strip())
+
+    assert "workspace" in on_the_wire, on_the_wire
+    assert on_the_wire["workspace"] == ""
+
+
 @pytest.mark.asyncio
 async def test_stream_stays_open_while_awaiting_approval(monkeypatch, tmp_path):
     """The turn blocks on approval, so the SSE body must not close beforehand.
@@ -445,3 +494,76 @@ def test_dangerous_shell_command_actually_requires_approval():
 
     assert asyncio.run(check(COMMAND)), "a dangerous command must ask first"
     assert not asyncio.run(check("ls -la")), "a safe command must not ask"
+
+
+async def _capture_approval_data(event_cls, data_cls, **payload):
+    """Stand in for `chat_stream`'s emit, which `_map_agent_event` awaits."""
+    return data_cls(sequence=1, **payload)
+
+
+@pytest.mark.asyncio
+async def test_the_frame_reports_the_workspace_the_gate_actually_used(tmp_path):
+    """Driven through the mapping the turn actually uses.
+
+    The point of sending this is that the dialog and the decision must describe
+    the same boundary. Asserting on the helper alone left the call site free to
+    disappear without a test noticing -- which it did, the first time this was
+    written -- so this goes through `_map_agent_event`, where a dropped argument
+    is visible.
+
+    Read from the same context the gate reads: if the service resolved the
+    workspace its own way the two could disagree, and a dialog naming one
+    directory while the gate judged another is worse than showing nothing,
+    because it looks authoritative.
+    """
+    from nova.agent import AgentEvent
+    from nova.server.chat_service import ChatService
+    from nova.settings import get_settings
+    from nova.tools.workspace_context import set_active_workspace
+
+    set_active_workspace(str(tmp_path))
+    service = ChatService(settings=get_settings())
+
+    mapped = await service._map_agent_event(
+        AgentEvent.APPROVAL_REQUIRED,
+        {"id": "r", "command": "/etc/hosts", "description": "d"},
+        _capture_approval_data,
+    )
+
+    assert mapped.workspace == str(tmp_path), mapped
+
+
+@pytest.mark.asyncio
+async def test_no_active_workspace_reports_empty_rather_than_stale(tmp_path):
+    """Empty is a real answer; the previous workspace must not linger.
+
+    The context is per-turn, and a long-lived service outlives several. A value
+    read at construction, or one that failed to clear, would name a boundary the
+    gate is no longer using -- so the same turn is asked twice, once with a
+    workspace and once without.
+    """
+    from nova.agent import AgentEvent
+    from nova.server.chat_service import ChatService
+    from nova.settings import get_settings
+    from nova.tools.workspace_context import set_active_workspace
+
+    service = ChatService(settings=get_settings())
+
+    async def ask() -> str:
+        set_active_workspace(str(tmp_path))
+        inside = await service._map_agent_event(
+            AgentEvent.APPROVAL_REQUIRED,
+            {"id": "r", "command": "x", "description": "d"},
+            _capture_approval_data,
+        )
+        assert inside.workspace == str(tmp_path)
+
+        set_active_workspace(None)
+        outside = await service._map_agent_event(
+            AgentEvent.APPROVAL_REQUIRED,
+            {"id": "r", "command": "x", "description": "d"},
+            _capture_approval_data,
+        )
+        return outside.workspace
+
+    assert await ask() == ""

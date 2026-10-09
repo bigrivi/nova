@@ -389,7 +389,34 @@ describe("event extractors", () => {
             rememberable: true,
             family: "",
             scriptScoped: false,
+            workspace: "",
         });
+    });
+
+    it("carries the workspace so the dialog can name the boundary", () => {
+        // An in-workspace read is silent, so the out-of-workspace prompt is the
+        // only place the boundary can appear. `String(...) || ""` also keeps an
+        // absent field reading as "no workspace" rather than `undefined`, which
+        // the dialog distinguishes from a server that simply never sent one.
+        expect(
+            extractApprovalRequest({
+                type: "data-nova-approval-required",
+                data: {
+                    requestId: "r",
+                    command: "c",
+                    description: "d",
+                    toolName: "write",
+                    workspace: "/Users/andy/project",
+                },
+            }).workspace,
+        ).toBe("/Users/andy/project");
+
+        expect(
+            extractApprovalRequest({
+                type: "data-nova-approval-required",
+                data: { requestId: "r", command: "c", description: "d" },
+            }).workspace,
+        ).toBe("");
     });
 
     it("carries the tool name so a tool approval is not labelled a shell command", () => {
