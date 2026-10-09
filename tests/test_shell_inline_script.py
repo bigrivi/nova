@@ -177,6 +177,39 @@ def _scan(command: str):
     return parsed
 
 
+def _pyinstaller_list(spec: pathlib.Path, keyword: str) -> list[str]:
+    """The literals PyInstaller would read out of ``<keyword>=[...]`` in *spec*.
+
+    Parsed with `ast` rather than matched as text, because the answer has to be what
+    the spec *means*: these files carry `*webview_hidden` inside those brackets, so
+    they are not literal lists and a regex would be guessing at the remainder.
+
+    Args:
+        spec: One `build_desktop_*.spec`.
+        keyword: The PyInstaller keyword to read, e.g. ``excludes``.
+
+    Returns:
+        The string literals in that list. A splat contributes nothing, which is
+        correct here because the module under test is never part of one.
+    """
+    import ast
+
+    for node in ast.walk(ast.parse(spec.read_text())):
+        if not isinstance(node, ast.Call):
+            continue
+        for entry in node.keywords:
+            if entry.arg != keyword:
+                continue
+            if not isinstance(entry.value, ast.List | ast.Tuple):
+                continue
+            return [
+                element.value
+                for element in entry.value.elts
+                if isinstance(element, ast.Constant) and isinstance(element.value, str)
+            ]
+    raise AssertionError(f"{spec.name} has no {keyword}=[...] PyInstaller would read")
+
+
 def _script_of(command: str) -> str:
     """The ``-c`` literal of *command*, as the interpreter would receive it.
 
@@ -444,21 +477,57 @@ class TestTheProofIsBounded:
             assert calls, "the analyser was never consulted, so this asserts nothing"
 
     def test_the_grammar_is_a_required_dependency(self) -> None:
-        """The exemption is only ever as available as the grammar it reads.
+        """Reading the manifest, because that is what decides what ships.
 
-        `tree-sitter` and `tree-sitter-bash` are required dependencies rather than
-        extras, and the PyInstaller specs list `tree_sitter_bash` among the hidden
-        imports. Checked from the manifest rather than taken on trust, because the
-        exemptions and the compound rules weaken together if this ever stops being
-        true, and this is the only place that fact is written down.
+        This used to read `pyproject.toml` only, and stayed green while all three
+        PyInstaller specs listed `tree_sitter_bash` in `excludes`. The dependency
+        really was required and the desktop build really did not have the grammar:
+        the import failed, `scan.py` warned and set `_parser_failed`, and
+        `policy.py` skipped every relationship rule because it gates them on
+        `parsed.usable`. So the shipped app ran on line matching -- the false
+        positives returned, the exemption never fired, and the grant key lost its
+        script half -- with nothing but a log line to say so.
+
+        The lesson is not "also check the specs". It is that a manifest assertion
+        proves the manifest says what the author assumed. Reading only the file you
+        remembered is how a green suite describes a broken build.
         """
         import tomllib
 
-        pyproject = pathlib.Path(__file__).resolve().parent.parent / "pyproject.toml"
-        required = tomllib.loads(pyproject.read_text())["project"]["dependencies"]
+        repo = pathlib.Path(__file__).resolve().parent.parent
+        required = tomllib.loads((repo / "pyproject.toml").read_text())
+        required = required["project"]["dependencies"]
 
         assert any(pkg.startswith("tree-sitter>") for pkg in required), required
         assert any(pkg.startswith("tree-sitter-bash>") for pkg in required), required
+
+        specs = sorted(repo.glob("build_desktop_*.spec"))
+        assert len(specs) == 3, [spec.name for spec in specs]
+        for spec in specs:
+            excluded = _pyinstaller_list(spec, "excludes")
+            hidden = _pyinstaller_list(spec, "hiddenimports")
+            assert "tree_sitter_bash" not in excluded, (
+                f"{spec.name} excludes the grammar, so the packaged app has no"
+                " bash parser and every parse-tree rule silently stops running"
+            )
+            assert "tree_sitter_bash" in hidden, (
+                f"{spec.name} does not name it; it is imported from inside a"
+                " function body, which static analysis does not follow"
+            )
+
+    def test_the_scanner_imports_the_grammar_the_specs_name(self) -> None:
+        """Ties the manifests to the code that needs them.
+
+        Without this, renaming the import in `scan.py` would leave every manifest
+        assertion green while the packaged app lost the scanner again: the specs
+        would be consistent, and consistent, and wrong.
+        """
+        repo = pathlib.Path(__file__).resolve().parent.parent
+        scan = (repo / "nova" / "tools" / "shell" / "scan.py").read_text()
+
+        assert "import tree_sitter_bash" in scan, (
+            "the specs name a grammar scan.py no longer imports"
+        )
 
 
 class TestTheCorpusHoldsItsOwnInvariants:

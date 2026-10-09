@@ -43,6 +43,9 @@ a = Analysis(
         'nova.app.runtime',
         'nova.config.service',
         'nova.db.database',
+        # A compiled extension loaded from inside a function body, so it is
+        # listed here rather than left to static analysis.
+        'tree_sitter_bash',
         *webview_hidden,
     ],
     hookspath=[],
@@ -65,9 +68,21 @@ a = Analysis(
         # TUI-only (not needed by desktop)
         'textual',
         'nova.cli',
+        # `tree_sitter_bash` is deliberately NOT here. `nova.tools.shell.scan`
+        # loads it at runtime, and the relationship rules -- pipe adjacency, the
+        # fork bomb, and the inline-script exemption -- are gated on
+        # `parsed.usable` in `policy.py`. Excluding the grammar made every one of
+        # them skip silently in the packaged app, so the desktop build ran on line
+        # matching while the source tree did not: the false positives came back and
+        # the grant key lost its script half, with nothing but a log warning.
+        #
+        # The other grammars are genuinely unused and stay excluded for size.
+        # `test_the_grammar_is_a_required_dependency` in
+        # `tests/test_shell_inline_script.py` reads these files, so this cannot
+        # regress silently again.
         'tree_sitter_python', 'tree_sitter_javascript',
         'tree_sitter_typescript', 'tree_sitter_json',
-        'tree_sitter_bash', 'tree_sitter_markdown',
+        'tree_sitter_markdown',
     ],
     noarchive=False,
     optimize=0,
