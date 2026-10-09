@@ -271,7 +271,16 @@ class PolicyToolBehavior(DefaultToolBehavior):
         if not inner.allowed:
             return inner
 
-        effect = self._policy.effect_for(self._tool)
+        # Name and path, because a tool that names a path outside the workspace
+        # is a different request from one that does not. `effect_for_call` can
+        # only tighten what the name resolved, so this cannot clear a configured
+        # ask or deny -- see its docstring for why that asymmetry is the point.
+        #
+        # Bound once because the rememberable decision below needs the same
+        # answer; `get_active_workspace` is a ContextVar read, not a computation
+        # worth repeating.
+        workspace = get_active_workspace()
+        effect = self._policy.effect_for_call(self._tool, args, workspace)
         if effect == "allow":
             return PreExecutionCheck()
         if effect == "deny":
@@ -289,11 +298,29 @@ class PolicyToolBehavior(DefaultToolBehavior):
         # have called it, which is what a reviewer reads.
         summary = self._tool_description or f"{self._tool} call"
         subject = args.get("description", "") or summary
-        # A deferral is not a clearance, and it is not answerable by a grant
-        # either -- `tool:{name}` is a rule like any other, so an approval the
-        # user gave for this tool would otherwise run the call the reviewer just
-        # refused to clear.
-        rememberable = True
+        # Three reasons a prompt here is not rememberable, and only the first is
+        # about this layer.
+        #
+        # A grant is keyed on `tool:<name>`, so it covers every call of this tool
+        # for the rest of the session -- including the ones that reached outside
+        # the workspace. Recording an out-of-workspace approval under that key
+        # would let the first click authorise every later one, which is the
+        # too-wide grant the shell narrowed by family and by script. So such a
+        # prompt carries no identity: nothing is stored, and the dialog is told
+        # not to offer the button.
+        #
+        # A reviewer that declines is the same shape of problem: the approval the
+        # user gave for some other call of this tool would otherwise run the call
+        # the reviewer just refused to clear.
+        # A grant is keyed on `tool:<name>`, so it covers every call of this tool
+        # for the rest of the session -- including the ones that reached outside
+        # the workspace. Recording an out-of-workspace approval under that key
+        # would let the first click authorise every later one, which is the
+        # too-wide grant the shell narrowed by family and by script. So such a
+        # prompt carries no identity: nothing is stored, and the dialog is told
+        # not to offer the button. The reviewer uses the same mechanism for the
+        # same reason.
+        rememberable = not self._policy.targets_outside(self._tool, args, workspace)
         if self._reviewer is not None:
             if await self._cleared(subject, summary):
                 log.info("cleared by review: %s %s", self._tool, subject[:80])

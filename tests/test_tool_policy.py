@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from nova.tools import tool_policy
 from nova.tools.approval import ApprovalManager
 from nova.tools.behavior import (
     DefaultToolBehavior,
@@ -30,7 +31,7 @@ from nova.tools.behavior import (
     PreExecutionCheck,
     TurnContext,
 )
-from nova.tools.tool_policy import ToolPolicy, load_tool_policy
+from nova.tools.tool_policy import ToolPolicy, contains, load_tool_policy
 
 
 def _ctx() -> TurnContext:
@@ -567,3 +568,340 @@ def test_shell_approvals_are_not_affected_by_the_tool_description() -> None:
 
     assert request["type"] == "shell"
     assert request["command"] == "git push --force origin main"
+
+
+# ── path: the axis a tool name cannot answer ────────────────────────
+#
+# `read` and `write` are allowed by name, so `write ~/.ssh/authorized_keys`
+# and `write src/app.ts` were the same request. Nothing in the tool looked at a
+# path -- `read.py` and `write.py` have no boundary check at all, and the gate read
+# `effect_for(self._tool)` and stopped there. These pin the two directions and
+# the fail-safe, because the failure mode is a *narrower* gate, not a crash: a
+# policy that stopped asking would look identical from the outside.
+
+
+class TestThePathDecidesTheEffect:
+    """Inside the workspace is allowed, outside asks, and doubt asks."""
+
+    def test_an_outside_path_asks_though_the_name_allows(self, tmp_path) -> None:
+        policy = ToolPolicy()  # the default: everything allowed
+
+        assert policy.effect_for("write") == "allow", "by name it is allowed"
+        assert (
+            policy.effect_for_call(
+                "write", {"filePath": "/etc/authorized_keys"}, str(tmp_path)
+            )
+            == "ask"
+        )
+
+    def test_an_inside_path_is_still_allowed(self, tmp_path) -> None:
+        policy = ToolPolicy()
+        target = tmp_path / "src" / "app.ts"
+        target.parent.mkdir(parents=True)
+        target.write_text("x", encoding="utf-8")
+
+        assert (
+            policy.effect_for_call("write", {"filePath": str(target)}, str(tmp_path))
+            == "allow"
+        )
+
+    def test_a_new_file_outside_is_asked_about(self, tmp_path) -> None:
+        """`write` creating a file is the common case, and the path is absent.
+
+        `resolve(strict=False)` canonicalises what exists and leaves the rest, so a
+        target that does not exist is still decidable -- which is why this is not
+        one of the "cannot be determined" cases."""
+
+        policy = ToolPolicy()
+        target = tmp_path.parent / "not-created-yet.ts"
+
+        assert not target.exists()
+        assert (
+            policy.effect_for_call("write", {"filePath": str(target)}, str(tmp_path))
+            == "ask"
+        )
+
+    def test_a_relative_path_is_judged_against_the_workspace(self, tmp_path) -> None:
+        """Otherwise `../../etc/passwd` reads as workspace-local.
+
+        This is the same base the shell runs commands in, so the two axes cannot
+        disagree about what "inside" means."""
+
+        policy = ToolPolicy()
+
+        assert (
+            policy.effect_for_call("read", {"filePath": "src/app.ts"}, str(tmp_path))
+            == "allow"
+        )
+        assert (
+            policy.effect_for_call(
+                "read", {"filePath": "../../../../etc/passwd"}, str(tmp_path)
+            )
+            == "ask"
+        )
+
+    def test_a_tilde_is_expanded_before_judged(self, tmp_path) -> None:
+        """`~/.ssh/authorized_keys` is outside whatever it looks like."""
+
+        policy = ToolPolicy()
+
+        assert (
+            policy.effect_for_call(
+                "write", {"filePath": "~/.ssh/authorized_keys"}, str(tmp_path)
+            )
+            == "ask"
+        )
+
+    def test_no_workspace_asks_rather_than_assumes_inside(self, tmp_path) -> None:
+        """Nothing to be inside of.
+
+        Guessing allow would make the exemption depend on whether the agent had a
+        workspace, which is not something the user chose. Same direction as the
+        rule the shell already applies when a path is undecidable."""
+
+        policy = ToolPolicy()
+
+        assert policy.effect_for_call("read", {"filePath": "/etc/hosts"}, None) == "ask"
+
+    def test_a_tool_with_no_path_is_unaffected(self, tmp_path) -> None:
+        """`web_fetch` names a URL, not a path, and there is nothing to be outside."""
+
+        policy = ToolPolicy()
+
+        assert (
+            policy.effect_for_call("web_fetch", {"url": "https://x/y"}, str(tmp_path))
+            == "allow"
+        )
+
+    def test_a_search_without_a_path_is_allowed(self, tmp_path) -> None:
+        """`grep`/`glob` already default `path` to the workspace."""
+
+        policy = ToolPolicy()
+
+        assert (
+            policy.effect_for_call("grep", {"pattern": "x"}, str(tmp_path)) == "allow"
+        )
+
+    def test_read_image_uses_its_own_argument_name(self, tmp_path) -> None:
+        """It is `file_path`, not `filePath`.
+
+        Reading one name for both would leave this tool ungated, which is
+        indistinguishable from a tool that has no path at all."""
+
+        policy = ToolPolicy()
+
+        assert (
+            policy.effect_for_call(
+                "read_image", {"file_path": "/etc/hosts"}, str(tmp_path)
+            )
+            == "ask"
+        )
+
+        assert (
+            policy.effect_for_call(
+                "read_image", {"file_path": "assets/a.png"}, str(tmp_path)
+            )
+            == "allow"
+        )
+
+
+class TestThePathOnlyTightens:
+    """It may add a prompt; it may never remove one."""
+
+    @pytest.mark.parametrize("configured", ["ask", "deny"])
+    def test_an_inside_path_does_not_clear_a_configured_gate(
+        self, configured: str, tmp_path
+    ) -> None:
+        """A deny narrowed by a path that looks safe is the inversion that must
+
+        never happen, and a configured ask means ask."""
+
+        policy = ToolPolicy({"write": configured})
+
+        assert (
+            policy.effect_for_call(
+                "write", {"filePath": str(tmp_path / "a.txt")}, str(tmp_path)
+            )
+            == configured
+        )
+
+    def test_the_gate_is_never_wider_than_the_name(self, tmp_path) -> None:
+        """Checked over every shape of argument, so a rule added later cannot
+
+        widen one case without the others asserting it."""
+
+        policy = ToolPolicy({"read": "ask"})
+        for args in (
+            {"filePath": str(tmp_path / "a")},
+            {"filePath": "/etc/hosts"},
+            {"filePath": "~/a"},
+            {},
+        ):
+            assert policy.effect_for_call("read", args, str(tmp_path)) in (
+                policy.effect_for("read"),
+                "ask",
+            )
+
+
+class TestTheGateAsksThroughTheBehaviour:
+    """The end-to-end path: a real call, a real manager, a real prompt."""
+
+    @pytest.mark.asyncio
+    async def test_an_outside_write_prompts(self, tmp_path) -> None:
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path))
+        behavior, _manager = _behavior(ToolPolicy(), "write")
+
+        inside = await behavior.before_execute(
+            {"filePath": str(tmp_path / "a.txt"), "content": "x"}, _ctx()
+        )
+        assert inside.approval_request is None
+
+        outside = await behavior.before_execute(
+            {"filePath": "/etc/authorized_keys", "content": "x"}, _ctx()
+        )
+        assert outside.approval_request is not None, "no prompt for an outside write"
+        assert outside.approval_request["toolName"] == "write"
+
+    @pytest.mark.asyncio
+    async def test_an_outside_write_cannot_be_remembered(self, tmp_path) -> None:
+        """The grant would be too wide, so there is nothing to record.
+
+        A grant is keyed on `tool:write` and covers every write for the rest of
+        the session. Recording the first out-of-workspace approval under it would
+        make that one click authorise every later one, so the prompt is marked
+        not rememberable and the dialog drops the button -- the same treatment a
+        declined review already gets.
+        """
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path))
+        behavior, manager = _behavior(ToolPolicy(), "write")
+
+        result = await behavior.before_execute(
+            {"filePath": "/etc/authorized_keys", "content": "x"}, _ctx()
+        )
+
+        assert result.approval_request is not None
+        assert result.approval_request["rememberable"] is False
+
+        manager.resolve(result.approval_request["id"], approved=True, remember=True)
+        assert manager.allowlist_for("s1") == set(), "nothing should be stored"
+
+        again = await behavior.before_execute(
+            {"filePath": "/etc/authorized_keys", "content": "x"}, _ctx()
+        )
+        assert again.approval_request is not None, "and it asks again next time"
+
+    @pytest.mark.asyncio
+    async def test_a_tool_without_a_path_still_never_prompts(self, tmp_path) -> None:
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path))
+        behavior, _manager = _behavior(ToolPolicy(), "web_fetch")
+
+        result = await behavior.before_execute({"url": "https://example.com"}, _ctx())
+
+        assert result.approval_request is None
+
+
+class TestTheNameResolutionIsUnchanged:
+    """`effect_for` also decides whether a tool gets registered.
+
+    That call has no arguments and must stay name-only, so a deny stands
+    unconditionally and registration never starts asking."""
+
+    def test_a_denied_tool_is_still_denied_by_name_alone(self) -> None:
+        assert ToolPolicy({"write": "deny"}).effect_for("write") == "deny"
+
+    def test_the_registration_call_has_no_path_to_consult(self, tmp_path) -> None:
+        """What `toolset.py` does when it decides what to register."""
+
+        policy = ToolPolicy()
+
+        assert policy.effect_for_call("write", {}, str(tmp_path)) == "allow"
+
+
+class TestContainmentItself:
+    """`contains` guards that the effect-level cases cannot reach.
+
+    Written after breaking each guard and watching the tests above stay green:
+    an effect test only sees the answer for the paths it happens to use, and all
+    of those sit on one side of the three normalisations below. Each of these
+    was individually silent.
+    """
+
+    def test_a_tilde_resolves_rather_than_staying_a_literal(self, tmp_path) -> None:
+        """`~/x` must be read as a home path, not as a workspace-relative one.
+
+        Dropping `expanduser` leaves the tilde as an ordinary directory name, so
+        `~/.ssh/authorized_keys` resolves to `<workspace>/~/.ssh/...` and reads
+        as inside. The effect-level tilde test did not catch it because the
+        policy there asks on the configured name, never reaching containment.
+        """
+        assert not contains(tmp_path, "~/.ssh/authorized_keys")
+
+    def test_a_case_variant_reads_as_outside_and_asks(self, tmp_path) -> None:
+        """A case variant is deliberately not treated as inside, and this pins
+        the direction of that mistake.
+
+        macOS volumes are usually case-insensitive, so `/TMP/.../x` names a file
+        that really is in the workspace. Comparing case-sensitively calls it
+        outside and prompts. Over-prompting is the recoverable error; the
+        alternative -- folding case, which would need the volume's actual
+        semantics -- is under-prompting on a case-sensitive filesystem. An
+        earlier version of this claimed `normcase` handled this. It does not:
+        it is the identity on POSIX and only normalises on Windows.
+        """
+        variant = str(tmp_path).swapcase()
+
+        assert not contains(tmp_path, f"{variant}/a.txt")
+
+    def test_a_sibling_directory_sharing_the_prefix_is_outside(self, tmp_path) -> None:
+        """`/w` and `/w-other` share a string prefix and share no files.
+
+        `startswith(base)` without the separator calls every sibling of the
+        workspace inside it, which is the unsafe direction: a workspace at
+        `/srv/app` would exempt `/srv/app-secrets`.
+        """
+        sibling = tmp_path.parent / f"{tmp_path.name}-other"
+
+        assert not contains(tmp_path, sibling / "a.txt")
+
+    def test_a_symlink_out_of_the_workspace_is_outside(self, tmp_path) -> None:
+        """`resolve` is what makes a symlink answer for its target.
+
+        The string is inside; where it lands is not. Reading the string would
+        exempt a link that hands the agent a file elsewhere on disk.
+        """
+        outside = tmp_path.parent / "outside-target"
+        outside.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(outside)
+
+        assert not contains(tmp_path, link / "a.txt")
+
+    def test_the_workspace_itself_is_inside(self, tmp_path) -> None:
+        """`write` to the directory itself is not an escape."""
+        assert contains(tmp_path, tmp_path)
+
+    def test_normcase_is_what_makes_this_correct_on_windows(self) -> None:
+        """The one thing `normcase` still does, asserted where it is observable.
+
+        Removing it changes nothing on POSIX -- `os.path.normcase` is the
+        identity there -- so this file cannot detect its absence by behaviour,
+        and a guard that no test can fail is a comment, not a check. What is
+        checkable is that the code routes both sides through it, which is what
+        makes the Windows comparison correct: `ntpath.normcase` lowercases and
+        rewrites separators to backslashes.
+        """
+        source = Path(tool_policy.__file__).read_text(encoding="utf-8")
+        body = source[source.index("def contains(") : source.index("class ToolPolicy")]
+        calls = [line for line in body.splitlines() if "os.path.normcase(" in line]
+
+        assert len(calls) == 3, "the target, the base, and the equality check"
+        assert any("str(resolved)) ==" in line for line in calls), (
+            "the workspace root has to compare equal, not merely be a prefix --"
+            " that branch is what a write to the root itself depends on"
+        )
