@@ -45,11 +45,106 @@ _CMDPOS = (
 # `~`, `$HOME`, `${HOME}`, and the expanded absolute paths. Quoted forms are
 # handled by letting the patterns accept an optional quote around the path.
 _HOME = r"(?:~|\$HOME|\$\{HOME\}|/home/[^/\s]+|/Users/[^/\s]+|/root)"
-_SYSTEM_ETC = r"/etc/|/private/etc/"
+# A boundary, not a trailing slash: `cp x /etc` writes into the system config
+# directory exactly as `cp x /etc/` does, and requiring the slash meant the
+# bare form matched nothing.
+_SYSTEM_ETC = r"/etc\b|/private/etc\b"
 _SSH_PATH = rf"{_HOME}/\.ssh(?:/|$)"
 _SHELL_RC = rf"{_HOME}/\.(?:bashrc|bash_login|bash_profile|zshrc|zshenv|zprofile|zlogin|profile)\b"
 _CRED_FILES = rf"{_HOME}/\.(?:netrc|pgpass|npmrc|pypirc)\b"
 _SENSITIVE_WRITE = rf"(?:{_SSH_PATH}|{_SHELL_RC}|{_CRED_FILES})"
+# Reading a credential out is the same act as writing one in, and the read side
+# had no rule at all: `cat ~/.ssh/id_rsa` ran without a prompt. Public keys are
+# excluded -- an `id_rsa.pub` is not a secret, and copying one around is
+# ordinary work. Shell rc files are excluded too: backing up `~/.bashrc` is
+# routine, and only the SSH and credential paths are secrets by themselves.
+_SECRET_READ = (
+    rf"{_HOME}/\.(?:ssh|aws|gnupg|kube|docker)(?:/|$)(?![^\s\"']*\.pub\b)"
+    rf"|{_HOME}/\.config/gcloud(?:/|$)"
+    r"|\.env\b(?!\.example)"
+)
+#: Programs whose quoted arguments *are* the payload a rule has to read.
+#:
+#: `psql -c "DROP TABLE users"` carries the whole command in one quoted
+#: argument, and so does `python3 -c "..."`, `bash -lc "..."`, and `rm -rf
+#: "$HOME"`. Masking quoted spans to stop prose from matching rules would take
+#: these with it, so the mask stops at programs where a quote is data the user
+#: must be shown rather than a sentence they happened to write.
+#:
+#: `eval` and `source` are here for the same reason the wrapper list elsewhere
+#: carries them: the payload is the argument, whatever the program is called.
+PAYLOAD_PROGRAMS = frozenset(
+    {
+        "awk",
+        "bash",
+        "bun",
+        "chgrp",
+        "chmod",
+        "chown",
+        "dash",
+        "dd",
+        "deno",
+        "diskutil",
+        "eval",
+        "install",
+        "ksh",
+        "ln",
+        "mkfs",
+        "mysql",
+        "node",
+        "perl",
+        "php",
+        "psql",
+        "python",
+        "python2",
+        "python3",
+        "rm",
+        "rsync",
+        "ruby",
+        "scp",
+        "sed",
+        "sh",
+        "source",
+        "sqlite3",
+        "systemctl",
+        "tar",
+        "tee",
+        "xargs",
+        "zsh",
+    }
+)
+
+#: Programs that read a file's contents. Consulted by the credential-read rule,
+#: which has to name the readers because the same path is harmless to `grep`
+#: for a pattern and worth a prompt to `cat`. `cp` is absent on purpose: a copy
+#: out of a credential path is the source-side rule's identity, and two rules
+#: answering one command splits a grant that should cover both spellings of
+#: "the key left the machine".
+_READERS = r"(?:cat|less|more|head|tail|bat|xxd|od|strings|base64|rsync|scp|tar)"
+
+#: The ask rules `acceptEdits` may not demote, however safely a path resolves.
+#:
+#: The mode demotes a rule about *where a path points* -- a world-writable bit
+#: set on a file the agent is working on is local churn. A rule about *what a
+#: path is* is different: `src/.env` is the same secret as `~/.env`, and the
+#: workspace boundary says nothing about either. These stay asked under every
+#: mode, which is the direction that costs a prompt and never a credential.
+#:
+#: The other paths that matter -- a traversal, a system directory, a symlink out
+#: of the workspace -- are excluded by the boundedness check itself rather than
+#: by being named here, because a path outside the workspace is never inside it.
+CREDENTIAL_RULES: frozenset[str] = frozenset(
+    {
+        "redirect into sensitive user file",
+        "write sensitive user file via tee",
+        "copy/move to sensitive credential/SSH file",
+        "copy from sensitive credential/SSH file",
+        "in-place edit of sensitive file",
+        "in-place edit of sensitive file (perl/ruby)",
+        "read a credential or environment file",
+    }
+)
+
 # Anchors the sensitive path to the command tail (i.e. it's the destination, not source)
 _CMDTAIL = r"(?:\s*(?:&&|\|\||;).*)?$"
 
@@ -210,6 +305,21 @@ DANGEROUS_PATTERNS: list[tuple[re.Pattern, str]] = [
         ),
         "recursive delete of absolute path",
     ),
+    # The same deletion spelled with a traversal instead of an absolute path.
+    # The rule above only reads operands that start with `/`, `~` or `$HOME`,
+    # and the workspace exemption declines any command whose paths leave the
+    # workspace -- so `rm -rf ../outside` matched neither and ran unattended.
+    # Asked rather than blocked: `rm -rf ../build` from a subdirectory is
+    # ordinary work, and a prompt is the right price for not being sure.
+    (
+        re.compile(
+            _CMDPOS
+            + r"rm\s+(?:-[^\s]*r[^\s]*\s+)+[\"']?\.\.(?:/[^\s;&|]*)?[\"']?"
+            + r"(?=\s|$|[;&|)])",
+            re.IGNORECASE,
+        ),
+        "recursive delete through a relative path",
+    ),
     # mkfs that is not aimed at a raw block device: formatting an image or a
     # loop file is routine work, but a mistyped device name is unrecoverable,
     # so it asks rather than being blocked outright.
@@ -256,9 +366,12 @@ DANGEROUS_PATTERNS: list[tuple[re.Pattern, str]] = [
     ),
     (re.compile(r"\bTRUNCATE\s+(TABLE)?\s*\w", re.IGNORECASE), "SQL TRUNCATE"),
     # System config overwrite
-    (re.compile(rf">\s*({_SYSTEM_ETC})", re.IGNORECASE), "overwrite system config"),
     (
-        re.compile(rf"\btee\b.*({_SYSTEM_ETC})", re.IGNORECASE),
+        re.compile(rf">\s*[\"']?(?:{_SYSTEM_ETC})", re.IGNORECASE),
+        "overwrite system config",
+    ),
+    (
+        re.compile(rf"\btee\b.*[\"']?(?:{_SYSTEM_ETC})", re.IGNORECASE),
         "overwrite system config via tee",
     ),
     # Writing a sensitive user file. The path is the destination here, so no
@@ -330,6 +443,20 @@ DANGEROUS_PATTERNS: list[tuple[re.Pattern, str]] = [
             re.IGNORECASE,
         ),
         "interpreter -c fetching code over the network",
+    ),
+    # `eval` handed a download inside a string rather than a substitution.
+    # `eval "$(curl x)"` is caught by the substitution rule from the parse, but
+    # `eval "curl x | sh"` parses as one command with one string argument: the
+    # pipe is data as far as the grammar is concerned, and it still reaches a
+    # shell. Same identity as the substitution form on purpose -- one grant has
+    # to cover both spellings of the same act.
+    (
+        re.compile(
+            r"\beval\s+[\"'][^\"'\n]*\b(?:curl|wget)\b[^\"'\n]*\|\s*"
+            r"(?:sudo\s+|env\s+\S+\s+)*(?:sh|bash|zsh|ksh|dash)\b",
+            re.IGNORECASE,
+        ),
+        "eval of remote content",
     ),
     # ── relationship rules: answered from the parse, not from the line ──
     #
@@ -457,6 +584,110 @@ DANGEROUS_PATTERNS: list[tuple[re.Pattern, str]] = [
         ),
         "copy/move to sensitive credential/SSH file",
     ),
+    # The same act from the other end: the sensitive path is the *source* and
+    # the destination is somewhere else. Writing `~/.ssh/authorized_keys` was
+    # asked about while `cp ~/.ssh/id_rsa /tmp/key-backup` ran without a
+    # prompt, because the rule above anchors the path to the command tail.
+    # Shell rc files are excluded deliberately -- backing up `~/.bashrc` is
+    # ordinary work and the pinned allow-list says so -- so this covers the
+    # SSH and credential files, which are secrets wherever they are going.
+    (
+        re.compile(
+            rf"\b(cp|mv)\b[^\n;&|]*\s[\"']?(?:{_SSH_PATH}|{_CRED_FILES})"
+            rf"(?![^\s\"']*\.pub\b)[^\s\"']*\s+\S",
+            re.IGNORECASE,
+        ),
+        "copy from sensitive credential/SSH file",
+    ),
+    # A symbolic link is a path that resolves somewhere else, and nothing read
+    # the target. Relative targets are the common case (`node_modules/.bin`)
+    # and stay allowed; an absolute or home target is what asks.
+    (
+        re.compile(
+            r"\bln\s+(?:-[^\s]+\s+)*-\w*s\w*\s+[\"']?"
+            r"(?:/|~|\$HOME|\$\{HOME\})",
+            re.IGNORECASE,
+        ),
+        "symbolic link to an absolute or home path",
+    ),
+    # Reading a credential out. The write side has rules; the read side had
+    # none, so `cat ~/.ssh/id_rsa` was as silent as `ls`. Public keys are
+    # excluded (`id_rsa.pub` is not a secret) and so are shell rc files, for
+    # the same reason the source-side copy rule excludes them.
+    (
+        re.compile(
+            rf"\b{_READERS}\b[^\n;&|]*(?:{_SECRET_READ})",
+            re.IGNORECASE,
+        ),
+        "read a credential or environment file",
+    ),
+    # Copy/move into a system PATH directory. PATH poisoning needs no rule of
+    # its own to be unrecoverable, and `/etc` is not the only place a stray
+    # binary lands.
+    (
+        re.compile(
+            rf"\b(cp|mv|install)\b.*\s(?:/usr/local/bin|/usr/local/sbin|/usr/bin"
+            rf"|/usr/sbin|/bin|/sbin)(?:/[^\s\"']*)?{_CMDTAIL}",
+            re.IGNORECASE,
+        ),
+        "copy/move/install into a system PATH directory",
+    ),
     # xargs rm
     (re.compile(r"\bxargs\s+.*\brm\b", re.IGNORECASE), "xargs rm"),
+]
+
+# ── Fallback patterns (only when the grammar cannot read the line) ───
+#
+# The three relationship rules above carry patterns that can never match: their
+# judgement moved to `compound.py`, which asks the parse tree. That trade
+# assumes the parse exists. When tree-sitter is missing -- a native extension
+# the install can lose -- or the line defeats it, `classify` skips the compound
+# rules entirely, and with them the only guards on `curl … | bash`. Failing
+# open on a safety judgement is the wrong direction, so these stand in for the
+# parse on the raw line.
+#
+# They are deliberately not in DANGEROUS_PATTERNS. On a line the grammar can
+# read they would re-introduce exactly the false positives the compound rules
+# removed: `curl x && make | python3 f.py` trips the second pattern below even
+# though the pipe belongs to `make`. Their whole-line breadth is the price of
+# not failing open, and it is paid only where the alternative is no answer.
+_FALLBACK_SHELLS = r"(?:sh|bash|zsh|ksh|dash|csh|tcsh|ash|fish)"
+_FALLBACK_INTERPRETERS = r"(?:python[23]?|perl|ruby|node|php|deno|bun)"
+_FALLBACK_FETCHERS = r"(?:curl|wget)"
+_FALLBACK_PREFIXES = r"(?:sudo\s+(?:-\S+\s+)*|env\s+\S+\s+)*"
+
+FALLBACK_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (
+        re.compile(
+            rf"\b{_FALLBACK_FETCHERS}\b[^\n]*\|\s*{_FALLBACK_PREFIXES}"
+            rf"{_FALLBACK_SHELLS}\b",
+            re.IGNORECASE,
+        ),
+        "pipe remote content to a shell",
+    ),
+    # Process substitution puts the download in an argument, so no pipe carries
+    # it: `bash <(curl …)`.
+    (
+        re.compile(
+            rf"\b{_FALLBACK_SHELLS}\s+<\(\s*{_FALLBACK_PREFIXES}"
+            rf"{_FALLBACK_FETCHERS}\b",
+            re.IGNORECASE,
+        ),
+        "pipe remote content to a shell",
+    ),
+    (
+        re.compile(
+            rf"\b{_FALLBACK_FETCHERS}\b[^\n]*\|\s*{_FALLBACK_PREFIXES}"
+            rf"{_FALLBACK_INTERPRETERS}\b",
+            re.IGNORECASE,
+        ),
+        "pipe remote content to an interpreter",
+    ),
+    (
+        re.compile(
+            rf"\b(?:eval|source)\b[^\n]*\b{_FALLBACK_FETCHERS}\b",
+            re.IGNORECASE,
+        ),
+        "eval of remote content",
+    ),
 ]

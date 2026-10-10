@@ -439,8 +439,11 @@ def test_the_two_layers_are_disjoint_and_cover_their_tables() -> None:
     # `killall -9` are one concept, so one remembered approval covers both -- which
     # is the point of keying grants on the description rather than the pattern.
     # The cost is that `disable` takes both out together, which is also correct.
+    # `eval of remote content` is shared for the same reason: `eval "$(curl …)"`
+    # is answered from the parse tree and `eval "curl … | sh"` from the line, and
+    # one approval has to cover both spellings of the same act.
     shared = [d for d, n in Counter(d for _p, d in table).items() if n > 1]
-    assert shared == ["force kill processes"], shared
+    assert shared == ["force kill processes", "eval of remote content"], shared
 
 
 def test_kill_all_processes_rule_is_the_only_kill_minus_one_rule() -> None:

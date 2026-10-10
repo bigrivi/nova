@@ -74,7 +74,8 @@ class Command:
             shell would execute rather than the bare program word.
         program: The leading program word with any path stripped, wrappers and
             flags skipped where that is unambiguous. Best effort, for display.
-        programs: Every program word in the command, for classification.
+        programs: Every *command-position* word in the command -- the wrappers
+            and the program itself, never an argument.
         argv: The words after the program name, in order.
         literal_script: The source of a ``-c`` script when the command is exactly
             ``<python> -c <literal>`` and the literal carries no expansion.
@@ -214,6 +215,38 @@ def _leading_program(words: list[str]) -> str:
     return words[index] if index < len(words) else ""
 
 
+def _command_position_words(words: list[str]) -> list[str]:
+    """The words that name the command rather than argue with it.
+
+    ``programs`` used to hold every word on the line, arguments included, and
+    every classification set was intersected against it. The consequence was a
+    search term doing the work of a program name: ``curl x | grep -w node``
+    asked about ``pipe remote content to an interpreter``, because ``node`` sat
+    in ``programs`` and the sink check reads that set. An argument cannot
+    execute, so it cannot be a sink.
+
+    Only the wrappers and the program itself are command positions. A wrapper's
+    flag or assignment is skipped on the way, matching
+    :func:`_leading_program`: ``sudo -u postgres psql`` reads as ``sudo`` plus
+    the word ``postgres``, which is that function's documented best-effort
+    reading of a flag whose arity is not decidable -- and it is harmless here,
+    because ``postgres`` classifies as nothing.
+    """
+    kept: list[str] = []
+    index = 0
+    while index < len(words):
+        word = words[index]
+        kept.append(word)
+        if word.rsplit("/", 1)[-1] not in _WRAPPERS:
+            break
+        index += 1
+        while index < len(words) and (
+            words[index].startswith("-") or "=" in words[index]
+        ):
+            index += 1
+    return kept
+
+
 def _text_of(node) -> str:  # type: ignore[no-untyped-def]
     """A command's text, lifted to the redirection or heredoc that wraps it.
 
@@ -274,7 +307,7 @@ def _command_of(node) -> Command:  # type: ignore[no-untyped-def]
     return Command(
         text=_text_of(node),
         program=_leading_program(words),
-        programs=frozenset(word for word in words if word),
+        programs=frozenset(_command_position_words(words)),
         argv=argv,
         literal_script=_literal_script(node, argv),
     )

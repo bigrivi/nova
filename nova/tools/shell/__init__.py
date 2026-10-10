@@ -109,13 +109,14 @@ class Verdict:
         return self.effect == "ask"
 
 
-def classify(command: str, workspace: str | None = None) -> Decision:
+def classify(command: str, workspace: str | None = None, mode: str = "ask") -> Decision:
     """The rule outcome alone, with no reviewer or channel consideration.
 
     Exposed for the pattern tests and the flood probe, which want to know what
-    matches without involving a model or a session.
+    matches without involving a model or a session. ``mode`` is the permission
+    mode; ``acceptEdits`` changes what the ask rules answer here.
     """
-    return default_rule_set().classify(command, workspace)
+    return default_rule_set().classify(command, workspace, mode)
 
 
 def family_of(command: str) -> str:
@@ -179,6 +180,7 @@ async def decide(
     *,
     reviewer: Reviewer | None = None,
     is_sub_agent: bool = False,
+    permission_mode: str = "ask",
 ) -> Verdict:
     """Decide whether *command* runs, and say who has to agree.
 
@@ -190,12 +192,16 @@ async def decide(
             rule flagged. It can clear one and nothing else.
         is_sub_agent: Whether the caller is a background sub-agent with no
             approval channel.
+        permission_mode: One of ``ask``, ``dontAsk`` or ``acceptEdits``.
+            ``acceptEdits`` is applied here, where the command and its paths
+            are known; ``dontAsk`` is the caller's to apply, because it is a
+            statement about a channel rather than about a command.
 
     Returns:
         The verdict. A refused command comes back as ``block``, so the caller has
         one shape to handle rather than two.
     """
-    decision = classify(command, workspace)
+    decision = classify(command, workspace, permission_mode)
     family = family_of(command)
     digest = digest_of(command)
 
