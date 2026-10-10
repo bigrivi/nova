@@ -43,6 +43,7 @@ class ToolsetBuilder:
         agent_key: str | None = None,
         reviewer: Any = None,
         tool_policy: Any = None,
+        permission_mode: str = "ask",
     ) -> None:
         self._registry = registry
         self._skill_service = skill_service
@@ -54,6 +55,9 @@ class ToolsetBuilder:
         self._reviewer = reviewer
         # Per-tool allow/ask/deny; an empty policy allows everything.
         self._tool_policy = tool_policy
+        # What an ask becomes when there is nobody to ask. Part of the cache
+        # identity because it changes what a registered tool does at call time.
+        self._permission_mode = permission_mode
         self.skill_tools: Any = None
         self.memory_tools: Any = None
 
@@ -108,6 +112,7 @@ class ToolsetBuilder:
                     self._reviewer,
                     inner,
                     tool.description,
+                    permission_mode=self._permission_mode,
                 ),
             )
 
@@ -175,7 +180,10 @@ class ToolsetBuilder:
         self._registry.set_behavior(
             "shell",
             ShellToolBehavior(
-                self._approval, is_sub_agent=self._is_sub_agent, reviewer=self._reviewer
+                self._approval,
+                is_sub_agent=self._is_sub_agent,
+                reviewer=self._reviewer,
+                permission_mode=self._permission_mode,
             ),
         )
         self._registry.set_behavior("read_image", ImageReturningToolBehavior())

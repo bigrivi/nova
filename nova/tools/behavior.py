@@ -128,6 +128,12 @@ class ShellToolBehavior(DefaultToolBehavior):
     the grant identity belong to :func:`nova.tools.shell.decide` -- this class
     used to hold that knowledge, which meant every caller of the approval path
     had to know it too.
+
+    ``permission_mode`` decides what "needs-a-human" means when there is no
+    human. ``ask`` asks; ``dontAsk`` refuses with a reason the model can read,
+    because a turn that waits forever for a click nobody will make is a worse
+    failure than a clean refusal. It applies only to an ask, never to a block
+    or a configured deny -- neither of those was ever put to a human.
     """
 
     def __init__(
@@ -135,12 +141,14 @@ class ShellToolBehavior(DefaultToolBehavior):
         approval_manager: Any,
         is_sub_agent: bool = False,
         reviewer: Any = None,
+        permission_mode: str = "ask",
     ) -> None:
         self._approval = approval_manager
         self._is_sub_agent = is_sub_agent
         # A model second opinion on flagged commands. None means every flag reaches
         # the user, which is the pre-review behaviour.
         self._reviewer = reviewer
+        self._permission_mode = permission_mode
 
     async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
         cmd = args.get("command", "")
@@ -149,17 +157,36 @@ class ShellToolBehavior(DefaultToolBehavior):
         # The workspace comes from the tool's own context rather than the turn:
         # the shell already resolves its cwd against it, so the boundary has to be
         # the same one.
+        #
+        # The reviewer is not consulted in dontAsk mode. A reviewer that clears
+        # a command lets it run, which is exactly what the mode exists to refuse;
+        # Codex's pairing is the same -- `approval_policy = "never"` leaves
+        # auto_review nothing to review. There is no third outcome for "nobody is
+        # watching" to have.
         verdict = await decide(
             cmd,
             get_active_workspace(),
-            reviewer=self._reviewer,
+            reviewer=(None if self._permission_mode == "dontAsk" else self._reviewer),
             is_sub_agent=self._is_sub_agent,
+            permission_mode=self._permission_mode,
         )
 
         if verdict.effect == "block":
             return PreExecutionCheck(allowed=False, reject_reason=verdict.reason)
 
         if verdict.needs_approval:
+            if self._permission_mode == "dontAsk":
+                # A grant is a human decision this session already made, so it
+                # still counts: `pre_request` is the path that would have read
+                # it, and asking it means creating a request only to refuse it.
+                if not self._approval.is_granted(
+                    verdict.rule,
+                    verdict.family,
+                    verdict.digest,
+                    ctx.session_id,
+                ):
+                    return self._refused(cmd, verdict.reason)
+                return PreExecutionCheck()
             # An empty id means the session already granted this rule and
             # family, so `pre_request` declines to create a request and nothing is
             # asked. A reviewer that declined is asked about anyway: passing no
@@ -190,6 +217,27 @@ class ShellToolBehavior(DefaultToolBehavior):
 
         return PreExecutionCheck()
 
+    def _refused(self, command: str, reason: str) -> PreExecutionCheck:
+        """The ask a ``dontAsk`` mode cannot put to anybody.
+
+        A refusal rather than a block: the command is one the rules wanted a
+        human for, not one nothing may undo, and the model is told both -- what
+        matched and that a mode, not a judgement, is what stopped it. Without
+        the second half an agent that reads "denied" will keep retrying the
+        same shape of command.
+        """
+        log.info("Command refused by dontAsk mode: %s (%s)", command[:120], reason)
+        return PreExecutionCheck(
+            allowed=False,
+            reject_reason=(
+                f"Refused: {reason}. "
+                "This command needs approval, and Nova is running in 'dontAsk' "
+                "mode, where a command that would need approval is refused "
+                "instead of waited for. Approve it interactively or add it to "
+                "permissions.json ('shell.allow') to run it here."
+            ),
+        )
+
 
 class PolicyToolBehavior(DefaultToolBehavior):
     """Gate one tool by its configured effect.
@@ -219,6 +267,7 @@ class PolicyToolBehavior(DefaultToolBehavior):
         reviewer: Any = None,
         inner: Any = None,
         tool_description: str = "",
+        permission_mode: str = "ask",
     ) -> None:
         self._tool = tool_name
         self._policy = policy
@@ -229,6 +278,10 @@ class PolicyToolBehavior(DefaultToolBehavior):
         # and a dialog whose whole job is to let someone decide cannot ask them to
         # decide from a tool name.
         self._tool_description = tool_description
+        # ``ask`` prompts; ``dontAsk`` refuses instead of waiting. Same reading
+        # as the shell's, and the same scope: a configured deny is already a
+        # refusal, so only an ask changes.
+        self._permission_mode = permission_mode
         # The behaviour this tool already had, if any. The policy is a gate laid
         # over it, never a replacement: ``read_image`` and `browser_use` return
         # images through ``postprocess``, and ``ask_user`` numbers its questions
@@ -264,6 +317,27 @@ class PolicyToolBehavior(DefaultToolBehavior):
             )
             return False
 
+    def _review_subject(self, args: dict, summary: str) -> str:
+        """What the reviewer sees: the tool and the argument it is about to use.
+
+        The old subject was ``args["description"]`` -- a sentence the *model*
+        wrote about its own call. A model told to write a config file can
+        describe it as one, and a reviewer reading that sentence approves a
+        description rather than an action. The path or URL is the part the user
+        would need to judge, so it is what goes in, with the model's own words
+        kept only as a fallback for tools that name nothing.
+
+        ``description`` is still the first key looked at for tools that put the
+        real payload there (``web_search``), and a path key wins over it: an
+        argument that names a target is the one a reviewer must not miss.
+        """
+        for key in ("filePath", "file_path", "path", "url", "query", "pattern"):
+            value = args.get(key)
+            if isinstance(value, str) and value.strip():
+                return f"{self._tool} {value.strip()[:200]}"
+        text = args.get("description", "")
+        return text.strip()[:200] if isinstance(text, str) and text.strip() else summary
+
     async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
         # The tool's own check runs first and unconditionally, so gating a tool
         # never skips a hook it depends on. Its rejection wins over the policy.
@@ -293,34 +367,44 @@ class PolicyToolBehavior(DefaultToolBehavior):
                 ),
             )
 
+        if self._permission_mode == "dontAsk":
+            # The reviewer is skipped with the prompt: a clear would run the
+            # call, and this mode refuses what a human would have had to
+            # approve. A grant cannot answer either -- `pre_request` is not
+            # reached, so nothing is stored and nothing is remembered.
+            log.info("Tool refused by dontAsk mode: %s", self._tool)
+            return PreExecutionCheck(
+                allowed=False,
+                reject_reason=(
+                    f"{self._tool} needs approval, and Nova is running in "
+                    "'dontAsk' mode, where a tool call that would need approval "
+                    "is refused instead of waited for. Set it to allow in "
+                    "permissions.json ('tools') to run it here."
+                ),
+            )
+
         # Two different strings, doing two different jobs. `summary` is what the
         # dialog shows and why it is asking; `subject` is what the model would
         # have called it, which is what a reviewer reads.
         summary = self._tool_description or f"{self._tool} call"
-        subject = args.get("description", "") or summary
-        # Three reasons a prompt here is not rememberable, and only the first is
-        # about this layer.
+        subject = self._review_subject(args, summary)
+        # Three reasons a prompt here is not rememberable, and only the last is
+        # not about this layer.
         #
         # A grant is keyed on `tool:<name>`, so it covers every call of this tool
         # for the rest of the session -- including the ones that reached outside
-        # the workspace. Recording an out-of-workspace approval under that key
-        # would let the first click authorise every later one, which is the
-        # too-wide grant the shell narrowed by family and by script. So such a
-        # prompt carries no identity: nothing is stored, and the dialog is told
-        # not to offer the button.
+        # the workspace, and the ones that reached into a credential. Recording
+        # either under that key would let the first click authorise every later
+        # one, which is the too-wide grant the shell narrowed by family and by
+        # script. So such a prompt carries no identity: nothing is stored, and
+        # the dialog is told not to offer the button.
         #
-        # A reviewer that declines is the same shape of problem: the approval the
-        # user gave for some other call of this tool would otherwise run the call
-        # the reviewer just refused to clear.
-        # A grant is keyed on `tool:<name>`, so it covers every call of this tool
-        # for the rest of the session -- including the ones that reached outside
-        # the workspace. Recording an out-of-workspace approval under that key
-        # would let the first click authorise every later one, which is the
-        # too-wide grant the shell narrowed by family and by script. So such a
-        # prompt carries no identity: nothing is stored, and the dialog is told
-        # not to offer the button. The reviewer uses the same mechanism for the
-        # same reason.
-        rememberable = not self._policy.targets_outside(self._tool, args, workspace)
+        # A reviewer that declines is the same shape of problem for the same
+        # mechanism: the approval the user gave for some other call of this tool
+        # would otherwise run the call the reviewer just refused to clear.
+        rememberable = not self._policy.targets_outside(
+            self._tool, args, workspace
+        ) and not self._policy.targets_sensitive(self._tool, args, workspace)
         if self._reviewer is not None:
             if await self._cleared(subject, summary):
                 log.info("cleared by review: %s %s", self._tool, subject[:80])

@@ -165,6 +165,17 @@ class ApprovalManager:
             return True
         return False
 
+    def is_granted(self, rule: str, family: str, digest: str, session_id: str) -> bool:
+        """Whether *session_id* already approved this exact shape.
+
+        The public half of :meth:`_granted`, for callers that must decide
+        without creating a request. ``dontAsk`` mode is the one that needs it:
+        refusing a command a human approved minutes earlier in the same session
+        would be the mode forgetting the answer it was given, and a grant is the
+        only record of a human decision this process holds.
+        """
+        return self._granted(rule, family, digest, session_id)
+
     async def wait_with_heartbeat(
         self,
         req_id: str,

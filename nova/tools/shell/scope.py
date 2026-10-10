@@ -22,6 +22,16 @@ PATH_MUTATORS = frozenset(
     {"mkdir", "touch", "cp", "mv", "rm", "rmdir", "ln", "install"}
 )
 
+# The same question, asked of a wider set for one mode.
+#
+# `chmod`, `chown` and `chgrp` answer it too -- after the mode token their
+# arguments are the paths they act on, and the mode resolves to something under
+# the workspace like any other nonexistent name would. They are not in
+# PATH_MUTATORS on purpose: a world-writable bit is a rule about permissions,
+# not about paths, so the default posture keeps asking and only `acceptEdits`
+# -- the mode whose whole subject is local file churn -- stops.
+MODE_MUTATORS = PATH_MUTATORS | {"chgrp", "chmod", "chown"}
+
 # Separators and substitutions. Any of these means the command is not a single
 # simple invocation, so its effects cannot be read off the argument list.
 _UNSAFE = re.compile(r"[;&|`<>$\n\r(){}*?!\[\]]")
@@ -35,16 +45,24 @@ def _strip_quotes(token: str) -> str:
     return token
 
 
-def is_bounded(command: str, workspace: str | None) -> bool:
+def is_bounded(
+    command: str,
+    workspace: str | None,
+    mutators: frozenset[str] = PATH_MUTATORS,
+) -> bool:
     """Whether every path *command* can touch is inside *workspace*.
 
     Args:
         command: The command line as the model wrote it.
         workspace: The boundary. ``None`` means unknown, which is never bounded.
+        mutators: Which programs count as path mutators. The caller widens this
+            for a mode that demotes path-scoped ask rules; the default is the
+            set the shipped exemption has always used, so widening it for one
+            mode does not quietly change the default posture.
 
     Returns:
-        True only when the command is a single unprivileged path-mutating
-        invocation and every path it names resolves under *workspace*.
+        True only when the command is a single unprivileged invocation from
+        *mutators* and every path it names resolves under *workspace*.
     """
     if not workspace:
         return False
@@ -55,7 +73,7 @@ def is_bounded(command: str, workspace: str | None) -> bool:
     tokens = text.split()
     if not tokens:
         return False
-    if Path(tokens[0]).name not in PATH_MUTATORS:
+    if Path(tokens[0]).name not in mutators:
         return False
 
     root = Path(workspace).expanduser()

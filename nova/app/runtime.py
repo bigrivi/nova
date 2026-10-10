@@ -22,6 +22,7 @@ from nova.llm import (
 from nova.prompt import PromptConfig
 from nova.settings import get_settings
 from nova.skills.tools import SkillTools
+from nova.tools.permissions import load_permission_mode, permissions_path
 from nova.tools.registry import ToolRegistry
 
 _llm_cache: dict[str, LLMProvider] = {}
@@ -239,6 +240,25 @@ def _first_configured_route(settings) -> tuple[str | None, str | None]:
     return provider, model
 
 
+def registry_cache_key(
+    agent_key: str,
+    model: str,
+    is_sub_agent: bool,
+    posture_marker: str,
+    permission_mode: str,
+) -> str:
+    """The identity of a cached tool registry.
+
+    The permission mode is part of it because the behaviour bound to every tool
+    changes with the mode: a registry built under ``dontAsk`` refuses calls an
+    ``ask`` session is meant to prompt for, so reusing one for the other makes a
+    config change look ignored -- or, the other way round, prompts in a run
+    nobody is watching. The posture marker has been here for the same reason
+    since the read-only sub-agent work.
+    """
+    return f"{agent_key}:{model}:{is_sub_agent}:{posture_marker}:{permission_mode}"
+
+
 async def build_agent(
     agent_key: str = DEFAULT_AGENT_KEY,
     llm: LLMProvider | None = None,
@@ -353,12 +373,18 @@ async def build_agent(
                 model=review_model,
             )
 
+    # The permission mode is read from the security-policy file, not from
+    # config.json: it changes what the *rules* do when they fire, so it belongs
+    # beside them. Read once per process, the way both axes are.
+    permission_mode = load_permission_mode(permissions_path())
+
     agent = Agent(
         config=AgentConfig(
             model=resolved_model,
             provider=resolved_provider,
             reasoning_effort=resolved_effort,
             shell_review=review.enabled,
+            permission_mode=permission_mode,
         ),
         llm_provider=llm,
         review_llm=review_llm,
@@ -374,9 +400,19 @@ async def build_agent(
     )
 
     # Cache 3: ToolRegistry (shallow copy + rebind skill tools). The posture
-    # marker is part of the key so a read-only sub-agent never reuses a fuller toolset.
+    # marker is part of the key so a read-only sub-agent never reuses a fuller toolset,
+    # and the permission mode is part of it for the same reason: the behaviour
+    # bound to every tool changes with the mode, so a dontAsk registry reused
+    # for an ask session would refuse commands the session is meant to prompt
+    # for -- or the reverse, which is worse.
     posture_marker = "ro" if allowed_tools is not None else ""
-    reg_key = f"{agent_key}:{resolved_model}:{agent.is_sub_agent}:{posture_marker}"
+    reg_key = registry_cache_key(
+        agent_key,
+        resolved_model,
+        agent.is_sub_agent,
+        posture_marker,
+        permission_mode,
+    )
     cached_registry = _registry_cache.get(reg_key)
     if cached_registry is not None:
         agent.tool_registry = ToolRegistry(source=cached_registry)

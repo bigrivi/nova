@@ -59,6 +59,11 @@ class AgentConfig:
     # reviewer that waves through something the user would have refused is a worse
     # failure than a prompt. Set from the ``approval_review`` block in config.json.
     shell_review: bool = False
+    # What a command that needs approval gets when the rules say so and no grant
+    # covers it. ``ask`` waits for a human; ``dontAsk`` refuses instead, for runs
+    # with nobody at the keyboard. Read from ``mode`` in permissions.json -- the
+    # security-policy file, next to the rules whose answer it changes.
+    permission_mode: str = "ask"
 
 
 def build_user_message(
@@ -814,6 +819,7 @@ class Agent:
             agent_key=self.agent_key,
             reviewer=reviewer,
             tool_policy=load_tool_policy(permissions_path()),
+            permission_mode=self.config.permission_mode,
         )
         await builder.build()
         self._skill_tools = builder.skill_tools
