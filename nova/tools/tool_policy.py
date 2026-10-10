@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Mapping
+from itertools import pairwise
 from pathlib import Path
 from typing import Final, Literal
 
@@ -31,6 +32,39 @@ log = logging.getLogger(__name__)
 
 Effect = Literal["allow", "ask", "deny"]
 _EFFECTS = frozenset({"allow", "ask", "deny"})
+
+
+#: Directory names that hold credentials, wherever they appear. A path is
+#: sensitive because a part of it is one of these or its name is an environment
+#: file -- not because of where it sits, since `src/.env` is the same secret as
+#: `~/.env`. OpenCode's base policy asks about `*.env` reads for the same
+#: reason; this also covers the SSH and cloud-credential directories.
+SENSITIVE_PARTS: Final[frozenset[str]] = frozenset(
+    {".ssh", ".aws", ".gnupg", ".kube", ".docker"}
+)
+
+
+def is_sensitive_path(target: str | Path) -> bool:
+    """Whether *target* names a credential or environment file.
+
+    Judged on the path as written, before resolution: a ``..`` segment that
+    walks into ``.ssh`` is sensitive exactly as a direct one is, and resolving
+    first would answer about the resolved path rather than the one asked about.
+
+    ``.env.example`` is the documented exception -- a template has nothing in
+    it, and reading one is how a new checkout learns what to fill in.
+    """
+    path = Path(target).expanduser()
+    name = path.name
+    if name == ".env" or (name.startswith(".env.") and name != ".env.example"):
+        return True
+    parts = path.parts
+    if any(part in SENSITIVE_PARTS for part in parts):
+        return True
+    # `~/.config/gcloud` and its neighbours: a directory, not a single file.
+    return any(
+        parent == ".config" and child == "gcloud" for parent, child in pairwise(parts)
+    )
 
 
 #: Which argument carries the path a tool is about to touch, per tool.
@@ -201,6 +235,13 @@ class ToolPolicy:
         if self.targets_outside(tool, args, workspace):
             log.info("%s targets %s, outside %s", tool, target, workspace)
             return "ask"
+        if is_sensitive_path(target):
+            # A credential is sensitive wherever it sits: `src/.env` is the same
+            # secret as `~/.env`, and the workspace boundary says nothing about
+            # either. The direction matches the shell's read rule, and both are
+            # one prompt rather than a silent read.
+            log.info("%s targets %s, a credential or environment file", tool, target)
+            return "ask"
         return "allow"
 
     def targets_outside(
@@ -236,6 +277,40 @@ class ToolPolicy:
         if target is None or workspace is None:
             return False
         return not contains(workspace, target)
+
+    def targets_sensitive(
+        self,
+        tool: str,
+        args: Mapping[str, object] | None = None,
+        workspace: str | Path | None = None,
+    ) -> bool:
+        """Whether *tool* is about to touch a credential or environment file.
+
+        Split out for the same reason as :meth:`targets_outside`: the gate is
+        not the only caller. A grant is keyed on ``tool:<name>`` and covers
+        every call of that tool for the session, so an "always allow" given for
+        reading ordinary files must not spend itself on ``.env``. The prompt is
+        marked not rememberable instead, which is one click per secret rather
+        than an authorisation nobody scoped.
+
+        The workspace argument is accepted for symmetry with the other path
+        questions and is ignored: sensitivity is a property of the path, not of
+        where the boundary runs.
+
+        Args:
+            tool: The tool being invoked.
+            args: The arguments the model sent, if any.
+            workspace: The active workspace root, or None when unknown.
+
+        Returns:
+            True only when a path was named and it names a credential.
+        """
+        if tool not in PATH_ARGUMENTS:
+            return False
+        target = path_target(tool, args or {})
+        if target is None:
+            return False
+        return is_sensitive_path(target)
 
     def __bool__(self) -> bool:
         return bool(self._rules)

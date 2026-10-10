@@ -823,6 +823,180 @@ class TestTheNameResolutionIsUnchanged:
         assert policy.effect_for_call("write", {}, str(tmp_path)) == "allow"
 
 
+# ── a credential is sensitive wherever it sits ────────────────────────
+#
+# The workspace boundary answers "outside or inside" and nothing about what a
+# path *is*. `src/.env` is the same secret as `~/.env`, and both ran without a
+# prompt because both are inside a workspace. OpenCode's base policy asks about
+# `*.env` reads for this reason; the shell gained a reader rule at the same
+# time, so the two axes cannot disagree about which paths are secrets.
+
+
+class TestACredentialIsSensitiveWhereverItSits:
+    def test_an_environment_file_inside_the_workspace_asks(self, tmp_path) -> None:
+        policy = ToolPolicy()
+
+        assert (
+            policy.effect_for_call("read", {"filePath": "src/.env"}, str(tmp_path))
+            == "ask"
+        )
+        assert (
+            policy.effect_for_call("write", {"filePath": ".env"}, str(tmp_path))
+            == "ask"
+        )
+
+    def test_a_credential_directory_asks(self, tmp_path) -> None:
+        policy = ToolPolicy()
+
+        assert (
+            policy.effect_for_call(
+                "read", {"filePath": "~/.aws/credentials"}, str(tmp_path)
+            )
+            == "ask"
+        )
+        assert (
+            policy.effect_for_call(
+                "read_image", {"file_path": "~/.kube/config"}, str(tmp_path)
+            )
+            == "ask"
+        )
+
+    def test_the_template_has_nothing_in_it(self, tmp_path) -> None:
+        policy = ToolPolicy()
+
+        assert (
+            policy.effect_for_call("read", {"filePath": ".env.example"}, str(tmp_path))
+            == "allow"
+        )
+
+    def test_an_ordinary_file_is_unaffected(self, tmp_path) -> None:
+        policy = ToolPolicy()
+
+        assert (
+            policy.effect_for_call("read", {"filePath": "src/app.ts"}, str(tmp_path))
+            == "allow"
+        )
+        assert (
+            policy.effect_for_call("grep", {"pattern": "x"}, str(tmp_path)) == "allow"
+        )
+
+    @pytest.mark.parametrize("configured", ["ask", "deny"])
+    def test_the_sensitivity_only_ever_tightens(
+        self, configured: str, tmp_path
+    ) -> None:
+        """Same asymmetry as the outside-path rule: it adds a prompt, never
+        removes one. A configured `deny` is not narrowed by a safe-looking path,
+        and a configured `ask` is not cleared by one."""
+
+        policy = ToolPolicy({"read": configured})
+
+        assert (
+            policy.effect_for_call(
+                "read", {"filePath": str(tmp_path / "a")}, str(tmp_path)
+            )
+            == configured
+        )
+
+    def test_targets_sensitive_names_the_question_for_the_caller(
+        self, tmp_path
+    ) -> None:
+        """The gate is not the only thing that needs the answer.
+
+        A grant is keyed on `tool:read` and covers every read for the session,
+        so an "always allow" given for ordinary files must not spend itself on
+        `.env`. Same reasoning as `targets_outside`, and the same mechanism.
+        """
+        policy = ToolPolicy()
+
+        assert policy.targets_sensitive("read", {"filePath": "src/.env"})
+        assert policy.targets_sensitive("read", {"filePath": "../../.ssh/id_rsa"})
+        assert not policy.targets_sensitive("read", {"filePath": "src/app.ts"})
+        assert not policy.targets_sensitive("web_fetch", {"url": "https://x"})
+
+
+class TestASensitivePromptIsNotRememberable:
+    """The grant would be too wide, so there is nothing to record."""
+
+    @pytest.mark.asyncio
+    async def test_a_credential_read_cannot_be_remembered(self, tmp_path) -> None:
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path))
+        manager = ApprovalManager()
+        behavior = PolicyToolBehavior("read", ToolPolicy(), manager)
+
+        result = await behavior.before_execute({"filePath": ".env"}, _ctx())
+
+        assert result.approval_request is not None
+        assert result.approval_request["rememberable"] is False
+
+        manager.resolve(result.approval_request["id"], approved=True, remember=True)
+        assert manager.allowlist_for("s1") == set(), "nothing should be stored"
+
+        again = await behavior.before_execute({"filePath": ".env"}, _ctx())
+        assert again.approval_request is not None, "and it asks again next time"
+
+    @pytest.mark.asyncio
+    async def test_an_ordinary_read_is_still_rememberable(self, tmp_path) -> None:
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path))
+        manager = ApprovalManager()
+        behavior = PolicyToolBehavior("read", ToolPolicy(), manager)
+
+        result = await behavior.before_execute({"filePath": "src/app.ts"}, _ctx())
+
+        assert result.approval_request is None, "inside and ordinary: no prompt"
+
+
+# ── the reviewer reads the call, not the model's description of it ────
+
+
+class TestTheReviewerSeesTheRealArgument:
+    """The subject was `args["description"]` -- a sentence the model wrote.
+
+    A model told to write a config file can describe it as one, and a reviewer
+    reading that sentence approves a description rather than an action. The
+    path or URL is the part the user would need to judge, so it goes in."""
+
+    @pytest.mark.asyncio
+    async def test_the_path_reaches_the_reviewer(self) -> None:
+        seen: list[str] = []
+
+        async def reviewer(subject: str, reason: str) -> str:
+            seen.append(subject)
+            return "escalate"
+
+        manager = ApprovalManager()
+        behavior = PolicyToolBehavior(
+            "write", ToolPolicy({"write": "ask"}), manager, reviewer=reviewer
+        )
+
+        await behavior.before_execute(
+            {"filePath": "/etc/passwd", "description": "writes the login database"},
+            _ctx(),
+        )
+
+        assert seen == ["write /etc/passwd"], seen
+
+    @pytest.mark.asyncio
+    async def test_the_url_reaches_the_reviewer_for_a_tool_without_a_path(self) -> None:
+        seen: list[str] = []
+
+        async def reviewer(subject: str, reason: str) -> str:
+            seen.append(subject)
+            return "escalate"
+
+        manager = ApprovalManager()
+        behavior = PolicyToolBehavior(
+            "web_fetch", ToolPolicy({"web_fetch": "ask"}), manager, reviewer=reviewer
+        )
+
+        await behavior.before_execute({"url": "https://example.com/x"}, _ctx())
+
+        assert seen == ["web_fetch https://example.com/x"], seen
+
+
 class TestContainmentItself:
     """`contains` guards that the effect-level cases cannot reach.
 
