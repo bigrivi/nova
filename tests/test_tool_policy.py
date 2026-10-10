@@ -806,6 +806,144 @@ class TestTheGateAsksThroughTheBehaviour:
         assert result.approval_request is None
 
 
+# ── Nova's own directories are not an escape from the workspace ───────
+#
+# The skills directory lives in the Nova home, which is outside every project
+# workspace, so reading a skill's own script was asked about -- the same
+# false positive as the ones the shell rules were fixed for, one axis over. The
+# home also holds the provider API keys, so the exemption is drawn at what the
+# agent is *designed* to read rather than at "outside the workspace".
+
+
+class TestNovaManagedDirectories:
+    WS = "/Users/andy/project"
+
+    def _nova(self, name: str) -> str:
+        from nova.tools.permissions import nova_home
+
+        return str(nova_home() / name)
+
+    def test_a_skill_script_is_read_without_a_prompt(self) -> None:
+        policy = ToolPolicy()
+
+        target = self._nova("skills/12306/scripts/query.mjs")
+        assert policy.effect_for_call("read", {"filePath": target}, self.WS) == "allow"
+
+    @pytest.mark.parametrize(
+        "sub",
+        ["skills/12306/SKILL.md", "agents/main/agent.md", "workspace/notes.md"],
+    )
+    def test_the_other_owned_directories_too(self, sub: str) -> None:
+        policy = ToolPolicy()
+
+        target = self._nova(sub)
+        assert policy.effect_for_call("read", {"filePath": target}, self.WS) == "allow"
+
+    def test_the_home_itself_is_not_exempt(self) -> None:
+        """The database, the sessions and the config all sit at that level."""
+        from nova.tools.tool_policy import is_managed_path
+
+        home = self._nova("")
+
+        assert not is_managed_path(home)
+        assert not is_managed_path(self._nova("config.json"))
+        assert not is_managed_path(self._nova("nova.db"))
+        assert not is_managed_path(self._nova("sessions/abc/messages.json"))
+        assert is_managed_path(self._nova("skills/abc/b.mjs"))
+
+    def test_a_credential_inside_a_managed_directory_still_asks(self) -> None:
+        """A managed root is who owns the directory; a credential is what the
+        file is. The second wins, or the exemption becomes a place to hide."""
+        policy = ToolPolicy()
+
+        target = self._nova("workspace/.env")
+        assert policy.effect_for_call("read", {"filePath": target}, self.WS) == "ask"
+
+    def test_a_configured_ask_is_not_cleared_by_the_exemption(self) -> None:
+        """Same asymmetry as every other path question: it can only tighten."""
+        policy = ToolPolicy({"*": "ask"})
+
+        target = self._nova("skills/12306/scripts/query.mjs")
+        assert policy.effect_for_call("read", {"filePath": target}, self.WS) == "ask"
+
+    def test_a_symlink_out_of_a_managed_directory_is_not_exempt(self, tmp_path) -> None:
+        """Judged by where it lands, the way a symlink out of the workspace is."""
+
+        from nova.tools.tool_policy import is_managed_path
+
+        secret = tmp_path / "config.json"
+        secret.write_text("{}", encoding="utf-8")
+        link = tmp_path / "skills" / "escape.mjs"
+        link.parent.mkdir()
+        link.symlink_to(secret)
+
+        assert not is_managed_path(link), "the link points at a file, not at skills"
+
+    def test_the_override_is_honoured(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        """NOVA_HOME is what tests and sandboxes use; reading the home any
+        other way would exempt a directory nobody configured."""
+        from nova.tools.tool_policy import is_managed_path
+
+        monkeypatch.setenv("NOVA_HOME", str(tmp_path / "state"))
+
+        assert is_managed_path(tmp_path / "state" / "skills" / "a" / "b.mjs")
+        assert not is_managed_path(tmp_path / "state" / "config.json")
+
+    def test_the_nova_config_is_a_credential(self, tmp_path) -> None:
+        """It is named for what it configures and holds the provider API keys.
+
+        Outside-workspace already asks; naming it is what makes that prompt
+        unrememberable, because a `tool:read` grant would otherwise cover
+        reading the keys for the rest of the session.
+        """
+        from nova.tools.tool_policy import is_sensitive_path
+
+        assert is_sensitive_path(self._nova("config.json"))
+        assert not is_sensitive_path(self._nova("skills/a/b.mjs"))
+
+    @pytest.mark.asyncio
+    async def test_a_skill_read_is_not_rememberable_because_it_never_prompts(
+        self, tmp_path
+    ) -> None:
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(self.WS)
+        manager = ApprovalManager()
+        behavior = PolicyToolBehavior("read", ToolPolicy(), manager)
+
+        target = self._nova("skills/12306/scripts/query.mjs")
+        try:
+            result = await behavior.before_execute({"filePath": target}, _ctx())
+        finally:
+            set_active_workspace(None)
+
+        assert result.allowed
+        assert result.approval_request is None
+        assert manager.get_pending() == []
+
+    @pytest.mark.asyncio
+    async def test_the_config_prompt_is_not_rememberable(self) -> None:
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(self.WS)
+        manager = ApprovalManager()
+        behavior = PolicyToolBehavior("read", ToolPolicy(), manager)
+
+        target = self._nova("config.json")
+        try:
+            result = await behavior.before_execute({"filePath": target}, _ctx())
+        finally:
+            set_active_workspace(None)
+
+        assert result.approval_request is not None
+        assert result.approval_request["rememberable"] is False
+
+        manager.resolve(result.approval_request["id"], approved=True, remember=True)
+        assert manager.allowlist_for("s1") == set(), "nothing should be stored"
+
+
 class TestTheNameResolutionIsUnchanged:
     """`effect_for` also decides whether a tool gets registered.
 

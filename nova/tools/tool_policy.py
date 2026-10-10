@@ -43,6 +43,62 @@ SENSITIVE_PARTS: Final[frozenset[str]] = frozenset(
     {".ssh", ".aws", ".gnupg", ".kube", ".docker"}
 )
 
+#: The Nova home's own credential file, whose name says nothing about what it
+#: holds: the provider API keys sit in `config.json`. It is outside every
+#: workspace already, so it asks -- naming it here is what makes that prompt
+#: *unrememberable*, because a grant keyed on `tool:read` would otherwise cover
+#: reading the keys for the rest of the session.
+_NOVA_CONFIG_NAME = "config.json"
+
+#: Directories under the Nova home that Nova itself owns and the agent is meant
+#: to use. OpenCode's base policy exempts its managed tool-output, shell-output,
+#: temporary and global-configuration directories from the outside-the-worktree
+#: question, and the reason is the same here: a skill's own script is not an
+#: escape from the workspace, it is the capability the user installed.
+#:
+#: The line is drawn at what the agent is *designed* to read. Skills, agents and
+#: hooks are Nova's own definitions; the workspace directory is Nova's own
+#: default working directory. Everything else in the home is user state -- the
+#: database with every conversation, the sessions, the logs -- and keeps asking.
+MANAGED_ROOTS: Final[frozenset[str]] = frozenset(
+    {"skills", "agents", "hooks", "workspace"}
+)
+
+
+def _nova_home() -> Path:
+    """The Nova state directory, through the module that owns the override."""
+    return Path(permissions.nova_home())
+
+
+def is_managed_path(target: str | Path) -> bool:
+    """Whether *target* sits under a directory Nova itself owns.
+
+    Resolved first, so a symlink planted under a managed root that points back
+    at the config is judged by where it lands rather than by where it was
+    written -- the same reading :func:`contains` gives a symlink out of the
+    workspace.
+    """
+    path = Path(target).expanduser()
+    if not path.is_absolute():
+        return False
+    home = _nova_home().expanduser()
+    try:
+        home_resolved = home.resolve(strict=False)
+        resolved = path.resolve(strict=False)
+    except OSError:
+        return False
+    try:
+        resolved.relative_to(home_resolved)
+    except ValueError:
+        return False
+    # The name directly under the home decides, and the home's own files are
+    # not in the set: `config.json` and `nova.db` sit at that level and are
+    # exactly what the exemption must not cover.
+    parts = resolved.parts
+    if len(parts) <= len(home_resolved.parts):
+        return False
+    return parts[len(home_resolved.parts)] in MANAGED_ROOTS
+
 
 def is_sensitive_path(target: str | Path) -> bool:
     """Whether *target* names a credential or environment file.
@@ -62,9 +118,21 @@ def is_sensitive_path(target: str | Path) -> bool:
     if any(part in SENSITIVE_PARTS for part in parts):
         return True
     # `~/.config/gcloud` and its neighbours: a directory, not a single file.
-    return any(
+    if any(
         parent == ".config" and child == "gcloud" for parent, child in pairwise(parts)
-    )
+    ):
+        return True
+    # The Nova home's config, by identity rather than by name: the file is named
+    # for what it configures and holds the provider API keys. Compared through
+    # the same home resolution the managed check uses, so an override in tests
+    # or a sandbox answers about the home that is actually in play.
+    if path.is_absolute():
+        try:
+            nova_config = (_nova_home() / _NOVA_CONFIG_NAME).resolve(strict=False)
+            return path.resolve(strict=False) == nova_config
+        except OSError:
+            return False
+    return False
 
 
 #: Which argument carries the path a tool is about to touch, per tool.
@@ -229,18 +297,30 @@ class ToolPolicy:
             # workspace by default, and a tool that names no path has nothing
             # outside one to reach.
             return "allow"
-        if workspace is None:
-            log.info("no active workspace; asking about %s on %s", tool, target)
-            return "ask"
-        if self.targets_outside(tool, args, workspace):
-            log.info("%s targets %s, outside %s", tool, target, workspace)
-            return "ask"
         if is_sensitive_path(target):
             # A credential is sensitive wherever it sits: `src/.env` is the same
             # secret as `~/.env`, and the workspace boundary says nothing about
             # either. The direction matches the shell's read rule, and both are
             # one prompt rather than a silent read.
+            #
+            # Ordered before the managed check so a `.env` planted inside Nova's
+            # own workspace directory does not inherit that exemption: a managed
+            # root is a fact about who owns the directory, a credential is a
+            # fact about what the file is, and the second wins.
             log.info("%s targets %s, a credential or environment file", tool, target)
+            return "ask"
+        if is_managed_path(target):
+            # Nova's own definitions, read by design: a skill's script is the
+            # capability the user installed, not an escape from the workspace.
+            # OpenCode exempts its managed directories from the same
+            # outside-the-worktree question, for the same reason.
+            log.info("%s targets %s, a Nova-managed directory", tool, target)
+            return "allow"
+        if workspace is None:
+            log.info("no active workspace; asking about %s on %s", tool, target)
+            return "ask"
+        if self.targets_outside(tool, args, workspace):
+            log.info("%s targets %s, outside %s", tool, target, workspace)
             return "ask"
         return "allow"
 

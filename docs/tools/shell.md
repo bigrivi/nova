@@ -238,7 +238,18 @@ Credential and environment paths ask even when the tool itself is allowed: a
 `read` of `.env`, `~/.ssh/…`, `~/.aws/…` or `~/.kube/…` is prompted wherever it
 sits, because `src/.env` is the same secret as `~/.env`. A prompt about one of
 those offers no "remember": a grant is keyed on the tool, and an "always" for
-ordinary files must not spend itself on reading secrets.
+ordinary files must not spend itself on reading secrets. `~/.nova/config.json`
+counts too -- it is named for what it configures and holds the provider API
+keys.
+
+Nova's own directories are not an escape from the workspace, so they are not
+asked about either: a skill's script under `~/.nova/skills/...` is the
+capability you installed, not a path outside your project. The exemption covers
+`skills`, `agents`, `hooks` and Nova's own `workspace` directory, and it is
+judged on where a path lands -- a symlink planted under `skills/` that points
+back at the config is asked about. Everything else in the home keeps asking:
+the database, the sessions, the logs. A configured `ask` is never cleared by
+the exemption, the same way the workspace boundary never clears one.
 
 A malformed `tools` block leaves everything allowed. Failing closed here would
 disable the agent's tools outright, which is worse than not applying what was
