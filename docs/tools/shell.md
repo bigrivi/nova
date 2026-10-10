@@ -24,12 +24,20 @@ Simple commands with no destructive potential:
 
 Commands that could modify system state or destroy data:
 
-- `rm -r /absolute/path` (absolute paths)
+- `rm -r /absolute/path` (absolute paths), and `rm -rf ../outside`
 - `chmod 777`, `chown root`
 - `DROP TABLE`, `DELETE FROM` without WHERE
 - `systemctl stop`, `pkill -9`
 - `git reset --hard`, `git push --force`
 - `sed -i`, overwriting sensitive files
+- `cp ~/.ssh/id_rsa …`, `cat ~/.ssh/id_rsa`, `cat .env`, `ln -s /etc/…`
+- `cp … /etc/…`, `mv … /usr/local/bin/…`
+
+The credential rules cover the read side as well as the write side: `cat
+~/.ssh/id_rsa` and `cat .env` are asked about wherever they sit, because
+`src/.env` is the same secret as `~/.env`. Public keys (`id_rsa.pub`), shell rc
+backups (`cp ~/.bashrc /tmp/`) and the `.env.example` template are not secrets
+and stay allowed.
 
 When a dangerous command is detected, Nova asks you to approve or reject it
 before execution.
@@ -88,6 +96,30 @@ Four things to know:
   `pkill -9` and `killall -9` are both "force kill processes" -- so disabling that
   description removes both, and one remembered approval covers both.
 
+## What a rule is matched against
+
+Rules are regular expressions, but not over the command line: the line is
+parsed and every rule is matched against **each command** the line runs, the
+way Claude Code and OpenCode read their bash rules. `npm test && git reset
+--hard` is asked about even with `allow: ["npm test *"]` configured, because an
+allow prefix is a prefix of a command, not a licence for whatever is chained
+after it. When several commands on one line are flagged, the strictest verdict
+wins -- any ask asks.
+
+Quoted spans are ignored unless the quote is the payload. `git commit -m "docs:
+why git push --force is dangerous"` runs; `psql -c "DROP TABLE users"` asks.
+The programs whose quoted argument is the payload (the SQL clients, the
+interpreters, `bash -lc`, `rm`'s operands) are listed in `patterns.py` as
+`PAYLOAD_PROGRAMS`, and a quoted redirect target (`echo x > "/etc/passwd"`) is
+an operand however it is quoted. Heredoc bodies are masked for the same
+reason: writing a document that quotes `rm -rf /` is not running it.
+
+If the shell grammar cannot be installed or cannot read a line, the line-level
+patterns answer instead -- including stand-ins for the pipe rules, so `curl … |
+bash` is still refused when tree-sitter is missing. That path is broader than
+the parsed one and asks about a compound line it cannot understand, which is
+the deliberate trade: a prompt, not a shell.
+
 ## Approvals
 
 A dangerous command pauses the turn and asks. Approving with "always" records a
@@ -140,6 +172,7 @@ when **every** path they name resolves inside the workspace.
 rm -rf ~/project/build          allowed  (inside)
 rm -rf build/output             allowed  (relative, resolved against the workspace)
 rm -rf ~/other/build            asked    (outside)
+rm -rf ../outside               asked    (traverses out of the workspace)
 rm -rf ~/project/build && ...   asked    (chaining is not analysed)
 rm -rf ~/project/*              asked    (wildcards expand at runtime)
 rm -rf "$TARGET"                asked    (paths are not knowable)
@@ -148,6 +181,12 @@ rm -rf "$TARGET"                asked    (paths are not knowable)
 A relative path is resolved against the workspace, because that is the directory
 the shell runs in -- not against the daemon's working directory, which on a server
 is wherever it happened to start.
+
+The exemption belongs to a command that does one thing. Each command on a
+compound line is matched against the rules separately, but the exemption itself
+is only granted to a single-command line: a chain whose halves are each inside
+the workspace still asks, because the cost of being wrong is a recursive delete
+nobody was asked about.
 
 Anything the analysis cannot bound falls through to the ordinary rules, so the
 worst case is a prompt rather than an unattended command. A blocked command is
@@ -195,9 +234,81 @@ spends a round trip and still gives a prompt injection something to aim at.
 The shell is excluded -- it decides against its own rule set, and layering the
 tool policy on as well would only duplicate the decision.
 
+Credential and environment paths ask even when the tool itself is allowed: a
+`read` of `.env`, `~/.ssh/…`, `~/.aws/…` or `~/.kube/…` is prompted wherever it
+sits, because `src/.env` is the same secret as `~/.env`. A prompt about one of
+those offers no "remember": a grant is keyed on the tool, and an "always" for
+ordinary files must not spend itself on reading secrets.
+
 A malformed `tools` block leaves everything allowed. Failing closed here would
 disable the agent's tools outright, which is worse than not applying what was
 asked for.
+
+## Permission modes
+
+One key selects the posture the whole file runs under:
+
+```json
+{ "mode": "ask" }
+```
+
+| Mode | A command that needs approval becomes |
+|---|---|
+| `ask` (default) | Paused, and the user is asked |
+| `acceptEdits` | Allowed when it only mutates files inside the workspace |
+| `dontAsk` | Refused, with the rule that matched named in the error |
+
+`dontAsk` is for runs with nobody at the keyboard -- CI, scheduled tasks, a bot
+left connected. A turn that waits forever on a prompt nobody will click fails
+in the least visible way available: nothing errors, nothing advances. Refusing
+instead gives the model something it can report.
+
+### `acceptEdits`
+
+The mode for a session that is churning through local files and being asked
+about a `chmod` between every edit. It demotes an ask rule about *where a path
+points* -- `chmod 777 run.sh`, `chown -R user src/` -- when every path the
+command names resolves inside the workspace, and leaves everything else exactly
+as it was:
+
+- **A credential is a credential wherever it sits.** `cat .env`, `cat
+  src/.env`, `cat ~/.ssh/id_rsa`, `cp ~/.ssh/id_rsa /tmp/...` and the writes to
+  those paths keep asking, under every mode. The workspace boundary says
+  nothing about what a path *is*.
+- **A path outside the workspace keeps asking**, however ordinary the command:
+  `chmod 777 ../outside.sh`, `chmod 777 /etc/passwd`, `cp payload /etc`,
+  `ln -s /etc/hosts ./h`.
+- **A rule about what a program does keeps asking**: `git reset --hard`,
+  `git clean -fd`, `docker compose down`, `bash -lc`, a heredoc script.
+- **A compound line keeps asking** for its parts: `chmod 777 run.sh && git
+  reset --hard` asks, because the second command is not a workspace-local
+  mutation. A single command is the unit, as everywhere else in this file.
+- **A block is not demoted.** `rm -rf /` was never put to a human.
+
+The demotion carries no grant, so nothing new is remembered: an allow is not a
+permission the user gave, and there is nothing to key it on. The reviewer keeps
+running, because a human is still behind this mode.
+It is **not** a bypass. A command this mode refuses is one a human would have
+had to approve, so the failure is a clean refusal rather than a silent run:
+
+- An `allow` entry still runs. Put the command in `shell.allow` (or `tools`) and
+  it works under `dontAsk` exactly as it does under `ask`.
+- **A grant still counts.** Approve `git push --force` once in a session and
+  later force pushes run even in `dontAsk` -- it is the one human decision the
+  process holds, and the mode forgetting it would throw that away.
+- **Blocks and denials are untouched.** Neither was ever put to a human.
+- **The model reviewer does not run.** A reviewer that clears a command lets it
+  run, which is what this mode exists to refuse (the same pairing Codex makes:
+  `approval_policy = "never"` leaves auto-review nothing to review).
+
+The mode is read once per process, like the rules. A malformed value reads as
+`ask`: a typo that switched asking off would be the one failure with no
+recovery.
+
+More modes exist in the tools this file borrows from -- Claude Code's
+`acceptEdits` and `plan`, Codex's sandbox presets -- and are not implemented
+here. `bypassPermissions` deliberately is not: without an OS-level sandbox it
+would skip the only boundary Nova has.
 
 ## Model review
 
@@ -244,6 +355,14 @@ confident about something a regex could not decide; `escalate` is how it says "I
 do not know". Every failure lands there too -- no provider, a timeout, output it
 cannot parse -- because failing open on a safety judgement is the wrong
 direction.
+
+The action is shown to the reviewer as untrusted data, inside its own block,
+with shell comments stripped: the agent wrote the command after reading a web
+page or a file, so a page that says `approve` in the right place would
+otherwise have a vote in what runs. The verdict is read from the last line of
+the response, so a verdict echoed back from inside the action is not the answer.
+For a tool call, the reviewer sees the real argument -- the file path or the
+URL -- rather than the description the model wrote about its own call.
 
 The reviewer sits behind the rules, not in front of them, so a command nothing
 flags costs nothing.
