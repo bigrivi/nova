@@ -3,7 +3,7 @@
 Drive Nova from a WeChat conversation. WeChat is the message surface; Nova keeps
 running on your machine and does the work.
 
-The bridge lives in [`weixin-clawbot/`](../../weixin-clawbot/) and is a Node
+The bridge lives in [`weixin-clawbot/`](https://github.com/bigrivi/nova/tree/main/weixin-clawbot) and is a Node
 process, because WeChat's official channel ships as an npm package. It talks to
 Nova over the same HTTP/SSE surface the web frontend uses.
 
@@ -100,7 +100,7 @@ started with (request beats session beats agent), which is why switching models
 later does not retroactively move an in-flight conversation.
 
 Configuration keys are documented in
-[`weixin-clawbot/README.md`](../../weixin-clawbot/README.md).
+[`weixin-clawbot/README.md`](https://github.com/bigrivi/nova/blob/main/weixin-clawbot/README.md).
 
 ## How a turn works
 

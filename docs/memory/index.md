@@ -13,6 +13,8 @@ Memories are scoped to control where they apply:
   project.
 - **`session`** -- single-session context. Only available during the current
   session.
+- **`agent`** -- tied to one agent's own workspace, so a delegated sub-agent
+  does not read the parent's private context.
 
 ## Memory Types
 

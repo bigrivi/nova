@@ -1,8 +1,11 @@
 # Tool Overview
 
-Nova ships with 20 built-in tools. The LLM decides which tools to call based on
+Nova ships with 26 built-in tools. The LLM decides which tools to call based on
 your request. You don't need to invoke them manually -- just describe what you
 want, and Nova handles the rest.
+
+Connected MCP servers add more tools at runtime. Sub-agents receive neither MCP
+tools nor `delegate_to_agent`.
 
 ## File Operations
 
@@ -44,7 +47,7 @@ want, and Nova handles the rest.
 |------|-------------|
 | [ask_user](ask-user.md) | Ask you questions |
 | [todo_write](todo.md) | Manage task lists |
-| [read_image](ask-user.md) | Read images (for vision models) |
+| `read_image` | Read images as base64 plus extracted text |
 
 ## Skills
 
@@ -59,3 +62,13 @@ want, and Nova handles the rest.
 | Tool | Description |
 |------|-------------|
 | [delegate_to_agent](../advanced/multi-agent.md) | Delegate tasks to sub-agents |
+| `subagent_status` | Check on a running delegated task |
+
+## Background Tasks
+
+| Tool | Description |
+|------|-------------|
+| `background_task_list` | List background tasks |
+| `background_task_status` | Check a task's current state |
+| `background_task_logs` | Read a task's output |
+| `background_task_cancel` | Stop a task |

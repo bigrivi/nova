@@ -102,7 +102,7 @@ Response:
 ```
 
 * `used`: estimated tokens in the current context.
-* `limit`: model context limit after the 20 percent safety margin.
+* `limit`: the compaction threshold, `model_max_tokens - reserve`, not the raw window. `reserve` is `output_reserve_tokens + summary_reserve_tokens`, capped at half the window. Using the threshold means `percent` reaches 100 at the point compaction fires rather than falling short; it can exceed 100 when the carried prefix plus growth crosses the threshold.
 * `percent`: `used / limit * 100`.
 * `message_count`: raw message count in the session.
 
@@ -358,7 +358,7 @@ AI SDK UI message parts emitted by the server (from `nova/server/ai_sdk_stream.p
 | `tool-input-start` / `tool-input-available` | Tool call announced, with `toolCallId`, `toolName`, and parsed `input` |
 | `tool-output-available` | Tool result, with `toolCallId` and `output` |
 | `data-nova-session` | Session id for a newly created session, `{"sessionId": "..."}` |
-| `data-nova-approval-required` | Shell approval needed, carries `sessionId`, `requestId`, `command`, `description`, `toolCallId`, `toolName` |
+| `data-nova-approval-required` | Shell or tool approval needed. Carries `sessionId`, `requestId`, `command`, `description`, `toolName`, `rememberable`, `family`, `scriptScoped`, and `workspace`. `rememberable: false` means the client must not offer to remember it; `scriptScoped: true` means remembering covers only the inline script above the buttons; `workspace` is the directory the path was judged against, empty when none is active |
 | `data-nova-heartbeat` | Keepalive while waiting for approval |
 | `data-nova-tool-error` | Tool failure detail, `{"toolName","toolCallId","message"}` |
 | `data-nova-context` | Context usage `{"used","limit","percent"}` |
@@ -586,7 +586,7 @@ Response (`MemoryListResponse`):
 }
 ```
 
-`scope` is one of `user`, `project`, `session`, `all` (filter only). `memory_type` is one of `fact`, `preference`, `decision`, `context`.
+`scope` is one of `user`, `project`, `session`, `agent`, or `all` (filter only). `memory_type` is one of `fact`, `preference`, `decision`, `context`.
 
 ### `DELETE /api/memories/{memory_id}`
 

@@ -311,9 +311,9 @@ points* -- `chmod 777 run.sh`, `chown -R user src/` -- when every path the
 command names resolves inside the workspace, and leaves everything else exactly
 as it was:
 
-- **A credential is a credential wherever it sits.** `cat .env`, `cat
+- **A credential keeps asking under every mode.** `cat .env`, `cat
   src/.env`, `cat ~/.ssh/id_rsa`, `cp ~/.ssh/id_rsa /tmp/...` and the writes to
-  those paths keep asking, under every mode. The workspace boundary says
+  those paths are asked about regardless of mode. The workspace boundary says
   nothing about what a path *is*.
 - **A path outside the workspace keeps asking**, however ordinary the command:
   `chmod 777 ../outside.sh`, `chmod 777 /etc/passwd`, `cp payload /etc`,
