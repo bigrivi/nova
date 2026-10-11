@@ -7,12 +7,80 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
-# Shared HTTP retry policy for all providers. 429 is quota/throttle feedback,
-# not a transient fault: retrying it only burns quota faster, so it fails
-# fast and surfaces upstream detail to the caller instead.
+# Shared HTTP retry policy for all providers. The status codes below are
+# transient faults; 429 is not among them, because a 429 means two unrelated
+# things and the status code cannot tell them apart. Quota: the account is out
+# of credit, and another attempt cannot succeed -- retrying it only burns quota
+# faster, so it fails fast and surfaces upstream detail to the caller instead.
+# Capacity: the endpoint is briefly unable to serve anybody, and an attempt a
+# second later often works. See ``is_capacity_429`` for how the two are told
+# apart, and note that only a body we can *positively* read as capacity is
+# retried -- an unrecognised 429 keeps failing fast, exactly as before.
 RETRY_STATUS_CODES = frozenset({500, 502, 503, 504, 529})
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 1.0
+
+#: Substrings that mark a 429 body as a quota refusal. Checked first, so a body
+#: carrying both signals is treated as quota: the direction that costs one
+#: prompt rather than burning an allowance the user does not have.
+QUOTA_429_MARKERS = frozenset(
+    {
+        "insufficient_quota",
+        "insufficient quota",
+        "quota exceeded",
+        "current quota",
+        "exceeded your quota",
+        "billing",
+        "credit balance",
+    }
+)
+
+#: Substrings that mark a 429 body as availability rather than quota. Deliberately
+#: narrow and worded on what endpoints actually say: a generic "too many
+#: requests" is *not* here, because per-minute throttling is the case the
+#: original fail-fast policy was written for, and widening the list would
+#: quietly reverse a decision somebody made on purpose.
+CAPACITY_429_MARKERS = frozenset(
+    {
+        "endpoint is unavailable",
+        "server_error",
+        "overloaded",
+        "capacity",
+        "temporarily unavailable",
+        "try again later",
+    }
+)
+
+#: Ceiling for a ``Retry-After`` honoured on a capacity 429. A header asking for
+#: longer than this is capped rather than obeyed: the retry budget is bounded,
+#: and one upstream's idea of "later" is not a licence to park the turn.
+CAPACITY_429_MAX_WAIT = 60.0
+
+
+def is_capacity_429(status: int, body: str) -> bool:
+    """Whether a 429 is about capacity, and therefore worth one more attempt.
+
+    A quota refusal and an unavailable endpoint arrive with the same status
+    code, and the difference is only in the body. Reading it is what lets the
+    transport retry the one without burning the other.
+
+    Args:
+        status: The HTTP status. Anything but 429 is never capacity.
+        body: The response body, as text. Read by the caller, which owns the
+            connection.
+
+    Returns:
+        True only when the body carries a capacity signal and no quota signal.
+        An empty, unparseable or unrecognised body returns False, which keeps
+        the fail-fast behaviour every 429 had before this existed.
+    """
+    if status != 429:
+        return False
+    lowered = (body or "").lower()
+    if any(marker in lowered for marker in QUOTA_429_MARKERS):
+        return False
+    return any(marker in lowered for marker in CAPACITY_429_MARKERS)
+
 
 # The config-facing name of the Responses API provider. It is also what
 # ``apply_effort`` branches on, so the spelling matters: it is

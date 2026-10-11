@@ -52,6 +52,11 @@ class TransportPolicy:
         guard_non_json: Whether a non-JSON success body becomes
             ``Error("unexpected response from API")`` rather than being allowed
             to raise. True for OpenAI Chat and Anthropic today.
+        retry_capacity_429: Whether a 429 whose body reads as capacity -- an
+            endpoint briefly unavailable -- is retried inside the same bounded
+            loop. True by default, and gated behind ``use_retry`` anyway. A
+            quota 429 is never retried whatever this says; see
+            ``is_capacity_429``.
         connector_kwargs: Keyword arguments for the aiohttp ``TCPConnector``.
     """
 
@@ -59,6 +64,7 @@ class TransportPolicy:
     trust_env: bool
     honor_retry_after: bool
     guard_non_json: bool
+    retry_capacity_429: bool = True
     connector_kwargs: dict = field(default_factory=dict)
 
 

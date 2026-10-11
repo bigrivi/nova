@@ -24,6 +24,7 @@ from nova.llm.accumulator import StreamAccumulator
 from nova.llm.framing import SSEFramer
 from nova.llm.policy import StreamPolicy, TransportPolicy
 from nova.llm.provider import (
+    CAPACITY_429_MAX_WAIT,
     MAX_RETRIES,
     RETRY_BASE_DELAY,
     RETRY_STATUS_CODES,
@@ -32,6 +33,7 @@ from nova.llm.provider import (
     Done,
     Error,
     LLMProvider,
+    is_capacity_429,
 )
 from nova.llm.stream_driver import StreamParser, drive_stream
 from nova.llm.stream_trace import StreamTrace
@@ -108,6 +110,24 @@ class HttpProvider(LLMProvider):
         if headers:
             kwargs["headers"] = headers
         return kwargs
+
+    @staticmethod
+    def _retry_after_seconds(resp: aiohttp.ClientResponse, fallback: float) -> float:
+        """The ``Retry-After`` header, capped, or *fallback* when it is unusable.
+
+        Honoured here rather than through ``honor_retry_after`` because that
+        flag belongs to the general 5xx path, and this is a different decision:
+        an endpoint that says when it will be back is being told to be waited
+        for. Both spellings of the header are read, because gateways and origin
+        servers disagree about casing.
+        """
+        raw = resp.headers.get("retry-after") or resp.headers.get("Retry-After")
+        if raw is None:
+            return fallback
+        try:
+            return min(max(float(raw), 0.0), CAPACITY_429_MAX_WAIT)
+        except (TypeError, ValueError):
+            return fallback
 
     async def _post_with_retry(
         self,
@@ -220,6 +240,32 @@ class HttpProvider(LLMProvider):
                 await asyncio.sleep(delay)
                 delay *= 2
                 continue
+
+            if (
+                self.transport_policy.use_retry
+                and self.transport_policy.retry_capacity_429
+                and resp.status == 429
+                and attempt < attempts - 1
+            ):
+                # The text is read here and only here, and only for this
+                # branch. aiohttp caches what ``text()`` returns, so the
+                # caller's own ``await resp.text()`` on the non-retry path
+                # produces exactly the error message it produced before this
+                # existed -- which matters, because that message is the only
+                # upstream detail the user ever sees.
+                response_text = await resp.text()
+                if is_capacity_429(resp.status, response_text):
+                    wait = self._retry_after_seconds(resp, delay)
+                    await resp.release()
+                    log.warning(
+                        "Got 429 (capacity) (attempt %d/%d), retrying in %.1fs",
+                        attempt + 1,
+                        attempts,
+                        wait,
+                    )
+                    await asyncio.sleep(wait)
+                    delay *= 2
+                    continue
 
             return resp
 
