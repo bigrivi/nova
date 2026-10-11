@@ -3,7 +3,7 @@ from pathlib import Path
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
-from nova.tools.workspace_context import get_active_workspace
+from nova.tools.workspace_context import get_active_workspace, resolve_path
 
 
 @tool(
@@ -32,7 +32,12 @@ async def grep(
     pattern: str, path: str | None = None, include: str | None = None
 ) -> ToolResult:
     try:
-        search_path = Path(path) if path else Path(get_active_workspace() or Path.cwd())
+        # A relative path means the workspace, the same one answer every other
+        # path-taking tool now gives; only a missing path falls back to the
+        # workspace, and then to the cwd when there is none.
+        search_path = (
+            resolve_path(path) if path else Path(get_active_workspace() or Path.cwd())
+        )
         regex = re.compile(pattern)
         matches = []
 

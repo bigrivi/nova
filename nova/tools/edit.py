@@ -3,10 +3,10 @@ Edit tool - perform precise file edits.
 """
 
 import difflib
-from pathlib import Path
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
+from nova.tools.workspace_context import resolve_path
 
 
 @tool(
@@ -17,7 +17,7 @@ from nova.tools.registry import tool
         "properties": {
             "filePath": {
                 "type": "string",
-                "description": "The absolute path to the file to edit",
+                "description": "Path to the file to edit, absolute or relative to the workspace",
             },
             "oldString": {
                 "type": "string",
@@ -39,7 +39,7 @@ from nova.tools.registry import tool
 async def edit(
     filePath: str, oldString: str, newString: str, replaceAll: bool = False
 ) -> ToolResult:
-    p = Path(filePath)
+    p = resolve_path(filePath)
 
     if not p.exists():
         return ToolResult(success=False, content=f"File not found: {filePath}")

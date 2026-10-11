@@ -2,10 +2,9 @@
 Read tool - file reader.
 """
 
-from pathlib import Path
-
 from nova.llm import ToolResult
 from nova.tools.registry import tool
+from nova.tools.workspace_context import resolve_path
 
 
 @tool(
@@ -16,7 +15,7 @@ from nova.tools.registry import tool
         "properties": {
             "filePath": {
                 "type": "string",
-                "description": "The absolute path to the file to read",
+                "description": "Path to the file to read, absolute or relative to the workspace",
             },
             "offset": {
                 "type": "integer",
@@ -33,7 +32,7 @@ from nova.tools.registry import tool
 async def read(
     filePath: str, offset: int | None = None, limit: int | None = None
 ) -> ToolResult:
-    p = Path(filePath)
+    p = resolve_path(filePath)
 
     if not p.exists():
         return ToolResult(success=False, content=f"File not found: {filePath}")

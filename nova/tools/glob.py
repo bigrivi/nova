@@ -2,7 +2,7 @@ from pathlib import Path
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
-from nova.tools.workspace_context import get_active_workspace
+from nova.tools.workspace_context import get_active_workspace, resolve_path
 
 
 @tool(
@@ -25,7 +25,11 @@ from nova.tools.workspace_context import get_active_workspace
 )
 async def glob(pattern: str, path: str | None = None) -> ToolResult:
     try:
-        search_path = Path(path) if path else Path(get_active_workspace() or Path.cwd())
+        # Same one answer to "what is a relative path" as every other
+        # path-taking tool: the workspace.
+        search_path = (
+            resolve_path(path) if path else Path(get_active_workspace() or Path.cwd())
+        )
         matches = list(search_path.glob(pattern))
         matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         paths = [str(p) for p in matches]

@@ -3,10 +3,10 @@ Write tool - write file contents.
 """
 
 import difflib
-from pathlib import Path
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
+from nova.tools.workspace_context import resolve_path
 
 
 @tool(
@@ -21,14 +21,14 @@ from nova.tools.registry import tool
             },
             "filePath": {
                 "type": "string",
-                "description": "The absolute path to the file to write",
+                "description": "Path to the file to write, absolute or relative to the workspace",
             },
         },
         "required": ["content", "filePath"],
     },
 )
 async def write(content: str, filePath: str) -> ToolResult:
-    p = Path(filePath)
+    p = resolve_path(filePath)
 
     try:
         is_new = not p.exists()
@@ -45,7 +45,11 @@ async def write(content: str, filePath: str) -> ToolResult:
             lc = content.count("\n") + (
                 1 if content and not content.endswith("\n") else 0
             )
-            return ToolResult(success=True, content=f"Created {filePath} ({lc} lines)")
+            # The resolved path, not the argument. A message naming the
+            # argument lies about where the file went whenever the two differ
+            # -- which is exactly the case the resolver exists for -- and the
+            # model then tells the user it created a file that is not there.
+            return ToolResult(success=True, content=f"Created {p} ({lc} lines)")
 
         old_lines = old_content.splitlines(keepends=True)
         new_lines = content.splitlines(keepends=True)
@@ -60,7 +64,7 @@ async def write(content: str, filePath: str) -> ToolResult:
         )
 
         if not diff:
-            return ToolResult(success=True, content=f"No changes in {filePath}")
+            return ToolResult(success=True, content=f"No changes in {p}")
 
         if len(diff) > 80:
             shown = diff[:80]
@@ -69,9 +73,7 @@ async def write(content: str, filePath: str) -> ToolResult:
         else:
             diff_text = "".join(diff)
 
-        return ToolResult(
-            success=True, content=f"File updated — {filePath}:\n\n{diff_text}"
-        )
+        return ToolResult(success=True, content=f"File updated — {p}:\n\n{diff_text}")
 
     except Exception as e:
         return ToolResult(success=False, content=f"Error: {e}")

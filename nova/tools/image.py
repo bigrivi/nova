@@ -10,6 +10,7 @@ from pathlib import Path
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
+from nova.tools.workspace_context import resolve_path
 
 SUPPORTED_FORMATS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 
@@ -47,7 +48,7 @@ def _get_image_format(file_path: str) -> str:
     },
 )
 async def read_image(file_path: str) -> ToolResult:
-    p = Path(file_path).expanduser()
+    p = resolve_path(file_path)
 
     if not p.exists():
         return ToolResult(success=False, content=f"File not found: {file_path}")
