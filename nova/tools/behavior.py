@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from nova.tools.shell import decide
+from nova.tools.shell.patterns import CREDENTIAL_RULES
 from nova.tools.workspace_context import get_active_workspace
 
 log = logging.getLogger(__name__)
@@ -193,7 +194,16 @@ class ShellToolBehavior(DefaultToolBehavior):
             # rule is the existing "always ask" path, and it also means
             # `remember` has nothing to store, so the dialog is told not to offer
             # it.
-            rememberable = not verdict.review_declined
+            #
+            # A credential rule is the third reason. The tool axis has refused to
+            # remember one since the credential work -- a grant is keyed on the
+            # rule and the family, and "always allow" for `cat .env` would cover
+            # every `cat` in the session. The shell axis read the same rules and
+            # offered to remember them anyway, which the approval suite caught as
+            # a prompt the dialog had no business showing.
+            rememberable = (
+                not verdict.review_declined and verdict.rule not in CREDENTIAL_RULES
+            )
             req_id = self._approval.pre_request(
                 cmd,
                 desc,

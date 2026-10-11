@@ -107,7 +107,42 @@ async def test_approving_one_script_leaves_the_other_asked() -> None:
         "a different script must still be asked, whatever was approved"
     )
 
-    assert len(manager.allowlist_for("s1")) == 1
+
+@pytest.mark.asyncio
+async def test_a_credential_read_asks_but_is_not_rememberable() -> None:
+    """The tool axis has refused to remember these since the credential work.
+
+    A grant is keyed on the rule and the family, so an "always allow" for
+    `cat .env` would authorise every `cat` in the session -- reading any file
+    anywhere. The shell axis asked about credential reads and offered to
+    remember them anyway; the approval suite caught it as a prompt the dialog
+    should never have shown.
+    """
+    manager = ApprovalManager()
+    behavior, ctx = _gate(manager)
+
+    result = await behavior.before_execute({"command": "cat .env"}, ctx)
+
+    assert result.approval_request is not None, "a credential read must ask"
+    assert result.approval_request["rememberable"] is False, (
+        "an 'always allow' here would cover every cat in the session"
+    )
+    manager.resolve(result.approval_request["id"], approved=True, remember=True)
+    assert manager.allowlist_for("s1") == set(), "nothing may be stored for it"
+
+
+@pytest.mark.asyncio
+async def test_a_credential_write_asks_but_is_not_rememberable() -> None:
+    """The write half of the same rule set, for the same reason."""
+    manager = ApprovalManager()
+    behavior, ctx = _gate(manager)
+
+    result = await behavior.before_execute(
+        {"command": "echo k >> ~/.ssh/authorized_keys"}, ctx
+    )
+
+    assert result.approval_request is not None
+    assert result.approval_request["rememberable"] is False
 
 
 @pytest.mark.asyncio
