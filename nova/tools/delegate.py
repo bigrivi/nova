@@ -23,9 +23,12 @@ log = logging.getLogger(__name__)
         "section of your system prompt for the exact keys; never invent a "
         "target. The sub-agent runs in the BACKGROUND and starts "
         "fresh with no memory of this conversation, so put everything it needs in "
-        "`task`. This returns immediately with a job handle; you will be notified "
-        "with the result as a later message. Do NOT wait or poll - continue with "
-        "other work or end your response. Delegate a self-contained unit of work; "
+        "`task`. This returns immediately with a job handle; its result is "
+        "injected back into this conversation as an automatic follow-up turn "
+        "(auto-wake), so you do not have to stay on the same turn to receive it "
+        "— end your response and the result will arrive on its own. Do NOT block "
+        "on it: if you or the user needs to know whether it has finished, "
+        "`subagent_status` reports it. Delegate a self-contained unit of work; "
         "do it yourself for a single lookup or a trivial edit."
     ),
     parameters={

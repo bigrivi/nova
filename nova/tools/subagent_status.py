@@ -42,9 +42,10 @@ def _format_record(record) -> str:
     description=(
         "Check the status of sub-agent tasks you delegated in this conversation. "
         "delegate_to_agent runs the sub-agent in the background and its result "
-        "arrives later as a message; call this when the user asks whether a "
-        "delegated task has finished, or before re-delegating the same work. "
-        "Optionally pass `target` to check one sub-agent by key."
+        "arrives on its own as a follow-up turn (auto-wake); call this when you "
+        "or the user needs to know whether a delegated task has finished, or "
+        "before re-delegating the same work — it is a question to answer, not a "
+        "loop to spin. Optionally pass `target` to check one sub-agent by key."
     ),
     parameters={
         "type": "object",
