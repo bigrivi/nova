@@ -198,3 +198,65 @@ async def test_globs_a_relative_search_path_in_the_workspace(tmp_path) -> None:
 
     assert "a.py" in result.content
     assert "elsewhere" not in result.content
+
+
+@pytest.mark.asyncio
+async def test_grep_can_show_context_around_a_match(tmp_path) -> None:
+    """`context=N` is grep -C, which is why a model reaches for it.
+
+    The suite caught two calls failing on `grep(context=6)` -- the tool took no
+    such argument, so the agent's most common request was a tool error. A
+    context block reports the range it came from, since a match line quoted
+    without its neighbours is the thing the agent was asking for more of.
+    """
+    from nova.tools.grep import grep
+
+    body = "\n".join(f"line {n}" for n in range(1, 8))
+    (tmp_path / "notes.md").write_text(body, encoding="utf-8")
+    set_active_workspace(str(tmp_path))
+
+    result = await grep(pattern="line 4", path="notes.md", context=2)
+
+    assert result.success
+    # Line 4 plus or minus two: the block is 2-6, and the count is one hit rather
+    # than the five lines it printed -- "Found 6 matches" is the number the agent
+    # would repeat back.
+    assert "Found 1 matches" in result.content
+    assert ":2-6:" in result.content, "the range of the block"
+    assert " 2: line 2" in result.content
+    assert " 4: line 4" in result.content
+    assert " 6: line 6" in result.content
+    assert "line 7" not in result.content
+
+
+@pytest.mark.asyncio
+async def test_grep_context_defaults_to_the_matching_line(tmp_path) -> None:
+    from nova.tools.grep import grep
+
+    (tmp_path / "notes.md").write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+    set_active_workspace(str(tmp_path))
+
+    result = await grep(pattern="beta", path="notes.md")
+
+    assert result.success
+    assert ":2: beta" in result.content
+    assert "\n  " not in result.content, "no context block without the argument"
+
+
+@pytest.mark.asyncio
+async def test_grep_of_a_file_path_searches_that_file(tmp_path) -> None:
+    """A path that names a file is not an empty search.
+
+    `rglob` over a file yields nothing, so the tool used to answer "No matches
+    found" to a question that had an answer -- and an agent that is told there
+    are no matches stops looking.
+    """
+    from nova.tools.grep import grep
+
+    (tmp_path / "notes.md").write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+    set_active_workspace(str(tmp_path))
+
+    result = await grep(pattern="beta", path="notes.md")
+
+    assert ":2: beta" in result.content
+    assert "No matches" not in result.content
