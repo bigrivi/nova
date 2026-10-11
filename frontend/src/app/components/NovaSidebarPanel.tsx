@@ -6,20 +6,21 @@ import {
     type SidebarDispatch,
 } from "../../components/sidebar/thread-sidebar";
 import { cn } from "../../lib/utils";
+import {
+    selectActiveThreadListId,
+    selectIsRunning,
+    useConversationStore,
+} from "../../stores/conversation-store";
 import type {
     NovaAgent,
     NovaModelRecord,
     NovaProject,
     NovaProviderRecord,
-    NovaThreadSummary,
 } from "../../types/nova";
 
 export interface NovaSidebarPanelProps {
     collapsed: boolean;
-    threads: NovaThreadSummary[];
     projects: NovaProject[];
-    activeThreadListId: string | undefined;
-    isRunning: boolean;
     agents: NovaAgent[];
     models: NovaModelRecord[];
     providers: NovaProviderRecord[];
@@ -60,15 +61,17 @@ export interface NovaSidebarPanelProps {
 export function NovaSidebarPanel(props: NovaSidebarPanelProps) {
     const {
         collapsed,
-        threads,
         projects,
-        activeThreadListId,
-        isRunning,
         agents,
         models,
         providers,
         appVersion,
     } = props;
+    // Thread list and run-state come straight from the store so the shell no
+    // longer re-renders this panel's inputs on every streamed token.
+    const threads = useConversationStore((state) => state.threads);
+    const activeThreadListId = useConversationStore(selectActiveThreadListId);
+    const isRunning = useConversationStore(selectIsRunning);
     const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
 
     const latest = useRef(props);

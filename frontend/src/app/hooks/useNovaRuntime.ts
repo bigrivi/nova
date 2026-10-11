@@ -1,23 +1,45 @@
+import { useCallback } from "react";
+
 import type { ThreadMessageLike } from "@assistant-ui/react";
 import {
+    AuiConfig,
     CompositeAttachmentAdapter,
     SimpleImageAttachmentAdapter,
     SimpleTextAttachmentAdapter,
     Tools,
-    useAui,
     useExternalStoreRuntime,
 } from "@assistant-ui/react";
 
 import { toolkit } from "../../components/assistant-ui/toolkit";
 import { useComposerStore } from "../../stores/composer-store";
-import type { NovaAttachmentData, NovaThreadSummary } from "../../types/nova";
+import {
+    selectActiveThreadListId,
+    selectIsRunning,
+    useConversationStore,
+} from "../../stores/conversation-store";
+import type { NovaAttachmentData } from "../../types/nova";
+
+/** Stable empty buffer so an empty thread never churns the runtime's input. */
+const EMPTY_MESSAGES: ThreadMessageLike[] = [];
+
+/**
+ * Stable identity converter. The library compares `convertMessage` by reference
+ * to decide whether a store update is cheap (same messages + isRunning) or a
+ * full re-conversion; a fresh arrow function here would flush that cache on every
+ * adapter sync and regenerate the pre-first-token loading placeholder, making a
+ * title-frame update flash the loading indicator. Keep this at module scope.
+ */
+const passthroughMessage = (message: ThreadMessageLike) => message;
+
+const attachmentsAdapter = new CompositeAttachmentAdapter([
+    new SimpleImageAttachmentAdapter(),
+    new SimpleTextAttachmentAdapter(),
+]);
+
+/** Tools are registry-bound (`toolkit` is a module constant), so build once. */
+const config = AuiConfig({ tools: Tools({ toolkit }) });
 
 export interface NovaRuntimeDeps {
-    currentMessages: ThreadMessageLike[];
-    isRunning: boolean;
-    currentThreadId: string;
-    threads: NovaThreadSummary[];
-    activeThreadListId: string | undefined;
     setThreadMessages: (threadId: string, messages: ThreadMessageLike[]) => void;
     submitPrompt: (
         prompt: string,
@@ -36,43 +58,71 @@ export interface NovaRuntimeDeps {
  * conversation's `submitPrompt`.
  */
 export function useNovaRuntime(deps: NovaRuntimeDeps) {
+    const {
+        setThreadMessages,
+        submitPrompt,
+        handleCancel: cancelThread,
+        switchToDraftThread,
+        selectThread,
+        handleRenameThread,
+        handleDeleteThread,
+    } = deps;
+
+    // Conversation state is read straight from the store; only the action
+    // callbacks still arrive as deps, so the runtime no longer depends on the
+    // shell to thread five state fields through on every render.
+    const currentThreadId = useConversationStore(
+        (state) => state.currentThreadId,
+    );
+    const currentMessages =
+        useConversationStore(
+            (state) => state.messagesByThreadId[state.currentThreadId],
+        ) ?? EMPTY_MESSAGES;
+    const isRunning = useConversationStore(selectIsRunning);
+    const threads = useConversationStore((state) => state.threads);
+    const activeThreadListId = useConversationStore(selectActiveThreadListId);
+
+    const onCancel = useCallback(() => {
+        return cancelThread();
+    }, [cancelThread]);
+    const setMessages = useCallback(
+        (messages: readonly ThreadMessageLike[]) => {
+            setThreadMessages(currentThreadId, [...messages]);
+        },
+        [setThreadMessages, currentThreadId],
+    );
+    const onResumeToolCall = useCallback(
+        (options: { payload?: unknown }) => {
+            void submitPrompt(String(options.payload ?? ""));
+        },
+        [submitPrompt],
+    );
+
     const runtime = useExternalStoreRuntime({
-        messages: deps.currentMessages,
-        isRunning: deps.isRunning,
+        messages: currentMessages,
+        isRunning,
         onNew: async () => {},
-        onCancel: () => deps.handleCancel(),
-        convertMessage: (message) => message,
-        setMessages: (messages) => {
-            deps.setThreadMessages(deps.currentThreadId, [...messages]);
-        },
-        onResumeToolCall: (options) => {
-            void deps.submitPrompt(String(options.payload ?? ""));
-        },
+        onCancel,
+        convertMessage: passthroughMessage,
+        setMessages,
+        onResumeToolCall,
         adapters: {
-            attachments: new CompositeAttachmentAdapter([
-                new SimpleImageAttachmentAdapter(),
-                new SimpleTextAttachmentAdapter(),
-            ]),
+            attachments: attachmentsAdapter,
             threadList: {
-                threadId: deps.activeThreadListId,
-                threads: deps.threads,
+                threadId: activeThreadListId,
+                threads,
                 archivedThreads: [],
-                onSwitchToNewThread: deps.switchToDraftThread,
-                onSwitchToThread: (threadId) => {
-                    deps.selectThread(threadId);
-                },
-                onRename: (threadId, newTitle) =>
-                    deps.handleRenameThread(threadId, newTitle),
-                onDelete: (threadId) => deps.handleDeleteThread(threadId),
+                onSwitchToNewThread: switchToDraftThread,
+                onSwitchToThread: selectThread,
+                onRename: handleRenameThread,
+                onDelete: handleDeleteThread,
             },
         },
     });
 
-    const aui = useAui({ tools: Tools({ toolkit }) });
-
     async function handleComposerSubmit() {
         const prompt = useComposerStore.getState().text.trim();
-        if (!prompt || deps.isRunning) {
+        if (!prompt || isRunning) {
             return;
         }
         const composerState = runtime.thread.composer.getState();
@@ -80,17 +130,15 @@ export function useNovaRuntime(deps: NovaRuntimeDeps) {
 
         let processedAttachments: NovaAttachmentData[] | undefined;
         if (pendingAttachments.length > 0) {
-            const adapter = new CompositeAttachmentAdapter([
-                new SimpleImageAttachmentAdapter(),
-                new SimpleTextAttachmentAdapter(),
-            ]);
             processedAttachments = [];
             for (const att of pendingAttachments) {
                 if (att.status.type === "complete" && att.content) {
                     processedAttachments.push(att as NovaAttachmentData);
                 } else if (att.status.type === "requires-action" && att.file) {
-                    const result = await adapter.send(
-                        att as unknown as Parameters<typeof adapter.send>[0],
+                    const result = await attachmentsAdapter.send(
+                        att as unknown as Parameters<
+                            typeof attachmentsAdapter.send
+                        >[0],
                     );
                     processedAttachments.push(result as NovaAttachmentData);
                 }
@@ -101,5 +149,5 @@ export function useNovaRuntime(deps: NovaRuntimeDeps) {
         await deps.submitPrompt(prompt, processedAttachments);
     }
 
-    return { runtime, aui, handleComposerSubmit };
+    return { runtime, config, handleComposerSubmit };
 }

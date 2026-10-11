@@ -106,12 +106,7 @@ export function NovaAppShell() {
         setSelectedAgentKey: agentSelection.setSelectedAgentKey,
     });
 
-    const { runtime, aui, handleComposerSubmit } = useNovaRuntime({
-        currentMessages: conversations.currentMessages,
-        isRunning: conversations.isRunning,
-        currentThreadId: conversations.currentThreadId,
-        threads: conversations.threads,
-        activeThreadListId: conversations.activeThreadListId,
+    const { runtime, config, handleComposerSubmit } = useNovaRuntime({
         setThreadMessages: conversations.setThreadMessages,
         submitPrompt: conversations.submitPrompt,
         handleCancel: conversations.handleCancel,
@@ -214,15 +209,12 @@ export function NovaAppShell() {
     );
 
     return (
-        <AssistantRuntimeProvider aui={aui} runtime={runtime}>
+        <AssistantRuntimeProvider runtime={runtime} config={config}>
             <TooltipProvider>
                 <div className="flex h-screen overflow-hidden bg-background text-foreground">
                     <NovaSidebarPanel
                         collapsed={viewport.isSidebarCollapsed}
-                        threads={conversations.threads}
                         projects={projects.projects}
-                        activeThreadListId={conversations.activeThreadListId}
-                        isRunning={conversations.isRunning}
                         agents={agentSelection.agents}
                         models={modelConfig.models}
                         providers={modelConfig.providers}
@@ -263,7 +255,6 @@ export function NovaAppShell() {
                             viewport.setIsSidebarCollapsed(false)
                         }
                         composerRef={conversations.composerRef}
-                        isRunning={conversations.isRunning}
                         onComposerSubmit={() => {
                             void handleComposerSubmit();
                         }}
@@ -287,7 +278,6 @@ export function NovaAppShell() {
                         assistantName={assistantName}
                         assistantAgentKey={assistantAgentKey}
                         threadTitle={activeThread?.title ?? null}
-                        currentThreadId={conversations.currentThreadId}
                     />
                 </div>
 

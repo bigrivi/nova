@@ -7,7 +7,7 @@ import type { ModelOption } from "./elements/model-selector";
 import type { NovaAgent, NovaModelRecord } from "@/types/nova";
 import { AuiIf, ThreadPrimitive } from "@assistant-ui/react";
 import type { KeyboardEvent, RefObject } from "react";
-import { type FC } from "react";
+import { type FC, useCallback, useMemo } from "react";
 
 import { CompactionBanner } from "./thread-compaction-banner";
 import { EmptyState } from "./thread-empty-state";
@@ -62,26 +62,60 @@ export const Thread: FC<ThreadProps> = ({
     // One composer, mounted either centered in the empty state or inside the
     // viewport footer. Only one branch is mounted at a time, so the draft (in
     // the composer store) and the shell-owned textarea ref survive the switch.
-    const composerNode = (
-        <ThreadStickyComposer
-            composerRef={composerRef}
-            composer={composer}
-            modelSelection={modelSelection}
-            agentSelection={agentSelection}
-            contextBar={contextBar}
-            contextUsage={contextUsage}
-        />
+    // Memoized so unrelated commits (e.g. a thread-title frame) don't rebuild
+    // the composer subtree.
+    const composerNode = useMemo(
+        () => (
+            <ThreadStickyComposer
+                composerRef={composerRef}
+                composer={composer}
+                modelSelection={modelSelection}
+                agentSelection={agentSelection}
+                contextBar={contextBar}
+                contextUsage={contextUsage}
+            />
+        ),
+        [
+            composerRef,
+            composer,
+            modelSelection,
+            agentSelection,
+            contextBar,
+            contextUsage,
+        ],
     );
-    const composerNodeWithDisclaimer = (
-        <ThreadStickyComposer
-            composerRef={composerRef}
-            composer={composer}
-            modelSelection={modelSelection}
-            agentSelection={agentSelection}
-            contextBar={contextBar}
-            showDisclaimer
-            contextUsage={contextUsage}
-        />
+    const composerNodeWithDisclaimer = useMemo(
+        () => (
+            <ThreadStickyComposer
+                composerRef={composerRef}
+                composer={composer}
+                modelSelection={modelSelection}
+                agentSelection={agentSelection}
+                contextBar={contextBar}
+                showDisclaimer
+                contextUsage={contextUsage}
+            />
+        ),
+        [
+            composerRef,
+            composer,
+            modelSelection,
+            agentSelection,
+            contextBar,
+            contextUsage,
+        ],
+    );
+
+    // Stable across commits so ThreadPrimitive.Messages' internal memo (which
+    // only holds when children identity is unchanged) isn't defeated.
+    const renderMessage = useCallback(
+        () => (
+            <ThreadMessage
+                assistantName={assistantName}
+                assistantAgentKey={assistantAgentKey}
+            />
+        ),
+        [assistantName, assistantAgentKey],
     );
 
     return (
@@ -114,14 +148,7 @@ export const Thread: FC<ThreadProps> = ({
                                 className="flex flex-col gap-y-2 empty:hidden"
                             >
                                 <ThreadPrimitive.Messages>
-                                    {() => (
-                                        <ThreadMessage
-                                            assistantName={assistantName}
-                                            assistantAgentKey={
-                                                assistantAgentKey
-                                            }
-                                        />
-                                    )}
+                                    {renderMessage}
                                 </ThreadPrimitive.Messages>
                             </div>
                         </div>

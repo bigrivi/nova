@@ -1,4 +1,5 @@
 import { MenuIcon } from "lucide-react";
+import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Thread } from "../../components/assistant-ui/thread";
@@ -7,6 +8,10 @@ import { useMacHiddenTitlebar } from "../../lib/desktop-chrome";
 import { DRAFT_THREAD_ID } from "../../lib/nova-constants";
 import { readSendShortcut, shouldSendOnKeyDown } from "../../lib/ui-prefs";
 import { useContextUsageStore } from "../../stores/context-usage-store";
+import {
+    selectIsRunning,
+    useConversationStore,
+} from "../../stores/conversation-store";
 import type { NovaAgent, NovaModelRecord } from "../../types/nova";
 import type { ModelOption } from "../../components/assistant-ui/elements/model-selector";
 
@@ -14,7 +19,6 @@ export interface NovaMainPanelProps {
     sidebarCollapsed: boolean;
     onExpandSidebar: () => void;
     composerRef: React.RefObject<HTMLTextAreaElement | null>;
-    isRunning: boolean;
     onComposerSubmit: () => void;
     onCancel: () => void;
     models: NovaModelRecord[];
@@ -34,7 +38,6 @@ export interface NovaMainPanelProps {
     assistantName: string;
     assistantAgentKey: string | null;
     threadTitle: string | null;
-    currentThreadId: string;
 }
 
 /**
@@ -45,7 +48,6 @@ export function NovaMainPanel({
     sidebarCollapsed,
     onExpandSidebar,
     composerRef,
-    isRunning,
     onComposerSubmit,
     onCancel,
     models,
@@ -65,9 +67,14 @@ export function NovaMainPanel({
     assistantName,
     assistantAgentKey,
     threadTitle,
-    currentThreadId,
 }: NovaMainPanelProps) {
     const { t } = useTranslation();
+    // Conversation run-state and selection come straight from the store, so the
+    // shell no longer threads them through props on every streamed token.
+    const isRunning = useConversationStore(selectIsRunning);
+    const currentThreadId = useConversationStore(
+        (state) => state.currentThreadId,
+    );
     // macOS desktop only: keep the expand button clear of traffic lights.
     const macHiddenTitlebar = useMacHiddenTitlebar();
     // WorkBuddy-style main titlebar: conversation title plus drag space.
@@ -77,6 +84,66 @@ export function NovaMainPanel({
         currentThreadId === DRAFT_THREAD_ID
             ? undefined
             : state.bySession[currentThreadId],
+    );
+
+    // The four prop bundles handed to <Thread> are memoized so a commit that
+    // only moves an unrelated field (e.g. a thread-title frame) doesn't rebuild
+    // the composer/selector subtree that Thread memoizes on.
+    const onComposerKeyDown = useCallback(
+        (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+            if (shouldSendOnKeyDown(event, readSendShortcut())) {
+                event.preventDefault();
+                onComposerSubmit();
+            }
+        },
+        [onComposerSubmit],
+    );
+    const composer = useMemo(
+        () => ({
+            isRunning,
+            onSubmit: onComposerSubmit,
+            onCancel,
+            onKeyDown: onComposerKeyDown,
+        }),
+        [isRunning, onComposerSubmit, onCancel, onComposerKeyDown],
+    );
+    const modelSelection = useMemo(
+        () => ({
+            models,
+            options: modelOptions,
+            selectedModelId,
+            onSelect: onSelectModel,
+            effort: reasoningEffort,
+            onEffortChange: onReasoningEffortChange,
+        }),
+        [
+            models,
+            modelOptions,
+            selectedModelId,
+            onSelectModel,
+            reasoningEffort,
+            onReasoningEffortChange,
+        ],
+    );
+    const agentSelection = useMemo(
+        () => ({ agents, selectedAgentKey, onSelect: onSelectAgent }),
+        [agents, selectedAgentKey, onSelectAgent],
+    );
+    const contextBar = useMemo(
+        () => ({
+            isNewChat,
+            draftProjectName,
+            onRemoveProject,
+            sessionAgentKey,
+            sessionProjectName,
+        }),
+        [
+            isNewChat,
+            draftProjectName,
+            onRemoveProject,
+            sessionAgentKey,
+            sessionProjectName,
+        ],
     );
 
     return (
@@ -114,42 +181,10 @@ export function NovaMainPanel({
             <div className="flex min-h-0 flex-1 flex-col">
                 <Thread
                     composerRef={composerRef}
-                    composer={{
-                        isRunning,
-                        onSubmit: onComposerSubmit,
-                        onCancel,
-                        onKeyDown: (event) => {
-                            if (
-                                shouldSendOnKeyDown(
-                                    event,
-                                    readSendShortcut(),
-                                )
-                            ) {
-                                event.preventDefault();
-                                onComposerSubmit();
-                            }
-                        },
-                    }}
-                    modelSelection={{
-                        models,
-                        options: modelOptions,
-                        selectedModelId,
-                        onSelect: onSelectModel,
-                        effort: reasoningEffort,
-                        onEffortChange: onReasoningEffortChange,
-                    }}
-                    agentSelection={{
-                        agents,
-                        selectedAgentKey,
-                        onSelect: onSelectAgent,
-                    }}
-                    contextBar={{
-                        isNewChat,
-                        draftProjectName,
-                        onRemoveProject,
-                        sessionAgentKey,
-                        sessionProjectName,
-                    }}
+                    composer={composer}
+                    modelSelection={modelSelection}
+                    agentSelection={agentSelection}
+                    contextBar={contextBar}
                     assistantName={assistantName}
                     assistantAgentKey={assistantAgentKey}
                     contextUsage={contextUsage ?? null}

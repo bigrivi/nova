@@ -1,5 +1,5 @@
 import type { ThreadMessageLike } from "@assistant-ui/react";
-import { startTransition, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef } from "react";
 
 import {
     clearLastSequence,
@@ -8,56 +8,28 @@ import {
     getLastSequence,
     getSessionRoute,
     getStreamStatus,
-    interruptChat,
     listMessages,
     renameSession,
-    sessionEventsUrl,
-    setLastSequence,
     setSessionPinned,
-    streamChat,
 } from "../../lib/nova-api";
 import { DRAFT_THREAD_ID } from "../../lib/nova-constants";
 import { toThreadMessages } from "../../lib/history-messages";
-import {
-    handleStreamEvent,
-    type StreamEngineDeps,
-    type StreamHandlerEnv,
-} from "../../lib/stream-engine";
-import {
-    nextRunningMap,
-    reconcileRunningMap,
-} from "../../lib/thread-running";
-import { appendFailureNotice, setAssistantText } from "../../lib/thread-stream";
-import {
-    consumeParkedTail,
-    decideTailOnActive,
-} from "../../lib/thread-tail";
-import {
-    buildDraftMessages,
-    buildUserMessageParts,
-    createAssistantMessage,
-    createOptimisticSessionTitle,
-    createTextMessage,
-} from "../../lib/thread-messages";
-import { renameThreadTitle, upsertThread } from "../../lib/thread-summary";
-import { randomId } from "../../lib/utils";
+import type { StreamRoute } from "../../lib/stream-controller";
 import { useApprovalStore } from "../../stores/approval-store";
-import {
-    useAskUserStore,
-    type ActiveAskUser,
-} from "../../stores/ask-user-store";
+import { useAskUserStore } from "../../stores/ask-user-store";
 import { useBackgroundTaskStore } from "../../stores/background-task-store";
 import { useComposerStore } from "../../stores/composer-store";
 import { useContextUsageStore } from "../../stores/context-usage-store";
-import { useReasoningStore } from "../../stores/reasoning-store";
+import { useConversationStore } from "../../stores/conversation-store";
 import { useTodoStore } from "../../stores/todo-store";
 import type {
     NovaAttachmentData,
     NovaSessionRoute,
-    NovaBackgroundTask,
     NovaModelRecord,
     NovaThreadSummary,
 } from "../../types/nova";
+import { useSessionEvents } from "./useSessionEvents";
+import { useStreamController } from "./useStreamController";
 
 export interface ConversationDeps {
     models: NovaModelRecord[];
@@ -74,10 +46,6 @@ export interface Conversations {
     threads: NovaThreadSummary[];
     setThreads: React.Dispatch<React.SetStateAction<NovaThreadSummary[]>>;
     currentThreadId: string;
-    activeThreadListId: string | undefined;
-    currentMessages: ThreadMessageLike[];
-    isRunning: boolean;
-    runningByThread: Record<string, boolean>;
     composerRef: React.RefObject<HTMLTextAreaElement | null>;
     submitPrompt: (
         prompt: string,
@@ -106,65 +74,70 @@ export interface Conversations {
 }
 
 /**
- * The conversation core: thread list, per-thread message buffers, running-state
- * map (fed by the session SSE), the composer, and the streaming lifecycle
- * (submit, resume, cancel, session handoff). These concerns share the same
- * cross-closure refs (abort controllers, seen sequences, session/current ids),
- * so they live together to keep that coordination coherent and testable via
- * the injected `stream-engine`.
+ * Compose the conversation core from its parts: the `conversation-store` owns
+ * the thread list, message buffers, and running map; the `stream-controller`
+ * owns the streaming lifecycle; `useSessionEvents` owns the SSE subscription.
+ * This hook wires them to the live model/agent selection and keeps the
+ * thread-list CRUD that coordinates several of those pieces at once.
  */
 export function useConversations(deps: ConversationDeps): Conversations {
-    const [threads, setThreads] = useState<NovaThreadSummary[]>([]);
-    const [messagesByThreadId, setMessagesByThreadId] = useState<
-        Record<string, ThreadMessageLike[]>
-    >({ [DRAFT_THREAD_ID]: [] });
-    const [currentThreadId, setCurrentThreadId] = useState(DRAFT_THREAD_ID);
-    const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
-    const [runningByThread, setRunningByThread] = useState<
-        Record<string, boolean>
-    >({});
+    const threads = useConversationStore((state) => state.threads);
+    const currentThreadId = useConversationStore(
+        (state) => state.currentThreadId,
+    );
+    const draftProjectId = useConversationStore(
+        (state) => state.draftProjectId,
+    );
+    const runningByThread = useConversationStore(
+        (state) => state.runningByThread,
+    );
+
+    const setThreads = useConversationStore((state) => state.setThreads);
+    const setMessagesByThreadId = useConversationStore(
+        (state) => state.setMessagesByThreadId,
+    );
+    const setCurrentThreadId = useConversationStore(
+        (state) => state.setCurrentThreadId,
+    );
+    const setDraftProjectId = useConversationStore(
+        (state) => state.setDraftProjectId,
+    );
+    const setThreadMessages = useConversationStore(
+        (state) => state.setThreadMessages,
+    );
+    const setThreadRunning = useConversationStore(
+        (state) => state.setThreadRunning,
+    );
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
     const sessionIdRef = useRef(DRAFT_THREAD_ID);
     const currentThreadIdRef = useRef(DRAFT_THREAD_ID);
-    const abortControllersRef = useRef(new Map<string, AbortController>());
-    const prevActiveSnapshotRef = useRef(new Set<string>());
-    const seenSequencesRef = useRef(new Map<string, Set<number>>());
-    // Session ids of streams this client started itself (fresh submits and
-    // resume tails). Their registration active-event is lighting-only: acting
-    // on it would park our own turn and fire a spurious empty resume.
-    const expectOwnActiveRef = useRef(new Set<string>());
-    const pendingTailRef = useRef(new Set<string>());
 
-    const isRunning = !!runningByThread[currentThreadId];
-    const currentMessages = messagesByThreadId[currentThreadId] || [];
-    const activeThreadListId = threads.some(
-        (thread) => thread.id === currentThreadId,
-    )
-        ? currentThreadId
-        : undefined;
+    // Read the route lazily from the latest deps so a turn resumed off an SSE
+    // frame never streams with a model/agent selection captured at mount.
+    const depsRef = useRef(deps);
+    useEffect(() => {
+        depsRef.current = deps;
+    });
+    const getRoute = useCallback<() => StreamRoute>(() => {
+        const current = depsRef.current;
+        const selectedModel =
+            current.models.find((item) => item.id === current.selectedModelId) ||
+            null;
+        return {
+            provider: selectedModel?.provider || null,
+            model: selectedModel?.model || null,
+            agentKey: current.selectedAgentKey,
+            reasoningEffort: current.getReasoningEffort?.() ?? null,
+        };
+    }, []);
 
-    function setThreadRunning(threadId: string, running: boolean) {
-        setRunningByThread((previous) =>
-            nextRunningMap(previous, threadId, running),
-        );
-    }
-
-    function setThreadMessages(
-        threadId: string,
-        updater:
-            | ThreadMessageLike[]
-            | ((messages: ThreadMessageLike[]) => ThreadMessageLike[]),
-    ) {
-        setMessagesByThreadId((previous) => {
-            const current = previous[threadId] || [];
-            return {
-                ...previous,
-                [threadId]:
-                    typeof updater === "function" ? updater(current) : updater,
-            };
-        });
-    }
+    const controller = useStreamController({
+        getRoute,
+        currentThreadIdRef,
+        sessionIdRef,
+        composerRef,
+    });
 
     useEffect(() => {
         sessionIdRef.current = currentThreadId;
@@ -182,6 +155,8 @@ export function useConversations(deps: ConversationDeps): Conversations {
                 currentThreadId === DRAFT_THREAD_ID ? null : currentThreadId,
             );
     }, [currentThreadId]);
+
+    useSessionEvents({ controller, currentThreadIdRef });
 
     async function loadThread(threadId: string) {
         try {
@@ -220,7 +195,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
                     ) {
                         clearLastSequence(threadId);
                     } else {
-                        void resumeThreadStream(threadId, storedCursor);
+                        void controller.resume(threadId, storedCursor);
                     }
                 }
             } catch {
@@ -325,8 +300,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
             return;
         }
         try {
-            abortControllersRef.current.get(threadId)?.abort();
-            abortControllersRef.current.delete(threadId);
+            controller.abort(threadId);
             setThreadRunning(threadId, false);
             await deleteSession(threadId, deleteMemories);
             useContextUsageStore.getState().clearSession(threadId);
@@ -357,411 +331,16 @@ export function useConversations(deps: ConversationDeps): Conversations {
         }
     }
 
-    function buildStreamEngineDeps(): StreamEngineDeps {
-        return {
-            abortControllersRef,
-            seenSequencesRef,
-            expectOwnActiveRef,
-            sessionIdRef,
-            currentThreadIdRef,
-            setThreadRunning,
-            setThreadMessages,
-            setMessagesByThreadId,
-            setCurrentThreadId,
-            setThreads,
-            runTransition: startTransition,
-            reasoning: {
-                setCompacting: (compacting) =>
-                    useReasoningStore.getState().setCompacting(compacting),
-                appendCompactionDelta: (delta) =>
-                    useReasoningStore.getState().appendCompactionDelta(delta),
-            },
-            approval: {
-                setPendingForSession: (sessionId, pending) =>
-                    useApprovalStore
-                        .getState()
-                        .setPendingForSession(sessionId, pending),
-                setPending: (pending) =>
-                    useApprovalStore.getState().setPending(pending),
-                clearPendingForSession: (sessionId) =>
-                    useApprovalStore
-                        .getState()
-                        .clearPendingForSession(sessionId),
-            },
-            todo: {
-                setActive: (input) => useTodoStore.getState().setActive(input),
-            },
-            contextUsage: {
-                setForSession: (sessionId, usage) =>
-                    useContextUsageStore
-                        .getState()
-                        .setForSession(sessionId, usage),
-            },
-        };
-    }
-
-    async function streamThread(args: {
-        originThreadId: string;
-        assistantMessageId: string;
-        prompt: string;
-        message: string;
-        sessionId: string | null;
-        projectId: string | null;
-        provider: string | null;
-        model: string | null;
-        agentKey: string | null;
-        reasoningEffort?: string | null;
-        attachments?: NovaAttachmentData[];
-        resumeFromSequence: number | null;
-    }) {
-        const env: StreamHandlerEnv = {
-            originThreadId: args.originThreadId,
-            prompt: args.prompt,
-            draftProjectId: args.projectId,
-            agentKey: args.agentKey,
-            assistantMessageId: args.assistantMessageId,
-            state: { activeThreadId: args.originThreadId },
-            flags: { requiresInput: false, pendingAskUser: null },
-        };
-        const engineDeps = buildStreamEngineDeps();
-        if (args.resumeFromSequence == null) {
-            seenSequencesRef.current.set(args.originThreadId, new Set<number>());
-        }
-        const controller = new AbortController();
-        abortControllersRef.current.set(args.originThreadId, controller);
-        expectOwnActiveRef.current.add(args.originThreadId);
-        setThreadRunning(args.originThreadId, true);
-        try {
-            await streamChat({
-                message: args.message,
-                sessionId: args.sessionId,
-                provider: args.provider,
-                model: args.model,
-                agentKey: args.agentKey,
-                reasoningEffort: args.reasoningEffort ?? null,
-                projectId: args.projectId,
-                attachments: args.attachments,
-                signal: controller.signal,
-                resumeFromSequence: args.resumeFromSequence,
-                onSequence: (sequence) =>
-                    setLastSequence(env.state.activeThreadId, sequence),
-                onEvent: (event) => handleStreamEvent(event, env, engineDeps),
-            });
-            if (!env.flags.requiresInput) {
-                clearLastSequence(env.state.activeThreadId);
-            }
-        } catch (error) {
-            if (error instanceof Error && error.name === "AbortError") {
-                return;
-            }
-            const messageText =
-                error instanceof Error ? error.message : String(error);
-            const failedThreadId = env.state.activeThreadId;
-            const failedAssistantId = env.assistantMessageId;
-            setThreadMessages(failedThreadId, (previous) =>
-                setAssistantText(
-                    previous,
-                    failedAssistantId,
-                    (text) => appendFailureNotice(text, messageText),
-                ),
-            );
-        } finally {
-            abortControllersRef.current.delete(args.originThreadId);
-            abortControllersRef.current.delete(env.state.activeThreadId);
-            expectOwnActiveRef.current.delete(args.originThreadId);
-            expectOwnActiveRef.current.delete(env.state.activeThreadId);
-            setThreadRunning(args.originThreadId, false);
-            setThreadRunning(env.state.activeThreadId, false);
-
-            // Consume a parked tail request: a server-initiated turn went
-            // active while this local stream was still draining, so the
-            // direct tail had to skip. Tail it now that the stream is gone.
-            const finishedThreadId =
-                env.state.activeThreadId || args.originThreadId;
-            const tailThreadId = consumeParkedTail(
-                pendingTailRef.current,
-                finishedThreadId,
-                finishedThreadId === currentThreadIdRef.current,
-            );
-            if (tailThreadId !== null) {
-                void resumeThreadStream(
-                    tailThreadId,
-                    getLastSequence(tailThreadId),
-                );
-            }
-
-            if (env.flags.requiresInput && env.flags.pendingAskUser) {
-                const askUser = env.flags.pendingAskUser as { input: unknown };
-                const resumedThreadId = env.state.activeThreadId;
-                const activeCall: ActiveAskUser = {
-                    args: askUser.input,
-                    argsText: JSON.stringify(askUser.input),
-                    resume: (text: unknown) => {
-                        submitPrompt(String(text));
-                        useAskUserStore
-                            .getState()
-                            .clearActiveForSession(resumedThreadId);
-                        if (resumedThreadId === currentThreadIdRef.current) {
-                            useAskUserStore.getState().setActive(null);
-                        }
-                    },
-                    result: null,
-                    status: { type: "running" } as const,
-                };
-                useAskUserStore
-                    .getState()
-                    .setActiveForSession(resumedThreadId, activeCall);
-                if (resumedThreadId === currentThreadIdRef.current) {
-                    useAskUserStore.getState().setActive(activeCall);
-                }
-            }
-        }
-    }
-
-    async function resumeThreadStream(
-        threadId: string,
-        fromSequence: number | null,
-    ) {
-        // Only a local stream (this client already tailing) should block a
-        // resume. A thread marked running purely from the /active poll is a
-        // server-initiated turn we WANT to tail, so it must not short-circuit.
-        if (abortControllersRef.current.has(threadId)) {
-            return;
-        }
-        const assistantMessageId = randomId();
-        setThreadMessages(threadId, (previous) => [
-            ...previous,
-            createAssistantMessage(assistantMessageId),
-        ]);
-        await streamThread({
-            originThreadId: threadId,
-            assistantMessageId,
-            prompt: "",
-            message: "",
-            sessionId: threadId,
-            projectId: null,
-            provider: null,
-            model: null,
-            agentKey: null,
-            resumeFromSequence: fromSequence ?? 0,
-        });
-    }
-
-    // Push, not poll: one SSE connection carries a snapshot of active sessions
-    // on connect plus live active/idle deltas as the registry reports them, so
-    // a sub-agent auto-wake lights its parent thread instantly. EventSource
-    // auto-reconnects and re-sends the snapshot, keeping the map correct.
-    useEffect(() => {
-        const source = new EventSource(sessionEventsUrl());
-
-        function applySnapshot(
-            active: string[],
-            tasks: NovaBackgroundTask[],
-        ) {
-            const seenNow = new Set(active);
-            const seenBefore = prevActiveSnapshotRef.current;
-            prevActiveSnapshotRef.current = seenNow;
-            setRunningByThread((previous) =>
-                reconcileRunningMap(
-                    previous,
-                    seenNow,
-                    seenBefore,
-                    (threadId) => abortControllersRef.current.has(threadId),
-                ),
-            );
-            // Tasks are pushed, not polled: this snapshot is the resync point
-            // and the "task" frames below keep it current from here on.
-            useBackgroundTaskStore.getState().replaceTasks(tasks);
-        }
-
-        function applyDelta(sessionId: string, state: string) {
-            const running = state === "active";
-            const snapshot = new Set(prevActiveSnapshotRef.current);
-            if (running) {
-                snapshot.add(sessionId);
-            } else {
-                snapshot.delete(sessionId);
-            }
-            prevActiveSnapshotRef.current = snapshot;
-            if (!running && abortControllersRef.current.has(sessionId)) {
-                return;
-            }
-            setRunningByThread((previous) =>
-                nextRunningMap(previous, sessionId, running),
-            );
-            // Edge-trigger the tail off the event itself, not off the
-            // running-map boolean: if the light is already on (e.g. the
-            // previous turn's local stream hasn't cleaned up yet), the map
-            // identity doesn't change and no effect would fire, so a
-            // server-initiated turn would never be tailed. Active events for
-            // streams this client started itself are consumed lighting-only.
-            const decision = decideTailOnActive({
-                active: running,
-                current: sessionId === currentThreadIdRef.current,
-                localStream: abortControllersRef.current.has(sessionId),
-                ownTurn: expectOwnActiveRef.current.delete(sessionId),
-            });
-            if (decision === "tail-now") {
-                void resumeThreadStream(sessionId, getLastSequence(sessionId));
-            } else if (decision === "park") {
-                // A local stream is still draining: park the tail request
-                // for the stream's cleanup to consume (see the streamThread
-                // finally block). Tailing now would race the open stream;
-                // doing nothing would miss the turn entirely.
-                pendingTailRef.current.add(sessionId);
-            }
-        }
-
-        source.onmessage = (event) => {
-            try {
-                const payload = JSON.parse(event.data);
-                if (payload.type === "snapshot") {
-                    applySnapshot(payload.active ?? [], payload.tasks ?? []);
-                } else if (payload.type === "state") {
-                    applyDelta(payload.session_id, payload.state);
-                } else if (payload.type === "task") {
-                    // A background task was created or changed status. Pushed
-                    // over this stream, so no /api/tasks poll is needed.
-                    useBackgroundTaskStore.getState().updateTask(payload.task);
-                } else if (payload.type === "title") {
-                    // The background title job finished. Renaming in place
-                    // keeps the sidebar from reordering under the cursor;
-                    // if this client missed the frame the next load still
-                    // picks the title up from /api/sessions.
-                    setThreads((previous) =>
-                        renameThreadTitle(
-                            previous,
-                            payload.session_id,
-                            payload.title,
-                        ),
-                    );
-                }
-            } catch {
-                // Malformed frame is non-fatal; the next event corrects state.
-            }
-        };
-
-        // Close the stream when the page is hidden or torn down so the
-        // backend is not left holding an orphaned SSE connection.
-        const handlePageHide = () => source.close();
-        window.addEventListener("pagehide", handlePageHide);
-
-        return () => {
-            window.removeEventListener("pagehide", handlePageHide);
-            source.close();
-        };
-    }, []);
-
-    async function submitPrompt(
-        prompt: string,
-        attachments?: NovaAttachmentData[],
-    ) {
-        if (!prompt) {
-            return;
-        }
-        const originThreadId = currentThreadId;
-        if (
-            runningByThread[originThreadId] ||
-            abortControllersRef.current.has(originThreadId)
-        ) {
-            return;
-        }
-
-        const { models, selectedModelId, selectedAgentKey } = deps;
-        const selectedModel =
-            models.find((item) => item.id === selectedModelId) || null;
-        const userMessageId = randomId();
-        const assistantMessageId = randomId();
-        const userMessage = {
-            ...createTextMessage("user", prompt, userMessageId),
-            content: buildUserMessageParts(prompt, attachments),
-        };
-        const assistantMessage = createAssistantMessage(assistantMessageId);
-        const submitSessionId =
-            sessionIdRef.current === DRAFT_THREAD_ID
-                ? null
-                : sessionIdRef.current;
-        const submitProjectId =
-            sessionIdRef.current === DRAFT_THREAD_ID ? draftProjectId : null;
-
-        useComposerStore.getState().clear();
-        composerRef.current?.focus({ preventScroll: true });
-        useTodoStore.getState().clear();
-        clearLastSequence(originThreadId);
-
-        setThreadMessages(originThreadId, (previous) => [
-            ...buildDraftMessages(previous),
-            userMessage,
-            assistantMessage,
-        ]);
-
-        if (submitSessionId === null) {
-            // Optimistic placeholder: the real session id only arrives with
-            // the first SSE frame, so list the draft immediately to avoid the
-            // sidebar lagging one round-trip behind the composer.
-            const optimisticTitle = createOptimisticSessionTitle(prompt);
-            setThreads((previous) =>
-                upsertThread(
-                    previous.filter(
-                        (thread) => thread.id !== DRAFT_THREAD_ID,
-                    ),
-                    {
-                        id: DRAFT_THREAD_ID,
-                        title: optimisticTitle,
-                        status: "regular",
-                        workspace_dir: null,
-                        project_id: submitProjectId,
-                        pinned: false,
-                        updated_at: Date.now(),
-                        agent_key: selectedAgentKey,
-                    },
-                ),
-            );
-        }
-
-        await streamThread({
-            originThreadId,
-            assistantMessageId,
-            prompt,
-            message: prompt,
-            sessionId: submitSessionId,
-            projectId: submitProjectId,
-            provider: selectedModel?.provider || null,
-            model: selectedModel?.model || null,
-            agentKey: selectedAgentKey,
-            reasoningEffort: deps.getReasoningEffort?.() ?? null,
-            attachments,
-            resumeFromSequence: null,
-        });
-    }
-
-    const handleCancel = async (threadId?: string) => {
-        const target = threadId ?? currentThreadIdRef.current;
-        useAskUserStore.getState().clearActiveForSession(target);
-        if (target === currentThreadIdRef.current) {
-            useAskUserStore.getState().setActive(null);
-        }
-        abortControllersRef.current.get(target)?.abort();
-        useTodoStore.getState().markOpenCancelled();
-        if (target !== DRAFT_THREAD_ID) {
-            await interruptChat(target);
-        }
-    };
-
     return {
         threads,
         setThreads,
         currentThreadId,
-        activeThreadListId,
         isDraftThread: currentThreadId === DRAFT_THREAD_ID,
         draftProjectId,
         clearDraftProject: () => setDraftProjectId(null),
-        currentMessages,
-        isRunning,
-        runningByThread,
         composerRef,
-        submitPrompt,
-        handleCancel,
+        submitPrompt: controller.submit,
+        handleCancel: controller.cancel,
         setThreadMessages,
         switchToDraftThread,
         handleNewThreadInProject,
