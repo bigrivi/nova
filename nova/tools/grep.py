@@ -3,6 +3,7 @@ from pathlib import Path
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
+from nova.tools.search_paths import _relative_to
 from nova.tools.workspace_context import get_active_workspace, resolve_path
 
 
@@ -22,7 +23,10 @@ from nova.tools.workspace_context import get_active_workspace, resolve_path
             },
             "path": {
                 "type": "string",
-                "description": "The directory to search in. Defaults to current working directory.",
+                "description": (
+                    "The directory to search in. Defaults to the active workspace. "
+                    "Returned paths are relative to it."
+                ),
             },
             "include": {
                 "type": "string",
@@ -55,13 +59,20 @@ async def grep(
         # yields nothing and the tool would answer "No matches found" for a
         # question that has an answer -- a silent miss, which is worse than an
         # error, because the agent believes it.
+        # Pair each file with the path the answer should show: its own name when
+        # the search named it directly, and otherwise a path from the searched
+        # directory -- see nova.tools.search_paths.
         files = (
-            [search_path]
+            [(search_path.name, search_path)]
             if search_path.is_file()
-            else sorted(p for p in search_path.rglob(include or "*") if p.is_file())
+            else [
+                (_relative_to(search_path, p), p)
+                for p in sorted(search_path.rglob(include or "*"))
+                if p.is_file()
+            ]
         )
 
-        for file_path in files:
+        for where, file_path in files:
             try:
                 content = file_path.read_text()
                 lines = content.splitlines()
@@ -70,11 +81,11 @@ async def grep(
                         continue
                     hits += 1
                     if span == 0:
-                        matches.append(f"{file_path}:{line_no}: {line.rstrip()}")
+                        matches.append(f"{where}:{line_no}: {line.rstrip()}")
                         continue
                     first = max(1, line_no - span)
                     last = min(len(lines), line_no + span)
-                    matches.append(f"{file_path}:{first}-{last}:")
+                    matches.append(f"{where}:{first}-{last}:")
                     matches.extend(
                         f"  {n}: {lines[n - 1].rstrip()}"
                         for n in range(first, last + 1)

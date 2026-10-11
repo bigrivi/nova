@@ -2,12 +2,17 @@ from pathlib import Path
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
+from nova.tools.search_paths import _relative_to
 from nova.tools.workspace_context import get_active_workspace, resolve_path
 
 
 @tool(
     name="glob",
-    description="Fast file pattern matching. Use to find files by name patterns (e.g., '**/*.py', 'src/**/*.ts'). Returns matching file paths sorted by modification time.",
+    description=(
+        "Fast file pattern matching. Use to find files by name patterns (e.g., '**/*.py', 'src/**/*.ts'). "
+        "Returns matching file paths, relative to the directory that was searched, sorted by modification time. "
+        "Pass those paths back to read, edit or grep as they are given."
+    ),
     parameters={
         "type": "object",
         "properties": {
@@ -17,7 +22,10 @@ from nova.tools.workspace_context import get_active_workspace, resolve_path
             },
             "path": {
                 "type": "string",
-                "description": "The directory to search in. Defaults to current working directory.",
+                "description": (
+                    "The directory to search in. Defaults to the active workspace. "
+                    "Returned paths are relative to it."
+                ),
             },
         },
         "required": ["pattern"],
@@ -32,7 +40,7 @@ async def glob(pattern: str, path: str | None = None) -> ToolResult:
         )
         matches = list(search_path.glob(pattern))
         matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        paths = [str(p) for p in matches]
+        paths = [_relative_to(search_path, p) for p in matches]
         return ToolResult(
             success=True,
             content=f"Found {len(paths)} files:\n" + "\n".join(paths)

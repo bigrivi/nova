@@ -260,3 +260,62 @@ async def test_grep_of_a_file_path_searches_that_file(tmp_path) -> None:
 
     assert ":2: beta" in result.content
     assert "No matches" not in result.content
+
+
+@pytest.mark.asyncio
+async def test_search_results_are_relative_to_what_was_searched(tmp_path) -> None:
+    """A path the agent can use is a path it did not have to copy.
+
+    One attempt failed a task it could do: `glob` handed it a 120-character
+    /var/folders path, it transcribed one character wrong, read the mistake four
+    times, and ended the turn on "Fixing it." with nothing fixed. The answer is
+    the same path relative to the directory that was asked about, which is short
+    enough to type and what ripgrep has always returned.
+    """
+    from nova.tools.glob import glob
+    from nova.tools.grep import grep
+
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("needle = 1\n", encoding="utf-8")
+    set_active_workspace(str(tmp_path))
+
+    files = await glob(pattern="**/*.py", path=".")
+    hits = await grep(pattern="needle", path=".")
+
+    assert files.success, files.content
+    assert "src/a.py" in files.content, f"not a usable path: {files.content}"
+    assert str(tmp_path) not in files.content
+    assert "src/a.py" in hits.content
+    assert str(tmp_path) not in hits.content
+
+
+@pytest.mark.asyncio
+async def test_grep_of_a_named_file_reports_its_name(tmp_path) -> None:
+    """Not "." -- which is what a path made relative to itself would give.
+
+    `Path("/a/b.txt").relative_to("/a/b.txt")` is `.`, and a result line that
+    reads ".:4: x" tells the agent nothing about which file it read.
+    """
+    from nova.tools.grep import grep
+
+    (tmp_path / "notes.md").write_text("alpha\nbeta\n", encoding="utf-8")
+    set_active_workspace(str(tmp_path))
+
+    result = await grep(pattern="beta", path="notes.md")
+
+    assert "notes.md:2: beta" in result.content, result.content
+
+
+def test_a_path_the_search_did_not_reach_stays_absolute() -> None:
+    """The fallback, which `rglob` cannot reach but a symlinked search can.
+
+    Forcing it relative would invent a path to a different file. Tested at the
+    unit rather than the tool level because the only way in is a caller that
+    hands over a path outside its own root.
+    """
+    from nova.tools.search_paths import _relative_to
+
+    outside = Path("/somewhere/else/outside.txt")
+
+    assert _relative_to(Path("/the/root"), outside) == str(outside)
+    assert _relative_to(Path("/the/root"), Path("/the/root/inner.py")) == "inner.py"
