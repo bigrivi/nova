@@ -46,7 +46,7 @@ class MemoryService:
         now = int(time.time() * 1000)
         record = MemoryRecord(
             id=str(uuid.uuid4()),
-            key=self._normalize_required_text(request.key, "key"),
+            key=self._canonical_key(request.key),
             scope=scope,
             session_id=session_id,
             owner_agent_key=owner_agent_key,
@@ -57,7 +57,33 @@ class MemoryService:
             created_at=now,
             updated_at=now,
         )
-        return await self.repository.upsert(record)
+        saved, created = await self.repository.upsert(record)
+
+        # Retire any older row that names the same fact in another spelling.
+        #
+        # Rows written before the canonical key existed keep their raw spelling
+        # in the database, so a canonical lookup cannot see them and the next
+        # save would sit *beside* them -- which is the duplicate this whole
+        # change is about. A scope holds tens of memories, so looking through it
+        # on every write is cheap, and the alternative is a migration that runs
+        # once and is then wrong about every spelling invented tomorrow.
+        canonical = self._canonical_key(request.key)
+        siblings = await self.repository.list_memories(
+            MemorySearchFilters(
+                scope=scope,
+                session_id=session_id,
+                owner_agent_key=owner_agent_key,
+                limit=500,
+            )
+        )
+        for other in siblings:
+            if (
+                other.id != saved.id
+                and other.key != saved.key
+                and self._canonical_key(other.key) == canonical
+            ):
+                await self.repository.delete_by_id(other.id)
+        return saved, created
 
     async def search(
         self,
@@ -226,6 +252,36 @@ class MemoryService:
     def _validate_scope_session_pair(self, scope: str, session_id: str | None) -> None:
         if scope == "session" and not session_id:
             raise ValueError("session_id is required when scope is session")
+
+    def _canonical_key(self, key: str) -> str:
+        """The key a memory is *identified* by, rather than the one it was called.
+
+        ``repository.upsert`` overwrites only when the key matches exactly, and
+        the model chooses the spelling. So one fact written twice came back as
+        four live rows -- ``rollback-codename``, ``codename-rollback``,
+        ``rollback_codename`` and ``ops-rollback-codename`` -- and a search for
+        "the rollback codename" returned all four, with three different values
+        and nothing saying which was current. An agent that was then asked for
+        the codename had to choose between contradictory memories, and it chose
+        the stale one.
+
+        A key therefore means the *set of words* in it: lowercased, split on
+        anything that is not alphanumeric, and sorted. Reorderings and
+        punctuation variants collide and the newer value replaces the older one,
+        which is what the tool description always promised and nothing enforced.
+
+        Deliberately conservative. No stemming, no stop-word removal, and no
+        prefix matching: ``ops-rollback-codename`` keeps its extra word and stays
+        its own memory, because a rule that merges two different facts is worse
+        than one that leaves four spellings of one.
+        """
+        text = "".join(char.lower() if char.isalnum() else " " for char in key).split()
+        canonical = "-".join(sorted(text))
+        if not canonical:
+            # A key with no alphanumerics at all is a caller error, and failing
+            # closed here writes a memory nobody can ever find again.
+            raise ValueError("key needs at least one alphanumeric character")
+        return canonical
 
     def _normalize_required_text(self, value: str, field_name: str) -> str:
         normalized = self._normalize_optional_text(value)

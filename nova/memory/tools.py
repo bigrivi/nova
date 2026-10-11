@@ -30,8 +30,34 @@ def _format_memory(record) -> str:
     parts.append(f"  content: {record.content}")
     if record.tags:
         parts.append(f"  tags: {', '.join(record.tags)}")
-    parts.append(f"  updated_at: {record.updated_at}")
+    parts.append(f"  updated_at: {_when(record.updated_at)}")
     return "\n".join(parts)
+
+
+def _when(epoch_ms: int) -> str:
+    """When a memory was last written, as a date and an age.
+
+    The epoch integer was there before and it is not a currency signal a reader
+    can use: choosing between four memories means comparing four integers by
+    eye. ``2 days ago`` next to ``2026-10-11`` is the same information in a form
+    that ranks itself, and it is what the agent needed when it had to pick
+    between a memory from last week and one from today.
+    """
+    import time
+
+    seconds = max(0, int(time.time()) - epoch_ms // 1000)
+    stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(epoch_ms // 1000))
+    for size, unit in ((86400 * 365, "year"), (86400 * 30, "month"), (86400, "day")):
+        if seconds >= size:
+            count = seconds // size
+            return f"{stamp} ({count} {unit}{'s' if count != 1 else ''} ago)"
+    if seconds >= 3600:
+        count = seconds // 3600
+        return f"{stamp} ({count} hour{'s' if count != 1 else ''} ago)"
+    if seconds >= 60:
+        count = seconds // 60
+        return f"{stamp} ({count} minute{'s' if count != 1 else ''} ago)"
+    return f"{stamp} (just now)"
 
 
 class MemoryTools:
@@ -65,9 +91,12 @@ class MemoryTools:
         description=(
             "Save a structured memory for future turns. Use this when the user shares "
             "a stable preference, project fact, decision, or reusable context that should "
-            "persist beyond the current reply. Prefer updating an existing memory by key "
-            "instead of saving duplicates. Do not save temporary task progress or raw "
-            "conversation copies."
+            "persist beyond the current reply. Do not save temporary task progress or raw "
+            "conversation copies. Two keys naming the same fact in different words are the "
+            "same memory: writing again updates it rather than adding a row, so a correction "
+            "the user makes later replaces what was stored. When the user corrects "
+            "something you remember, always write the correction in the same turn as the "
+            "reply."
         ),
         parameters={
             "type": "object",
@@ -159,7 +188,11 @@ class MemoryTools:
         description=(
             "Search previously saved memories by query text. Use this before answering "
             "when prior user preferences, project decisions, or stored context may affect "
-            "the response. Use this only when stored memory may change the answer or behavior."
+            "the response. Use this only when stored memory may change the answer or behavior. "
+            "A memory is evidence about the past, never about the present: if the user has "
+            "just told you something that contradicts a memory, the user is right and the "
+            "memory is stale -- answer from what they said, save the correction, and say the "
+            "memory was out of date. If you cannot tell which is current, ask."
         ),
         parameters={
             "type": "object",

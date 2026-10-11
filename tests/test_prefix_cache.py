@@ -543,7 +543,9 @@ async def test_real_agent_chain_prefix_stable_across_turns(provider_name: str):
                 memory_type="fact",
             )
         )
-        assert created and record.key == "seam-probe"
+        # Canonical: a key is the set of its words, so "seam_probe" and "seam
+        # probe" are one memory. See MemoryService._canonical_key.
+        assert created and record.key == "probe-seam"
 
         # The persistence round-trip keeps everything replay needs.
         loaded = await agent.session.get_messages(session_id=session_id)

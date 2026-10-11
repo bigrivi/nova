@@ -34,7 +34,7 @@ async def db():
 @pytest.mark.asyncio
 async def test_save_and_search_memory(db):
     result = await save_memory(
-        key="answer_style",
+        key="answer_style",  # stored as "answer-style": see the canonical-key rule
         content="Respond with the conclusion first and keep it concise.",
         summary="User prefers concise answers.",
         scope="user",
@@ -48,7 +48,7 @@ async def test_save_and_search_memory(db):
     search_result = await search_memory(query="concise", scope="user")
 
     assert search_result.success is True
-    assert "answer_style" in search_result.content
+    assert "answer-style" in search_result.content
     assert "User prefers concise answers." in search_result.content
 
 
@@ -72,7 +72,7 @@ async def test_search_rejects_content_only_single_term_match(db):
 @pytest.mark.asyncio
 async def test_search_accepts_summary_or_key_match(db):
     await save_memory(
-        key="python_notes",
+        key="python_notes",  # stored as "notes-python"
         content="Use ruff for linting.",
         summary="Python development notes.",
         scope="user",
@@ -83,7 +83,7 @@ async def test_search_accepts_summary_or_key_match(db):
     result = await search_memory(query="python", scope="user")
 
     assert result.success is True
-    assert "python_notes" in result.content
+    assert "notes-python" in result.content
 
 
 @pytest.mark.asyncio
@@ -153,7 +153,7 @@ async def test_session_memory_requires_session_id(db):
 @pytest.mark.asyncio
 async def test_list_and_delete_memory(db):
     create_result = await save_memory(
-        key="repo_fact",
+        key="repo_fact",  # stored as "fact-repo"
         content="Nova uses sqlite for session persistence.",
         summary="Session persistence uses sqlite.",
         scope="project",
@@ -163,8 +163,10 @@ async def test_list_and_delete_memory(db):
 
     listed = await list_memories(scope="project")
     assert listed.success is True
-    assert "repo_fact" in listed.content
+    assert "fact-repo" in listed.content
 
+    # Deleting by the spelling it was saved under, which canonicalises on the way
+    # in: identity is the set of words, not the punctuation.
     delete_result = await delete_memory(key="repo_fact", scope="project")
     assert delete_result.success is True
     assert "Deleted 1 memory record" in delete_result.content
@@ -243,7 +245,7 @@ async def test_search_memory_use_ai_can_select_non_top_keyword_candidate(db):
     )
 
     assert len(results) == 1
-    assert results[0].key == "review_priority"
+    assert results[0].key == "priority-review"
 
 
 @pytest.mark.asyncio
@@ -272,7 +274,7 @@ async def test_search_memory_use_ai_falls_back_to_keyword_ranking_on_selector_er
     )
 
     assert len(results) == 1
-    assert results[0].key == "response_style"
+    assert results[0].key == "response-style"
 
 
 def test_memory_ai_selection_messages_prefer_direct_match_rules():
@@ -442,6 +444,139 @@ async def test_agent_injects_current_session_id_into_save_memory(db):
     assert session_id
     saved = await MemoryService().list_memories(scope="session", session_id=session_id)
     assert len(saved) == 1
-    assert saved[0].key == "active_task"
+    assert saved[0].key == "active-task"
     assert saved[0].scope == "session"
     assert saved[0].session_id == session_id
+
+
+# ── a key is the set of its words, not the spelling the model typed ──────
+
+
+@pytest.mark.asyncio
+async def test_two_spellings_of_one_fact_are_one_memory(db):
+    """The failure this came from: four rows, three values, one question.
+
+    An agent asked to recall a codename searched memory and got four records
+    back -- ``rollback-codename``, ``codename-rollback``, ``rollback_codename``
+    and ``ops-rollback-codename`` -- written across four sessions, with three
+    different values in them. Nothing marked one as current, so it picked the
+    stale one and said so.
+
+    ``upsert`` already overwrites on an exact key match; what was missing was
+    an identity for "same fact, other words". Punctuation and word order are
+    not evidence of a different fact.
+    """
+    from nova.memory.service import MemoryService
+
+    service = MemoryService()
+
+    for spelling in ("rollback-codename", "Rollback Codename", "rollback_codename"):
+        await service.save(
+            MemoryWriteRequest(
+                key=spelling,
+                content="The rollback codename is HARBOUR-DCB79B.",
+                summary="Rollback codename",
+                scope="user",
+                memory_type="fact",
+            )
+        )
+
+    records = await service.list_memories(scope="user")
+    assert len(records) == 1, f"the same fact was stored {len(records)} times"
+    assert records[0].content.endswith("HARBOUR-DCB79B.")
+
+    # A correction replaces it rather than sitting beside it.
+    await service.save(
+        MemoryWriteRequest(
+            key="codename rollback",
+            content="The rollback codename is HARBOUR-QQ4481.",
+            summary="Rollback codename",
+            scope="user",
+            memory_type="fact",
+        )
+    )
+    again = await service.list_memories(scope="user")
+    assert len(again) == 1, "the correction added a row instead of updating one"
+    found = await service.search(query="rollback codename", scope="user")
+    assert found and "QQ4481" in found[0].content, (
+        "search still returns the superseded value"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_key_with_an_extra_word_stays_its_own_memory(db):
+    """The conservative half: merging must not invent facts.
+
+    Normalising harder -- stemming, stop-words, prefix matching -- would fold
+    ``ops-rollback-codename`` into ``rollback-codename``, and a rule that merges
+    two different facts is worse than one that leaves four spellings of one.
+    """
+    from nova.memory.service import MemoryService
+
+    service = MemoryService()
+    for key in ("rollback-codename", "ops-rollback-codename"):
+        await service.save(
+            MemoryWriteRequest(
+                key=key,
+                content=f"stored under {key}",
+                summary=key,
+                scope="user",
+                memory_type="fact",
+            )
+        )
+
+    assert len(await service.list_memories(scope="user")) == 2
+
+
+def test_currency_is_reported_in_a_form_a_reader_can_rank():
+    """``1791676861851`` is not a currency signal.
+
+    Choosing between memories meant comparing epoch integers by eye. The same
+    information as a date and an age ranks itself.
+    """
+    import time
+
+    from nova.memory.models import MemoryRecord
+    from nova.memory.tools import _format_memory, _when
+
+    stale = MemoryRecord(
+        id="a",
+        key="k",
+        scope="user",
+        memory_type="fact",
+        content="c",
+        summary="s",
+        updated_at=int((time.time() - 86400 * 3) * 1000),
+    )
+    fresh = MemoryRecord(
+        id="b",
+        key="k",
+        scope="user",
+        memory_type="fact",
+        content="c",
+        summary="s",
+        updated_at=int(time.time() * 1000),
+    )
+
+    assert "3 days ago" in _format_memory(stale)
+    assert "just now" in _format_memory(fresh)
+    # Epoch zero is 1970, which is the age it says rather than a special case:
+    # an ancient memory reads as ancient instead of crashing the caller.
+    assert "1970" in _when(0) and "ago" in _when(0)
+
+
+def test_search_tells_the_agent_that_the_user_outranks_memory():
+    """The rule the failing agent needed, where it would have read it.
+
+    It found a stale memory, asked the user which codename was right, got no
+    answer, and answered from the memory anyway -- while admitting the value it
+    had just been told was never stored. The rule belongs in the tool it called
+    to get there.
+    """
+    import nova.memory.tools  # noqa: F401 -- registers the schemas
+    import nova.tools.registry as registry
+
+    description = registry._tool_metadata["search_memory"].get("description", "")
+    assert "stale" in description and "the user is right" in description, (
+        "search_memory does not say that a current statement outranks a memory"
+    )

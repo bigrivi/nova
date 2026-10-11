@@ -38,6 +38,23 @@ class MemoryRepository:
         await data_source.save_memory(record)
         return record, True
 
+    @staticmethod
+    def canonical(key: str) -> str:
+        """The identity of *key*: its words, sorted, however it was spelled.
+
+        Kept beside ``upsert`` rather than in the service because this is where a
+        key decides whether two writes are one memory. The service normalises on
+        the way in and this normalises the lookup, so a row written before the
+        rule existed -- ``rollback_codename`` -- is still updated by a later
+        ``rollback codename``.
+
+        Conservative on purpose: an extra word stays extra. See
+        ``MemoryService._canonical_key``.
+        """
+        return "-".join(
+            sorted("".join(c.lower() if c.isalnum() else " " for c in key).split())
+        )
+
     async def get_by_key(
         self,
         key: str,
@@ -47,7 +64,7 @@ class MemoryRepository:
     ) -> MemoryRecord | None:
         data_source = await self._get_data_source()
         row = await data_source.get_memory_by_key(
-            key, scope, session_id, owner_agent_key
+            self.canonical(key), scope, session_id, owner_agent_key
         )
         return self._row_to_record(row) if row else None
 
@@ -80,7 +97,7 @@ class MemoryRepository:
     ) -> int:
         data_source = await self._get_data_source()
         return await data_source.delete_memory_by_key(
-            key, scope, session_id, owner_agent_key
+            self.canonical(key), scope, session_id, owner_agent_key
         )
 
     def _row_to_record(self, row) -> MemoryRecord:

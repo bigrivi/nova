@@ -750,7 +750,9 @@ async def test_memories_endpoint_filters_by_session_id(monkeypatch, tmp_path):
     assert response.status_code == 200
     items = response.json()["items"]
     assert len(items) == 1
-    assert items[0]["key"] == "sess_a_fact"
+    # A key is stored as the set of its words, so any spelling of the same fact
+    # is one memory. See MemoryService._canonical_key.
+    assert items[0]["key"] == "a-fact-sess"
     assert items[0]["session_id"] == "sess-a"
 
 
@@ -842,7 +844,7 @@ async def test_delete_session_with_delete_memories_purges_memories(
     assert response.json()["status"] == "deleted"
     remaining = await service.list_memories(scope="all")
     assert len(remaining) == 1
-    assert remaining[0].key == "other_user_fact"
+    assert remaining[0].key == "fact-other-user"
 
 
 @pytest.mark.asyncio
@@ -869,7 +871,7 @@ async def test_memories_endpoint_returns_saved_memories(monkeypatch, tmp_path):
     assert response.status_code == 200
     items = response.json()["items"]
     assert len(items) == 1
-    assert items[0]["key"] == "answer_style"
+    assert items[0]["key"] == "answer-style"
     assert items[0]["scope"] == "user"
     assert items[0]["memory_type"] == "preference"
     assert items[0]["summary"] == "User prefers concise answers."
