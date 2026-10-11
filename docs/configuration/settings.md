@@ -158,7 +158,7 @@ cd frontend && npm run dev -- --host
 
 All other top-level keys are ignored.
 
-## Voice to Text
+## Voice to Text { #voice-to-text }
 
 The composer's microphone button appears only when `transcription` is configured. Recording happens in the Nova process through the OS audio API (AVAudioRecorder on macOS, winmm on Windows), then the audio is sent to an OpenAI-compatible `/audio/transcriptions` endpoint using the key from this file. The webview cannot capture audio itself, so there is no browser-microphone permission to grant.
 

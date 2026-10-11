@@ -1,0 +1,83 @@
+# 安全模型
+
+Nova 跑在你的机器上，能访问你的文件、shell 和浏览器。这套安全模型的设计目标是：让你
+保持控制，同时让 Agent 能干活。
+
+## Shell 命令分级
+
+Shell 命令分为三档：
+
+### 第一档：硬性（直接阻止）
+
+无论什么上下文都绝不允许的命令：
+
+- 破坏性文件系统操作（`rm -rf /`、`mkfs`、`dd of=/dev/sd*`）
+- 系统关机/重启（`shutdown`、`reboot`、`poweroff`）
+- Fork 炸弹和进程强杀（`kill -1`）
+- 这些命令在到达审批系统之前就被拦下。
+
+### 第二档：危险（需要审批）
+
+可能造成损害、会弹出来给你审批的命令：
+
+- 对绝对路径的递归删除（`rm -r /etc`、`rm -rf ~/`）
+- 权限变更（`chmod 777`、`chown root`）
+- 数据库破坏操作（`DROP TABLE`、不带 WHERE 的 `DELETE FROM`）
+- 系统配置覆盖（`> /etc/`、`tee /etc/`）
+- 服务管理（`systemctl stop`、`systemctl restart`）
+- Git 破坏操作（`reset --hard`、`push --force`、`clean -f`）
+- Docker 生命周期（`docker compose down`、`docker stop`）
+- 管道执行的远程代码（`curl | sh`、`wget | sh`）
+- 敏感文件改写（对 `~/.ssh/`、`~/.bashrc` 的 `sed -i`）
+
+### 第三档：安全（直接执行）
+
+不会造成损害的命令：
+
+- 列文件和看内容（`ls`、`cat`、`head`、`tail`）
+- Git status 和 log
+- 包安装（`npm install`、`pip install`）
+- Docker 只读命令（`docker ps`、`docker compose logs`）
+- 相对路径清理（`rm -r build/`、`rm -rf node_modules`）
+
+## 提示词注入检测
+
+Nova 会在这些位置扫描提示词注入模式：
+
+- 用户消息
+- 记忆内容（`save_memory`）
+- Agent 工作区文件（SOUL.md、USER.md、MEMORY.md）
+
+检测五类威胁：
+
+- `ignore_previous` ：试图覆盖系统指令
+- `role_hijack` ：试图改变 Nova 的角色
+- `prompt_leak` ：试图抽取系统提示词
+- `code_jailbreak` ：试图执行任意代码
+- `exfiltration` ：试图把数据发到外部
+
+## 工具护栏
+
+- **连续 5 次完全相同的工具调用** 触发停机
+- **连续 3 次完全相同的失败** 触发停机
+- **连续 10 次只读调用** 而没有任何写入时给出警告
+
+## 记忆安全
+
+记忆存在本地 SQLite 数据库里。写入任何记忆之前都会扫描威胁模式。Agent 工作区文件在启动
+时加载，并在进程生命周期内缓存。
+
+## 网络暴露
+
+Nova 默认绑定 `127.0.0.1`，所以你不主动要求，什么都不离开你的机器。在 config.json 的
+`server` 块里把 `host` 放宽成 `"0.0.0.0"`，会把每个 `/api` 路由暴露给局域网，因此必须在
+同一个块里同时设置 `auth_user` 和 `auth_password`：
+
+- 只有两个值都非空时认证才生效。只设其中一个会让认证整体失效（启动时会打警告），所以
+  开放端口前务必两个都检查一遍。
+- 回环客户端（`127.0.0.1`、`::1`、`::ffff:127.0.0.1`）免检，所以桌面应用、本地 Web 界面
+  和 TUI 永远不会弹认证框。
+- 凭据是以 base64 走明文 HTTP 传输的，这不算加密。只把它当作可信网络下的防护，超出这个
+  范围请在 Nova 前面放一个终止 TLS 的反向代理。
+
+`server` 块的完整参考见[设置](../configuration/settings.md)。
