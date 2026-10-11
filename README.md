@@ -7,6 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/bigrivi/nova/actions/workflows/ci.yml"><img src="https://github.com/bigrivi/nova/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://bigrivi.github.io/nova/"><img src="https://img.shields.io/badge/docs-bigrivi.github.io%2Fnova-blue.svg" alt="Docs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
   <img src="https://img.shields.io/badge/python-3.12%2B-blue.svg" alt="Python 3.12+">
 </p>

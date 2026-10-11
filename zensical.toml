@@ -1,0 +1,146 @@
+# Documentation site configuration.
+#
+# Zensical is the successor to MkDocs and Material for MkDocs, built by the
+# Material team. It builds this repository's existing docs/ tree unchanged and
+# reads the same mkdocs.yml shape, so the two names below that look like MkDocs
+# keys are deliberate.
+#
+# Run `zensical serve` to preview and `zensical build --strict` to check.
+
+[project]
+site_name = "Nova"
+site_description = "A personal AI agent that runs on your machine and remembers you."
+site_url = "https://bigrivi.github.io/nova/"
+repo_url = "https://github.com/bigrivi/nova"
+repo_name = "bigrivi/nova"
+edit_uri = "edit/main/docs/"
+
+# Explicit nav, because the generated one takes its section names from directory
+# names and would show "Api", "Tui" and "Getting started" beside a raw "zh CN"
+# folder. Naming both trees here also keeps `--strict` happy: a page that exists
+# but appears in no nav entry is a warning, and warnings fail a strict build.
+#
+# The Chinese tree is listed in full rather than hidden. Zensical cannot scope a
+# nav to one language without an i18n plugin, so the sidebar shows both and the
+# language selector is what jumps between the same page in each.
+nav = [
+    { "Home" = "index.md" },
+    { "What is Nova?" = "introduction.md" },
+    { "Getting started" = [
+        { "Installation" = "getting-started/installation.md" },
+        { "Quickstart" = "getting-started/quickstart.md" },
+    ] },
+    { "Configuration" = [
+        { "Providers & Models" = "configuration/providers.md" },
+        { "Settings" = "configuration/settings.md" },
+    ] },
+    { "Tools" = [
+        { "Overview" = "tools/index.md" },
+        { "Shell" = "tools/shell.md" },
+        { "File Operations" = "tools/file-operations.md" },
+        { "Code Execution" = "tools/code-execution.md" },
+        { "Web Tools" = "tools/web.md" },
+        { "Ask User" = "tools/ask-user.md" },
+        { "Task Management" = "tools/todo.md" },
+    ] },
+    { "Memory" = "memory/index.md" },
+    { "Skills" = "skills/index.md" },
+    { "TUI" = "tui/index.md" },
+    { "Desktop" = "desktop/index.md" },
+    { "Advanced" = [
+        { "Security Model" = "advanced/security.md" },
+        { "MCP Integration" = "advanced/mcp.md" },
+        { "Multi-Agent" = "advanced/multi-agent.md" },
+        { "Context Compaction" = "advanced/compaction.md" },
+        { "WeChat ClawBot" = "advanced/wechat-clawbot.md" },
+    ] },
+    { "API" = "api/index.md" },
+    { "FAQ" = "troubleshooting/faq.md" },
+    { "中文" = [
+        { "首页" = "zh-CN/index.md" },
+        { "Nova 是什么？" = "zh-CN/introduction.md" },
+        { "快速开始" = [
+            { "安装" = "zh-CN/getting-started/installation.md" },
+            { "快速上手" = "zh-CN/getting-started/quickstart.md" },
+        ] },
+        { "配置" = [
+            { "模型提供方" = "zh-CN/configuration/providers.md" },
+            { "设置" = "zh-CN/configuration/settings.md" },
+        ] },
+        { "工具" = [
+            { "总览" = "zh-CN/tools/index.md" },
+            { "Shell" = "zh-CN/tools/shell.md" },
+            { "文件操作" = "zh-CN/tools/file-operations.md" },
+            { "代码执行" = "zh-CN/tools/code-execution.md" },
+            { "网页工具" = "zh-CN/tools/web.md" },
+            { "向用户提问" = "zh-CN/tools/ask-user.md" },
+            { "任务管理" = "zh-CN/tools/todo.md" },
+        ] },
+        { "记忆" = "zh-CN/memory/index.md" },
+        { "技能" = "zh-CN/skills/index.md" },
+        { "TUI" = "zh-CN/tui/index.md" },
+        { "桌面端" = "zh-CN/desktop/index.md" },
+        { "进阶" = [
+            { "安全模型" = "zh-CN/advanced/security.md" },
+            { "MCP 接入" = "zh-CN/advanced/mcp.md" },
+            { "多 Agent" = "zh-CN/advanced/multi-agent.md" },
+            { "上下文压缩" = "zh-CN/advanced/compaction.md" },
+            { "微信 ClawBot" = "zh-CN/advanced/wechat-clawbot.md" },
+        ] },
+        { "API" = "zh-CN/api/index.md" },
+        { "常见问题" = "zh-CN/troubleshooting/faq.md" },
+    ] },
+]
+
+# Both languages live in one site: English at the root, Chinese under /zh-CN/.
+# Zensical's native i18n is still on its roadmap, so the language selector below
+# points at the two trees rather than switching content in place. When native
+# i18n lands it is designed to reuse mkdocs-static-i18n's configuration, so this
+# block is what will need to change, not the content.
+#
+# `language` sets the canonical HTML lang and the built-in UI strings. It has to
+# be a single value: HTML5 allows one language per document, and the Chinese
+# pages carry their own lang attribute through the alternate entries.
+[project.theme]
+language = "en"
+features = [
+    "navigation.tabs",
+    "navigation.sections",
+    "navigation.top",
+    "navigation.indexes",
+    "search.suggest",
+    "search.highlight",
+    "content.code.copy",
+    "content.action.edit",
+    "toc.follow",
+]
+
+[[project.extra.alternate]]
+name = "English"
+link = "/nova/"
+lang = "en"
+
+[[project.extra.alternate]]
+name = "中文"
+link = "/nova/zh-CN/"
+lang = "zh"
+
+# `attr_list` is load-bearing, not cosmetic. Zensical's slugifier drops CJK
+# characters entirely -- `## 语音转文字` becomes `id="_2"` -- so any Chinese
+# heading that is linked to needs an explicit id, written `{ #voice-to-text }`.
+# Two headings in docs/zh-CN/ rely on this. Without the extension those links
+# would point at nothing and `--strict` would fail the build.
+[project.markdown_extensions.attr_list]
+[project.markdown_extensions.tables]
+[project.markdown_extensions.toc]
+permalink = true
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.pymdownx.superfences]
+[project.markdown_extensions.pymdownx.details]
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+[project.markdown_extensions.pymdownx.inlinehilite]
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+
+[project.plugins.search]

@@ -1,0 +1,82 @@
+name: Docs
+
+# Builds the documentation site and publishes it to GitHub Pages.
+#
+# The built HTML is never committed. It is uploaded as a workflow artifact and
+# handed to `actions/deploy-pages`, so the repository holds only the Markdown
+# sources in docs/ and the built site exists only inside Pages. There is no
+# gh-pages branch to keep in sync, and nothing derived from docs/ can drift from
+# it in git history.
+#
+# `zensical build --strict` is the gate: a broken internal link, a heading anchor
+# that does not resolve, or a page missing from the nav fails the build. That is
+# what catches a renamed file whose inbound links were not updated, which is the
+# mistake this repository has already made once.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "zensical.toml"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "zensical.toml"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+# `pages: write` and `id-token: write` are required by deploy-pages; without them
+# the deployment step cannot obtain the OIDC token it publishes with.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. Unlike CI, an in-flight Pages deployment is not worth
+# cancelling: it is already publishing, and interrupting it can leave the site on
+# a partial upload. Queue instead.
+concurrency:
+  group: docs-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Zensical
+        run: pip install zensical
+
+      # `--strict` turns warnings into failures. The two things it catches that
+      # matter: an internal link to a page or anchor that does not exist, and a
+      # page present in docs/ but absent from the nav in zensical.toml.
+      - name: Build
+        run: zensical build --strict
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    # Pull requests build to prove the docs are valid, but must not publish.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
