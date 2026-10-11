@@ -251,6 +251,35 @@ back at the config is asked about. Everything else in the home keeps asking:
 the database, the sessions, the logs. A configured `ask` is never cleared by
 the exemption, the same way the workspace boundary never clears one.
 
+## Reads are free, writes are gated
+
+The workspace boundary is asked about for the tools that **mutate** — `write`
+and `edit`. A tool that only reads is free to name a path anywhere on disk,
+including outside the workspace, which is where every comparable agent lands:
+Codex's sandbox deliberately "allows Codex to read files almost anywhere and
+write files within your workspace", and Claude Code's default configuration
+allows reading and searching, with the outside-the-working-directory prompt
+available only as an opt-in setting. A grep is a search tool, not an escape.
+
+What a reader still asks about is a credential path, which every one of those
+agents also asks about. So the rule is one sentence:
+
+```text
+read anywhere          -> allowed (unless it is a credential)
+write outside the workspace -> asked
+credential path, any tool    -> asked, and never rememberable
+```
+
+To get the stricter posture back — a read outside the workspace also asked
+about, the way Claude Code ships `blockReadsOutsideWorkingDirectories` — set:
+
+```json
+{ "block_reads_outside_workspace": true }
+```
+
+It is read once per process like every other key here, and only a literal
+`true` enables it.
+
 A malformed `tools` block leaves everything allowed. Failing closed here would
 disable the agent's tools outright, which is worse than not applying what was
 asked for.

@@ -94,6 +94,36 @@ def test_a_broken_policy_leaves_everything_allowed(tmp_path, payload: str) -> No
     assert load_tool_policy(path).effect_for("write") == "allow"
 
 
+def test_the_strict_read_posture_is_read_from_the_file(tmp_path) -> None:
+    """The opt-in lives beside `mode`, not inside the per-tool map.
+
+    A posture over every tool buried in a per-tool map would read as one tool's
+    setting; and only a literal `true` enables it, because `"yes"` silently
+    turning on a gate stricter than the user meant is the failure a bool key
+    invites.
+    """
+    path = tmp_path / "permissions.json"
+    path.write_text(
+        json.dumps({"block_reads_outside_workspace": True}), encoding="utf-8"
+    )
+    policy = load_tool_policy(path)
+
+    assert policy.block_reads is True
+    assert policy.effect_for_call("read", {"filePath": "/etc/hosts"}, "/ws") == "ask"
+
+
+def test_a_non_boolean_strict_read_posture_is_ignored(tmp_path) -> None:
+    path = tmp_path / "permissions.json"
+    path.write_text(
+        json.dumps({"block_reads_outside_workspace": "yes"}), encoding="utf-8"
+    )
+
+    policy = load_tool_policy(path)
+
+    assert policy.block_reads is False
+    assert policy.effect_for_call("read", {"filePath": "/etc/hosts"}, "/ws") == "allow"
+
+
 # ── at dispatch ───────────────────────────────────────────────────────
 
 
@@ -622,23 +652,28 @@ class TestThePathDecidesTheEffect:
         )
 
     def test_a_relative_path_is_judged_against_the_workspace(self, tmp_path) -> None:
-        """Otherwise `../../etc/passwd` reads as workspace-local.
+        """`../../etc/passwd` does not read as workspace-local.
 
-        This is the same base the shell runs commands in, so the two axes cannot
-        disagree about what "inside" means."""
-
+        The resolution is the same base the shell runs commands in, so the two
+        axes cannot disagree about what "inside" means. What that resolution
+        *does* differs by effect: a read is free wherever it lands, and a write
+        outside the boundary asks. Asserted on one string so the split cannot
+        drift apart silently."""
         policy = ToolPolicy()
+        traversal = "../../../../etc/passwd"
 
         assert (
             policy.effect_for_call("read", {"filePath": "src/app.ts"}, str(tmp_path))
             == "allow"
         )
         assert (
-            policy.effect_for_call(
-                "read", {"filePath": "../../../../etc/passwd"}, str(tmp_path)
-            )
+            policy.effect_for_call("read", {"filePath": traversal}, str(tmp_path))
+            == "allow"
+        ), "a reader is free outside the workspace"
+        assert (
+            policy.effect_for_call("write", {"filePath": traversal}, str(tmp_path))
             == "ask"
-        )
+        ), "the same path is asked about for the tool that mutates"
 
     def test_a_tilde_is_expanded_before_judged(self, tmp_path) -> None:
         """`~/.ssh/authorized_keys` is outside whatever it looks like."""
@@ -657,11 +692,18 @@ class TestThePathDecidesTheEffect:
 
         Guessing allow would make the exemption depend on whether the agent had a
         workspace, which is not something the user chose. Same direction as the
-        rule the shell already applies when a path is undecidable."""
+        rule the shell already applies when a path is undecidable -- and it
+        applies to the mutating tools, because a write with no workspace is a
+        write with no boundary."""
 
         policy = ToolPolicy()
 
-        assert policy.effect_for_call("read", {"filePath": "/etc/hosts"}, None) == "ask"
+        assert (
+            policy.effect_for_call("write", {"filePath": "/etc/hosts"}, None) == "ask"
+        )
+        assert (
+            policy.effect_for_call("read", {"filePath": "/etc/hosts"}, None) == "allow"
+        )
 
     def test_a_tool_with_no_path_is_unaffected(self, tmp_path) -> None:
         """`web_fetch` names a URL, not a path, and there is nothing to be outside."""
@@ -686,13 +728,17 @@ class TestThePathDecidesTheEffect:
         """It is `file_path`, not `filePath`.
 
         Reading one name for both would leave this tool ungated, which is
-        indistinguishable from a tool that has no path at all."""
+        indistinguishable from a tool that has no path at all. The distinguisher
+        is a credential rather than a path outside the workspace: a reader is
+        free outside the boundary now, but it still asks about a credential --
+        and an argument name that failed to resolve would answer "allow" for
+        one."""
 
         policy = ToolPolicy()
 
         assert (
             policy.effect_for_call(
-                "read_image", {"file_path": "/etc/hosts"}, str(tmp_path)
+                "read_image", {"file_path": "~/.ssh/id_rsa"}, str(tmp_path)
             )
             == "ask"
         )
@@ -702,6 +748,78 @@ class TestThePathDecidesTheEffect:
                 "read_image", {"file_path": "assets/a.png"}, str(tmp_path)
             )
             == "allow"
+        )
+
+
+class TestReadsAreFreeWritesAreGated:
+    """The split, and the one place it can be turned back.
+
+    Reads outside the workspace do not ask, which is where Codex's sandbox
+    ("read files almost anywhere and write files within your workspace") and
+    Claude Code's default configuration ("reading files and searching are always
+    allowed") both land. The credential question survives either way, because a
+    search that reads a credential path has read the credential.
+    """
+
+    WS = "/Users/andy/project"
+
+    def test_a_read_of_anywhere_is_free(self) -> None:
+        policy = ToolPolicy()
+
+        assert (
+            policy.effect_for_call("read", {"filePath": "/etc/hosts"}, self.WS)
+            == "allow"
+        )
+        assert (
+            policy.effect_for_call("grep", {"pattern": "x", "path": "/etc"}, self.WS)
+            == "allow"
+        )
+        assert (
+            policy.effect_for_call("glob", {"pattern": "*.md", "path": "/etc"}, self.WS)
+            == "allow"
+        )
+
+    def test_a_write_of_the_same_path_asks(self) -> None:
+        """The pair, so the boundary is not a matter of which tool was picked."""
+        policy = ToolPolicy()
+        target = "/etc/hosts"
+
+        assert policy.effect_for_call("write", {"filePath": target}, self.WS) == "ask"
+        assert policy.effect_for_call("edit", {"filePath": target}, self.WS) == "ask"
+
+    @pytest.mark.parametrize("tool", ["read", "grep", "glob", "read_image"])
+    def test_a_credential_read_asks_either_way(self, tool: str) -> None:
+        """The half every comparable agent also asks about."""
+        policy = ToolPolicy()
+        key = (
+            "file_path"
+            if tool == "read_image"
+            else ("path" if tool in ("grep", "glob") else "filePath")
+        )
+        args = (
+            {"pattern": "x", key: "~/.ssh/id_rsa"}
+            if tool in ("grep", "glob")
+            else {key: "~/.ssh/id_rsa"}
+        )
+
+        assert policy.effect_for_call(tool, args, self.WS) == "ask"
+
+    def test_the_strict_posture_asks_about_reads_again(self) -> None:
+        """The opt-in, which is how Claude Code ships the same idea."""
+        policy = ToolPolicy(block_reads=True)
+
+        assert (
+            policy.effect_for_call("read", {"filePath": "/etc/hosts"}, self.WS) == "ask"
+        )
+        assert (
+            policy.effect_for_call("grep", {"pattern": "x", "path": "/etc"}, self.WS)
+            == "ask"
+        )
+        # And a credential still asks under the default posture, so the
+        # strictness is additive rather than a different rule.
+        assert (
+            ToolPolicy().effect_for_call("read", {"filePath": "~/.ssh/id_rsa"}, self.WS)
+            == "ask"
         )
 
 

@@ -155,6 +155,30 @@ PATH_ARGUMENTS: Final[dict[str, tuple[str, ...]]] = {
     "glob": ("path",),
 }
 
+#: The read-only half of that table -- the half the boundary question does not
+#: apply to.
+#:
+#: Reads are free outside the workspace, which is where every comparable agent
+#: lands. Codex's sandbox deliberately "allows Codex to read files almost
+#: anywhere and write files within your workspace", and an open issue asks for
+#: the mode to be renamed workspace-write-unrestricted-read; Claude Code's
+#: default configuration allows reading and searching, with the
+#: outside-the-working-directory prompt available only as an opt-in setting. A
+#: grep is a search tool, not an escape: gating it by path stopped the agent's
+#: ordinary work -- reading docs, looking at a sibling repo, finding a file it
+#: installed itself -- and one fifteen-minute turn was spent entirely on an
+#: unanswered prompt.
+#:
+#: What survives for a reader is the credential question, which every one of
+#: those agents also asks: a search that reads a credential path has read the
+#: credential, wherever the path sits.
+READ_PATH_ARGUMENTS: Final[frozenset[str]] = frozenset(
+    {"read", "read_image", "grep", "glob"}
+)
+
+#: The mutating half, where the boundary question is the whole point.
+WRITE_PATH_ARGUMENTS: Final[frozenset[str]] = frozenset({"write", "edit"})
+
 
 def path_target(tool: str, args: Mapping[str, object]) -> Path | None:
     """The path *tool* is about to touch, or None when it names none.
@@ -220,10 +244,16 @@ class ToolPolicy:
             ``*`` is the fallback for anything unmatched.
     """
 
-    def __init__(self, rules: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, rules: dict[str, str] | None = None, *, block_reads: bool = False
+    ) -> None:
         self._rules: dict[str, Effect] = {
             name: effect for name, effect in (rules or {}).items() if effect in _EFFECTS
         }
+        # Whether a read that leaves the workspace is put to the user. Off by
+        # default, matching where Codex and Claude Code both land; see
+        # READ_PATH_ARGUMENTS. A credential read asks whatever this says.
+        self.block_reads = block_reads
 
     def effect_for(self, tool: str) -> Effect:
         """The effect for *tool*, most specific match winning.
@@ -316,6 +346,12 @@ class ToolPolicy:
             # outside-the-worktree question, for the same reason.
             log.info("%s targets %s, a Nova-managed directory", tool, target)
             return "allow"
+        if not self._asks_about_boundary(tool):
+            # A reader under the reads-free default. The argument may name a
+            # path anywhere on disk and that is the intended behaviour: a
+            # search tool is not an escape, and the only read that asks is one
+            # that names a credential -- which was decided above.
+            return "allow"
         if workspace is None:
             log.info("no active workspace; asking about %s on %s", tool, target)
             return "ask"
@@ -323,6 +359,18 @@ class ToolPolicy:
             log.info("%s targets %s, outside %s", tool, target, workspace)
             return "ask"
         return "allow"
+
+    def _asks_about_boundary(self, tool: str) -> bool:
+        """Whether this tool's call is subject to the workspace boundary.
+
+        A mutating tool always is -- the boundary is the whole point of gating
+        one. A reading tool is only subject to it when the user asked for the
+        strict posture, which is the opt-in Claude Code ships as
+        ``permissions.blockReadsOutsideWorkingDirectories``.
+        """
+        if self.block_reads:
+            return True
+        return tool in WRITE_PATH_ARGUMENTS
 
     def targets_outside(
         self,
@@ -401,10 +449,26 @@ def load_tool_policy(path: Path | str | None = None) -> ToolPolicy:
 
     An absent or unreadable file yields an empty policy, which allows everything
     -- the behaviour before this existed. Parsing and the file's location belong
-    to :mod:`nova.tools.permissions`; this only reads the one key it cares about.
+    to :mod:`nova.tools.permissions`; this only reads the keys it cares about.
+
+    ``block_reads_outside_workspace`` is top-level rather than inside the
+    ``tools`` block because it is a posture over every tool, the way ``mode``
+    is; a key buried in a per-tool map would read as one tool's setting. Only a
+    literal ``true`` enables it -- ``"yes"`` silently turning on a gate stricter
+    than the user meant is the failure a bool key invites.
     """
-    tools = permissions.load_permissions(path).get("tools")
-    if not isinstance(tools, dict):
-        return ToolPolicy()
-    rules = {name: effect for name, effect in tools.items() if isinstance(name, str)}
-    return ToolPolicy(rules)
+    payload = permissions.load_permissions(path)
+    tools = payload.get("tools")
+    rules = (
+        {name: effect for name, effect in tools.items() if isinstance(name, str)}
+        if isinstance(tools, dict)
+        else {}
+    )
+    block_reads = payload.get("block_reads_outside_workspace")
+    if block_reads is not None and not isinstance(block_reads, bool):
+        log.warning(
+            "ignoring 'block_reads_outside_workspace' %r: expected true or false",
+            block_reads,
+        )
+        block_reads = False
+    return ToolPolicy(rules, block_reads=bool(block_reads))

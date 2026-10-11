@@ -65,6 +65,7 @@ DEFAULT_PAYLOAD: dict[str, Any] = {
         "does not reach a running agent."
     ),
     "mode": "ask",
+    "block_reads_outside_workspace": False,
     "shell": {
         "_readme": (
             "Command rules, consulted in this order: block, allow, workspace "
