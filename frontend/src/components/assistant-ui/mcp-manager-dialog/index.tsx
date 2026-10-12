@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Loader2Icon, PencilIcon, PlusIcon } from "lucide-react";
 
 import { listMcpServers } from "../../../lib/nova-api";
+import { cn } from "../../../lib/utils";
 import { Button } from "../../ui/button";
 import { McpServerDialog } from "./server-dialog";
 import {
@@ -13,6 +14,34 @@ import {
 /** Stand-in when the host surface has no status bar to report to. */
 function noopStatus() {
     /* nothing to report to */
+}
+
+/**
+ * Whether a configured server is actually serving tools right now.
+ *
+ * A dot rather than a badge: the tool count already has a line of its own below,
+ * and a row of numbers is noise next to the name it describes. The reason a
+ * server is unreachable is spelled out underneath in words, so the dot only has
+ * to answer "is this one working" at a glance. The title carries the same answer
+ * for anyone hovering.
+ */
+function StatusBadge({ server }: { server: NovaMcpServerRecord }) {
+    const { t } = useTranslation();
+    const dot = (color: string, label: string) => (
+        <span
+            className={cn("size-2 shrink-0 rounded-full", color)}
+            title={label}
+            role="img"
+            aria-label={label}
+        />
+    );
+    if (server.error) {
+        return dot("bg-destructive", t("mcp.statusFailed"));
+    }
+    if (server.loaded_tools === null) {
+        return dot("bg-muted-foreground/40", t("mcp.statusUnknown"));
+    }
+    return dot("bg-emerald-500", t("mcp.statusConnected"));
 }
 
 export type McpManagerContentProps = {
@@ -111,10 +140,21 @@ export function McpManagerContent({
                                     <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
                                         {t(`mcp.transport_${server.transport}`)}
                                     </span>
+                                    <StatusBadge server={server} />
                                 </div>
                                 <p className="mt-1 font-mono text-xs break-all text-muted-foreground">
                                     {serverTarget(server)}
                                 </p>
+                                {/* A server that cannot be reached has no tools
+                                    at all, so this is the only symptom there is.
+                                    Without it the tools just stop existing. */}
+                                {server.error ? (
+                                    <p className="mt-1 text-[11px] break-words text-destructive">
+                                        {t("mcp.connectionFailed", {
+                                            reason: server.error,
+                                        })}
+                                    </p>
+                                ) : null}
                                 {server.env_keys.length > 0 ||
                                 server.header_keys.length > 0 ? (
                                     <p className="mt-1 text-[11px] text-muted-foreground/70">
@@ -167,7 +207,7 @@ export function McpManagerContent({
             )}
 
             <p className="shrink-0 rounded-lg bg-muted/40 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
-                {t("mcp.restartNotice")}
+                {t("mcp.reloadNotice")}
             </p>
 
             {adding ? (

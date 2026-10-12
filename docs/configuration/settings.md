@@ -138,12 +138,14 @@ cd frontend && npm run dev -- --host
 
 ## Config File Shape
 
-`~/.nova/config.json` is the only file `Settings.load_config` reads. The loader understands exactly five top-level keys:
+`~/.nova/config.json` is the only file `Settings.load_config` reads. The loader understands exactly seven top-level keys:
 
 ```json
 {
   "providers": {},
   "mcp_servers": {},
+  "mcp_prefix_tool_names": true,
+  "mcp_non_prefixed_servers": [],
   "compaction": {},
   "transcription": {},
   "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"}
@@ -152,6 +154,8 @@ cd frontend && npm run dev -- --host
 
 * `providers`: object mapping alias to provider config. Missing, `null`, or absent defaults to `{}`. Each entry must be an object with a `type` string. Optional fields: `name` (defaults to the alias), `options` (object, defaults to `{}`), `models` (object, defaults to `{}`). Model values that are not objects are normalized to `{"name": value}`.
 * `mcp_servers`: object mapping name to server config. Non-object values are ignored and replaced with `{}`. See `docs/advanced/mcp.md` for the stdio and HTTP shapes.
+* `mcp_prefix_tool_names`: whether an MCP tool is exposed as `mcp__<server>__<tool>`. Default `true`; a non-boolean value falls back to the default. See [Tool names](../advanced/mcp.md#tool-names).
+* `mcp_non_prefixed_servers`: array of server names exempt from the prefix, while the prefix still applies to the rest. A non-array value is ignored.
 * `compaction`: object with tuning keys. See `docs/advanced/compaction.md` for the real keys and defaults.
 * `transcription`: object configuring voice-to-text. See [Voice to Text](#voice-to-text) below.
 * `server`: object with `host` (default `127.0.0.1`), `port` (default `8765`, must be 1-65535), `log_level` (default `INFO`), and optional `auth_user` / `auth_password` for LAN auth (see above). A non-object `server` or an invalid port raises `ValueError` at startup. `port` also accepts a numeric string.

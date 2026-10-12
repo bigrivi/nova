@@ -29,7 +29,9 @@ import re
 from collections.abc import Iterable
 
 #: Marks a tool as having come from a server, and is the prefix Nova's own
-#: permission rules match on (``mcp__github__*``).
+#: permission rules match on (``mcp__github__*``). Withheld per-server when
+#: ``mcp_prefix_tool_names`` is off; the rest of this module's work is unaffected,
+#: because none of the safety properties depend on the prefix itself.
 MCP_TOOL_PREFIX = "mcp__"
 
 #: OpenAI's tool-use API rejects a ``function.name`` longer than this, and the
@@ -37,7 +39,10 @@ MCP_TOOL_PREFIX = "mcp__"
 #: rather than discovered as a 400 from the provider.
 MAX_TOOL_NAME_LENGTH = 64
 
-_HASH_LENGTH = 8
+#: 12 hex characters, matching what Codex uses. Eight was chosen first and is a
+#: 32-bit space, which is fine until it is not: the whole point of a hash here is
+#: to be the difference between two tools that would otherwise collide.
+_HASH_LENGTH = 12
 _SEPARATOR = "__"
 
 #: How many times :func:`allocate` will re-hash a name that is still taken before
@@ -86,22 +91,39 @@ def _shorten(base: str, seed: str, *, force_hash: bool) -> str:
     return f"{stem}_{digest}"
 
 
-def qualify(server: str, tool: str) -> str:
+def qualify(server: str, tool: str, *, prefix: bool = True) -> str:
     """The namespaced name for *tool* on *server*, before collision resolution.
 
-    Use :func:`allocate` when registering more than one tool; this is the
-    collision-free single-tool case and the shape the others are built from.
+    Args:
+        server: The server's configured name, which need not match the server's
+            own ``serverInfo`` -- the spec warns that the latter is not unique
+            across servers.
+        tool: The name the server reported.
+        prefix: Whether to namespace under *server*. Off leaves the tool under
+            its own sanitized name; callers still get collision handling.
+
+    Returns:
+        The name, within the length budget, or the shape :func:`allocate` builds
+        from when the caller needs to account for other tools.
+
     """
-    base = (
-        f"{MCP_TOOL_PREFIX}{sanitize(server, 'server')}"
-        f"{_SEPARATOR}{sanitize(tool, 'tool')}"
-    )
+    base = _base_name(server, tool, prefix)
     return _shorten(base, base, force_hash=False)
+
+
+def _base_name(server: str, tool: str, prefix: bool) -> str:
+    sanitized_server = sanitize(server, "server")
+    sanitized_tool = sanitize(tool, "tool")
+    if not prefix:
+        return sanitized_tool
+    return f"{MCP_TOOL_PREFIX}{sanitized_server}{_SEPARATOR}{sanitized_tool}"
 
 
 def allocate(
     server_tools: Iterable[tuple[str, str]],
     reserved: Iterable[str] = (),
+    *,
+    unprefixed: Iterable[str] = (),
 ) -> dict[tuple[str, str], str]:
     """Assign every ``(server, tool)`` pair a distinct name that fits the budget.
 
@@ -110,6 +132,9 @@ def allocate(
         reserved: Names already taken -- Nova's built-in tools, and anything
             registered before this call. An MCP tool is never handed one of
             these, which is what keeps a server from displacing ``edit``.
+        unprefixed: Servers whose tools should keep their own names. They still
+            get sanitised, length-capped and deduplicated -- only the namespace is
+            withheld, so this costs the one property and keeps the rest.
 
     Returns:
         A mapping from each pair to the name the model will see, in a form the
@@ -120,12 +145,10 @@ def allocate(
     resumed session would call a tool that no longer exists under that name.
     """
     taken = set(reserved)
+    without_prefix = set(unprefixed)
     plans: list[tuple[str, str, tuple[str, str]]] = []
     for server, tool in server_tools:
-        base = (
-            f"{MCP_TOOL_PREFIX}{sanitize(server, 'server')}"
-            f"{_SEPARATOR}{sanitize(tool, 'tool')}"
-        )
+        base = _base_name(server, tool, prefix=server not in without_prefix)
         plans.append((base, f"{server}\0{tool}", (server, tool)))
 
     # A base shared by two servers or tools cannot serve both, so both hash even

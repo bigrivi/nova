@@ -175,12 +175,14 @@ cd frontend && npm run dev -- --host
 
 ## 配置文件结构
 
-`~/.nova/config.json` 是 `Settings.load_config` 读取的唯一文件。加载器恰好认识五个顶层键：
+`~/.nova/config.json` 是 `Settings.load_config` 读取的唯一文件。加载器恰好认识七个顶层键：
 
 ```json
 {
   "providers": {},
   "mcp_servers": {},
+  "mcp_prefix_tool_names": true,
+  "mcp_non_prefixed_servers": [],
   "compaction": {},
   "transcription": {},
   "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"}
@@ -193,6 +195,9 @@ cd frontend && npm run dev -- --host
   `{"name": value}`。
 * `mcp_servers`：名字到服务配置的对象。非对象的值会被忽略并替换成 `{}`。stdio 和 HTTP
   的形态见 `docs/advanced/mcp.md`。
+* `mcp_prefix_tool_names`：MCP 工具是否以 `mcp__<服务名>__<工具名>` 暴露。默认 `true`；
+  非布尔值退回默认值。见[工具命名](../advanced/mcp.md#工具命名)。
+* `mcp_non_prefixed_servers`：豁免前缀的服务名数组，其余服务仍加前缀。非数组的值被忽略。
 * `compaction`：带调优键的对象。真正的键和默认值见 `docs/advanced/compaction.md`。
 * `transcription`：配置语音转文字的对象。见下面[语音转文字](#voice-to-text)。
 * `server`：带 `host`（默认 `127.0.0.1`）、`port`（默认 `8765`，必须是 1-65535）、

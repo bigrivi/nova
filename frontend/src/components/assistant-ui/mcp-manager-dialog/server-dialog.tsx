@@ -172,8 +172,10 @@ export function McpServerDialog({
     /**
      * Connect the config as the form currently stands, without saving it.
      *
-     * This is the point of the button: a saved config is inert until Nova
-     * restarts, so the user needs proof of reachability *before* committing.
+     * The point of the button is to answer "will this work" before the config is
+     * committed: a saved server that fails to connect leaves the user with a
+     * broken entry and a name to go and edit. Testing first turns that into a
+     * message they can act on while the form is still open.
      */
     async function handleTest() {
         setError(null);
@@ -417,8 +419,9 @@ export function McpServerDialog({
                         </>
                     )}
 
-                    {/* The connection test: proves reachability now, because a
-                        saved config stays inert until Nova restarts. */}
+                    {/* The connection test: proves the server answers while the
+                        form is still open, so a bad config can be fixed here
+                        instead of saved and then discovered. */}
                     <div className="rounded-lg border bg-muted/30 p-3">
                         <div className="flex items-center gap-2">
                             <Button

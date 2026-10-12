@@ -63,6 +63,35 @@ Five threat categories are detected:
 - **Max 3 consecutive identical failures** triggers a halt
 - **Max 10 consecutive read-only calls** without a write triggers a warning
 
+## MCP Tool Permissions
+
+An MCP tool is resolved **by name alone**. A configured `allow`, `ask` or `deny`
+rule is honoured exactly as written, but Nova does not derive a prompt from the
+tool's arguments.
+
+This is a deliberate trade, and the reasoning matters more than the rule:
+
+- Nova's per-argument rules infer what a call *targets* from the argument names
+  of its own tools. Against an arbitrary server's schema that inference is
+  unreliable -- it asks about a path the tool never touches, or misses the one it
+  does. A prompt that is wrong in either direction is worse than no prompt: it
+  teaches the user to clear the dialog without reading it, which is the mechanism
+  behind consent-fatigue attacks, where a server fronts dozens of harmless calls
+  so that the dangerous one is reflex-allowed.
+- **The cost is real.** Nova no longer stops an MCP tool reading a credential
+  outside the workspace, or one whose arguments look like a write. Trust in a
+  server is placed where it is actually chosen -- adding a stdio server is adding
+  a command that runs with your privileges -- rather than once per call.
+
+Two things narrow that gap:
+
+- Namespace rules in `permissions.json` can address a whole server
+  (`"deny": ["mcp__github__*"]`) without naming every tool. Because MCP tools are
+  registered as `mcp__<server>__<tool>`, these rules match; they could not before
+  namespacing, because tools were registered under bare names.
+- A server that cannot connect is reported with its reason in Settings -> MCP,
+  rather than silently contributing no tools.
+
 ## Memory Security
 
 Memories are stored in a local SQLite database. Threat patterns are scanned

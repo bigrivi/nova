@@ -237,6 +237,28 @@ def _transport_of(payload: dict) -> str:
     return "http" if "url" in payload else "stdio"
 
 
+async def _apply_mcp_change(http_request: Request) -> McpServerListResponse:
+    """Reflect a just-written config in the running process, then return the list.
+
+    Three steps, in an order that is not interchangeable. The config is reloaded
+    first, because the MCP manager reads the cached settings and would otherwise
+    reconnect with the servers this change exists to replace. The manager then
+    reconnects, and the toolset cache is dropped with it -- a cached registry
+    still holds the tools of the servers as they were, and it is keyed on the
+    agent and model rather than on the MCP config, so nothing else would ever
+    clear it.
+
+    The effect is that the change is live for the next message in any session,
+    including one already open, which is why the settings UI no longer tells the
+    user to restart.
+    """
+    from nova.app.runtime import reload_mcp_servers
+
+    refreshed = refresh_settings(http_request)
+    await reload_mcp_servers()
+    return await build_mcp_list_response(refreshed)
+
+
 async def build_mcp_list_response(settings: Settings) -> McpServerListResponse:
     """The configured servers, read fresh, with secret values withheld.
 
@@ -274,6 +296,9 @@ async def build_mcp_list_response(settings: Settings) -> McpServerListResponse:
                 # Absent before an agent has built a toolset, which is not the
                 # same as zero: nothing has looked yet.
                 loaded_tools=list(loaded.names) if loaded else None,
+                # None unless the server could not be reached, so the UI can treat
+                # "no error" and "not looked yet" as different states.
+                error=(loaded.error or None) if loaded else None,
                 skipped_tools=(
                     [McpSkippedTool(**entry) for entry in loaded.skipped]
                     if loaded
@@ -314,7 +339,7 @@ async def add_mcp_server(
         service.add_mcp_server(_config_of(body, body.name))
     except ConfigValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return await build_mcp_list_response(refresh_settings(http_request))
+    return await _apply_mcp_change(http_request)
 
 
 @router.post("/api/config/mcp/update", response_model=McpServerListResponse)
@@ -331,7 +356,7 @@ async def update_mcp_server(
         if "does not exist" in message:
             raise HTTPException(status_code=404, detail=message) from exc
         raise HTTPException(status_code=400, detail=message) from exc
-    return await build_mcp_list_response(refresh_settings(http_request))
+    return await _apply_mcp_change(http_request)
 
 
 @router.post("/api/config/mcp/delete", response_model=McpServerListResponse)
@@ -348,7 +373,7 @@ async def delete_mcp_server(
         if "does not exist" in message:
             raise HTTPException(status_code=404, detail=message) from exc
         raise HTTPException(status_code=400, detail=message) from exc
-    return await build_mcp_list_response(refresh_settings(http_request))
+    return await _apply_mcp_change(http_request)
 
 
 @router.post("/api/config/mcp/test", response_model=McpTestResponse)

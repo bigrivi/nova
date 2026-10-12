@@ -159,6 +159,71 @@ async def test_dont_ask_mode_refuses_a_configured_ask_for_an_mcp_tool() -> None:
     assert not result.allowed
 
 
+# ── a live server reaches an agent's toolset, through the real builder ─
+#
+# Everything above drives the behaviour class with a hand-registered tool. This is
+# the other end: a real MCP server, a real `ToolsetBuilder`, and the assertion
+# that what lands in an agent's registry is namespaced, marked as MCP-sourced, and
+# carries the policy behaviour. It stops short of `build_agent`, which needs a
+# provider and a data source to stand up; the remaining link is that function's
+# cache-miss branch, which calls the builder this exercises.
+
+
+@pytest.mark.asyncio
+async def test_a_live_server_reaches_an_agents_toolset(
+    monkeypatch, tmp_path, mcp_server_path
+) -> None:
+    import json
+    import sys
+
+    from nova.mcp.manager import MCPManager
+    from nova.settings import get_settings
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.json").write_text(
+        json.dumps(
+            {
+                "providers": {},
+                "mcp_servers": {
+                    "demo": {"command": sys.executable, "args": [mcp_server_path]}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    get_settings.cache_clear()
+
+    # The builder reaches the manager through `get_shared`, so the connected one
+    # has to be the shared one -- and it has to be put back afterwards, or this
+    # leaks a manager into every later test.
+    previous = MCPManager._instance
+    manager = MCPManager()
+    MCPManager._instance = manager
+    try:
+        await manager.ensure_initialized()
+
+        registry = ToolRegistry()
+        await ToolsetBuilder(
+            registry=registry,
+            skill_service=None,
+            approval=ApprovalManager(),
+            is_sub_agent=False,
+        ).build()
+
+        tool = registry.get("mcp__demo__echo")
+        assert tool is not None, sorted(registry.tools)
+        assert tool.from_mcp is True, "the agent must know where it came from"
+
+        behaviour = registry.behavior_for("mcp__demo__echo")
+        assert isinstance(behaviour, PolicyToolBehavior)
+        assert behaviour._from_mcp is True
+    finally:
+        MCPManager._instance = previous
+        await manager.shutdown()
+
+
 # ── a built-in keeps every gate it had ────────────────────────────────
 
 

@@ -443,6 +443,18 @@ class Settings:
     # MCP server definitions: {name: {command|url, ...}}
     mcp_servers: dict[str, dict] = field(default_factory=dict)
 
+    # Whether an MCP tool is exposed as `mcp__<server>__<tool>` rather than under
+    # the bare name the server chose. On by default because bare names are how a
+    # server's `edit` collides with Nova's editor; off costs roughly 3% of the
+    # tokens a server's tool definitions occupy, so it is a choice rather than a
+    # correction. See `nova.mcp.naming`.
+    mcp_prefix_tool_names: bool = True
+
+    # Servers exempt from the prefix. Sanitising, the length budget and collision
+    # handling still apply to these -- only the namespace is withheld, so the
+    # exemption costs the safety properties that do not depend on the prefix.
+    mcp_non_prefixed_servers: frozenset[str] = frozenset()
+
     # Context compaction thresholds.
     compaction: CompactionSettings = field(default_factory=CompactionSettings)
 
@@ -478,6 +490,16 @@ class Settings:
         providers = _parse_provider_configs(config_payload.get("providers"))
         raw_mcp = config_payload.get("mcp_servers")
         mcp_servers = dict(raw_mcp) if isinstance(raw_mcp, dict) else {}
+        # Read strictly: a malformed value falls back to the default rather than
+        # raising, because a typo in one key should not stop Nova from starting.
+        prefix_raw = config_payload.get("mcp_prefix_tool_names", True)
+        mcp_prefix_tool_names = prefix_raw if isinstance(prefix_raw, bool) else True
+        non_prefixed_raw = config_payload.get("mcp_non_prefixed_servers")
+        mcp_non_prefixed_servers = (
+            frozenset(str(name) for name in non_prefixed_raw)
+            if isinstance(non_prefixed_raw, list)
+            else frozenset()
+        )
         approval_review = _parse_approval_review_config(
             config_payload.get("approval_review")
         )
@@ -501,6 +523,8 @@ class Settings:
             frontend_dist_path=frontend_dist_path,
             providers=providers,
             mcp_servers=mcp_servers,
+            mcp_prefix_tool_names=mcp_prefix_tool_names,
+            mcp_non_prefixed_servers=mcp_non_prefixed_servers,
             compaction=compaction,
             transcription=transcription,
             web_search=web_search,

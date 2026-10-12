@@ -293,6 +293,10 @@ class McpServerRecord(BaseModel):
     call, under the namespaced names the model sees. Both are None rather than
     empty until a toolset has been built, because "nothing loaded yet" and "the
     server offers nothing" are different facts and only one of them is a problem.
+
+    ``error`` is set when the server could not be connected at all. A server that
+    fails silently is the worst case: its tools simply stop existing and the user
+    has no symptom to chase, only a tool that used to work and does not.
     """
 
     name: str
@@ -304,6 +308,7 @@ class McpServerRecord(BaseModel):
     header_keys: list[str] = []
     loaded_tools: list[str] | None = None
     skipped_tools: list[McpSkippedTool] | None = None
+    error: str | None = None
 
 
 class McpServerListResponse(BaseModel):

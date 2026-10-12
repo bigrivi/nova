@@ -30,6 +30,25 @@ _identity_cache: dict[str, PromptConfig] = {}
 _registry_cache: dict[str, ToolRegistry] = {}
 
 
+async def reload_mcp_servers() -> None:
+    """Reconnect the MCP servers and drop the cached toolsets that held them.
+
+    The two steps belong together, which is why this is one function rather than
+    two calls at the call site. A toolset is rebuilt for every message, so
+    emptying the cache is enough to pick up new tools on the next message in any
+    session -- but only if the manager has reconnected first, and reconnecting
+    alone changes nothing while the cache still holds a registry built from the
+    servers as they were.
+
+    Call this *after* the config file is written and settings are reloaded;
+    the manager reads ``get_settings()``, which is cached.
+    """
+    from nova.mcp.manager import MCPManager
+
+    await MCPManager.get_shared().reload()
+    _registry_cache.clear()
+
+
 def build_llm(
     provider: str | None = None,
     model: str | None = None,

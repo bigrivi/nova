@@ -16,6 +16,8 @@ answer does not depend on the order the servers happened to connect in.
 from __future__ import annotations
 
 import json
+import os
+import sys
 
 import pytest
 
@@ -27,7 +29,7 @@ from nova.mcp.naming import (
     qualify,
     sanitize,
 )
-from nova.settings import get_settings
+from nova.settings import Settings, get_settings
 from nova.tools.registry import ToolRegistry
 
 # ── the shape of a name ───────────────────────────────────────────────
@@ -376,6 +378,160 @@ def test_the_tool_is_called_by_the_name_the_server_knows_it_as() -> None:
     assert wrapper.__qualname__ == "McpClient.github.list_issues"
 
 
+# ── the namespace is a choice, not a correction ──────────────────────
+
+
+def test_a_server_can_keep_its_own_tool_names() -> None:
+    """The escape hatch, for a server whose names are already unambiguous.
+
+    The prefix costs about 3% of the tokens a server's tool definitions occupy,
+    which is cheap at the median and noise next to the context a heavy server
+    costs anyway. So it is a setting, not a rule.
+    """
+
+    names = allocate([("github", "list_issues")], unprefixed=["github"])
+
+    assert names[("github", "list_issues")] == "list_issues"
+
+
+def test_an_exempt_server_keeps_every_other_safety_property() -> None:
+    """Only the namespace is withheld, not the work the namespace was part of.
+
+    Withholding the prefix must not mean withholding the length budget or the
+    collision handling, or the exemption would quietly reintroduce the 400 and the
+    silent overwrite that the cap and the allocator exist to prevent.
+    """
+
+    long_name = "x" * 200
+    names = allocate([("s", long_name), ("s", long_name + "y")], unprefixed=["s"])
+
+    assert all(len(name) <= MAX_TOOL_NAME_LENGTH for name in names.values())
+    assert len(set(names.values())) == 2
+
+
+def test_an_exempt_server_still_cannot_take_a_builtin_name() -> None:
+    """The boundary the prefix gave for free has to be paid for another way."""
+
+    names = allocate([("github", "edit")], reserved=["edit"], unprefixed=["github"])
+
+    assert "edit" not in names.values()
+    assert len(names[("github", "edit")]) <= MAX_TOOL_NAME_LENGTH
+
+
+def test_two_exempt_servers_offering_the_same_tool_stay_distinct() -> None:
+    """Without the namespace, deduplication is the only thing holding."""
+
+    names = allocate([("a", "query"), ("b", "query")], unprefixed=["a", "b"])
+
+    assert len(set(names.values())) == 2
+
+
+def test_an_exemption_applies_only_to_the_named_server() -> None:
+    """A per-server choice, not a global one."""
+
+    names = allocate([("github", "edit"), ("linear", "edit")], unprefixed=["github"])
+
+    assert names[("github", "edit")] == "edit"
+    assert names[("linear", "edit")] == "mcp__linear__edit"
+
+
+# ── the setting reaches the manager, not just the parser ──────────────
+#
+# Three pieces have to agree for the switch to work: `Settings` parses the key,
+# `allocate` honours it, and `MCPManager` passes one to the other. The first two
+# have their own tests; these pin the third, which nothing else would catch --
+# a manager that ignores the setting leaves every test here passing while the
+# user's choice silently does nothing.
+
+
+def _settings_home(tmp_path, script: str, names: list[str], **mcp_options) -> None:
+    """Write a config with one MCP server per name, all running *script*."""
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    (home / "config.json").write_text(
+        json.dumps(
+            {
+                "providers": {},
+                **mcp_options,
+                "mcp_servers": {
+                    name: {"command": sys.executable, "args": [script]}
+                    for name in names
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_prefix_setting_reaches_the_registry(
+    monkeypatch, tmp_path, mcp_server_path
+) -> None:
+    """Turning the prefix off must actually turn it off."""
+    _settings_home(tmp_path, mcp_server_path, ["demo"], mcp_prefix_tool_names=False)
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    get_settings.cache_clear()
+
+    manager = MCPManager()
+    registry = ToolRegistry()
+    try:
+        await manager.ensure_initialized()
+        manager.register_tools(registry)
+
+        names = sorted(registry.tools)
+        assert "echo" in names, f"the prefix should be gone, got {names}"
+        assert not any(name.startswith(MCP_TOOL_PREFIX) for name in names)
+    finally:
+        await manager.shutdown()
+
+    # And the converse, so a manager that hard-codes "no prefix" fails too.
+    _settings_home(tmp_path, mcp_server_path, ["demo"], mcp_prefix_tool_names=True)
+    get_settings.cache_clear()
+    manager = MCPManager()
+    registry = ToolRegistry()
+    try:
+        await manager.ensure_initialized()
+        manager.register_tools(registry)
+
+        assert "mcp__demo__echo" in registry.tools
+    finally:
+        await manager.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_a_per_server_exemption_reaches_the_registry(
+    monkeypatch, tmp_path, mcp_server_path
+) -> None:
+    """The exemption is per server, and the manager is what makes it so.
+
+    Both servers run the same script, so the only difference between them is the
+    name in the config -- which is exactly the thing the exemption is written
+    against.
+    """
+    _settings_home(
+        tmp_path,
+        mcp_server_path,
+        ["exempt", "normal"],
+        mcp_non_prefixed_servers=["exempt"],
+    )
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
+    get_settings.cache_clear()
+
+    manager = MCPManager()
+    registry = ToolRegistry()
+    try:
+        await manager.ensure_initialized()
+        manager.register_tools(registry)
+
+        names = sorted(registry.tools)
+        assert "echo" in names, f"the exempt server keeps its own name: {names}"
+        assert "mcp__normal__echo" in names, (
+            f"the other server keeps the prefix: {names}"
+        )
+    finally:
+        await manager.shutdown()
+
+
 @pytest.mark.parametrize(
     "servers",
     [
@@ -391,3 +547,72 @@ def test_every_registered_name_is_unique_and_within_budget(servers) -> None:
     assert len(set(names.values())) == len(servers)
     assert all(len(name) <= MAX_TOOL_NAME_LENGTH for name in names.values())
     assert not set(names.values()) & {"edit", "read", "write"}
+
+
+# ── the setting itself ───────────────────────────────────────────────
+
+
+def _settings(tmp_path, **overrides):
+    """Settings loaded from a config carrying only the given MCP keys."""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.json").write_text(
+        json.dumps({"providers": {}, **overrides}), encoding="utf-8"
+    )
+    previous = os.environ.get("NOVA_HOME")
+    os.environ["NOVA_HOME"] = str(home)
+    get_settings.cache_clear()
+    try:
+        return Settings.load_config()
+    finally:
+        if previous is None:
+            os.environ.pop("NOVA_HOME", None)
+        else:
+            os.environ["NOVA_HOME"] = previous
+        get_settings.cache_clear()
+
+
+def test_naming_is_prefixed_by_default(tmp_path) -> None:
+    """Bare names are the broken status quo, so the default is the fix."""
+
+    assert _settings(tmp_path).mcp_prefix_tool_names is True
+
+
+def test_the_prefix_can_be_turned_off(tmp_path) -> None:
+    assert (
+        _settings(tmp_path, mcp_prefix_tool_names=False).mcp_prefix_tool_names is False
+    )
+
+
+def test_a_malformed_flag_falls_back_to_the_default(tmp_path) -> None:
+    """A typo in one key must not stop Nova from starting."""
+
+    settings = _settings(tmp_path, mcp_prefix_tool_names="nope")
+
+    assert settings.mcp_prefix_tool_names is True
+
+
+def test_per_server_exemptions_are_read(tmp_path) -> None:
+    settings = _settings(tmp_path, mcp_non_prefixed_servers=["a", "b", 7])
+
+    assert settings.mcp_non_prefixed_servers == frozenset({"a", "b", "7"})
+
+
+def test_a_malformed_exemption_list_falls_back_to_empty(tmp_path) -> None:
+    settings = _settings(tmp_path, mcp_non_prefixed_servers={"not": "a list"})
+
+    assert settings.mcp_non_prefixed_servers == frozenset()
+
+
+def test_the_hash_suffix_is_long_enough_to_earn_its_name() -> None:
+    """Twelve hex characters, matching Codex.
+
+    Eight was the first choice and is a 32-bit space. That is a lot of collisions
+    at a thousand tools and not many at a hundred million, which means the value
+    someone actually depends on is the one nobody measures.
+    """
+    name = qualify("s" * 60, "t" * 60)
+    suffix = name.rsplit("_", 1)[-1]
+
+    assert len(suffix) == 12
+    assert all(char in "0123456789abcdef" for char in suffix)

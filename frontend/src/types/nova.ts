@@ -117,6 +117,8 @@ export type NovaMcpServerRecord = {
     header_keys: string[];
     loaded_tools: string[] | null;
     skipped_tools: { tool: string; reason: string }[] | null;
+    /** Set when the server could not be connected at all. */
+    error: string | null;
 };
 
 /** One env var or header: a name and a value. */

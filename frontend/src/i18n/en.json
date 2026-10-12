@@ -332,7 +332,7 @@
     "mcp.addDialogTitle": "Add MCP server",
     "mcp.addDialogDescription": "Point Nova at an MCP server, then test the connection before saving.",
     "mcp.editDialogTitle": "Edit MCP server",
-    "mcp.editDialogDescription": "Changes take effect after Nova restarts.",
+    "mcp.editDialogDescription": "A saved change takes effect on your next message.",
     "mcp.name": "Name",
     "mcp.namePlaceholder": "filesystem",
     "mcp.transport": "Transport",
@@ -361,9 +361,13 @@
     "mcp.testFailed": "Could not connect to the server.",
     "mcp.delete": "Delete server",
     "mcp.confirmDelete": "This MCP server will be removed from the configuration and cannot be recovered.",
-    "mcp.restartNotice": "Nova connects MCP servers once at startup. A saved change takes effect the next time Nova starts.",
+    "mcp.reloadNotice": "A saved change reconnects the servers right away. The next message you send uses the new tools; a reply already in progress keeps the tools it started with.",
     "common.save": "Save",
     "mcp.loadedTools_one": "{{count}} tool available to agents",
     "mcp.loadedTools_other": "{{count}} tools available to agents",
-    "mcp.skippedTool": "'{{tool}}' cannot be used by agents: {{reason}}"
+    "mcp.skippedTool": "'{{tool}}' cannot be used by agents: {{reason}}",
+    "mcp.statusFailed": "Not connected",
+    "mcp.statusUnknown": "Not checked yet",
+    "mcp.connectionFailed": "Cannot connect: {{reason}}",
+    "mcp.statusConnected": "Connected"
 }

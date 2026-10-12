@@ -331,7 +331,7 @@
     "mcp.addDialogTitle": "添加 MCP 服务器",
     "mcp.addDialogDescription": "填写 MCP 服务器信息，保存前可先测试连接是否可用。",
     "mcp.editDialogTitle": "编辑 MCP 服务器",
-    "mcp.editDialogDescription": "修改将在 Nova 重启后生效。",
+    "mcp.editDialogDescription": "保存后在下一次发送消息时生效。",
     "mcp.name": "名称",
     "mcp.namePlaceholder": "filesystem",
     "mcp.transport": "连接方式",
@@ -360,9 +360,13 @@
     "mcp.testFailed": "无法连接到该服务器。",
     "mcp.delete": "删除服务器",
     "mcp.confirmDelete": "该 MCP 服务器将从配置中移除，且无法恢复。",
-    "mcp.restartNotice": "Nova 仅在启动时连接 MCP 服务器。保存的修改会在下次启动 Nova 后生效。",
+    "mcp.reloadNotice": "保存后立即重新连接。下一次发送消息即可使用新工具；正在进行的这一轮仍用旧工具。",
     "common.save": "保存",
     "mcp.loadedTools_one": "{{count}} 个工具可供 Agent 使用",
     "mcp.loadedTools_other": "{{count}} 个工具可供 Agent 使用",
-    "mcp.skippedTool": "“{{tool}}” 无法被 Agent 使用：{{reason}}"
+    "mcp.skippedTool": "“{{tool}}” 无法被 Agent 使用：{{reason}}",
+    "mcp.statusFailed": "未连接",
+    "mcp.statusUnknown": "尚未检查",
+    "mcp.connectionFailed": "无法连接：{{reason}}",
+    "mcp.statusConnected": "已连接"
 }

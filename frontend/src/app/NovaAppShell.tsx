@@ -1,13 +1,9 @@
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import { useEffect, useRef, useState } from "react";
-
 import { LoginDialog } from "../components/auth/login-dialog";
 import { resolveModelEffort } from "../components/assistant-ui/elements/model-selector";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { agentDisplayName } from "../lib/agent-display";
-import { fetchAppVersion, getSpeechStatus, setSessionRoute, updateAgent } from "../lib/nova-api";
 import { useReasoningEffortStore } from "../stores/reasoning-effort-store";
-import { useSpeechStore } from "../stores/speech-store";
 import { NovaMainPanel } from "./components/NovaMainPanel";
 import { NovaSidebarPanel } from "./components/NovaSidebarPanel";
 import { useAgentSelection } from "./hooks/useAgentSelection";
@@ -16,43 +12,20 @@ import { useConversations } from "./hooks/useConversations";
 import { useModelConfig } from "./hooks/useModelConfig";
 import { useNovaRuntime } from "./hooks/useNovaRuntime";
 import { useProjects } from "./hooks/useProjects";
+import { useStartupStatus } from "./hooks/useStartupStatus";
+import {
+    useAgentRouteSync,
+    useSessionRouteSync,
+} from "./hooks/useRouteSync";
 import { useViewport } from "./hooks/useViewport";
 
 export function NovaAppShell() {
     const viewport = useViewport();
     const modelConfig = useModelConfig();
     const agentSelection = useAgentSelection();
-    // Backend version for the WorkBuddy-style sidebar badge.
-    const [appVersion, setAppVersion] = useState<string | null>(null);
-    useEffect(() => {
-        let live = true;
-        fetchAppVersion()
-            .then((version) => {
-                if (live) setAppVersion(version);
-            })
-            .catch(() => {});
-        // Microphone button visibility follows the transcription config.
-        getSpeechStatus()
-            .then((status) => {
-                if (!live) {
-                    return;
-                }
-                const speech = useSpeechStore.getState();
-                speech.setEnabled(status.enabled);
-                // A take started before a reload outlives the view; adopt it
-                // so the panel offers cancel/send instead of a 409, with the
-                // clock picked up where the backend left it.
-                if (status.recording) {
-                    const startedAt =
-                        status.recording_since_ms ?? Date.now();
-                    speech.setPhase("recording", startedAt);
-                }
-            })
-            .catch(() => {});
-        return () => {
-            live = false;
-        };
-    }, []);
+    // Backend version for the WorkBuddy-style sidebar badge, and the voice state
+    // the microphone control follows -- including a take that outlived a reload.
+    const { appVersion } = useStartupStatus();
     const reasoningEffort = useReasoningEffortStore((state) => state.effort);
     const setReasoningEffort = useReasoningEffortStore(
         (state) => state.setEffort,
@@ -65,11 +38,14 @@ export function NovaAppShell() {
         reasoningEffort ?? undefined,
     );
 
-    // Reopening a conversation restores what it ran with, which is not the
-    // same as the user picking that route now. Without this the restore would
-    // travel back through the writers below and quietly overwrite the default a
-    // new conversation starts from.
-    const restoringRoute = useRef(false);
+    // The agent's defaults, and the record of the conversation on screen. Two
+    // writers because a route lives in both, and they differ on purpose -- see
+    // the hooks. `beginRestore` is what keeps a restore from echoing back out.
+    const { beginRestore } = useAgentRouteSync({
+        agentKey: agentSelection.selectedAgentKey,
+        selectedModelId: modelConfig.selectedModelId,
+        reasoningEffort: activeEffort ?? null,
+    });
 
     const conversations = useConversations({
         models: modelConfig.models,
@@ -78,7 +54,11 @@ export function NovaAppShell() {
         syncAgentForThread: agentSelection.syncAgentForThread,
         getReasoningEffort: () => activeEffort ?? null,
         applySessionRoute: (route) => {
-            restoringRoute.current = true;
+            // Reopening a conversation restores what it ran with, which is not
+            // the user picking that route now. Without this the restore would
+            // travel back through the agent writer and quietly overwrite the
+            // default a new conversation starts from.
+            beginRestore();
             if (route.model) {
                 const match = modelConfig.models.find(
                     (model) => model.model === route.model,
@@ -118,72 +98,15 @@ export function NovaAppShell() {
 
     const isNewChat = conversations.isDraftThread;
 
-    // Two writers, because a route lives in two places.
-    //
-    // The agent row is the default a brand-new conversation starts from, so it
-    // takes every explicit pick - including one made while composing a draft,
-    // which is the case that used to be lost. The session row is what that one
-    // conversation ran with, so reopening it restores those values. The level
-    // rides along with the model in both, since it means nothing beside a
-    // different model.
-    const selectedModel = modelConfig.selectedModelId;
-    const routeParts = selectedModel ? selectedModel.split(":") : [];
-    const routeProvider = routeParts[0] ?? null;
-    const routeModel = routeParts[1] ?? null;
+    // Two writers, because a route lives in two places: the agent's defaults, and
+    // each conversation's record. See the hooks for why they disagree.
+    useSessionRouteSync({
+        selectedModelId: modelConfig.selectedModelId,
+        reasoningEffort: activeEffort ?? null,
+        isNewChat: conversations.isDraftThread,
+        threadId: conversations.currentThreadId,
+    });
 
-    const pushedAgent = useRef("");
-    useEffect(() => {
-        if (!routeProvider || !routeModel) {
-            return;
-        }
-        if (restoringRoute.current) {
-            // Consumed by this one skip: the next real change is a real change.
-            restoringRoute.current = false;
-            pushedAgent.current = "";
-            return;
-        }
-        const key = `${routeProvider}:${routeModel}|${activeEffort ?? ""}`;
-        if (pushedAgent.current === key) {
-            return;
-        }
-        pushedAgent.current = key;
-        void updateAgent(agentSelection.selectedAgentKey, {
-            model: routeModel,
-            provider: routeProvider,
-            reasoningEffort: activeEffort ?? null,
-        }).catch(() => {});
-    }, [
-        routeProvider,
-        routeModel,
-        activeEffort,
-        agentSelection.selectedAgentKey,
-    ]);
-
-    const pushedSession = useRef("");
-    useEffect(() => {
-        if (isNewChat || !routeProvider || !routeModel) {
-            pushedSession.current = "";
-            return;
-        }
-        const key = `${conversations.currentThreadId}|${routeProvider}:${routeModel}|${
-            activeEffort ?? ""
-        }`;
-        if (pushedSession.current === key) {
-            return;
-        }
-        pushedSession.current = key;
-        void setSessionRoute(conversations.currentThreadId, {
-            provider: routeProvider,
-            model: routeModel,
-            reasoning_effort: activeEffort ?? null,
-        }).catch(() => {});
-    }, [
-        isNewChat,
-        routeProvider,
-        routeModel,
-        conversations.currentThreadId,
-        activeEffort,
-    ]);
     const activeThread = conversations.threads.find(
         (thread) => thread.id === conversations.currentThreadId,
     );
