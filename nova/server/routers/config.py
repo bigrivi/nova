@@ -13,6 +13,9 @@ from nova.config.service import (
     ConfigValidationError,
 )
 from nova.config.service import (
+    McpServerConfig as ConfigMcpServerConfig,
+)
+from nova.config.service import (
     ModelCreateRequest as ConfigModelCreateRequest,
 )
 from nova.config.service import (
@@ -20,6 +23,13 @@ from nova.config.service import (
 )
 from nova.server.deps import get_settings, refresh_settings
 from nova.server.schemas import (
+    McpServerCreateRequest,
+    McpServerDeleteRequest,
+    McpServerListResponse,
+    McpServerRecord,
+    McpServerUpdateRequest,
+    McpTestRequest,
+    McpTestResponse,
     ModelCreateRequest,
     ModelDeleteRequest,
     ModelListResponse,
@@ -211,3 +221,134 @@ async def delete_model(
             raise HTTPException(status_code=404, detail=message) from exc
         raise HTTPException(status_code=400, detail=message) from exc
     return build_model_list_response(refresh_settings(http_request))
+
+
+# ── MCP servers ──────────────────────────────────────────────────────
+#
+# A change here reaches a running agent on the next restart, not sooner (the MCP
+# manager connects its servers once at startup). The /test route is what makes
+# that acceptable: it connects the config as given, right now, so a user knows a
+# server is reachable before committing it and waiting for the restart.
+
+
+def _transport_of(payload: dict) -> str:
+    return "http" if "url" in payload else "stdio"
+
+
+def build_mcp_list_response(settings: Settings) -> McpServerListResponse:
+    """The configured servers, read fresh, with secret values withheld."""
+    service = ConfigService(settings)
+    items: list[McpServerRecord] = []
+    for name, payload in service.list_mcp_servers().items():
+        if not isinstance(payload, dict):
+            continue
+        env_value = payload.get("env")
+        env = env_value if isinstance(env_value, dict) else {}
+        headers_value = payload.get("headers")
+        headers = headers_value if isinstance(headers_value, dict) else {}
+        items.append(
+            McpServerRecord(
+                name=name,
+                transport=_transport_of(payload),
+                command=str(payload.get("command", "")),
+                args=[str(a) for a in payload.get("args", []) or []],
+                url=str(payload.get("url", "")),
+                env_keys=list(env.keys()),
+                header_keys=list(headers.keys()),
+            )
+        )
+    items.sort(key=lambda record: record.name)
+    return McpServerListResponse(items=items)
+
+
+def _config_of(body: McpServerCreateRequest, name: str) -> ConfigMcpServerConfig:
+    return ConfigMcpServerConfig(
+        name=name,
+        command=body.command,
+        args=tuple(body.args),
+        env=tuple((pair.key, pair.value) for pair in body.env),
+        url=body.url,
+        headers=tuple((pair.key, pair.value) for pair in body.headers),
+    )
+
+
+@router.get("/api/mcp-servers", response_model=McpServerListResponse)
+async def mcp_servers(
+    settings: Settings = Depends(get_settings),
+) -> McpServerListResponse:
+    return build_mcp_list_response(settings)
+
+
+@router.post("/api/config/mcp/add", response_model=McpServerListResponse)
+async def add_mcp_server(
+    body: McpServerCreateRequest,
+    http_request: Request,
+    settings: Settings = Depends(get_settings),
+) -> McpServerListResponse:
+    service = ConfigService(settings)
+    try:
+        service.add_mcp_server(_config_of(body, body.name))
+    except ConfigValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return build_mcp_list_response(refresh_settings(http_request))
+
+
+@router.post("/api/config/mcp/update", response_model=McpServerListResponse)
+async def update_mcp_server(
+    body: McpServerUpdateRequest,
+    http_request: Request,
+    settings: Settings = Depends(get_settings),
+) -> McpServerListResponse:
+    service = ConfigService(settings)
+    try:
+        service.update_mcp_server(body.original_name, _config_of(body, body.name))
+    except ConfigValidationError as exc:
+        message = str(exc)
+        if "does not exist" in message:
+            raise HTTPException(status_code=404, detail=message) from exc
+        raise HTTPException(status_code=400, detail=message) from exc
+    return build_mcp_list_response(refresh_settings(http_request))
+
+
+@router.post("/api/config/mcp/delete", response_model=McpServerListResponse)
+async def delete_mcp_server(
+    body: McpServerDeleteRequest,
+    http_request: Request,
+    settings: Settings = Depends(get_settings),
+) -> McpServerListResponse:
+    service = ConfigService(settings)
+    try:
+        service.delete_mcp_server(body.name)
+    except ConfigValidationError as exc:
+        message = str(exc)
+        if "does not exist" in message:
+            raise HTTPException(status_code=404, detail=message) from exc
+        raise HTTPException(status_code=400, detail=message) from exc
+    return build_mcp_list_response(refresh_settings(http_request))
+
+
+@router.post("/api/config/mcp/test", response_model=McpTestResponse)
+async def test_mcp_server(body: McpTestRequest) -> McpTestResponse:
+    """Connect the given config now and report what it offered.
+
+    Validation first, so an obviously malformed config fails fast with a clear
+    message rather than a transport error; then the real connection, which is the
+    only honest test of reachability. Nothing is written -- a test is a question,
+    not a save.
+    """
+    from nova.config.service import validate_mcp_config
+    from nova.mcp import probe_mcp_server
+
+    try:
+        config = validate_mcp_config(_config_of(body, body.name or "probe"))
+    except ConfigValidationError as exc:
+        return McpTestResponse(ok=False, error=str(exc))
+    result = await probe_mcp_server(config.to_payload())
+    return McpTestResponse(
+        ok=result.ok,
+        server_name=result.server_name,
+        server_version=result.server_version,
+        tool_count=result.tool_count,
+        tool_names=result.tool_names,
+        error=result.error,
+    )

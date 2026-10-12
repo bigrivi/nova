@@ -3,10 +3,7 @@ MCP transport, client, and manager tests.
 """
 
 import asyncio
-import os
 import sys
-import tempfile
-import textwrap
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -25,68 +22,6 @@ from nova.tools.registry import ToolRegistry
 # ══════════════════════════════════════════════
 # helpers
 # ══════════════════════════════════════════════
-
-
-def _write_mcp_server_script() -> str:
-    """Write a minimal MCP Stdio server script and return its path."""
-    code = textwrap.dedent("""\
-    import json, sys
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        msg = json.loads(line)
-        rid = msg.get("id")
-        method = msg.get("method")
-        params = msg.get("params", {})
-        if method == "initialize":
-            sys.stdout.write(json.dumps({"jsonrpc":"2.0","id":rid,"result":{
-                "protocolVersion":"2025-03-26",
-                "capabilities":{"tools":{}},
-                "serverInfo":{"name":"test-server","version":"1.0.0"},
-            }}) + "\\n")
-        elif method == "notifications/initialized":
-            pass
-        elif method == "tools/list":
-            sys.stdout.write(json.dumps({"jsonrpc":"2.0","id":rid,"result":{
-                "tools":[{
-                    "name":"echo",
-                    "description":"Echo input",
-                    "inputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]},
-                }]
-            }}) + "\\n")
-        elif method == "tools/call":
-            name = params.get("name","")
-            args = params.get("arguments",{})
-            if name == "echo":
-                sys.stdout.write(json.dumps({"jsonrpc":"2.0","id":rid,"result":{
-                    "content":[{"type":"text","text":args.get("text","")}]
-                }}) + "\\n")
-            else:
-                sys.stdout.write(json.dumps({"jsonrpc":"2.0","id":rid,"error":{
-                    "code":-32601,"message":f"Unknown tool: {name}"
-                }}) + "\\n")
-        else:
-            sys.stdout.write(json.dumps({"jsonrpc":"2.0","id":rid,"error":{
-                "code":-32601,"message":f"Unknown method: {method}"
-            }}) + "\\n")
-        sys.stdout.flush()
-    """)
-    fd, path = tempfile.mkstemp(suffix=".py", prefix="mcp_test_server_", text=True)
-    with os.fdopen(fd, "w") as f:
-        f.write(code)
-    os.chmod(path, 0o755)
-    return path
-
-
-@pytest.fixture
-def mcp_server_path():
-    path = _write_mcp_server_script()
-    yield path
-    try:
-        os.unlink(path)
-    except OSError:
-        pass
 
 
 def _dummy_tool_schema(name: str = "dummy") -> dict:

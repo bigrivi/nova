@@ -4,6 +4,9 @@ import type {
     NovaAgentCreateRequest,
     NovaAttachmentData,
     NovaDirectoryListing,
+    NovaMcpServerInput,
+    NovaMcpServerRecord,
+    NovaMcpTestResult,
     NovaMemoryRecord,
     NovaMessageRecord,
     NovaModelCreateRequest,
@@ -359,6 +362,76 @@ export async function deleteModel(
         }),
     );
     return response.items;
+}
+
+// ── MCP servers ──────────────────────────────────────────────────────
+
+/** POST a JSON body and decode the reply, as every mutation below does. */
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+    return parseJson<T>(
+        await apiFetch(path, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+        }),
+    );
+}
+
+export async function listMcpServers(): Promise<NovaMcpServerRecord[]> {
+    const payload = await parseJson<JsonResponse<NovaMcpServerRecord>>(
+        await apiFetch("/api/mcp-servers"),
+    );
+    return payload.items;
+}
+
+export async function addMcpServer(
+    payload: NovaMcpServerInput,
+): Promise<NovaMcpServerRecord[]> {
+    return (await postJson<JsonResponse<NovaMcpServerRecord>>(
+        "/api/config/mcp/add",
+        payload,
+    )).items;
+}
+
+/**
+ * Replace a server's stored config, optionally renaming it.
+ *
+ * `originalName` is how the server is stored; `payload.name` is what it becomes.
+ * The config is replaced wholesale rather than merged, so a field the form
+ * cleared is genuinely cleared instead of lingering from the old entry.
+ */
+export async function updateMcpServer(
+    originalName: string,
+    payload: NovaMcpServerInput,
+): Promise<NovaMcpServerRecord[]> {
+    return (await postJson<JsonResponse<NovaMcpServerRecord>>(
+        "/api/config/mcp/update",
+        { original_name: originalName, ...payload },
+    )).items;
+}
+
+export async function deleteMcpServer(
+    name: string,
+): Promise<NovaMcpServerRecord[]> {
+    return (await postJson<JsonResponse<NovaMcpServerRecord>>(
+        "/api/config/mcp/delete",
+        { name },
+    )).items;
+}
+
+/**
+ * Connect the given config now and report what the server offered.
+ *
+ * Resolves with the result either way -- an unreachable server is an answer, not
+ * an exception -- so the caller renders the failure instead of catching it. Only
+ * a malformed request reaches here as a throw.
+ */
+export async function testMcpServer(
+    payload: NovaMcpServerInput,
+): Promise<NovaMcpTestResult> {
+    return postJson<NovaMcpTestResult>("/api/config/mcp/test", payload);
 }
 
 /** Read the model a session runs with, so reopening it restores that model. */

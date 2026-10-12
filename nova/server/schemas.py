@@ -261,6 +261,73 @@ class ModelDeleteRequest(BaseModel):
     model: str
 
 
+class McpKeyValue(BaseModel):
+    """One env var or header, as a name and a value.
+
+    A list of pairs rather than a map so the form can hold a half-typed row
+    (a key with no value yet) without it becoming a key named "" -- and so the
+    order the user entered them in survives the round trip.
+    """
+
+    key: str
+    value: str = ""
+
+
+class McpServerRecord(BaseModel):
+    """A configured server as the UI lists it, with secret values withheld.
+
+    ``env`` and ``headers`` carry credential values, so the list returns their
+    names only -- the same choice the provider list makes for ``api_key``. To
+    change a value the form re-enters it; to see one, read the config file. The
+    client already runs with the config owner's trust, but a value never has to
+    cross the wire to render the list, so it does not.
+    """
+
+    name: str
+    transport: str  # "stdio" | "http"
+    command: str = ""
+    args: list[str] = []
+    url: str = ""
+    env_keys: list[str] = []
+    header_keys: list[str] = []
+
+
+class McpServerListResponse(BaseModel):
+    items: list[McpServerRecord]
+
+
+class McpServerCreateRequest(BaseModel):
+    name: str
+    command: str = ""
+    args: list[str] = []
+    env: list[McpKeyValue] = []
+    url: str = ""
+    headers: list[McpKeyValue] = []
+
+
+class McpServerUpdateRequest(McpServerCreateRequest):
+    # The name under which the server is currently stored. ``name`` on the base
+    # is the new name, so a rename is one request.
+    original_name: str
+
+
+class McpServerDeleteRequest(BaseModel):
+    name: str
+
+
+class McpTestRequest(McpServerCreateRequest):
+    """The same shape a create carries: a test connects the config as given."""
+
+
+class McpTestResponse(BaseModel):
+    ok: bool
+    server_name: str = ""
+    server_version: str = ""
+    tool_count: int = 0
+    tool_names: list[str] = []
+    error: str = ""
+
+
 class InterruptRequest(BaseModel):
     session_id: str
 

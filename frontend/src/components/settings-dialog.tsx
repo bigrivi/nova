@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { AgentsManagerContent } from "@/components/assistant-ui/agents-manager-dialog";
+import { McpManagerContent } from "@/components/assistant-ui/mcp-manager-dialog";
 import { MemoryManagerContent } from "@/components/assistant-ui/memory-manager-dialog";
 import { ModelsManagerContent } from "@/components/assistant-ui/models-manager-dialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -14,6 +15,7 @@ import {
     CheckIcon,
     CpuIcon,
     DatabaseIcon,
+    PlugIcon,
     MoonIcon,
     SettingsIcon,
     SunIcon,
@@ -35,7 +37,7 @@ import {
 const ACTIVE_NAV_CLASS = "bg-brand-soft text-brand";
 const IDLE_NAV_CLASS = "text-foreground hover:bg-muted/60";
 
-type SettingsSection = "general" | "memory" | "models" | "agents";
+type SettingsSection = "general" | "memory" | "models" | "agents" | "mcp";
 
 const SECTIONS: ReadonlyArray<{
     id: SettingsSection;
@@ -46,6 +48,7 @@ const SECTIONS: ReadonlyArray<{
     { id: "memory", labelKey: "settings.section.memory", icon: DatabaseIcon },
     { id: "models", labelKey: "settings.section.models", icon: CpuIcon },
     { id: "agents", labelKey: "settings.section.agents", icon: UsersIcon },
+    { id: "mcp", labelKey: "settings.section.mcp", icon: PlugIcon },
 ];
 
 const LANGUAGES = [
@@ -121,12 +124,14 @@ export function SettingsDialog({
         memory: "settings.section.memory",
         models: "settings.section.models",
         agents: "settings.section.agents",
+        mcp: "settings.section.mcp",
     };
     const sectionDescriptionKey: Record<SettingsSection, string> = {
         general: "settings.general.description",
         memory: "memory.manageDescription",
         models: "modelSelector.managerDescription",
         agents: "agentManager.manageDescription",
+        mcp: "mcp.description",
     };
 
     function handleOpenChange(next: boolean) {
@@ -416,6 +421,11 @@ export function SettingsDialog({
                                     agents={agents}
                                     models={models}
                                     onAgentsChanged={onAgentsChanged}
+                                />
+                            ) : null}
+                            {section === "mcp" ? (
+                                <McpManagerContent
+                                    onStatusChange={onConfigStatusChange}
                                 />
                             ) : null}
                         </div>

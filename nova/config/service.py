@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +43,92 @@ _DEFAULT_BASE_URLS: dict[str, str] = {
 }
 
 
+def _merge_secrets(
+    stored: object, submitted: tuple[tuple[str, str], ...]
+) -> tuple[tuple[str, str], ...]:
+    """Fold submitted env/header rows into what is already stored.
+
+    Three moves have to be distinguishable from one submission, and none of them
+    can be a plain overwrite because the form cannot display a stored value:
+
+    * a row the user deleted is a **removal** -- its key was not submitted;
+    * a row the user left blank **keeps** the stored value, since the blank means
+      "I cannot see this secret and I am not retyping it";
+    * a row with a value **sets** it.
+
+    Args:
+        stored: The raw ``env``/``headers`` value from the config file, which may
+            be absent, malformed, or of a foreign type.
+        submitted: The ``(key, value)`` pairs the form sent, in user order.
+
+    Returns:
+        The merged pairs in submitted order, so a user who reorders rows in the
+        form gets that order in the file.
+    """
+    existing: dict[str, str] = {}
+    if isinstance(stored, dict):
+        existing = {str(k): str(v) for k, v in stored.items()}
+    submitted_keys = {key.strip() for key, _ in submitted if key.strip()}
+    merged: dict[str, str] = {
+        key: value for key, value in existing.items() if key in submitted_keys
+    }
+    for raw_key, value in submitted:
+        key = raw_key.strip()
+        if key and value:
+            merged[key] = value
+    return tuple(
+        (key, merged[key])
+        for key in (raw.strip() for raw, _ in submitted)
+        if key in merged
+    )
+
+
+def normalize_mcp_name(name: str) -> str:
+    """The identifier a server is stored and addressed under.
+
+    Trimmed, and required: a blank name would key an entry nothing could later
+    find to update or delete.
+    """
+    cleaned = (name or "").strip()
+    if not cleaned:
+        raise ConfigValidationError("MCP server name is required.")
+    return cleaned
+
+
+def validate_mcp_config(config: McpServerConfig) -> McpServerConfig:
+    """Reject a server that names neither a command nor a URL, or both.
+
+    This is the same either/or ``create_transport`` enforces, checked here so the
+    error reaches the user as a 400 at save time rather than a silent skip when
+    the manager tries to connect it at the next startup.
+    """
+    command = (config.command or "").strip()
+    url = (config.url or "").strip()
+    if command and url:
+        raise ConfigValidationError(
+            "An MCP server is either a local command or a remote URL, not both."
+        )
+    if not command and not url:
+        raise ConfigValidationError(
+            "An MCP server needs a command (local) or a URL (remote)."
+        )
+    if url and not (url.startswith("http://") or url.startswith("https://")):
+        raise ConfigValidationError(
+            "A remote MCP URL must start with http:// or https://."
+        )
+    args = tuple(a for a in config.args if a != "")
+    env = tuple((k.strip(), v) for k, v in config.env if k.strip())
+    headers = tuple((k.strip(), v) for k, v in config.headers if k.strip())
+    return McpServerConfig(
+        name=normalize_mcp_name(config.name),
+        command=command,
+        args=args if command else (),
+        env=env if command else (),
+        url=url,
+        headers=headers if url else (),
+    )
+
+
 @dataclass(frozen=True)
 class AgentCreateRequest:
     key: str
@@ -72,6 +158,42 @@ class ModelCreateRequest:
     model: str
     label: str
     tools: bool
+
+
+@dataclass(frozen=True)
+class McpServerConfig:
+    """One MCP server, in the shape the transport layer already understands.
+
+    Exactly one of ``command`` (a local stdio subprocess) or ``url`` (a remote
+    HTTP endpoint) is set -- the same either/or ``create_transport`` enforces, so
+    a config that round-trips through here is one it can build.
+    """
+
+    name: str
+    command: str = ""
+    args: tuple[str, ...] = ()
+    env: tuple[tuple[str, str], ...] = ()
+    url: str = ""
+    headers: tuple[tuple[str, str], ...] = ()
+
+    def to_payload(self) -> dict[str, Any]:
+        """The JSON object stored under ``mcp_servers[name]``.
+
+        Only the keys that belong to the chosen transport are written: a stdio
+        server with a stray empty ``url`` would make ``create_transport``'s
+        command/url check ambiguous.
+        """
+        if self.command:
+            payload: dict[str, Any] = {"command": self.command}
+            if self.args:
+                payload["args"] = list(self.args)
+            if self.env:
+                payload["env"] = dict(self.env)
+            return payload
+        payload = {"url": self.url}
+        if self.headers:
+            payload["headers"] = dict(self.headers)
+        return payload
 
 
 class ConfigService:
@@ -440,5 +562,78 @@ class ConfigService:
             )
 
         del models[model_key]
+        _write_json(self._config_path, payload)
+        return payload
+
+    # ── MCP server CRUD (JSON-backed) ───────────────────────────────
+    #
+    # The config shape is ``mcp_servers: {name: {command|url, ...}}`` -- the one
+    # the transport layer reads at startup. These methods are the only writers,
+    # so the JSON a human edits by hand and the JSON this writes stay the same
+    # shape, and a server added here is one `create_transport` can build.
+    #
+    # A change here reaches a running agent on the next restart, not sooner: the
+    # MCP manager connects its servers once at process start, and reconnecting a
+    # live stdio subprocess mid-session is a risk the connection test exists to
+    # make unnecessary. The UI says as much.
+
+    def _mcp_servers(self, payload: dict[str, Any]) -> dict[str, Any]:
+        servers = payload.setdefault("mcp_servers", {})
+        if not isinstance(servers, dict):
+            raise ConfigValidationError(
+                "Invalid Nova config: 'mcp_servers' must be an object."
+            )
+        return servers
+
+    def list_mcp_servers(self) -> dict[str, Any]:
+        """Every configured server, by name, in its stored form."""
+        payload = _load_config_payload(self._config_path)
+        return dict(self._mcp_servers(payload))
+
+    def add_mcp_server(self, config: McpServerConfig) -> dict[str, Any]:
+        payload = _load_config_payload(self._config_path)
+        servers = self._mcp_servers(payload)
+        name = normalize_mcp_name(config.name)
+        if name in servers:
+            raise ConfigValidationError(f"MCP server '{name}' already exists.")
+        servers[name] = validate_mcp_config(config).to_payload()
+        _write_json(self._config_path, payload)
+        return payload
+
+    def update_mcp_server(self, name: str, config: McpServerConfig) -> dict[str, Any]:
+        payload = _load_config_payload(self._config_path)
+        servers = self._mcp_servers(payload)
+        existing = normalize_mcp_name(name)
+        if existing not in servers:
+            raise ConfigValidationError(f"MCP server '{existing}' does not exist.")
+        stored = servers[existing]
+        if not isinstance(stored, dict):
+            raise ConfigValidationError(f"MCP server '{existing}' is not an object.")
+        renamed = normalize_mcp_name(config.name)
+        if renamed != existing and renamed in servers:
+            raise ConfigValidationError(f"MCP server '{renamed}' already exists.")
+        validated = validate_mcp_config(config)
+        # env/headers merge by key rather than replacing: the API never returns
+        # their values, so an edit form cannot show what is already stored. A
+        # blind overwrite would destroy a token whenever someone fixed a typo in
+        # the command line. _merge_secrets reads a dropped row as a removal and a
+        # blank value as "keep what you have", which is what those two moves mean.
+        merged = replace(
+            validated,
+            env=tuple(_merge_secrets(stored.get("env"), validated.env)),
+            headers=tuple(_merge_secrets(stored.get("headers"), validated.headers)),
+        )
+        del servers[existing]
+        servers[renamed] = merged.to_payload()
+        _write_json(self._config_path, payload)
+        return payload
+
+    def delete_mcp_server(self, name: str) -> dict[str, Any]:
+        payload = _load_config_payload(self._config_path)
+        servers = self._mcp_servers(payload)
+        existing = normalize_mcp_name(name)
+        if existing not in servers:
+            raise ConfigValidationError(f"MCP server '{existing}' does not exist.")
+        del servers[existing]
         _write_json(self._config_path, payload)
         return payload

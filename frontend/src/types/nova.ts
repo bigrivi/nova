@@ -92,6 +92,52 @@ export type NovaModelCreateRequest = {
     tools: boolean;
 };
 
+/** How an MCP server is reached: a local subprocess, or a remote endpoint. */
+export type McpTransportKind = "stdio" | "http";
+
+/**
+ * A configured MCP server, as the settings list shows it.
+ *
+ * Secret values are withheld by the server: `envKeys` / `headerKeys` carry the
+ * names of what is set, never the values, so rendering the list never needs a
+ * credential to cross the wire. Editing a value means re-entering it.
+ */
+export type NovaMcpServerRecord = {
+    name: string;
+    transport: McpTransportKind;
+    command: string;
+    args: string[];
+    url: string;
+    env_keys: string[];
+    header_keys: string[];
+};
+
+/** One env var or header: a name and a value. */
+export type McpKeyValue = {
+    key: string;
+    value: string;
+};
+
+/** The form's payload, for add, update and test alike. */
+export type NovaMcpServerInput = {
+    name: string;
+    command: string;
+    args: string[];
+    env: McpKeyValue[];
+    url: string;
+    headers: McpKeyValue[];
+};
+
+/** What a connection test found, or why it failed. */
+export type NovaMcpTestResult = {
+    ok: boolean;
+    server_name: string;
+    server_version: string;
+    tool_count: number;
+    tool_names: string[];
+    error: string;
+};
+
 export type NovaProviderUpdateRequest = {
     name?: string;
     type?: string;
