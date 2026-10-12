@@ -103,6 +103,14 @@ style(frontend): use overflow-x-clip so composer shadow fades naturally
 
 Run `git log --oneline -20` yourself to see the current style before you commit.
 
+### No co-author trailers
+
+Do not add `Co-authored-by:` or `Co-Authored-By:` trailers to a commit message. GitHub credits every co-author as a contributor, so a trailer that names a tool or a model adds a contributor to the repository's Insights graph who is not a person and cannot be removed without rewriting history.
+
+This applies to agents and assistants as much as to people. If a tool wants to sign a commit, it can say so in the pull request body, where it is visible and costs nothing.
+
+The rule was added after 62 commits acquired such trailers, so `git log` before this line still shows them. Leave the existing ones alone: rewriting 278 commits to strip them would change every SHA on `main` and force every clone to re-fetch, which is a worse outcome than two stale entries in a graph.
+
 ## Project layout
 
 * `nova/` is the shared Python runtime. It holds the agent loop, tools, providers, persistence, and server. Keep agent logic, tools, providers, and persistence here so all four surfaces stay consistent. That rule is stated in the README.
