@@ -126,6 +126,28 @@ export function McpManagerContent({
                                         })}
                                     </p>
                                 ) : null}
+                                {/* What the agent can reach, which the connection
+                                    test cannot tell the user: a server can connect
+                                    and still offer tools no agent will ever see. */}
+                                {server.loaded_tools !== null &&
+                                server.loaded_tools.length > 0 ? (
+                                    <p className="mt-1 text-[11px] text-muted-foreground">
+                                        {t("mcp.loadedTools", {
+                                            count: server.loaded_tools.length,
+                                        })}
+                                    </p>
+                                ) : null}
+                                {(server.skipped_tools ?? []).map((entry) => (
+                                    <p
+                                        key={entry.tool}
+                                        className="mt-1 text-[11px] text-destructive"
+                                    >
+                                        {t("mcp.skippedTool", {
+                                            tool: entry.tool,
+                                            reason: entry.reason,
+                                        })}
+                                    </p>
+                                ))}
                             </div>
                             <Button
                                 type="button"

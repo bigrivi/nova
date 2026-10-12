@@ -21,6 +21,7 @@ from nova.config.service import (
 from nova.config.service import (
     ProviderCreateRequest as ConfigProviderCreateRequest,
 )
+from nova.mcp.manager import MCPManager
 from nova.server.deps import get_settings, refresh_settings
 from nova.server.schemas import (
     McpServerCreateRequest,
@@ -28,6 +29,7 @@ from nova.server.schemas import (
     McpServerListResponse,
     McpServerRecord,
     McpServerUpdateRequest,
+    McpSkippedTool,
     McpTestRequest,
     McpTestResponse,
     ModelCreateRequest,
@@ -235,9 +237,22 @@ def _transport_of(payload: dict) -> str:
     return "http" if "url" in payload else "stdio"
 
 
-def build_mcp_list_response(settings: Settings) -> McpServerListResponse:
-    """The configured servers, read fresh, with secret values withheld."""
+async def build_mcp_list_response(settings: Settings) -> McpServerListResponse:
+    """The configured servers, read fresh, with secret values withheld.
+
+    Carries what the *agent* can reach from each server alongside what the server
+    advertised, because the two can differ and the connection test only ever
+    showed the second. A tool that connected fine and is nonetheless unreachable
+    is otherwise indistinguishable from a model that simply chose not to call it.
+    """
     service = ConfigService(settings)
+    manager = MCPManager.get_shared()
+    # Connecting here is what makes the load report meaningful: without it the
+    # manager has never looked at the servers, and the page would say "unknown"
+    # about the very thing it opened to find out. Idempotent and lock-guarded, so
+    # the first agent to start pays nothing for having gone second.
+    await manager.ensure_initialized()
+    report = {entry.server: entry for entry in manager.load_report()}
     items: list[McpServerRecord] = []
     for name, payload in service.list_mcp_servers().items():
         if not isinstance(payload, dict):
@@ -246,6 +261,7 @@ def build_mcp_list_response(settings: Settings) -> McpServerListResponse:
         env = env_value if isinstance(env_value, dict) else {}
         headers_value = payload.get("headers")
         headers = headers_value if isinstance(headers_value, dict) else {}
+        loaded = report.get(name)
         items.append(
             McpServerRecord(
                 name=name,
@@ -255,6 +271,14 @@ def build_mcp_list_response(settings: Settings) -> McpServerListResponse:
                 url=str(payload.get("url", "")),
                 env_keys=list(env.keys()),
                 header_keys=list(headers.keys()),
+                # Absent before an agent has built a toolset, which is not the
+                # same as zero: nothing has looked yet.
+                loaded_tools=list(loaded.names) if loaded else None,
+                skipped_tools=(
+                    [McpSkippedTool(**entry) for entry in loaded.skipped]
+                    if loaded
+                    else None
+                ),
             )
         )
     items.sort(key=lambda record: record.name)
@@ -276,7 +300,7 @@ def _config_of(body: McpServerCreateRequest, name: str) -> ConfigMcpServerConfig
 async def mcp_servers(
     settings: Settings = Depends(get_settings),
 ) -> McpServerListResponse:
-    return build_mcp_list_response(settings)
+    return await build_mcp_list_response(settings)
 
 
 @router.post("/api/config/mcp/add", response_model=McpServerListResponse)
@@ -290,7 +314,7 @@ async def add_mcp_server(
         service.add_mcp_server(_config_of(body, body.name))
     except ConfigValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return build_mcp_list_response(refresh_settings(http_request))
+    return await build_mcp_list_response(refresh_settings(http_request))
 
 
 @router.post("/api/config/mcp/update", response_model=McpServerListResponse)
@@ -307,7 +331,7 @@ async def update_mcp_server(
         if "does not exist" in message:
             raise HTTPException(status_code=404, detail=message) from exc
         raise HTTPException(status_code=400, detail=message) from exc
-    return build_mcp_list_response(refresh_settings(http_request))
+    return await build_mcp_list_response(refresh_settings(http_request))
 
 
 @router.post("/api/config/mcp/delete", response_model=McpServerListResponse)
@@ -324,7 +348,7 @@ async def delete_mcp_server(
         if "does not exist" in message:
             raise HTTPException(status_code=404, detail=message) from exc
         raise HTTPException(status_code=400, detail=message) from exc
-    return build_mcp_list_response(refresh_settings(http_request))
+    return await build_mcp_list_response(refresh_settings(http_request))
 
 
 @router.post("/api/config/mcp/test", response_model=McpTestResponse)

@@ -273,6 +273,13 @@ class McpKeyValue(BaseModel):
     value: str = ""
 
 
+class McpSkippedTool(BaseModel):
+    """A tool the server advertised that the agent cannot reach, and why."""
+
+    tool: str
+    reason: str
+
+
 class McpServerRecord(BaseModel):
     """A configured server as the UI lists it, with secret values withheld.
 
@@ -281,6 +288,11 @@ class McpServerRecord(BaseModel):
     change a value the form re-enters it; to see one, read the config file. The
     client already runs with the config owner's trust, but a value never has to
     cross the wire to render the list, so it does not.
+
+    ``loaded_tools`` and ``skipped_tools`` describe what an agent can actually
+    call, under the namespaced names the model sees. Both are None rather than
+    empty until a toolset has been built, because "nothing loaded yet" and "the
+    server offers nothing" are different facts and only one of them is a problem.
     """
 
     name: str
@@ -290,6 +302,8 @@ class McpServerRecord(BaseModel):
     url: str = ""
     env_keys: list[str] = []
     header_keys: list[str] = []
+    loaded_tools: list[str] | None = None
+    skipped_tools: list[McpSkippedTool] | None = None
 
 
 class McpServerListResponse(BaseModel):

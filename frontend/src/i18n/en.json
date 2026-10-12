@@ -362,5 +362,8 @@
     "mcp.delete": "Delete server",
     "mcp.confirmDelete": "This MCP server will be removed from the configuration and cannot be recovered.",
     "mcp.restartNotice": "Nova connects MCP servers once at startup. A saved change takes effect the next time Nova starts.",
-    "common.save": "Save"
+    "common.save": "Save",
+    "mcp.loadedTools_one": "{{count}} tool available to agents",
+    "mcp.loadedTools_other": "{{count}} tools available to agents",
+    "mcp.skippedTool": "'{{tool}}' cannot be used by agents: {{reason}}"
 }

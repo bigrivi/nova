@@ -194,7 +194,11 @@ def main() -> int:
         check("status", status, 200)
         check("ok", body.get("ok"), False)
         print(f"         error: {body.get('error')}")
-        check("names the command", "definitely-not-a-real-binary-xyz" in body.get("error", ""), True)
+        check(
+            "names the command",
+            "definitely-not-a-real-binary-xyz" in body.get("error", ""),
+            True,
+        )
 
         print("\n-- test an unreachable remote URL")
         status, body = call(
@@ -239,13 +243,24 @@ def main() -> int:
             servers.get("probe2", {}).get("env", {}).get("PROBE_TOKEN"),
             "s3cret-value",
         )
-        check("args updated", servers["probe2"].get("args"), [str(server_script), "--flag"])
+        check(
+            "args updated",
+            servers["probe2"].get("args"),
+            [str(server_script), "--flag"],
+        )
 
         print("\n-- add a duplicate is refused")
         status, body = call(
             "POST",
             "/api/config/mcp/add",
-            {"name": "probe2", "command": "x", "args": [], "env": [], "url": "", "headers": []},
+            {
+                "name": "probe2",
+                "command": "x",
+                "args": [],
+                "env": [],
+                "url": "",
+                "headers": [],
+            },
         )
         check("status", status, 400)
         print(f"         detail: {body.get('detail')}")
@@ -254,7 +269,14 @@ def main() -> int:
         status, body = call(
             "POST",
             "/api/config/mcp/add",
-            {"name": "broken", "command": "", "args": [], "env": [], "url": "", "headers": []},
+            {
+                "name": "broken",
+                "command": "",
+                "args": [],
+                "env": [],
+                "url": "",
+                "headers": [],
+            },
         )
         check("status", status, 400)
         print(f"         detail: {body.get('detail')}")

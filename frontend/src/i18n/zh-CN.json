@@ -361,5 +361,8 @@
     "mcp.delete": "删除服务器",
     "mcp.confirmDelete": "该 MCP 服务器将从配置中移除，且无法恢复。",
     "mcp.restartNotice": "Nova 仅在启动时连接 MCP 服务器。保存的修改会在下次启动 Nova 后生效。",
-    "common.save": "保存"
+    "common.save": "保存",
+    "mcp.loadedTools_one": "{{count}} 个工具可供 Agent 使用",
+    "mcp.loadedTools_other": "{{count}} 个工具可供 Agent 使用",
+    "mcp.skippedTool": "“{{tool}}” 无法被 Agent 使用：{{reason}}"
 }

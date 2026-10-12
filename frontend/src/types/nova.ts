@@ -101,6 +101,11 @@ export type McpTransportKind = "stdio" | "http";
  * Secret values are withheld by the server: `envKeys` / `headerKeys` carry the
  * names of what is set, never the values, so rendering the list never needs a
  * credential to cross the wire. Editing a value means re-entering it.
+ *
+ * `loadedTools` / `skippedTools` describe what an agent can actually call, under
+ * the namespaced names the model sees. Both are null until a toolset has been
+ * built — which is not the same as empty, and not something to render as a
+ * problem.
  */
 export type NovaMcpServerRecord = {
     name: string;
@@ -110,6 +115,8 @@ export type NovaMcpServerRecord = {
     url: string;
     env_keys: string[];
     header_keys: string[];
+    loaded_tools: string[] | null;
+    skipped_tools: { tool: string; reason: string }[] | null;
 };
 
 /** One env var or header: a name and a value. */
