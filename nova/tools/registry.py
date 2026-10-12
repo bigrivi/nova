@@ -43,6 +43,12 @@ class Tool:
     params_schema: dict = field(default_factory=dict)
     read_only: bool = True
     concurrent_safe: bool = True
+    # Whether this tool arrived from an MCP server rather than Nova's own
+    # registry. It changes how the call is gated, not whether it runs: an MCP
+    # tool is resolved by name alone, because Nova's per-argument rules infer
+    # what a call *targets* from the argument names of the built-in tools, and
+    # those inferences do not transfer to an arbitrary server's schema.
+    from_mcp: bool = False
 
 
 class ToolRegistry:
@@ -105,12 +111,14 @@ class ToolRegistry:
         description: str,
         func: Callable,
         params_schema: dict,
+        from_mcp: bool = False,
     ) -> None:
         self.tools[name] = Tool(
             name=name,
             description=description,
             func=func,
             params_schema=params_schema,
+            from_mcp=from_mcp,
         )
 
     def unregister(self, name: str):

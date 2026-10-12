@@ -32,7 +32,11 @@ async def init_mcp_servers(
                 if name in registry.tools:
                     log.warning("MCP tool '%s' overrides existing tool", name)
                 registry.register_direct(
-                    name=name, description=desc, func=tool_func, params_schema=schema
+                    name=name,
+                    description=desc,
+                    func=tool_func,
+                    params_schema=schema,
+                    from_mcp=True,
                 )
             clients.append(client)
             log.info("Registered %d MCP tool(s) from '%s'", len(tools), server_name)
@@ -147,7 +151,11 @@ class MCPManager:
                 if name in registry.tools:
                     continue
                 registry.register_direct(
-                    name=name, description=desc, func=tool_func, params_schema=schema
+                    name=name,
+                    description=desc,
+                    func=tool_func,
+                    params_schema=schema,
+                    from_mcp=True,
                 )
 
     async def shutdown(self) -> None:

@@ -278,6 +278,7 @@ class PolicyToolBehavior(DefaultToolBehavior):
         inner: Any = None,
         tool_description: str = "",
         permission_mode: str = "ask",
+        from_mcp: bool = False,
     ) -> None:
         self._tool = tool_name
         self._policy = policy
@@ -292,6 +293,9 @@ class PolicyToolBehavior(DefaultToolBehavior):
         # as the shell's, and the same scope: a configured deny is already a
         # refusal, so only an ask changes.
         self._permission_mode = permission_mode
+        # An MCP tool is gated by name alone; see ``before_execute`` for why its
+        # arguments are not read.
+        self._from_mcp = from_mcp
         # The behaviour this tool already had, if any. The policy is a gate laid
         # over it, never a replacement: ``read_image`` and `browser_use` return
         # images through ``postprocess``, and ``ask_user`` numbers its questions
@@ -364,7 +368,26 @@ class PolicyToolBehavior(DefaultToolBehavior):
         # answer; `get_active_workspace` is a ContextVar read, not a computation
         # worth repeating.
         workspace = get_active_workspace()
-        effect = self._policy.effect_for_call(self._tool, args, workspace)
+        effect = (
+            # An MCP tool carries no schema Nova can reason about. The per-argument
+            # rules below infer a call's target from the argument names of Nova's
+            # own tools -- `path`, `file` -- so on a server's tool they would either
+            # miss the file it actually touches or ask about one it never names. A
+            # prompt that is wrong in either direction is worse than no prompt: it
+            # teaches the user to clear the dialog without reading it, which is the
+            # mechanism behind consent-fatigue attacks, where a server fronts dozens
+            # of harmless calls to make the dangerous one reflex-allowed.
+            #
+            # So an MCP tool resolves by name: a configured allow/ask/deny is
+            # honoured exactly as written, and Nova never manufactures a prompt of
+            # its own. Trust is placed in the server at the point someone adds it --
+            # a stdio server is a command -- not once per call. The cost of that
+            # trade is real and deliberate: an MCP tool reading a credential
+            # outside the workspace is no longer stopped here.
+            self._policy.effect_for(self._tool)
+            if self._from_mcp
+            else self._policy.effect_for_call(self._tool, args, workspace)
+        )
         if effect == "allow":
             return PreExecutionCheck()
         if effect == "deny":
