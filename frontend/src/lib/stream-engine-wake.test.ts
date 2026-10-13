@@ -53,6 +53,7 @@ function makeDepsWithStore(initial: ThreadMessageLike[] = []) {
         reasoning: {
             setCompacting: vi.fn(),
             appendCompactionDelta: vi.fn(),
+            setRetry: vi.fn(),
         },
         approval: {
             setPendingForSession: vi.fn(),

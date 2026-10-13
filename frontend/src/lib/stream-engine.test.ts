@@ -127,7 +127,7 @@ describe("handleStreamEvent control frames", () => {
             env,
             deps,
         );
-        deps.reasoning.setRetry.mockClear();
+        vi.mocked(deps.reasoning.setRetry).mockClear();
 
         handleStreamEvent({ type: "data-nova-heartbeat" }, env, deps);
 

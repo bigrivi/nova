@@ -1,6 +1,7 @@
 import type { ThreadMessageLike } from "@assistant-ui/react";
 
 import type { ApprovalPending } from "../stores/approval-store";
+import type { RetryState } from "../stores/reasoning-store";
 import type { NovaStreamEvent } from "../types/nova";
 import { DEFAULT_AGENT_KEY, DRAFT_THREAD_ID } from "./nova-constants";
 import { createOptimisticSessionTitle } from "./thread-messages";
@@ -83,6 +84,7 @@ export interface StreamEngineDeps {
     reasoning: {
         setCompacting: (compacting: boolean) => void;
         appendCompactionDelta: (delta: string) => void;
+        setRetry: (retry: RetryState | null) => void;
     };
     approval: {
         /**
