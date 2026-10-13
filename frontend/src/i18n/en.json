@@ -218,6 +218,8 @@
     "reasoning.workedFor": "Thought for {{time}}",
     "reasoning.toolsCount": "· {{count}} tool calls",
     "reasoning.compacting": "Compacting conversation history…",
+    "reasoning.retryDue": "Retry due",
+    "reasoning.retryAttempt": "attempt {{attempt}}",
     "dialog.close": "Close",
     "approval.title": "Shell Command",
     "approval.toolTitle": "Tool call: {{tool}}",

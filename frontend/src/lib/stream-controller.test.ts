@@ -101,7 +101,11 @@ function makeHarness(options: HarnessOptions = {}) {
         runTransition: (fn) => fn(),
         composer: { clear: vi.fn(), focus: vi.fn() },
         todo: { clear: vi.fn(), markOpenCancelled: vi.fn(), setActive: vi.fn() },
-        reasoning: { setCompacting: vi.fn(), appendCompactionDelta: vi.fn() },
+        reasoning: {
+            setCompacting: vi.fn(),
+            appendCompactionDelta: vi.fn(),
+            setRetry: vi.fn(),
+        },
         approval: {
             setPendingForSession: vi.fn(),
             setPending: vi.fn(),

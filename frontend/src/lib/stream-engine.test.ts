@@ -39,6 +39,7 @@ function makeDeps(overrides: Partial<StreamEngineDeps> = {}): StreamEngineDeps {
         reasoning: {
             setCompacting: vi.fn(),
             appendCompactionDelta: vi.fn(),
+            setRetry: vi.fn(),
         },
         approval: {
             setPendingForSession: vi.fn(),
@@ -84,6 +85,53 @@ describe("handleStreamEvent control frames", () => {
         expect(deps.reasoning.setCompacting).toHaveBeenLastCalledWith(true);
         handleStreamEvent({ type: "data-nova-compaction-end" }, env, deps);
         expect(deps.reasoning.setCompacting).toHaveBeenLastCalledWith(false);
+    });
+
+    it("shows a retry, then clears it once the stream moves on", () => {
+        // The retry line describes a wait that is happening, so it has to be
+        // taken down by the stream that put it up. A timer would either cut a
+        // long retry short or leave a stale line after it had succeeded.
+        const deps = makeDeps();
+        const env = makeEnv();
+
+        handleStreamEvent(
+            {
+                type: "data-nova-retry",
+                data: {
+                    attempt: 2,
+                    total: 6,
+                    wait_seconds: 4,
+                    reason: "Upstream request failed: Endpoint is unavailable.",
+                },
+            },
+            env,
+            deps,
+        );
+        expect(deps.reasoning.setRetry).toHaveBeenLastCalledWith({
+            attempt: 2,
+            total: 6,
+            reason: "Upstream request failed: Endpoint is unavailable.",
+        });
+
+        handleStreamEvent({ type: "text-delta", delta: "hi" }, env, deps);
+        expect(deps.reasoning.setRetry).toHaveBeenLastCalledWith(null);
+    });
+
+    it("keeps the retry up across a heartbeat", () => {
+        // A heartbeat says the connection is alive, not that the request went
+        // through, so it must not take the line down.
+        const deps = makeDeps();
+        const env = makeEnv();
+        handleStreamEvent(
+            { type: "data-nova-retry", data: { attempt: 1, total: 6 } },
+            env,
+            deps,
+        );
+        deps.reasoning.setRetry.mockClear();
+
+        handleStreamEvent({ type: "data-nova-heartbeat" }, env, deps);
+
+        expect(deps.reasoning.setRetry).not.toHaveBeenCalled();
     });
 
     it("forwards each summary chunk while compacting", () => {

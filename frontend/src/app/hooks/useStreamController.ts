@@ -80,6 +80,7 @@ export function useStreamController(
                     useReasoningStore.getState().setCompacting(compacting),
                 appendCompactionDelta: (delta) =>
                     useReasoningStore.getState().appendCompactionDelta(delta),
+                setRetry: (retry) => useReasoningStore.getState().setRetry(retry),
             },
             approval: {
                 setPendingForSession: (sessionId, pending) =>

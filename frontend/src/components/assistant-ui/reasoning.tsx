@@ -22,6 +22,7 @@ import {
     CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { useReasoningStore } from "@/stores/reasoning-store";
 
 const InTimelineContext = createContext(false);
 
@@ -184,23 +185,49 @@ export const Reasoning: FC<{ elapsedMs?: number | null }> = ({
     );
 };
 
+/**
+ * The running-message placeholder: three dots while waiting for the first
+ * content, replaced in place by the retry line while the provider is waiting
+ * to re-send the request.
+ *
+ * One slot, not two: retry notices only ever arrive before the first content
+ * (once streaming starts a failure goes through on_exception instead), so the
+ * indicator is always mounted during a retry. A second banner below the
+ * messages would duplicate the dots and add a gap; rendering here keeps the
+ * wait where the answer will land. The reason is the upstream's own words --
+ * "Endpoint is unavailable" is worth waiting out, "you are out of credit" is
+ * not, and the two arrive with the same status code -- so it is rendered
+ * rather than summarised.
+ */
 export const ThinkingIndicator: FC = () => {
+    const { t } = useTranslation();
+    const retry = useReasoningStore((s) => s.retry);
+
     return (
         <div className="flex min-w-0 items-center gap-2 py-1 text-sm text-muted-foreground">
-            <span className="inline-flex gap-0.5" aria-hidden="true">
-                <span
-                    className="size-1.5 animate-bounce rounded-full bg-muted-foreground motion-reduce:animate-none"
-                    style={{ animationDelay: "0ms" }}
-                />
-                <span
-                    className="size-1.5 animate-bounce rounded-full bg-muted-foreground motion-reduce:animate-none"
-                    style={{ animationDelay: "150ms" }}
-                />
-                <span
-                    className="size-1.5 animate-bounce rounded-full bg-muted-foreground motion-reduce:animate-none"
-                    style={{ animationDelay: "300ms" }}
-                />
+            <span className="inline-flex shrink-0 gap-0.5" aria-hidden="true">
+                {[0, 150, 300].map((delay) => (
+                    <span
+                        key={delay}
+                        // One waiting color for the whole line while retrying:
+                        // amber dots next to amber text read as a single state,
+                        // grey dots next to amber text read as two.
+                        className={cn(
+                            "size-1.5 animate-bounce rounded-full motion-reduce:animate-none",
+                            retry ? "bg-[#A5750F]" : "bg-muted-foreground",
+                        )}
+                        style={{ animationDelay: `${delay}ms` }}
+                    />
+                ))}
             </span>
+            {retry ? (
+                <span className="min-w-0 break-words text-[#A5750F]">
+                    {t("reasoning.retryDue")}
+                    {" · "}
+                    {t("reasoning.retryAttempt", { attempt: retry.attempt })}
+                    {retry.reason ? ` · ${retry.reason}` : ""}
+                </span>
+            ) : null}
         </div>
     );
 };

@@ -217,6 +217,8 @@
     "reasoning.workedFor": "已完成思考 · {{time}}",
     "reasoning.toolsCount": "· {{count}} 次工具调用",
     "reasoning.compacting": "正在压缩历史记录…",
+    "reasoning.retryDue": "重试中",
+    "reasoning.retryAttempt": "第 {{attempt}} 次",
     "dialog.close": "关闭",
     "approval.title": "Shell 命令",
     "approval.toolTitle": "工具调用：{{tool}}",

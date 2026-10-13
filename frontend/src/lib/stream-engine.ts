@@ -288,6 +288,17 @@ const TERMINAL_HANDLERS: Record<
         deps.reasoning.appendCompactionDelta(String(event.data?.delta || "")),
     "data-nova-compaction-end": (_event, _env, deps) =>
         deps.reasoning.setCompacting(false),
+    // The provider is waiting to re-send a request and has said why. Rendered
+    // as a transient line rather than as part of the answer, because it
+    // describes a wait that is happening now.
+    "data-nova-retry": (event, _env, deps) => {
+        const data = event.data ?? {};
+        deps.reasoning.setRetry({
+            attempt: Number(data.attempt ?? 0),
+            total: Number(data.total ?? 0),
+            reason: String(data.reason ?? ""),
+        });
+    },
     "data-nova-heartbeat": () => {},
     "data-nova-approval-required": (event, env, deps) => {
         const threadId = env.state.activeThreadId;
@@ -355,6 +366,12 @@ export function handleStreamEvent(
         terminal(event, env, deps);
         return;
     }
+
+    // Anything that is not a retry frame means the request moved on, so a retry
+    // line still on screen is stale. Cleared here rather than on a timer: only
+    // the stream knows when the wait ended, and a timer would either cut a long
+    // retry short or leave the line up after it had succeeded.
+    deps.reasoning.setRetry(null);
 
     if (event.type === "error") {
         throwStreamError(event);

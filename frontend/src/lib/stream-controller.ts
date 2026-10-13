@@ -5,6 +5,7 @@ import type { ThreadMessageLike } from "@assistant-ui/react";
 import type { ApprovalPending } from "../stores/approval-store";
 import type { ActiveAskUser } from "../stores/ask-user-store";
 import type { ContextUsage } from "../stores/context-usage-store";
+import type { RetryState } from "../stores/reasoning-store";
 import type { NovaAttachmentData, NovaThreadSummary } from "../types/nova";
 import { DRAFT_THREAD_ID } from "./nova-constants";
 import {
@@ -84,6 +85,7 @@ export interface StreamControllerDeps {
     reasoning: {
         setCompacting: (compacting: boolean) => void;
         appendCompactionDelta: (delta: string) => void;
+        setRetry: (retry: RetryState | null) => void;
     };
     approval: {
         setPendingForSession: (
