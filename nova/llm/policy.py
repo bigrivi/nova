@@ -47,16 +47,17 @@ class TransportPolicy:
             False for Ollama today (a single post, no retry loop).
         trust_env: The ``trust_env`` flag for the aiohttp session. False for
             Ollama today (it does not read proxy environment variables).
-        honor_retry_after: Whether a ``Retry-After`` response header overrides
-            the exponential backoff. True only for Anthropic today.
+        honor_retry_after: Whether a ``Retry-After`` header overrides the
+            exponential backoff on the general 5xx path. True only for
+            Anthropic today. A 429 reads the header whatever this says, because
+            there the header is the whole point of the status.
         guard_non_json: Whether a non-JSON success body becomes
             ``Error("unexpected response from API")`` rather than being allowed
             to raise. True for OpenAI Chat and Anthropic today.
-        retry_capacity_429: Whether a 429 whose body reads as capacity -- an
-            endpoint briefly unavailable -- is retried inside the same bounded
-            loop. True by default, and gated behind ``use_retry`` anyway. A
-            quota 429 is never retried whatever this says; see
-            ``is_capacity_429``.
+        retry_429: Whether a retryable 429 is retried inside the same bounded
+            loop. True by default, and gated behind ``use_retry`` anyway. A 429
+            whose body names a spent quota is never retried whatever this says;
+            see ``is_terminal_429``.
         connector_kwargs: Keyword arguments for the aiohttp ``TCPConnector``.
     """
 
@@ -64,7 +65,7 @@ class TransportPolicy:
     trust_env: bool
     honor_retry_after: bool
     guard_non_json: bool
-    retry_capacity_429: bool = True
+    retry_429: bool = True
     connector_kwargs: dict = field(default_factory=dict)
 
 

@@ -14,9 +14,12 @@ between providers stays explicit.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from abc import abstractmethod
 from collections.abc import AsyncGenerator, Callable, Coroutine
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 import aiohttp
 
@@ -24,8 +27,10 @@ from nova.llm.accumulator import StreamAccumulator
 from nova.llm.framing import SSEFramer
 from nova.llm.policy import StreamPolicy, TransportPolicy
 from nova.llm.provider import (
-    CAPACITY_429_MAX_WAIT,
     MAX_RETRIES,
+    RETRY_429_MAX_ATTEMPTS,
+    RETRY_429_MAX_WAIT,
+    RETRY_429_TOTAL_BUDGET,
     RETRY_BASE_DELAY,
     RETRY_STATUS_CODES,
     STREAM_IDLE_TIMEOUT_SECONDS,
@@ -33,7 +38,8 @@ from nova.llm.provider import (
     Done,
     Error,
     LLMProvider,
-    is_capacity_429,
+    RetryNotice,
+    is_terminal_429,
 )
 from nova.llm.stream_driver import StreamParser, drive_stream
 from nova.llm.stream_trace import StreamTrace
@@ -113,21 +119,89 @@ class HttpProvider(LLMProvider):
 
     @staticmethod
     def _retry_after_seconds(resp: aiohttp.ClientResponse, fallback: float) -> float:
-        """The ``Retry-After`` header, capped, or *fallback* when it is unusable.
+        """The ``Retry-After`` header as seconds, capped, or *fallback*.
 
-        Honoured here rather than through ``honor_retry_after`` because that
-        flag belongs to the general 5xx path, and this is a different decision:
-        an endpoint that says when it will be back is being told to be waited
-        for. Both spellings of the header are read, because gateways and origin
-        servers disagree about casing.
+        RFC 7231 section 7.1.3 allows the header in two forms and servers use
+        both: a count of seconds (``Retry-After: 120``) and an absolute date
+        (``Retry-After: Wed, 21 Oct 2015 07:28:00 GMT``). Only the first is
+        parseable as a float, so reading it that way alone silently ignores every
+        server that names a time instead of a delay -- and those are exactly the
+        ones whose answer is worth having, since an absolute date is what a
+        shared cache or a gateway in front of the model emits.
+
+        Read on both the 429 and the 5xx paths. An endpoint that says when it
+        will be back is being told to be waited for, which is better information
+        than any backoff this class could invent.
+
+        Args:
+            resp: The response carrying the header. ``headers`` is a
+                ``CIMultiDict``, so the lookup is case-insensitive and one
+                spelling is enough.
+            fallback: Seconds to use when the header is absent or unusable.
+
+        Returns:
+            Seconds to wait, never negative and never above
+            ``RETRY_429_MAX_WAIT``.
         """
-        raw = resp.headers.get("retry-after") or resp.headers.get("Retry-After")
+        raw = resp.headers.get("retry-after")
         if raw is None:
             return fallback
+        raw = raw.strip()
+
         try:
-            return min(max(float(raw), 0.0), CAPACITY_429_MAX_WAIT)
+            return min(max(float(raw), 0.0), RETRY_429_MAX_WAIT)
+        except ValueError:
+            pass
+
+        try:
+            when = parsedate_to_datetime(raw)
         except (TypeError, ValueError):
             return fallback
+        # A date without a zone is read as UTC rather than local time: the spec
+        # requires GMT, and treating a malformed date as local would shift the
+        # wait by the machine's offset.
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        remaining = (when - datetime.now(UTC)).total_seconds()
+        return min(max(remaining, 0.0), RETRY_429_MAX_WAIT)
+
+    @staticmethod
+    def _retry_reason(body: str) -> str:
+        """The upstream's own words for a refusal, unwrapped and shortened.
+
+        A one-line notice has room for the reason and not for the envelope
+        around it. Providers put the readable part inside JSON -- ``{"error":
+        {"message": "Upstream request failed: Endpoint is unavailable."}}`` --
+        so pull the message out when the body is shaped that way and fall back
+        to the raw text when it is not.
+
+        Paraphrasing would be worse than either: the reason is what tells a user
+        whether to wait (an endpoint that is down) or stop (an account out of
+        credit), and only the upstream knows which it is.
+
+        Args:
+            body: The response body as text, or an exception's text.
+
+        Returns:
+            A single line, at most 200 characters, or an empty string when there
+            is nothing to say.
+        """
+        text = (body or "").strip()
+        if not text:
+            return ""
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return text.splitlines()[0][:200]
+        if isinstance(data, dict):
+            error = data.get("error")
+            if isinstance(error, dict) and isinstance(error.get("message"), str):
+                return error["message"].splitlines()[0][:200]
+            if isinstance(error, str):
+                return error.splitlines()[0][:200]
+            if isinstance(data.get("message"), str):
+                return data["message"].splitlines()[0][:200]
+        return text.splitlines()[0][:200]
 
     async def _post_with_retry(
         self,
@@ -137,18 +211,44 @@ class HttpProvider(LLMProvider):
         body: dict,
         abort_event: asyncio.Event | None,
         timeout: aiohttp.ClientTimeout | None = None,
-    ) -> aiohttp.ClientResponse | None:
+    ) -> AsyncGenerator[RetryNotice | aiohttp.ClientResponse | None, None]:
         """POST the body, racing an abort and retrying per the transport policy.
 
-        Returns:
-            The response, or None when the abort fired before it arrived.
+        An async generator rather than a coroutine, so a retry can be reported
+        *before* it is waited out. The notice is yielded first and the sleep runs
+        only when the caller asks for the next item, so a client sees "retrying"
+        while it is still waiting instead of after the fact -- the difference
+        between a turn that looks hung and one that explains itself.
+
+        Yields:
+            One ``RetryNotice`` per retry, then exactly one final item: the
+            response, or None when the abort fired. The caller loops until it
+            sees the non-notice item, so a bare ``return`` here would strand it.
 
         Raises:
             RuntimeError: All retry attempts were exhausted without a response.
         """
+        use_retry = self.transport_policy.use_retry
+        # Two budgets, because a 429 and a 5xx are different questions: the
+        # first is the endpoint asking to be come back to, the second a request
+        # that could not be served. The loop runs long enough for whichever one
+        # is being spent and each branch checks its own counter, so a 429 can
+        # outlast the general budget without a 503 inheriting it.
+        general_attempts = MAX_RETRIES if use_retry else 1
+        rate_attempts = (
+            RETRY_429_MAX_ATTEMPTS
+            if use_retry and self.transport_policy.retry_429
+            else 1
+        )
+        total_attempts = max(general_attempts, rate_attempts)
+
         delay = RETRY_BASE_DELAY
-        attempts = MAX_RETRIES if self.transport_policy.use_retry else 1
-        for attempt in range(attempts):
+        rate_delay = RETRY_BASE_DELAY
+        rate_waited = 0.0
+        general_used = 0
+        rate_used = 0
+
+        for attempt in range(total_attempts):
             post_task = asyncio.create_task(
                 session.post(
                     url,
@@ -175,7 +275,8 @@ class HttpProvider(LLMProvider):
                     await post_task
                 except Exception:
                     pass
-                return None
+                yield None
+                return
 
             if abort_task:
                 abort_task.cancel()
@@ -187,66 +288,61 @@ class HttpProvider(LLMProvider):
             try:
                 resp = post_task.result()
             except (TimeoutError, aiohttp.ClientConnectionError) as e:
-                if self.transport_policy.use_retry and attempt < attempts - 1:
+                if general_used < general_attempts - 1:
+                    general_used += 1
+                    reason = str(e) or type(e).__name__
                     log.warning(
                         "Connection error (attempt %d/%d): %s, retrying in %.1fs",
-                        attempt + 1,
-                        attempts,
+                        general_used,
+                        general_attempts,
                         e,
                         delay,
+                    )
+                    yield RetryNotice(
+                        attempt=general_used,
+                        total=general_attempts,
+                        wait_seconds=delay,
+                        reason=reason,
                     )
                     await asyncio.sleep(delay)
                     delay *= 2
                     continue
-                log.error("Connection error after %d attempts: %s", attempts, e)
+                log.error("Connection error after %d attempts: %s", general_attempts, e)
                 raise
             except Exception as e:
                 log.error("Unexpected error in post_task: %s", e)
                 raise
 
             if (
-                self.transport_policy.use_retry
-                and resp.status in RETRY_STATUS_CODES
-                and attempt < attempts - 1
+                resp.status in RETRY_STATUS_CODES
+                and general_used < general_attempts - 1
             ):
-                if self.transport_policy.honor_retry_after:
-                    retry_after = resp.headers.get("retry-after") or resp.headers.get(
-                        "Retry-After"
-                    )
-                    if retry_after is not None:
-                        try:
-                            retry_delay = min(max(float(retry_after), 0), 60)
-                            await resp.release()
-                            log.warning(
-                                "Got %d (attempt %d/%d), retrying in %.1fs (retry-after)",
-                                resp.status,
-                                attempt + 1,
-                                attempts,
-                                retry_delay,
-                            )
-                            await asyncio.sleep(retry_delay)
-                            delay *= 2
-                            continue
-                        except Exception:
-                            pass
+                general_used += 1
+                wait = (
+                    self._retry_after_seconds(resp, delay)
+                    if self.transport_policy.honor_retry_after
+                    else delay
+                )
+                reason = self._retry_reason(await resp.text())
                 await resp.release()
                 log.warning(
                     "Got %d (attempt %d/%d), retrying in %.1fs",
                     resp.status,
-                    attempt + 1,
-                    attempts,
-                    delay,
+                    general_used,
+                    general_attempts,
+                    wait,
                 )
-                await asyncio.sleep(delay)
+                yield RetryNotice(
+                    attempt=general_used,
+                    total=general_attempts,
+                    wait_seconds=wait,
+                    reason=reason or f"HTTP {resp.status}",
+                )
+                await asyncio.sleep(wait)
                 delay *= 2
                 continue
 
-            if (
-                self.transport_policy.use_retry
-                and self.transport_policy.retry_capacity_429
-                and resp.status == 429
-                and attempt < attempts - 1
-            ):
+            if resp.status == 429 and rate_used < rate_attempts - 1:
                 # The text is read here and only here, and only for this
                 # branch. aiohttp caches what ``text()`` returns, so the
                 # caller's own ``await resp.text()`` on the non-retry path
@@ -254,22 +350,42 @@ class HttpProvider(LLMProvider):
                 # existed -- which matters, because that message is the only
                 # upstream detail the user ever sees.
                 response_text = await resp.text()
-                if is_capacity_429(resp.status, response_text):
-                    wait = self._retry_after_seconds(resp, delay)
+                # 429 is "Too Many Requests". Only a body that names a spent
+                # quota is worth refusing to wait out; every other 429 is a rate
+                # limit or an endpoint asking to be come back to, and retrying
+                # those is what the status code means.
+                if not is_terminal_429(resp.status, response_text):
+                    wait = self._retry_after_seconds(resp, rate_delay)
+                    if rate_waited + wait > RETRY_429_TOTAL_BUDGET:
+                        # The wall-clock budget is spent. Hand the response back
+                        # rather than sleep past the ceiling that budget exists
+                        # to set; the body is already cached, so the caller still
+                        # builds its message from it.
+                        yield resp
+                        return
+                    rate_used += 1
+                    rate_waited += wait
                     await resp.release()
                     log.warning(
-                        "Got 429 (capacity) (attempt %d/%d), retrying in %.1fs",
-                        attempt + 1,
-                        attempts,
+                        "Got 429 (attempt %d/%d), retrying in %.1fs",
+                        rate_used,
+                        rate_attempts,
                         wait,
                     )
+                    yield RetryNotice(
+                        attempt=rate_used,
+                        total=rate_attempts,
+                        wait_seconds=wait,
+                        reason=self._retry_reason(response_text) or "HTTP 429",
+                    )
                     await asyncio.sleep(wait)
-                    delay *= 2
+                    rate_delay *= 2
                     continue
 
-            return resp
+            yield resp
+            return
 
-        raise RuntimeError(f"Failed after {MAX_RETRIES} attempts")
+        raise RuntimeError(f"Failed after {total_attempts} attempts")
 
     def _open_session(self) -> tuple[aiohttp.TCPConnector, aiohttp.ClientSession]:
         connector = self._make_connector()
@@ -329,7 +445,15 @@ class HttpProvider(LLMProvider):
         )
         connector, session = self._open_session()
         try:
-            resp = await self._post_with_retry(session, url, headers, body, abort_event)
+            resp = None
+            # Retry notices are dropped here: this path has no channel to a
+            # client, so there is nobody to tell. The loop still has to run to
+            # completion or the response is never yielded.
+            async for item in self._post_with_retry(
+                session, url, headers, body, abort_event
+            ):
+                if not isinstance(item, RetryNotice):
+                    resp = item
             if resp is None:
                 return Done(content="", tool_calls=[], aborted=True)
             async with resp:
@@ -388,9 +512,17 @@ class HttpProvider(LLMProvider):
         )
         parser = self._new_parser(model)
         try:
-            resp = await self._post_with_retry(
+            resp = None
+            # Each RetryNotice is forwarded as it arrives, before the wait it
+            # describes -- that ordering is the whole reason this is a generator
+            # and not a coroutine.
+            async for item in self._post_with_retry(
                 session, url, headers, body, abort_event, timeout=timeout
-            )
+            ):
+                if isinstance(item, RetryNotice):
+                    yield item
+                else:
+                    resp = item
             if resp is None:
                 yield Done(content="", tool_calls=[], aborted=True)
                 return

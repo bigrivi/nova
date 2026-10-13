@@ -384,6 +384,23 @@ class AISDKStreamAdapter:
             )
             return chunks
 
+        if event == AgentEvent.RETRY:
+            payload = data if isinstance(data, dict) else {}
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "data-nova-retry",
+                        "data": {
+                            "attempt": int(payload.get("attempt", 0)),
+                            "total": int(payload.get("total", 0)),
+                            "wait_seconds": float(payload.get("wait_seconds", 0.0)),
+                            "reason": str(payload.get("reason", "")),
+                        },
+                    }
+                )
+            )
+            return chunks
+
         if event == AgentEvent.DONE:
             reason, content = _parse_done_payload(data)
             chunks.extend(self._close_open_parts())

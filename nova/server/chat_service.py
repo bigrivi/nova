@@ -36,6 +36,8 @@ from nova.server.schemas import (
     ResponseErrorEventData,
     ResponseStartedEvent,
     ResponseStartedEventData,
+    RetryEvent,
+    RetryEventData,
     ServerStreamEvent,
     SessionListResponse,
     SessionStartedEvent,
@@ -679,6 +681,16 @@ class ChatService:
                 family=data.get("family", ""),
                 script_scoped=bool(data.get("digest", "")),
                 workspace=await self._active_workspace(),
+            )
+        if agent_event == AgentEvent.RETRY:
+            payload = data if isinstance(data, dict) else {}
+            return await emit(
+                RetryEvent,
+                RetryEventData,
+                attempt=int(payload.get("attempt", 0)),
+                total=int(payload.get("total", 0)),
+                wait_seconds=float(payload.get("wait_seconds", 0.0)),
+                reason=str(payload.get("reason", "")),
             )
         if agent_event == AgentEvent.ERROR:
             return await emit(

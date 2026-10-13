@@ -408,6 +408,25 @@ class ResponseErrorEventData(BaseStreamEventData):
     message: str
 
 
+class RetryEventData(BaseStreamEventData):
+    """A retry is about to happen, and this is why.
+
+    Sent while the provider is still waiting, not after: a silent thirty-second
+    wait is indistinguishable from a hung request, and the reason is the part a
+    user can act on. "Endpoint is unavailable" is worth waiting out; "you are out
+    of credit" is not, and the two arrive with the same status code.
+    """
+
+    #: 1-based: the attempt that just failed, not the one about to be made.
+    attempt: int = 0
+    #: The budget that attempt is counted against.
+    total: int = 0
+    #: How long the provider will wait before trying again.
+    wait_seconds: float = 0.0
+    #: The upstream's own words, unwrapped from its JSON envelope.
+    reason: str = ""
+
+
 class ApprovalRequiredEventData(BaseStreamEventData):
     model_config = {"populate_by_name": True}
 
@@ -501,6 +520,11 @@ class ResponseErrorEvent(StreamEvent):
     data: ResponseErrorEventData
 
 
+class RetryEvent(StreamEvent):
+    type: Literal["retry"] = "retry"
+    data: RetryEventData
+
+
 class ApprovalRequiredEvent(StreamEvent):
     type: Literal["approval.required"] = "approval.required"
     data: ApprovalRequiredEventData
@@ -516,6 +540,7 @@ type ServerStreamEvent = (
     | ResponseCancelledEvent
     | InputRequiredEvent
     | ResponseErrorEvent
+    | RetryEvent
     | ApprovalRequiredEvent
 )
 

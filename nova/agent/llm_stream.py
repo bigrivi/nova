@@ -98,6 +98,20 @@ class TurnStreamReader:
                     self.content += chunk.content
                     yield AgentEvent.TEXT_DELTA, chunk.content
 
+                elif chunk_type == "retry":
+                    # Forwarded immediately and not accumulated: this describes
+                    # a wait that is happening now, and the client renders it as
+                    # a transient line rather than as part of the answer.
+                    yield (
+                        AgentEvent.RETRY,
+                        {
+                            "attempt": getattr(chunk, "attempt", 0),
+                            "total": getattr(chunk, "total", 0),
+                            "wait_seconds": getattr(chunk, "wait_seconds", 0.0),
+                            "reason": getattr(chunk, "reason", ""),
+                        },
+                    )
+
                 elif chunk_type == "done":
                     if getattr(chunk, "aborted", False):
                         self.outcome = TurnOutcome.STOPPED

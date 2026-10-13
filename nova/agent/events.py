@@ -27,6 +27,10 @@ class AgentEvent(Enum):
     TURN_START = "turn_start"
     TURN_END = "turn_end"
 
+    # Transport retry: the provider is about to re-send the request and says
+    # why. Carries attempt, total, wait_seconds and the upstream's reason.
+    RETRY = "retry"
+
     # Reasoning stream
     REASONING_START = "reasoning_start"
     REASONING_DELTA = "reasoning_delta"

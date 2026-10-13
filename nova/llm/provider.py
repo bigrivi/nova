@@ -7,22 +7,29 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
-# Shared HTTP retry policy for all providers. The status codes below are
-# transient faults; 429 is not among them, because a 429 means two unrelated
-# things and the status code cannot tell them apart. Quota: the account is out
-# of credit, and another attempt cannot succeed -- retrying it only burns quota
-# faster, so it fails fast and surfaces upstream detail to the caller instead.
-# Capacity: the endpoint is briefly unable to serve anybody, and an attempt a
-# second later often works. See ``is_capacity_429`` for how the two are told
-# apart, and note that only a body we can *positively* read as capacity is
-# retried -- an unrecognised 429 keeps failing fast, exactly as before.
+# Shared HTTP retry policy for all providers.
+#
+# The status codes below are transient faults. 429 is handled separately because
+# it is the one status whose meaning depends on the body: "Too Many Requests" is
+# returned both for a rate limit, which clears on its own, and for a quota the
+# account has run out of, which does not. Retrying the first is what every HTTP
+# client does; retrying the second only burns the allowance faster, so it fails
+# fast and surfaces the upstream detail. ``is_terminal_429`` reads the body to
+# tell them apart.
+#
+# ``Retry-After`` is honoured whenever the server sends it. That header is the
+# server stating how long to wait, which is better information than any backoff
+# we could invent, and it is the part of RFC 6585 that makes 429 actionable.
 RETRY_STATUS_CODES = frozenset({500, 502, 503, 504, 529})
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 1.0
 
-#: Substrings that mark a 429 body as a quota refusal. Checked first, so a body
-#: carrying both signals is treated as quota: the direction that costs one
-#: prompt rather than burning an allowance the user does not have.
+#: Substrings that mark a 429 as a permanent refusal rather than a rate limit.
+#: A spent quota or a billing problem does not clear by waiting, so the loop
+#: stops instead of spending the allowance it says is gone. Checked before
+#: anything else: a body carrying both signals is treated as terminal, the
+#: direction that costs one prompt rather than burning credit the user may not
+#: have.
 QUOTA_429_MARKERS = frozenset(
     {
         "insufficient_quota",
@@ -35,51 +42,53 @@ QUOTA_429_MARKERS = frozenset(
     }
 )
 
-#: Substrings that mark a 429 body as availability rather than quota. Deliberately
-#: narrow and worded on what endpoints actually say: a generic "too many
-#: requests" is *not* here, because per-minute throttling is the case the
-#: original fail-fast policy was written for, and widening the list would
-#: quietly reverse a decision somebody made on purpose.
-CAPACITY_429_MARKERS = frozenset(
-    {
-        "endpoint is unavailable",
-        "server_error",
-        "overloaded",
-        "capacity",
-        "temporarily unavailable",
-        "try again later",
-    }
-)
+#: Attempt budget for a retryable 429, separate from ``MAX_RETRIES`` because the
+#: reason is different in kind. A 5xx says one request could not be served; a 429
+#: says the endpoint is asking to be come back to, and ``Retry-After`` may name a
+#: wait the general three-second schedule would never reach. Sharing that budget
+#: meant giving up after three seconds on a condition the upstream had just
+#: described as temporary.
+#:
+#: Six attempts with the schedule below waits 1+2+4+8+16 = 31s, and a
+#: ``Retry-After`` can stretch any single wait to ``RETRY_429_MAX_WAIT``.
+RETRY_429_MAX_ATTEMPTS = 6
 
-#: Ceiling for a ``Retry-After`` honoured on a capacity 429. A header asking for
-#: longer than this is capped rather than obeyed: the retry budget is bounded,
-#: and one upstream's idea of "later" is not a licence to park the turn.
-CAPACITY_429_MAX_WAIT = 60.0
+#: Ceiling for a single honoured ``Retry-After``. A header asking for longer is
+#: capped rather than obeyed: the budget is bounded, and one upstream's idea of
+#: "later" is not a licence to park the turn.
+RETRY_429_MAX_WAIT = 60.0
+
+#: Wall-clock ceiling across all 429 waits for one request. Without it an
+#: endpoint answering every attempt with ``Retry-After: 60`` would park the turn
+#: for five minutes. The headerless schedule totals 31s and never reaches this;
+#: it exists to bound the case where the upstream keeps naming a long wait.
+RETRY_429_TOTAL_BUDGET = 90.0
 
 
-def is_capacity_429(status: int, body: str) -> bool:
-    """Whether a 429 is about capacity, and therefore worth one more attempt.
+def is_terminal_429(status: int, body: str) -> bool:
+    """Whether a 429 is a refusal that waiting cannot fix.
 
-    A quota refusal and an unavailable endpoint arrive with the same status
-    code, and the difference is only in the body. Reading it is what lets the
-    transport retry the one without burning the other.
+    429 is "Too Many Requests", and the body is the only thing that says which
+    kind: a rate limit clears on its own, a spent quota does not. Reading it is
+    what lets the transport wait out the first without spending the second.
 
     Args:
-        status: The HTTP status. Anything but 429 is never capacity.
+        status: The HTTP status. Anything but 429 is never terminal.
         body: The response body, as text. Read by the caller, which owns the
             connection.
 
     Returns:
-        True only when the body carries a capacity signal and no quota signal.
-        An empty, unparseable or unrecognised body returns False, which keeps
-        the fail-fast behaviour every 429 had before this existed.
+        True when the body names a permanent condition -- an exhausted quota or
+        a billing problem. An empty, unparseable or unrecognised body returns
+        False, so the default is to retry. That is the standard reading of 429
+        and the safer one here: retrying a 429 that turns out to be permanent
+        costs one request, while refusing to retry a rate limit fails a turn
+        that would have succeeded a second later.
     """
     if status != 429:
         return False
     lowered = (body or "").lower()
-    if any(marker in lowered for marker in QUOTA_429_MARKERS):
-        return False
-    return any(marker in lowered for marker in CAPACITY_429_MARKERS)
+    return any(marker in lowered for marker in QUOTA_429_MARKERS)
 
 
 # The config-facing name of the Responses API provider. It is also what
@@ -213,7 +222,30 @@ class Error(ChatEvent):
     provider_meta: dict | None = None
 
 
-ChatStreamEvent = TextDelta | ReasoningDelta | ToolCall | Done | Error
+@dataclass
+class RetryNotice(ChatEvent):
+    """A retry is about to happen, so a client can say why it is waiting.
+
+    Emitted *before* the wait rather than after, which is the whole point: a
+    retry that waits silently for thirty seconds is indistinguishable from a
+    hung request, and the reason is the part a user can act on. "Endpoint is
+    unavailable" is worth waiting out; "you are out of credit" is not.
+
+    ``reason`` is the upstream's own words where there are any -- the response
+    body for a 429, the exception text for a connection error -- because a
+    paraphrase would hide the distinction the user is trying to make.
+    """
+
+    type: str = "retry"
+    #: 1-based: the attempt that just failed, not the one about to be made.
+    attempt: int = 0
+    #: The budget that attempt is counted against.
+    total: int = 0
+    wait_seconds: float = 0.0
+    reason: str = ""
+
+
+ChatStreamEvent = TextDelta | ReasoningDelta | ToolCall | Done | Error | RetryNotice
 
 
 class LLMProvider(ABC):

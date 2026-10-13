@@ -1206,7 +1206,12 @@ async def test_chat_stream_non_200(monkeypatch):
             [Message(role="user", content="hi")], model="claude-3-opus-20240229"
         )
     ]
-    assert isinstance(collected[0], Error)
+    # A 500 is retried, and each retry is announced before it is waited out, so
+    # the stream opens with notices rather than the failure. The failure is
+    # still the last word, and no turn is reported as complete.
+    errors = [event for event in collected if isinstance(event, Error)]
+    assert errors, collected
+    assert isinstance(collected[-1], Error)
     assert not any(isinstance(event, Done) for event in collected)
 
 
