@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nova"
 dynamic = ["version"]
-description = "A local personal AI agent assistant for terminal and desktop workflows"
+description = "Self-hosted AI agent with its own identity, memory, and skills. Runs local with Ollama or any LLM API — terminal, web, desktop, HTTP."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
