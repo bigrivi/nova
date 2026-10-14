@@ -1,0 +1,129 @@
+name: Release
+
+# Builds the desktop bundle for all three platforms and publishes them as one
+# GitHub release. Triggered by pushing a version tag; the tag is the version,
+# so a tag that disagrees with nova/__init__.py fails before anything is
+# published.
+#
+# This is the formal release path. build.yml is separate and untouched: it
+# publishes a Windows-only `nightly` prerelease on every push to main, which is
+# a narrower, cheaper signal than a versioned release.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+# Never cancel a publish. An interrupted upload leaves the release holding a
+# partial artifact set, and re-running is cheap by comparison.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing should not hide the other two from the release.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            os: windows-latest
+            file: Nova-Windows-x64.zip
+          # Pinned rather than macos-latest so the artifact name stays honest
+          # about the architecture.
+          - platform: macos-arm64
+            os: macos-14
+            file: Nova-macOS-arm64.zip
+          # 22.04 rather than latest: pywebview's GTK backend wants
+          # gir1.2-webkit2-4.0, which 24.04 dropped in favour of 4.1.
+          - platform: linux-x64
+            os: ubuntu-22.04
+            file: Nova-Linux-x64.tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi gir1.2-webkit2-4.0 \
+            || sudo apt-get install -y python3-gi gir1.2-webkit2-4.1
+
+      # Only the node modules here. build.py runs `npm run build`
+      # (tsc -b && vite build) itself before handing the spec to PyInstaller,
+      # so a separate build step would only repeat it.
+      - run: npm ci
+        working-directory: frontend
+
+      - run: pip install -r requirements.txt pyinstaller
+
+      - run: python build.py --clean
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/Nova/* -DestinationPath ${{ matrix.file }}
+
+      # ditto, not zip: it is what preserves the symlinks and resource forks
+      # inside the bundle, and an app that loses those launches oddly.
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepNew dist/Nova.app ${{ matrix.file }}
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czf ${{ matrix.file }} -C dist Nova
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nova-${{ matrix.platform }}
+          path: ${{ matrix.file }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the package version
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys
+
+          # A GitHub expression, not a shell variable: the heredoc is quoted,
+          # so the shell would hand the literal ${...} through untouched.
+          tag = "${{ github.ref_name }}".removeprefix("v")
+          source = pathlib.Path("nova/__init__.py").read_text(encoding="utf-8")
+          version = re.search(r'__version__\s*=\s*"([^"]+)"', source).group(1)
+          if version != tag:
+              sys.exit(f"tag {tag!r} does not match nova.__version__ {version!r}")
+          print(f"publishing {tag}")
+          PY
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
