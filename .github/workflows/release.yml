@@ -81,11 +81,13 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path dist/Nova/* -DestinationPath ${{ matrix.file }}
 
-      # ditto, not zip: it is what preserves the symlinks and resource forks
-      # inside the bundle, and an app that loses those launches oddly.
+      # ditto, not zip: it is what preserves the resource fork and the code
+      # signature inside the bundle, and an app that loses those launches
+      # oddly. --keepParent puts Nova.app/ at the top of the archive rather
+      # than a loose pile of Contents/ -- ditto has no --keepNew.
       - name: Package (macOS)
         if: runner.os == 'macOS'
-        run: ditto -c -k --sequesterRsrc --keepNew dist/Nova.app ${{ matrix.file }}
+        run: ditto -c -k --sequesterRsrc --keepParent dist/Nova.app ${{ matrix.file }}
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
