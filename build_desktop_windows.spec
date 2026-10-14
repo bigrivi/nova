@@ -44,7 +44,7 @@ a = Analysis(
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(ROOT / 'runtime_hook_ssl_certifi.py')],
     excludes=[
         'tkinter',
         'matplotlib',
