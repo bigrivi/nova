@@ -31,6 +31,7 @@ from nova.db import DataSourceProtocol, get_default_data_source
 from nova.llm import LLMProvider
 from nova.llm import Message as LLMMessage
 from nova.prompt import PromptBuilder, PromptConfig
+from nova.prompt.project_instructions import discover_project_instructions
 from nova.session import get_session_manager
 from nova.session.manager import SessionContext, default_session_title
 from nova.session.protocol import SessionProtocol
@@ -201,9 +202,11 @@ class Agent:
         await self._events.emit(event, data)
 
     def _build_system_prompt(self, session_ctx: SessionContext = None) -> str:
+        workspace = self._active_workspace or str(self.agent_dir)
         return self._prompt_builder.build(
             available_skills=self._skill_service.list_skills(),
             workspace_override=self._active_workspace,
+            project_instructions=discover_project_instructions(workspace),
         )
 
     def _apply_active_workspace(self, session_ctx: SessionContext = None) -> None:

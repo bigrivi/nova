@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from nova.prompt.project_instructions import ProjectInstructions
 from nova.prompt.threat_patterns import has_threats
 from nova.settings import get_settings
 from nova.tools.shell_utils import get_shell_label
@@ -117,6 +118,7 @@ class PromptBuilder:
         available_skills: list[Any] | None = None,
         date: str | None = None,
         workspace_override: str | None = None,
+        project_instructions: ProjectInstructions | None = None,
     ) -> str:
         """Render the system prompt.
 
@@ -146,6 +148,11 @@ class PromptBuilder:
                 shell=get_shell_label(),
             )
         )
+
+        if project_instructions is not None and (
+            project_instructions.text.strip() or project_instructions.flagged
+        ):
+            parts.append(self._build_project_instructions_section(project_instructions))
 
         if self.config.subagent_roster:
             parts.append(
@@ -198,6 +205,29 @@ class PromptBuilder:
         import platform
 
         return platform.system()
+
+    def _build_project_instructions_section(
+        self, instructions: ProjectInstructions
+    ) -> str:
+        """Render the project instruction block.
+
+        Project conventions outrank the agent's persona (Soul) but not the
+        system-level Working Style above. Sources are listed so the user can
+        see which files are in effect; individually dropped files are named
+        rather than silently omitted.
+        """
+        lines = ["## Project Instructions", ""]
+        if instructions.text.strip():
+            lines.append(instructions.text)
+            lines.append("")
+        if instructions.sources:
+            lines.append("In effect from: " + ", ".join(instructions.sources))
+            lines.append("")
+        if instructions.flagged:
+            lines.append(
+                "Omitted as potential injection: " + "; ".join(instructions.flagged)
+            )
+        return "\n".join(lines).rstrip()
 
     def _build_available_skills_section(
         self, available_skills: list[Any] | None
