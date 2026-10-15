@@ -278,12 +278,14 @@ class PolicyToolBehavior(DefaultToolBehavior):
         inner: Any = None,
         tool_description: str = "",
         permission_mode: str = "ask",
+        is_sub_agent: bool = False,
         from_mcp: bool = False,
     ) -> None:
         self._tool = tool_name
         self._policy = policy
         self._approval = approval_manager
         self._reviewer = reviewer
+        self._is_sub_agent = is_sub_agent
         # The tool's own description, shown in the approval prompt. Without it the
         # prompt says "read call", which names the tool but not what it does --
         # and a dialog whose whole job is to let someone decide cannot ask them to
@@ -400,6 +402,21 @@ class PolicyToolBehavior(DefaultToolBehavior):
                 ),
             )
 
+        if self._is_sub_agent:
+            # The channel check precedes the reviewer, as it does for the shell:
+            # a sub-agent has nothing to ask on, so an ask here would be a prompt
+            # nobody can answer and a task hung until someone notices.
+            log.info("Tool refused for sub-agent (no approval channel): %s", self._tool)
+            return PreExecutionCheck(
+                allowed=False,
+                reject_reason=(
+                    f"{self._tool} needs approval, and a sub-agent runs in the "
+                    "background with no approval channel, so it cannot run tools "
+                    "that need approval. Do this work in the main session, or "
+                    "have the user allow it in permissions.json ('tools')."
+                ),
+            )
+
         if self._permission_mode == "dontAsk":
             # The reviewer is skipped with the prompt: a clear would run the
             # call, and this mode refuses what a human would have had to
@@ -415,6 +432,20 @@ class PolicyToolBehavior(DefaultToolBehavior):
                     "permissions.json ('tools') to run it here."
                 ),
             )
+
+        if (
+            self._permission_mode == "acceptEdits"
+            and not self._from_mcp
+            and self._policy.is_workspace_local_mutation(self._tool, args, workspace)
+        ):
+            # The tool axis' half of the shell's demotion: a mutation that
+            # provably stays inside the workspace is the case this mode exists
+            # for, and the prompt it spares is about a local file rather than
+            # about a decision. An MCP tool is never demoted -- Nova cannot see
+            # what a server's tool touches, and its rule here is that a
+            # configured ask is honoured exactly as written.
+            log.info("Tool allowed by acceptEdits: %s", self._tool)
+            return PreExecutionCheck()
 
         # Two different strings, doing two different jobs. `summary` is what the
         # dialog shows and why it is asking; `subject` is what the model would

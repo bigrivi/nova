@@ -113,6 +113,7 @@ class ToolsetBuilder:
                     inner,
                     tool.description,
                     permission_mode=self._permission_mode,
+                    is_sub_agent=self._is_sub_agent,
                     # Read off the registration rather than assumed: an MCP tool
                     # keeps its own behaviour entirely, which is not the same as a
                     # built-in that happens to be read-only.

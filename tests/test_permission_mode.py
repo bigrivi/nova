@@ -71,6 +71,15 @@ def test_dont_ask_is_read(tmp_path) -> None:
     assert permissions.load_permission_mode(path) == "dontAsk"
 
 
+def test_accept_edits_is_read(tmp_path) -> None:
+    """A documented mode. It used to be named as valid and then silently read
+    as ``ask``, so the shell demotion the docs describe never happened."""
+    path = tmp_path / "permissions.json"
+    path.write_text(json.dumps({"mode": "acceptEdits"}), encoding="utf-8")
+
+    assert permissions.load_permission_mode(path) == "acceptEdits"
+
+
 @pytest.mark.parametrize("value", ["nonsense", "", "ASK", 42, None, ["ask"]])
 def test_a_malformed_mode_reads_as_ask(tmp_path, value) -> None:
     """The one failure that costs nothing.
@@ -450,7 +459,9 @@ class TestThroughTheBuilder:
     async def test_the_mode_reaches_every_gated_tool(self) -> None:
         from nova.tools.behavior import TurnContext as _Ctx
 
-        registry = await _built(ToolPolicy({"read_image": "ask"}), "dontAsk")
+        registry = await _built(
+            ToolPolicy({"read_image": "ask"}), "dontAsk", sub_agent=False
+        )
 
         result = await registry.behavior_for("read_image").before_execute(
             {}, _Ctx(session_id="s1")
@@ -478,6 +489,116 @@ class TestThroughTheBuilder:
 
 
 # ── the wiring: the config value reaches the tools ────────────────────
+
+
+class TestTheToolAxisInAcceptEdits:
+    """The mode demotes an ask about a local mutation, and nothing else."""
+
+    @pytest.mark.asyncio
+    async def test_a_workspace_local_write_is_not_asked(self, tmp_path) -> None:
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path))
+        manager = ApprovalManager()
+        behavior = PolicyToolBehavior(
+            "write",
+            ToolPolicy({"write": "ask"}),
+            manager,
+            permission_mode="acceptEdits",
+        )
+
+        result = await behavior.before_execute({"filePath": "a.md"}, _ctx())
+
+        assert result.allowed
+        assert result.approval_request is None
+        assert manager.get_pending() == []
+
+    @pytest.mark.asyncio
+    async def test_a_write_outside_the_workspace_still_asks(self, tmp_path) -> None:
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path))
+        behavior = PolicyToolBehavior(
+            "write",
+            ToolPolicy({"write": "ask"}),
+            ApprovalManager(),
+            permission_mode="acceptEdits",
+        )
+
+        result = await behavior.before_execute({"filePath": "../outside.md"}, _ctx())
+
+        assert result.allowed
+        assert result.approval_request is not None
+
+    @pytest.mark.asyncio
+    async def test_a_credential_write_still_asks(self, tmp_path) -> None:
+        """A credential is not ordinary because it happens to sit inside."""
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path))
+        behavior = PolicyToolBehavior(
+            "write",
+            ToolPolicy({"write": "ask"}),
+            ApprovalManager(),
+            permission_mode="acceptEdits",
+        )
+
+        result = await behavior.before_execute({"filePath": ".env"}, _ctx())
+
+        assert result.allowed
+        assert result.approval_request is not None
+
+    @pytest.mark.asyncio
+    async def test_a_deny_is_not_demoted(self, tmp_path) -> None:
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path))
+        behavior = PolicyToolBehavior(
+            "edit",
+            ToolPolicy({"edit": "deny"}),
+            ApprovalManager(),
+            permission_mode="acceptEdits",
+        )
+
+        result = await behavior.before_execute({"filePath": "a.md"}, _ctx())
+
+        assert not result.allowed
+        assert "permissions.json" in result.reject_reason
+
+    @pytest.mark.asyncio
+    async def test_an_mcp_tool_is_not_demoted(self, tmp_path) -> None:
+        """A server's tool keeps its configured ask: Nova cannot see what it
+        touches, and the prefix that separates the two namespaces can be off."""
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path))
+        behavior = PolicyToolBehavior(
+            "write",
+            ToolPolicy({"write": "ask"}),
+            ApprovalManager(),
+            permission_mode="acceptEdits",
+            from_mcp=True,
+        )
+
+        result = await behavior.before_execute({"filePath": "a.md"}, _ctx())
+
+        assert result.approval_request is not None
+
+    @pytest.mark.asyncio
+    async def test_a_tool_with_no_path_is_not_a_local_mutation(self, tmp_path) -> None:
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path))
+        behavior = PolicyToolBehavior(
+            "web_fetch",
+            ToolPolicy({"web_fetch": "ask"}),
+            ApprovalManager(),
+            permission_mode="acceptEdits",
+        )
+
+        result = await behavior.before_execute({"url": "https://example.com"}, _ctx())
+
+        assert result.approval_request is not None
 
 
 def _agent(mode: str):  # type: ignore[no-untyped-def]

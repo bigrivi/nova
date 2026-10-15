@@ -223,7 +223,7 @@ async def _built(policy: ToolPolicy):
             registry=registry,
             skill_service=SkillService(skills_dir=Path(tmp) / "skills"),
             approval=ApprovalManager(),
-            is_sub_agent=True,
+            is_sub_agent=False,
             tool_policy=policy,
         )
         await builder.build()
@@ -536,7 +536,7 @@ async def test_a_gated_tool_prompt_says_what_the_tool_does() -> None:
             registry=registry,
             skill_service=SkillService(skills_dir=_Path(tmp) / "skills"),
             approval=ApprovalManager(),
-            is_sub_agent=True,
+            is_sub_agent=False,
             tool_policy=ToolPolicy({"read": "ask"}),
         )
         await builder.build()
@@ -570,7 +570,7 @@ async def test_the_tool_name_reaches_the_frame_the_frontend_reads() -> None:
             registry=registry,
             skill_service=SkillService(skills_dir=_Path(tmp) / "skills"),
             approval=ApprovalManager(),
-            is_sub_agent=True,
+            is_sub_agent=False,
             tool_policy=ToolPolicy({"read": "ask"}),
         )
         await builder.build()

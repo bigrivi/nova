@@ -126,15 +126,19 @@ def load_permission_mode(path: Path | str | None = None) -> PermissionMode:
         path: The permissions file, or None for the default location.
 
     Returns:
-        ``ask`` or ``dontAsk``. Never anything else, whatever the file says.
+        ``ask``, ``dontAsk`` or ``acceptEdits``. ``ask`` when the file is
+        absent, malformed, or names nothing known.
     """
     value = load_permissions(path).get("mode")
     if isinstance(value, str) and value in _MODES:
         # Narrowed explicitly rather than cast from the `Any` the file yields:
-        # the value has been checked against the two names, so it is one of
+        # the value has been checked against the known names, so it is one of
         # them, and saying so here keeps the return type honest.
-        mode: PermissionMode = "dontAsk" if value == "dontAsk" else "ask"
-        return mode
+        if value == "dontAsk":
+            return "dontAsk"
+        if value == "acceptEdits":
+            return "acceptEdits"
+        return "ask"
     if value is not None:
         log.warning(
             "ignoring permissions 'mode' %r: expected one of %s",

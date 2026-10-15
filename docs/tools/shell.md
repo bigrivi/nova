@@ -309,7 +309,9 @@ The mode for a session that is churning through local files and being asked
 about a `chmod` between every edit. It demotes an ask rule about *where a path
 points* -- `chmod 777 run.sh`, `chown -R user src/` -- when every path the
 command names resolves inside the workspace, and leaves everything else exactly
-as it was:
+as it was. The same question is asked of a mutating tool call: a `write` or
+`edit` that names a path inside the workspace runs without a prompt, while one
+that names an outside path -- or a credential -- keeps asking.
 
 - **A credential keeps asking under every mode.** `cat .env`, `cat
   src/.env`, `cat ~/.ssh/id_rsa`, `cp ~/.ssh/id_rsa /tmp/...` and the writes to

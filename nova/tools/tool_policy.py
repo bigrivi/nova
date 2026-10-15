@@ -440,6 +440,37 @@ class ToolPolicy:
             return False
         return is_sensitive_path(target)
 
+    def is_workspace_local_mutation(
+        self,
+        tool: str,
+        args: Mapping[str, object] | None = None,
+        workspace: str | Path | None = None,
+    ) -> bool:
+        """Whether *tool* is about to mutate a path that provably stays inside.
+
+        The one question ``acceptEdits`` demotes an ask on, kept here beside the
+        other containment answers so the mode cannot disagree with the gate
+        about them. Everything else keeps asking: a tool that names no path (a
+        fetch, a search) is not a local mutation, an out-of-workspace target is
+        not inside one, and a credential is not ordinary because of where it
+        sits.
+
+        Args:
+            tool: The tool being invoked.
+            args: The arguments the model sent, if any.
+            workspace: The active workspace root, or None when unknown.
+
+        Returns:
+            True only for a mutating tool that names a path inside *workspace*
+            and touches no credential.
+        """
+        if tool not in WRITE_PATH_ARGUMENTS:
+            return False
+        target = path_target(tool, args or {})
+        if target is None or workspace is None:
+            return False
+        return contains(workspace, target) and not is_sensitive_path(target)
+
     def __bool__(self) -> bool:
         return bool(self._rules)
 
