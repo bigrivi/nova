@@ -49,6 +49,16 @@ def test_roster_preamble_treats_roster_as_source_of_truth() -> None:
     assert "never" in prompt and "invent" in prompt
 
 
+def test_roster_preamble_treats_at_mention_as_explicit_delegation() -> None:
+    """A user `@<key>` mention is an explicit delegation instruction that
+    overrides the default of doing small work yourself."""
+    config = PromptConfig(subagent_roster="- `coder` (full access): implement")
+    prompt = PromptBuilder(config).build()
+
+    assert "`@<key>` mention" in prompt
+    assert "overrides" in prompt
+
+
 def test_delegate_tool_description_names_no_specific_agents() -> None:
     """Same guarantee for the `delegate_to_agent` tool description, which
     the model also reads when deciding whether to delegate."""

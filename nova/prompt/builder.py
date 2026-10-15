@@ -166,7 +166,10 @@ class PromptBuilder:
                 "level and what it is for — match the task to the entry whose "
                 "description fits best, and put everything the sub-agent needs "
                 "in `task` since it starts fresh with no memory of this "
-                "conversation. Do trivial single-file work yourself.\n\n"
+                "conversation. Do trivial single-file work yourself, but an "
+                "explicit `@<key>` mention from the user overrides that: they "
+                "are choosing the sub-agent, so hand that work to it via "
+                "`delegate_to_agent(target=<key>, ...)`.\n\n"
                 f"{self.config.subagent_roster}"
             )
 
