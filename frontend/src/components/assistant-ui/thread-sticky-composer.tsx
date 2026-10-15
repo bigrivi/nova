@@ -1,9 +1,12 @@
 import { ArrowUpIcon, Square } from "lucide-react";
 import {
+    type ChangeEvent,
     type ClipboardEvent,
     type KeyboardEvent,
     useLayoutEffect,
+    useMemo,
     type RefObject,
+    useState,
 } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -12,6 +15,13 @@ import { useAui } from "@assistant-ui/react";
 import { useComposerStore } from "../../stores/composer-store";
 import type { ContextUsage } from "../../stores/context-usage-store";
 import { useContextRingVisible } from "../../lib/ui-prefs";
+import {
+    applyMention,
+    detectMention,
+    filterSubagentsByQuery,
+    type Mention,
+    selectableSubagents,
+} from "../../lib/subagent-mention";
 import { ContextRing } from "./context-ring";
 import type { NovaAgent, NovaModelRecord } from "../../types/nova";
 import type { ModelOption } from "./elements/model-selector";
@@ -22,6 +32,7 @@ import {
     type ComposerContextBarProps,
 } from "./composer-context-bar";
 import { ModelSelector } from "./model-selector";
+import { SubagentMentionPicker } from "./subagent-mention-picker";
 import { TodoProgressPanel } from "./todo-progress-panel";
 import { VoiceErrorHint, VoiceInputButton } from "./voice-input-button";
 
@@ -73,6 +84,79 @@ export function ThreadStickyComposer({
     // User-toggled in Settings > General; hides the ring but keeps the data.
     const { visible: ringVisible } = useContextRingVisible();
 
+    const activeMainAgentKey =
+        contextBar.sessionAgentKey ?? agentSelection.selectedAgentKey;
+    const subagents = useMemo(
+        () => selectableSubagents(agentSelection.agents, activeMainAgentKey),
+        [agentSelection.agents, activeMainAgentKey],
+    );
+    const [mention, setMention] = useState<Mention | null>(null);
+    const [highlight, setHighlight] = useState(0);
+    // Escape closes the picker; keep it closed for this mention until the draft
+    // changes, or the next keystroke would reopen it.
+    const [mentionDismissed, setMentionDismissed] = useState(false);
+
+    const matches = useMemo(
+        () => (mention ? filterSubagentsByQuery(subagents, mention.query) : []),
+        [subagents, mention],
+    );
+    const activeIndex = Math.min(highlight, Math.max(matches.length - 1, 0));
+    const pickerOpen =
+        mention !== null &&
+        subagents.length > 0 &&
+        !mentionDismissed &&
+        !composer.isRunning;
+
+    const insertMention = (agent: NovaAgent) => {
+        if (!mention) {
+            return;
+        }
+        const next = applyMention(text, mention, agent.key);
+        setText(next.text);
+        setMention(null);
+        setMentionDismissed(false);
+        requestAnimationFrame(() => {
+            composerRef.current?.focus();
+            composerRef.current?.setSelectionRange(next.caret, next.caret);
+        });
+    };
+
+    const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+        const value = event.target.value;
+        setText(value);
+        setMention(detectMention(value, event.target.selectionStart));
+        setHighlight(0);
+        setMentionDismissed(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+        if (pickerOpen && matches.length > 0) {
+            if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setHighlight((index) => (index + 1) % matches.length);
+                return;
+            }
+            if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setHighlight(
+                    (index) => (index - 1 + matches.length) % matches.length,
+                );
+                return;
+            }
+            if (event.key === "Enter" || event.key === "Tab") {
+                event.preventDefault();
+                insertMention(matches[activeIndex]);
+                return;
+            }
+        }
+        if (pickerOpen && event.key === "Escape") {
+            event.preventDefault();
+            setMentionDismissed(true);
+            return;
+        }
+        composer.onKeyDown(event);
+    };
+
     // Auto-size reads the draft here, so a keystroke re-renders the composer
     // alone instead of the whole shell.
     useLayoutEffect(() => {
@@ -118,6 +202,14 @@ export function ThreadStickyComposer({
                         sessionProjectName={contextBar.sessionProjectName}
                         onRemoveProject={contextBar.onRemoveProject}
                     />
+                    {pickerOpen ? (
+                        <SubagentMentionPicker
+                            agents={matches}
+                            activeIndex={activeIndex}
+                            onActiveIndexChange={setHighlight}
+                            onSelect={insertMention}
+                        />
+                    ) : null}
                     <textarea
                         ref={composerRef}
                         value={text}
@@ -126,8 +218,9 @@ export function ThreadStickyComposer({
                         placeholder={t("composer.sendMessage")}
                         aria-label={t("composer.messageInput")}
                         className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1 py-1 text-sm outline-none readOnly:cursor-default readOnly:opacity-60"
-                        onChange={(event) => setText(event.target.value)}
-                        onKeyDown={composer.onKeyDown}
+                        onChange={handleChange}
+                        onKeyDown={handleKeyDown}
+                        onBlur={() => setMention(null)}
                         onPaste={handlePaste}
                     />
 

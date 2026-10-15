@@ -38,6 +38,8 @@
     "composer.voiceElapsed": "录音时长",
     "composer.agentFixed": "会话开始后智能体已固定，如需更换请新开对话",
     "composer.removeProject": "不归入项目",
+    "composer.subagentMentionTitle": "委派给子智能体",
+    "composer.subagentMentionEmpty": "没有匹配的子智能体",
     "modelSelector.ollama": "Ollama",
     "modelSelector.openaiCompatible": "OpenAI 兼容",
     "modelSelector.anthropic": "Anthropic",

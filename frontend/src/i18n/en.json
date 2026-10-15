@@ -38,6 +38,8 @@
     "composer.voiceElapsed": "Recording time",
     "composer.agentFixed": "Agent is fixed after the session starts. Start a new chat to switch.",
     "composer.removeProject": "Remove from project",
+    "composer.subagentMentionTitle": "Delegate to a sub-agent",
+    "composer.subagentMentionEmpty": "No matching sub-agents",
     "modelSelector.ollama": "Ollama",
     "modelSelector.openaiCompatible": "OpenAI Compatible",
     "modelSelector.anthropic": "Anthropic",
