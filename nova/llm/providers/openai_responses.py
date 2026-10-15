@@ -271,9 +271,6 @@ class OpenAIResponsesProvider(HttpProvider):
             headers["User-Agent"] = self._user_agent
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        # OpenRouter-style app attribution; harmless for gateways that ignore them
-        headers.setdefault("HTTP-Referer", "https://github.com/bigrivi/nova")
-        headers.setdefault("X-Title", "nova")
         if self._extra_headers:
             headers.update(self._extra_headers)
         if self._request_session_hook:
