@@ -8,7 +8,7 @@ from nova.session import SessionManager, get_session_manager
 from nova.settings import Settings, get_settings
 from nova.tools import ToolRegistry, tool
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 __all__ = [
     "Agent",
