@@ -97,7 +97,7 @@ export function ModelSelector({
                         t("modelSelector.noModelsAvailable")
                     }
                     size="sm"
-                    className="h-8 w-auto min-w-0 rounded-full border-border/60 bg-background/85 px-2.5 text-[11px] font-medium text-muted-foreground shadow-none hover:bg-muted/35 hover:text-muted-foreground focus:bg-background focus:text-foreground"
+                    className="h-8 w-auto min-w-0 rounded-full border-0 bg-transparent px-2.5 text-[11px] font-medium text-foreground shadow-none hover:bg-muted/60 hover:text-primary focus:bg-accent/60 focus:text-primary"
                 >
                     <ModelSelectorValue
                         placeholder={t("modelSelector.noModelsAvailable")}
