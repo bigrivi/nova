@@ -53,6 +53,7 @@ from pathlib import Path
 from nova.tools.permissions import load_permissions, permissions_path
 from nova.tools.shell import compound as compound_rules
 from nova.tools.shell.patterns import (
+    BUILTIN_DANGEROUS_RULES,
     CREDENTIAL_RULES,
     DANGEROUS_PATTERNS,
     FALLBACK_PATTERNS,
@@ -170,6 +171,16 @@ def _matchable(text: str) -> str:
     return _mask_quoted_arguments(_mask_heredoc_bodies(text))
 
 
+def _builtin_dangerous(description: str) -> bool:
+    """Whether *description* names a built-in danger rule.
+
+    Descriptions are grant identities, so the set is exact: a user-configured
+    rule carries its own wording and never lands in it, and the credential
+    rules were subtracted at the source.
+    """
+    return description in BUILTIN_DANGEROUS_RULES
+
+
 @dataclass(frozen=True)
 class Rule:
     """One match and what it means."""
@@ -194,6 +205,10 @@ class Decision:
     effect: str  # "allow" | "ask" | "block"
     rule: str = ""
     description: str = ""
+    #: True when the ask came from the built-in danger layer rather than from a
+    #: credential rule or a user-configured one. Display only: never consulted by
+    #: the grant logic, and never set on an allow.
+    dangerous: bool = False
 
     @property
     def allowed(self) -> bool:
@@ -263,7 +278,12 @@ class RuleSet:
             compound = compound_rules.classify(parsed)  # type: ignore[arg-type]
             if compound.matched:
                 effect = "block" if self._blocked(compound.rule) else "ask"
-                return Decision(effect, compound.rule, compound.rule)
+                return Decision(
+                    effect,
+                    compound.rule,
+                    compound.rule,
+                    dangerous=_builtin_dangerous(compound.rule),
+                )
         else:
             # No grammar, or the line defeated it. The compound rules cannot
             # answer, so their line-level stand-ins do -- failing open on
@@ -272,7 +292,12 @@ class RuleSet:
             for rule in self.fallback:
                 if rule.matches(_matchable(text)):
                     effect = "block" if self._blocked(rule.description) else "ask"
-                    return Decision(effect, rule.description, rule.description)
+                    return Decision(
+                        effect,
+                        rule.description,
+                        rule.description,
+                        dangerous=_builtin_dangerous(rule.description),
+                    )
 
         segments = self._segments(parsed, text)
 
@@ -295,7 +320,7 @@ class RuleSet:
             if decision.effect == "ask" and not asked:
                 asked = decision.rule
         if asked:
-            return Decision("ask", asked, asked)
+            return Decision("ask", asked, asked, dangerous=_builtin_dangerous(asked))
         return Decision("allow")
 
     def _segments(self, parsed: object, text: str) -> list[str]:
@@ -340,7 +365,12 @@ class RuleSet:
         text = _matchable(segment)
         for rule in self.block:
             if rule.matches(text):
-                return Decision("block", rule.description, rule.description)
+                return Decision(
+                    "block",
+                    rule.description,
+                    rule.description,
+                    dangerous=_builtin_dangerous(rule.description),
+                )
         for rule in self.allow:
             if rule.matches(text):
                 # Carries the rule the way an ask does: a caller reporting what
@@ -365,7 +395,12 @@ class RuleSet:
                     # No rule is carried, because an allow is not a permission
                     # the user gave -- there is nothing to grant against.
                     return Decision("allow")
-                return Decision("ask", rule.description, rule.description)
+                return Decision(
+                    "ask",
+                    rule.description,
+                    rule.description,
+                    dangerous=_builtin_dangerous(rule.description),
+                )
         return Decision("allow")
 
     def _blocked(self, description: str) -> bool:

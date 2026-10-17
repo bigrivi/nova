@@ -331,6 +331,7 @@ class AISDKStreamAdapter:
                             "family": data_payload.get("family", ""),
                             "target": data_payload.get("target", ""),
                             "scriptScoped": bool(data_payload.get("digest", "")),
+                            "dangerous": data_payload.get("dangerous", False),
                             "workspace": get_active_workspace() or "",
                         },
                     }

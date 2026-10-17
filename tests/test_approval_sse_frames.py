@@ -282,6 +282,39 @@ async def test_the_frame_carries_the_family(monkeypatch, tmp_path, path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
+async def test_the_frame_carries_the_danger_flag(monkeypatch, tmp_path, path):
+    """Destructive, not merely asking: the dialog reddens off this field.
+
+    Both serializers, like the target test -- a field added to one and not
+    the other is the gap that bit `workspace` before.
+    """
+    script = [
+        *APPROVAL_SCRIPT[:-1],
+        (
+            AgentEvent.APPROVAL_REQUIRED,
+            {**APPROVAL_SCRIPT[-1][1], "dangerous": True},
+        ),
+        (AgentEvent.DONE, {"reason": "", "content": "done"}),
+    ]
+    app = _make_app(monkeypatch, tmp_path, f"home-dangerous-{path}", script=script)
+    request = type(
+        "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
+    )()
+
+    if path == "ai_sdk":
+        chunks = [
+            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        ]
+        data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
+    else:
+        events = [e async for e in app.state.chat_service.chat_stream(request)]
+        data = _approval_frames_via_chat_stream(events)[0].data.model_dump()
+
+    assert data["dangerous"] is True, f"the {path} path dropped the danger flag"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
 async def test_the_frame_carries_the_target_path(monkeypatch, tmp_path, path):
     """The file the tool is about to touch, so the dialog can name it.
 

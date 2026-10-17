@@ -225,6 +225,7 @@ class ShellToolBehavior(DefaultToolBehavior):
                         "rememberable": rememberable,
                         "family": verdict.family if rememberable else "",
                         "digest": verdict.digest if rememberable else "",
+                        "dangerous": verdict.dangerous,
                     }
                 )
 

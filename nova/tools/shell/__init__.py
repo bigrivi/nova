@@ -92,6 +92,11 @@ class Verdict:
             script, which is the right trade: the user is approving code, and two
             scripts that differ are not interchangeable. Existing grants recorded
             without a digest keep working and stay as wide as they were.
+        dangerous: Whether the built-in danger layer fired on this command.
+            Display only, like ``review_declined`` but weaker: it never reaches
+            the grant logic and the grant key is unchanged. Consulted only when
+            ``effect`` is ``ask`` -- a blocked command has no dialog to redden
+            and an allowed one has no prompt at all.
     """
 
     effect: Effect
@@ -100,6 +105,7 @@ class Verdict:
     review_declined: bool = False
     family: str = ""
     digest: str = ""
+    dangerous: bool = False
 
     @property
     def runs(self) -> bool:
@@ -209,10 +215,22 @@ async def decide(
 
     if decision.effect == "block":
         log.info("Hardline command rejected: %s (%s)", command, decision.description)
-        return Verdict("block", decision.description, decision.rule, family=family)
+        return Verdict(
+            "block",
+            decision.description,
+            decision.rule,
+            family=family,
+            dangerous=decision.dangerous,
+        )
 
     if not decision.needs_approval:
-        return Verdict("allow", decision.description, decision.rule, family=family)
+        return Verdict(
+            "allow",
+            decision.description,
+            decision.rule,
+            family=family,
+            dangerous=decision.dangerous,
+        )
 
     # The channel check precedes the reviewer. A sub-agent has nothing to ask on,
     # so a cleared command would still be a command no human saw -- and getting
@@ -225,6 +243,7 @@ async def decide(
             "approval channel, so it cannot run commands that need approval.",
             decision.rule,
             family=family,
+            dangerous=decision.dangerous,
         )
 
     if reviewer is not None:
@@ -238,7 +257,13 @@ async def decide(
             verdict = "escalate"
         if verdict == "approve":
             log.info("cleared by review: %s", command[:120])
-            return Verdict("allow", decision.description, decision.rule, family=family)
+            return Verdict(
+                "allow",
+                decision.description,
+                decision.rule,
+                family=family,
+                dangerous=decision.dangerous,
+            )
         log.info("review returned %r; asking the user: %s", verdict, command[:120])
         # Flagged so the caller cannot answer *this* prompt with a grant. A
         # remembered approval is recorded against `rule`, and the command the
@@ -251,10 +276,16 @@ async def decide(
             decision.rule,
             review_declined=True,
             family=family,
+            dangerous=decision.dangerous,
         )
 
     return Verdict(
-        "ask", decision.description, decision.rule, family=family, digest=digest
+        "ask",
+        decision.description,
+        decision.rule,
+        family=family,
+        digest=digest,
+        dangerous=decision.dangerous,
     )
 
 

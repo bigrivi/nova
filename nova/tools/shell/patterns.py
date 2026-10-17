@@ -691,3 +691,14 @@ FALLBACK_PATTERNS: list[tuple[re.Pattern, str]] = [
         "eval of remote content",
     ),
 ]
+
+#: Descriptions that mark a shell approval as destructive rather than merely
+#: asking. The dangerous layer, the fallback stand-ins, and the compound
+#: relationship rules that ask -- minus the credential rules. A credential
+#: prompt is sensitive, not destructive: `cat .env` stays amber, and the grant
+#: refusal on credentials is untouched because this set never reaches it.
+BUILTIN_DANGEROUS_RULES: frozenset[str] = (
+    frozenset(desc for _, desc in DANGEROUS_PATTERNS)
+    | frozenset(desc for _, desc in FALLBACK_PATTERNS)
+    | {"pipe remote content to an interpreter", "eval of remote content"}
+) - CREDENTIAL_RULES

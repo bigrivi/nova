@@ -168,3 +168,27 @@ def test_the_manager_can_be_reached_without_an_event_loop() -> None:
     would pass every other test here.
     """
     assert asyncio.iscoroutinefunction(ShellToolBehavior.before_execute)
+
+
+@pytest.mark.asyncio
+async def test_the_request_carries_the_danger_flag() -> None:
+    manager = ApprovalManager()
+    behavior, ctx = _gate(manager)
+
+    result = await behavior.before_execute({"command": "rm -rf /tmp/x"}, ctx)
+
+    assert result.approval_request is not None
+    assert result.approval_request["dangerous"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_credential_request_is_not_flagged_danger() -> None:
+    """Sensitive is not destructive: the credential prompt stays amber."""
+
+    manager = ApprovalManager()
+    behavior, ctx = _gate(manager)
+
+    result = await behavior.before_execute({"command": "cat .env"}, ctx)
+
+    assert result.approval_request is not None
+    assert result.approval_request["dangerous"] is False

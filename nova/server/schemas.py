@@ -458,6 +458,10 @@ class ApprovalRequiredEventData(BaseStreamEventData):
     #: hands out Python field names. This one is two words on both sides and would
     #: have gone out as `script_scoped`, which the client reads as `undefined`.
     script_scoped: bool = Field(default=False, serialization_alias="scriptScoped")
+    #: True when the shell's built-in danger layer fired on this command.
+    #: Display only -- the dialog reddens, the grant logic never reads it.
+    #: Defaulted so older frames stay loadable.
+    dangerous: bool = False
     #: The workspace the tool axis judged the path against. Sent because the
     #: boundary is otherwise invisible: a read inside it is silent, and a read
     #: outside it prompts with no indication of where "inside" was. Empty when

@@ -681,6 +681,7 @@ class ChatService:
                 family=data.get("family", ""),
                 target=data.get("target", ""),
                 script_scoped=bool(data.get("digest", "")),
+                dangerous=data.get("dangerous", False),
                 workspace=await self._active_workspace(),
             )
         if agent_event == AgentEvent.RETRY:
