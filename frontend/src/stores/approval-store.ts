@@ -24,6 +24,12 @@ export type ApprovalPending = {
      */
     scriptScoped: boolean;
     /**
+     * True only for a shell approval the built-in danger layer flagged
+     * (e.g. rm -rf). Credential-shaped and user-configured asks stay false,
+     * and non-shell cards never render red off this flag.
+     */
+    dangerous: boolean;
+    /**
      * The workspace the tool path was judged against. Empty means none is
      * active, which is the case where every path is undecidable and prompts --
      * so the dialog distinguishes it from "inside, nothing to report" instead of

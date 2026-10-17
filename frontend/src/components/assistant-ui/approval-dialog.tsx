@@ -90,14 +90,38 @@ export const ApprovalDialog = () => {
         useApprovalStore.getState().clearPendingForSession(pending.sessionId);
     };
 
+    // Red is "will break things", amber is "take a look": only a shell card
+    // the danger layer flagged goes red. Non-shell cards stay amber even if
+    // the flag ever arrives on them.
+    const isDangerous = isShell && pending.dangerous === true;
+
     return (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-950">
+        <div
+            data-dangerous={isDangerous ? "true" : undefined}
+            className={
+                isDangerous
+                    ? "rounded-2xl border border-red-300 bg-red-50/80 px-4 py-4 text-sm text-red-950"
+                    : "rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 text-sm text-amber-950"
+            }
+        >
             <div className="flex items-start gap-3">
-                <div className="mt-0.5 rounded-full bg-amber-100 p-2 text-amber-700">
+                <div
+                    className={
+                        isDangerous
+                            ? "mt-0.5 rounded-full bg-red-100 p-2 text-red-700"
+                            : "mt-0.5 rounded-full bg-amber-100 p-2 text-amber-700"
+                    }
+                >
                     <ShieldAlertIcon className="size-4" />
                 </div>
                 <div className="min-w-0 flex-1 space-y-3">
-                    <div className="text-sm font-bold text-amber-950">
+                    <div
+                        className={
+                            isDangerous
+                                ? "text-sm font-bold text-red-950"
+                                : "text-sm font-bold text-amber-950"
+                        }
+                    >
                         {title}
                     </div>
                     {/*
@@ -112,18 +136,24 @@ export const ApprovalDialog = () => {
                             </div>
                         )}
                     {block && (
-                        <pre className="overflow-x-auto rounded-xl border border-amber-200 bg-amber-100/70 px-3 py-2 font-mono text-xs whitespace-pre-wrap break-all text-amber-950">
+                        <pre
+                            className={
+                                isDangerous
+                                    ? "overflow-x-auto rounded-xl border border-red-200 bg-red-100/70 px-3 py-2 font-mono text-xs whitespace-pre-wrap break-all text-red-950"
+                                    : "overflow-x-auto rounded-xl border border-amber-200 bg-amber-100/70 px-3 py-2 font-mono text-xs whitespace-pre-wrap break-all text-amber-950"
+                            }
+                        >
                             {block}
                         </pre>
                     )}
-
-                    {isShell && pending.workspace && (
-                        <div className="font-mono text-xs text-amber-800">
-                            {t("approval.workdir", { path: pending.workspace })}
-                        </div>
-                    )}
-                    {(isShell || isDir) && (
-                        <div className="text-xs leading-5 text-amber-800">
+                    {(isShell ? pending.rememberable : isDir) && (
+                        <div
+                            className={
+                                isDangerous
+                                    ? "text-xs leading-5 text-red-800"
+                                    : "text-xs leading-5 text-amber-800"
+                            }
+                        >
                             {isShell
                                 ? t("approval.shellDiff")
                                 : t("approval.dirDiff", { verb })}
@@ -133,7 +163,11 @@ export const ApprovalDialog = () => {
                         <button
                             type="button"
                             onClick={() => handleApprove(false)}
-                            className="rounded-xl bg-amber-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-900"
+                            className={
+                                isDangerous
+                                    ? "rounded-xl bg-red-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-800"
+                                    : "rounded-xl bg-amber-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-900"
+                            }
                         >
                             {t("approval.approve")}
                         </button>
@@ -141,7 +175,11 @@ export const ApprovalDialog = () => {
                             <button
                                 type="button"
                                 onClick={() => handleApprove(true)}
-                                className="rounded-xl border border-amber-800 bg-transparent px-4 py-2 text-sm font-medium text-amber-950 transition-colors hover:bg-amber-100"
+                                className={
+                                    isDangerous
+                                        ? "rounded-xl border border-red-800 bg-transparent px-4 py-2 text-sm font-medium text-red-950 transition-colors hover:bg-red-100"
+                                        : "rounded-xl border border-amber-800 bg-transparent px-4 py-2 text-sm font-medium text-amber-950 transition-colors hover:bg-amber-100"
+                                }
                             >
                                 {t("approval.remember")}
                             </button>

@@ -304,6 +304,12 @@ export type ApprovalRequest = {
      */
     scriptScoped: boolean;
     /**
+     * True only for a shell approval the built-in danger layer flagged.
+     * Absent on frames from a server predating the field, where the dialog
+     * keeps the amber card.
+     */
+    dangerous: boolean;
+    /**
      * The workspace the tool path was judged against, so the dialog can name
      * the boundary. Empty when none is active, which the dialog reports rather
      * than leaving blank.
@@ -328,6 +334,8 @@ export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest 
         // Absent on frames from a server predating the script-scoped key,
         // where remembering still covered the whole family.
         scriptScoped: event.data?.scriptScoped === true,
+        // Absent on frames from a server predating the danger field.
+        dangerous: event.data?.dangerous === true,
         // Absent on frames from a server predating the workspace field.
         workspace: String(event.data?.workspace || ""),
         // Absent on frames from a server predating the target field.

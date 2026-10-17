@@ -186,6 +186,7 @@ describe("handleStreamEvent control frames", () => {
             rememberable: true,
             family: "",
             scriptScoped: false,
+            dangerous: false,
             workspace: "",
             target: "",
         });

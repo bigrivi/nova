@@ -29,6 +29,7 @@ const base: ApprovalPending = {
     rememberable: true,
     family: "",
     scriptScoped: false,
+    dangerous: false,
     workspace: "",
     target: "",
 };
@@ -71,7 +72,7 @@ describe("approvalDirVerbKey", () => {
 });
 
 describe("ApprovalDialog", () => {
-    it("renders the shell card with the command and the workspace", () => {
+    it("renders the shell card with the command and no workspace line", () => {
         show({
             toolName: "",
             command: "git status --short",
@@ -80,18 +81,16 @@ describe("ApprovalDialog", () => {
 
         expect(screen.getByText("需要执行以下命令")).toBeTruthy();
         expect(screen.getByText("git status --short")).toBeTruthy();
-        expect(
-            screen.getByText("工作目录:/Users/demo/project"),
-        ).toBeTruthy();
+        expect(screen.queryByText(/工作目录/)).toBeNull();
         expect(
             screen.getByText(
-                "批准:仅本次执行。批准并记住:本会话内,相同命令将不再询问。",
+                "批准:仅本次执行。批准并记住:本会话内,同一类命令将不再询问。",
             ),
         ).toBeTruthy();
     });
 
-    it("hides the workspace line when there is none", () => {
-        show({ toolName: "shell", command: "ls", workspace: "" });
+    it("never renders the workspace line even when a workspace is active", () => {
+        show({ toolName: "shell", command: "ls", workspace: "/Users/demo/project" });
 
         expect(screen.queryByText(/工作目录/)).toBeNull();
     });
@@ -157,6 +156,20 @@ describe("ApprovalDialog", () => {
         expect(screen.getByText("/Users/demo/.ssh")).toBeTruthy();
     });
 
+    it("hides the explainer and the remember button when shell is unrememberable", () => {
+        show({
+            toolName: "shell",
+            command: "rm -rf /tmp/x",
+            rememberable: false,
+        });
+
+        expect(screen.getByText("需要执行以下命令")).toBeTruthy();
+        expect(screen.getByText("批准")).toBeTruthy();
+        expect(screen.getByText("拒绝")).toBeTruthy();
+        expect(screen.queryByText("批准并记住")).toBeNull();
+        expect(screen.queryByText(/批准:/)).toBeNull();
+    });
+
     it("keeps the legacy copy for verbless tools", () => {
         show({
             toolName: "web_fetch",
@@ -167,5 +180,45 @@ describe("ApprovalDialog", () => {
         expect(screen.getByText("工具调用：web_fetch")).toBeTruthy();
         expect(screen.queryByText(/需要/)).toBeNull();
         expect(screen.queryByText(/批准:/)).toBeNull();
+    });
+
+    it("renders the red card only for a dangerous shell approval", () => {
+        show({
+            toolName: "shell",
+            command: "rm -rf /tmp/x",
+            dangerous: true,
+        });
+
+        expect(
+            document.querySelector('[data-dangerous="true"]'),
+        ).toBeTruthy();
+        // Copy is unchanged: the color carries the danger, not new wording.
+        expect(screen.getByText("需要执行以下命令")).toBeTruthy();
+        expect(
+            screen.getByText(
+                "批准:仅本次执行。批准并记住:本会话内,同一类命令将不再询问。",
+            ),
+        ).toBeTruthy();
+        // Remember stays: a dangerous command can still be granted.
+        expect(screen.getByText("批准并记住")).toBeTruthy();
+        cleanup();
+
+        show({ toolName: "shell", command: "ls" });
+        expect(
+            document.querySelector('[data-dangerous="true"]'),
+        ).toBeNull();
+    });
+
+    it("never renders red for a non-shell card", () => {
+        show({
+            toolName: "write",
+            family: "/private/tmp/test_remember_dir",
+            target: "/private/tmp/test_remember_dir/file.txt",
+            dangerous: true,
+        });
+
+        expect(
+            document.querySelector('[data-dangerous="true"]'),
+        ).toBeNull();
     });
 });

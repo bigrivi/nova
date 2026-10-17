@@ -389,6 +389,7 @@ describe("event extractors", () => {
             rememberable: true,
             family: "",
             scriptScoped: false,
+            dangerous: false,
             workspace: "",
             target: "",
         });
@@ -515,6 +516,26 @@ describe("event extractors", () => {
                     rememberable: false,
                 },
             }).rememberable,
+        ).toBe(false);
+    });
+
+    it("carries the danger flag, defaulting to false on older frames", () => {
+        expect(
+            extractApprovalRequest({
+                type: "data-nova-approval-required",
+                data: {
+                    requestId: "r9",
+                    command: "rm -rf /tmp/x",
+                    description: "",
+                    dangerous: true,
+                },
+            }).dangerous,
+        ).toBe(true);
+        expect(
+            extractApprovalRequest({
+                type: "data-nova-approval-required",
+                data: { requestId: "r10", command: "ls", description: "" },
+            }).dangerous,
         ).toBe(false);
     });
 });

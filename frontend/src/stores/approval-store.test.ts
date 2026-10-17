@@ -11,6 +11,7 @@ const ghost = (sessionId: string): ApprovalPending => ({
     rememberable: true,
     family: "rm *",
     scriptScoped: false,
+    dangerous: false,
     workspace: "",
     target: "",
 });
