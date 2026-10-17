@@ -270,6 +270,34 @@ write outside the workspace -> asked
 credential path, any tool    -> asked, and never rememberable
 ```
 
+### Remembering an approval outside the workspace
+
+An outside write still asks, and "Approve & Remember" is offered on it, naming
+what the button covers: the **directory** the file is in.
+
+The boundary is its own permission rather than one per tool, which is what makes
+the button worth clicking: the grant carries no tool name, so one remembered
+answer covers `read`, `write` and `edit` in that directory. Approving in
+`~/work/` means the next file there -- whatever the tool -- does not ask again.
+Without that, the same folder gets three separate "remember" clicks, once per
+tool, which is the interruption the button exists to remove.
+
+Two cases narrow or drop the scope, because a directory that broad turns one
+click into an authorisation nobody meant to give:
+
+- **A credential is not remembered at all.** It still asks, every time. `.env`
+  and its neighbours are files rather than places to work, so there is no
+  directory to point a grant at that would not also cover a dozen other files.
+- **Nova's own `config.json` is remembered, but scoped to the file.** It holds
+  the provider API keys, and its directory is the home holding every
+  conversation and the database.
+- **A file sitting directly in `/` or in your home directory** falls back to the
+  file, for the same reason: granting the root would hand over every path on the
+  volume.
+
+The dialog always names the scope, because a button that promises to remember
+something of unknown width is asking you to authorise more than you can see.
+
 To get the stricter posture back — a read outside the workspace also asked
 about, the way Claude Code ships `blockReadsOutsideWorkingDirectories` — set:
 

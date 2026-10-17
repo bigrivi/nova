@@ -20,6 +20,7 @@
 export type ApprovalScope =
     | { key: "approval.rememberScript" }
     | { key: "approval.rememberFamily"; family: string }
+    | { key: "approval.rememberTool" }
     | null;
 
 export type ScopeInput = {
@@ -39,14 +40,15 @@ export type ScopeInput = {
  * which it always is, since the family is still part of the key. Naming the
  * family in that case would overstate what is being remembered.
  *
- * Nothing is returned when remembering is not on offer, or when there is no
- * family and no script to name. That is an unreadable command line, where the
- * grant covers the whole rule; the button is still honest there because the rule
- * is what the dialog is already about, and inventing a label would not be.
+ * Nothing is returned only when remembering is not on offer, which is also when
+ * the button is hidden. Every case that does offer it names a scope: a tool that
+ * takes no path has nothing narrower to narrow to, so its grant really does
+ * cover every call of that tool -- which is worth saying out loud rather than
+ * leaving the button describing nothing.
  */
 export function approvalScope(input: ScopeInput): ApprovalScope {
     if (!input.rememberable) return null;
     if (input.scriptScoped) return { key: "approval.rememberScript" };
     if (input.family) return { key: "approval.rememberFamily", family: input.family };
-    return null;
+    return { key: "approval.rememberTool" };
 }

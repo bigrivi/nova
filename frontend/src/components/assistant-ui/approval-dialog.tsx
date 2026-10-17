@@ -75,15 +75,19 @@ export const ApprovalDialog = () => {
                       * wording the user never sees, so without this line the button is
                       * an approval of unknown width.
                       *
+                      * Every case that offers the button names a scope, including a
+                      * tool that takes no path: its grant really does cover every
+                      * call of it, and saying so is the honest label.
+                      *
                       * The script case names the script rather than printing its hash:
                       * the script is the `command` directly above, and the whole point
                       * of the narrower key is that only that text would be remembered.
                       */}
                     {scope && (
                         <div className="font-mono text-xs text-amber-800">
-                            {scope.key === "approval.rememberScript"
-                                ? t(scope.key)
-                                : t(scope.key, { family: scope.family })}
+                            {scope.key === "approval.rememberFamily"
+                                ? t(scope.key, { family: scope.family })
+                                : t(scope.key)}
                         </div>
                     )}
                     {/*

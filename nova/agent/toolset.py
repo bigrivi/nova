@@ -8,11 +8,21 @@ registry is populated, so it is kept out of the agent runtime.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING
 
 from nova.mcp.manager import MCPManager
 from nova.tools.approval import ApprovalManager
 from nova.tools.registry import ToolRegistry
+
+# Types only. `ToolPolicy` and `PolicyToolBehavior` are deliberately imported
+# inside the methods that use them, so this block must not pull them in eagerly
+# and undo that.
+if TYPE_CHECKING:
+    from nova.memory.tools import MemoryTools
+    from nova.skills.service import SkillService
+    from nova.skills.tools import SkillTools
+    from nova.tools.approval_review import Reviewer
+    from nova.tools.tool_policy import ToolPolicy
 
 log = logging.getLogger(__name__)
 
@@ -36,13 +46,13 @@ class ToolsetBuilder:
     def __init__(
         self,
         registry: ToolRegistry,
-        skill_service: Any,
+        skill_service: SkillService,
         approval: ApprovalManager,
         is_sub_agent: bool,
         allowed_tools: frozenset[str] | None = None,
         agent_key: str | None = None,
-        reviewer: Any = None,
-        tool_policy: Any = None,
+        reviewer: Reviewer | None = None,
+        tool_policy: ToolPolicy | None = None,
         permission_mode: str = "ask",
     ) -> None:
         self._registry = registry
@@ -58,8 +68,8 @@ class ToolsetBuilder:
         # What an ask becomes when there is nobody to ask. Part of the cache
         # identity because it changes what a registered tool does at call time.
         self._permission_mode = permission_mode
-        self.skill_tools: Any = None
-        self.memory_tools: Any = None
+        self.skill_tools: SkillTools | None = None
+        self.memory_tools: MemoryTools | None = None
 
     def _allows(self, tool_name: str) -> bool:
         return self._allowed_tools is None or tool_name in self._allowed_tools

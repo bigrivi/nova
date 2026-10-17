@@ -42,11 +42,16 @@ describe("approvalScope", () => {
         ).toBeNull();
     });
 
-    it("says nothing when there is neither a script nor a family", () => {
-        // An unreadable command line: the grant covers the whole rule. There is no
-        // narrower label to give, and a wrong one would be worse than none.
-        expect(approvalScope({ ...base, family: "" })).toBeNull();
-        expect(approvalScope({ ...base, family: "", scriptScoped: false })).toBeNull();
+    it("names the tool-wide scope when there is neither a script nor a family", () => {
+        // A tool that takes no path: the grant is keyed on the tool alone, so it
+        // really does cover every call of it. Saying so beats a button that
+        // promises to remember something of unknown width.
+        expect(approvalScope({ ...base, family: "" })).toEqual({
+            key: "approval.rememberTool",
+        });
+        expect(
+            approvalScope({ ...base, family: "", scriptScoped: false }),
+        ).toEqual({ key: "approval.rememberTool" });
     });
 
     it("still names the script when the family is missing", () => {

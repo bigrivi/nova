@@ -18,12 +18,13 @@ changes for anyone who has not configured it.
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from nova.tools import tool_policy
+from nova.tools import permissions, tool_policy
 from nova.tools.approval import ApprovalManager
 from nova.tools.behavior import (
     DefaultToolBehavior,
@@ -31,7 +32,13 @@ from nova.tools.behavior import (
     PreExecutionCheck,
     TurnContext,
 )
-from nova.tools.tool_policy import ToolPolicy, contains, load_tool_policy
+from nova.tools.tool_policy import (
+    EXTERNAL_DIRECTORY_ACTION,
+    GrantScope,
+    ToolPolicy,
+    contains,
+    load_tool_policy,
+)
 
 
 def _ctx() -> TurnContext:
@@ -883,34 +890,184 @@ class TestTheGateAsksThroughTheBehaviour:
         assert outside.approval_request["toolName"] == "write"
 
     @pytest.mark.asyncio
-    async def test_an_outside_write_cannot_be_remembered(self, tmp_path) -> None:
-        """The grant would be too wide, so there is nothing to record.
+    async def test_an_outside_write_remembers_its_directory(self, tmp_path) -> None:
+        """The grant is keyed on the directory, so one click answers the next call.
 
-        A grant is keyed on `tool:write` and covers every write for the rest of
-        the session. Recording the first out-of-workspace approval under it would
-        make that one click authorise every later one, so the prompt is marked
-        not rememberable and the dialog drops the button -- the same treatment a
-        declined review already gets.
+        It used to be `tool:write` alone -- every write for the rest of the
+        session -- so this prompt offered no button at all and the user was asked
+        the same question forever. The middle level of the key now carries the
+        containing directory, which is the scope that makes remembering worth
+        offering: the next file in the same place stops asking.
         """
         from nova.tools.workspace_context import set_active_workspace
 
-        set_active_workspace(str(tmp_path))
+        # Outside the workspace, or there is no prompt to remember in the first
+        # place -- and an in-workspace write is not a test of this at all.
+        set_active_workspace(str(tmp_path / "ws"))
+        outside = tmp_path / "elsewhere"
         behavior, manager = _behavior(ToolPolicy(), "write")
+        args = {"filePath": str(outside / "a.txt"), "content": "x"}
+
+        result = await behavior.before_execute(args, _ctx())
+
+        assert result.approval_request is not None
+        assert result.approval_request["rememberable"] is True
+        assert result.approval_request["family"] == os.path.normcase(
+            str(outside.resolve())
+        ), "the directory, not the file"
+
+        manager.resolve(result.approval_request["id"], approved=True, remember=True)
+
+        again = await behavior.before_execute(args, _ctx())
+        assert again.approval_request is None, "and the grant must answer next time"
+
+    @pytest.mark.asyncio
+    async def test_one_directory_is_asked_once_across_tools(self, tmp_path) -> None:
+        """The opencode shape: the boundary is asked once, not per tool.
+
+        Reading and editing files in the same outside directory are calls of two
+        tools, and a grant keyed on the tool asked once per tool -- the user
+        clicked "Approve & Remember" three times for the same folder, which is
+        the interruption this is meant to remove. The boundary is its own action
+        (`EXTERNAL_DIRECTORY_ACTION`), so one remembered answer covers every tool
+        in the directory; `file-access.ts:112-141` asks it the same way.
+
+        Note the first entry: `read` is free outside the workspace under the
+        default posture, so it never reaches a prompt at all -- the directory is
+        entered here by the first tool that does ask about it.
+        """
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path / "ws"))
+        outside = tmp_path / "shared"
+        manager = ApprovalManager()
+        asked: list[tuple[str, str]] = []
+
+        for tool, args in (
+            ("read", {"filePath": str(outside / "a.txt")}),
+            ("write", {"filePath": str(outside / "b.txt"), "content": "x"}),
+            ("edit", {"filePath": str(outside / "c.txt")}),
+            ("read", {"filePath": str(outside / "d.txt")}),
+        ):
+            behavior = PolicyToolBehavior(tool, ToolPolicy(), manager)
+            result = await behavior.before_execute(args, _ctx())
+            if result.approval_request is None:
+                continue
+            asked.append((tool, result.approval_request["family"]))
+            if len(asked) == 1:
+                # One click on the directory, answering every tool in it.
+                manager.resolve(
+                    result.approval_request["id"], approved=True, remember=True
+                )
+
+        assert asked == [("write", os.path.normcase(str(outside.resolve())))], (
+            "asked once for the directory, then silent for every tool in it"
+        )
+        assert manager.allowlist_for("s1") == {
+            (EXTERNAL_DIRECTORY_ACTION, os.path.normcase(str(outside.resolve())), "")
+        }, "keyed on the directory, with no tool name in it"
+
+    @pytest.mark.asyncio
+    async def test_a_grant_covers_one_directory_and_not_the_next(
+        self, tmp_path
+    ) -> None:
+        """The narrowing is the whole point; a grant that covered every path
+        would be the too-wide authorisation the button used to be denied for."""
+        from nova.tools.workspace_context import set_active_workspace
+
+        here = tmp_path / "here"
+        there = tmp_path / "there"
+        # Both outside the workspace: an in-workspace write never prompts, so
+        # putting them inside would test nothing.
+        set_active_workspace(str(tmp_path / "ws"))
+        behavior, manager = _behavior(ToolPolicy(), "write")
+        granted = {"filePath": str(here / "a.txt"), "content": "x"}
+        manager.add_to_allowlist(
+            EXTERNAL_DIRECTORY_ACTION,
+            "s1",
+            family=ToolPolicy()
+            .external_boundary("write", granted, tmp_path / "ws")
+            .scope,
+        )
+
+        assert (await behavior.before_execute(granted, _ctx())).approval_request is None
+        sibling = await behavior.before_execute(
+            {"filePath": str(here / "b.txt"), "content": "x"}, _ctx()
+        )
+        assert sibling.approval_request is None, "the whole directory was granted"
+
+        other = await behavior.before_execute(
+            {"filePath": str(there / "a.txt"), "content": "x"}, _ctx()
+        )
+        assert other.approval_request is not None, "another directory is a new question"
+
+    @pytest.mark.asyncio
+    async def test_a_file_at_the_filesystem_root_falls_back_to_the_file(
+        self, tmp_path
+    ) -> None:
+        """Granting the root would hand over every path on the volume, so the
+        scope drops to the file."""
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path))
+        manager = ApprovalManager()
+        behavior = PolicyToolBehavior("write", ToolPolicy(), manager)
 
         result = await behavior.before_execute(
-            {"filePath": "/etc/authorized_keys", "content": "x"}, _ctx()
+            {"filePath": "/hosts", "content": "x"}, _ctx()
         )
 
         assert result.approval_request is not None
-        assert result.approval_request["rememberable"] is False
+        assert result.approval_request["family"] == os.path.normcase("/hosts")
 
-        manager.resolve(result.approval_request["id"], approved=True, remember=True)
-        assert manager.allowlist_for("s1") == set(), "nothing should be stored"
+    @pytest.mark.asyncio
+    async def test_a_file_in_the_home_directory_falls_back_to_the_file(
+        self, tmp_path
+    ) -> None:
+        """Granting the home directory would cover every file the user owns."""
+        from pathlib import Path as _Path
 
-        again = await behavior.before_execute(
-            {"filePath": "/etc/authorized_keys", "content": "x"}, _ctx()
+        from nova.tools.workspace_context import set_active_workspace
+
+        set_active_workspace(str(tmp_path))
+        home = _Path.home()
+        manager = ApprovalManager()
+        behavior = PolicyToolBehavior("write", ToolPolicy(), manager)
+
+        result = await behavior.before_execute(
+            {"filePath": str(home / ".zshrc"), "content": "x"}, _ctx()
         )
-        assert again.approval_request is not None, "and it asks again next time"
+
+        assert result.approval_request is not None
+        assert result.approval_request["family"] == os.path.normcase(
+            str((home / ".zshrc").resolve())
+        )
+
+    @pytest.mark.asyncio
+    async def test_nothing_to_narrow_stays_a_single_level_grant(self) -> None:
+        """A tool naming no path has nothing to narrow, which is not a reason to
+        take the button away."""
+        result = ToolPolicy().grant_scope("web_fetch", {"url": "https://a.example"})
+
+        assert result == GrantScope("", True)
+
+    def test_the_nova_config_honours_a_nova_home_override(self, tmp_path) -> None:
+        """No path literal in the code: the home is resolved, so a test or a
+        sandbox answers about the home actually in play."""
+        home = tmp_path / ".nova"
+        home.mkdir()
+        config = home / "config.json"
+        monkey = permissions.nova_home
+        permissions.nova_home = lambda: home  # type: ignore[assignment]
+        try:
+            assert tool_policy.is_nova_config(config) is True
+            assert tool_policy.is_nova_config(home / "nova.db") is False
+            assert tool_policy.is_nova_config(home / "skills" / "x.md") is False
+            scope = ToolPolicy().grant_scope("write", {"filePath": str(config)})
+            assert scope.rememberable, "the one credential that may be remembered"
+            assert scope.scope == os.path.normcase(str(config.resolve())), "the file"
+        finally:
+            permissions.nova_home = monkey  # type: ignore[assignment]
 
     @pytest.mark.asyncio
     async def test_a_tool_without_a_path_still_never_prompts(self, tmp_path) -> None:
@@ -1042,7 +1199,8 @@ class TestNovaManagedDirectories:
         assert manager.get_pending() == []
 
     @pytest.mark.asyncio
-    async def test_the_config_prompt_is_not_rememberable(self) -> None:
+    async def test_the_config_prompt_remembers_only_that_file(self) -> None:
+        """The keys are read once, for this file, and no further."""
         from nova.tools.workspace_context import set_active_workspace
 
         set_active_workspace(self.WS)
@@ -1056,10 +1214,13 @@ class TestNovaManagedDirectories:
             set_active_workspace(None)
 
         assert result.approval_request is not None
-        assert result.approval_request["rememberable"] is False
+        assert result.approval_request["rememberable"] is True
+        assert result.approval_request["family"] == str(Path(target).resolve())
 
         manager.resolve(result.approval_request["id"], approved=True, remember=True)
-        assert manager.allowlist_for("s1") == set(), "nothing should be stored"
+        assert manager.allowlist_for("s1") == {
+            ("tool:read", str(Path(target).resolve()), "")
+        }, "the grant is the path, not the tool"
 
 
 class TestTheNameResolutionIsUnchanged:
@@ -1156,11 +1317,11 @@ class TestACredentialIsSensitiveWhereverItSits:
     def test_targets_sensitive_names_the_question_for_the_caller(
         self, tmp_path
     ) -> None:
-        """The gate is not the only thing that needs the answer.
+        """The predicate form of the credential question.
 
-        A grant is keyed on `tool:read` and covers every read for the session,
-        so an "always allow" given for ordinary files must not spend itself on
-        `.env`. Same reasoning as `targets_outside`, and the same mechanism.
+        `effect_for_call` decides it inline against a target it already has; this
+        is the same question as something a caller can ask on its own, and it is
+        deliberately independent of the workspace.
         """
         policy = ToolPolicy()
 
@@ -1170,11 +1331,12 @@ class TestACredentialIsSensitiveWhereverItSits:
         assert not policy.targets_sensitive("web_fetch", {"url": "https://x"})
 
 
-class TestASensitivePromptIsNotRememberable:
-    """The grant would be too wide, so there is nothing to record."""
+class TestASensitivePromptIsPathScoped:
+    """A credential asks, and remembering it is refused: there is no narrower
+    place to point a grant that would not also cover a dozen other files."""
 
     @pytest.mark.asyncio
-    async def test_a_credential_read_cannot_be_remembered(self, tmp_path) -> None:
+    async def test_a_credential_read_is_not_rememberable(self, tmp_path) -> None:
         from nova.tools.workspace_context import set_active_workspace
 
         set_active_workspace(str(tmp_path))
@@ -1183,14 +1345,44 @@ class TestASensitivePromptIsNotRememberable:
 
         result = await behavior.before_execute({"filePath": ".env"}, _ctx())
 
-        assert result.approval_request is not None
-        assert result.approval_request["rememberable"] is False
+        assert result.approval_request is not None, "it still asks"
+        assert result.approval_request["rememberable"] is False, "but never remembers"
 
         manager.resolve(result.approval_request["id"], approved=True, remember=True)
-        assert manager.allowlist_for("s1") == set(), "nothing should be stored"
+        assert manager.allowlist_for("s1") == set(), "nothing was stored"
 
         again = await behavior.before_execute({"filePath": ".env"}, _ctx())
-        assert again.approval_request is not None, "and it asks again next time"
+        assert again.approval_request is not None, "so it asks again, by design"
+
+    @pytest.mark.asyncio
+    async def test_the_nova_config_is_the_one_rememberable_credential(
+        self, tmp_path
+    ) -> None:
+        """Nova's own settings file holds API keys, but the user edits it as
+        ordinary settings, so it is worth one click. Scoped to the file: its
+        directory is the home holding every conversation and the database."""
+        from nova.tools.workspace_context import set_active_workspace
+
+        home = tmp_path / ".nova"
+        home.mkdir()
+        config = home / "config.json"
+        config.write_text("{}", encoding="utf-8")
+        set_active_workspace(str(tmp_path))
+        monkey = permissions.nova_home
+        permissions.nova_home = lambda: home  # type: ignore[assignment]
+        try:
+            manager = ApprovalManager()
+            behavior = PolicyToolBehavior("read", ToolPolicy(), manager)
+
+            result = await behavior.before_execute({"filePath": str(config)}, _ctx())
+        finally:
+            permissions.nova_home = monkey  # type: ignore[assignment]
+
+        assert result.approval_request is not None, "it still asks"
+        assert result.approval_request["rememberable"] is True
+        assert result.approval_request["family"] == os.path.normcase(
+            str(config.resolve())
+        ), "the file, not the home directory beside it"
 
     @pytest.mark.asyncio
     async def test_an_ordinary_read_is_still_rememberable(self, tmp_path) -> None:

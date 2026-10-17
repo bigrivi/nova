@@ -310,6 +310,12 @@ class AISDKStreamAdapter:
 
         if event == AgentEvent.APPROVAL_REQUIRED:
             data_payload = data if isinstance(data, dict) else {}
+            # The boundary the tool axis judged the path against, read the same way
+            # `chat_stream` reads it for the other serializer. The payload does not
+            # carry it, and a frame that always sent an empty string would tell the
+            # dialog there is no workspace on a turn deciding every path against one.
+            from nova.tools.workspace_context import get_active_workspace
+
             chunks.append(
                 encode_ai_sdk_sse(
                     {
@@ -324,6 +330,7 @@ class AISDKStreamAdapter:
                             "rememberable": data_payload.get("rememberable", True),
                             "family": data_payload.get("family", ""),
                             "scriptScoped": bool(data_payload.get("digest", "")),
+                            "workspace": get_active_workspace() or "",
                         },
                     }
                 )

@@ -38,10 +38,10 @@ imported from outside; `decide` is the seam.
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
 
+from nova.tools.approval_review import Reviewer
 from nova.tools.shell.arity import command_family
 from nova.tools.shell.inline_script import script_digest
 from nova.tools.shell.policy import Decision, RuleSet, default_rule_set
@@ -53,8 +53,10 @@ log = logging.getLogger(__name__)
 
 Effect = Literal["block", "allow", "ask"]
 
-#: Reviews something a rule flagged. Returns ``approve``/``deny``/``escalate``.
-Reviewer = Callable[[str, str], Awaitable[str]]
+# `Reviewer` is imported rather than defined here. It is not shell-specific --
+# `PolicyToolBehavior` reviews with the same callable -- so its one definition
+# lives beside `build_reviewer`, the only function that returns one. The import
+# keeps ``nova.tools.shell.Reviewer`` working for callers that still name it.
 
 
 @dataclass(frozen=True)

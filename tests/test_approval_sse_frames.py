@@ -280,6 +280,70 @@ async def test_the_frame_carries_the_family(monkeypatch, tmp_path, path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
+async def test_the_frame_carries_the_workspace_it_judged_against(
+    monkeypatch, tmp_path, path
+):
+    """The boundary, so the dialog can say where "inside" was.
+
+    Both serializers, because this field reached only one of them: a turn that
+    decides every path against an active workspace was telling the dialog there
+    was none, so the line read "no workspace" while the same request was being
+    judged against one.
+    """
+    from nova.tools.workspace_context import set_active_workspace
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    set_active_workspace(str(workspace))
+    app = _make_app(monkeypatch, tmp_path, f"home-workspace-{path}")
+    request = type(
+        "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
+    )()
+
+    if path == "ai_sdk":
+        chunks = [
+            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        ]
+        data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
+    else:
+        events = [e async for e in app.state.chat_service.chat_stream(request)]
+        data = _approval_frames_via_chat_stream(events)[0].data.model_dump()
+
+    assert data["workspace"] == str(workspace), f"the {path} path lost the workspace"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
+async def test_a_frame_with_no_active_workspace_sends_an_empty_one(
+    monkeypatch, tmp_path, path
+):
+    """Empty means "undecidable", which the dialog shows rather than hiding.
+
+    Sent explicitly so it stays distinguishable from a dropped field -- the same
+    ambiguity this file has already caught once.
+    """
+    from nova.tools.workspace_context import set_active_workspace
+
+    set_active_workspace(None)
+    app = _make_app(monkeypatch, tmp_path, f"home-workspace-none-{path}")
+    request = type(
+        "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
+    )()
+
+    if path == "ai_sdk":
+        chunks = [
+            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        ]
+        data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
+    else:
+        events = [e async for e in app.state.chat_service.chat_stream(request)]
+        data = _approval_frames_via_chat_stream(events)[0].data.model_dump()
+
+    assert data["workspace"] == ""
+
+
+@pytest.mark.asyncio
 async def test_a_frame_without_a_family_sends_an_empty_one(monkeypatch, tmp_path):
     """A tool call, a declined review or an unreadable line has no family.
 

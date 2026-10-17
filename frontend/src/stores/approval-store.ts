@@ -14,7 +14,7 @@ export type ApprovalPending = {
     rememberable: boolean;
     /**
      * What "Approve & Remember" would cover, e.g. `git push *`. Empty when there
-     * is nothing to name, which is also when the button is hidden.
+     * is nothing to name, which the dialog renders as the tool-wide scope.
      */
     family: string;
     /**

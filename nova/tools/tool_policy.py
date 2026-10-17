@@ -24,7 +24,7 @@ import os
 from collections.abc import Mapping
 from itertools import pairwise
 from pathlib import Path
-from typing import Final, Literal
+from typing import Final, Literal, NamedTuple
 
 from nova.tools import permissions
 
@@ -45,9 +45,8 @@ SENSITIVE_PARTS: Final[frozenset[str]] = frozenset(
 
 #: The Nova home's own credential file, whose name says nothing about what it
 #: holds: the provider API keys sit in `config.json`. It is outside every
-#: workspace already, so it asks -- naming it here is what makes that prompt
-#: *unrememberable*, because a grant keyed on `tool:read` would otherwise cover
-#: reading the keys for the rest of the session.
+#: workspace already, so it asks -- naming it here is what asks it as a credential
+#: rather than as a boundary crossing, whatever a later block_reads would do.
 _NOVA_CONFIG_NAME = "config.json"
 
 #: Directories under the Nova home that Nova itself owns and the agent is meant
@@ -100,6 +99,33 @@ def is_managed_path(target: str | Path) -> bool:
     return parts[len(home_resolved.parts)] in MANAGED_ROOTS
 
 
+def _home_dir() -> Path | None:
+    """The user's home directory, or None when the environment cannot say."""
+    try:
+        return Path.home().resolve(strict=False)
+    except (OSError, RuntimeError):
+        return None
+
+
+def is_nova_config(target: str | Path) -> bool:
+    """Whether *target* is the Nova home's own ``config.json``.
+
+    By identity rather than by name: the file is named for what it configures and
+    holds the provider API keys. Compared through the same home resolution
+    :func:`is_managed_path` uses, so a ``NOVA_HOME`` override in tests or a sandbox
+    answers about the home that is actually in play, and no path is written into
+    the code.
+    """
+    path = Path(target).expanduser()
+    if not path.is_absolute():
+        return False
+    try:
+        nova_config = (_nova_home() / _NOVA_CONFIG_NAME).resolve(strict=False)
+        return path.resolve(strict=False) == nova_config
+    except OSError:
+        return False
+
+
 def is_sensitive_path(target: str | Path) -> bool:
     """Whether *target* names a credential or environment file.
 
@@ -122,18 +148,16 @@ def is_sensitive_path(target: str | Path) -> bool:
         parent == ".config" and child == "gcloud" for parent, child in pairwise(parts)
     ):
         return True
-    # The Nova home's config, by identity rather than by name: the file is named
-    # for what it configures and holds the provider API keys. Compared through
-    # the same home resolution the managed check uses, so an override in tests
-    # or a sandbox answers about the home that is actually in play.
-    if path.is_absolute():
-        try:
-            nova_config = (_nova_home() / _NOVA_CONFIG_NAME).resolve(strict=False)
-            return path.resolve(strict=False) == nova_config
-        except OSError:
-            return False
-    return False
+    # The Nova home's config, by identity rather than by name.
+    return is_nova_config(path)
 
+
+#: The permission action for crossing out of the workspace, kept separate from
+#: the per-tool actions so one remembered answer covers every tool in the
+#: directory. OpenCode's ``external_directory``, and the reason its "don't ask
+#: again" for a file covers the rest of the folder: the grant is keyed on this
+#: name and the directory, with no tool in it.
+EXTERNAL_DIRECTORY_ACTION: Final[str] = "external_directory"
 
 #: Which argument carries the path a tool is about to touch, per tool.
 #:
@@ -233,6 +257,22 @@ def contains(workspace: str | Path, target: str | Path) -> bool:
     return os.path.normcase(str(resolved)).startswith(
         os.path.normcase(str(base)) + os.sep
     ) or os.path.normcase(str(resolved)) == os.path.normcase(str(base))
+
+
+class GrantScope(NamedTuple):
+    """What remembering an approval for one call would cover.
+
+    Both halves belong together because they answer one question the dialog
+    asks: "may this be remembered, and over what". A tool that names no path
+    may be remembered with nothing to narrow (the grant was already keyed on the
+    tool alone), which is different from a credential that may not be remembered
+    at all -- and `scope` is empty in both, so a single string cannot carry it.
+    """
+
+    #: The path or directory the grant is narrowed to; "" when it is not narrowed.
+    scope: str
+    #: Whether the dialog may offer to remember this call.
+    rememberable: bool
 
 
 class ToolPolicy:
@@ -380,12 +420,7 @@ class ToolPolicy:
     ) -> bool:
         """Whether *tool* is about to touch something outside *workspace*.
 
-        The single containment question, so the gate and the caller cannot
-        disagree about it. Split out because the gate is not the only thing that
-        needs the answer: a `tool:write` grant covers every write in the session,
-        so an out-of-workspace prompt must not offer to be remembered. Same
-        reasoning as `review_declined` on the shell, and the same mechanism.
-
+        The single containment question, so the gate cannot disagree with itself.
         False whenever the question does not apply: no path argument, a tool this
         module cannot reason about, or no workspace. The last one is deliberate --
         it still asks, but for a reason that is not *outside*, and a prompt that
@@ -414,12 +449,10 @@ class ToolPolicy:
     ) -> bool:
         """Whether *tool* is about to touch a credential or environment file.
 
-        Split out for the same reason as :meth:`targets_outside`: the gate is
-        not the only caller. A grant is keyed on ``tool:<name>`` and covers
-        every call of that tool for the session, so an "always allow" given for
-        reading ordinary files must not spend itself on ``.env``. The prompt is
-        marked not rememberable instead, which is one click per secret rather
-        than an authorisation nobody scoped.
+        The predicate form of the same question `effect_for_call` decides inline.
+        It no longer decides remembering: a grant is narrowed to the path it was
+        made for (`grant_scope`), so an approval for `src/app.ts` cannot spend
+        itself on `.env`.
 
         The workspace argument is accepted for symmetry with the other path
         questions and is ignored: sensitivity is a property of the path, not of
@@ -470,6 +503,141 @@ class ToolPolicy:
         if target is None or workspace is None:
             return False
         return contains(workspace, target) and not is_sensitive_path(target)
+
+    def external_boundary(
+        self,
+        tool: str,
+        args: Mapping[str, object] | None = None,
+        workspace: str | Path | None = None,
+    ) -> GrantScope:
+        """The out-of-workspace boundary a call crosses, if any.
+
+        The first of the two checks ``before_execute`` makes, and the one that
+        makes "remember" worth offering: the grant is keyed on
+        ``EXTERNAL_DIRECTORY_ACTION`` and the directory, with no tool name in it,
+        so one remembered answer covers ``read``, ``write`` and ``edit`` in that
+        directory. Keying it on the tool instead meant a user clicking "Approve &
+        Remember" twice for the same folder, which is the interruption this
+        exists to remove.
+
+        A credential never reaches here: it keeps its own permanent prompt, and a
+        directory grant must not be a way to let one through.
+
+        Args:
+            tool: The tool being invoked.
+            args: The arguments the model sent, if any.
+            workspace: The active workspace root, or None when unknown.
+
+        Returns:
+            A ``GrantScope`` whose scope is the directory. A scope of "" means the
+            call stays inside, or the question is not this one, and this check
+            does not apply.
+        """
+        if tool not in PATH_ARGUMENTS:
+            return GrantScope("", True)
+        target = path_target(tool, args or {})
+        if target is None:
+            return GrantScope("", True)
+        resolved = target.resolve(strict=False)
+        if is_sensitive_path(resolved):
+            # Its own prompt, never rememberable, asked by the tool's own rules
+            # rather than here, so a directory grant cannot let one through.
+            return GrantScope("", True)
+        if is_managed_path(resolved):
+            return GrantScope("", True)
+        if not self._asks_about_boundary(tool):
+            # A reader under the reads-free default: nothing to cross into.
+            return GrantScope("", True)
+        if workspace is None:
+            # An undecidable boundary is still a boundary; the tool's own rules
+            # ask about it below, keeping the prompt about the file rather than
+            # about a boundary nothing can settle.
+            return GrantScope("", True)
+        if contains(workspace, resolved):
+            return GrantScope("", True)
+        log.info("%s targets %s, outside %s", tool, resolved, workspace)
+        return GrantScope(self._directory_scope(resolved), True)
+
+    @staticmethod
+    def _directory_scope(resolved: Path) -> str:
+        """The directory a boundary grant covers, narrowed when it would be too broad.
+
+        Remembering ``/`` or the home directory would hand over every path on the
+        volume, which is not what anyone means by allowing one file there; the
+        file itself is the narrowest thing that still answers the next call for
+        it.
+        """
+        parent = resolved.parent
+        home = _home_dir()
+        too_broad = parent == Path(parent.anchor) or (
+            home is not None and parent == home
+        )
+        return os.path.normcase(str(resolved if too_broad else parent))
+
+    def grant_scope(
+        self,
+        tool: str,
+        args: Mapping[str, object] | None = None,
+    ) -> GrantScope:
+        """Whether an approval for *tool* can be remembered, and over what.
+
+        For a call that crosses the workspace boundary this is not the question:
+        :meth:`external_boundary` answers it, keyed on the directory so one
+        remembered answer covers every tool there. What is left is a call that
+        stays inside -- configured ``ask``, a credential, a tool with no path --
+        and for those the key is the middle level the shell axis already used,
+        narrowing one tool's remembered approval to this path's neighbourhood.
+
+        Three cases narrow or drop that scope, because one that broad turns a
+        click into an authorisation nobody meant to give:
+
+        * a credential is not remembered at all -- `.env` and its neighbours are
+          files rather than places to work, so there is no directory to point a
+          grant at that would not also cover a dozen other files;
+        * the Nova home's own `config.json` is remembered, but scoped to the
+          **file**: its directory is the home holding every conversation;
+        * a file sitting directly in the filesystem root or in the home directory
+          falls back to the file, for the same reason.
+
+        Normalised the way :func:`contains` reads a path, because a grant only
+        applies when it matches the *same* string next time: `path_target` has
+        already expanded `~`, and `resolve(strict=False)` collapses `..` and
+        follows symlinks -- `strict=False` because `write` names a file that does
+        not exist yet. `normcase` folds case so a case-insensitive volume does not
+        turn one remembered directory into two.
+
+        Args:
+            tool: The tool being invoked.
+            args: The arguments the model sent, if any.
+
+        Returns:
+            A `GrantScope`: unrememberable for a credential, otherwise the scope
+            the grant is narrowed to.
+        """
+        if tool not in PATH_ARGUMENTS:
+            # Nothing to narrow, which is not a reason to refuse: the grant was
+            # already keyed on the tool alone, and refusing would take away an
+            # approval the dialog used to be able to offer.
+            return GrantScope("", True)
+        target = path_target(tool, args or {})
+        if target is None:
+            return GrantScope("", True)
+        resolved = target.resolve(strict=False)
+        if is_sensitive_path(resolved):
+            # Every credential except Nova's own config.
+            if not is_nova_config(resolved):
+                return GrantScope("", False)
+            # The home holds every conversation and the database beside this
+            # file, so the grant is the file and not the directory it sits in.
+            return GrantScope(os.path.normcase(str(resolved)), True)
+        parent = resolved.parent
+        home = _home_dir()
+        too_broad = parent == Path(parent.anchor) or (
+            home is not None and parent == home
+        )
+        return GrantScope(
+            os.path.normcase(str(resolved if too_broad else parent)), True
+        )
 
     def __bool__(self) -> bool:
         return bool(self._rules)

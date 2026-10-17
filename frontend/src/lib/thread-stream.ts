@@ -290,7 +290,8 @@ export type ApprovalRequest = {
     rememberable: boolean;
     /**
      * The command family "Approve & Remember" would cover, e.g. `git push *`.
-     * Empty when there is nothing to name. Shown in the dialog so the button is
+     * Empty when there is nothing narrower to name, which the dialog renders
+     * as the tool-wide scope. Shown so the button is
      * not an approval of unknown width -- the grant is keyed on this and the rule
      * together, and the rule description is wording the user never sees.
      */

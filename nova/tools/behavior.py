@@ -14,10 +14,13 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 
+from nova.tools.approval import ApprovalManager
+from nova.tools.approval_review import Reviewer
 from nova.tools.shell import decide
 from nova.tools.shell.patterns import CREDENTIAL_RULES
+from nova.tools.tool_policy import EXTERNAL_DIRECTORY_ACTION, ToolPolicy
 from nova.tools.workspace_context import get_active_workspace
 
 log = logging.getLogger(__name__)
@@ -44,7 +47,7 @@ class TurnContext:
     orchestrator.
     """
 
-    approval_manager: Any = None
+    approval_manager: ApprovalManager | None = None
     event_emitter: Callable | None = None
     session_id: str = ""
 
@@ -139,9 +142,9 @@ class ShellToolBehavior(DefaultToolBehavior):
 
     def __init__(
         self,
-        approval_manager: Any,
+        approval_manager: ApprovalManager,
         is_sub_agent: bool = False,
-        reviewer: Any = None,
+        reviewer: Reviewer | None = None,
         permission_mode: str = "ask",
     ) -> None:
         self._approval = approval_manager
@@ -258,8 +261,9 @@ class PolicyToolBehavior(DefaultToolBehavior):
     the gap was -- `write` edits files and `web_fetch` sends requests without ever
     asking.
 
-    A grant is keyed on ``tool:<name>``, so one approval covers the shape of work
-    rather than one exact argument set, and is per session like every other grant.
+    A grant is keyed on ``tool:<name>`` plus the path the call names, so one
+    approval covers that file and not every later call of the tool, and is per
+    session like every other grant.
 
     The optional reviewer is the same one the shell uses. It lives beside the
     approval channel rather than inside the shell package because it is not
@@ -272,10 +276,10 @@ class PolicyToolBehavior(DefaultToolBehavior):
     def __init__(
         self,
         tool_name: str,
-        policy: Any,
-        approval_manager: Any,
-        reviewer: Any = None,
-        inner: Any = None,
+        policy: ToolPolicy,
+        approval_manager: ApprovalManager,
+        reviewer: Reviewer | None = None,
+        inner: ToolBehavior | None = None,
         tool_description: str = "",
         permission_mode: str = "ask",
         is_sub_agent: bool = False,
@@ -452,34 +456,37 @@ class PolicyToolBehavior(DefaultToolBehavior):
         # have called it, which is what a reviewer reads.
         summary = self._tool_description or f"{self._tool} call"
         subject = self._review_subject(args, summary)
-        # Three reasons a prompt here is not rememberable, and only the last is
-        # not about this layer.
+        # The grant key, and whether the dialog may offer to store it.
         #
-        # A grant is keyed on `tool:<name>`, so it covers every call of this tool
-        # for the rest of the session -- including the ones that reached outside
-        # the workspace, and the ones that reached into a credential. Recording
-        # either under that key would let the first click authorise every later
-        # one, which is the too-wide grant the shell narrowed by family and by
-        # script. So such a prompt carries no identity: nothing is stored, and
-        # the dialog is told not to offer the button.
-        #
-        # A reviewer that declines is the same shape of problem for the same
-        # mechanism: the approval the user gave for some other call of this tool
-        # would otherwise run the call the reviewer just refused to clear.
-        rememberable = not self._policy.targets_outside(
-            self._tool, args, workspace
-        ) and not self._policy.targets_sensitive(self._tool, args, workspace)
+        # An out-of-workspace call is keyed on the directory rather than the tool,
+        # which is what lets one remembered answer cover `read`, `write` and
+        # `edit` there instead of asking once per tool for the same folder --
+        # OpenCode's `external_directory` action, for the same reason.
+        boundary = self._policy.external_boundary(self._tool, args, workspace)
+        grant = self._policy.grant_scope(self._tool, args)
+        if boundary.scope:
+            rule, scope, rememberable = EXTERNAL_DIRECTORY_ACTION, boundary.scope, True
+        else:
+            rule, scope, rememberable = (
+                f"tool:{self._tool}",
+                grant.scope,
+                grant.rememberable,
+            )
         if self._reviewer is not None:
             if await self._cleared(subject, summary):
                 log.info("cleared by review: %s %s", self._tool, subject[:80])
                 return PreExecutionCheck()
+            # The one case that stays unrememberable: the approval the user gave
+            # for some other call of this tool would otherwise run the call the
+            # reviewer just refused to clear.
             rememberable = False
 
         req_id = self._approval.pre_request(
             subject,
             summary,
             session_id=ctx.session_id,
-            rule=f"tool:{self._tool}" if rememberable else "",
+            rule=rule if rememberable else "",
+            family=scope,
         )
         if not req_id:
             return PreExecutionCheck()
@@ -493,6 +500,9 @@ class PolicyToolBehavior(DefaultToolBehavior):
                 "command": summary,
                 "description": summary,
                 "rememberable": rememberable,
+                # What the button will cover, and the dialog labels it with this
+                # ("Remember <path>"). A path or directory reads correctly as one.
+                "family": scope,
             }
         )
 
