@@ -1,5 +1,9 @@
-<h1 align="center">Nova</h1>
-
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo-light.svg" alt="Nova" width="320">
+  </picture>
+</p>
 <p align="center">
   一个跑在你机器上的个人 AI Agent，它记得你。<br/>
   桌面端、终端、网页、API —— 同一套运行时，四个入口。

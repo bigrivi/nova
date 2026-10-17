@@ -1,5 +1,9 @@
-<h1 align="center">Nova</h1>
-
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo-light.svg" alt="Nova" width="320">
+  </picture>
+</p>
 <p align="center">
   A personal AI agent that runs on your machine and remembers you.<br/>
   Desktop, terminal, web, and API — one runtime, four surfaces.
