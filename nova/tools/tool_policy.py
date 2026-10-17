@@ -140,6 +140,11 @@ def is_sensitive_path(target: str | Path) -> bool:
     name = path.name
     if name == ".env" or (name.startswith(".env.") and name != ".env.example"):
         return True
+    # Private keys, named the way `.env` is: the name or the suffix says what
+    # the file holds. Exact matches only -- `id_rsa.pub` is the public half,
+    # and `monkey.key.bak` ends in `.bak`, so neither is a key.
+    if name in ("id_rsa", "id_ed25519") or path.suffix in (".pem", ".key"):
+        return True
     parts = path.parts
     if any(part in SENSITIVE_PARTS for part in parts):
         return True

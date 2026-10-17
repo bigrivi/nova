@@ -1278,6 +1278,46 @@ class TestACredentialIsSensitiveWhereverItSits:
             == "ask"
         )
 
+    def test_a_private_key_asks(self, tmp_path) -> None:
+        policy = ToolPolicy()
+
+        assert (
+            policy.effect_for_call("read", {"filePath": "/x/server.pem"}, str(tmp_path))
+            == "ask"
+        )
+        assert (
+            policy.effect_for_call("read", {"filePath": "app.key"}, str(tmp_path))
+            == "ask"
+        )
+        assert (
+            policy.effect_for_call(
+                "read", {"filePath": "certs/id_ed25519"}, str(tmp_path)
+            )
+            == "ask"
+        )
+
+    def test_a_public_key_or_a_near_miss_does_not(self, tmp_path) -> None:
+        policy = ToolPolicy()
+
+        assert (
+            policy.effect_for_call(
+                "read", {"filePath": "certs/id_rsa.pub"}, str(tmp_path)
+            )
+            == "allow"
+        )
+        assert (
+            policy.effect_for_call(
+                "read", {"filePath": "notes/monkey.key.bak"}, str(tmp_path)
+            )
+            == "allow"
+        )
+        assert (
+            policy.effect_for_call(
+                "read", {"filePath": "src/keyboard.txt"}, str(tmp_path)
+            )
+            == "allow"
+        )
+
     def test_the_template_has_nothing_in_it(self, tmp_path) -> None:
         policy = ToolPolicy()
 
