@@ -309,6 +309,11 @@ export type ApprovalRequest = {
      * than leaving blank.
      */
     workspace: string;
+    /**
+     * The exact file path the tool is about to touch, so the dialog can name
+     * it. Empty when the tool names no path (e.g. a URL fetch).
+     */
+    target: string;
 };
 
 export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest {
@@ -325,6 +330,8 @@ export function extractApprovalRequest(event: NovaStreamEvent): ApprovalRequest 
         scriptScoped: event.data?.scriptScoped === true,
         // Absent on frames from a server predating the workspace field.
         workspace: String(event.data?.workspace || ""),
+        // Absent on frames from a server predating the target field.
+        target: String(event.data?.target || ""),
     };
 }
 

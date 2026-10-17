@@ -274,7 +274,7 @@ class TestChatStreamCorePaths:
 
 class TestApprovalFlow:
     @pytest.mark.asyncio
-    async def test_approval_required_pauses_and_rejected_command_stops(self):
+    async def test_approval_required_pauses_and_rejected_command_continues(self):
         provider = ScriptedProvider(
             [
                 [
@@ -282,6 +282,9 @@ class TestApprovalFlow:
                         id="call-1", name="shell", arguments='{"command":"rm -rf /"}'
                     )
                 ],
+                # After the rejection the turn continues: the model sees the
+                # synthesized tool result and responds instead of stopping.
+                [TextDelta(content="Understood."), Done(content="Understood.", tool_calls=[])],
             ]
         )
 
@@ -322,14 +325,30 @@ class TestApprovalFlow:
 
             await run()
             assert any(e == AgentEvent.APPROVAL_REQUIRED for e, _ in events)
-            assert any(
-                e == AgentEvent.DONE and d.get("reason") == "stopped" for e, d in events
-            )
-            assert not any(e == AgentEvent.TOOL_RESULT for e, _ in events)
             # A resolution event must accompany the denial so a replayed stream
             # retracts the dialog instead of resurrecting an answered prompt.
             resolved = [d for e, d in events if e == AgentEvent.APPROVAL_RESULT]
             assert resolved and resolved[0].get("approved") is False
+            # The rejected call is skipped, but its rejection is fed back to the
+            # model as a tool result so the turn can continue instead of
+            # stopping -- the mainstream pattern (OpenAI Agents SDK, LangChain
+            # HITL, AI SDK). The model then sees the denial and responds.
+            rejected = [d for e, d in events if e == AgentEvent.TOOL_RESULT]
+            assert rejected, "a rejected call must produce a tool result"
+            assert rejected[0]["result"].success is False
+            assert "rejected" in rejected[0]["result"].content.lower()
+            # The turn continues rather than stopping: the model gets another
+            # turn to respond to the rejection.
+            assert any(
+                e == AgentEvent.DONE and d.get("reason") == "completed"
+                for e, d in events
+            )
+            # The synthesized rejection is persisted as a tool result so the
+            # assistant->tool pairing the provider requires holds.
+            messages = await agent.session.get_messages()
+            tool_msgs = [m for m in messages if m.role == "tool"]
+            assert tool_msgs, "a tool result must be persisted for the rejected call"
+            assert "rejected" in (tool_msgs[-1].content or "").lower()
 
 
 class TestMemoryReviewScheduling:

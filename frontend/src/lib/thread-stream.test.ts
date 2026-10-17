@@ -390,6 +390,7 @@ describe("event extractors", () => {
             family: "",
             scriptScoped: false,
             workspace: "",
+            target: "",
         });
     });
 

@@ -12,6 +12,7 @@ import {
     ToolFallbackTrigger,
 } from "@/components/assistant-ui/tool-fallback";
 import { errorTextFromResult } from "@/lib/tool-result";
+import { mutationVerbKey } from "@/lib/file-mutation-verb";
 import { cn } from "@/lib/utils";
 
 type FileMutationViewModel = {
@@ -102,6 +103,7 @@ function buildViewModel(
     args: unknown,
     argsText: string | undefined,
     result: unknown,
+    isError: boolean,
 ): FileMutationViewModel | null {
     const normalizedName = toolName.trim().toLowerCase();
     if (normalizedName !== "edit" && normalizedName !== "write") {
@@ -116,8 +118,14 @@ function buildViewModel(
         ? extractDiff(resultText)
         : { headline: "", diff: null };
 
-    const verb =
-        normalizedName === "edit" ? t("tools.edited") : t("tools.wrote");
+    // The verb says what happened, not what the tool is: a call still waiting for
+    // approval has not written anything yet, and a rejected one never will.
+    const verb = t(
+        mutationVerbKey(normalizedName, {
+            hasResult: result !== undefined,
+            isError,
+        }),
+    );
     return {
         displayName: baseName ? `${verb} ${baseName}` : verb,
         headline: diffPayload.diff ? diffPayload.headline : "",
@@ -274,8 +282,8 @@ const FileMutationToolImpl: ToolCallMessagePartComponent = ({
 }) => {
     const { t } = useTranslation();
     const model = useMemo(
-        () => buildViewModel(t, toolName, args, argsText, result),
-        [args, argsText, result, toolName, t],
+        () => buildViewModel(t, toolName, args, argsText, result, isError === true),
+        [args, argsText, result, toolName, t, isError],
     );
 
     if (!model) {
@@ -283,13 +291,17 @@ const FileMutationToolImpl: ToolCallMessagePartComponent = ({
     }
 
     const errored = isError === true;
+    // Until a result arrives the call has not settled, whatever the runtime
+    // reports: the approval prompt is the long case, and the card must not show
+    // a tick while nothing has been written.
+    const settled = result !== undefined;
 
     return (
         <ToolFallbackRoot className={cn(errored && "opacity-80")}>
             <ToolFallbackTrigger
                 toolName={model.displayName}
                 argsText={argsText}
-                status={status}
+                status={settled ? status : { type: "running" }}
                 isError={isError}
             />
             <ToolFallbackContent>

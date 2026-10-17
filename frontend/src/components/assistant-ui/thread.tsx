@@ -141,7 +141,7 @@ export const Thread: FC<ThreadProps> = ({
                     {/* shrink-0 keeps min-h-full from collapsing this column to
                         the viewport height, which would make it a too-short
                         sticky containing block for the footer. */}
-                    <div className="mx-auto flex min-h-full w-full max-w-(--thread-max-width) shrink-0 flex-col pt-6 px-9 max-md:px-6">
+                    <div className="mx-auto flex min-h-full w-full max-w-(--thread-max-width) shrink-0 flex-col pt-6 px-4 md:px-6 xl:px-9">
                         <div data-slot="aui_message-group" className="mb-5">
                             <div
                                 ref={zoomTargetRef}

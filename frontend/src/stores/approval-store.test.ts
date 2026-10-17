@@ -12,6 +12,7 @@ const ghost = (sessionId: string): ApprovalPending => ({
     family: "rm *",
     scriptScoped: false,
     workspace: "",
+    target: "",
 });
 
 beforeEach(() => {

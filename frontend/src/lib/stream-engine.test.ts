@@ -187,6 +187,7 @@ describe("handleStreamEvent control frames", () => {
             family: "",
             scriptScoped: false,
             workspace: "",
+            target: "",
         });
         expect(deps.approval.setPending).toHaveBeenCalledTimes(1);
     });

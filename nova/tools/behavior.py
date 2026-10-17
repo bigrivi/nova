@@ -20,7 +20,7 @@ from nova.tools.approval import ApprovalManager
 from nova.tools.approval_review import Reviewer
 from nova.tools.shell import decide
 from nova.tools.shell.patterns import CREDENTIAL_RULES
-from nova.tools.tool_policy import EXTERNAL_DIRECTORY_ACTION, ToolPolicy
+from nova.tools.tool_policy import EXTERNAL_DIRECTORY_ACTION, ToolPolicy, path_target
 from nova.tools.workspace_context import get_active_workspace
 
 log = logging.getLogger(__name__)
@@ -503,6 +503,9 @@ class PolicyToolBehavior(DefaultToolBehavior):
                 # What the button will cover, and the dialog labels it with this
                 # ("Remember <path>"). A path or directory reads correctly as one.
                 "family": scope,
+                # The exact file the tool is about to touch, so the dialog can
+                # name it instead of the workspace or the remember-scope.
+                "target": str(path_target(self._tool, args) or ""),
             }
         )
 

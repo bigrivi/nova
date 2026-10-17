@@ -27,7 +27,7 @@ const Welcome: FC = () => {
 };
 
 export const EmptyState: FC<{ children: ReactNode }> = ({ children }) => (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-9 max-md:px-6">
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 md:px-6 xl:px-9">
         <div className="flex w-full max-w-(--thread-max-width) flex-col items-stretch">
             <Welcome />
             {children}

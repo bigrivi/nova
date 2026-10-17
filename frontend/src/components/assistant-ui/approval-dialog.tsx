@@ -3,7 +3,6 @@
 import { ShieldAlertIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { approvalScope } from "@/lib/approval-scope";
 import { approveCommand } from "@/lib/nova-api";
 import { useApprovalStore } from "@/stores/approval-store";
 
@@ -17,7 +16,6 @@ export const ApprovalDialog = () => {
     // axes, and `{"tools": {"web_fetch": "ask"}}` genuinely reaches this dialog --
     // labelling it "Shell Command" with the tool name in the code block told the
     // user nothing about what they were authorising.
-    const scope = approvalScope(pending);
     const isShell = !pending.toolName || pending.toolName === "shell";
     const title = isShell
         ? t("approval.title")
@@ -65,52 +63,14 @@ export const ApprovalDialog = () => {
                                 {pending.description}
                             </div>
                         )}
-                    <pre className="overflow-x-auto rounded-xl border border-amber-200 bg-card/80 px-3 py-2 text-xs text-slate-700">
-                        {pending.command}
-                    </pre>
-                    {/*
-                      * What "Approve & Remember" will cover. The grant is keyed on
-                      * the rule, the family and -- when the command has a readable
-                      * inline script -- the script itself. The rule's description is
-                      * wording the user never sees, so without this line the button is
-                      * an approval of unknown width.
-                      *
-                      * Every case that offers the button names a scope, including a
-                      * tool that takes no path: its grant really does cover every
-                      * call of it, and saying so is the honest label.
-                      *
-                      * The script case names the script rather than printing its hash:
-                      * the script is the `command` directly above, and the whole point
-                      * of the narrower key is that only that text would be remembered.
-                      */}
-                    {scope && (
-                        <div className="font-mono text-xs text-amber-800">
-                            {scope.key === "approval.rememberFamily"
-                                ? t(scope.key, { family: scope.family })
-                                : t(scope.key)}
-                        </div>
+                    {isShell && (
+                        <pre className="overflow-x-auto rounded-xl border border-amber-200 bg-card/80 px-3 py-2 text-xs text-slate-700">
+                            {pending.command}
+                        </pre>
                     )}
-                    {/*
-                      * The boundary the tool axis judged the path against.
-                      *
-                      * It has to be shown rather than inferred: an in-workspace
-                      * read is silent, so the prompt for an out-of-workspace one
-                      * is the only place the boundary can appear. Without it, a
-                      * read inside a project the user selected has no visible
-                      * explanation, and the natural reading is "the tool is
-                      * broken" rather than "this path is outside where you are".
-                      *
-                      * Shown for tool approvals only. The shell resolves paths
-                      * through its own rules, and this line would name a
-                      * workspace that the shell never consulted.
-                      */}
-                    {!isShell && (
+                    {!isShell && pending.target && (
                         <div className="font-mono text-xs text-amber-800">
-                            {pending.workspace
-                                ? t("approval.workspace", {
-                                      path: pending.workspace,
-                                  })
-                                : t("approval.workspaceNone")}
+                            {t("approval.target", { path: pending.target })}
                         </div>
                     )}
                     <div className="flex items-center gap-2">

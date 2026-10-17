@@ -329,6 +329,7 @@ class AISDKStreamAdapter:
                             "toolName": data_payload.get("toolName", ""),
                             "rememberable": data_payload.get("rememberable", True),
                             "family": data_payload.get("family", ""),
+                            "target": data_payload.get("target", ""),
                             "scriptScoped": bool(data_payload.get("digest", "")),
                             "workspace": get_active_workspace() or "",
                         },

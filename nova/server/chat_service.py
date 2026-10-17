@@ -679,6 +679,7 @@ class ChatService:
                 description=data.get("description", ""),
                 rememberable=data.get("rememberable", True),
                 family=data.get("family", ""),
+                target=data.get("target", ""),
                 script_scoped=bool(data.get("digest", "")),
                 workspace=await self._active_workspace(),
             )

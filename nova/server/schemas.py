@@ -443,6 +443,8 @@ class ApprovalRequiredEventData(BaseStreamEventData):
     #: authorise; a remembered approval keyed on something the user never sees is
     #: an approval of unknown width.
     family: str = ""
+    #: The exact file path the tool is about to touch, so the dialog can name it.
+    target: str = ""
     #: Whether the command's inline script is part of the key, which is what makes
     #: "Approve & Remember" mean "remember this script" rather than "remember every
     #: `python3 -c` in this family". The digest itself is not sent: it is a hash the

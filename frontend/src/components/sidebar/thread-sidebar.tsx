@@ -717,7 +717,7 @@ export const ThreadSidebar = memo(function ThreadSidebar(
     );
 
     return (
-        <aside className="flex h-screen w-(--sidebar-width) shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-foreground">
+        <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-foreground xl:w-(--sidebar-width)">
             {macHiddenTitlebar ? (
                 <div className="pywebview-drag-region flex h-10 w-full shrink-0 items-center justify-end pl-[76px] pr-2.5">
                     {headerActions}

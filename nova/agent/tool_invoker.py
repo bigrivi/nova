@@ -27,6 +27,15 @@ log = logging.getLogger(__name__)
 
 CANCELLED_TOOL_CONTENT = "Tool call cancelled by user."
 
+# Rejected by the user at the approval prompt. The tool never ran; this is the
+# synthetic result the model receives so it can respond to the rejection instead
+# of staring at an unanswered tool call. Wording matters: a model that sees a
+# bare "rejected" often retries the same call, so the message says not to.
+REJECTED_TOOL_CONTENT = (
+    "Tool call rejected by user. Do not retry this call; choose another "
+    "approach or ask the user."
+)
+
 
 class ToolOutcome(Enum):
     COMPLETED = "completed"
@@ -109,6 +118,7 @@ class ToolInvoker:
                 return
 
             approval_request_id = ""
+            rejected = False
             if precheck.approval_request:
                 approval_request_id = precheck.approval_request.get("id", "")
                 precheck.approval_request["toolCallId"] = _id_of(tool_call)
@@ -127,6 +137,7 @@ class ToolInvoker:
                         yield AgentEvent.APPROVAL_HEARTBEAT, None
                         continue
                     if not tick:
+                        rejected = True
                         log.info(
                             "[Turn %s] Approval denied id=%s",
                             self._turn_count,
@@ -138,12 +149,42 @@ class ToolInvoker:
                             AgentEvent.APPROVAL_RESULT,
                             {"id": approval_request_id, "approved": False},
                         )
-                        self.outcome = ToolOutcome.STOPPED
-                        yield (
-                            AgentEvent.DONE,
-                            done_payload("stopped", "Command rejected by user"),
-                        )
-                        return
+                        break
+
+                if rejected:
+                    # The tool never ran. Synthesise a tool result carrying the
+                    # rejection so the model sees it and can respond instead of
+                    # staring at an unanswered tool call -- the mainstream
+                    # pattern (OpenAI Agents SDK, LangChain HITL, AI SDK):
+                    # reject = skip tool + feed rejection to the model +
+                    # continue the loop. Persisting it also keeps the
+                    # assistant->tool pairing the provider requires, and
+                    # _executed_ids keeps a later persist_cancelled from
+                    # writing a second result for the same call.
+                    tool_call_id = _id_of(tool_call)
+                    result = ToolResult(
+                        success=False,
+                        content=REJECTED_TOOL_CONTENT,
+                        error=REJECTED_TOOL_CONTENT,
+                    )
+                    await self._session.add_message(
+                        role="tool",
+                        content=result.content,
+                        tool_call_id=tool_call_id,
+                        group_id=group_id,
+                        error=result.error,
+                    )
+                    self._executed_ids.add(tool_call_id)
+                    payload = {
+                        "tool": _name_of(tool_call),
+                        "tool_call_id": tool_call_id,
+                        "result": result,
+                    }
+                    await self._emit(AgentEvent.TOOL_RESULT, payload)
+                    yield AgentEvent.TOOL_RESULT, payload
+                    # Continue: remaining tool calls still run, and the model
+                    # gets another turn to respond to the rejection.
+                    continue
                     log.info(
                         "[Turn %s] Approval granted id=%s",
                         self._turn_count,

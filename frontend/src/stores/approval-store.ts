@@ -30,6 +30,11 @@ export type ApprovalPending = {
      * showing nothing in both cases.
      */
     workspace: string;
+    /**
+     * The exact file path the tool is about to touch, so the dialog can name
+     * it. Empty when the tool names no path.
+     */
+    target: string;
 };
 
 interface ApprovalStore {

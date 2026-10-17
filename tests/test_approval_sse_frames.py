@@ -45,6 +45,7 @@ APPROVAL_SCRIPT = [
             "sessionId": SESSION_ID,
             "toolCallId": "call-1",
             "toolName": "shell",
+            "target": "/tmp/test_target.txt",
         },
     ),
 ]
@@ -278,6 +279,32 @@ async def test_the_frame_carries_the_family(monkeypatch, tmp_path, path):
 
     assert data["family"] == "git push *", f"the {path} path dropped the family"
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
+async def test_the_frame_carries_the_target_path(monkeypatch, tmp_path, path):
+    """The file the tool is about to touch, so the dialog can name it.
+
+    Both serializers, because this field was added to each on its own commit and
+    neither was under test -- the same gap that let `workspace` reach only one.
+    """
+    app = _make_app(monkeypatch, tmp_path, f"home-target-{path}")
+    request = type(
+        "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
+    )()
+
+    if path == "ai_sdk":
+        chunks = [
+            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        ]
+        data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
+    else:
+        events = [e async for e in app.state.chat_service.chat_stream(request)]
+        data = _approval_frames_via_chat_stream(events)[0].data.model_dump()
+
+    assert data["target"] == "/tmp/test_target.txt", (
+        f"the {path} path dropped the target"
+    )
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
