@@ -46,3 +46,11 @@ Search for "def handle_" in all Python files
 ```
 
 最多显示 100 条匹配，带文件路径和行号。
+
+## 权限
+
+这些工具由 `~/.nova/permissions.json` 的 `tools` 块管控，与 shell 共用同一个文件
+（见 [Shell → 工具权限](shell.md#tool-permissions)）。`read`/`glob`/`grep` 在工作区内自由，
+凭据路径无论在哪里都会询问；`write`/`edit` 在目标离开工作区时询问。配置了 `deny` 的工具
+会被完全移除。默认情况下工作区外的读取是自由的；设 `block_reads_outside_workspace: true`
+可恢复严格姿态。

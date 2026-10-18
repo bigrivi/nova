@@ -191,6 +191,12 @@ date         backend       ok  empty   429  errors  total  quota_low
 新增一个后端意味着新增一个文件，提供端点、凭据，以及它如何组织查询和解析回复；该文件
 之外什么都不用改。子类从 `base.SearchBackend` 继承托管 MCP 协议，只覆盖不同的部分。
 
+## 权限
+
+`web_fetch` 和 `browser_use` 与其他非 shell 工具一样，受 `~/.nova/permissions.json` 的
+`tools` 块管控（见 [Shell → 工具权限](shell.md#tool-permissions)）：配置了 `ask` 会暂停
+轮次，`deny` 会完全移除工具。`web_search` 默认不弹窗，因为它只返回元数据，从不读取页面。
+
 ## `browser_use`
 
 用 Playwright 做完整的浏览器自动化。支持 18 个动作，包括：

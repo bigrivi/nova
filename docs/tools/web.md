@@ -218,6 +218,14 @@ credentials, and how it shapes a query and parses a reply; nothing outside that
 file changes. Subclasses inherit the hosted-MCP protocol from
 `base.SearchBackend` and override only what differs.
 
+## Permissions
+
+`web_fetch` and `browser_use` are gated by the `tools` block in
+`~/.nova/permissions.json` like every other non-shell tool (see
+[Shell → Tool permissions](shell.md#tool-permissions)): a configured `ask` pauses
+the turn, `deny` removes the tool entirely. `web_search` runs without a prompt by
+default, since it only returns metadata and never reads a page.
+
 ## `browser_use`
 
 Full browser automation using Playwright. Supports 18 actions including:

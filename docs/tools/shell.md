@@ -35,9 +35,11 @@ Commands that could modify system state or destroy data:
 
 The credential rules cover the read side as well as the write side: `cat
 ~/.ssh/id_rsa` and `cat .env` are asked about wherever they sit, because
-`src/.env` is the same secret as `~/.env`. Public keys (`id_rsa.pub`), shell rc
-backups (`cp ~/.bashrc /tmp/`) and the `.env.example` template are not secrets
-and stay allowed.
+`src/.env` is the same secret as `~/.env`. Private key files (`*.pem`, `*.key`,
+`id_rsa`, `id_ed25519`) and the SSH/AWS/GnuPG/kube/docker credential
+directories are covered too. Public keys (`id_rsa.pub`), shell rc backups
+(`cp ~/.bashrc /tmp/`) and the `.env.example` template are not secrets and stay
+allowed.
 
 When a dangerous command is detected, Nova asks you to approve or reject it
 before execution.

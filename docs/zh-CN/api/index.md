@@ -374,7 +374,7 @@ data: [DONE]\n
 | `tool-input-start` / `tool-input-available` | 宣布一次工具调用，带 `toolCallId`、`toolName` 和解析后的 `input` |
 | `tool-output-available` | 工具结果，带 `toolCallId` 和 `output` |
 | `data-nova-session` | 新建会话的 id，`{"sessionId": "..."}` |
-| `data-nova-approval-required` | 需要 shell 或工具审批。携带 `sessionId`、`requestId`、`command`、`description`、`toolName`、`rememberable`、`family`、`scriptScoped` 和 `workspace`。`rememberable: false` 表示客户端不能提供「记住」；`scriptScoped: true` 表示记住只覆盖按钮上方那段行内脚本；`workspace` 是路径被判定的工作区，没有活动工作区时为空 |
+| `data-nova-approval-required` | 需要 shell 或工具审批。携带 `sessionId`、`requestId`、`command`、`description`、`toolName`、`toolCallId`、`rememberable`、`family`、`target`、`scriptScoped`、`dangerous` 和 `workspace`。`rememberable: false` 表示客户端不能提供「记住」；`target` 是工具即将触碰的精确路径（shell 命令为空）；`scriptScoped: true` 表示记住只覆盖按钮上方那段行内脚本；`dangerous: true` 表示 shell 内置危险层触发（仅展示）；`workspace` 是路径被判定的工作区，没有活动工作区时为空 |
 | `data-nova-heartbeat` | 等待审批期间的心跳 |
 | `data-nova-tool-error` | 工具失败详情，`{"toolName","toolCallId","message"}` |
 | `data-nova-context` | 上下文用量 `{"used","limit","percent"}` |

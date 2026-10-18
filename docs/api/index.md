@@ -358,7 +358,7 @@ AI SDK UI message parts emitted by the server (from `nova/server/ai_sdk_stream.p
 | `tool-input-start` / `tool-input-available` | Tool call announced, with `toolCallId`, `toolName`, and parsed `input` |
 | `tool-output-available` | Tool result, with `toolCallId` and `output` |
 | `data-nova-session` | Session id for a newly created session, `{"sessionId": "..."}` |
-| `data-nova-approval-required` | Shell or tool approval needed. Carries `sessionId`, `requestId`, `command`, `description`, `toolName`, `rememberable`, `family`, `scriptScoped`, and `workspace`. `rememberable: false` means the client must not offer to remember it; `scriptScoped: true` means remembering covers only the inline script above the buttons; `workspace` is the directory the path was judged against, empty when none is active |
+| `data-nova-approval-required` | Shell or tool approval needed. Carries `sessionId`, `requestId`, `command`, `description`, `toolName`, `toolCallId`, `rememberable`, `family`, `target`, `scriptScoped`, `dangerous`, and `workspace`. `rememberable: false` means the client must not offer to remember it; `target` is the exact path the tool is about to touch (empty for a shell command); `scriptScoped: true` means remembering covers only the inline script above the buttons; `dangerous: true` means the shell's built-in danger layer fired (display only); `workspace` is the directory the path was judged against, empty when none is active |
 | `data-nova-heartbeat` | Keepalive while waiting for approval |
 | `data-nova-tool-error` | Tool failure detail, `{"toolName","toolCallId","message"}` |
 | `data-nova-context` | Context usage `{"used","limit","percent"}` |

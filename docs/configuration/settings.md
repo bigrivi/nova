@@ -138,7 +138,7 @@ cd frontend && npm run dev -- --host
 
 ## Config File Shape
 
-`~/.nova/config.json` is the only file `Settings.load_config` reads. The loader understands exactly seven top-level keys:
+`~/.nova/config.json` is the only file `Settings.load_config` reads. The loader understands nine top-level keys:
 
 ```json
 {
@@ -158,9 +158,11 @@ cd frontend && npm run dev -- --host
 * `mcp_non_prefixed_servers`: array of server names exempt from the prefix, while the prefix still applies to the rest. A non-array value is ignored.
 * `compaction`: object with tuning keys. See `docs/advanced/compaction.md` for the real keys and defaults.
 * `transcription`: object configuring voice-to-text. See [Voice to Text](#voice-to-text) below.
+* `approval_review`: object configuring the model second opinion on flagged actions (off by default). See [Tool permissions](../tools/shell.md#model-review).
+* `web_search`: object configuring search backends and optional keys. See [Web Tools](../tools/web.md).
 * `server`: object with `host` (default `127.0.0.1`), `port` (default `8765`, must be 1-65535), `log_level` (default `INFO`), and optional `auth_user` / `auth_password` for LAN auth (see above). A non-object `server` or an invalid port raises `ValueError` at startup. `port` also accepts a numeric string.
 
-All other top-level keys are ignored.
+The loader understands these nine top-level keys; an unknown key is ignored.
 
 ## Voice to Text { #voice-to-text }
 

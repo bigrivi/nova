@@ -47,3 +47,12 @@ Search for "def handle_" in all Python files
 ```
 
 Shows up to 100 matches with file paths and line numbers.
+
+## Permissions
+
+These tools are gated by the `tools` block in `~/.nova/permissions.json`, the same
+file that configures the shell (see [Shell → Tool permissions](shell.md#tool-permissions)).
+`read`/`glob`/`grep` are free inside the workspace and ask about credential paths
+wherever they sit; `write`/`edit` ask when the target leaves the workspace. A
+configured `deny` removes the tool entirely. Reads are free outside the workspace
+by default; set `block_reads_outside_workspace: true` for the stricter posture.

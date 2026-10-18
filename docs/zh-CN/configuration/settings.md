@@ -200,12 +200,15 @@ cd frontend && npm run dev -- --host
 * `mcp_non_prefixed_servers`：豁免前缀的服务名数组，其余服务仍加前缀。非数组的值被忽略。
 * `compaction`：带调优键的对象。真正的键和默认值见 `docs/advanced/compaction.md`。
 * `transcription`：配置语音转文字的对象。见下面[语音转文字](#voice-to-text)。
+* `approval_review`：配置对被标记动作的模型二次意见（默认关闭）。见
+  [工具权限](../tools/shell.md#model-review)。
+* `web_search`：配置搜索后端和可选 key。见 [Web 工具](../tools/web.md)。
 * `server`：带 `host`（默认 `127.0.0.1`）、`port`（默认 `8765`，必须是 1-65535）、
   `log_level`（默认 `INFO`）的对象，以及可选的局域网认证 `auth_user` / `auth_password`
   （见上）。`server` 不是对象或端口非法会在启动时抛 `ValueError`。`port` 也接受数字
   字符串。
 
-其他所有顶层键都被忽略。
+加载器识别这九个顶层键；未知的键会被忽略。
 
 ## 语音转文字 { #voice-to-text }
 

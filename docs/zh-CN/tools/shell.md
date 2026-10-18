@@ -34,8 +34,9 @@ Shell 命令分为三档：
 - `cp … /etc/…`、`mv … /usr/local/bin/…`
 
 凭据规则同时覆盖读和写两侧：`cat ~/.ssh/id_rsa` 和 `cat .env` 无论在哪儿都会被问，因为
-`src/.env` 和 `~/.env` 是同一个秘密。公钥（`id_rsa.pub`）、shell 配置备份
-（`cp ~/.bashrc /tmp/`）和 `.env.example` 模板不是秘密，保持放行。
+`src/.env` 和 `~/.env` 是同一个秘密。私钥文件（`*.pem`、`*.key`、`id_rsa`、
+`id_ed25519`）以及 SSH/AWS/GnuPG/kube/docker 凭据目录也被覆盖。公钥（`id_rsa.pub`）、
+shell 配置备份（`cp ~/.bashrc /tmp/`）和 `.env.example` 模板不是秘密，保持放行。
 
 检测到危险命令时，Nova 会在执行前请你批准或拒绝。
 
