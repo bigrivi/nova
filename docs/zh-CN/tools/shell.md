@@ -168,7 +168,7 @@ rm -rf "$TARGET"                询问  （路径不可知）
 
 作用域里没有工作区时，什么都不豁免。
 
-## 工具权限
+## 工具权限 {#tool-permissions}
 
 Shell 不是唯一能对你机器动手的东西。`write` 改文件，`web_fetch` 发请求，MCP 工具做它服务
 端决定的事 —— 在 `tools` 块存在之前，这些都不弹窗。
@@ -320,7 +320,7 @@ Codex 几乎在任何地方读文件，而在你的工作区内写文件」，Cl
 沙箱预设 —— 这里没有实现。`bypassPermissions` 是刻意不做的：没有操作系统级沙箱，它会跳过
 Nova 唯一的边界。
 
-## 模型复核
+## 模型复核 {#model-review}
 
 `config.json` 里的 `approval_review` 块把一个模型放在审批弹窗前面。规则标记的动作会先给
 模型看，一个自信的 `approve` 会放行它。

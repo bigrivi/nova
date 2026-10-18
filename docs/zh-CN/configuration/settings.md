@@ -196,7 +196,7 @@ cd frontend && npm run dev -- --host
 * `mcp_servers`：名字到服务配置的对象。非对象的值会被忽略并替换成 `{}`。stdio 和 HTTP
   的形态见 `docs/advanced/mcp.md`。
 * `mcp_prefix_tool_names`：MCP 工具是否以 `mcp__<服务名>__<工具名>` 暴露。默认 `true`；
-  非布尔值退回默认值。见[工具命名](../advanced/mcp.md#工具命名)。
+  非布尔值退回默认值。见[工具命名](../advanced/mcp.md#tool-names)。
 * `mcp_non_prefixed_servers`：豁免前缀的服务名数组，其余服务仍加前缀。非数组的值被忽略。
 * `compaction`：带调优键的对象。真正的键和默认值见 `docs/advanced/compaction.md`。
 * `transcription`：配置语音转文字的对象。见下面[语音转文字](#voice-to-text)。
