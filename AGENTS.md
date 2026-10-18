@@ -76,3 +76,17 @@ links *and* the nav in the same change.
 Conventional Commits with an optional scope (`fix(skills): ...`). **No `Co-authored-by:`
 trailers** — this applies to agents as much as people. 62 old commits already carry them
 and must not be rewritten; see CONTRIBUTING.md for why.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues (gh CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default triage labels (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context repo. See `docs/agents/domain.md`.
