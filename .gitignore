@@ -35,3 +35,9 @@ yarn.lock
 *.egg-info/
 .eggs/
 .playwright-mcp/
+
+# Agent skills config (local)
+docs/agents/
+
+# Local issue tracker (matt-pocock skills)
+.scratch/

@@ -81,7 +81,7 @@ and must not be rewritten; see CONTRIBUTING.md for why.
 
 ### Issue tracker
 
-GitHub Issues (gh CLI). See `docs/agents/issue-tracker.md`.
+Local markdown issues under `.scratch/`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
