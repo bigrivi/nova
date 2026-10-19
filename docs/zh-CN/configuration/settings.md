@@ -203,6 +203,10 @@ cd frontend && npm run dev -- --host
 * `approval_review`：配置对被标记动作的模型二次意见（默认关闭）。见
   [工具权限](../tools/shell.md#model-review)。
 * `web_search`：配置搜索后端和可选 key。见 [Web 工具](../tools/web.md)。
+* `learning`：配置闭合学习循环（默认除会话搜索外关闭）。键：`enabled`、
+  `nudge_interval_turns`（默认 5）、`skill_extraction_min_tool_calls`（默认 4）、
+  `user_model_enabled`（默认 false）、`session_search_enabled`（默认 true）。见
+  [记忆](../memory/index.md)。
 * `server`：带 `host`（默认 `127.0.0.1`）、`port`（默认 `8765`，必须是 1-65535）、
   `log_level`（默认 `INFO`）的对象，以及可选的局域网认证 `auth_user` / `auth_password`
   （见上）。`server` 不是对象或端口非法会在启动时抛 `ValueError`。`port` 也接受数字

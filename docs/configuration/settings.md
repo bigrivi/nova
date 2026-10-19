@@ -160,6 +160,7 @@ cd frontend && npm run dev -- --host
 * `transcription`: object configuring voice-to-text. See [Voice to Text](#voice-to-text) below.
 * `approval_review`: object configuring the model second opinion on flagged actions (off by default). See [Tool permissions](../tools/shell.md#model-review).
 * `web_search`: object configuring search backends and optional keys. See [Web Tools](../tools/web.md).
+* `learning`: object configuring the closed learning loop (off by default except session search). Keys: `enabled`, `nudge_interval_turns` (default 5), `skill_extraction_min_tool_calls` (default 4), `user_model_enabled` (default false), `session_search_enabled` (default true). See [Memory](../memory/index.md).
 * `server`: object with `host` (default `127.0.0.1`), `port` (default `8765`, must be 1-65535), `log_level` (default `INFO`), and optional `auth_user` / `auth_password` for LAN auth (see above). A non-object `server` or an invalid port raises `ValueError` at startup. `port` also accepts a numeric string.
 
 The loader understands these nine top-level keys; an unknown key is ignored.
