@@ -98,6 +98,7 @@ class PromptBuilder:
 - Only call `search_memory` when the current question is directly related to past preferences, decisions, or facts. Never search memory for unrelated topics.
 - When search results are not relevant to the current question, ignore them and answer normally.
 - Use `save_memory` to store important information for future sessions.
+- When the user asks about prior work, past sessions, or "what did we do before", call `session_search` to retrieve the relevant conversation history before answering.
 - When saving memory, choose scope: 'user' for stable cross-session facts and preferences; 'project' for project-specific decisions; 'session' ONLY for temporary context that expires with this conversation. Never store temporary task progress or conversation copies as user or project memory.
 
 # Current Available Skills
@@ -120,6 +121,8 @@ class PromptBuilder:
         date: str | None = None,
         workspace_override: str | None = None,
         project_instructions: ProjectInstructions | None = None,
+        user_model_content: str | None = None,
+        nudge_reminder: str | None = None,
     ) -> str:
         """Render the system prompt.
 
@@ -202,6 +205,17 @@ class PromptBuilder:
                 )
             else:
                 parts.append(f"## Long-Term Memory\n\n{self.config.memory_content}")
+
+        if user_model_content:
+            if has_threats(user_model_content):
+                parts.append(
+                    "## User Model\n\n[User model omitted — content flagged as potential injection]"
+                )
+            else:
+                parts.append(f"## User Model\n\n{user_model_content}")
+
+        if nudge_reminder:
+            parts.append(nudge_reminder)
 
         return "\n\n".join(parts)
 

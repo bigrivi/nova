@@ -8,7 +8,7 @@ registry is populated, so it is kept out of the agent runtime.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nova.mcp.manager import MCPManager
 from nova.tools.approval import ApprovalManager
@@ -54,6 +54,7 @@ class ToolsetBuilder:
         reviewer: Reviewer | None = None,
         tool_policy: ToolPolicy | None = None,
         permission_mode: str = "ask",
+        learning_loop: Any = None,
     ) -> None:
         self._registry = registry
         self._skill_service = skill_service
@@ -70,6 +71,8 @@ class ToolsetBuilder:
         self._permission_mode = permission_mode
         self.skill_tools: SkillTools | None = None
         self.memory_tools: MemoryTools | None = None
+        self.learning_tools: Any = None
+        self._learning_loop = learning_loop
 
     def _allows(self, tool_name: str) -> bool:
         return self._allowed_tools is None or tool_name in self._allowed_tools
@@ -77,6 +80,7 @@ class ToolsetBuilder:
     async def build(self) -> None:
         self._register_builtin_tools()
         self._register_memory_tools()
+        self._register_learning_tools()
         self._register_skill_tools()
         if not self._is_sub_agent:
             self._register_delegation()
@@ -147,6 +151,18 @@ class ToolsetBuilder:
             if self._allows(name):
                 self._registry.register(getattr(self.memory_tools, name), name=name)
 
+    def _register_learning_tools(self) -> None:
+        if self._is_sub_agent:
+            return
+        if self._learning_loop is None:
+            return
+        from nova.learning.tools import LearningTools
+
+        self.learning_tools = LearningTools(learning_loop=self._learning_loop)
+        if self._allows("session_search"):
+            self._registry.register(
+                self.learning_tools.session_search, name="session_search"
+            )
     def _register_builtin_tools(self) -> None:
         from nova import tools as tools_module
 

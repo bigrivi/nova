@@ -113,6 +113,20 @@ class ApprovalReviewSettings:
 
 
 @dataclass(frozen=True)
+class LearningSettings:
+    """Closed learning loop configuration, overridable via config.json ``learning`` block.
+
+    Off by default except session search, which is cheap and high-value.
+    """
+
+    enabled: bool = False
+    nudge_interval_turns: int = 5
+    skill_extraction_min_tool_calls: int = 4
+    user_model_enabled: bool = False
+    session_search_enabled: bool = True
+
+
+@dataclass(frozen=True)
 class CompactionSettings:
     """Context compaction thresholds, overridable via config.json ``compaction`` block."""
 
@@ -339,6 +353,24 @@ def _parse_approval_review_config(raw: Any) -> ApprovalReviewSettings:
     )
 
 
+def _parse_learning_config(raw: Any) -> LearningSettings:
+    if raw is None:
+        return LearningSettings()
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid Nova config: 'learning' must be an object")
+    nudge = raw.get("nudge_interval_turns", 5)
+    min_tools = raw.get("skill_extraction_min_tool_calls", 4)
+    nudge_val = int(nudge) if nudge is not None and isinstance(nudge, (int, str)) else 5
+    min_tools_val = int(min_tools) if min_tools is not None and isinstance(min_tools, (int, str)) else 4
+    return LearningSettings(
+        enabled=bool(raw.get("enabled", False)),
+        nudge_interval_turns=nudge_val,
+        skill_extraction_min_tool_calls=min_tools_val,
+        user_model_enabled=bool(raw.get("user_model_enabled", False)),
+        session_search_enabled=bool(raw.get("session_search_enabled", True)),
+    )
+
+
 def _parse_compaction_config(raw: Any) -> CompactionSettings:
     if raw is None:
         return CompactionSettings()
@@ -469,6 +501,9 @@ class Settings:
         default_factory=ApprovalReviewSettings
     )
 
+    # Closed learning loop. Off unless configured.
+    learning: LearningSettings = field(default_factory=LearningSettings)
+
     # Runtime config file path.
     config_path: Path | None = None
 
@@ -503,6 +538,7 @@ class Settings:
         approval_review = _parse_approval_review_config(
             config_payload.get("approval_review")
         )
+        learning = _parse_learning_config(config_payload.get("learning"))
         compaction = _parse_compaction_config(config_payload.get("compaction"))
         transcription = _parse_transcription_config(config_payload.get("transcription"))
         web_search = _parse_web_search_config(config_payload.get("web_search"))
@@ -529,6 +565,7 @@ class Settings:
             transcription=transcription,
             web_search=web_search,
             approval_review=approval_review,
+            learning=learning,
             auth_user=auth_user,
             auth_password=auth_password,
         )

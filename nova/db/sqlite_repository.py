@@ -135,6 +135,18 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY,
     applied_at INTEGER NOT NULL
 );
+
+CREATE VIRTUAL TABLE IF NOT EXISTS session_fts USING fts5(
+    session_id UNINDEXED,
+    content,
+    tokenize='unicode61'
+);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id TEXT PRIMARY KEY,
+    profile_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 
