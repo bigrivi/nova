@@ -90,7 +90,7 @@ async def test_no_title_means_no_write_and_no_broadcast(
             first_message=FIRST_MESSAGE, agent_key="main"
         )
 
-        await agent._generate_title_in_background(session, FIRST_MESSAGE)
+        await agent.background.generate_title_in_background(session, FIRST_MESSAGE)
 
         stored = await database.get_session(session.id)
         assert stored["title"] == FIRST_MESSAGE
@@ -108,7 +108,7 @@ async def test_a_real_title_is_written_and_broadcast(tmp_path: Path) -> None:
             first_message=FIRST_MESSAGE, agent_key="main"
         )
 
-        await agent._generate_title_in_background(session, FIRST_MESSAGE)
+        await agent.background.generate_title_in_background(session, FIRST_MESSAGE)
 
         stored = await database.get_session(session.id)
         assert stored["title"] == "排查 Bug"

@@ -46,12 +46,12 @@ async def test_workspace_switch_reloads_project_instructions(tmp_path) -> None:
             agent_dir=tmp_path / "agent",
             data_source=database,
         )
-        agent._apply_active_workspace(SimpleNamespace(workspace_dir=str(repo_a)))
-        first = agent._build_system_prompt()
+        agent.messaging.apply_active_workspace(SimpleNamespace(workspace_dir=str(repo_a)))
+        first = agent.messaging.build_system_prompt()
         assert "AAA-RULE." in first
 
-        agent._apply_active_workspace(SimpleNamespace(workspace_dir=str(repo_b)))
-        second = agent._build_system_prompt()
+        agent.messaging.apply_active_workspace(SimpleNamespace(workspace_dir=str(repo_b)))
+        second = agent.messaging.build_system_prompt()
         assert "BBB-RULE." in second
         assert "AAA-RULE." not in second
     finally:

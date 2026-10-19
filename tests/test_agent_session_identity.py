@@ -38,7 +38,7 @@ async def test_new_session_persists_agent_key() -> None:
     )
 
     try:
-        session = await agent._resolve_session(
+        session = await agent.session_service.resolve_session(
             session_id=None,
             user_input="hello",
             workspace_dir=None,

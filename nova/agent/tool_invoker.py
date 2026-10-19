@@ -130,13 +130,13 @@ class ToolInvoker:
                     str(precheck.approval_request.get("command", ""))[:200],
                 )
                 yield AgentEvent.APPROVAL_REQUIRED, precheck.approval_request
-                async for tick in self._approval.wait_with_heartbeat(
+                async for approved in self._approval.wait_with_heartbeat(
                     approval_request_id
                 ):
-                    if tick is None:
+                    if approved is None:
                         yield AgentEvent.APPROVAL_HEARTBEAT, None
                         continue
-                    if not tick:
+                    if not approved:
                         rejected = True
                         log.info(
                             "[Turn %s] Approval denied id=%s",
@@ -185,16 +185,6 @@ class ToolInvoker:
                     # Continue: remaining tool calls still run, and the model
                     # gets another turn to respond to the rejection.
                     continue
-                    log.info(
-                        "[Turn %s] Approval granted id=%s",
-                        self._turn_count,
-                        approval_request_id,
-                    )
-                    yield (
-                        AgentEvent.APPROVAL_RESULT,
-                        {"id": approval_request_id, "approved": True},
-                    )
-                    break
 
             result = await self.execute_with_abort(
                 tool_call, arguments, approval_request_id=approval_request_id

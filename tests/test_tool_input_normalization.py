@@ -82,7 +82,7 @@ def test_agent_rewrites_the_call_before_it_is_announced() -> None:
         name="ask_user",
         arguments=json.dumps({"questions": RAW}),
     )
-    agent._normalize_tool_arguments([call])
+    agent.normalize_tool_arguments([call])
 
     announced = json.loads(call.arguments)
     executed = normalize_questions(announced["questions"])
@@ -99,7 +99,7 @@ def test_untouched_when_the_model_got_it_right() -> None:
     original = json.dumps({"questions": normalize_questions(RAW)})
     call = ToolCall(id="call-1", name="ask_user", arguments=original)
 
-    agent._normalize_tool_arguments([call])
+    agent.normalize_tool_arguments([call])
 
     assert call.arguments == original
 
@@ -110,7 +110,7 @@ def test_unparsable_arguments_are_left_for_the_existing_drop() -> None:
 
     call = ToolCall(id="call-1", name="ask_user", arguments="{not json")
 
-    agent._normalize_tool_arguments([call])
+    agent.normalize_tool_arguments([call])
 
     assert call.arguments == "{not json"
 
@@ -126,7 +126,7 @@ def test_a_failing_normalizer_does_not_take_the_turn_down() -> None:
     original = json.dumps({"questions": RAW})
     call = ToolCall(id="call-1", name="ask_user", arguments=original)
 
-    agent._normalize_tool_arguments([call])
+    agent.normalize_tool_arguments([call])
 
     assert call.arguments == original
 
@@ -138,7 +138,7 @@ def test_a_tool_without_a_behavior_is_left_alone() -> None:
     original = json.dumps({"questions": RAW})
     call = ToolCall(id="call-1", name="something_else", arguments=original)
 
-    agent._normalize_tool_arguments([call])
+    agent.normalize_tool_arguments([call])
 
     assert call.arguments == original
 
@@ -158,6 +158,6 @@ def test_non_dict_arguments_pass_through(bad: object) -> None:
 
     call = ToolCall(id="call-1", name="ask_user", arguments=json.dumps(bad))
 
-    agent._normalize_tool_arguments([call])
+    agent.normalize_tool_arguments([call])
 
     assert json.loads(call.arguments) == bad

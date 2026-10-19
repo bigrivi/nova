@@ -1,7 +1,7 @@
 """Direct coverage for the six uncovered branches of Agent.chat_stream.
 
 Each test locks an event sequence or a persisted side effect, so the Tier 3
-refactor of chat_stream (extracting _resolve_session, build_user_message and
+refactor of chat_stream (extracting resolve_session, build_user_message and
 the compaction event block) can be verified by event order rather than by
 reading the implementation.
 """
@@ -358,12 +358,12 @@ class TestMemoryReviewScheduling:
 
         provider = ScriptedProvider([[TextDelta(content="done")]])
         async with isolated_agent(provider, memory_review_interval=1) as (agent, _db):
-            agent._run_memory_review = AsyncMock()  # type: ignore[assignment]
+            agent.run_memory_review = AsyncMock()  # type: ignore[assignment]
             async for _ in agent.chat_stream("hello"):
                 pass
             # Give the scheduled task a chance to be created
             await asyncio.sleep(0)
-            agent._run_memory_review.assert_called_once()
+            agent.run_memory_review.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_does_not_schedule_review_when_interval_zero(self):
@@ -371,11 +371,11 @@ class TestMemoryReviewScheduling:
 
         provider = ScriptedProvider([[TextDelta(content="done")]])
         async with isolated_agent(provider, memory_review_interval=0) as (agent, _db):
-            agent._run_memory_review = AsyncMock()  # type: ignore[assignment]
+            agent.run_memory_review = AsyncMock()  # type: ignore[assignment]
             async for _ in agent.chat_stream("hello"):
                 pass
             await asyncio.sleep(0)
-            agent._run_memory_review.assert_not_called()
+            agent.run_memory_review.assert_not_called()
 
 
 class TestProviderMetaRoundTrip:
@@ -405,7 +405,7 @@ class TestProviderMetaRoundTrip:
                 if event == AgentEvent.SESSION:
                     session_id = data
             loaded_messages = await agent.session.get_messages(session_id=session_id)
-            llm_messages = agent._convert_to_llm_messages(loaded_messages)
+            llm_messages = agent.messaging.convert_to_llm_messages(loaded_messages)
             assistant_llm_messages = [m for m in llm_messages if m.role == "assistant"]
             assert len(assistant_llm_messages) >= 1
             target_message = assistant_llm_messages[0]

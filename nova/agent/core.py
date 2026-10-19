@@ -2,11 +2,12 @@ import asyncio
 import json
 import logging
 import uuid
-from collections.abc import AsyncGenerator, Callable, Coroutine
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+from nova.agent.background import AgentBackground
 from nova.agent.compaction import CompactionController, CompactionError
 from nova.agent.events import (
     AgentEvent,
@@ -20,20 +21,16 @@ from nova.agent.events import (
 )
 from nova.agent.hierarchy import AgentHierarchy
 from nova.agent.llm_stream import TurnOutcome, TurnStreamReader
-from nova.agent.memory_review import MemoryReviewer
-from nova.agent.overflow import is_context_overflow
-from nova.agent.title_generator import generate_session_title
+from nova.agent.messaging import AgentMessaging
+from nova.agent.session import AgentSession
 from nova.agent.tool_guardrails import ToolGuardrails
 from nova.agent.tool_invoker import ToolInvoker, has_parsable_arguments
 from nova.agent.toolset import ToolsetBuilder
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.llm import LLMProvider
-from nova.llm import Message as LLMMessage
 from nova.prompt import PromptBuilder, PromptConfig
-from nova.prompt.project_instructions import discover_project_instructions
 from nova.session import get_session_manager
-from nova.session.manager import SessionContext, default_session_title
 from nova.session.protocol import SessionProtocol
 from nova.skills.service import SkillService
 from nova.tools.approval import get_approval_manager
@@ -94,6 +91,7 @@ def build_user_message(
 
 
 class Agent:
+    """Nova agent: chat stream, tool use, session management."""
     def __init__(
         self,
         config: AgentConfig | None = None,
@@ -142,7 +140,6 @@ class Agent:
         self._prompt_builder = PromptBuilder(
             prompt_config or PromptConfig.from_agent_dir(agent_dir)
         )
-
         self._abort_event = asyncio.Event()
         self._base_system_prompt: str | None = None
         self._active_workspace: str | None = None
@@ -164,6 +161,54 @@ class Agent:
         self._guardrails = ToolGuardrails()
         self._approval = get_approval_manager()
 
+        # Closed learning loop (opt-in). The loop is shared per agent key: a
+        # new Agent is built per request, so a loop held on the agent would
+        # reset its turn counter every turn and never reach the nudge interval.
+        from nova.settings import get_settings
+        _settings = get_settings()
+        self._learning_loop = None
+        if getattr(_settings, "learning", None) is not None and _settings.learning.enabled:
+            from nova.learning.loop import get_learning_loop
+            skills_dir = self._skill_service.skills_dir if hasattr(self._skill_service, "skills_dir") else (self.agent_dir / "skills")
+            self._learning_loop = get_learning_loop(
+                agent_key,
+                settings=_settings.learning,
+                skills_dir=skills_dir,
+                db_path=str(_settings.database_path),
+                llm=self.llm,
+                model=self.config.model,
+            )
+
+        # AgentContext: shared state for composed services (long-term direction).
+        from nova.agent.context import AgentContext
+
+        self.ctx = AgentContext(
+            agent=self,
+            agent_key=self.agent_key,
+            agent_dir=self.agent_dir,
+            session=self.session,
+            llm=self.llm,
+            config=self.config,
+            skill_service=self._skill_service,
+            tool_registry=self.tool_registry,
+            approval=self._approval,
+            events=self._events,
+            background_tasks=self._background_tasks,
+            learning_loop=self._learning_loop,
+            on_title_updated=self._on_title_updated,
+            data_source=self._data_source,
+            is_sub_agent=self.is_sub_agent,
+            review_llm=self._review_llm,
+            review_model=self._review_model,
+            allowed_tools=self.allowed_tools,
+            prompt_builder=self._prompt_builder,
+            compaction=self._compaction,
+            guardrails=self._guardrails,
+        )
+        # Composed services. Created after the context so they can read it.
+        self.messaging = AgentMessaging(self)
+        self.background = AgentBackground(self)
+        self.session_service = AgentSession(self)
     @staticmethod
     def _build_skill_service(agent_key: str, agent_dir: Path) -> SkillService:
         if agent_key == DEFAULT_AGENT_KEY:
@@ -201,103 +246,6 @@ class Agent:
     async def _emit(self, event: AgentEvent, data: Any = None) -> None:
         await self._events.emit(event, data)
 
-    def _build_system_prompt(self, session_ctx: SessionContext = None) -> str:
-        workspace = self._active_workspace or str(self.agent_dir)
-        return self._prompt_builder.build(
-            available_skills=self._skill_service.list_skills(),
-            workspace_override=self._active_workspace,
-            project_instructions=discover_project_instructions(workspace),
-        )
-
-    def _apply_active_workspace(self, session_ctx: SessionContext = None) -> None:
-        from nova.tools.workspace_context import set_active_workspace
-
-        override = getattr(session_ctx, "workspace_dir", None) if session_ctx else None
-        if override:
-            resolved = Path(override).expanduser()
-            try:
-                resolved = resolved.resolve()
-            except OSError:
-                pass
-            try:
-                resolved.mkdir(parents=True, exist_ok=True)
-            except OSError:
-                pass
-            effective = str(resolved)
-        else:
-            effective = str(self.agent_dir)
-
-        if effective != self._active_workspace:
-            self._active_workspace = effective
-            self._base_system_prompt = None
-        set_active_workspace(effective)
-
-    def _convert_to_llm_messages(self, loaded_messages: list) -> list[LLMMessage]:
-        resolved_tool_call_ids = {
-            loaded_message.tool_call_id
-            for loaded_message in loaded_messages
-            if loaded_message.role == "tool" and loaded_message.tool_call_id
-        }
-        declared_tool_call_ids: set[str] = set()
-        for loaded_message in loaded_messages:
-            if loaded_message.role == "assistant" and loaded_message.tool_calls:
-                for tool_call in loaded_message.tool_calls:
-                    tool_call_identifier = (
-                        tool_call.get("id") if isinstance(tool_call, dict) else None
-                    )
-                    if tool_call_identifier:
-                        declared_tool_call_ids.add(tool_call_identifier)
-
-        converted_messages: list[LLMMessage] = []
-        for loaded_message in loaded_messages:
-            if (
-                loaded_message.role == "tool"
-                and loaded_message.tool_call_id not in declared_tool_call_ids
-            ):
-                continue
-            llm_message = LLMMessage(
-                role=loaded_message.role, content=loaded_message.content
-            )
-            if loaded_message.tool_calls:
-                llm_message.tool_calls = [
-                    tool_call
-                    for tool_call in loaded_message.tool_calls
-                    if (
-                        isinstance(tool_call, dict)
-                        and tool_call.get("id")
-                        and tool_call["id"] in resolved_tool_call_ids
-                    )
-                ]
-            if loaded_message.tool_call_id:
-                llm_message.tool_call_id = loaded_message.tool_call_id
-            if loaded_message.images:
-                llm_message.images = loaded_message.images
-            if loaded_message.reasoning_content:
-                llm_message.reasoning_content = loaded_message.reasoning_content
-            if loaded_message.provider_meta:
-                llm_message.provider_meta = loaded_message.provider_meta
-            if loaded_message.model:
-                llm_message.model = loaded_message.model
-            converted_messages.append(llm_message)
-        return converted_messages
-
-    async def _build_messages(
-        self, loaded_messages: list | None = None
-    ) -> list[LLMMessage]:
-        session = self.session.get_current_session()
-
-        if self._base_system_prompt is None:
-            await self._refresh_memory_index()
-            await self._refresh_subagent_roster()
-            self._base_system_prompt = self._build_system_prompt(session)
-
-        if loaded_messages is None:
-            loaded_messages = await self.session.get_messages()
-        return [
-            LLMMessage(role="system", content=self._base_system_prompt),
-            *self._convert_to_llm_messages(loaded_messages),
-        ]
-
     async def _emit_approval(self, data: dict) -> None:
         await self._emit(AgentEvent.APPROVAL_REQUIRED, data)
 
@@ -328,7 +276,7 @@ class Agent:
                 # error as terminal and returns, which abandons this generator
                 # at the yield - so anything written after it would never run,
                 # and the text the user watched arrive would be lost.
-                await self._persist_failed_turn(reader, group_id)
+                await self.session_service._persist_failed_turn(reader, group_id)
             yield event, data
         if reader.outcome is not TurnOutcome.CONTINUE:
             return
@@ -344,12 +292,12 @@ class Agent:
         tool_calls = self._executable_tool_calls(
             reader.collected_tool_calls(), turn_count
         )
-        self._normalize_tool_arguments(tool_calls)
+        self.normalize_tool_arguments(tool_calls)
         for tool_call in tool_calls:
             log.info(
                 f"[Turn {turn_count}] Calling tool: {tool_call.name}({tool_call.arguments})"
             )
-        await self._persist_assistant_message(reader, tool_calls, group_id)
+        await self.session_service._persist_assistant_message(reader, tool_calls, group_id)
 
         if not tool_calls:
             payload = _done_payload("completed", reader.final_content)
@@ -371,7 +319,7 @@ class Agent:
         tool_schemas: Any,
         loaded_messages: list | None,
     ) -> AsyncGenerator[Any, None]:
-        messages = await self._build_messages(loaded_messages=loaded_messages)
+        messages = await self.messaging.build_messages(loaded_messages=loaded_messages)
         current_session = self.session.get_current_session()
         session_id = current_session.id if current_session else None
         log.info(
@@ -385,264 +333,6 @@ class Agent:
             session_id=session_id,
             reasoning_effort=self.config.reasoning_effort,
         )
-
-    async def _record_session_route(self, data_source) -> None:
-        """Stamp the route this session is running with onto the session row.
-
-        Written per turn rather than per session load so that reopening an old
-        conversation restores the model and effort it actually ran with, instead
-        of whatever the agent happens to point at today.
-        """
-        session = self.session.get_current_session()
-        if session is None:
-            return
-        try:
-            await data_source.set_session_route(
-                session.id,
-                self.config.provider,
-                self.config.model,
-                self.config.reasoning_effort,
-            )
-        except Exception as error:
-            # The route is a convenience for the next visit, not state the turn
-            # depends on; failing to record it must not fail the turn.
-            log.warning("[Session %s] could not record route: %s", session.id, error)
-
-    def _try_overflow_recovery(self, error_message: str | None) -> bool:
-        """Whether to compact and re-run after the provider rejected the request.
-
-        Token pressure normally decides to compact, which means an overflowing
-        request is possible whenever the estimate was low. The provider saying so
-        outright is a better signal than any estimate, so it takes precedence and
-        the failed turn is replayed. One attempt per user request: a second
-        overflow means the fixed prompt alone does not fit, and retrying cannot
-        change that.
-        """
-        if self._overflow_recovered:
-            return False
-        if not is_context_overflow(error_message):
-            return False
-        self._overflow_recovered = True
-        self._compaction.force_next = True
-        log.warning(
-            "Provider rejected the request as too large; compacting and retrying once"
-        )
-        return True
-
-    def _normalize_tool_arguments(self, tool_calls: list) -> None:
-        """Repair model-supplied tool arguments in place, before they are used.
-
-        Runs ahead of persisting the assistant message and ahead of announcing
-        the call, so the stored record, the announcement a client renders, and
-        the value the tool receives are all the same thing. A tool that quietly
-        fills in a missing field would otherwise publish that repair only in its
-        result, leaving the two frames describing one call differently -- which
-        is how a question whose id the model omitted ended up announced without
-        one and impossible to map an answer back to.
-        """
-        for tool_call in tool_calls:
-            name = getattr(tool_call, "name", None)
-            raw = getattr(tool_call, "arguments", None)
-            if not name or not isinstance(raw, str) or not raw:
-                continue
-            try:
-                arguments = json.loads(raw)
-            except json.JSONDecodeError:
-                continue  # reported where the unparsable call is dropped
-            if not isinstance(arguments, dict):
-                continue
-            try:
-                normalized = self.tool_registry.behavior_for(name).normalize_input(
-                    arguments
-                )
-            except Exception:
-                log.exception(
-                    "normalize_input failed for tool %s; keeping raw arguments", name
-                )
-                continue
-            if normalized != arguments:
-                tool_call.arguments = json.dumps(normalized, ensure_ascii=False)
-
-    def _executable_tool_calls(self, tool_calls: list, turn_count: int) -> list:
-        executable = []
-        for tool_call in tool_calls:
-            if has_parsable_arguments(tool_call):
-                executable.append(tool_call)
-            else:
-                log.warning(
-                    f"[Turn {turn_count}] Skipping tool call {tool_call.name} "
-                    f"with invalid JSON arguments: {tool_call.arguments!r}"
-                )
-        return executable
-
-    async def _persist_failed_turn(
-        self,
-        reader: TurnStreamReader,
-        group_id: str | None,
-    ) -> None:
-        """Keep the text a failed turn produced, so a reload does not lose it.
-
-        The turn is over either way. Without this, text the user watched arrive
-        exists only in the stream: nothing is written, so reopening the session
-        shows a turn that produced nothing at all.
-
-        A user abort is deliberately excluded. They asked for the turn to stop,
-        and the contract there is that history is left as it was - the existing
-        interrupt tests pin that.
-
-        Args:
-            reader: The finished turn, holding the text and the failure reason.
-            group_id: Tool-call group the turn belongs to, if any.
-        """
-        if reader.outcome is not TurnOutcome.FAILED or not reader.content:
-            return
-        await self.session.add_message(
-            role="assistant",
-            content=reader.content,
-            reasoning_content=reader.reasoning or None,
-            group_id=group_id,
-            reasoning_elapsed_ms=reader.reasoning_elapsed_ms,
-            error=reader.error_message or "turn failed",
-            model=self.config.model,
-            reasoning_effort=self.config.reasoning_effort,
-        )
-
-    async def _persist_assistant_message(
-        self,
-        reader: TurnStreamReader,
-        tool_calls: list,
-        group_id: str | None,
-    ) -> None:
-        await self.session.add_message(
-            role="assistant",
-            content=reader.final_content,
-            tool_calls=[
-                tool_call.model_dump()
-                if hasattr(tool_call, "model_dump")
-                else tool_call
-                for tool_call in tool_calls
-            ]
-            or None,
-            reasoning_content=reader.reasoning or None,
-            group_id=group_id,
-            reasoning_elapsed_ms=reader.reasoning_elapsed_ms,
-            tokens_input=reader.tokens_input,
-            tokens_output=reader.tokens_output,
-            provider_meta=reader.provider_meta,
-            model=self.config.model,
-            reasoning_effort=self.config.reasoning_effort,
-        )
-
-    async def _invoke_tools(
-        self,
-        tool_calls: list,
-        group_id: str | None,
-        turn_count: int,
-    ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
-        invoker = ToolInvoker(
-            registry=self.tool_registry,
-            session=self.session,
-            approval=self._approval,
-            guardrails=self._guardrails,
-            llm=self.llm,
-            model=self.config.model,
-            provider=self.config.provider,
-            abort_event=self._abort_event,
-            emit=self._emit,
-            emit_approval=self._emit_approval,
-            stop_if_aborted=self._stop_if_aborted,
-            turn_count=turn_count,
-        )
-        async for event, data in invoker.run(tool_calls, group_id=group_id):
-            yield event, data
-
-    async def _resolve_session(
-        self,
-        session_id: str | None,
-        user_input: str,
-        workspace_dir: str | None,
-        project_id: str | None = None,
-    ) -> SessionContext:
-        """Load the requested session, creating one when it is absent."""
-        if session_id and await self.session.load_session(session_id):
-            current = self.session.get_current_session()
-            log.info("[Session %s] Reused", session_id)
-            return current
-        await self.session.create_session(
-            persist=True,
-            first_message=user_input,
-            agent_key=self.agent_key,
-            workspace_dir=workspace_dir,
-            project_id=project_id,
-        )
-        current = self.session.get_current_session()
-        log.info("[Session %s] Created", current.id if current else "?")
-        self._maybe_schedule_title_generation(current, user_input)
-        return current
-
-    def _maybe_schedule_title_generation(
-        self, session: SessionContext, first_message: str
-    ) -> None:
-        """Kick off the background title rewrite for a brand new session.
-
-        The auto-derived title is already persisted, so this only improves it.
-        Sub-agents keep the default: their sessions are never surfaced.
-        """
-        if self.is_sub_agent or self._on_title_updated is None:
-            return
-        self._spawn(self._generate_title_in_background(session, first_message))
-
-    async def _generate_title_in_background(
-        self, session: SessionContext, first_message: str
-    ) -> None:
-        session_id = session.id
-        try:
-            tool_schemas = (
-                self.tool_registry.get_schema() if self.tool_registry.tools else None
-            )
-            title = await generate_session_title(
-                self.llm,
-                first_message,
-                self.config.model,
-                session.id,
-                tool_schemas,
-            )
-            if title is None:
-                return
-            applied = await self.session.apply_generated_title(
-                session_id,
-                title,
-                default_session_title(first_message),
-            )
-            if not applied:
-                log.info(
-                    "[Session %s] Title left alone; the user renamed it", session_id
-                )
-                return
-            log.info("[Session %s] Title regenerated: %r", session_id, title)
-            self._on_title_updated(session_id, title)
-        except Exception as exception:
-            # Defence in depth: the generator swallows its own failures, so
-            # reaching here means something unexpected. The default title
-            # stays regardless.
-            log.warning(
-                "[Session %s] Title generation task failed: %s", session_id, exception
-            )
-
-    def _maybe_schedule_memory_review(self) -> None:
-        if self.config.memory_review_interval <= 0:
-            return
-        self._turns_since_review += 1
-        if self._turns_since_review < self.config.memory_review_interval:
-            return
-        self._turns_since_review = 0
-        self._spawn(self._run_memory_review())
-
-    def _spawn(self, coro: Coroutine[Any, Any, None]) -> None:
-        """Run *coro* in the background, holding it until it finishes."""
-        task = asyncio.create_task(coro)
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
 
     async def chat_stream(
         self,
@@ -658,11 +348,11 @@ class Agent:
         # not only in __init__, so a reused Agent still recovers on later requests.
         self._overflow_recovered = False
 
-        current_session = await self._resolve_session(
+        current_session = await self.session_service.resolve_session(
             session_id, user_input, workspace_dir, project_id
         )
         session_id = current_session.id if current_session else ""
-        self._apply_active_workspace(current_session)
+        self.messaging.apply_active_workspace(current_session)
 
         yield AgentEvent.SESSION, session_id
         await self._emit(AgentEvent.START, user_input)
@@ -706,7 +396,7 @@ class Agent:
             # request: a single request can run many tool turns and each tool
             # result can be arbitrarily large, so a request that started well
             # inside the window can overrun it halfway through.
-            await self._record_session_route(data_source)
+            await self.session_service._record_session_route(data_source)
             try:
                 async for event, data in self._compaction.maybe_compact(
                     session_messages,
@@ -734,17 +424,24 @@ class Agent:
 
             done_payload = None
             retry_after_compaction = False
+            # Tool calls made in THIS turn, not the session's running total:
+            # the skill extractor asks "was this turn complex", and a session
+            # total answers that question about every turn before it.
+            turn_tool_calls = 0
+            messages_before_turn = len(session_messages)
             async for event, data in self._run_turn(
                 turn_count,
                 tool_schemas,
                 group_id=run_group_id,
                 loaded_messages=session_messages,
             ):
+                if event == AgentEvent.TOOL_CALL:
+                    turn_tool_calls += 1
                 if event == AgentEvent.DONE:
                     done_payload = data
                 elif event == AgentEvent.ERROR:
                     message = data.get("message") if isinstance(data, dict) else data
-                    if self._try_overflow_recovery(message):
+                    if self.session_service._try_overflow_recovery(message):
                         # The provider refused the request as too large. The error
                         # is not surfaced: the client sees one turn, not a failure
                         # followed by a silent retry.
@@ -775,6 +472,23 @@ class Agent:
             await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
             yield AgentEvent.TURN_END, {"turn": turn_count}
 
+            # Closed learning loop: schedule background work (non-blocking).
+            if self._learning_loop is not None:
+                try:
+                    msgs = await self.session.get_messages()
+                    _sess = self.session.get_current_session()
+                    session_id = getattr(_sess, "id", "") or ""
+                    user_id = getattr(_sess, "user_id", "") or self.agent_key
+                    await self._schedule_learning_loop(
+                        turn_count,
+                        turn_tool_calls,
+                        [m for m in msgs[messages_before_turn:]],
+                        session_id,
+                        user_id,
+                    )
+                except Exception as e:
+                    log.warning("learning loop scheduling failed: %s", e)
+
             if done_payload is not None:
                 reason = (
                     done_payload.get("reason", "")
@@ -783,7 +497,7 @@ class Agent:
                 )
                 log.info("[Session %s] Done reason=%s", session_id, reason)
                 if reason in ("completed", "requires_input"):
-                    self._maybe_schedule_memory_review()
+                    self.background._maybe_schedule_memory_review()
                 await self._emit(AgentEvent.DONE, done_payload)
                 yield AgentEvent.DONE, done_payload
                 return
@@ -792,40 +506,6 @@ class Agent:
         await self._emit(AgentEvent.ERROR, error_payload)
         log.warning(f"[Turn {turn_count}] Maximum iterations reached")
         yield AgentEvent.ERROR, error_payload
-
-    def register_tool(self, func: Callable, name: str | None = None) -> None:
-        self.tool_registry.register(func, name)
-
-    async def register_all_tools(self) -> None:
-        from nova.tools.approval_review import build_reviewer
-        from nova.tools.permissions import ensure_permissions_file, permissions_path
-        from nova.tools.tool_policy import load_tool_policy
-
-        # Written once per launch, before any tool call can consult it.
-        ensure_permissions_file(permissions_path().parent)
-
-        # One reviewer serves both axes: the shell consults it for a flagged
-        # command, and any tool set to `ask` consults it before interrupting.
-        reviewer = None
-        if self.config.shell_review and not self.is_sub_agent:
-            reviewer = build_reviewer(
-                self._review_llm or self.llm,
-                self._review_model or self.config.model,
-            )
-
-        builder = ToolsetBuilder(
-            registry=self.tool_registry,
-            skill_service=self._skill_service,
-            approval=self._approval,
-            is_sub_agent=self.is_sub_agent,
-            allowed_tools=self.allowed_tools,
-            agent_key=self.agent_key,
-            reviewer=reviewer,
-            tool_policy=load_tool_policy(permissions_path()),
-            permission_mode=self.config.permission_mode,
-        )
-        await builder.build()
-        self._skill_tools = builder.skill_tools
 
     async def _refresh_memory_index(self) -> None:
         """Build the memory index from DB for system prompt inclusion.
@@ -880,17 +560,6 @@ class Agent:
             lines.append(f"- `{key}` ({access}): {description}")
         self._prompt_builder.config.subagent_roster = "\n".join(lines)
 
-    async def _run_memory_review(self) -> None:
-        await MemoryReviewer(
-            llm=self.llm,
-            session=self.session,
-            model=self.config.model,
-            data_source=self._data_source,
-            tools=(
-                self.tool_registry.get_schema() if self.tool_registry.tools else None
-            ),
-        ).run()
-
     def add_sub_agent(self, sub_agent: "Agent") -> None:
         """Add a sub-agent to this agent's list of sub-agents."""
         self._hierarchy.add_sub_agent(self, sub_agent)
@@ -919,3 +588,107 @@ class Agent:
         to agree.
         """
         return await self._hierarchy.first_parent_agent_record()
+
+    def normalize_tool_arguments(self, tool_calls: list) -> None:
+        """Repair model-supplied tool arguments in place, before they are used.
+
+        Runs ahead of persisting the assistant message and ahead of announcing
+        the call, so the stored record, the announcement a client renders, and
+        the value the tool receives are all the same thing. A tool that quietly
+        fills in a missing field would otherwise publish that repair only in its
+        result, leaving the two frames describing one call differently -- which
+        is how a question whose id the model omitted ended up announced without
+        one and impossible to map an answer back to.
+        """
+        for tool_call in tool_calls:
+            name = getattr(tool_call, "name", None)
+            raw = getattr(tool_call, "arguments", None)
+            if not name or not isinstance(raw, str) or not raw:
+                continue
+            try:
+                arguments = json.loads(raw)
+            except json.JSONDecodeError:
+                continue  # reported where the unparsable call is dropped
+            if not isinstance(arguments, dict):
+                continue
+            try:
+                normalized = self.tool_registry.behavior_for(name).normalize_input(
+                    arguments
+                )
+            except Exception:
+                log.exception(
+                    "normalize_input failed for tool %s; keeping raw arguments", name
+                )
+                continue
+            if normalized != arguments:
+                tool_call.arguments = json.dumps(normalized, ensure_ascii=False)
+
+    def _executable_tool_calls(self, tool_calls: list, turn_count: int) -> list:
+        executable = []
+        for tool_call in tool_calls:
+            if has_parsable_arguments(tool_call):
+                executable.append(tool_call)
+            else:
+                log.warning(
+                    f"[Turn {turn_count}] Skipping tool call {tool_call.name} "
+                    f"with invalid JSON arguments: {tool_call.arguments!r}"
+                )
+        return executable
+
+    async def _invoke_tools(
+        self,
+        tool_calls: list,
+        group_id: str | None,
+        turn_count: int,
+    ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
+        invoker = ToolInvoker(
+            registry=self.tool_registry,
+            session=self.session,
+            approval=self._approval,
+            guardrails=self._guardrails,
+            llm=self.llm,
+            model=self.config.model,
+            provider=self.config.provider,
+            abort_event=self._abort_event,
+            emit=self._emit,
+            emit_approval=self._emit_approval,
+            stop_if_aborted=self._stop_if_aborted,
+            turn_count=turn_count,
+        )
+        async for event, data in invoker.run(tool_calls, group_id=group_id):
+            yield event, data
+
+    def register_tool(self, func: Callable, name: str | None = None) -> None:
+        self.tool_registry.register(func, name)
+
+    async def register_all_tools(self) -> None:
+        from nova.tools.approval_review import build_reviewer
+        from nova.tools.permissions import ensure_permissions_file, permissions_path
+        from nova.tools.tool_policy import load_tool_policy
+
+        # Written once per launch, before any tool call can consult it.
+        ensure_permissions_file(permissions_path().parent)
+
+        # One reviewer serves both axes: the shell consults it for a flagged
+        # command, and any tool set to `ask` consults it before interrupting.
+        reviewer = None
+        if self.config.shell_review and not self.is_sub_agent:
+            reviewer = build_reviewer(
+                self._review_llm or self.llm,
+                self._review_model or self.config.model,
+            )
+
+        builder = ToolsetBuilder(
+            registry=self.tool_registry,
+            skill_service=self._skill_service,
+            approval=self._approval,
+            is_sub_agent=self.is_sub_agent,
+            allowed_tools=self.allowed_tools,
+            agent_key=self.agent_key,
+            reviewer=reviewer,
+            tool_policy=load_tool_policy(permissions_path()),
+            permission_mode=self.config.permission_mode,
+        )
+        await builder.build()
+        self._skill_tools = builder.skill_tools
+
