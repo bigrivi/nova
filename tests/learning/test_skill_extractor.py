@@ -82,3 +82,49 @@ async def test_improve_bumps_version(tmp_path):
     text = (skills / "s" / "SKILL.md").read_text()
     assert "version: 2" in text
     assert "weekly" in text
+
+
+@pytest.mark.asyncio
+async def test_similar_name_merges_instead_of_creating(tmp_path):
+    skills = tmp_path / "skills"
+    (skills / "csv-aggregate-to-json").mkdir(parents=True)
+    (skills / "csv-aggregate-to-json" / "SKILL.md").write_text(
+        "version: 1\n\n# CSV Aggregate\nread csv group by column output json", encoding="utf-8"
+    )
+
+    class MockLLM:
+        async def chat_stream(self, messages, model="gpt-4o", **kw):
+            from nova.llm.provider import TextDelta, Done
+            body = '{"name": "csv-aggregation-json", "content": "# CSV Aggregate\\nread csv group by column output json"}'
+            yield TextDelta(content=body)
+            yield Done(content=body)
+
+    ext = SkillExtractor(skills, min_tool_calls=1, llm=MockLLM())
+    turn = TurnContext(session_id="s1", messages=[], tool_call_count=5)
+    result = await ext.maybe_extract(turn)
+    # Either merged into the existing skill or skipped as a duplicate; never a new dir.
+    dirs = [p.name for p in skills.iterdir() if p.is_dir()]
+    assert dirs == ["csv-aggregate-to-json"]
+    if result is not None:
+        assert result.name == "csv-aggregate-to-json"
+
+
+@pytest.mark.asyncio
+async def test_identical_content_is_a_no_op(tmp_path):
+    skills = tmp_path / "skills"
+    (skills / "same-skill").mkdir(parents=True)
+    original = "version: 1\n\n# Same\nread csv group by column output json"
+    (skills / "same-skill" / "SKILL.md").write_text(original, encoding="utf-8")
+
+    class MockLLM:
+        async def chat_stream(self, messages, model="gpt-4o", **kw):
+            from nova.llm.provider import TextDelta, Done
+            body = '{"name": "same-skill", "content": "# Same\\nread csv group by column output json"}'
+            yield TextDelta(content=body)
+            yield Done(content=body)
+
+    ext = SkillExtractor(skills, min_tool_calls=1, llm=MockLLM())
+    turn = TurnContext(session_id="s1", messages=[], tool_call_count=5)
+    result = await ext.maybe_extract(turn)
+    assert result is None
+    assert (skills / "same-skill" / "SKILL.md").read_text() == original

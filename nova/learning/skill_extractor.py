@@ -9,6 +9,27 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 
+def _tokens(text: str) -> set[str]:
+    """Lower-case word tokens split on whitespace, underscores, slashes and dashes."""
+    normalized = text.lower()
+    for sep in ("_", "/", "-"):
+        normalized = normalized.replace(sep, " ")
+    return {part for part in normalized.split() if part}
+
+
+def _jaccard(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def _strip_version(content: str) -> str:
+    """Drop the ``version: N`` marker so revisions compare on their body."""
+    import re
+
+    return re.sub(r"^version:\s*\d+\s*", "", content, flags=re.MULTILINE).lstrip()
+
+
 @dataclass
 class TurnContext:
     session_id: str
@@ -95,10 +116,22 @@ class SkillExtractor:
         content = proposal.get("content")
         if not name or not content:
             return None
-        # Reuse an existing skill when names overlap strongly, to avoid
-        # skill proliferation from slightly different LLM-chosen names.
-        similar = self._find_similar(name)
+        # Reuse an existing skill when it overlaps strongly, to avoid skill
+        # proliferation from slightly different LLM-chosen names. An almost
+        # identical proposal is a no-op: rewriting it only bumps the version.
+        similar = self._find_similar(name, content)
         if similar is not None:
+            existing = (self.skills_dir / similar / "SKILL.md").read_text(
+                encoding="utf-8"
+            )
+            if (
+                _jaccard(
+                    _tokens(_strip_version(content)[:400]),
+                    _tokens(_strip_version(existing)[:400]),
+                )
+                >= 0.85
+            ):
+                return None
             name = similar
         skill_dir = self.skills_dir / name
         skill_dir.mkdir(parents=True, exist_ok=True)
@@ -122,34 +155,43 @@ class SkillExtractor:
             p.name for p in self.skills_dir.iterdir() if (p / "SKILL.md").exists()
         )
 
-    def _find_similar(self, name: str) -> str | None:
-        """Return an existing skill name that strongly overlaps *name*, if any.
+    def _find_similar(self, name: str, content: str = "") -> str | None:
+        """Return an existing skill that overlaps the proposed one, if any.
 
-        Token-based Jaccard similarity; threshold 0.5 avoids merging unrelated
-        skills while collapsing near-duplicates like 'csv-sales' and
-        'csv-sales-report'.
+        Two signals, because names alone are unreliable: the LLM gives the
+        same workflow a different name each time, while the body keeps the
+        same vocabulary. Name tokens and the first 400 characters of content
+        are each compared with Jaccard similarity; either signal crossing
+        ``_SIMILARITY_THRESHOLD`` is enough to merge.
         """
         if not self.skills_dir.exists():
             return None
-        existing = [p.name for p in self.skills_dir.iterdir() if (p / "SKILL.md").exists()]
+        existing = [p for p in self.skills_dir.iterdir() if (p / "SKILL.md").exists()]
         if not existing:
             return None
-        name_tokens = set(name.replace("_", "-").split("-"))
+        name_tokens = _tokens(name)
+        content_tokens = _tokens(content[:400])
         best = None
         best_score = 0.0
         for cand in existing:
-            cand_tokens = set(cand.replace("_", "-").split("-"))
-            if not cand_tokens or not name_tokens:
-                continue
-            inter = len(name_tokens & cand_tokens)
-            union = len(name_tokens | cand_tokens)
-            score = inter / union if union else 0.0
+            cand_tokens = _tokens(cand.name)
+            score = _jaccard(name_tokens, cand_tokens)
+            try:
+                cand_content = (cand / "SKILL.md").read_text(encoding="utf-8")[:400]
+            except OSError:
+                cand_content = ""
+            content_score = _jaccard(content_tokens, _tokens(cand_content))
+            score = max(score, content_score)
             if score > best_score:
                 best_score = score
-                best = cand
-        if best is not None and best_score >= 0.5:
+                best = cand.name
+        if best is not None and best_score >= self._SIMILARITY_THRESHOLD:
             return best
         return None
+
+    #: Jaccard threshold above which a proposal is treated as the same skill.
+    #: Below it, two data tasks may share words ("csv") without being one skill.
+    _SIMILARITY_THRESHOLD = 0.35
 
     def _write_revision(self, skill_path: Path, content: str) -> None:
         """Replace a skill's body, bumping its version marker."""
