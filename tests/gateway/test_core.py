@@ -78,8 +78,9 @@ def test_remembering_is_a_separate_answer():
 
 
 def test_describe_approval_offers_always_only_when_rememberable():
-    assert "a 始终允许" in describe_approval("rm -rf x", "删除文件", True)
-    assert "a 始终允许" not in describe_approval("cat .env", "读取凭据", False)
+    assert "a 批准并记住" in describe_approval("rm -rf x", "删除文件", True)
+    assert "a 批准并记住" not in describe_approval("cat .env", "读取凭据", False)
+    assert "只记住上面这段脚本" in describe_approval("x", "y", True, script_scoped=True)
 
 
 @pytest.mark.asyncio
@@ -251,7 +252,7 @@ async def test_approval_prompt_shows_the_command_and_the_options():
     prompt = adapter.sent[0][1]
     assert "删除目录" in prompt
     assert "rm -rf /tmp/x" in prompt
-    assert "回复 y 允许" in prompt
+    assert "回复 y 批准" in prompt
 
 
 @pytest.mark.asyncio

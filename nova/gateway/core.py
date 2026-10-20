@@ -58,8 +58,19 @@ def parse_approval(text: str) -> tuple[bool, bool] | None:
     return None
 
 
-def describe_approval(command: str, description: str, rememberable: bool) -> str:
-    """Render the confirmation prompt a chat user answers."""
+def describe_approval(
+    command: str,
+    description: str,
+    rememberable: bool,
+    script_scoped: bool = False,
+) -> str:
+    """Render the confirmation prompt a chat user answers.
+
+    The wording follows the desktop dialog: one button approves this call, a
+    second one also remembers it, and the second is only offered when the
+    approval is rememberable at all. What remembering covers is named too, so
+    the user is not left guessing how wide the grant is.
+    """
     what = description or "危险命令"
     lines = [
         f"需要确认：{what}",
@@ -69,12 +80,14 @@ def describe_approval(command: str, description: str, rememberable: bool) -> str
         "```",
         "",
     ]
-    if rememberable:
-        # Nova's grant is keyed on the rule, the command family AND the inline
-        # script, so "always" covers this command, not every command like it.
-        lines.append("回复 y 允许 · n 拒绝 · a 始终允许本会话内这条命令")
+    if not rememberable:
+        lines.append("回复 y 批准 · n 拒绝")
+        return "\n".join(lines)
+    if script_scoped:
+        lines.append("批准:仅本次执行。批准并记住:本会话内,只记住上面这段脚本。")
     else:
-        lines.append("回复 y 允许 · n 拒绝")
+        lines.append("批准:仅本次执行。批准并记住:本会话内,同一类命令将不再询问。")
+    lines.append("回复 y 批准 · a 批准并记住 · n 拒绝")
     return "\n".join(lines)
 
 
@@ -296,6 +309,7 @@ class GatewayCore:
                             pending.command,
                             pending.description,
                             pending.rememberable,
+                            bool(data.get("scriptScoped", False)),
                         ),
                     )
                     buffer.clear()
