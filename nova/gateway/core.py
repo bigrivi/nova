@@ -10,23 +10,72 @@ import json
 import logging
 import re
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from pathlib import Path
 
 from nova.gateway.platform import InboundMessage, PlatformAdapter
 
 log = logging.getLogger(__name__)
 
-_APPROVE = re.compile(r"^\s*(?:/approve|/yes|yes|y|同意|批准|允许)\s*$", re.IGNORECASE)
-_DENY = re.compile(r"^\s*(?:/deny|/no|no|n|拒绝|不同意|不允许)\s*$", re.IGNORECASE)
+#: Approval answers. The first group approves this call only, the second
+#: approves and remembers it for the session, the third refuses.
+_APPROVE = re.compile(r"^(?:y|yes|ok|好|可以|同意|确认|批准)$")
+_APPROVE_ALWAYS = re.compile(r"^(?:a|all|总是|始终|以后都|永远)$")
+_DENY = re.compile(r"^(?:n|no|否|不|不行|拒绝|取消)$")
+#: Explicit slash forms, for a user who wants to be unambiguous.
+_APPROVE_SLASH = re.compile(r"^/(?:approve|yes)$")
+_APPROVE_ALWAYS_SLASH = re.compile(r"^/always$")
+_DENY_SLASH = re.compile(r"^/(?:deny|no)$")
+#: Leading punctuation a chat user adds around a one-word answer.
+_LEADING_NOISE = re.compile(r"^[!！。.\s]+")
 
 
-def parse_approval(text: str) -> bool | None:
-    """Interpret a chat message as an approval answer, or None if it is not one."""
-    if _APPROVE.match(text):
-        return True
-    if _DENY.match(text):
-        return False
+def parse_approval(text: str) -> tuple[bool, bool] | None:
+    """Interpret a chat message as an approval answer.
+
+    Returns ``(approved, remember)`` or None when the message is not an answer.
+
+    Remembering is a separate answer, not a side effect of approving: a user
+    who types "y" approved one command, and the grant that "always allow"
+    creates outlives the turn that asked for it.
+    """
+    stripped = text.strip()
+    if _APPROVE_SLASH.match(stripped.lower()):
+        return True, False
+    if _APPROVE_ALWAYS_SLASH.match(stripped.lower()):
+        return True, True
+    if _DENY_SLASH.match(stripped.lower()):
+        return False, False
+    normalized = _LEADING_NOISE.sub("", stripped.lower())
+    if not normalized:
+        return None
+    if _APPROVE.match(normalized):
+        return True, False
+    if _APPROVE_ALWAYS.match(normalized):
+        return True, True
+    if _DENY.match(normalized):
+        return False, False
     return None
+
+
+def describe_approval(command: str, description: str, rememberable: bool) -> str:
+    """Render the confirmation prompt a chat user answers."""
+    what = description or "危险命令"
+    lines = [
+        f"需要确认：{what}",
+        "",
+        "```",
+        command or what,
+        "```",
+        "",
+    ]
+    if rememberable:
+        # Nova's grant is keyed on the rule, the command family AND the inline
+        # script, so "always" covers this command, not every command like it.
+        lines.append("回复 y 允许 · n 拒绝 · a 始终允许本会话内这条命令")
+    else:
+        lines.append("回复 y 允许 · n 拒绝")
+    return "\n".join(lines)
 
 
 class NovaClient:
@@ -84,6 +133,17 @@ class NovaClient:
             )
 
 
+@dataclass
+class PendingApproval:
+    """An approval Nova is waiting on."""
+
+    request_id: str
+    session_id: str
+    command: str
+    description: str
+    rememberable: bool = True
+
+
 class GatewayCore:
     """Routes messages between adapters and Nova."""
 
@@ -99,7 +159,8 @@ class GatewayCore:
         self.allowed_senders = allowed_senders or set()
         self.segment_chars = segment_chars
         self._sessions: dict[str, str] = {}
-        self._pending: dict[str, str] = {}
+        self._pending: dict[str, PendingApproval] = {}
+        self._running: set[str] = set()
 
     def session_key(self, platform: str, sender: str) -> str:
         return f"{platform}:{sender}"
@@ -125,13 +186,47 @@ class GatewayCore:
 
         answer = parse_approval(msg.text)
         if answer is not None and key in self._pending:
-            await self.nova.approve(
-                self._sessions[key], self._pending.pop(key), answer, remember=True
+            await self._resolve_approval(key, answer, adapter, msg.sender)
+            return
+
+        if key in self._running:
+            # One turn per conversation: a turn waiting on an approval still
+            # holds the session, and a second one would interleave with it.
+            await adapter.send_text(
+                msg.sender, "当前还有一个任务在跑，本次请求没有执行。等它结束后再发一次。"
             )
-            await adapter.send_text(msg.sender, "已处理审批。" if answer else "已拒绝。")
             return
 
         await self._run_turn(platform, adapter, key, msg)
+
+    async def _resolve_approval(
+        self,
+        key: str,
+        answer: tuple[bool, bool],
+        adapter: PlatformAdapter,
+        sender: str,
+    ) -> None:
+        """Answer a pending approval and release the blocked Nova turn."""
+        pending = self._pending.pop(key)
+        approved, remember = answer
+        try:
+            await self.nova.approve(
+                pending.session_id,
+                pending.request_id,
+                approved,
+                remember=remember and pending.rememberable,
+            )
+        except Exception as exc:
+            log.warning("gateway: approve failed: %s", exc)
+            await adapter.send_text(sender, f"审批提交失败：{exc}")
+            return
+        if not approved:
+            verdict = "已拒绝，跳过该命令。"
+        elif remember and pending.rememberable:
+            verdict = "已允许，本会话内不再询问。"
+        else:
+            verdict = "已允许，继续执行。"
+        await adapter.send_text(sender, verdict)
 
     async def _transcribe(self, attachments: list) -> str:
         """Turn voice attachments into text, joined by newlines."""
@@ -159,6 +254,7 @@ class GatewayCore:
     ) -> None:
         session_id = self._sessions.get(key)
         buffer: list[str] = []
+        self._running.add(key)
         try:
             async for event in self.nova.stream_chat(
                 msg.text, session_id, agent_key=getattr(adapter, "agent_key", "main")
@@ -176,17 +272,46 @@ class GatewayCore:
                         delta = data.get("delta", "")
                     buffer.append(str(delta))
                 elif kind == "data-nova-approval-required":
-                    self._pending[key] = str(data.get("requestId", ""))
-                    prompt = data.get("command") or data.get("description") or "需要审批"
-                    log.info("gateway: approval required on %s for %s: %s", platform, msg.sender, prompt)
+                    pending = PendingApproval(
+                        request_id=str(data.get("requestId", "")),
+                        session_id=str(
+                            data.get("sessionId") or self._sessions.get(key, "")
+                        ),
+                        command=str(data.get("command", "")),
+                        description=str(data.get("description", "")),
+                        rememberable=bool(data.get("rememberable", True)),
+                    )
+                    if not pending.request_id:
+                        continue
+                    self._pending[key] = pending
+                    log.info(
+                        "gateway: approval required on %s for %s: %s",
+                        platform,
+                        msg.sender,
+                        pending.command,
+                    )
                     await adapter.send_text(
-                        msg.sender, f"需要审批：{prompt}\n回复 yes 或 no。"
+                        msg.sender,
+                        describe_approval(
+                            pending.command,
+                            pending.description,
+                            pending.rememberable,
+                        ),
                     )
                     buffer.clear()
+                elif kind == "data-nova-approval-resolved":
+                    # Nova resolved it on its own; a stale request id would
+                    # answer a question the user is no longer being asked.
+                    self._pending.pop(key, None)
         except Exception as exc:
             log.warning("gateway: turn failed on %s: %s", platform, exc)
             await adapter.send_text(msg.sender, "处理失败，请稍后重试。")
             return
+        finally:
+            # Released only when the turn is really over. A turn waiting on an
+            # approval still holds the session, so the key stays taken until
+            # the user answers.
+            self._running.discard(key)
 
         text = "".join(buffer).strip()
         if text:
