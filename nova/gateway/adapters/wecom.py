@@ -8,10 +8,10 @@ gateway skips it without affecting other adapters.
 
 from __future__ import annotations
 
-from nova.gateway.platform import MessageHandler
+from nova.gateway.platform import MessageHandler, PlatformAdapter
 
 
-class WeComAdapter:
+class WeComAdapter(PlatformAdapter):
     name = "wecom"
 
     def __init__(self, corp_id: str = "", secret: str = "", **options):

@@ -11,12 +11,12 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from nova.gateway.platform import InboundMessage, MessageHandler
+from nova.gateway.platform import InboundMessage, MessageHandler, PlatformAdapter
 
 log = logging.getLogger(__name__)
 
 
-class WeChatAdapter:
+class WeChatAdapter(PlatformAdapter):
     name = "wechat"
 
     def __init__(self, token: str = "", **options):

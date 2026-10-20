@@ -5,14 +5,14 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from nova.gateway.platform import InboundMessage, MessageHandler
+from nova.gateway.platform import InboundMessage, MessageHandler, PlatformAdapter
 
 log = logging.getLogger(__name__)
 
 _API = "https://api.telegram.org"
 
 
-class TelegramAdapter:
+class TelegramAdapter(PlatformAdapter):
     name = "telegram"
 
     def __init__(self, token: str, *, poll_timeout: int = 30):

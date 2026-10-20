@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from nova.gateway.platform import InboundMessage, MessageHandler
+from nova.gateway.platform import InboundMessage, MessageHandler, PlatformAdapter
 
 log = logging.getLogger(__name__)
 
 
-class FeishuAdapter:
+class FeishuAdapter(PlatformAdapter):
     name = "feishu"
 
     def __init__(self, app_id: str, app_secret: str):

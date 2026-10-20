@@ -6,10 +6,10 @@ structural placeholder: enabling it raises at start and the gateway skips it.
 
 from __future__ import annotations
 
-from nova.gateway.platform import MessageHandler
+from nova.gateway.platform import MessageHandler, PlatformAdapter
 
 
-class YuanbaoAdapter:
+class YuanbaoAdapter(PlatformAdapter):
     name = "yuanbao"
 
     def __init__(self, token: str = "", **options):
