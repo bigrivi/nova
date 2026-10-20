@@ -131,7 +131,9 @@ class GatewayCore:
         session_id = self._sessions.get(key)
         buffer: list[str] = []
         try:
-            async for event in self.nova.stream_chat(msg.text, session_id):
+            async for event in self.nova.stream_chat(
+                msg.text, session_id, agent_key=getattr(adapter, "agent_key", "main")
+            ):
                 kind = event.get("type")
                 data = event.get("data") or {}
                 if kind == "data-nova-session":

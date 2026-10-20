@@ -14,9 +14,10 @@ from nova.gateway.platform import MessageHandler, PlatformAdapter
 class WeComAdapter(PlatformAdapter):
     name = "wecom"
 
-    def __init__(self, corp_id: str = "", secret: str = "", **options):
+    def __init__(self, corp_id: str = "", secret: str = "", agent_key: str = "main", **options):
         self.corp_id = corp_id
         self.secret = secret
+        self.agent_key = agent_key
         self.options = options
         self._handler: MessageHandler | None = None
 

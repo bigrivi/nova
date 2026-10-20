@@ -56,13 +56,18 @@ def build_adapters(config: GatewayConfig) -> dict[str, PlatformAdapter]:
         cfg = config.platform(name)
         if cfg is None:
             continue
-        missing = [key for key in _REQUIRED.get(name, ()) if not cfg.options.get(key)]
+        # Strip an instance suffix (qq_2 -> qq) to find the builder.
+        base = name.split("_")[0] if "_" in name else name
+        missing = [key for key in _REQUIRED.get(base, ()) if not cfg.options.get(key)]
         if missing:
             log.warning("gateway: %s disabled; missing %s", name, ", ".join(missing))
             continue
-        builder = _BUILDERS.get(name)
+        builder = _BUILDERS.get(base)
         if builder is None:
             log.warning("gateway: unknown platform %s", name)
             continue
-        adapters[name] = builder(cfg.options)
+        adapter = builder(cfg.options)
+        adapter.name = name
+        adapter.agent_key = cfg.options.get("agent_key", "main")
+        adapters[name] = adapter
     return adapters

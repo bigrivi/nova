@@ -15,8 +15,9 @@ _API = "https://api.telegram.org"
 class TelegramAdapter(PlatformAdapter):
     name = "telegram"
 
-    def __init__(self, token: str, *, poll_timeout: int = 30):
+    def __init__(self, token: str, *, agent_key: str = "main", poll_timeout: int = 30):
         self.token = token
+        self.agent_key = agent_key
         self.poll_timeout = poll_timeout
         self._handler: MessageHandler | None = None
         self._offset = 0

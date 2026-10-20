@@ -19,8 +19,9 @@ log = logging.getLogger(__name__)
 class WeChatAdapter(PlatformAdapter):
     name = "wechat"
 
-    def __init__(self, token: str = "", **options):
+    def __init__(self, token: str = "", agent_key: str = "main", **options):
         self.token = token
+        self.agent_key = agent_key
         self.options = options
         self._handler: MessageHandler | None = None
         self._task: asyncio.Task | None = None

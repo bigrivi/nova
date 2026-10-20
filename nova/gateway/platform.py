@@ -28,6 +28,7 @@ class PlatformAdapter(Protocol):
     """A messaging platform the gateway can drive Nova from."""
 
     name: str
+    agent_key: str
 
     async def start(self) -> None:
         """Begin receiving messages. Return once the poll loop is running."""

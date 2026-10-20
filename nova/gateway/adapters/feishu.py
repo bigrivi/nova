@@ -13,9 +13,10 @@ log = logging.getLogger(__name__)
 class FeishuAdapter(PlatformAdapter):
     name = "feishu"
 
-    def __init__(self, app_id: str, app_secret: str):
+    def __init__(self, app_id: str, app_secret: str, agent_key: str = "main"):
         self.app_id = app_id
         self.app_secret = app_secret
+        self.agent_key = agent_key
         self._handler: MessageHandler | None = None
         self._task: asyncio.Task | None = None
         self._tasks: set = set()

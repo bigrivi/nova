@@ -13,9 +13,10 @@ log = logging.getLogger(__name__)
 class QQAdapter(PlatformAdapter):
     name = "qq"
 
-    def __init__(self, app_id: str, token: str, **options):
+    def __init__(self, app_id: str, token: str, agent_key: str = "main", **options):
         self.app_id = app_id
         self.token = token
+        self.agent_key = agent_key
         self.options = options
         self._handler: MessageHandler | None = None
         self._task: asyncio.Task | None = None

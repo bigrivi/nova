@@ -13,9 +13,10 @@ log = logging.getLogger(__name__)
 class DingTalkAdapter(PlatformAdapter):
     name = "dingtalk"
 
-    def __init__(self, app_key: str, app_secret: str):
+    def __init__(self, app_key: str, app_secret: str, agent_key: str = "main"):
         self.app_key = app_key
         self.app_secret = app_secret
+        self.agent_key = agent_key
         self._handler: MessageHandler | None = None
         self._task: asyncio.Task | None = None
         self._client = None

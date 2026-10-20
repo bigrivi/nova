@@ -58,15 +58,27 @@ def load_config(path: Path | str | None = None) -> GatewayConfig:
     raw_platforms = raw.get("platforms")
     if isinstance(raw_platforms, dict):
         for name, value in raw_platforms.items():
-            if not isinstance(value, dict):
-                continue
-            options = {
-                str(k): str(v) for k, v in value.items() if k != "enabled"
-            }
-            platforms[str(name)] = PlatformConfig(
-                enabled=bool(value.get("enabled", True)),
-                options=options,
-            )
+            if isinstance(value, list):
+                # Multiple instances of the same platform (e.g. several QQ bots).
+                for index, item in enumerate(value):
+                    if not isinstance(item, dict):
+                        continue
+                    suffix = "" if index == 0 else f"_{index + 1}"
+                    options = {
+                        str(k): str(v) for k, v in item.items() if k != "enabled"
+                    }
+                    platforms[f"{name}{suffix}"] = PlatformConfig(
+                        enabled=bool(item.get("enabled", True)),
+                        options=options,
+                    )
+            elif isinstance(value, dict):
+                options = {
+                    str(k): str(v) for k, v in value.items() if k != "enabled"
+                }
+                platforms[str(name)] = PlatformConfig(
+                    enabled=bool(value.get("enabled", True)),
+                    options=options,
+                )
 
     # Environment fallbacks: only fill a missing option, never overwrite config.
     env_fallbacks = {
