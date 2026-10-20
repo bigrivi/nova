@@ -106,6 +106,9 @@ class GatewayCore:
     async def handle_inbound(self, platform: str, msg: InboundMessage) -> None:
         adapter = self.adapters[platform]
         key = self.session_key(platform, msg.sender)
+        log.info(
+            "gateway: inbound on %s from %s: %s", platform, msg.sender, msg.text[:120]
+        )
 
         if self.allowed_senders and msg.sender not in self.allowed_senders:
             log.warning("gateway: rejected sender on %s", platform)
@@ -144,6 +147,7 @@ class GatewayCore:
                 elif kind == "data-nova-approval-required":
                     self._pending[key] = str(data.get("requestId", ""))
                     prompt = data.get("command") or data.get("description") or "需要审批"
+                    log.info("gateway: approval required on %s for %s: %s", platform, msg.sender, prompt)
                     await adapter.send_text(
                         msg.sender, f"需要审批：{prompt}\n回复 yes 或 no。"
                     )
@@ -155,6 +159,7 @@ class GatewayCore:
 
         text = "".join(buffer).strip()
         if text:
+            log.info("gateway: reply on %s to %s (%d chars)", platform, msg.sender, len(text))
             await self._deliver(adapter, msg.sender, text)
 
     async def _deliver(
