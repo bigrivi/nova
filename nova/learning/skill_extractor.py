@@ -1,8 +1,16 @@
-"""Skill extraction and self-improvement from completed turns."""
+"""Review-driven skill extraction and self-improvement.
+
+Modelled on Hermes's background review: after a turn the model is asked
+whether anything is worth persisting, and is steered to update an existing
+skill rather than add a new one. The turn's tool-call count only decides
+whether the review is worth paying for -- it never forces a write.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,8 +33,6 @@ def _jaccard(left: set[str], right: set[str]) -> float:
 
 def _strip_version(content: str) -> str:
     """Drop the ``version: N`` marker so revisions compare on their body."""
-    import re
-
     return re.sub(r"^version:\s*\d+\s*", "", content, flags=re.MULTILINE).lstrip()
 
 
@@ -40,9 +46,44 @@ class TurnContext:
 
 @dataclass
 class SkillProposal:
+    action: str  # "create" | "update"
     name: str
     content: str
-    revision: str = ""
+    references: dict[str, str] | None = None
+
+
+_REVIEW_PROMPT = """\
+Review the conversation above and update the skill library.
+
+A no-op is a legitimate result: if nothing generalizable happened, reply
+{{"action": "none"}}.
+
+Signals that warrant action:
+- the user corrected your style, workflow, or sequence of steps;
+- a non-trivial technique, fix, workaround, or debugging path emerged;
+- a skill used this session turned out to be wrong or missing a step.
+
+Prefer, in order:
+1. UPDATE an existing skill that covers this territory.
+2. ADD a reference file under an existing umbrella skill.
+3. CREATE a new class-level skill only when nothing existing fits.
+
+Keep the library class-level: one broad skill with a few references, not a
+flat list of one-task skills.
+
+Existing skills:
+{existing}
+
+Reply with ONLY JSON:
+- no-op: {{"action": "none"}}
+- update: {{"action": "update", "name": "<existing name>", "content": "<full revised SKILL.md>"}}
+- create: {{"action": "create", "name": "<kebab-case>", "content": "<full SKILL.md>", "references": {{"<topic>.md": "<content>"}}}}
+
+Example: {{"action": "update", "name": "csv-analysis", "content": "# CSV Analysis\\n..."}}
+
+Conversation:
+{transcript}
+"""
 
 
 class SkillExtractor:
@@ -60,109 +101,105 @@ class SkillExtractor:
         transcript = "\n".join(
             f"{m.get('role', '')}: {m.get('content', '')}" for m in turn.messages
         )
-        existing = self._existing_names()
-        existing_hint = (
-            "Existing skills: " + ", ".join(existing) + ". "
-            "If this work is the same skill as one of them, return that exact "
-            "name and the full revised content (it will be merged). "
-            "Otherwise return a new kebab-case name. "
-            if existing
-            else ""
+        prompt = _REVIEW_PROMPT.format(
+            existing=self._existing_summary(), transcript=transcript
         )
         try:
-            chunks = []
-            final_content = ""
-            async for ev in self.llm.chat_stream(
-                [{"role": "user", "content":
-                  "Extract a reusable skill from this transcript. "
-                  + existing_hint +
-                  "Reply with ONLY a JSON object, no markdown, with keys 'name' (kebab-case) "
-                  "and 'content' (the full skill markdown). Example: "
-                  '{"name": "csv-sales", "content": "# CSV Sales\\nSteps..."}\n\n' + transcript}],
-                model=self.model or "gpt-4o",
-                session_id=turn.session_id,
-                reasoning_effort="high",
-            ):
-                if type(ev).__name__ == "TextDelta" and getattr(ev, "content", None):
-                    chunks.append(ev.content)
-                if type(ev).__name__ == "Done":
-                    final_content = getattr(ev, "content", "") or ""
-                    break
-                if type(ev).__name__ == "Error":
-                    raise RuntimeError(getattr(ev, "message", "stream error"))
-            raw = ("".join(chunks) or final_content).strip()
-            # Strip markdown code fences if present
-            if raw.startswith("```"):
-                raw = raw.strip("`").strip()
-                if raw.lower().startswith("json"):
-                    raw = raw[4:].strip()
-            import json
-            try:
-                proposal = json.loads(raw)
-            except json.JSONDecodeError:
-                # Fallback: try to find a JSON object in the text
-                import re
-                m = re.search(r"\{.*\}", raw, re.DOTALL)
-                if m:
-                    proposal = json.loads(m.group(0))
-                else:
-                    raise
+            raw = await self._complete(prompt, turn.session_id)
+            proposal = _parse_json(raw)
         except Exception as e:
-            log.warning("skill extraction failed: %s", e)
+            log.warning("skill review failed: %s", e)
             return None
         if not proposal or not isinstance(proposal, dict):
             return None
-        name = proposal.get("name")
-        content = proposal.get("content")
+        action = proposal.get("action")
+        if action == "none":
+            return None
+        name = (proposal.get("name") or "").strip()
+        content = proposal.get("content") or ""
         if not name or not content:
             return None
-        # Reuse an existing skill when it overlaps strongly, to avoid skill
-        # proliferation from slightly different LLM-chosen names. An almost
-        # identical proposal is a no-op: rewriting it only bumps the version.
-        similar = self._find_similar(name, content)
-        if similar is not None:
-            existing = (self.skills_dir / similar / "SKILL.md").read_text(
-                encoding="utf-8"
-            )
-            if (
-                _jaccard(
-                    _tokens(_strip_version(content)[:400]),
-                    _tokens(_strip_version(existing)[:400]),
-                )
-                >= 0.85
-            ):
-                return None
-            name = similar
+
+        if action == "create":
+            # A colliding name is an update, never a second skill.
+            resolved = self._find_similar(name, content)
+            if resolved is not None:
+                action, name = "update", resolved
+            elif (self.skills_dir / name / "SKILL.md").exists():
+                action = "update"
+
         skill_dir = self.skills_dir / name
         skill_dir.mkdir(parents=True, exist_ok=True)
         skill_path = skill_dir / "SKILL.md"
-        if skill_path.exists():
-            # Same skill, new turn: revise it rather than adding a near-duplicate.
-            self._write_revision(skill_path, content)
+        if action == "update" or skill_path.exists():
+            existing = skill_path.read_text(encoding="utf-8") if skill_path.exists() else ""
+            if existing and _jaccard(
+                _tokens(_strip_version(content)[:400]),
+                _tokens(_strip_version(existing)[:400]),
+            ) >= 0.85:
+                return None  # nothing new to record
+            if existing:
+                self._write_revision(skill_path, content)
+            else:
+                skill_path.write_text(f"version: 1\n\n{content.strip()}\n", encoding="utf-8")
         else:
-            skill_path.write_text(
-                f"version: 1\n\n{content.strip()}\n", encoding="utf-8"
-            )
+            skill_path.write_text(f"version: 1\n\n{content.strip()}\n", encoding="utf-8")
+
+        references = proposal.get("references")
+        if isinstance(references, dict):
+            self._write_references(skill_dir, references)
+
         return SkillProposal(
-            name=name, content=content, revision=proposal.get("revision", "")
+            action="update" if action == "update" else "create",
+            name=name,
+            content=content,
+            references=references if isinstance(references, dict) else None,
         )
 
-    def _existing_names(self) -> list[str]:
-        """Names of the skills already installed, for reuse by the extractor."""
+    async def _complete(self, prompt: str, session_id: str) -> str:
+        chunks: list[str] = []
+        final = ""
+        async for ev in self.llm.chat_stream(
+            [{"role": "user", "content": prompt}],
+            model=self.model or "gpt-4o",
+            session_id=session_id,
+            reasoning_effort="high",
+        ):
+            if type(ev).__name__ == "TextDelta" and getattr(ev, "content", None):
+                chunks.append(ev.content)
+            if type(ev).__name__ == "Done":
+                final = getattr(ev, "content", "") or ""
+                break
+            if type(ev).__name__ == "Error":
+                raise RuntimeError(getattr(ev, "message", "stream error"))
+        return "".join(chunks) or final
+
+    def _existing_summary(self) -> str:
+        """Name plus first line of each installed skill, for the review prompt."""
         if not self.skills_dir.exists():
-            return []
-        return sorted(
-            p.name for p in self.skills_dir.iterdir() if (p / "SKILL.md").exists()
-        )
+            return "- (none)"
+        lines = []
+        for path in sorted(self.skills_dir.iterdir()):
+            skill_md = path / "SKILL.md"
+            if not skill_md.exists():
+                continue
+            try:
+                body = skill_md.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            description = next(
+                (line.strip("# ").strip() for line in _strip_version(body).splitlines() if line.strip()),
+                "",
+            )
+            lines.append(f"- {path.name}: {description[:120]}")
+        return "\n".join(lines) if lines else "- (none)"
 
-    def _find_similar(self, name: str, content: str = "") -> str | None:
+    def _find_similar(self, name: str, content: str) -> str | None:
         """Return an existing skill that overlaps the proposed one, if any.
 
-        Two signals, because names alone are unreliable: the LLM gives the
-        same workflow a different name each time, while the body keeps the
-        same vocabulary. Name tokens and the first 400 characters of content
-        are each compared with Jaccard similarity; either signal crossing
-        ``_SIMILARITY_THRESHOLD`` is enough to merge.
+        Names alone are unreliable -- the model names the same workflow
+        differently each run -- so content is a second signal. Either
+        crossing ``_SIMILARITY_THRESHOLD`` is enough to merge.
         """
         if not self.skills_dir.exists():
             return None
@@ -171,34 +208,32 @@ class SkillExtractor:
             return None
         name_tokens = _tokens(name)
         content_tokens = _tokens(content[:400])
-        best = None
-        best_score = 0.0
+        best, best_score = None, 0.0
         for cand in existing:
-            cand_tokens = _tokens(cand.name)
-            score = _jaccard(name_tokens, cand_tokens)
+            score = _jaccard(name_tokens, _tokens(cand.name))
             try:
                 cand_content = (cand / "SKILL.md").read_text(encoding="utf-8")[:400]
             except OSError:
                 cand_content = ""
-            content_score = _jaccard(content_tokens, _tokens(cand_content))
-            score = max(score, content_score)
+            score = max(score, _jaccard(content_tokens, _tokens(cand_content)))
             if score > best_score:
-                best_score = score
-                best = cand.name
-        if best is not None and best_score >= self._SIMILARITY_THRESHOLD:
+                best, best_score = cand.name, score
+        if best is not None and best_score >= 0.35:
             return best
         return None
 
-    #: Jaccard threshold above which a proposal is treated as the same skill.
-    #: Below it, two data tasks may share words ("csv") without being one skill.
-    _SIMILARITY_THRESHOLD = 0.35
+    def _write_references(self, skill_dir: Path, references: dict) -> None:
+        ref_dir = skill_dir / "references"
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        for topic, body in references.items():
+            if not isinstance(topic, str) or not isinstance(body, str):
+                continue
+            safe = topic.replace("/", "_").replace("\\", "_")
+            (ref_dir / safe).write_text(body, encoding="utf-8")
 
     def _write_revision(self, skill_path: Path, content: str) -> None:
-        """Replace a skill's body, bumping its version marker."""
         previous = skill_path.read_text(encoding="utf-8")
-        skill_path.write_text(
-            self._with_version(content, previous), encoding="utf-8"
-        )
+        skill_path.write_text(self._with_version(content, previous), encoding="utf-8")
 
     async def improve(self, skill_name: str, correction: str, session_id: str = "") -> None:
         skill_path = self.skills_dir / skill_name / "SKILL.md"
@@ -208,39 +243,37 @@ class SkillExtractor:
             current = skill_path.read_text(encoding="utf-8")
             if self.llm is None:
                 return
-            chunks = []
-            final = ""
-            async for ev in self.llm.chat_stream(
-                [{"role": "user", "content": f"Revise this skill based on correction: {correction}\n\n{current}"}],
-                model=self.model or "gpt-4o",
-                session_id=session_id or skill_name,
-                reasoning_effort="high",
-            ):
-                if type(ev).__name__ == "TextDelta" and getattr(ev, "content", None):
-                    chunks.append(ev.content)
-                if type(ev).__name__ == "Done":
-                    final = getattr(ev, "content", "") or ""
-                    break
-                if type(ev).__name__ == "Error":
-                    raise RuntimeError(getattr(ev, "message", "stream error"))
-            revised = ("".join(chunks) or final).strip()
-            if not revised:
-                return
-            skill_path.write_text(self._with_version(revised, current), encoding="utf-8")
+            revised = await self._complete(
+                f"Revise this skill based on correction: {correction}\n\n{current}",
+                session_id or skill_name,
+            )
+            if revised.strip():
+                skill_path.write_text(self._with_version(revised, current), encoding="utf-8")
         except Exception as e:
             log.warning("skill improvement failed: %s", e)
 
     @staticmethod
     def _with_version(content: str, previous: str) -> str:
-        """Stamp a revision marker, bumping the version when there was one.
-
-        The marker is what makes an improvement visible: a skill whose file is
-        rewritten in place looks unchanged to anyone reading it later, so the
-        version is the only record that the skill was revised.
-        """
-        import re
-
+        """Stamp a revision marker, bumping the version when there was one."""
         old = re.search(r"^version:\s*(\d+)\s*$", previous, re.MULTILINE)
         version = (int(old.group(1)) + 1) if old else 2
         body = re.sub(r"^version:\s*\d+\s*\n?", "", content).strip()
         return f"version: {version}\n\n{body}\n"
+
+
+def _parse_json(raw: str) -> dict | None:
+    raw = (raw or "").strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`").strip()
+        if raw.lower().startswith("json"):
+            raw = raw[4:].strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                return None
+        return None
