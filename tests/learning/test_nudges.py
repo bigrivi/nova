@@ -1,5 +1,4 @@
-import pytest
-from nova.learning.nudges import should_nudge, build_nudge_reminder
+from nova.learning.nudges import build_nudge_reminder, should_nudge
 
 
 def test_should_nudge_every_n_turns():

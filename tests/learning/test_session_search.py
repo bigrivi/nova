@@ -1,5 +1,6 @@
+
 import pytest
-import asyncio
+
 from nova.learning.session_search import SessionSearch
 
 
@@ -52,7 +53,7 @@ async def test_summarize_with_mock_llm(tmp_path):
     hits = await ss.search("CSV")
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import TextDelta, Done
+            from nova.llm.provider import Done, TextDelta
             yield TextDelta(content="Summary: CSV sales report found.")
             yield Done(content="Summary: CSV sales report found.")
     result = await ss.summarize(hits, "CSV", MockLLM())
@@ -66,7 +67,7 @@ async def test_summarize_empty_hits(tmp_path):
     await ss.connect()
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import TextDelta, Done
+            from nova.llm.provider import Done, TextDelta
             yield TextDelta(content="no")
             yield Done(content="no")
     result = await ss.summarize([], "q", MockLLM())

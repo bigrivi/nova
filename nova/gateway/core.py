@@ -143,7 +143,12 @@ class GatewayCore:
                     self._sessions[key] = str(data.get("sessionId", ""))
                     session_id = self._sessions[key]
                 elif kind == "text-delta":
-                    buffer.append(str(data.get("delta", "")))
+                    # The text delta sits at the top level of the frame, not
+                    # inside "data" like the data-nova-* frames.
+                    delta = event.get("delta")
+                    if delta is None:
+                        delta = data.get("delta", "")
+                    buffer.append(str(delta))
                 elif kind == "data-nova-approval-required":
                     self._pending[key] = str(data.get("requestId", ""))
                     prompt = data.get("command") or data.get("description") or "需要审批"

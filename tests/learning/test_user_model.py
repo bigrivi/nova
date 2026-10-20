@@ -1,4 +1,5 @@
 import pytest
+
 from nova.learning.user_model import UserModel, UserProfile
 
 

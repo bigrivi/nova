@@ -146,3 +146,21 @@ async def test_long_reply_is_segmented():
     core = GatewayCore(nova, {"telegram": adapter}, segment_chars=4)
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="task"))
     assert [len(t) for _, t in adapter.sent] == [4, 4, 2]
+
+
+@pytest.mark.asyncio
+async def test_text_delta_is_read_from_the_top_level():
+    """Nova's text-delta frame carries delta outside "data"."""
+    adapter = FakeAdapter("telegram")
+    nova = FakeNova(
+        {
+            "task": [
+                {"type": "data-nova-session", "data": {"sessionId": "s1"}},
+                {"type": "text-delta", "id": "text_1", "delta": "hel"},
+                {"type": "text-delta", "id": "text_1", "delta": "lo"},
+            ]
+        }
+    )
+    core = GatewayCore(nova, {"telegram": adapter})
+    await core.handle_inbound("telegram", InboundMessage(sender="u1", text="task"))
+    assert adapter.sent == [("u1", "hello")]

@@ -1,9 +1,11 @@
-import pytest
 import asyncio
 import time
+
+import pytest
+
 from nova.learning.loop import LearningLoop
-from nova.settings import LearningSettings
 from nova.learning.skill_extractor import TurnContext
+from nova.settings import LearningSettings
 
 
 @pytest.mark.asyncio
@@ -90,8 +92,8 @@ async def test_loop_is_shared_across_agents(tmp_path):
     A new Agent is built per request, so a loop held on the agent would
     reset its turn counter every turn and never reach the nudge interval.
     """
-    from nova.learning.loop import get_learning_loop
     import nova.learning.loop as loop_module
+    from nova.learning.loop import get_learning_loop
 
     loop_module._loops.clear()
     settings = LearningSettings(enabled=True, nudge_interval_turns=2)
