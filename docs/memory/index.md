@@ -39,6 +39,24 @@ Every N turns, Nova reviews the conversation and automatically extracts
 important information as memories. This happens in the background without
 interrupting your workflow.
 
+## Learning Loop (opt-in)
+
+Nova can optionally learn from experience across sessions. When enabled
+(`learning.enabled: true` in `config.json`), it runs a background loop that:
+
+- **Indexes sessions** for full-text search (FTS5), so Nova can recall what
+  was discussed in past conversations.
+- **Nudges** the agent to persist durable facts every N turns.
+- **Extracts skills** after sufficiently complex tasks, reusing or improving
+  existing skills rather than creating duplicates.
+- **Builds a user model** that deepens across sessions and is injected into
+  the system prompt.
+
+The loop is off by default except session search. It never blocks the main
+turn: all work runs in the background and failures are isolated.
+
 ## Configuration
 
 Memory review frequency is configurable via `memory_review_interval` in settings.
+The learning loop is configured via the `learning` block in `config.json`
+(see [Settings](../configuration/settings.md)).

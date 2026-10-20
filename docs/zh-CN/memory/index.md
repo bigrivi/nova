@@ -33,6 +33,19 @@ What do you know about me?
 每过 N 轮，Nova 会回顾一遍对话，自动把重要信息提取成记忆。这在后台发生，不打断你的
 工作流。
 
+## 学习循环（可选）
+
+Nova 可以可选地从经验中学习。启用时（`config.json` 里 `learning.enabled: true`），
+后台循环会：
+
+- **索引会话**用于全文搜索（FTS5），以便 Nova 召回过去对话的内容。
+- **定期 nudges**，每 N 轮提示 agent 持久化持久事实。
+- **复杂任务后提取技能**，优先复用/改进已有技能而非新建。
+- **建立用户模型**，跨会话逐步加深并注入 system prompt。
+
+循环默认关闭（除会话搜索外）。它绝不阻塞主轮次：所有工作在后台执行，失败被隔离。
+
 ## 配置
 
-记忆回顾频率由设置里的 `memory_review_interval` 控制。
+记忆回顾频率由设置里的 `memory_review_interval` 控制。学习循环通过 `config.json` 的
+`learning` 块配置（见 [设置](../configuration/settings.md)）。
