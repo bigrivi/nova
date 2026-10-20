@@ -387,6 +387,11 @@ class Agent:
 
         run_group_id = uuid.uuid4().hex
         turn_count = 0
+        # The learning loop reviews the whole user request, not each tool
+        # round: one request may run several model turns, and reviewing each
+        # would extract the same skill several times.
+        request_tool_calls = 0
+        request_messages_before = len(session_messages)
         for _ in range(self.config.max_iterations):
             turn_count += 1
             if turn_count > 1:
@@ -428,7 +433,6 @@ class Agent:
             # the skill extractor asks "was this turn complex", and a session
             # total answers that question about every turn before it.
             turn_tool_calls = 0
-            messages_before_turn = len(session_messages)
             async for event, data in self._run_turn(
                 turn_count,
                 tool_schemas,
@@ -472,22 +476,7 @@ class Agent:
             await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
             yield AgentEvent.TURN_END, {"turn": turn_count}
 
-            # Closed learning loop: schedule background work (non-blocking).
-            if self._learning_loop is not None:
-                try:
-                    msgs = await self.session.get_messages()
-                    _sess = self.session.get_current_session()
-                    session_id = getattr(_sess, "id", "") or ""
-                    user_id = getattr(_sess, "user_id", "") or self.agent_key
-                    await self._schedule_learning_loop(
-                        turn_count,
-                        turn_tool_calls,
-                        [m for m in msgs[messages_before_turn:]],
-                        session_id,
-                        user_id,
-                    )
-                except Exception as e:
-                    log.warning("learning loop scheduling failed: %s", e)
+            request_tool_calls += turn_tool_calls
 
             if done_payload is not None:
                 reason = (
@@ -498,6 +487,9 @@ class Agent:
                 log.info("[Session %s] Done reason=%s", session_id, reason)
                 if reason in ("completed", "requires_input"):
                     self.background._maybe_schedule_memory_review()
+                await self.background.schedule_request_learning(
+                    request_tool_calls, request_messages_before
+                )
                 await self._emit(AgentEvent.DONE, done_payload)
                 yield AgentEvent.DONE, done_payload
                 return

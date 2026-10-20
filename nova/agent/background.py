@@ -89,15 +89,36 @@ class AgentBackground:
             ),
         ).run()
 
+    async def schedule_request_learning(
+        self, tool_call_count: int, messages_before: int
+    ) -> None:
+        """Review one finished user request with the learning loop.
+
+        Called once per request, after the agent loop ends, so a request that
+        ran several tool rounds is reviewed once instead of once per round.
+        """
+        if self.ctx.learning_loop is None:
+            return
+        log.info("learning: reviewing request tool_calls=%d", tool_call_count)
+        try:
+            msgs = await self.ctx.session.get_messages()
+            _sess = self.ctx.session.get_current_session()
+            session_id = getattr(_sess, "id", "") or ""
+            user_id = getattr(_sess, "user_id", "") or self.ctx.agent_key
+            await self._schedule_learning_loop(
+                tool_call_count, msgs[messages_before:], session_id, user_id
+            )
+        except Exception as e:
+            log.warning("learning loop scheduling failed: %s", e)
+
     async def _schedule_learning_loop(
         self,
-        turn_count: int,
-        turn_tool_calls: int,
+        tool_call_count: int,
         msgs: list,
         session_id: str,
         user_id: str,
     ) -> None:
-        loop = getattr(self, "_learning_loop", None)
+        loop = self.ctx.learning_loop
         if loop is None:
             return
         try:
@@ -106,7 +127,7 @@ class AgentBackground:
             ctx = TurnContext(
                 session_id=session_id,
                 messages=[{"role": m.role, "content": m.content} for m in msgs],
-                tool_call_count=turn_tool_calls,
+                tool_call_count=tool_call_count,
                 user_id=user_id,
             )
             task = asyncio.create_task(loop.on_turn_completed(ctx))

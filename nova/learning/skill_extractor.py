@@ -111,8 +111,10 @@ class SkillExtractor:
             log.warning("skill review failed: %s", e)
             return None
         if not proposal or not isinstance(proposal, dict):
+            log.warning("skill review returned unparsable output: %r", raw[:300])
             return None
         action = proposal.get("action")
+        log.info("skill review action=%s name=%s", action, proposal.get("name"))
         if action == "none":
             return None
         name = (proposal.get("name") or "").strip()
