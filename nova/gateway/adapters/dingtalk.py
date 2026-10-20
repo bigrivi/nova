@@ -60,12 +60,25 @@ class DingTalkAdapter:
             self._task = None
 
     async def send_text(self, sender: str, text: str) -> None:
-        # DingTalk stream replies need the callback's conversation context,
-        # which the SDK handler holds. Wiring the core's deferred reply back
-        # into it is a follow-up; see the adapter contract in docs.
-        raise NotImplementedError(
-            "DingTalk replies are not wired to the stream callback yet"
-        )
+        # DingTalk stream bots can reply proactively via the open API.
+        import httpx
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            token_resp = await client.post(
+                "https://api.dingtalk.com/v1.0/oauth2/accessToken",
+                json={"appKey": self.app_key, "appSecret": self.app_secret},
+            )
+            token = token_resp.json().get("accessToken", "")
+            await client.post(
+                "https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend",
+                headers={"x-acs-dingtalk-access-token": token},
+                json={
+                    "robotCode": self.app_key,
+                    "userIds": [sender],
+                    "msgKey": "sampleText",
+                    "msgParam": __import__("json").dumps({"content": text}),
+                },
+            )
 
     async def send_file(self, sender: str, path: str) -> None:
         raise NotImplementedError("DingTalk file sending is not implemented yet")

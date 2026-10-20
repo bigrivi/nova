@@ -59,9 +59,19 @@ class QQAdapter:
             self._task = None
 
     async def send_text(self, sender: str, text: str) -> None:
-        if self._client is not None:
-            await self._client.api.post_group_message(
-                group_openid=sender, msg_type=0, content=text
+        import httpx
+
+        # QQ bot access token via app credentials.
+        async with httpx.AsyncClient(timeout=30) as client:
+            token_resp = await client.post(
+                "https://bots.qq.com/app/getAppAccessToken",
+                json={"appId": self.app_id, "clientSecret": self.token},
+            )
+            token = token_resp.json().get("access_token", "")
+            await client.post(
+                f"https://api.sgroup.qq.com/v2/users/{sender}/messages",
+                headers={"Authorization": f"QQBot {token}"},
+                json={"content": text, "msg_type": 0},
             )
 
     async def send_file(self, sender: str, path: str) -> None:
