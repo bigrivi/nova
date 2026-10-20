@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 
 from nova.gateway.platform import InboundMessage, MessageHandler, PlatformAdapter
 
@@ -68,14 +69,20 @@ class QQAdapter(PlatformAdapter):
                     )
                     return
                 adapter._last_message[sender] = message
+                attachments = await adapter._collect_voice(message)
                 log.info(
-                    "qq: inbound %s from %s: %r",
+                    "qq: inbound %s from %s: %r (voice=%d)",
                     type(message).__name__,
                     sender,
                     str(message.content or "")[:120],
+                    len(attachments),
                 )
                 await adapter._handler(
-                    InboundMessage(sender=sender, text=str(message.content or ""))
+                    InboundMessage(
+                        sender=sender,
+                        text=str(message.content or ""),
+                        attachments=attachments or None,
+                    )
                 )
 
             async def on_message_create(self, message):
@@ -114,6 +121,24 @@ class QQAdapter(PlatformAdapter):
             except asyncio.CancelledError:
                 pass
             self._task = None
+
+    async def _collect_voice(self, message) -> list[dict]:
+        """Download voice attachments so the core can transcribe them."""
+        from nova.gateway.voice import download_attachment, is_audio_attachment
+
+        attachments = []
+        for attachment in getattr(message, "attachments", None) or []:
+            if not is_audio_attachment(attachment):
+                continue
+            url = str(getattr(attachment, "url", "") or "")
+            filename = str(getattr(attachment, "filename", "") or "")
+            suffix = Path(filename).suffix or ".silk"
+            path = await download_attachment(url, suffix)
+            if path is None:
+                continue
+            attachments.append({"kind": "voice", "path": str(path)})
+            log.info("qq: downloaded voice %s (%d bytes)", path, path.stat().st_size)
+        return attachments
 
     async def send_text(self, sender: str, text: str) -> None:
         message = self._last_message.get(sender)

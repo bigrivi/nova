@@ -483,3 +483,43 @@ def test_create_recorder_picks_platform_implementation(monkeypatch) -> None:
     )
     monkeypatch.setattr(sys, "platform", "darwin")
     assert isinstance(recorder_module.create_recorder(), recorder_module.MacRecorder)
+
+
+def test_transcribe_route_accepts_a_raw_body(monkeypatch, tmp_path) -> None:
+    """The upload route hands the file to the provider and returns the text."""
+    from fastapi.testclient import TestClient
+
+    import nova.speech.client as client_module
+
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "nova-voice-upload"))
+    settings = _settings_with_key(monkeypatch, tmp_path)
+    transport = _FakeTransport(httpx.Response(200, json={"text": "你好"}))
+    real_client = httpx.AsyncClient
+
+    class _SpyClient(real_client):  # type: ignore[misc]
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(client_module.httpx, "AsyncClient", _SpyClient)
+
+    app = create_app(settings=settings)
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.post(
+        "/api/speech/transcribe?suffix=.wav",
+        content=b"fake-audio-bytes",
+        headers={"Content-Type": "application/octet-stream"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"text": "你好"}
+    assert b"fake-audio-bytes" in transport.bodies[0]
+
+
+def test_transcribe_route_rejects_an_empty_body(monkeypatch, tmp_path) -> None:
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path / "nova-voice-empty"))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.post("/api/speech/transcribe", content=b"")
+    assert response.status_code == 400

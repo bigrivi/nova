@@ -78,3 +78,36 @@ async def test_reply_goes_through_the_original_message():
     await client.on_group_at_message_create(message)
     await adapter.send_text("m1", "answer")
     assert message.replies == [{"content": "answer"}]
+
+
+class FakeAttachment:
+    def __init__(self, content_type="record", filename="voice.silk", url="http://x/v"):
+        self.content_type = content_type
+        self.filename = filename
+        self.url = url
+
+
+@pytest.mark.asyncio
+async def test_voice_attachment_is_collected(monkeypatch, tmp_path):
+    from nova.gateway import voice
+
+    audio = tmp_path / "voice.silk"
+    audio.write_bytes(b"audio")
+
+    async def fake_download(url, suffix=""):
+        return audio
+
+    monkeypatch.setattr(voice, "download_attachment", fake_download)
+
+    adapter = QQAdapter("id", "secret")
+    received = []
+
+    async def handler(msg: InboundMessage):
+        received.append(msg)
+
+    adapter.on_message(handler)
+    client = adapter._make_client()
+    message = FakeMessage("", user_openid="u1")
+    message.attachments = [FakeAttachment()]
+    await client.on_c2c_message_create(message)
+    assert received[0].attachments == [{"kind": "voice", "path": str(audio)}]

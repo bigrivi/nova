@@ -30,6 +30,7 @@ class FakeNova:
     def __init__(self, events_by_message=None):
         self.events_by_message = events_by_message or {}
         self.approvals = []
+        self.base_url = "http://nova.test"
 
     async def stream_chat(self, message, session_id=None, agent_key="main"):
         for event in self.events_by_message.get(message, []):
@@ -164,3 +165,27 @@ async def test_text_delta_is_read_from_the_top_level():
     core = GatewayCore(nova, {"telegram": adapter})
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="task"))
     assert adapter.sent == [("u1", "hello")]
+
+
+@pytest.mark.asyncio
+async def test_voice_attachment_is_transcribed_before_the_turn(monkeypatch):
+    """A voice message becomes text, then the turn runs on that text."""
+    from nova.gateway import voice
+
+    async def fake_transcribe(path, nova_url):
+        return "spoken words"
+
+    monkeypatch.setattr(voice, "transcribe", fake_transcribe)
+
+    adapter = FakeAdapter("qq")
+    nova = FakeNova({"spoken words": _turn_events(text="answered")})
+    core = GatewayCore(nova, {"qq": adapter})
+    await core.handle_inbound(
+        "qq",
+        InboundMessage(
+            sender="u1",
+            text="",
+            attachments=[{"kind": "voice", "path": "/tmp/v.silk"}],
+        ),
+    )
+    assert adapter.sent == [("u1", "answered")]

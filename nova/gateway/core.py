@@ -10,6 +10,7 @@ import json
 import logging
 import re
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 from nova.gateway.platform import InboundMessage, PlatformAdapter
 
@@ -110,6 +111,14 @@ class GatewayCore:
             "gateway: inbound on %s from %s: %s", platform, msg.sender, msg.text[:120]
         )
 
+        if not msg.text and msg.attachments:
+            transcribed = await self._transcribe(msg.attachments)
+            if transcribed:
+                msg = InboundMessage(
+                    sender=msg.sender, text=transcribed, attachments=msg.attachments
+                )
+                log.info("gateway: transcribed voice on %s: %s", platform, msg.text[:120])
+
         if self.allowed_senders and msg.sender not in self.allowed_senders:
             log.warning("gateway: rejected sender on %s", platform)
             return
@@ -123,6 +132,23 @@ class GatewayCore:
             return
 
         await self._run_turn(platform, adapter, key, msg)
+
+    async def _transcribe(self, attachments: list) -> str:
+        """Turn voice attachments into text, joined by newlines."""
+        from nova.gateway.voice import transcribe
+
+        parts = []
+        for attachment in attachments:
+            if attachment.get("kind") != "voice":
+                continue
+            path = attachment.get("path")
+            if not path:
+                continue
+            try:
+                parts.append(await transcribe(Path(path), self.nova.base_url))
+            except Exception as exc:
+                log.warning("gateway: transcription failed: %s", exc)
+        return "\n".join(part for part in parts if part).strip()
 
     async def _run_turn(
         self,

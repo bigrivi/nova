@@ -11,6 +11,34 @@ logger = logging.getLogger(__name__)
 
 _TIMEOUT_SECONDS = 120.0
 
+#: Content type per file suffix. The provider picks its decoder from this, and
+#: a wrong one (mp4 for an mp3) is rejected before the audio is read.
+_CONTENT_TYPES = {
+    ".m4a": "audio/mp4",
+    ".mp4": "audio/mp4",
+    ".mp3": "audio/mpeg",
+    ".mpeg": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/opus",
+    ".flac": "audio/flac",
+    ".webm": "audio/webm",
+    ".amr": "audio/amr",
+    ".silk": "audio/octet-stream",
+}
+
+
+def _content_type(path: Path) -> str:
+    return _CONTENT_TYPES.get(path.suffix.lower(), "application/octet-stream")
+
+
+def _form_data(model: str, language: str) -> dict[str, str]:
+    """The form fields; an empty or "auto" language lets the model detect it."""
+    data = {"model": model}
+    if language and language.lower() != "auto":
+        data["language"] = language
+    return data
+
 
 async def transcribe_file(
     audio_path: Path,
@@ -37,9 +65,9 @@ async def transcribe_file(
                     url,
                     headers={"Authorization": f"Bearer {api_key}"},
                     files={
-                        "file": (audio_path.name, handle, "audio/mp4"),
+                        "file": (audio_path.name, handle, _content_type(audio_path)),
                     },
-                    data={"model": model, "language": language},
+                    data=_form_data(model, language),
                 )
     except httpx.HTTPError as exc:
         raise RuntimeError(f"Transcription request failed: {exc}") from exc

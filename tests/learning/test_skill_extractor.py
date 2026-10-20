@@ -135,7 +135,7 @@ async def test_identical_content_is_a_no_op(tmp_path):
 async def test_none_action_is_a_no_op(tmp_path):
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import TextDelta, Done
+            from nova.llm.provider import Done, TextDelta
             yield TextDelta(content='{"action": "none"}')
             yield Done(content='{"action": "none"}')
 
@@ -150,7 +150,7 @@ async def test_none_action_is_a_no_op(tmp_path):
 async def test_create_with_references(tmp_path):
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import TextDelta, Done
+            from nova.llm.provider import Done, TextDelta
             body = '{"action": "create", "name": "csv-analysis", "content": "# CSV Analysis", "references": {"csv.md": "# CSV notes"}}'
             yield TextDelta(content=body)
             yield Done(content=body)

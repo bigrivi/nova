@@ -45,6 +45,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gateway = [
+    # SILK decoding for QQ voice: no transcription provider reads SILK, and
+    # ffmpeg has no silk decoder either, so the payload is decoded here.
+    "silk-python",
+    # Platform SDKs, imported lazily by the adapters that need them.
+    "qq-botpy",
+]
 dev = [
     "mypy>=1.11",
     "pytest>=7.4",
