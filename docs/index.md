@@ -55,6 +55,7 @@ execute code, browse the web, search files, run shell commands, and more.
 - [Context Compaction](advanced/compaction.md) -- two-layer compaction and tuning keys
 - [Security Model](advanced/security.md) -- shell approval, threat detection, tool guardrails
 - [WeChat ClawBot](advanced/wechat-clawbot.md) -- drive Nova from a WeChat conversation
+- [Messaging Gateway](advanced/messaging-gateway.md) -- drive Nova from Telegram, Feishu, QQ and more
 
 ## Troubleshooting
 

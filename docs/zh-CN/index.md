@@ -54,6 +54,7 @@ Nova 是一个跑在本地的个人 AI Agent。它运行在你的机器上，用
 - [上下文压缩](advanced/compaction.md) ：两层压缩机制与调优项
 - [安全模型](advanced/security.md) ：shell 审批、威胁检测、工具护栏
 - [微信 ClawBot](advanced/wechat-clawbot.md) ：从微信对话里驱动 Nova
+- [消息网关](advanced/messaging-gateway.md) ：从 Telegram、飞书、QQ 等平台驱动 Nova
 
 ## 故障排查
 

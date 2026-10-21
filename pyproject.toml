@@ -51,6 +51,8 @@ gateway = [
     "silk-python",
     # Platform SDKs, imported lazily by the adapters that need them.
     "qq-botpy",
+    "lark-oapi",
+    "dingtalk-stream",
 ]
 dev = [
     "mypy>=1.11",

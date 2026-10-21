@@ -22,7 +22,9 @@ async def safe_start(adapter: PlatformAdapter) -> None:
         log.warning("gateway: %s failed to start: %s", adapter.name, exc)
 
 
-async def run(config: GatewayConfig) -> None:
+async def run(config: GatewayConfig | None = None) -> None:
+    """Run the gateway until interrupted."""
+    config = config or load_config()
     adapters = build_adapters(config)
     if not adapters:
         log.warning("gateway: no platforms enabled")

@@ -133,9 +133,9 @@ def main():
     parser.add_argument(
         "mode",
         nargs="?",
-        choices=["serve", "web", "tui", "desktop", "websearch-stats"],
+        choices=["serve", "web", "tui", "desktop", "websearch-stats", "gateway"],
         default="serve",
-        help="Run mode: serve (HTTP backend, default), web (backend + browser UI), tui (OpenTUI client), desktop (GUI window), websearch-stats (summarise web_search backend usage)",
+        help="Run mode: serve (HTTP backend, default), web (backend + browser UI), tui (OpenTUI client), desktop (GUI window), websearch-stats (summarise web_search backend usage), gateway (messaging gateway for Telegram/Feishu/QQ)",
     )
     parser.add_argument(
         "--days",
@@ -173,7 +173,7 @@ def main():
     )
     args = parser.parse_args()
     init_site_packages()
-    configure_logging(settings, console=args.mode in ("serve", "web"))
+    configure_logging(settings, console=args.mode in ("serve", "web", "gateway"))
 
     try:
         if args.mode == "websearch-stats":
@@ -181,6 +181,11 @@ def main():
             return
         if args.mode == "tui":
             _run_tui()
+            return
+        if args.mode == "gateway":
+            from nova.gateway.main import run as run_gateway
+
+            asyncio.run(run_gateway())
             return
         if args.mode == "desktop":
             run_desktop(settings=settings, dev=args.dev)
