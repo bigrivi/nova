@@ -22,13 +22,25 @@ block_cipher = None
 # everything so mouse interaction / text selection keep working when packaged.
 webview_datas, webview_binaries, webview_hidden = collect_all('webview')
 
+# pythonnet (required by pywebview's WinForms backend on Windows) ships its
+# own netstandard2.0 support assemblies (System.*.dll, Microsoft.CSharp.dll,
+# ...) in pythonnet/runtime/. PyInstaller's contrib hook only collects
+# Python.Runtime.dll itself, so without collect_all here the CLR cannot resolve
+# the assembly's dependencies and fails with "Failed to resolve
+# Python.Runtime.Loader.Initialize".
+pythonnet_datas, pythonnet_binaries, pythonnet_hidden = collect_all('pythonnet')
+# clr_loader hosts the CLR; its native loader DLL lives under ffi/dlls.
+clr_loader_datas, clr_loader_binaries, clr_loader_hidden = collect_all('clr_loader')
+
 a = Analysis(
     ['nova/desktop/entry.py'],
     pathex=[str(ROOT)],
-    binaries=webview_binaries,
+    binaries=[*webview_binaries, *pythonnet_binaries, *clr_loader_binaries],
     datas=[
         (str(ROOT / 'frontend' / 'dist'), 'frontend/dist'),
         *webview_datas,
+        *pythonnet_datas,
+        *clr_loader_datas,
     ],
     hiddenimports=[
         'nova.server.app',
@@ -41,6 +53,8 @@ a = Analysis(
         # listed here rather than left to static analysis.
         'tree_sitter_bash',
         *webview_hidden,
+        *pythonnet_hidden,
+        *clr_loader_hidden,
     ],
     hookspath=[],
     hooksconfig={},
@@ -101,11 +115,12 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    # .NET assemblies (pythonnet/clr_loader) must not be UPX-packed.
+    upx_exclude=['*.dll'],
     runtime_tmpdir=None,
     console=False,
     icon='resources/icon.ico',
-    disable_windowed_traceback=True,
+    disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
@@ -118,6 +133,7 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    upx_exclude=[],
+    # .NET assemblies (pythonnet/clr_loader) must not be UPX-packed.
+    upx_exclude=['*.dll'],
     name='Nova',
 )
