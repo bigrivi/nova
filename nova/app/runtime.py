@@ -290,6 +290,7 @@ async def build_agent(
     on_title_updated: Callable[[str, str], None] | None = None,
     session_id: str | None = None,
     reasoning_effort: str | None = None,
+    permission_mode: str | None = None,
 ) -> Agent:
     settings = get_settings()
 
@@ -394,8 +395,11 @@ async def build_agent(
 
     # The permission mode is read from the security-policy file, not from
     # config.json: it changes what the *rules* do when they fire, so it belongs
-    # beside them. Read once per process, the way both axes are.
-    permission_mode = load_permission_mode(permissions_path())
+    # beside them. Read once per process, the way both axes are. An explicit
+    # override wins: a headless run passes "dontAsk" so approval-gated tools are
+    # refused instead of waiting on a human who is not there. The override is
+    # part of the registry cache key below, so each mode keeps its own tools.
+    permission_mode = permission_mode or load_permission_mode(permissions_path())
 
     agent = Agent(
         config=AgentConfig(

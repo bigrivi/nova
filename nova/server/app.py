@@ -23,6 +23,7 @@ from nova.server.routers import (
     health,
     memory,
     projects,
+    schedules,
     sessions,
     speech,
     tasks,
@@ -95,9 +96,46 @@ def _wire_task_autowake(app: FastAPI) -> None:
             return
         if not record.session_id:
             return
+        if record.kind == "scheduled_run":
+            # A scheduled turn already ran inside its session via
+            # start_headless_turn; waking it again would inject a second,
+            # redundant turn narrating its own result.
+            return
         scheduler.enqueue(record.session_id, record.task_id, _wrap(record))
 
     task_manager.set_completion_listener(_on_complete)
+
+
+def _make_schedule_runner(app: FastAPI):
+    """Build the tick-loop callback: due jobs become background tasks.
+
+    Fire-and-forget on purpose: the executor persists the terminal schedule
+    status when the turn ends, so the runner only submits. A submit failure
+    is logged here and surfaces as ``failed`` via the tick loop.
+    """
+
+    async def _run_job(job) -> None:
+        manager = app.state.background_task_manager
+        try:
+            manager.submit(
+                "scheduled_run",
+                {
+                    "schedule_id": job.id,
+                    "prompt": job.prompt,
+                    "session_id": job.session_id,
+                    "agent_key": job.agent_key,
+                    "name": job.name,
+                },
+                session_id=job.session_id,
+                label=(job.name or "").strip() or "scheduled run",
+                timeout_seconds=None,
+                background=True,
+            )
+        except Exception:
+            log.exception("Scheduler runner: submit failed for %s", job.id)
+            raise
+
+    return _run_job
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -107,9 +145,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         registry = app.state.request_registry
         registry.start_reaper()
+        scheduler = None
+        try:
+            from nova.db import get_default_data_source
+            from nova.scheduler.service import SchedulerService
+
+            repository = await get_default_data_source()
+            scheduler = SchedulerService(
+                repository,
+                tick_interval=60.0,
+                runner=_make_schedule_runner(app),
+            )
+            app.state.scheduler = scheduler
+            await scheduler.start()
+        except Exception:
+            # A broken scheduler must not take the whole API down; routes
+            # keep serving and runs keep working through manual triggers.
+            log.exception("Scheduler failed to start; continuing without ticks")
         try:
             yield
         finally:
+            if scheduler is not None:
+                await scheduler.stop()
             await shutdown_background_task_manager()
             bus = getattr(app.state, "session_event_bus", None)
             if bus is not None:
@@ -162,6 +219,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from nova.speech.service import SpeechService
 
     app.state.speech_service = SpeechService(settings)
+    app.state.scheduler = None
+    from nova.tasks.executors.scheduled import set_chat_service_provider
+
+    set_chat_service_provider(lambda: app.state.chat_service)
     _wire_task_autowake(app)
 
     for module in (
@@ -175,6 +236,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         events,
         memory,
         tasks,
+        schedules,
         speech,
     ):
         app.include_router(module.router)

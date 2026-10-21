@@ -21,7 +21,11 @@ log = logging.getLogger(__name__)
 
 
 async def start_headless_turn(
-    chat_service, parent_id: str, text: str, metadata: dict
+    chat_service,
+    parent_id: str,
+    text: str,
+    metadata: dict,
+    permission_mode: str | None = None,
 ) -> bool:
     """Start a parent turn seeded with *text*. Return False if the parent is busy."""
     registry = chat_service.request_registry
@@ -41,6 +45,7 @@ async def start_headless_turn(
         message=text,
         agent_key=agent_key,
         metadata=metadata or {},
+        permission_mode=permission_mode,
     )
     # Clamp spawn depth for the whole wake turn so a completion report cannot
     # re-delegate and loop; the existing depth ceiling refuses the spawn.

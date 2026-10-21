@@ -28,6 +28,12 @@ class ChatRequest(BaseModel):
     project_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     attachments: list[AttachmentData] = Field(default_factory=list)
+    # Optional permission-mode override for this turn ("ask", "dontAsk",
+    # "acceptEdits"). None keeps the previous behaviour: build_agent reads the
+    # permissions file. Headless runs (scheduled jobs) pass "dontAsk" so a tool
+    # that would wait for approval is refused instead of hanging a turn nobody
+    # is watching.
+    permission_mode: str | None = None
     # SSE resume cursor: replay buffered frames after this sequence number, then
     # live-tail while the stream is in flight. None = start a new turn.
     # Unknown cursors replay the full in-flight buffer with resync

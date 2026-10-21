@@ -559,6 +559,7 @@ class ChatService:
             on_title_updated=self._on_title_updated,
             session_id=request.session_id,
             reasoning_effort=request.reasoning_effort,
+            permission_mode=request.permission_mode,
         )
         register_key = request.session_id
         if register_key:

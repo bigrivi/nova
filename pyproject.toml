@@ -26,6 +26,10 @@ dependencies = [
     "aiosqlite",
     "fastapi>=0.141.1",
     "httpx",
+    # Cron expression to "when does this fire next". Only that: the schedule
+    # store, the tick loop and the catch-up policy are Nova's own, because they
+    # have to line up with the session and approval semantics.
+    "croniter",
     # Shell grammar, so a compound command can be split into the commands it
     # actually runs instead of being matched as one string. A regex cannot tell
     # `curl x && make | python3 f` from `curl x | python3 f`: the pipe belongs to

@@ -16,6 +16,59 @@ export type NovaSessionSummary = {
     project_id: string | null;
 };
 
+/** How a scheduled job recurs: cron expression, fixed interval, or once. */
+export type NovaScheduleKind = "cron" | "interval" | "once";
+
+/** The last recorded run outcome; "" means it never ran. */
+export type NovaScheduleLastStatus =
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "skipped"
+    | "missed"
+    | "";
+
+export type NovaScheduleJob = {
+    id: string;
+    name: string;
+    prompt: string;
+    kind: NovaScheduleKind;
+    cron_expr: string;
+    interval_minutes: number | null;
+    run_at: string;
+    enabled: boolean;
+    session_id: string;
+    agent_key: string;
+    next_run_at: string | null;
+    last_run_at: string | null;
+    last_status: NovaScheduleLastStatus;
+    last_error: string;
+    created_at: number;
+};
+
+export type NovaScheduleCreateRequest = {
+    name: string;
+    prompt: string;
+    kind: NovaScheduleKind;
+    cron_expr?: string;
+    interval_minutes?: number;
+    run_at?: string;
+    session_id: string;
+    agent_key?: string;
+};
+
+export type NovaScheduleUpdateRequest = {
+    name?: string;
+    prompt?: string;
+    kind?: NovaScheduleKind;
+    cron_expr?: string;
+    interval_minutes?: number;
+    run_at?: string;
+    session_id?: string;
+    agent_key?: string;
+    enabled?: boolean;
+};
+
 export type NovaProject = {
     id: string;
     name: string;

@@ -8,6 +8,10 @@ own kind and budget policy. Registering a new kind means adding its module to
 from __future__ import annotations
 
 from nova.tasks.executors.code_run import CodeRunExecutor
+from nova.tasks.executors.scheduled import (
+    ScheduledRunExecutor,
+    set_chat_service_provider,
+)
 from nova.tasks.executors.shell import ShellExecutor
 from nova.tasks.executors.subagent import SubagentExecutor
 from nova.tasks.models import TaskExecutor
@@ -17,12 +21,15 @@ BUILTIN_EXECUTORS: tuple[TaskExecutor, ...] = (
     ShellExecutor(),
     CodeRunExecutor(),
     SubagentExecutor(),
+    ScheduledRunExecutor(),
 )
 
 
 __all__ = [
     "BUILTIN_EXECUTORS",
     "CodeRunExecutor",
+    "ScheduledRunExecutor",
     "ShellExecutor",
     "SubagentExecutor",
+    "set_chat_service_provider",
 ]

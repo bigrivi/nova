@@ -16,6 +16,9 @@ import type {
     NovaProviderCreateRequest,
     NovaProviderRecord,
     NovaProviderUpdateRequest,
+    NovaScheduleCreateRequest,
+    NovaScheduleJob,
+    NovaScheduleUpdateRequest,
     NovaSessionSummary,
     NovaStreamEvent,
 } from "../types/nova";
@@ -1040,4 +1043,59 @@ export async function setSessionProject(
     if (!response.ok) {
         throw new Error(await parseErrorMessage(response));
     }
+}
+
+// ── Schedules ────────────────────────────────────────────────────────
+
+export async function listSchedules(): Promise<NovaScheduleJob[]> {
+    const payload = await parseJson<{ schedules: NovaScheduleJob[] }>(
+        await apiFetch("/api/schedules"),
+    );
+    return Array.isArray(payload.schedules) ? payload.schedules : [];
+}
+
+export async function createSchedule(
+    payload: NovaScheduleCreateRequest,
+): Promise<NovaScheduleJob> {
+    const body = await parseJson<{ schedule: NovaScheduleJob }>(
+        await apiFetch("/api/schedules", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        }),
+    );
+    return body.schedule;
+}
+
+export async function updateSchedule(
+    id: string,
+    patch: NovaScheduleUpdateRequest,
+): Promise<NovaScheduleJob> {
+    const body = await parseJson<{ schedule: NovaScheduleJob }>(
+        await apiFetch(`/api/schedules/${encodeURIComponent(id)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch),
+        }),
+    );
+    return body.schedule;
+}
+
+export async function deleteSchedule(id: string): Promise<void> {
+    const response = await apiFetch(
+        `/api/schedules/${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+    );
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+}
+
+export async function runScheduleNow(id: string): Promise<string> {
+    const body = await parseJson<{ ok: boolean; task_id: string }>(
+        await apiFetch(`/api/schedules/${encodeURIComponent(id)}/run`, {
+            method: "POST",
+        }),
+    );
+    return body.task_id;
 }

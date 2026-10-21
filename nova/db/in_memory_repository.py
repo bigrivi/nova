@@ -14,6 +14,8 @@ class InMemoryRepository(NovaRepository):
         self._sessions: dict[str, dict[str, Any]] = {}
         self._projects: dict[str, dict[str, Any]] = {}
         self._messages: dict[str, Message] = {}
+        self._schedules: dict[str, Any] = {}
+        self._leases: dict[str, dict[str, Any]] = {}
         self._agents: dict[str, dict[str, Any]] = {
             "main": {
                 "key": "main",
@@ -447,3 +449,88 @@ class InMemoryRepository(NovaRepository):
         return (
             int(value.timestamp() * 1000) if hasattr(value, "timestamp") else int(value)
         )
+
+    @staticmethod
+    def _copy_job(job: Any) -> Any:
+        from dataclasses import replace
+
+        return replace(job) if hasattr(job, "__dataclass_fields__") else dict(job)
+
+    def _coerce_job(self, job: Any) -> Any:
+        if isinstance(job, dict):
+            from nova.scheduler.models import ScheduledJob
+
+            return ScheduledJob.from_dict(job)
+        return self._copy_job(job)
+
+    async def create_schedule(self, job: Any) -> Any:
+        from nova.scheduler.schedule import next_fire_time
+
+        record = self._coerce_job(job)
+        now = int(time.time() * 1000)
+        if not record.id:
+            record.id = str(uuid.uuid4())
+        if not record.created_at:
+            record.created_at = now
+        record.updated_at = now
+        if record.next_run_at is None and record.enabled:
+            try:
+                record.next_run_at = next_fire_time(record, now)
+            except ValueError:
+                record.next_run_at = None
+        self._schedules[record.id] = self._copy_job(record)
+        return self._copy_job(record)
+
+    async def get_schedule(self, job_id: str) -> Any | None:
+        job = self._schedules.get(job_id)
+        return self._copy_job(job) if job is not None else None
+
+    async def list_schedules(self, enabled_only: bool = False) -> list[Any]:
+        jobs = list(self._schedules.values())
+        if enabled_only:
+            jobs = [job for job in jobs if job.enabled]
+        jobs.sort(key=lambda job: job.updated_at, reverse=True)
+        return [self._copy_job(job) for job in jobs]
+
+    async def update_schedule(self, job: Any) -> bool:
+        record = self._coerce_job(job)
+        if record.id not in self._schedules:
+            return False
+        if not record.updated_at:
+            record.updated_at = int(time.time() * 1000)
+        self._schedules[record.id] = self._copy_job(record)
+        return True
+
+    async def delete_schedule(self, job_id: str) -> bool:
+        return self._schedules.pop(job_id, None) is not None
+
+    async def due_schedules(self, now_ms: int, limit: int = 100) -> list[Any]:
+        due = [
+            job
+            for job in self._schedules.values()
+            if job.enabled and job.next_run_at is not None and job.next_run_at <= now_ms
+        ]
+        due.sort(key=lambda job: job.next_run_at or 0)
+        return [self._copy_job(job) for job in due[:limit]]
+
+    async def get_scheduler_lease(self, lease_id: str = "primary") -> dict | None:
+        lease = self._leases.get(lease_id)
+        return dict(lease) if lease else None
+
+    async def acquire_scheduler_lease(
+        self, lease_id: str, owner: str, expires_at_ms: int, now_ms: int
+    ) -> bool:
+        """Take or renew the lease when free, expired, or already ours."""
+        current = self._leases.get(lease_id)
+        if (
+            current is None
+            or current["owner"] == owner
+            or current["expires_at"] <= now_ms
+        ):
+            self._leases[lease_id] = {
+                "id": lease_id,
+                "owner": owner,
+                "expires_at": expires_at_ms,
+            }
+            return True
+        return False

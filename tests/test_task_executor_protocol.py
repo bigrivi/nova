@@ -93,7 +93,9 @@ def test_builtin_executors_declare_distinct_protocol_kinds() -> None:
 
 def test_only_subagents_are_unlimited() -> None:
     # Unlimited bypasses the semaphore and the per-session quota, so it stays a
-    # deliberate per-kind choice rather than a default that leaked.
+    # deliberate per-kind choice rather than a default that leaked. Scheduled
+    # runs join subagents: their fan-out is bounded by the tick cadence, not
+    # by the shared concurrency budget.
     unlimited = {e.kind for e in BUILTIN_EXECUTORS if e.unlimited}
 
-    assert unlimited == {"subagent"}
+    assert unlimited == {"subagent", "scheduled_run"}

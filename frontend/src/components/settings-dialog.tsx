@@ -4,6 +4,7 @@ import { AgentsManagerContent } from "@/components/assistant-ui/agents-manager-d
 import { McpManagerContent } from "@/components/assistant-ui/mcp-manager-dialog";
 import { MemoryManagerContent } from "@/components/assistant-ui/memory-manager-dialog";
 import { ModelsManagerContent } from "@/components/assistant-ui/models-manager-dialog";
+import { SchedulesManagerContent } from "@/components/assistant-ui/schedules-manager-dialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import type {
@@ -13,6 +14,7 @@ import type {
 } from "@/types/nova";
 import {
     CheckIcon,
+    ClockIcon,
     CpuIcon,
     DatabaseIcon,
     PlugIcon,
@@ -37,7 +39,13 @@ import {
 const ACTIVE_NAV_CLASS = "bg-brand-soft text-brand";
 const IDLE_NAV_CLASS = "text-foreground hover:bg-muted/60";
 
-type SettingsSection = "general" | "memory" | "models" | "agents" | "mcp";
+type SettingsSection =
+    | "general"
+    | "memory"
+    | "models"
+    | "agents"
+    | "mcp"
+    | "schedules";
 
 const SECTIONS: ReadonlyArray<{
     id: SettingsSection;
@@ -49,6 +57,11 @@ const SECTIONS: ReadonlyArray<{
     { id: "models", labelKey: "settings.section.models", icon: CpuIcon },
     { id: "agents", labelKey: "settings.section.agents", icon: UsersIcon },
     { id: "mcp", labelKey: "settings.section.mcp", icon: PlugIcon },
+    {
+        id: "schedules",
+        labelKey: "settings.section.schedules",
+        icon: ClockIcon,
+    },
 ];
 
 const LANGUAGES = [
@@ -125,6 +138,7 @@ export function SettingsDialog({
         models: "settings.section.models",
         agents: "settings.section.agents",
         mcp: "settings.section.mcp",
+        schedules: "settings.section.schedules",
     };
     const sectionDescriptionKey: Record<SettingsSection, string> = {
         general: "settings.general.description",
@@ -132,6 +146,7 @@ export function SettingsDialog({
         models: "modelSelector.managerDescription",
         agents: "agentManager.manageDescription",
         mcp: "mcp.description",
+        schedules: "schedules.description",
     };
 
     function handleOpenChange(next: boolean) {
@@ -427,6 +442,9 @@ export function SettingsDialog({
                                 <McpManagerContent
                                     onStatusChange={onConfigStatusChange}
                                 />
+                            ) : null}
+                            {section === "schedules" ? (
+                                <SchedulesManagerContent agents={agents} />
                             ) : null}
                         </div>
                     </div>
