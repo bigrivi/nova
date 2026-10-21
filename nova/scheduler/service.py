@@ -79,6 +79,21 @@ class SchedulerService:
             task.cancel()
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
+        await self._release_lease()
+
+    async def _release_lease(self) -> None:
+        """Hand the lease back on a clean stop, so a restart resumes at once.
+
+        The lease keeps two live servers from both scheduling, and its timeout
+        is how a crashed one eventually steps aside. A process that stops
+        cleanly has no reason to make the next one wait out that timeout.
+        """
+        try:
+            await self._repository.release_scheduler_lease(
+                self._lease_id, self._owner, self._now_ms()
+            )
+        except Exception:
+            log.exception("Scheduler: lease release failed")
 
     async def tick(self) -> list[str]:
         """Run one scheduling pass; never raises, returns triggered job ids."""

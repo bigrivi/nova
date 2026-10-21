@@ -534,3 +534,13 @@ class InMemoryRepository(NovaRepository):
             }
             return True
         return False
+
+    async def release_scheduler_lease(
+        self, lease_id: str, owner: str, now_ms: int
+    ) -> bool:
+        """Expire the lease when *owner* holds it, so a restart resumes at once."""
+        current = self._leases.get(lease_id)
+        if current is None or current["owner"] != owner:
+            return False
+        current["expires_at"] = now_ms
+        return True

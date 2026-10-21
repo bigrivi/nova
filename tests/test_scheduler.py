@@ -346,6 +346,31 @@ async def test_tick_skips_when_lease_held_by_other():
     await service.stop()
 
 
+@pytest.mark.asyncio
+async def test_a_clean_stop_hands_the_lease_back(repository):
+    """A restart must not wait out the lease timeout of the process it replaced.
+
+    The lease keeps two live servers from both scheduling; its expiry is the
+    fallback for a process that crashed. A clean stop has no reason to make
+    the next server wait for that fallback to pass.
+    """
+    now_box = [10_000_000]
+    service = _service(repository, now_box)
+    await service.tick()
+    lease = await repository.get_scheduler_lease("primary")
+    assert lease is not None and lease["owner"] == service._owner
+
+    await service.stop()
+
+    released = await repository.get_scheduler_lease("primary")
+    assert released is not None
+    assert released["expires_at"] <= now_box[0]
+    # Another owner takes it straight away, without waiting for a timeout.
+    assert await repository.acquire_scheduler_lease(
+        "primary", "other", now_box[0] + 60_000, now_box[0]
+    )
+
+
 # ── at-most-once across restarts ───────────────────────────────────────
 
 

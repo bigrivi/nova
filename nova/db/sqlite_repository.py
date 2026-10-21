@@ -1513,6 +1513,35 @@ class SqliteRepository(NovaRepository):
         )
         return [ScheduledJob.from_dict(dict(row)) for row in await cursor.fetchall()]
 
+    async def release_scheduler_lease(
+        self, lease_id: str, owner: str, now_ms: int
+    ) -> bool:
+        """Expire the lease when *owner* holds it, so a restart resumes at once.
+
+        A graceful stop hands the lease back instead of leaving it to time out.
+        The lease exists to keep two live servers from both scheduling; a
+        process that is gone cannot be told apart from one that is slow, so the
+        timeout is the fallback. Handing it back on the way out is what keeps a
+        clean restart from waiting out that fallback.
+
+        Args:
+            lease_id: Which lease row to release.
+            owner: The owner releasing it; a lease held by someone else is
+                left alone.
+            now_ms: Current time in epoch milliseconds.
+
+        Returns:
+            True when this owner held the lease and it was released.
+        """
+        await self._ensure_connected()
+        async with self._lock:
+            cursor = await self._conn.execute(
+                "UPDATE scheduler_leases SET expires_at = ? WHERE id = ? AND owner = ?",
+                (now_ms, lease_id, owner),
+            )
+            await self._conn.commit()
+            return cursor.rowcount > 0
+
     async def get_scheduler_lease(self, lease_id: str = "primary") -> dict | None:
         await self._ensure_connected()
         cursor = await self._conn.execute(

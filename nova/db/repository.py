@@ -98,6 +98,9 @@ class NovaRepository(Protocol):
     async def acquire_scheduler_lease(
         self, lease_id: str, owner: str, expires_at_ms: int, now_ms: int
     ) -> bool: ...
+    async def release_scheduler_lease(
+        self, lease_id: str, owner: str, now_ms: int
+    ) -> bool: ...
 
 
 DataSourceProtocol = NovaRepository
