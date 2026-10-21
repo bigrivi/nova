@@ -6,6 +6,7 @@ answers approval prompts from text, and delivers replies through the adapter.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -174,6 +175,7 @@ class GatewayCore:
         self._sessions: dict[str, str] = {}
         self._pending: dict[str, PendingApproval] = {}
         self._running: set[str] = set()
+        self._tasks: set[asyncio.Task] = set()
 
     def session_key(self, platform: str, sender: str) -> str:
         return f"{platform}:{sender}"
@@ -210,7 +212,38 @@ class GatewayCore:
             )
             return
 
-        await self._run_turn(platform, adapter, key, msg)
+        # The turn runs detached. Awaiting it here would block the platform's
+        # dispatch loop for the whole turn, and on a serial dispatcher that
+        # makes the approval answer unreachable -- the user could not reply to
+        # a prompt that is waiting for exactly that reply.
+        self._running.add(key)
+        task = asyncio.create_task(self._run_turn_detached(platform, adapter, key, msg))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def wait_idle(self) -> None:
+        """Wait for every running turn to finish.
+
+        A turn waiting on an approval is still running, so this also waits for
+        the user to answer.
+        """
+        while self._tasks:
+            await asyncio.gather(*list(self._tasks), return_exceptions=True)
+
+    async def _run_turn_detached(
+        self,
+        platform: str,
+        adapter: PlatformAdapter,
+        key: str,
+        msg: InboundMessage,
+    ) -> None:
+        try:
+            await self._run_turn(platform, adapter, key, msg)
+        finally:
+            # Released only when the turn is really over. A turn waiting on an
+            # approval still holds the session, so the key stays taken until
+            # the user answers.
+            self._running.discard(key)
 
     async def _resolve_approval(
         self,
@@ -336,5 +369,6 @@ class GatewayCore:
         self, adapter: PlatformAdapter, sender: str, text: str
     ) -> None:
         """Send long replies in segments so a platform's cap is not hit."""
-        for start in range(0, len(text), self.segment_chars):
-            await adapter.send_text(sender, text[start : start + self.segment_chars])
+        limit = int(getattr(adapter, "max_message_chars", self.segment_chars))
+        for start in range(0, len(text), limit):
+            await adapter.send_text(sender, text[start : start + limit])

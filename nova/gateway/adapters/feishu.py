@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 
 class FeishuAdapter(PlatformAdapter):
     name = "feishu"
+    max_message_chars = 4000
 
     def __init__(self, app_id: str, app_secret: str, agent_key: str = "main"):
         self.app_id = app_id

@@ -89,6 +89,7 @@ async def test_routes_reply_back_to_sender():
     nova = FakeNova({"task": _turn_events(text="done")})
     core = GatewayCore(nova, {"telegram": adapter})
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="task"))
+    await core.wait_idle()
     assert adapter.sent == [("u1", "done")]
 
 
@@ -105,6 +106,7 @@ async def test_sessions_are_isolated_per_platform_and_sender():
     core = GatewayCore(nova, {"telegram": a, "feishu": b})
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="one"))
     await core.handle_inbound("feishu", InboundMessage(sender="u1", text="two"))
+    await core.wait_idle()
     assert core._sessions["telegram:u1"] == "tg-1"
     assert core._sessions["feishu:u1"] == "fs-1"
 
@@ -125,8 +127,10 @@ async def test_approval_answer_resolves_pending_request():
     )
     core = GatewayCore(nova, {"telegram": adapter})
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="danger"))
+    await core.wait_idle()
     assert [p.request_id for p in core._pending.values()] == ["r1"]
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="yes"))
+    await core.wait_idle()
     assert nova.approvals == [("s1", "r1", True, False)]
 
 
@@ -144,8 +148,10 @@ async def test_approval_is_scoped_to_its_platform():
     )
     core = GatewayCore(nova, {"telegram": a, "feishu": b})
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="danger"))
+    await core.wait_idle()
     # A "yes" from another platform must not resolve it.
     await core.handle_inbound("feishu", InboundMessage(sender="u1", text="yes"))
+    await core.wait_idle()
     assert nova.approvals == []
     assert [p.request_id for p in core._pending.values()] == ["r1"]
 
@@ -156,6 +162,7 @@ async def test_disallowed_sender_is_ignored():
     nova = FakeNova({"task": _turn_events()})
     core = GatewayCore(nova, {"telegram": adapter}, allowed_senders={"allowed"})
     await core.handle_inbound("telegram", InboundMessage(sender="stranger", text="task"))
+    await core.wait_idle()
     assert adapter.sent == []
 
 
@@ -165,6 +172,7 @@ async def test_long_reply_is_segmented():
     nova = FakeNova({"task": _turn_events(text="x" * 10)})
     core = GatewayCore(nova, {"telegram": adapter}, segment_chars=4)
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="task"))
+    await core.wait_idle()
     assert [len(t) for _, t in adapter.sent] == [4, 4, 2]
 
 
@@ -183,6 +191,7 @@ async def test_text_delta_is_read_from_the_top_level():
     )
     core = GatewayCore(nova, {"telegram": adapter})
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="task"))
+    await core.wait_idle()
     assert adapter.sent == [("u1", "hello")]
 
 
@@ -207,6 +216,7 @@ async def test_voice_attachment_is_transcribed_before_the_turn(monkeypatch):
             attachments=[{"kind": "voice", "path": "/tmp/v.silk"}],
         ),
     )
+    await core.wait_idle()
     assert adapter.sent == [("u1", "answered")]
 
 
@@ -223,7 +233,9 @@ async def test_always_answer_asks_nova_to_remember():
     )
     core = GatewayCore(nova, {"telegram": adapter})
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="danger"))
+    await core.wait_idle()
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="a"))
+    await core.wait_idle()
     assert nova.approvals == [("s1", "r1", True, True)]
     assert adapter.sent[-1] == ("u1", "已允许，本会话内不再询问。")
 
@@ -249,6 +261,7 @@ async def test_approval_prompt_shows_the_command_and_the_options():
     )
     core = GatewayCore(nova, {"telegram": adapter})
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="danger"))
+    await core.wait_idle()
     prompt = adapter.sent[0][1]
     assert "删除目录" in prompt
     assert "rm -rf /tmp/x" in prompt
@@ -269,9 +282,11 @@ async def test_approval_resolved_clears_the_pending_request():
     )
     core = GatewayCore(nova, {"telegram": adapter})
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="danger"))
+    await core.wait_idle()
     assert core._pending == {}
     # A later "yes" is now an ordinary message, not an approval answer.
     await core.handle_inbound("telegram", InboundMessage(sender="u1", text="yes"))
+    await core.wait_idle()
     assert nova.approvals == []
 
 

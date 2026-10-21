@@ -14,6 +14,7 @@ _API = "https://api.telegram.org"
 
 class TelegramAdapter(PlatformAdapter):
     name = "telegram"
+    max_message_chars = 4096
 
     def __init__(self, token: str, *, agent_key: str = "main", poll_timeout: int = 30):
         self.token = token

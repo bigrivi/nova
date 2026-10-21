@@ -19,6 +19,7 @@ log = logging.getLogger(__name__)
 
 class QQAdapter(PlatformAdapter):
     name = "qq"
+    max_message_chars = 2000
 
     def __init__(self, app_id: str, token: str, agent_key: str = "main", **options):
         self.app_id = app_id

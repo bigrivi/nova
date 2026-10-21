@@ -25,10 +25,27 @@ MessageHandler = Callable[[InboundMessage], Awaitable[None]]
 
 
 class PlatformAdapter(Protocol):
-    """A messaging platform the gateway can drive Nova from."""
+    """A messaging platform the gateway can drive Nova.
+
+    ``name`` identifies the adapter; it is the key the core routes under, and
+    it must be unique per instance so two bots on one platform stay separate.
+
+    ``agent_key`` is the Nova agent this bot talks to. A platform with several
+    bots sets a different one per instance, and the core routes the turn to it.
+
+    ``sender`` is the platform's user identifier -- not a chat identifier. A
+    conversation is therefore per user, which is what the Nova session key is
+    built from. An adapter that supports groups must keep the group context
+    itself (as the QQ adapter does by remembering the message it replies to)
+    rather than expect the core to address the group.
+
+    ``max_message_chars`` is the platform's single-message limit; the core
+    splits a long reply to fit it. Absent, the core's default is used.
+    """
 
     name: str
     agent_key: str
+    max_message_chars: int
 
     async def start(self) -> None:
         """Begin receiving messages. Return once the poll loop is running."""

@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 
 class DingTalkAdapter(PlatformAdapter):
     name = "dingtalk"
+    max_message_chars = 4000
 
     def __init__(self, app_key: str, app_secret: str, agent_key: str = "main"):
         self.app_key = app_key
