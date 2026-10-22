@@ -425,6 +425,8 @@
     "schedules.sessionPlaceholder": "Pick a session",
     "schedules.sessionCurrent": "Current session",
     "schedules.sessionMissing": "Session gone",
+    "schedules.sessionSearch": "Search sessions...",
+    "schedules.sessionEmpty": "No matching sessions.",
     "schedules.agent": "Agent",
     "schedules.describeInterval": "Every {{minutes}} min",
     "schedules.describeOnce": "Once at {{time}}",

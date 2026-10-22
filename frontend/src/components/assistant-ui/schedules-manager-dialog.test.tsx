@@ -95,6 +95,14 @@ beforeAll(async () => {
     if (!Element.prototype.scrollIntoView) {
         Element.prototype.scrollIntoView = (() => {}) as unknown as Element["scrollIntoView"];
     }
+    // cmdk measures its list with ResizeObserver, which jsdom lacks.
+    if (typeof globalThis.ResizeObserver === "undefined") {
+        globalThis.ResizeObserver = class {
+            observe() {}
+            unobserve() {}
+            disconnect() {}
+        } as unknown as typeof ResizeObserver;
+    }
 });
 
 beforeEach(() => {
@@ -330,6 +338,33 @@ describe("SchedulesManagerContent session select", () => {
         ).toBeTruthy();
     });
 
+    it("keeps the session dropdown at trigger width with one-line rows", async () => {
+        render(<SchedulesManagerContent agents={agents} />);
+        await openCreate();
+
+        fireEvent.click(
+            screen.getByRole("combobox", { name: "目标会话" }),
+        );
+        const listbox = await screen.findByRole("listbox");
+        const layer = listbox.closest(
+            '[data-slot="popover-content"]',
+        ) as HTMLElement | null;
+        expect(layer).not.toBeNull();
+        expect(layer!.className).toContain(
+            "w-(--radix-popover-trigger-width)",
+        );
+        expect(layer!.className).toContain(
+            "max-w-(--radix-popover-trigger-width)",
+        );
+
+        const option = await screen.findByRole("option", {
+            name: "S1 s1 · 当前会话",
+        });
+        expect(option.querySelector(".truncate")).not.toBeNull();
+        expect(option.querySelector(".whitespace-nowrap")).not.toBeNull();
+        expect(option.textContent).toContain("s1");
+    });
+
     it("sends the picked session id on create", async () => {
         useConversationStore.setState({
             threads: [
@@ -399,6 +434,111 @@ describe("SchedulesManagerContent session select", () => {
                 name: "gone-ses… · 会话不存在",
             }),
         ).toBeTruthy();
+    });
+
+    it("filters sessions by title text", async () => {
+        useConversationStore.setState({
+            threads: [
+                {
+                    id: "s1",
+                    title: "Alpha 早报",
+                    status: "regular",
+                    workspace_dir: null,
+                    pinned: false,
+                    updated_at: 0,
+                    project_id: null,
+                    agent_key: "main",
+                },
+                {
+                    id: "s2",
+                    title: "Beta 巡检",
+                    status: "regular",
+                    workspace_dir: null,
+                    pinned: false,
+                    updated_at: 0,
+                    project_id: null,
+                    agent_key: "main",
+                },
+            ],
+            currentThreadId: "s1",
+        });
+        render(<SchedulesManagerContent agents={agents} />);
+        await openCreate();
+
+        fireEvent.click(
+            screen.getByRole("combobox", { name: "目标会话" }),
+        );
+        await screen.findByRole("option", {
+            name: "Alpha 早报 s1 · 当前会话",
+        });
+
+        fireEvent.change(screen.getByPlaceholderText("搜索会话…"), {
+            target: { value: "巡检" },
+        });
+
+        await waitFor(() =>
+            expect(
+                screen.queryByRole("option", {
+                    name: "Alpha 早报 s1 · 当前会话",
+                }),
+            ).toBeNull(),
+        );
+        expect(
+            screen.getByRole("option", { name: "Beta 巡检 s2" }),
+        ).toBeTruthy();
+    });
+
+    it("matches sessions by short-id fragment and shows an empty hint", async () => {
+        useConversationStore.setState({
+            threads: [
+                {
+                    id: "abcdef123456",
+                    title: "Alpha",
+                    status: "regular",
+                    workspace_dir: null,
+                    pinned: false,
+                    updated_at: 0,
+                    project_id: null,
+                    agent_key: "main",
+                },
+                {
+                    id: "zzz999",
+                    title: "Beta",
+                    status: "regular",
+                    workspace_dir: null,
+                    pinned: false,
+                    updated_at: 0,
+                    project_id: null,
+                    agent_key: "main",
+                },
+            ],
+            currentThreadId: "abcdef123456",
+        });
+        render(<SchedulesManagerContent agents={agents} />);
+        await openCreate();
+
+        fireEvent.click(
+            screen.getByRole("combobox", { name: "目标会话" }),
+        );
+        const search = await screen.findByPlaceholderText("搜索会话…");
+
+        fireEvent.change(search, { target: { value: "cdef12" } });
+
+        await waitFor(() =>
+            expect(
+                screen.queryByRole("option", { name: "Beta zzz999" }),
+            ).toBeNull(),
+        );
+        expect(
+            screen.getByRole("option", {
+                name: "Alpha abcdef12… · 当前会话",
+            }),
+        ).toBeTruthy();
+
+        fireEvent.change(search, {
+            target: { value: "no-such-session" },
+        });
+        expect(await screen.findByText("没有匹配的会话。")).toBeTruthy();
     });
 });
 

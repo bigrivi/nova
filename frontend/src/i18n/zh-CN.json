@@ -424,6 +424,8 @@
     "schedules.sessionPlaceholder": "选择一个会话",
     "schedules.sessionCurrent": "当前会话",
     "schedules.sessionMissing": "会话不存在",
+    "schedules.sessionSearch": "搜索会话…",
+    "schedules.sessionEmpty": "没有匹配的会话。",
     "schedules.agent": "智能体",
     "schedules.describeInterval": "每 {{minutes}} 分钟",
     "schedules.describeOnce": "单次 {{time}}",

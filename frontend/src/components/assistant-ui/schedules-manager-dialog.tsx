@@ -1,5 +1,7 @@
 import {
     CalendarClockIcon,
+    CheckIcon,
+    ChevronDownIcon,
     PencilIcon,
     PlayIcon,
     PlusIcon,
@@ -44,12 +46,18 @@ import {
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "../ui/select";
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from "../ui/command";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "../ui/popover";
 import { Textarea } from "../ui/textarea";
 import { cn } from "../../lib/utils";
 
@@ -447,6 +455,7 @@ function ScheduleFormDialog({
     >({});
     const [serverError, setServerError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+    const [sessionOpen, setSessionOpen] = useState(false);
 
     // Reset the form whenever the dialog opens for create vs. edit.
     useEffect(() => {
@@ -455,6 +464,7 @@ function ScheduleFormDialog({
         }
         setErrors({});
         setServerError(null);
+        setSessionOpen(false);
         setValues(
             editing
                 ? scheduleFormFromJob(editing)
@@ -695,51 +705,210 @@ function ScheduleFormDialog({
                         >
                             {t("schedules.session")}
                         </span>
-                        <Select
-                            value={values.sessionId}
-                            onValueChange={(value) =>
-                                set("sessionId", value)
-                            }
+                        <Popover
+                            open={sessionOpen}
+                            onOpenChange={setSessionOpen}
                         >
-                            <SelectTrigger
-                                className="h-9 w-full rounded-lg"
-                                aria-label={t("schedules.session")}
-                                aria-labelledby="schedule-session-label"
-                                aria-invalid={!!errors.sessionId}
+                            <PopoverTrigger asChild>
+                                <button
+                                    type="button"
+                                    role="combobox"
+                                    aria-haspopup="listbox"
+                                    aria-expanded={sessionOpen}
+                                    aria-label={t("schedules.session")}
+                                    aria-labelledby="schedule-session-label"
+                                    aria-invalid={!!errors.sessionId}
+                                    onKeyDown={(event) => {
+                                        // ARIA combobox: arrows open the listbox from a focused trigger.
+                                        if (
+                                            event.key === "ArrowDown" ||
+                                            event.key === "ArrowUp"
+                                        ) {
+                                            event.preventDefault();
+                                            setSessionOpen(true);
+                                        }
+                                    }}
+                                    onClick={() =>
+                                        setSessionOpen((prev) => !prev)
+                                    }
+                                    className="inline-flex h-9 w-full items-center justify-between gap-2 rounded-lg border bg-background px-3 py-2 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 [&_span]:truncate"
+                                >
+                                    {(() => {
+                                        const selected = threads.find(
+                                            (thread) =>
+                                                thread.id ===
+                                                values.sessionId,
+                                        );
+                                        if (selected) {
+                                            const title =
+                                                selected.title ||
+                                                t("app.untitledSession");
+                                            const current =
+                                                selected.id ===
+                                                currentThreadId;
+                                            return (
+                                                <span className="flex min-w-0 flex-1 items-center overflow-hidden whitespace-nowrap">
+                                                    <span className="min-w-0 flex-1 truncate text-left">
+                                                        {title}
+                                                    </span>{" "}
+                                                    <span className="shrink-0 text-muted-foreground">
+                                                        {shortId(selected.id)}
+                                                    </span>
+                                                    {current ? (
+                                                        <>
+                                                            {" "}
+                                                            <span className="shrink-0 text-muted-foreground">
+                                                                ·{" "}
+                                                                {t(
+                                                                    "schedules.sessionCurrent",
+                                                                )}
+                                                            </span>
+                                                        </>
+                                                    ) : null}
+                                                </span>
+                                            );
+                                        }
+                                        if (values.sessionId) {
+                                            return (
+                                                <span className="flex min-w-0 flex-1 items-center overflow-hidden whitespace-nowrap">
+                                                    <span className="shrink-0">
+                                                        {shortId(
+                                                            values.sessionId,
+                                                        )}
+                                                    </span>{" "}
+                                                    <span className="min-w-0 flex-1 truncate text-left">
+                                                        ·{" "}
+                                                        {t(
+                                                            "schedules.sessionMissing",
+                                                        )}
+                                                    </span>
+                                                </span>
+                                            );
+                                        }
+                                        return (
+                                            <span className="min-w-0 flex-1 truncate text-left text-muted-foreground/80">
+                                                {t(
+                                                    "schedules.sessionPlaceholder",
+                                                )}
+                                            </span>
+                                        );
+                                    })()}
+                                    <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
+                                </button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                                align="start"
+                                className="w-(--radix-popover-trigger-width) max-w-(--radix-popover-trigger-width) p-0"
                             >
-                                <SelectValue
-                                    placeholder={t(
-                                        "schedules.sessionPlaceholder",
-                                    )}
-                                />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {threads.map((thread) => {
-                                    const title =
-                                        thread.title ||
-                                        t("app.untitledSession");
-                                    const current =
-                                        thread.id === currentThreadId;
-                                    return (
-                                        <SelectItem
-                                            key={thread.id}
-                                            value={thread.id}
-                                        >
-                                            {`${title} ${shortId(thread.id)}${current ? ` · ${t("schedules.sessionCurrent")}` : ""}`}
-                                        </SelectItem>
-                                    );
-                                })}
-                                {values.sessionId &&
-                                !threads.some(
-                                    (thread) =>
-                                        thread.id === values.sessionId,
-                                ) ? (
-                                    <SelectItem value={values.sessionId}>
-                                        {`${shortId(values.sessionId)} · ${t("schedules.sessionMissing")}`}
-                                    </SelectItem>
-                                ) : null}
-                            </SelectContent>
-                        </Select>
+                                <Command>
+                                    <CommandInput
+                                        placeholder={t(
+                                            "schedules.sessionSearch",
+                                        )}
+                                    />
+                                    <CommandList>
+                                        <CommandEmpty>
+                                            {t("schedules.sessionEmpty")}
+                                        </CommandEmpty>
+                                        <CommandGroup>
+                                            {threads.map((thread) => {
+                                                const title =
+                                                    thread.title ||
+                                                    t(
+                                                        "app.untitledSession",
+                                                    );
+                                                const current =
+                                                    thread.id ===
+                                                    currentThreadId;
+                                                const selected =
+                                                    thread.id ===
+                                                    values.sessionId;
+                                                return (
+                                                    <CommandItem
+                                                        key={thread.id}
+                                                        value={`${title} ${thread.id} ${shortId(thread.id)}`}
+                                                        keywords={[
+                                                            thread.id,
+                                                            shortId(
+                                                                thread.id,
+                                                            ),
+                                                        ]}
+                                                        onSelect={() => {
+                                                            set(
+                                                                "sessionId",
+                                                                thread.id,
+                                                            );
+                                                            setSessionOpen(
+                                                                false,
+                                                            );
+                                                        }}
+                                                    >
+                                                        <span className="flex min-w-0 flex-1 items-center overflow-hidden whitespace-nowrap">
+                                                            <span className="min-w-0 flex-1 truncate">
+                                                                {title}
+                                                            </span>{" "}
+                                                            <span className="shrink-0 text-muted-foreground">
+                                                                {shortId(
+                                                                    thread.id,
+                                                                )}
+                                                            </span>
+                                                            {current ? (
+                                                                <>
+                                                                    {" "}
+                                                                    <span className="shrink-0 text-muted-foreground">
+                                                                        ·{" "}
+                                                                        {t(
+                                                                            "schedules.sessionCurrent",
+                                                                        )}
+                                                                    </span>
+                                                                </>
+                                                            ) : null}
+                                                        </span>
+                                                        {selected ? (
+                                                            <CheckIcon className="size-3.5 shrink-0 text-primary" />
+                                                        ) : null}
+                                                    </CommandItem>
+                                                );
+                                            })}
+                                            {values.sessionId &&
+                                            !threads.some(
+                                                (thread) =>
+                                                    thread.id ===
+                                                    values.sessionId,
+                                            ) ? (
+                                                <CommandItem
+                                                    value={`${values.sessionId} ${shortId(values.sessionId)} ${t("schedules.sessionMissing")}`}
+                                                    keywords={[
+                                                        values.sessionId,
+                                                        shortId(
+                                                            values.sessionId,
+                                                        ),
+                                                    ]}
+                                                    onSelect={() => {
+                                                        setSessionOpen(false);
+                                                    }}
+                                                >
+                                                    <span className="flex min-w-0 flex-1 items-center overflow-hidden whitespace-nowrap">
+                                                        <span className="shrink-0">
+                                                            {shortId(
+                                                                values.sessionId,
+                                                            )}
+                                                        </span>{" "}
+                                                        <span className="min-w-0 flex-1 truncate">
+                                                            ·{" "}
+                                                            {t(
+                                                                "schedules.sessionMissing",
+                                                            )}
+                                                        </span>
+                                                    </span>
+                                                    <CheckIcon className="size-3.5 shrink-0 text-primary" />
+                                                </CommandItem>
+                                            ) : null}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
                         {errors.sessionId ? (
                             <p className={errorClassName}>
                                 {errors.sessionId}
