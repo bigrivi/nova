@@ -42,5 +42,6 @@ docs/agents/
 # Local issue tracker (matt-pocock skills)
 .scratch/
 
-# QQ bot SDK runtime log
+# QQ bot SDK runtime log (the SDK rotates it into dated files)
 botpy.log
+botpy.log.*
