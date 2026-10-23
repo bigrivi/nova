@@ -20,7 +20,7 @@ The styling is installed as a wrapper around pywebview's
 Every entry point is a safe no-op on other platforms and never raises.
 """
 
-# ruff: noqa: ANN401 -- AppKit/pywebview bridge objects have no static types;
+
 # the remaining `Any` below is opaque native handles, not inferable types.
 
 from __future__ import annotations

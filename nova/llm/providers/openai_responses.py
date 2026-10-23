@@ -4,7 +4,7 @@ import json
 import logging
 from collections.abc import Iterable
 
-import aiohttp  # noqa: F401  # kept so tests can patch nova.llm.providers.openai_responses.aiohttp
+import aiohttp  # noqa: F401 - kept so tests can patch nova.llm.providers.openai_responses.aiohttp
 
 from nova.llm.accumulator import StreamAccumulator
 from nova.llm.framing import SSEFramer

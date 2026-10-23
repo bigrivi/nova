@@ -79,10 +79,10 @@ def create_recorder() -> Recorder:
 
 # Opaque PyObjC class object; built once (redefining an NSObject subclass
 # crashes the second recording), so it cannot be given a static type.
-_RUNNER_CLS: Any = None  # noqa: ANN401
+_RUNNER_CLS: Any = None
 
 
-def _runner_cls() -> Any:  # noqa: ANN401 - opaque PyObjC class object
+def _runner_cls() -> Any:
     """The main-thread hop helper, defined exactly once.
 
     PyObjC registers NSObject subclasses globally: defining the class inside
@@ -132,7 +132,7 @@ def _mac_file_url(path: str) -> object:
     return NSURL.fileURLWithPath_(path)
 
 
-def _make_mac_recorder(path: str) -> Any:  # noqa: ANN401 - opaque AVAudioRecorder
+def _make_mac_recorder(path: str) -> Any:
     """Create (not start) an AVAudioRecorder writing AAC/m4a to ``path``."""
     import AVFoundation  # type: ignore[import-not-found]
 

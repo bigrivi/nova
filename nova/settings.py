@@ -127,6 +127,25 @@ class LearningSettings:
 
 
 @dataclass(frozen=True)
+class TerminalSettings:
+    """Shell execution backend selection, overridable via config.json ``terminal``.
+
+    ``backend`` is one of ``local`` (default), ``ssh``, ``docker``. Per-backend
+    connection details live in the matching fields and are only consulted when
+    that backend is selected.
+    """
+
+    backend: str = "local"
+    ssh_host: str = ""
+    ssh_user: str = ""
+    ssh_port: int = 22
+    ssh_key: str = ""
+    docker_image: str = ""
+    docker_container: str = ""
+    docker_workdir: str = "/workspace"
+
+
+@dataclass(frozen=True)
 class CompactionSettings:
     """Context compaction thresholds, overridable via config.json ``compaction`` block."""
 
@@ -371,6 +390,28 @@ def _parse_learning_config(raw: object) -> LearningSettings:
     )
 
 
+def _parse_terminal_config(raw: object) -> TerminalSettings:
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid Nova config: 'terminal' must be an object")
+    port_raw = raw.get("ssh_port", 22)
+    try:
+        port = int(port_raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        port = 22
+    return TerminalSettings(
+        backend=str(raw.get("backend", "local")).strip() or "local",
+        ssh_host=str(raw.get("ssh_host", "")).strip(),
+        ssh_user=str(raw.get("ssh_user", "")).strip(),
+        ssh_port=port,
+        ssh_key=str(raw.get("ssh_key", "")).strip(),
+        docker_image=str(raw.get("docker_image", "")).strip(),
+        docker_container=str(raw.get("docker_container", "")).strip(),
+        docker_workdir=str(raw.get("docker_workdir", "/workspace")).strip() or "/workspace",
+    )
+
+
 def _parse_compaction_config(raw: object) -> CompactionSettings:
     if raw is None:
         return CompactionSettings()
@@ -504,6 +545,9 @@ class Settings:
     # Closed learning loop. Off unless configured.
     learning: LearningSettings = field(default_factory=LearningSettings)
 
+    # Shell execution backend (local / ssh / docker).
+    terminal: TerminalSettings = field(default_factory=TerminalSettings)
+
     # Runtime config file path.
     config_path: Path | None = None
 
@@ -539,6 +583,7 @@ class Settings:
             config_payload.get("approval_review")
         )
         learning = _parse_learning_config(config_payload.get("learning"))
+        terminal = _parse_terminal_config(config_payload.get("terminal"))
         compaction = _parse_compaction_config(config_payload.get("compaction"))
         transcription = _parse_transcription_config(config_payload.get("transcription"))
         web_search = _parse_web_search_config(config_payload.get("web_search"))
@@ -566,6 +611,7 @@ class Settings:
             web_search=web_search,
             approval_review=approval_review,
             learning=learning,
+            terminal=terminal,
             auth_user=auth_user,
             auth_password=auth_password,
         )

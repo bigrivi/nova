@@ -172,6 +172,14 @@ MAX_FOREGROUND_WAIT_SECONDS = 120
                     '"Find and delete all .tmp files recursively".'
                 ),
             },
+            "backend": {
+                "type": "string",
+                "description": (
+                    "Execution backend: 'local' (default), 'ssh', or 'docker'. "
+                    "Overrides NOVA_TERMINAL_BACKEND for this command."
+                ),
+                "default": "",
+            },
         },
         "required": ["command"],
     },
@@ -183,6 +191,7 @@ async def shell(
     run_in_background: bool = False,
     session_id: str = "",
     foreground_wait_seconds: int | None = None,
+    backend: str = "",
 ) -> ToolResult:
     """Execute a shell command, retaining long work as a managed task.
 
@@ -235,7 +244,7 @@ async def shell(
     try:
         task = manager.submit(
             "shell",
-            {"command": command, "cwd": cwd},
+            {"command": command, "cwd": cwd, "backend": backend},
             session_id=session_id,
             label=label,
             timeout_seconds=normalized_timeout,

@@ -11,11 +11,8 @@ from nova.tasks.models import (
     TaskExecutionResult,
     TaskExecutor,
 )
-from nova.tools.shell_utils import (
-    build_shell_args,
-    detect_shell,
-    normalize_path,
-)
+from nova.tools.shell.backends import get_backend
+from nova.tools.shell_utils import normalize_path
 from nova.tools.workspace_context import get_active_workspace
 
 
@@ -37,9 +34,19 @@ class ShellExecutor(TaskExecutor):
                 success=False,
                 error="Shell command must not be empty",
             )
-        shell_path, _ = detect_shell()
         cwd = normalize_path(
             str(arguments.get("cwd") or get_active_workspace() or os.getcwd())
         )
-        command_args = [shell_path, *build_shell_args(shell_path, command)]
-        return await run_process(command_args, cwd=cwd, context=context)
+        backend_name = str(arguments.get("backend") or "").strip() or None
+        settings = None
+        try:
+            from nova.settings import Settings
+
+            settings = Settings.load_config()
+        except Exception:
+            settings = None
+        backend = get_backend(backend_name, settings=settings)
+        prepared = backend.prepare(command, cwd)
+        return await run_process(
+            prepared.argv, cwd=prepared.cwd, context=context, environment=prepared.environment
+        )
