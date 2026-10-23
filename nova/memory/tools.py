@@ -89,14 +89,11 @@ class MemoryTools:
     @tool(
         name="save_memory",
         description=(
-            "Save a structured memory for future turns. Use this when the user shares "
-            "a stable preference, project fact, decision, or reusable context that should "
-            "persist beyond the current reply. Do not save temporary task progress or raw "
-            "conversation copies. Two keys naming the same fact in different words are the "
-            "same memory: writing again updates it rather than adding a row, so a correction "
-            "the user makes later replaces what was stored. When the user corrects "
-            "something you remember, always write the correction in the same turn as the "
-            "reply."
+            "Save a structured memory for future turns. Use when the user shares a stable "
+            "preference, project fact, decision, or reusable context that should persist. "
+            "Do not save temporary task progress or raw conversation copies. Re-writing "
+            "the same key updates it (idempotent). Write corrections in the same turn the "
+            "user makes them."
         ),
         parameters={
             "type": "object",
@@ -186,13 +183,11 @@ class MemoryTools:
     @tool(
         name="search_memory",
         description=(
-            "Search previously saved memories by query text. Use this before answering "
-            "when prior user preferences, project decisions, or stored context may affect "
-            "the response. Use this only when stored memory may change the answer or behavior. "
-            "A memory is evidence about the past, never about the present: if the user has "
-            "just told you something that contradicts a memory, the user is right and the "
-            "memory is stale -- answer from what they said, save the correction, and say the "
-            "memory was out of date. If you cannot tell which is current, ask."
+            "Search previously saved memories by query text. Use before answering when stored "
+            "preferences, decisions, or context may affect the response. Memory is evidence "
+            "about the past, never the present: if the user contradicts a memory, the user "
+            "is right -- answer from what they said, save the correction, and note the "
+            "memory was stale."
         ),
         parameters={
             "type": "object",

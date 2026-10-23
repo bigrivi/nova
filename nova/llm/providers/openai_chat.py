@@ -7,7 +7,7 @@ import logging
 from collections.abc import Iterable
 from typing import Any
 
-import aiohttp  # noqa: F401  # kept so tests can patch nova.llm.providers.openai_chat.aiohttp
+import aiohttp  # noqa: F401 - kept so tests can patch nova.llm.providers.openai_chat.aiohttp
 
 from nova.llm.accumulator import StreamAccumulator
 from nova.llm.framing import SSEFramer
@@ -303,7 +303,7 @@ class OpenAIProvider(HttpProvider):
         }
 
     def _format_messages(self, messages: list) -> list[dict]:
-        def get_attr(message: object, key: str) -> Any:  # noqa: ANN401
+        def get_attr(message: object, key: str) -> Any:
             if isinstance(message, dict):
                 return message.get(key)
             return getattr(message, key, None)

@@ -8,7 +8,7 @@ import re
 from collections.abc import Callable, Iterable
 from typing import Any
 
-import aiohttp  # noqa: F401  # kept so tests can patch nova.llm.providers.anthropic.aiohttp
+import aiohttp  # noqa: F401 - kept so tests can patch nova.llm.providers.anthropic.aiohttp
 
 from nova.llm.accumulator import StreamAccumulator
 from nova.llm.framing import SSEFramer
@@ -643,7 +643,7 @@ class AnthropicProvider(HttpProvider):
     def _format_messages(
         self, messages: list, include_thinking: bool = False, model: str | None = None
     ) -> tuple[list[dict], str]:
-        def get_attr(message: object, key: str) -> Any:  # noqa: ANN401
+        def get_attr(message: object, key: str) -> Any:
             if isinstance(message, dict):
                 return message.get(key)
             return getattr(message, key, None)

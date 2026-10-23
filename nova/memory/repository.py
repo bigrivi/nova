@@ -107,7 +107,7 @@ class MemoryRepository:
             key=row["key"],
             scope=row["scope"],
             session_id=row["session_id"],
-            owner_agent_key=row.get("owner_agent_key", None),
+            owner_agent_key=row.get("owner_agent_key"),
             memory_type=row["memory_type"],
             content=row["content"],
             summary=row["summary"],

@@ -92,11 +92,13 @@ class PromptBuilder:
 - If the user asks to use a skill, asks what skills are available, mentions a likely skill name, or the task sounds like a reusable workflow, call `list_skills` early.
 - Call `load_skill` only after you know the exact skill name and need the full `SKILL.md`.
 - If `list_skills` shows a relevant match, call `load_skill` before doing the workflow from memory.
+- Skill descriptions in the catalog below are abbreviated; call `list_skills` for full details when a name looks relevant.
 - Only call `install_skill` when the user explicitly asks you to install a ClawHub skill.
 - If you are unsure whether a skill is already installed locally, call `list_skills` before `install_skill`.
 - If the skill is already installed and the user did not ask to update or replace it, prefer `load_skill` instead of reinstalling.
 - When calling `shell` or `code_run`, always include a `description` that briefly explains what the command or code does in active voice.
 - For file work, use the dedicated tools: `write` to create, `edit` to modify, `read` to read, `grep`/`glob` to search. Do not emulate them with `shell` redirection, heredocs, or `sed`/`awk` in-place edits.
+- Prefer purpose-built tools over shell pipelines: use `web_fetch` instead of curl, `jq` instead of piping into an interpreter. Inline scripts that execute fetched bytes require user approval.
 
 # Memory
 - Only call `search_memory` when the current question is directly related to past preferences, decisions, or facts. Never search memory for unrelated topics.
@@ -156,6 +158,12 @@ class PromptBuilder:
                 shell=get_shell_label(),
             )
         )
+
+        # Tell the model where shell commands actually run, so it does not
+        # assume a local machine when the terminal backend is remote/container.
+        terminal_section = self._build_terminal_backend_section(settings)
+        if terminal_section:
+            parts.append(terminal_section)
 
         if project_instructions is not None and (
             project_instructions.text.strip() or project_instructions.flagged
@@ -228,6 +236,43 @@ class PromptBuilder:
 
         return platform.system()
 
+    @staticmethod
+    def _build_terminal_backend_section(settings: object) -> str:
+        terminal = getattr(settings, "terminal", None)
+        backend = getattr(terminal, "backend", "local") if terminal is not None else "local"
+        backend = (backend or "local").strip().lower()
+        if backend == "local":
+            return ""
+        if backend == "ssh":
+            host = getattr(terminal, "ssh_host", "") if terminal is not None else ""
+            user = getattr(terminal, "ssh_user", "") if terminal is not None else ""
+            target = f"{user}@{host}" if user and host else (host or "remote host")
+            return (
+                "## Terminal Backend\n\n"
+                "All `shell` commands execute on a REMOTE host over SSH "
+                f"({target}), NOT on the local machine. Working directories, "
+                "installed binaries, and environment variables refer to that "
+                "host. Use single chained commands (`&&`/`;`) because state "
+                "(cwd, env) does not persist between separate calls."
+            )
+        if backend == "docker":
+            image = getattr(terminal, "docker_image", "") if terminal is not None else ""
+            container = getattr(terminal, "docker_container", "") if terminal is not None else ""
+            target = container or image or "container"
+            return (
+                "## Terminal Backend\n\n"
+                "All `shell` commands execute inside a Docker container "
+                f"({target}), NOT on the local machine. The filesystem and "
+                "installed packages are the container's. Use single chained "
+                "commands (`&&`/`;`) because state does not persist between "
+                "separate calls."
+            )
+        return (
+            "## Terminal Backend\n\n"
+            f"All `shell` commands run via the '{backend}' backend, NOT on "
+            "the local machine."
+        )
+
     def _build_project_instructions_section(
         self, instructions: ProjectInstructions
     ) -> str:
@@ -260,12 +305,20 @@ class PromptBuilder:
         lines = []
         for skill in available_skills:
             name = str(getattr(skill, "name", "") or "").strip() or "unknown-skill"
+            # Keep the prompt compact: only a short hint here. Full descriptions
+            # are available via list_skills/load_skill so the model can fetch them
+            # on demand instead of paying for every skill on every turn.
             description = (
                 str(getattr(skill, "description", "") or "").strip()
                 or "(no description)"
             )
-            lines.append(f"- {name}: {description}")
+            # First sentence, capped, to stay one line.
+            first_sentence = description.split(". ")[0].split("\n")[0].strip()
+            if len(first_sentence) > 80:
+                first_sentence = first_sentence[:77].rstrip() + "..."
+            lines.append(f"- {name}: {first_sentence}")
         lines.append(
-            "- If one of these matches the task, call `load_skill` with the exact skill name before using it."
+            "- Descriptions above are abbreviated. Call `list_skills` for full "
+            "details, or `load_skill` with the exact name once you have chosen."
         )
         return "\n".join(lines)
