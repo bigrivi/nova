@@ -92,6 +92,7 @@ class PromptBuilder:
 - If the user asks to use a skill, asks what skills are available, mentions a likely skill name, or the task sounds like a reusable workflow, call `list_skills` early.
 - Call `load_skill` only after you know the exact skill name and need the full `SKILL.md`.
 - If `list_skills` shows a relevant match, call `load_skill` before doing the workflow from memory.
+- Skill descriptions in the catalog below are abbreviated; call `list_skills` for full details when a name looks relevant.
 - Only call `install_skill` when the user explicitly asks you to install a ClawHub skill.
 - If you are unsure whether a skill is already installed locally, call `list_skills` before `install_skill`.
 - If the skill is already installed and the user did not ask to update or replace it, prefer `load_skill` instead of reinstalling.
@@ -303,12 +304,20 @@ class PromptBuilder:
         lines = []
         for skill in available_skills:
             name = str(getattr(skill, "name", "") or "").strip() or "unknown-skill"
+            # Keep the prompt compact: only a short hint here. Full descriptions
+            # are available via list_skills/load_skill so the model can fetch them
+            # on demand instead of paying for every skill on every turn.
             description = (
                 str(getattr(skill, "description", "") or "").strip()
                 or "(no description)"
             )
-            lines.append(f"- {name}: {description}")
+            # First sentence, capped, to stay one line.
+            first_sentence = description.split(". ")[0].split("\n")[0].strip()
+            if len(first_sentence) > 80:
+                first_sentence = first_sentence[:77].rstrip() + "..."
+            lines.append(f"- {name}: {first_sentence}")
         lines.append(
-            "- If one of these matches the task, call `load_skill` with the exact skill name before using it."
+            "- Descriptions above are abbreviated. Call `list_skills` for full "
+            "details, or `load_skill` with the exact name once you have chosen."
         )
         return "\n".join(lines)
