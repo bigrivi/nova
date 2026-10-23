@@ -98,6 +98,7 @@ class PromptBuilder:
 - If the skill is already installed and the user did not ask to update or replace it, prefer `load_skill` instead of reinstalling.
 - When calling `shell` or `code_run`, always include a `description` that briefly explains what the command or code does in active voice.
 - For file work, use the dedicated tools: `write` to create, `edit` to modify, `read` to read, `grep`/`glob` to search. Do not emulate them with `shell` redirection, heredocs, or `sed`/`awk` in-place edits.
+- Prefer purpose-built tools over shell pipelines: use `web_fetch` instead of curl, `jq` instead of piping into an interpreter. Inline scripts that execute fetched bytes require user approval.
 
 # Memory
 - Only call `search_memory` when the current question is directly related to past preferences, decisions, or facts. Never search memory for unrelated topics.

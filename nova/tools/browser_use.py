@@ -28,22 +28,11 @@ EXTRACT_SYSTEM_PROMPT = (
 )
 
 _BROWSER_DESCRIPTION = """\
-A browser automation tool for interacting with web pages through various actions.
-Maintains state across calls — the browser session persists until explicitly closed.
+Browser automation tool for interacting with web pages. Session persists across calls until closed.
 
-Each action returns the current page URL, title, and a list of clickable elements
-identified by index (e.g. [0], [1], ...). Use these indices for click_element,
-input_text, get_dropdown_options, and select_dropdown_option actions.
+Each action returns the current page URL, title, and clickable elements by index (e.g. [0], [1]). Use indices for click_element, input_text, get_dropdown_options, select_dropdown_option.
 
-Key capabilities:
-- Navigation: go_to_url, go_back, web_search
-- Interaction: click_element, input_text, send_keys
-- Scrolling: scroll_down, scroll_up, scroll_to_text
-- Dropdowns: get_dropdown_options, select_dropdown_option
-- Extraction: extract_content
-- Tabs: switch_tab, open_tab, close_tab
-- Utilities: wait, get_state, cleanup
-"""
+Actions: go_to_url, go_back, web_search, click_element, input_text, send_keys, scroll_down, scroll_up, scroll_to_text, get_dropdown_options, select_dropdown_option, extract_content, switch_tab, open_tab, close_tab, wait, get_state, cleanup."""
 
 _playwright = None
 _browser = None
