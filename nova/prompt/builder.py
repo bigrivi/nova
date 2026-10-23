@@ -157,6 +157,12 @@ class PromptBuilder:
             )
         )
 
+        # Tell the model where shell commands actually run, so it does not
+        # assume a local machine when the terminal backend is remote/container.
+        terminal_section = self._build_terminal_backend_section(settings)
+        if terminal_section:
+            parts.append(terminal_section)
+
         if project_instructions is not None and (
             project_instructions.text.strip() or project_instructions.flagged
         ):
@@ -227,6 +233,43 @@ class PromptBuilder:
         import platform
 
         return platform.system()
+
+    @staticmethod
+    def _build_terminal_backend_section(settings: object) -> str:
+        terminal = getattr(settings, "terminal", None)
+        backend = getattr(terminal, "backend", "local") if terminal is not None else "local"
+        backend = (backend or "local").strip().lower()
+        if backend == "local":
+            return ""
+        if backend == "ssh":
+            host = getattr(terminal, "ssh_host", "") if terminal is not None else ""
+            user = getattr(terminal, "ssh_user", "") if terminal is not None else ""
+            target = f"{user}@{host}" if user and host else (host or "remote host")
+            return (
+                "## Terminal Backend\n\n"
+                "All `shell` commands execute on a REMOTE host over SSH "
+                f"({target}), NOT on the local machine. Working directories, "
+                "installed binaries, and environment variables refer to that "
+                "host. Use single chained commands (`&&`/`;`) because state "
+                "(cwd, env) does not persist between separate calls."
+            )
+        if backend == "docker":
+            image = getattr(terminal, "docker_image", "") if terminal is not None else ""
+            container = getattr(terminal, "docker_container", "") if terminal is not None else ""
+            target = container or image or "container"
+            return (
+                "## Terminal Backend\n\n"
+                "All `shell` commands execute inside a Docker container "
+                f"({target}), NOT on the local machine. The filesystem and "
+                "installed packages are the container's. Use single chained "
+                "commands (`&&`/`;`) because state does not persist between "
+                "separate calls."
+            )
+        return (
+            "## Terminal Backend\n\n"
+            f"All `shell` commands run via the '{backend}' backend, NOT on "
+            "the local machine."
+        )
 
     def _build_project_instructions_section(
         self, instructions: ProjectInstructions
