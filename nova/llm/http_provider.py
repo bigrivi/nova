@@ -24,7 +24,7 @@ from email.utils import parsedate_to_datetime
 import aiohttp
 
 from nova.llm.accumulator import StreamAccumulator
-from nova.llm.framing import SSEFramer
+from nova.llm.framing import NDJSONFramer, SSEFramer
 from nova.llm.policy import StreamPolicy, TransportPolicy
 from nova.llm.provider import (
     MAX_RETRIES,
@@ -61,7 +61,7 @@ class HttpProvider(LLMProvider):
         trace_label: Provider name used in stream trace log lines.
     """
 
-    framer: object = SSEFramer()
+    framer: SSEFramer | NDJSONFramer = SSEFramer()
     stream_policy: StreamPolicy
     transport_policy: TransportPolicy
     trace_label: str = "http"
@@ -438,7 +438,7 @@ class HttpProvider(LLMProvider):
         abort_event: asyncio.Event | None = None,
         session_id: str | None = None,
         reasoning_effort: str | None = None,
-        **kwargs,
+        **kwargs: object,
     ) -> Done:
         url, headers, body = self._prepare_request(
             messages, model, stream, tools, session_id, reasoning_effort
@@ -496,7 +496,7 @@ class HttpProvider(LLMProvider):
         total_timeout_seconds: int | None = None,
         session_id: str | None = None,
         reasoning_effort: str | None = None,
-        **kwargs,
+        **kwargs: object,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         url, headers, body = self._prepare_request(
             messages, model, True, tools, session_id, reasoning_effort

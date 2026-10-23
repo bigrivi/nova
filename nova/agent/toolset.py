@@ -8,7 +8,7 @@ registry is populated, so it is kept out of the agent runtime.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nova.mcp.manager import MCPManager
 from nova.tools.approval import ApprovalManager
@@ -18,6 +18,8 @@ from nova.tools.registry import ToolRegistry
 # inside the methods that use them, so this block must not pull them in eagerly
 # and undo that.
 if TYPE_CHECKING:
+    from nova.learning.loop import LearningLoop
+    from nova.learning.tools import LearningTools
     from nova.memory.tools import MemoryTools
     from nova.skills.service import SkillService
     from nova.skills.tools import SkillTools
@@ -54,7 +56,7 @@ class ToolsetBuilder:
         reviewer: Reviewer | None = None,
         tool_policy: ToolPolicy | None = None,
         permission_mode: str = "ask",
-        learning_loop: Any = None,
+        learning_loop: LearningLoop | None = None,
     ) -> None:
         self._registry = registry
         self._skill_service = skill_service
@@ -71,7 +73,7 @@ class ToolsetBuilder:
         self._permission_mode = permission_mode
         self.skill_tools: SkillTools | None = None
         self.memory_tools: MemoryTools | None = None
-        self.learning_tools: Any = None
+        self.learning_tools: LearningTools | None = None
         self._learning_loop = learning_loop
 
     def _allows(self, tool_name: str) -> bool:

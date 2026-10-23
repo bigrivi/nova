@@ -21,7 +21,7 @@ from nova.llm import LLMProvider, ToolCall, ToolResult
 from nova.session.protocol import SessionProtocol
 from nova.tools.approval import ApprovalManager
 from nova.tools.behavior import TurnContext
-from nova.tools.registry import ToolRegistry
+from nova.tools.registry import Tool, ToolRegistry
 
 log = logging.getLogger(__name__)
 
@@ -235,7 +235,7 @@ class ToolInvoker:
 
     async def _announce(
         self,
-        tool_call: Any,
+        tool_call: ToolCall,
         all_tool_calls: list,
         group_id: str | None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
@@ -265,7 +265,7 @@ class ToolInvoker:
 
     async def execute_with_abort(
         self,
-        tool_call: Any,
+        tool_call: ToolCall,
         arguments: dict,
         approval_request_id: str = "",
     ) -> ToolResult | None:
@@ -332,7 +332,9 @@ class ToolInvoker:
             self._guardrails.observe(tool_name, {}, False)
             return ToolResult(success=False, content=f"Tool error: {error}")
 
-    def _inject_implicit_arguments(self, registered_tool: Any, arguments: dict) -> None:
+    def _inject_implicit_arguments(
+        self, registered_tool: Tool, arguments: dict
+    ) -> None:
         """Fill parameters the model is not asked to provide."""
         import inspect
 
@@ -385,7 +387,7 @@ class ToolInvoker:
             yield AgentEvent.TOOL_RESULT, payload
 
 
-def parse_tool_arguments(arguments_text: Any) -> dict:
+def parse_tool_arguments(arguments_text: str | dict[str, Any]) -> dict:
     if isinstance(arguments_text, dict):
         return arguments_text
     try:
@@ -397,7 +399,7 @@ def parse_tool_arguments(arguments_text: Any) -> dict:
         ) from error
 
 
-def has_parsable_arguments(tool_call: Any) -> bool:
+def has_parsable_arguments(tool_call: ToolCall) -> bool:
     """Whether a tool call can be executed at all.
 
     A model that streams malformed JSON would otherwise take the whole turn down
@@ -413,13 +415,13 @@ def has_parsable_arguments(tool_call: Any) -> bool:
         return False
 
 
-def _name_of(tool_call: Any) -> str:
+def _name_of(tool_call: ToolCall) -> str:
     return tool_call.name if hasattr(tool_call, "name") else str(tool_call)
 
 
-def _id_of(tool_call: Any) -> str:
+def _id_of(tool_call: ToolCall) -> str:
     return tool_call.id if hasattr(tool_call, "id") else str(tool_call)
 
 
-def _arguments_of(tool_call: Any) -> Any:
+def _arguments_of(tool_call: ToolCall) -> str | dict[str, Any]:
     return tool_call.arguments if hasattr(tool_call, "arguments") else "{}"

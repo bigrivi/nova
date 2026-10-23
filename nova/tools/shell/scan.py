@@ -25,6 +25,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from tree_sitter import Node, Parser
 
 log = logging.getLogger(__name__)
 
@@ -44,11 +48,11 @@ _SHELLS = frozenset({"sh", "bash", "zsh", "ksh", "dash", "csh", "tcsh", "ash", "
 #: Programs whose output is the network's, i.e. what makes a pipe worth checking.
 _FETCHERS = frozenset({"curl", "wget"})
 
-_parser: object | None = None
+_parser: Parser | None = None
 _parser_failed = False
 
 
-def _load_parser():  # type: ignore[no-untyped-def]
+def _load_parser() -> Parser | None:
     """Build the bash parser once, or return ``None`` if it cannot be built."""
     global _parser, _parser_failed
     if _parser is not None or _parser_failed:
@@ -167,7 +171,7 @@ class Scan:
         return tuple(command.text for command in self.commands)
 
 
-def _words_of(node) -> list[str]:  # type: ignore[no-untyped-def]
+def _words_of(node: Node) -> list[str]:
     """The program words of a command node, wrappers and paths removed.
 
     Substitution nodes are skipped rather than read as words. `eval "$(curl …)"`
@@ -186,7 +190,7 @@ def _words_of(node) -> list[str]:  # type: ignore[no-untyped-def]
     for child in node.children:
         if child.type not in ("command_name", "word", "string"):
             continue
-        text = child.text.decode("utf-8", "replace").strip("\"'")
+        text = cast(bytes, child.text).decode("utf-8", "replace").strip("\"'")
         if not text or _contains_substitution(text):
             continue
         words.append(text.rsplit("/", 1)[-1].lower())
@@ -247,7 +251,7 @@ def _command_position_words(words: list[str]) -> list[str]:
     return kept
 
 
-def _text_of(node) -> str:  # type: ignore[no-untyped-def]
+def _text_of(node: Node) -> str:
     """A command's text, lifted to the redirection or heredoc that wraps it.
 
     ``echo x > /dev/sda`` parses as a ``command`` node reading ``echo x`` with a
@@ -261,18 +265,18 @@ def _text_of(node) -> str:  # type: ignore[no-untyped-def]
         "redirected_statement",
         "heredoc_redirected_statement",
     ):
-        return parent.text.decode("utf-8", "replace").strip()
-    return node.text.decode("utf-8", "replace").strip()
+        return cast(bytes, parent.text).decode("utf-8", "replace").strip()
+    return cast(bytes, node.text).decode("utf-8", "replace").strip()
 
 
-def _walk(node, kind: str, out: list) -> None:  # type: ignore[no-untyped-def]
+def _walk(node: Node, kind: str, out: list[Node]) -> None:
     if node.type == kind:
         out.append(node)
     for child in node.children:
         _walk(child, kind, out)
 
 
-def _string_literal(node) -> str | None:  # type: ignore[no-untyped-def]
+def _string_literal(node: Node) -> str | None:
     """The value of a quoting node, or None when the shell would alter it.
 
     A single-quoted word is literal by definition. A double-quoted one is literal
@@ -285,7 +289,7 @@ def _string_literal(node) -> str | None:  # type: ignore[no-untyped-def]
         # decode in both branches rather than leaking the difference to the
         # caller. "replace" matches what the rest of this module already does
         # with node text.
-        text = node.text.decode("utf-8", "replace")
+        text = cast(bytes, node.text).decode("utf-8", "replace")
         return text[1:-1] if len(text) >= 2 else None
     if node.type == "string":
         children = [child for child in node.children if child.is_named]
@@ -295,12 +299,12 @@ def _string_literal(node) -> str | None:  # type: ignore[no-untyped-def]
         # decode in both branches rather than leaking the difference to the
         # caller. "replace" matches what the rest of this module already does
         # with node text.
-        text = node.text.decode("utf-8", "replace")
+        text = cast(bytes, node.text).decode("utf-8", "replace")
         return text[1:-1] if len(text) >= 2 else None
     return None
 
 
-def _command_of(node) -> Command:  # type: ignore[no-untyped-def]
+def _command_of(node: Node) -> Command:
     """Read one command node into a :class:`Command`."""
     words = _words_of(node)
     argv = _argv_of(node)
@@ -313,7 +317,7 @@ def _command_of(node) -> Command:  # type: ignore[no-untyped-def]
     )
 
 
-def _argv_of(node) -> tuple[str, ...]:  # type: ignore[no-untyped-def]
+def _argv_of(node: Node) -> tuple[str, ...]:
     """The words after the program name, in order.
 
     A quoted word contributes its value when the shell would pass that value
@@ -335,16 +339,18 @@ def _argv_of(node) -> tuple[str, ...]:  # type: ignore[no-untyped-def]
         if not seen_name or child.type not in ("word", "string", "raw_string"):
             continue
         if child.type == "word":
-            argv.append(child.text.decode("utf-8", "replace"))
+            argv.append(cast(bytes, child.text).decode("utf-8", "replace"))
             continue
         value = _string_literal(child)
         argv.append(
-            value if value is not None else child.text.decode("utf-8", "replace")
+            value
+            if value is not None
+            else cast(bytes, child.text).decode("utf-8", "replace")
         )
     return tuple(argv)
 
 
-def _literal_script(node, argv: tuple[str, ...]) -> str | None:  # type: ignore[no-untyped-def]
+def _literal_script(node: Node, argv: tuple[str, ...]) -> str | None:
     """The ``-c`` script when it is a literal, else None.
 
     The shape is exactly ``<prog> -c <script>`` with nothing else. A second flag

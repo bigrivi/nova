@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -115,7 +116,9 @@ _extract_session_id = extract_session_id_from_chunk
 _normalize_session_chunk = normalize_session_chunk_for_session
 
 
-async def park_detached_stream_session(registry: Any, session_id: str | None) -> None:
+async def park_detached_stream_session(
+    registry: RequestRegistry | None, session_id: str | None
+) -> None:
     if registry is None or not session_id:
         return
     try:
@@ -132,17 +135,22 @@ async def park_detached_stream_session(registry: Any, session_id: str | None) ->
 
 def resolve_stream_dependencies(
     http_request: Request,
-) -> tuple[ChatService, RequestRegistry, StreamBuffer]:
+) -> tuple[ChatService, RequestRegistry | None, StreamBuffer | None]:
     chat_service: ChatService = http_request.app.state.chat_service
     # Prefer the public ChatService interface (2.1); fall back to the legacy
     # private attributes so lightweight test stubs without the properties
     # keep working.
-    request_registry: RequestRegistry = getattr(chat_service, "request_registry", None)
+    request_registry: RequestRegistry | None = getattr(
+        chat_service, "request_registry", None
+    )
     if request_registry is None:
         request_registry = getattr(chat_service, "_request_registry", None)
-    service_stream_buffer: StreamBuffer = getattr(chat_service, "stream_buffer", None)
+    service_stream_buffer: StreamBuffer | None = getattr(
+        chat_service, "stream_buffer", None
+    )
     if service_stream_buffer is None:
         service_stream_buffer = getattr(chat_service, "_stream_buffer", None)
+    stream_buffer: StreamBuffer | None
     if service_stream_buffer is not None:
         stream_buffer = service_stream_buffer
     else:
@@ -224,7 +232,11 @@ class ChatStreamOrchestrator:
                 buffer.is_done(session_id),
             )
 
-            async def resume_stream():
+            async def resume_stream() -> AsyncIterator[bytes]:
+                # Guaranteed by the enclosing resume branch: a cursor resume
+                # only reaches here with both set.
+                assert buffer is not None
+                assert session_id is not None
                 try:
                     replay_done_count = 0
                     for event_frame in frames:
@@ -331,7 +343,7 @@ class ChatStreamOrchestrator:
             service_stream_buffer is not None and buffer is service_stream_buffer
         )
 
-        async def event_stream():
+        async def event_stream() -> AsyncIterator[bytes]:
             stream_queue: asyncio.Queue[bytes | None] = asyncio.Queue(
                 maxsize=CONNECTION_QUEUE_MAXSIZE
             )

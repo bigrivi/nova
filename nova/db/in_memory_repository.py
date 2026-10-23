@@ -3,10 +3,18 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from typing import Any
+from dataclasses import replace
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from nova.db.repository import NovaRepository
+from nova.memory.models import MemoryRecord, MemorySearchFilters
+from nova.project.models import Project
+from nova.scheduler.models import ScheduledJob
 from nova.session.models import Message, MessageFilter
+
+if TYPE_CHECKING:
+    from nova.session.manager import SessionContext
 
 
 class InMemoryRepository(NovaRepository):
@@ -14,7 +22,7 @@ class InMemoryRepository(NovaRepository):
         self._sessions: dict[str, dict[str, Any]] = {}
         self._projects: dict[str, dict[str, Any]] = {}
         self._messages: dict[str, Message] = {}
-        self._schedules: dict[str, Any] = {}
+        self._schedules: dict[str, ScheduledJob] = {}
         self._leases: dict[str, dict[str, Any]] = {}
         self._agents: dict[str, dict[str, Any]] = {
             "main": {
@@ -40,7 +48,7 @@ class InMemoryRepository(NovaRepository):
     async def close(self) -> None:
         self._connected = False
 
-    async def save_session(self, session: Any) -> None:
+    async def save_session(self, session: SessionContext) -> None:
         now = int(time.time() * 1000)
         self._sessions[session.id] = {
             "id": session.id,
@@ -126,7 +134,7 @@ class InMemoryRepository(NovaRepository):
         session["project_id"] = project_id
         return True
 
-    async def save_project(self, project: Any) -> None:
+    async def save_project(self, project: Project) -> None:
         now = int(time.time() * 1000)
         self._projects[project.id] = {
             "id": project.id,
@@ -177,7 +185,7 @@ class InMemoryRepository(NovaRepository):
 
     async def get_all_sessions(
         self, limit: int | None = None, agent_key: str | None = None
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         sessions = list(self._sessions.values())
         if agent_key:
             sessions = [s for s in sessions if s["agent_key"] == agent_key]
@@ -188,38 +196,56 @@ class InMemoryRepository(NovaRepository):
 
     async def get_sessions_by_parent_id(
         self, parent_id: str, limit: int = 50
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         sessions = [s for s in self._sessions.values() if s["parent_id"] == parent_id]
         sessions.sort(key=lambda item: item["created_at"], reverse=True)
         return [dict(session) for session in sessions[:limit]]
 
     async def add_message(
-        self, session_id: str, role: str, content: str, **kwargs: Any
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        tool_calls: list[dict[str, Any]] | None = None,
+        tool_call_id: str | None = None,
+        summary: bool = False,
+        images: list[str] | None = None,
+        reasoning_content: str | None = None,
+        group_id: str | None = None,
+        reasoning_elapsed_ms: int | None = None,
+        tokens_input: int | None = None,
+        tokens_output: int | None = None,
+        provider_meta: dict[str, Any] | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        error: str | None = None,
+        variant: str | None = None,
+        time_created: int | None = None,
     ) -> Message:
         now = int(time.time() * 1000)
-        stamp = kwargs.get("time_created")
         message = Message(
             id=str(uuid.uuid4()),
             session_id=session_id,
             role=role,
             content=content,
-            tool_calls=kwargs.get("tool_calls"),
-            tool_call_id=kwargs.get("tool_call_id"),
-            summary=1 if kwargs.get("summary", False) else 0,
-            images=kwargs.get("images"),
-            reasoning_content=kwargs.get("reasoning_content"),
-            group_id=kwargs.get("group_id"),
-            reasoning_elapsed_ms=kwargs.get("reasoning_elapsed_ms"),
-            error=kwargs.get("error"),
-            provider_meta=kwargs.get("provider_meta"),
-            model=kwargs.get("model"),
-            reasoning_effort=kwargs.get("reasoning_effort"),
-            tokens_input=kwargs.get("tokens_input"),
-            tokens_output=kwargs.get("tokens_output"),
+            tool_calls=tool_calls,
+            tool_call_id=tool_call_id,
+            summary=1 if summary else 0,
+            images=images,
+            reasoning_content=reasoning_content,
+            group_id=group_id,
+            reasoning_elapsed_ms=reasoning_elapsed_ms,
+            error=error,
+            provider_meta=provider_meta,
+            model=model,
+            reasoning_effort=reasoning_effort,
+            tokens_input=tokens_input,
+            tokens_output=tokens_output,
+            variant=variant,
             # A caller may place a row at an earlier point in time (compaction
             # summaries do); updated_at below still tracks insertion order so
             # sidebar ordering is unaffected.
-            time_created=now if stamp is None else stamp,
+            time_created=now if time_created is None else time_created,
         )
         self._messages[message.id] = message
         session = self._sessions.get(session_id)
@@ -300,7 +326,7 @@ class InMemoryRepository(NovaRepository):
             session["updated_at"] = int(time.time() * 1000)
         return len(selected)
 
-    async def list_agents(self) -> list[dict]:
+    async def list_agents(self) -> list[dict[str, Any]]:
         return sorted(
             (dict(agent) for agent in self._agents.values()),
             key=lambda item: item["name"],
@@ -313,7 +339,7 @@ class InMemoryRepository(NovaRepository):
     async def save_agent(self, agent: dict[str, Any]) -> None:
         self._agents[agent["key"]] = dict(agent)
 
-    async def get_child_agents(self, parent_key: str) -> list[dict]:
+    async def get_child_agents(self, parent_key: str) -> list[dict[str, Any]]:
         child_keys = {
             child for child, parent in self._agent_parents if parent == parent_key
         }
@@ -356,7 +382,7 @@ class InMemoryRepository(NovaRepository):
             await self.delete_session(session_id)
         return True
 
-    async def save_memory(self, record: Any) -> None:
+    async def save_memory(self, record: MemoryRecord) -> None:
         self._memories[record.id] = {
             "id": record.id,
             "key": record.key,
@@ -389,7 +415,9 @@ class InMemoryRepository(NovaRepository):
                 return dict(memory)
         return None
 
-    async def list_memories(self, filters: Any) -> list[dict]:
+    async def list_memories(
+        self, filters: MemorySearchFilters
+    ) -> list[dict[str, Any]]:
         memories = list(self._memories.values())
         if filters.scope != "all":
             memories = [m for m in memories if m["scope"] == filters.scope]
@@ -427,7 +455,9 @@ class InMemoryRepository(NovaRepository):
             del self._memories[memory_id]
         return len(ids)
 
-    async def list_memories_by_session(self, session_id: str) -> list[dict]:
+    async def list_memories_by_session(
+        self, session_id: str
+    ) -> list[dict[str, Any]]:
         memories = [
             dict(m) for m in self._memories.values() if m["session_id"] == session_id
         ]
@@ -445,25 +475,19 @@ class InMemoryRepository(NovaRepository):
         return await self.delete_memory_by_id(memory["id"]) if memory else 0
 
     @staticmethod
-    def _milliseconds(value: Any) -> int:
+    def _milliseconds(value: datetime | int | float) -> int:
         return (
             int(value.timestamp() * 1000) if hasattr(value, "timestamp") else int(value)
         )
 
-    @staticmethod
-    def _copy_job(job: Any) -> Any:
-        from dataclasses import replace
-
-        return replace(job) if hasattr(job, "__dataclass_fields__") else dict(job)
-
-    def _coerce_job(self, job: Any) -> Any:
+    def _coerce_job(self, job: ScheduledJob | dict[str, Any]) -> ScheduledJob:
         if isinstance(job, dict):
-            from nova.scheduler.models import ScheduledJob
-
             return ScheduledJob.from_dict(job)
-        return self._copy_job(job)
+        return replace(job)
 
-    async def create_schedule(self, job: Any) -> Any:
+    async def create_schedule(
+        self, job: ScheduledJob | dict[str, Any]
+    ) -> ScheduledJob:
         from nova.scheduler.schedule import next_fire_time
 
         record = self._coerce_job(job)
@@ -478,42 +502,48 @@ class InMemoryRepository(NovaRepository):
                 record.next_run_at = next_fire_time(record, now)
             except ValueError:
                 record.next_run_at = None
-        self._schedules[record.id] = self._copy_job(record)
-        return self._copy_job(record)
+        self._schedules[record.id] = replace(record)
+        return replace(record)
 
-    async def get_schedule(self, job_id: str) -> Any | None:
+    async def get_schedule(self, job_id: str) -> ScheduledJob | None:
         job = self._schedules.get(job_id)
-        return self._copy_job(job) if job is not None else None
+        return replace(job) if job is not None else None
 
-    async def list_schedules(self, enabled_only: bool = False) -> list[Any]:
+    async def list_schedules(
+        self, enabled_only: bool = False
+    ) -> list[ScheduledJob]:
         jobs = list(self._schedules.values())
         if enabled_only:
             jobs = [job for job in jobs if job.enabled]
         jobs.sort(key=lambda job: job.updated_at, reverse=True)
-        return [self._copy_job(job) for job in jobs]
+        return [replace(job) for job in jobs]
 
-    async def update_schedule(self, job: Any) -> bool:
+    async def update_schedule(self, job: ScheduledJob | dict[str, Any]) -> bool:
         record = self._coerce_job(job)
         if record.id not in self._schedules:
             return False
         if not record.updated_at:
             record.updated_at = int(time.time() * 1000)
-        self._schedules[record.id] = self._copy_job(record)
+        self._schedules[record.id] = replace(record)
         return True
 
     async def delete_schedule(self, job_id: str) -> bool:
         return self._schedules.pop(job_id, None) is not None
 
-    async def due_schedules(self, now_ms: int, limit: int = 100) -> list[Any]:
+    async def due_schedules(
+        self, now_ms: int, limit: int = 100
+    ) -> list[ScheduledJob]:
         due = [
             job
             for job in self._schedules.values()
             if job.enabled and job.next_run_at is not None and job.next_run_at <= now_ms
         ]
         due.sort(key=lambda job: job.next_run_at or 0)
-        return [self._copy_job(job) for job in due[:limit]]
+        return [replace(job) for job in due[:limit]]
 
-    async def get_scheduler_lease(self, lease_id: str = "primary") -> dict | None:
+    async def get_scheduler_lease(
+        self, lease_id: str = "primary"
+    ) -> dict[str, Any] | None:
         lease = self._leases.get(lease_id)
         return dict(lease) if lease else None
 

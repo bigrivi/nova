@@ -12,16 +12,20 @@ completion turn cannot itself trigger another wake->spawn->wake cycle.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from nova.agent.spawn import MAX_SPAWN_DEPTH, SPAWN_DEPTH
 from nova.server.request_registry import _RESERVED
 from nova.server.schemas import ChatRequest
 
+if TYPE_CHECKING:
+    from nova.server.chat_service import ChatService
+
 log = logging.getLogger(__name__)
 
 
 async def start_headless_turn(
-    chat_service,
+    chat_service: ChatService,
     parent_id: str,
     text: str,
     metadata: dict,

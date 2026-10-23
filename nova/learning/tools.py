@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from nova.llm import ToolResult
 from nova.tools.registry import tool
 
+if TYPE_CHECKING:
+    from nova.learning.loop import LearningLoop
+
 
 class LearningTools:
-    def __init__(self, learning_loop=None):
+    def __init__(self, learning_loop: LearningLoop | None = None) -> None:
         self._loop = learning_loop
 
     @tool(

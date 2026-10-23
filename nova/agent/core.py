@@ -28,7 +28,7 @@ from nova.agent.tool_invoker import ToolInvoker, has_parsable_arguments
 from nova.agent.toolset import ToolsetBuilder
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
-from nova.llm import LLMProvider
+from nova.llm import ChatStreamEvent, LLMProvider, ToolCall
 from nova.prompt import PromptBuilder, PromptConfig
 from nova.session import get_session_manager
 from nova.session.protocol import SessionProtocol
@@ -108,7 +108,7 @@ class Agent:
         prompt_config: PromptConfig | None = None,
         data_source: DataSourceProtocol | None = None,
         on_title_updated: Callable[[str, str], None] | None = None,
-    ):
+    ) -> None:
         self.config = config or AgentConfig()
         self.agent_key = agent_key
         self.llm = llm_provider
@@ -243,7 +243,9 @@ class Agent:
     def off(self, event: AgentEvent, handler: Callable) -> None:
         self._events.off(event, handler)
 
-    async def _emit(self, event: AgentEvent, data: Any = None) -> None:
+    async def _emit(
+        self, event: AgentEvent, data: dict[str, Any] | str | ToolCall | None = None
+    ) -> None:
         await self._events.emit(event, data)
 
     async def _emit_approval(self, data: dict) -> None:
@@ -252,7 +254,7 @@ class Agent:
     async def _run_turn(
         self,
         turn_count: int,
-        tool_schemas: Any,
+        tool_schemas: list[dict[str, Any]] | None,
         group_id: str | None = None,
         loaded_messages: list | None = None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
@@ -316,9 +318,9 @@ class Agent:
     async def _start_completion_stream(
         self,
         turn_count: int,
-        tool_schemas: Any,
+        tool_schemas: list[dict[str, Any]] | None,
         loaded_messages: list | None,
-    ) -> AsyncGenerator[Any, None]:
+    ) -> AsyncGenerator[ChatStreamEvent, None]:
         messages = await self.messaging.build_messages(loaded_messages=loaded_messages)
         current_session = self.session.get_current_session()
         session_id = current_session.id if current_session else None

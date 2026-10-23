@@ -13,9 +13,12 @@ import logging
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nova.agent.events import AgentEvent, done_payload, error_payload
+
+if TYPE_CHECKING:
+    from nova.llm import ChatStreamEvent
 
 log = logging.getLogger(__name__)
 
@@ -64,7 +67,7 @@ class TurnStreamReader:
 
     async def consume(
         self,
-        chunks: Any,
+        chunks: AsyncGenerator[ChatStreamEvent, None],
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         closing = False
         try:
@@ -83,8 +86,8 @@ class TurnStreamReader:
                         self._reasoning_started_at = time.monotonic()
                         await self._emit(AgentEvent.REASONING_START)
                         yield AgentEvent.REASONING_START, None
-                    self.reasoning += chunk.content
-                    yield AgentEvent.REASONING_DELTA, chunk.content
+                    self.reasoning += getattr(chunk, "content", "")
+                    yield AgentEvent.REASONING_DELTA, getattr(chunk, "content", "")
 
                 elif chunk_type == "text_delta":
                     if not self._text_started:
@@ -95,8 +98,8 @@ class TurnStreamReader:
                             yield AgentEvent.REASONING_END, self.reasoning_elapsed_ms
                         await self._emit(AgentEvent.TEXT_START)
                         yield AgentEvent.TEXT_START, None
-                    self.content += chunk.content
-                    yield AgentEvent.TEXT_DELTA, chunk.content
+                    self.content += getattr(chunk, "content", "")
+                    yield AgentEvent.TEXT_DELTA, getattr(chunk, "content", "")
 
                 elif chunk_type == "retry":
                     # Forwarded immediately and not accumulated: this describes
@@ -121,8 +124,11 @@ class TurnStreamReader:
 
                 elif chunk_type == "error":
                     self.outcome = TurnOutcome.FAILED
-                    self.error_message = chunk.message
-                    yield AgentEvent.ERROR, error_payload("llm_error", chunk.message)
+                    self.error_message = getattr(chunk, "message", "")
+                    yield (
+                        AgentEvent.ERROR,
+                        error_payload("llm_error", getattr(chunk, "message", "")),
+                    )
                     return
 
                 elif chunk_type == "tool_call":
@@ -168,7 +174,7 @@ class TurnStreamReader:
             return None
         return int((time.monotonic() - self._reasoning_started_at) * 1000)
 
-    def _absorb_done(self, chunk: Any) -> None:
+    def _absorb_done(self, chunk: ChatStreamEvent) -> None:
         self.done_content = getattr(chunk, "content", "") or self.done_content
         self.tokens_input = getattr(chunk, "tokens_input", None) or self.tokens_input
         self.tokens_output = getattr(chunk, "tokens_output", None) or self.tokens_output
@@ -177,12 +183,12 @@ class TurnStreamReader:
         )
         self.provider_meta = getattr(chunk, "provider_meta", None) or self.provider_meta
 
-    def _absorb_tool_call(self, chunk: Any) -> None:
+    def _absorb_tool_call(self, chunk: ChatStreamEvent) -> None:
         identifier = getattr(chunk, "id", None) or getattr(chunk, "name", "")
         if identifier:
             self.tool_calls[str(identifier)] = chunk
 
-    def _absorb_batched_tool_calls(self, chunk: Any) -> None:
+    def _absorb_batched_tool_calls(self, chunk: ChatStreamEvent) -> None:
         batched = getattr(chunk, "tool_calls", None)
         if not batched:
             return

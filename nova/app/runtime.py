@@ -20,7 +20,7 @@ from nova.llm import (
     OpenAIResponsesProvider,
 )
 from nova.prompt import PromptConfig
-from nova.settings import get_settings
+from nova.settings import Settings, get_settings
 from nova.skills.tools import SkillTools
 from nova.tools.permissions import load_permission_mode, permissions_path
 from nova.tools.registry import ToolRegistry
@@ -156,7 +156,7 @@ def build_llm(
     return llm
 
 
-def _optional_int(value) -> int | None:
+def _optional_int(value: str | int | float | None) -> int | None:
     return int(value) if value is not None else None
 
 
@@ -200,7 +200,7 @@ async def _agent_dir(agent_key: str) -> Path:
 
 
 def _resolve_effort(
-    settings,
+    settings: Settings,
     provider: str,
     model: str,
     requested: str | None,
@@ -251,7 +251,7 @@ def _resolve_effort(
     return None
 
 
-def _first_configured_route(settings) -> tuple[str | None, str | None]:
+def _first_configured_route(settings: Settings) -> tuple[str | None, str | None]:
     provider = next(iter(settings.providers.keys()), None)
     if provider is None:
         return None, None

@@ -4,6 +4,7 @@ Ollama LLM Provider using aiohttp
 
 import json
 import logging
+from collections.abc import Iterable
 
 import aiohttp  # noqa: F401  # kept so tests can patch nova.llm.providers.ollama.aiohttp
 
@@ -12,6 +13,7 @@ from nova.llm.framing import NDJSONFramer
 from nova.llm.http_provider import HttpProvider
 from nova.llm.policy import StreamPolicy, TransportPolicy
 from nova.llm.provider import (
+    ChatStreamEvent,
     Done,
     ReasoningDelta,
     TextDelta,
@@ -39,7 +41,7 @@ class _OllamaStreamParser(StreamParser):
         self._tool_calls: dict[int, dict] = {}
         self._current_tool_index: int | None = None
 
-    def feed(self, event: dict, acc: StreamAccumulator):
+    def feed(self, event: dict, acc: StreamAccumulator) -> Iterable[ChatStreamEvent]:
         message = event.get("message", {})
         delta = message.get("content", "") or ""
         reasoning = message.get("reasoning_content") or message.get("thinking") or ""
@@ -115,7 +117,7 @@ class OllamaProvider(HttpProvider):
         base_url: str | None = None,
         request_options: dict | None = None,
         timeout_seconds: int = 120,
-    ):
+    ) -> None:
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
         self.timeout_seconds = timeout_seconds

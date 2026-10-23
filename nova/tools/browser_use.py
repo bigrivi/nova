@@ -7,7 +7,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from nova.llm import Message, ToolResult
 from nova.llm.oneshot import stream_text_once
@@ -15,6 +15,8 @@ from nova.tools.registry import tool
 from nova.tools.web_search import TOOL as web_search_tool
 
 if TYPE_CHECKING:
+    from playwright.async_api import Page
+
     from nova.tools.context import ToolContext
 
 log = logging.getLogger(__name__)
@@ -47,7 +49,7 @@ _playwright = None
 _browser = None
 _context = None
 _page = None
-_element_cache: dict[str, list] = {}
+_element_cache: dict[str, list[dict[str, Any]]] = {}
 
 
 def _detect_system_browser() -> str | None:
@@ -92,7 +94,7 @@ def _detect_system_profile() -> str:
     return str(Path.home() / ".config" / "google-chrome")
 
 
-def _seed_profile(target: str):
+def _seed_profile(target: str) -> None:
     src_default = str(Path(_detect_system_profile()) / "Default")
     if not os.path.isdir(src_default):
         return
@@ -112,7 +114,7 @@ def _seed_profile(target: str):
                 pass
 
 
-async def _ensure_browser():
+async def _ensure_browser() -> "Page":
     global _playwright, _browser, _context, _page
     if _browser is not None:
         try:
@@ -135,7 +137,7 @@ async def _ensure_browser():
     if not os.path.isdir(os.path.join(user_data_dir, "Default")):
         _seed_profile(user_data_dir)
 
-    launch_kwargs = {
+    launch_kwargs: dict[str, Any] = {
         "headless": False,
         "ignore_default_args": [
             "--enable-automation",
@@ -156,7 +158,7 @@ async def _ensure_browser():
     return _page
 
 
-def _invalidate_cache():
+def _invalidate_cache() -> None:
     _element_cache.clear()
 
 
@@ -528,7 +530,7 @@ async def browser_use(
         )
 
 
-async def _get_clickable_elements(page) -> list[dict]:
+async def _get_clickable_elements(page: "Page") -> list[dict[str, Any]]:
     current_url = page.url
     if current_url in _element_cache:
         return _element_cache[current_url]
@@ -577,7 +579,7 @@ async def _get_clickable_elements(page) -> list[dict]:
     return elements
 
 
-async def _get_state(include_screenshot: bool = False) -> dict:
+async def _get_state(include_screenshot: bool = False) -> dict[str, Any]:
     try:
         await _page.wait_for_load_state("load", timeout=10000)
     except Exception:
@@ -586,7 +588,7 @@ async def _get_state(include_screenshot: bool = False) -> dict:
     url = _page.url
     title = await _page.title()
 
-    elements = await _get_clickable_elements(_page)
+    elements = await _get_clickable_elements(cast("Page", _page))
     scroll = await _page.evaluate("""() => ({
         pixels_above: window.scrollY,
         pixels_below: Math.max(0, document.documentElement.scrollHeight - window.scrollY - window.innerHeight),
@@ -613,7 +615,7 @@ async def _get_state(include_screenshot: bool = False) -> dict:
     return state
 
 
-def _format_state_text(state: dict) -> str:
+def _format_state_text(state: dict[str, Any]) -> str:
     lines = [
         f"URL: {state['url']}",
         f"Title: {state['title']}",
@@ -629,7 +631,7 @@ def _format_state_text(state: dict) -> str:
     return "\n".join(lines)
 
 
-async def _cleanup():
+async def _cleanup() -> None:
     global _playwright, _browser, _context, _page
     if _context:
         await _context.close()

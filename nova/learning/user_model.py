@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import aiosqlite
+
+    from nova.learning.skill_extractor import TurnContext
 
 MAX_RENDER_CHARS = 500
 
@@ -18,9 +23,9 @@ class UserProfile:
 
 
 class UserModel:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str) -> None:
         self.db_path = db_path
-        self._conn: Any = None
+        self._conn: aiosqlite.Connection | None = None
 
     async def connect(self) -> None:
         import aiosqlite
@@ -55,7 +60,7 @@ class UserModel:
             extra=data.get("extra", {}),
         )
 
-    async def update(self, user_id: str, turn: Any) -> None:
+    async def update(self, user_id: str, turn: TurnContext) -> None:
         if self._conn is None:
             await self.connect()
         import datetime

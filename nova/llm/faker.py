@@ -7,12 +7,14 @@ import logging
 import random
 import re
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from nova.llm.provider import (
     ChatStreamEvent,
     Done,
     Error,
     LLMProvider,
+    Message,
     ReasoningDelta,
     TextDelta,
     ToolCall,
@@ -337,7 +339,7 @@ class FakerLLMProvider(LLMProvider):
         model: str = "gpt-4o",
         stream: bool = False,
         tools: list[dict] | None = None,
-        **kwargs,
+        **kwargs: object,
     ) -> Done | Error:
         rng = self._rng(messages, model)
         response = self._response(messages, model, rng)
@@ -355,7 +357,7 @@ class FakerLLMProvider(LLMProvider):
         tools: list[dict] | None = None,
         abort_event: asyncio.Event | None = None,
         timeout: int | None = None,
-        **kwargs,
+        **kwargs: object,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         rng = self._rng(messages, model)
         response = self._response(messages, model, rng)
@@ -510,8 +512,8 @@ class FakerLLMProvider(LLMProvider):
 
     @classmethod
     def _contextual_arguments(
-        cls, name: str, message: str, schema, rng: random.Random
-    ) -> dict:
+        cls, name: str, message: str, schema: dict[str, Any], rng: random.Random
+    ) -> dict[str, Any]:
         base = dict(cls._generate_arguments(name, schema))
         if not isinstance(schema, dict):
             return base
@@ -575,15 +577,15 @@ class FakerLLMProvider(LLMProvider):
         has_cjk = any("\u4e00" <= c <= "\u9fff" for c in message)
 
         def q(
-            qid,
-            header,
-            question,
-            input_type,
-            options=None,
-            multiple=False,
-            required=True,
-            default="",
-        ):
+            qid: str,
+            header: str,
+            question: str,
+            input_type: str,
+            options: list[dict[str, str]] | None = None,
+            multiple: bool = False,
+            required: bool = True,
+            default: str = "",
+        ) -> dict[str, Any]:
             return {
                 "id": qid,
                 "header": header,
@@ -1047,7 +1049,7 @@ class FakerLLMProvider(LLMProvider):
         return random.Random(int.from_bytes(digest[:8], "big"))
 
     @staticmethod
-    def _message_role(message) -> str:
+    def _message_role(message: Message | dict[str, Any]) -> str:
         return (
             message.get("role", "")
             if isinstance(message, dict)
@@ -1055,7 +1057,7 @@ class FakerLLMProvider(LLMProvider):
         )
 
     @staticmethod
-    def _message_content(message) -> str:
+    def _message_content(message: Message | dict[str, Any]) -> str:
         content = (
             message.get("content", "")
             if isinstance(message, dict)

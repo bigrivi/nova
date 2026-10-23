@@ -10,16 +10,23 @@ import logging
 import re
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db.config import DatabaseConfig
 from nova.db.repository import NovaRepository
+from nova.memory.models import MemoryRecord, MemorySearchFilters
+from nova.project.models import Project
 from nova.project.paths import normalize_project_path, project_label_from_path
+from nova.scheduler.models import ScheduledJob
 from nova.session.models import Message, MessageFilter
+
+if TYPE_CHECKING:
+    from nova.session.manager import SessionContext
 
 log = logging.getLogger(__name__)
 
@@ -178,7 +185,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 """
 
 
-def _parse_tool_calls(raw: str | None) -> list | None:
+def _parse_tool_calls(raw: str | None) -> list[dict[str, Any]] | None:
     if not raw:
         return None
     try:
@@ -187,7 +194,7 @@ def _parse_tool_calls(raw: str | None) -> list | None:
         return None
 
 
-def _serialize_tool_calls(tool_calls: list | None) -> str | None:
+def _serialize_tool_calls(tool_calls: list[Any] | None) -> str | None:
     if not tool_calls:
         return None
     items: list[Any] = []
@@ -201,7 +208,7 @@ def _serialize_tool_calls(tool_calls: list | None) -> str | None:
     return json.dumps(items, ensure_ascii=False)
 
 
-def _parse_provider_meta(raw: str | None) -> dict | None:
+def _parse_provider_meta(raw: str | None) -> dict[str, Any] | None:
     if not raw:
         return None
     try:
@@ -241,11 +248,11 @@ def _row_to_message(row_dict: dict[str, Any]) -> Message:
     )
 
 
-def _row_to_session(row: Any) -> dict[str, Any]:
+def _row_to_session(row: aiosqlite.Row) -> dict[str, Any]:
     return dict(row)
 
 
-def _to_ms_timestamp(value: Any) -> int:
+def _to_ms_timestamp(value: datetime | int | float) -> int:
     if hasattr(value, "timestamp"):
         return int(value.timestamp() * 1000)
     return int(value)
@@ -277,7 +284,7 @@ def _ddl_columns(ddl: str, table: str) -> set[str]:
 
 
 class SqliteRepository(NovaRepository):
-    def __init__(self, config: DatabaseConfig | None = None):
+    def __init__(self, config: DatabaseConfig | None = None) -> None:
         self.config = config or DatabaseConfig()
         self._conn: aiosqlite.Connection | None = None
         self._lock = asyncio.Lock()
@@ -636,7 +643,7 @@ class SqliteRepository(NovaRepository):
         rows = await cursor.fetchall()
         return [_row_to_message(dict(row)) for row in rows]
 
-    async def save_session(self, session: Any) -> None:
+    async def save_session(self, session: SessionContext) -> None:
         await self._ensure_connected()
         agent_key = getattr(session, "agent_key", DEFAULT_AGENT_KEY)
         async with self._lock:
@@ -681,7 +688,7 @@ class SqliteRepository(NovaRepository):
             )
             await self._conn.commit()
 
-    async def get_session(self, session_id: str) -> dict | None:
+    async def get_session(self, session_id: str) -> dict[str, Any] | None:
         await self._ensure_connected()
         cursor = await self._conn.execute(
             "SELECT * FROM sessions WHERE id = ?",
@@ -777,7 +784,7 @@ class SqliteRepository(NovaRepository):
             await self._conn.commit()
             return cursor.rowcount > 0
 
-    async def save_project(self, project: Any) -> None:
+    async def save_project(self, project: Project) -> None:
         await self._ensure_connected()
         async with self._lock:
             await self._conn.execute(
@@ -794,7 +801,7 @@ class SqliteRepository(NovaRepository):
             )
             await self._conn.commit()
 
-    async def get_project(self, project_id: str) -> dict | None:
+    async def get_project(self, project_id: str) -> dict[str, Any] | None:
         await self._ensure_connected()
         cursor = await self._conn.execute(
             "SELECT * FROM projects WHERE id = ?",
@@ -803,14 +810,14 @@ class SqliteRepository(NovaRepository):
         row = await cursor.fetchone()
         return dict(row) if row else None
 
-    async def list_projects(self) -> list[dict]:
+    async def list_projects(self) -> list[dict[str, Any]]:
         await self._ensure_connected()
         cursor = await self._conn.execute(
             "SELECT * FROM projects ORDER BY updated_at DESC"
         )
         return [dict(row) for row in await cursor.fetchall()]
 
-    async def find_projects_by_path(self, path: str) -> list[dict]:
+    async def find_projects_by_path(self, path: str) -> list[dict[str, Any]]:
         await self._ensure_connected()
         cursor = await self._conn.execute(
             "SELECT * FROM projects WHERE path = ? ORDER BY updated_at DESC",
@@ -850,7 +857,7 @@ class SqliteRepository(NovaRepository):
 
     async def get_all_sessions(
         self, limit: int | None = None, agent_key: str | None = None
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         await self._ensure_connected()
         query = "SELECT * FROM sessions"
         params: list[Any] = []
@@ -867,7 +874,7 @@ class SqliteRepository(NovaRepository):
 
     async def get_sessions_by_parent_id(
         self, parent_id: str, limit: int = 50
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Get all child sessions of a parent session."""
         await self._ensure_connected()
         cursor = await self._conn.execute(
@@ -882,7 +889,7 @@ class SqliteRepository(NovaRepository):
         session_id: str,
         role: str,
         content: str,
-        tool_calls: list | None = None,
+        tool_calls: list[Any] | None = None,
         tool_call_id: str | None = None,
         summary: bool = False,
         images: list[str] | None = None,
@@ -891,7 +898,7 @@ class SqliteRepository(NovaRepository):
         reasoning_elapsed_ms: int | None = None,
         tokens_input: int | None = None,
         tokens_output: int | None = None,
-        provider_meta: dict | None = None,
+        provider_meta: dict[str, Any] | None = None,
         model: str | None = None,
         reasoning_effort: str | None = None,
         error: str | None = None,
@@ -1103,14 +1110,14 @@ class SqliteRepository(NovaRepository):
 
     # ── Agent CRUD ──────────────────────────────────────────────────
 
-    async def list_agents(self) -> list[dict]:
+    async def list_agents(self) -> list[dict[str, Any]]:
         await self._ensure_connected()
         cursor = await self._conn.execute(
             "SELECT * FROM agents ORDER BY name ASC",
         )
         return [dict(row) for row in await cursor.fetchall()]
 
-    async def get_agent(self, key: str) -> dict | None:
+    async def get_agent(self, key: str) -> dict[str, Any] | None:
         await self._ensure_connected()
         cursor = await self._conn.execute(
             "SELECT * FROM agents WHERE key = ?",
@@ -1119,7 +1126,7 @@ class SqliteRepository(NovaRepository):
         row = await cursor.fetchone()
         return dict(row) if row else None
 
-    async def save_agent(self, agent: dict) -> None:
+    async def save_agent(self, agent: dict[str, Any]) -> None:
         await self._ensure_connected()
         async with self._lock:
             await self._conn.execute(
@@ -1150,7 +1157,7 @@ class SqliteRepository(NovaRepository):
             )
             await self._conn.commit()
 
-    async def get_child_agents(self, parent_key: str) -> list[dict]:
+    async def get_child_agents(self, parent_key: str) -> list[dict[str, Any]]:
         """Get all child agents of a parent agent (via the agent_parents M2M table)."""
         await self._ensure_connected()
         cursor = await self._conn.execute(
@@ -1254,7 +1261,7 @@ class SqliteRepository(NovaRepository):
             await self._conn.commit()
             return cursor.rowcount > 0
 
-    async def save_memory(self, record: Any) -> None:
+    async def save_memory(self, record: MemoryRecord) -> None:
         await self._ensure_connected()
         async with self._lock:
             await self._conn.execute(
@@ -1285,7 +1292,7 @@ class SqliteRepository(NovaRepository):
         scope: str,
         session_id: str | None = None,
         owner_agent_key: str | None = None,
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         await self._ensure_connected()
         # owner_agent_key is matched exactly (including NULL) so one agent's
         # upsert never resolves to a different owner's row of the same key.
@@ -1303,7 +1310,9 @@ class SqliteRepository(NovaRepository):
         row = await cursor.fetchone()
         return dict(row) if row else None
 
-    async def list_memories(self, filters: Any) -> list[dict]:
+    async def list_memories(
+        self, filters: MemorySearchFilters
+    ) -> list[dict[str, Any]]:
         await self._ensure_connected()
         sql = "SELECT * FROM memories WHERE 1 = 1"
         params: list[object] = []
@@ -1350,7 +1359,7 @@ class SqliteRepository(NovaRepository):
             await self._conn.commit()
             return cursor.rowcount or 0
 
-    async def list_memories_by_session(self, session_id: str) -> list[dict]:
+    async def list_memories_by_session(self, session_id: str) -> list[dict[str, Any]]:
         await self._ensure_connected()
         cursor = await self._conn.execute(
             "SELECT * FROM memories WHERE session_id = ? ORDER BY updated_at DESC",
@@ -1383,15 +1392,15 @@ class SqliteRepository(NovaRepository):
 
     # ── Scheduled jobs ─────────────────────────────────────────────
 
-    def _coerce_job(self, job: Any) -> Any:
+    def _coerce_job(self, job: ScheduledJob | dict[str, Any]) -> ScheduledJob:
         """Accept a ScheduledJob or a plain row dict; return a job object."""
         if isinstance(job, dict):
-            from nova.scheduler.models import ScheduledJob
-
             return ScheduledJob.from_dict(job)
         return job
 
-    async def create_schedule(self, job: Any) -> Any:
+    async def create_schedule(
+        self, job: ScheduledJob | dict[str, Any]
+    ) -> ScheduledJob:
         from nova.scheduler.schedule import next_fire_time
 
         record = self._coerce_job(job)
@@ -1436,9 +1445,7 @@ class SqliteRepository(NovaRepository):
             await self._conn.commit()
         return record
 
-    async def get_schedule(self, job_id: str) -> Any | None:
-        from nova.scheduler.models import ScheduledJob
-
+    async def get_schedule(self, job_id: str) -> ScheduledJob | None:
         await self._ensure_connected()
         cursor = await self._conn.execute(
             "SELECT * FROM scheduled_jobs WHERE id = ?",
@@ -1447,9 +1454,9 @@ class SqliteRepository(NovaRepository):
         row = await cursor.fetchone()
         return ScheduledJob.from_dict(dict(row)) if row else None
 
-    async def list_schedules(self, enabled_only: bool = False) -> list[Any]:
-        from nova.scheduler.models import ScheduledJob
-
+    async def list_schedules(
+        self, enabled_only: bool = False
+    ) -> list[ScheduledJob]:
         await self._ensure_connected()
         sql = "SELECT * FROM scheduled_jobs"
         if enabled_only:
@@ -1458,7 +1465,7 @@ class SqliteRepository(NovaRepository):
         cursor = await self._conn.execute(sql)
         return [ScheduledJob.from_dict(dict(row)) for row in await cursor.fetchall()]
 
-    async def update_schedule(self, job: Any) -> bool:
+    async def update_schedule(self, job: ScheduledJob | dict[str, Any]) -> bool:
         record = self._coerce_job(job)
         await self._ensure_connected()
         async with self._lock:
@@ -1501,9 +1508,9 @@ class SqliteRepository(NovaRepository):
             await self._conn.commit()
             return cursor.rowcount > 0
 
-    async def due_schedules(self, now_ms: int, limit: int = 100) -> list[Any]:
-        from nova.scheduler.models import ScheduledJob
-
+    async def due_schedules(
+        self, now_ms: int, limit: int = 100
+    ) -> list[ScheduledJob]:
         await self._ensure_connected()
         cursor = await self._conn.execute(
             """SELECT * FROM scheduled_jobs
@@ -1542,7 +1549,7 @@ class SqliteRepository(NovaRepository):
             await self._conn.commit()
             return cursor.rowcount > 0
 
-    async def get_scheduler_lease(self, lease_id: str = "primary") -> dict | None:
+    async def get_scheduler_lease(self, lease_id: str = "primary") -> dict[str, Any] | None:
         await self._ensure_connected()
         cursor = await self._conn.execute(
             "SELECT * FROM scheduler_leases WHERE id = ?",

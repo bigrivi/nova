@@ -38,7 +38,7 @@ class _HTMLTextExtractor(HTMLParser):
         self._skip_depth = 0
         self._parts: list[str] = []
 
-    def handle_starttag(self, tag: str, attrs) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in {"script", "style", "noscript", "iframe", "object", "embed"}:
             self._skip_depth += 1
         elif tag in {
@@ -97,7 +97,7 @@ class _HTMLMarkdownExtractor(HTMLParser):
         self._heading_level: int | None = None
         self._heading_buffer: list[str] = []
 
-    def handle_starttag(self, tag: str, attrs) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in {"script", "style", "noscript", "iframe", "object", "embed"}:
             self._skip_depth += 1
             return

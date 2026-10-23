@@ -19,6 +19,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from nova.db import DataSourceProtocol
 from nova.scheduler.models import ScheduledJob
 from nova.scheduler.schedule import next_fire_time
 from nova.server.chat_service import ChatService
@@ -61,7 +62,7 @@ def _job_payload(job: ScheduledJob) -> dict[str, Any]:
     }
 
 
-def _parse_run_at(value: Any) -> int | None:
+def _parse_run_at(value: str | None) -> int | None:
     """Parse an ISO ``run_at`` into epoch milliseconds; 400 when unreadable."""
     if value is None:
         return None
@@ -126,7 +127,9 @@ def _validate_job_fields(
             raise HTTPException(status_code=400, detail="once jobs need a run_at")
 
 
-async def _repository(request: Request, chat_service: ChatService) -> Any:
+async def _repository(
+    request: Request, chat_service: ChatService
+) -> DataSourceProtocol:
     return await chat_service._get_data_source()
 
 

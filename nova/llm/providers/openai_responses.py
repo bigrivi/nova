@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 
 import aiohttp  # noqa: F401  # kept so tests can patch nova.llm.providers.openai_responses.aiohttp
 
@@ -12,6 +13,7 @@ from nova.llm.policy import StreamPolicy, TransportPolicy
 from nova.llm.provider import (
     PROVIDER_TYPE_OPENAI_RESPONSE,
     RETRY_STATUS_CODES,
+    ChatStreamEvent,
     Done,
     Error,
     ReasoningDelta,
@@ -85,7 +87,7 @@ class _ResponsesStreamParser(StreamParser):
         self._tool_calls: dict[int, dict] = {}
         self._saw_completed = False
 
-    def feed(self, event: dict, acc: StreamAccumulator):
+    def feed(self, event: dict, acc: StreamAccumulator) -> Iterable[ChatStreamEvent]:
         event_type = event.get("type", "")
 
         # response.completed is the end of the stream. Carrying on would mean
@@ -209,7 +211,7 @@ class _ResponsesStreamParser(StreamParser):
             cache_read_tokens=acc.cache_read_tokens,
         )
 
-    def on_eof(self, acc: StreamAccumulator):
+    def on_eof(self, acc: StreamAccumulator) -> Iterable[ChatStreamEvent]:
         # The protocol's terminal event is response.completed, so reaching the
         # end of the transport without it means the response was cut short.
         if not self._saw_completed:
@@ -254,7 +256,7 @@ class OpenAIResponsesProvider(HttpProvider):
         request_hook: str | None = None,
         request_session_hook: str | None = None,
         default_reasoning_effort: str | None = None,
-    ):
+    ) -> None:
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})

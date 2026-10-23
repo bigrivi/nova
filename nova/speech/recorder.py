@@ -21,6 +21,7 @@ import sys
 import tempfile
 import threading
 import wave
+from collections.abc import Callable
 from ctypes import (
     POINTER,
     Structure,
@@ -31,7 +32,7 @@ from ctypes import (
     c_void_p,
 )
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +77,12 @@ def create_recorder() -> Recorder:
     raise RuntimeError(UNSUPPORTED_PLATFORM)
 
 
-_RUNNER_CLS: Any = None
+# Opaque PyObjC class object; built once (redefining an NSObject subclass
+# crashes the second recording), so it cannot be given a static type.
+_RUNNER_CLS: Any = None  # noqa: ANN401
 
 
-def _runner_cls() -> Any:
+def _runner_cls() -> Any:  # noqa: ANN401 - opaque PyObjC class object
     """The main-thread hop helper, defined exactly once.
 
     PyObjC registers NSObject subclasses globally: defining the class inside
@@ -91,7 +94,7 @@ def _runner_cls() -> Any:
         from Foundation import NSObject  # type: ignore[import-not-found]
 
         class _Runner(NSObject):  # type: ignore[no-redef]
-            def run_(self, _sender: Any) -> None:
+            def run_(self, _sender: object) -> None:
                 func, args, box = self._call
                 try:
                     box["value"] = func(*args)
@@ -102,7 +105,7 @@ def _runner_cls() -> Any:
     return _RUNNER_CLS
 
 
-def _call_on_main_thread(func: Any, *args: Any) -> Any:
+def _call_on_main_thread[T](func: Callable[..., T], *args: object) -> T:
     """Run ``func(*args)`` on the main thread and return its result.
 
     AVFoundation objects must be created and driven from the main thread;
@@ -120,16 +123,16 @@ def _call_on_main_thread(func: Any, *args: Any) -> Any:
     runner.performSelectorOnMainThread_withObject_waitUntilDone_("run:", None, True)
     if "error" in box:
         raise box["error"]
-    return box.get("value")
+    return cast(T, box.get("value"))
 
 
-def _mac_file_url(path: str) -> Any:
+def _mac_file_url(path: str) -> object:
     from Foundation import NSURL  # type: ignore[import-not-found]
 
     return NSURL.fileURLWithPath_(path)
 
 
-def _make_mac_recorder(path: str) -> Any:
+def _make_mac_recorder(path: str) -> Any:  # noqa: ANN401 - opaque AVAudioRecorder
     """Create (not start) an AVAudioRecorder writing AAC/m4a to ``path``."""
     import AVFoundation  # type: ignore[import-not-found]
 
@@ -271,7 +274,7 @@ _KERNEL_SIGNATURES: dict[str, tuple[list[Any], Any]] = {
 }
 
 
-def _winmm() -> Any:
+def _winmm() -> tuple[ctypes.CDLL, ctypes.CDLL]:
     """Return winmm.dll with typed signatures, and kernel32 event helpers.
 
     Raises RuntimeError off Windows, where neither DLL is loadable.
@@ -287,7 +290,7 @@ def _typed_dll(
     name: str,
     signatures: dict[str, tuple[list[Any], Any]],
     use_last_error: bool = False,
-) -> Any:
+) -> ctypes.CDLL:
     """Load a Windows DLL and pin each listed function's signature."""
     dll = ctypes.WinDLL(name, use_last_error=use_last_error)
     for func_name, (argtypes, restype) in signatures.items():
@@ -373,8 +376,8 @@ class WindowsRecorder:
         logger.info("Voice recording started: %s", tmp.name)
 
     def _open_device(
-        self, dll: Any, kernel: Any
-    ) -> tuple[Any, Any, list[_WinmmBuffer]]:
+        self, dll: ctypes.CDLL, kernel: ctypes.CDLL
+    ) -> tuple[c_void_p, c_void_p, list[_WinmmBuffer]]:
         """Open the default capture device and queue its input buffers."""
         fmt = _WaveFormatEx()
         fmt.wFormatTag = _WAVE_FORMAT_PCM
@@ -445,10 +448,10 @@ class WindowsRecorder:
 
     @staticmethod
     def _close_device(
-        dll: Any,
-        kernel: Any,
-        handle: Any,
-        event: Any,
+        dll: ctypes.CDLL,
+        kernel: ctypes.CDLL,
+        handle: c_void_p,
+        event: c_void_p,
         buffers: list[_WinmmBuffer],
     ) -> None:
         """Return the device and its buffers, never raising."""

@@ -13,7 +13,7 @@ import json
 import logging
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -25,6 +25,8 @@ from nova.settings import get_settings
 
 if TYPE_CHECKING:
     from nova.db.data_source import DataSourceProtocol
+    from nova.session.manager import SessionContext
+    from nova.session.models import Message as StoredMessage
 
 log = logging.getLogger(__name__)
 
@@ -692,7 +694,7 @@ async def _generate_summary(
     return None
 
 
-def _is_summary(message) -> bool:
+def _is_summary(message: StoredMessage | dict[str, Any]) -> bool:
     """Whether *message* is a compaction summary rather than real history."""
     if isinstance(message, dict):
         return bool(message.get("summary"))
@@ -708,35 +710,35 @@ def _generate_id() -> str:
     return str(uuid.uuid4())
 
 
-def _get_content(msg) -> str:
+def _get_content(msg: StoredMessage | dict[str, Any]) -> str:
     """Get message content."""
     if isinstance(msg, dict):
         return msg.get("content", "") or ""
     return getattr(msg, "content", "") or ""
 
 
-def _get_tool_calls(msg) -> list:
+def _get_tool_calls(msg: StoredMessage | dict[str, Any]) -> list:
     """Get the tool calls attached to a message."""
     if isinstance(msg, dict):
         return msg.get("tool_calls", []) or []
     return getattr(msg, "tool_calls", []) or []
 
 
-def _get_role(msg) -> str:
+def _get_role(msg: StoredMessage | dict[str, Any]) -> str:
     """Get the message role."""
     if isinstance(msg, dict):
         return msg.get("role", "?")
     return getattr(msg, "role", "?")
 
 
-def _get_msg_id(msg) -> str:
+def _get_msg_id(msg: StoredMessage | dict[str, Any]) -> str:
     """Get the message ID."""
     if isinstance(msg, dict):
         return msg.get("id", "")
     return getattr(msg, "id", "")
 
 
-def _get_tool_call_ids(msg) -> list[str]:
+def _get_tool_call_ids(msg: StoredMessage | dict[str, Any]) -> list[str]:
     """Extract tool call IDs from an assistant message's tool_calls field."""
     tc = _get_tool_calls(msg)
     if not tc:
@@ -751,21 +753,21 @@ def _get_tool_call_ids(msg) -> list[str]:
     return []
 
 
-def _get_tool_call_id(msg) -> str:
+def _get_tool_call_id(msg: StoredMessage | dict[str, Any]) -> str:
     """Get the tool_call_id for a tool response message."""
     if isinstance(msg, dict):
         return msg.get("tool_call_id", "") or ""
     return getattr(msg, "tool_call_id", "") or ""
 
 
-def _get_time_created(msg) -> int:
+def _get_time_created(msg: StoredMessage | dict[str, Any]) -> int:
     """Get the message creation timestamp in milliseconds."""
     if isinstance(msg, dict):
         return int(msg.get("time_created") or 0)
     return int(getattr(msg, "time_created", 0) or 0)
 
 
-def _get_session_id(session) -> str | None:
+def _get_session_id(session: SessionContext | dict[str, Any] | None) -> str | None:
     """Sessions reach this module both as SessionContext objects and as raw
     ``db.get_session()`` dicts, so every field read has to accept both."""
     if session is None:
@@ -775,7 +777,9 @@ def _get_session_id(session) -> str | None:
     return getattr(session, "id", None)
 
 
-def _get_session_compacted_at(session) -> int | None:
+def _get_session_compacted_at(
+    session: SessionContext | dict[str, Any] | None,
+) -> int | None:
     if session is None:
         return None
     if isinstance(session, dict):
@@ -783,7 +787,9 @@ def _get_session_compacted_at(session) -> int | None:
     return getattr(session, "compacted_at", None)
 
 
-def _set_session_compacted_at(session, value: int) -> None:
+def _set_session_compacted_at(
+    session: SessionContext | dict[str, Any] | None, value: int
+) -> None:
     if session is None:
         return
     if isinstance(session, dict):
@@ -792,13 +798,13 @@ def _set_session_compacted_at(session, value: int) -> None:
     session.compacted_at = value
 
 
-def _get_tokens_input(msg) -> int:
+def _get_tokens_input(msg: StoredMessage | dict[str, Any]) -> int:
     if isinstance(msg, dict):
         return int(msg.get("tokens_input") or 0)
     return int(getattr(msg, "tokens_input", 0) or 0)
 
 
-def _get_tokens_output(msg) -> int:
+def _get_tokens_output(msg: StoredMessage | dict[str, Any]) -> int:
     if isinstance(msg, dict):
         return int(msg.get("tokens_output") or 0)
     return int(getattr(msg, "tokens_output", 0) or 0)
@@ -835,7 +841,7 @@ class CompactionController:
     async def plan(
         self,
         messages: list,
-        session: Any,
+        session: SessionContext | dict[str, Any] | None,
         db: DataSourceProtocol,
         force: bool = False,
     ) -> CompactionPlan | None:
@@ -867,7 +873,9 @@ class CompactionController:
             return None
         return plan
 
-    def record_result(self, compacted: bool, session: Any) -> None:
+    def record_result(
+        self, compacted: bool, session: SessionContext | dict[str, Any] | None
+    ) -> None:
         """Fold one compaction outcome into the consecutive-failure streak.
 
         Forced (overflow-driven) runs share this streak with automatic ones: the
@@ -887,12 +895,12 @@ class CompactionController:
     async def maybe_compact(
         self,
         messages: list,
-        session: Any,
+        session: SessionContext | dict[str, Any] | None,
         db: DataSourceProtocol,
         llm: LLMProvider,
-        emit: Any,
+        emit: Callable[..., Awaitable[None]],
         tools: list[dict] | None = None,
-    ) -> Any:
+    ) -> AsyncGenerator[tuple[AgentEvent, dict[str, Any]], None]:
         """Compact if needed, announcing it around the summarisation call.
 
         ``compacted`` records whether history actually changed, so the caller

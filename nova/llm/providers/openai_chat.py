@@ -4,6 +4,8 @@ OpenAI LLM Provider
 
 import json
 import logging
+from collections.abc import Iterable
+from typing import Any
 
 import aiohttp  # noqa: F401  # kept so tests can patch nova.llm.providers.openai_chat.aiohttp
 
@@ -13,6 +15,7 @@ from nova.llm.http_provider import HttpProvider
 from nova.llm.policy import StreamPolicy, TransportPolicy
 from nova.llm.provider import (
     RETRY_STATUS_CODES,
+    ChatStreamEvent,
     Done,
     Error,
     ReasoningDelta,
@@ -71,7 +74,7 @@ class _OpenAIChatStreamParser(StreamParser):
         self._tool_calls: dict[int, dict[str, object]] = {}
         self._finish_reason: str | None = None
 
-    def feed(self, event: dict, acc: StreamAccumulator):
+    def feed(self, event: dict, acc: StreamAccumulator) -> Iterable[ChatStreamEvent]:
         usage = event.get("usage")
         if isinstance(usage, dict):
             # Providers report usage in a trailing chunk that carries no
@@ -200,7 +203,7 @@ class OpenAIProvider(HttpProvider):
         request_hook: str | None = None,
         request_session_hook: str | None = None,
         default_reasoning_effort: str | None = None,
-    ):
+    ) -> None:
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
@@ -300,7 +303,7 @@ class OpenAIProvider(HttpProvider):
         }
 
     def _format_messages(self, messages: list) -> list[dict]:
-        def get_attr(message: object, key: str):
+        def get_attr(message: object, key: str) -> Any:  # noqa: ANN401
             if isinstance(message, dict):
                 return message.get(key)
             return getattr(message, key, None)

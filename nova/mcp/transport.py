@@ -5,7 +5,10 @@ import json
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import aiohttp
 
 log = logging.getLogger(__name__)
 
@@ -13,7 +16,7 @@ _MCP_VERSION = "2025-03-26"
 
 
 class McpError(Exception):
-    def __init__(self, code: int, message: str, data: Any = None):
+    def __init__(self, code: int, message: str, data: object = None) -> None:
         self.code = code
         self.message = message
         self.data = data
@@ -42,7 +45,7 @@ class StdioTransport(McpTransport):
         command: str,
         args: list[str] | None = None,
         env: dict[str, str] | None = None,
-    ):
+    ) -> None:
         self._command = command
         self._args = args or []
         self._env = env or {}
@@ -70,9 +73,13 @@ class StdioTransport(McpTransport):
         self._start_stderr_reader()
 
     def _start_stderr_reader(self) -> None:
-        async def _read_stderr():
+        async def _read_stderr() -> None:
+            proc = self._process
+            # Narrowed once: connect() always sets the process before this
+            # reader starts; without a process there is nothing to drain.
+            assert proc is not None and proc.stderr is not None
             while True:
-                line = await self._process.stderr.readline()
+                line = await proc.stderr.readline()
                 if not line:
                     break
                 log.debug("MCP stderr: %s", line.decode().rstrip())
@@ -149,11 +156,11 @@ class StdioTransport(McpTransport):
 class HttpTransport(McpTransport):
     def __init__(
         self, url: str, headers: dict[str, str] | None = None, timeout: int = 120
-    ):
+    ) -> None:
         self._url = url
         self._headers = headers or {}
         self._timeout = timeout
-        self._session: Any | None = None
+        self._session: aiohttp.ClientSession | None = None
         self._request_id = 0
 
     def _next_id(self) -> str:

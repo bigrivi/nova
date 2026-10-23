@@ -456,14 +456,14 @@ class ChatService:
         async def emit(
             event_cls: type,
             data_cls: type[BaseStreamEventData],
-            **payload: Any,
+            **payload: object,
         ) -> ServerStreamEvent:
             nonlocal sequence, session_id
             sequence += 1
-            event_session_id = payload.get("session_id") or session_id
-            if event_session_id:
-                session_id = event_session_id
-            data_payload = {
+            raw_session_id = payload.get("session_id") or session_id
+            if isinstance(raw_session_id, str) and raw_session_id:
+                session_id = raw_session_id
+            data_payload: dict[str, Any] = {
                 **payload,
                 "session_id": session_id,
                 "sequence": sequence,
@@ -592,7 +592,7 @@ class ChatService:
     async def _map_agent_event(
         self,
         agent_event: AgentEvent,
-        data: Any,
+        data: object,
         emit: Callable[..., Any],
     ) -> ServerStreamEvent | None:
         done_reason = ""
@@ -636,6 +636,8 @@ class ChatService:
                 arguments=arguments,
             )
         if agent_event == AgentEvent.TOOL_RESULT:
+            # The invoker always yields a payload dict for this event.
+            assert isinstance(data, dict)
             result = data["result"]
             return await emit(
                 ToolResultEvent,
@@ -672,6 +674,8 @@ class ChatService:
                 content=done_content,
             )
         if agent_event == AgentEvent.APPROVAL_REQUIRED:
+            # The tool axis always yields the approval request dict.
+            assert isinstance(data, dict)
             return await emit(
                 ApprovalRequiredEvent,
                 ApprovalRequiredEventData,

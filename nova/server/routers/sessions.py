@@ -51,7 +51,7 @@ async def session_context(
     chat_service: ChatService = Depends(get_chat_service),
     provider: str | None = None,
     model: str | None = None,
-):
+) -> dict[str, object]:
     return await chat_service.get_context(session_id, provider=provider, model=model)
 
 

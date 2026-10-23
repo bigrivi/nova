@@ -111,7 +111,7 @@ def _run_tui() -> None:
     os.execvpe(bun, [bun, "run", "src/index.tsx"], environment)
 
 
-def main():
+def main() -> None:
     # Internal flag: run a Python script and exit (no GUI).
     # Used by code_run in PyInstaller desktop builds where sys.executable
     # is the app bundle, not a standalone Python interpreter.

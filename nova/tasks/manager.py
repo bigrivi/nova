@@ -7,7 +7,7 @@ import contextlib
 import logging
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import replace
 
 from nova.tasks.models import (
@@ -71,7 +71,7 @@ class TaskLimitError(RuntimeError):
 
 
 @contextlib.asynccontextmanager
-async def _maybe(semaphore: asyncio.Semaphore, skip: bool):
+async def _maybe(semaphore: asyncio.Semaphore, skip: bool) -> AsyncIterator[None]:
     """Acquire ``semaphore`` unless ``skip``; a no-op gate for unlimited kinds."""
     if skip:
         yield

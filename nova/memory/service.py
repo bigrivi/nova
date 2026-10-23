@@ -35,7 +35,7 @@ class MemoryService:
         self,
         repository: MemoryRepository | None = None,
         data_source: NovaRepository | None = None,
-    ):
+    ) -> None:
         self.repository = repository or MemoryRepository(data_source=data_source)
 
     async def save(self, request: MemoryWriteRequest) -> tuple[MemoryRecord, bool]:

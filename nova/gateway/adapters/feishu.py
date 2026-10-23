@@ -14,7 +14,7 @@ class FeishuAdapter(PlatformAdapter):
     name = "feishu"
     max_message_chars = 4000
 
-    def __init__(self, app_id: str, app_secret: str, agent_key: str = "main"):
+    def __init__(self, app_id: str, app_secret: str, agent_key: str = "main") -> None:
         self.app_id = app_id
         self.app_secret = app_secret
         self.agent_key = agent_key

@@ -53,12 +53,14 @@ async def chat_stream(chat_request: ChatRequest, request: Request) -> StreamingR
 
 
 @router.get("/api/chat/stream/status")
-async def chat_stream_status(session_id: str, request: Request):
+async def chat_stream_status(session_id: str, request: Request) -> dict[str, object]:
     return await ChatStreamOrchestrator(request).handle_chat_stream_status(session_id)
 
 
 @router.get("/api/chat/stream/active")
-async def chat_stream_active(registry: RequestRegistry = Depends(get_request_registry)):
+async def chat_stream_active(
+    registry: RequestRegistry = Depends(get_request_registry),
+) -> dict[str, object]:
     states = await registry.active_stream_states() if registry is not None else {}
     return {
         "streams": [
@@ -76,7 +78,9 @@ async def interrupt(
 
 
 @router.post("/api/chat/approve")
-async def approve(body: ApproveRequest, session_id: str | None = None):
+async def approve(
+    body: ApproveRequest, session_id: str | None = None
+) -> dict[str, object]:
     approval_manager = get_approval_manager()
     if session_id is not None:
         owning_session_id = approval_manager.get_session_id_for_request(body.request_id)

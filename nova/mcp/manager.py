@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
 
 from nova.llm import ToolResult
 from nova.mcp.client import McpClient
@@ -47,8 +47,10 @@ async def init_mcp_servers(
     return clients
 
 
-def _build_wrapper(tool_name: str, client: McpClient) -> Any:
-    async def wrapper(**kwargs: Any) -> ToolResult:
+def _build_wrapper(
+    tool_name: str, client: McpClient
+) -> Callable[..., Awaitable[ToolResult]]:
+    async def wrapper(**kwargs: object) -> ToolResult:
         try:
             result_text = await client.call_tool(tool_name, arguments=kwargs)
             return ToolResult(success=True, content=result_text)

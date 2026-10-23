@@ -7,11 +7,12 @@ working. Do not bind these values at import or router-registration time.
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import Request
 
 from nova.server.chat_service import ChatService
+from nova.server.request_registry import RequestRegistry
+from nova.server.session_event_bus import SessionEventBus
+from nova.server.stream_buffer import StreamBuffer
 from nova.settings import Settings, reload_settings
 from nova.speech.service import SpeechService
 
@@ -28,11 +29,11 @@ def get_settings(request: Request) -> Settings:
     return request.app.state.settings
 
 
-def get_request_registry(request: Request) -> Any:
+def get_request_registry(request: Request) -> RequestRegistry:
     return request.app.state.request_registry
 
 
-def get_stream_buffer(request: Request) -> Any:
+def get_stream_buffer(request: Request) -> StreamBuffer:
     return request.app.state.stream_buffer
 
 
@@ -48,7 +49,7 @@ def is_server_stopping(request: Request) -> bool:
     return bool(server is not None and server.should_exit)
 
 
-def get_session_event_bus(request: Request) -> Any:
+def get_session_event_bus(request: Request) -> SessionEventBus:
     return request.app.state.session_event_bus
 
 

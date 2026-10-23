@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 class AgentBackground:
     """Composed service: fire-and-forget work reachable from a turn."""
 
-    def __init__(self, agent: Agent):
+    def __init__(self, agent: Agent) -> None:
         self.agent = agent
         self.ctx: AgentContext = agent.ctx
 

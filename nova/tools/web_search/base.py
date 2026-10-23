@@ -238,7 +238,7 @@ class RestBackend(SearchBackend):
             ) from exc
         return self.rows_from_payload(payload, limit)
 
-    def rows_from_payload(self, payload: Any, limit: int = 0) -> list[SearchHit]:
+    def rows_from_payload(self, payload: object, limit: int = 0) -> list[SearchHit]:
         """Build result rows from an already-decoded body.
 
         Args:
@@ -412,7 +412,7 @@ _MAX_TRAILING_FRAGMENT = 12
 TRUNCATION_MARK = "…"
 
 
-def coerce_description(value: Any, limit: int) -> str:
+def coerce_description(value: object, limit: int) -> str:
     """Normalise a backend's description field into bounded plain text.
 
     Providers disagree on shape: some ship a curated string, some a list of
@@ -568,7 +568,7 @@ def published_label(hit: dict[str, Any]) -> str:
     return ""
 
 
-def reject_non_object(backend_name: str, payload: Any) -> None:
+def reject_non_object(backend_name: str, payload: object) -> None:
     """Raise unless *payload* is a JSON object.
 
     Args:

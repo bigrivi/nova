@@ -6,7 +6,7 @@ from pathlib import Path
 
 from nova.skills.catalog import SkillCatalog
 from nova.skills.installer import install_skill_from_clawhub
-from nova.skills.models import SkillDocument, SkillSummary
+from nova.skills.models import SkillDocument, SkillInstallResult, SkillSummary
 from nova.skills.scanner import load_skill_document, scan_skills_dir
 
 
@@ -54,7 +54,9 @@ class SkillService:
             skills_dir = self.skills_dir
         return load_skill_document(skill_path, skills_dir=skills_dir)
 
-    async def install_from_clawhub(self, skill_ref: str, *, force: bool = False):
+    async def install_from_clawhub(
+        self, skill_ref: str, *, force: bool = False
+    ) -> SkillInstallResult:
         result = await install_skill_from_clawhub(
             skill_ref,
             skills_dir=self.skills_dir,
@@ -63,7 +65,9 @@ class SkillService:
         self.scan_skills()
         return result
 
-    async def install_global(self, skill_ref: str, *, force: bool = False):
+    async def install_global(
+        self, skill_ref: str, *, force: bool = False
+    ) -> SkillInstallResult:
         target = self.fallback_dir or self.skills_dir
         result = await install_skill_from_clawhub(
             skill_ref,

@@ -184,7 +184,7 @@ class Done(ChatEvent):
     # None means unknown (vendor silent), not necessarily zero.
     cache_read_tokens: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.tool_calls is None:
             self.tool_calls = []
 
@@ -258,7 +258,7 @@ class LLMProvider(ABC):
         model: str = "gpt-4o",
         stream: bool = False,
         tools: list[dict] | None = None,
-        **kwargs,
+        **kwargs: object,
     ) -> Done:
         """Run a non-streaming chat request and return the full response."""
         pass
@@ -271,7 +271,7 @@ class LLMProvider(ABC):
         tools: list[dict] | None = None,
         abort_event: asyncio.Event | None = None,
         timeout: int | None = None,
-        **kwargs,
+        **kwargs: object,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         pass
 

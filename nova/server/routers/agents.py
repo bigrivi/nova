@@ -41,7 +41,9 @@ def _annotate(agent: dict, parents: list[str] | None = None) -> dict:
 
 
 @router.get("/api/agents")
-async def list_agents(settings: Settings = Depends(get_settings)):
+async def list_agents(
+    settings: Settings = Depends(get_settings),
+) -> dict[str, object]:
     service = ConfigService(settings)
     agents = await service.list_agents()
     items = [
@@ -52,7 +54,9 @@ async def list_agents(settings: Settings = Depends(get_settings)):
 
 
 @router.get("/api/agents/{key}")
-async def get_agent(key: str, settings: Settings = Depends(get_settings)):
+async def get_agent(
+    key: str, settings: Settings = Depends(get_settings)
+) -> dict[str, object]:
     service = ConfigService(settings)
     agent = await service.get_agent(key)
     if agent is None:
@@ -63,7 +67,7 @@ async def get_agent(key: str, settings: Settings = Depends(get_settings)):
 @router.post("/api/agents")
 async def create_agent(
     body: AgentCreateRequest, settings: Settings = Depends(get_settings)
-):
+) -> dict[str, object]:
     if not _AGENT_KEY_PATTERN.match(body.key):
         raise HTTPException(
             status_code=400, detail="Agent key must be 3-32 chars: [a-z0-9-]"
@@ -83,7 +87,7 @@ async def create_agent(
 @router.post("/api/agents/import")
 async def import_agent(
     body: AgentImportRequest, settings: Settings = Depends(get_settings)
-):
+) -> dict[str, object]:
     try:
         parsed = parse_agent_markdown(body.content)
     except AgentImportError as exc:
@@ -135,7 +139,7 @@ async def import_agent(
 @router.put("/api/agents/{key}/parents")
 async def set_agent_parents(
     key: str, body: dict, settings: Settings = Depends(get_settings)
-):
+) -> dict[str, object]:
     service = ConfigService(settings)
     if await service.get_agent(key) is None:
         raise HTTPException(status_code=404, detail=f"Agent '{key}' not found")
@@ -151,7 +155,9 @@ async def set_agent_parents(
 
 
 @router.delete("/api/agents/{key}")
-async def delete_agent(key: str, settings: Settings = Depends(get_settings)):
+async def delete_agent(
+    key: str, settings: Settings = Depends(get_settings)
+) -> dict[str, object]:
     if key == DEFAULT_AGENT_KEY:
         raise HTTPException(
             status_code=400, detail=f"Cannot delete '{DEFAULT_AGENT_KEY}' agent"
@@ -166,7 +172,7 @@ async def delete_agent(key: str, settings: Settings = Depends(get_settings)):
 @router.patch("/api/agents/{key}")
 async def update_agent(
     key: str, body: dict, settings: Settings = Depends(get_settings)
-):
+) -> dict[str, object]:
     service = ConfigService(settings)
     model = body.get("model")
     provider = body.get("provider")

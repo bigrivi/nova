@@ -11,7 +11,7 @@ import sys
 from nova.tasks.models import TaskExecutionContext, TaskExecutionResult
 
 
-def kill_process_tree(pid: int):
+def kill_process_tree(pid: int) -> None:
     """Kill a process and its children cross-platform."""
     if sys.platform == "win32":
         subprocess.run(

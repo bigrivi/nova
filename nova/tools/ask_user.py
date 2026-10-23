@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING
 
 from nova.llm import ToolResult
 from nova.tools.registry import tool
+
+if TYPE_CHECKING:
+    from nova.tools.behavior import PreExecutionCheck, TurnContext
 
 _VALID_TYPES = frozenset({"text", "select", "textarea"})
 
@@ -158,7 +161,7 @@ class AskUserToolBehavior:
             return args
         return {**args, "questions": normalize_questions(questions)}
 
-    async def before_execute(self, args: dict, ctx: Any) -> Any:
+    async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
         from nova.tools.behavior import PreExecutionCheck
 
         return PreExecutionCheck()
@@ -166,7 +169,7 @@ class AskUserToolBehavior:
     def postprocess(self, raw_content: str) -> tuple[str, list | None]:
         return raw_content, None
 
-    def on_success(self, ctx: Any) -> None:
+    def on_success(self, ctx: TurnContext) -> None:
         return None
 
 

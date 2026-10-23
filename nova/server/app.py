@@ -5,7 +5,9 @@ FastAPI server app for frontend and desktop integration.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 import uvicorn
 from fastapi import FastAPI
@@ -35,6 +37,10 @@ from nova.tasks.manager import (
     get_background_task_manager,
     shutdown_background_task_manager,
 )
+
+if TYPE_CHECKING:
+    from nova.scheduler.models import ScheduledJob
+    from nova.tasks.models import TaskRecord
 
 log = logging.getLogger(__name__)
 
@@ -76,7 +82,7 @@ def _wire_task_autowake(app: FastAPI) -> None:
     scheduler = WakeScheduler(start_turn=_start_turn, wait_free=_wait_free)
     app.state.wake_scheduler = scheduler
 
-    def _wrap(record) -> str:
+    def _wrap(record: TaskRecord) -> str:
         done = record.status == "succeeded"
         body = (
             (record.output_tail or record.result or "").strip()
@@ -89,7 +95,7 @@ def _wire_task_autowake(app: FastAPI) -> None:
         exit_note = f" exit={record.exit_code}" if record.exit_code is not None else ""
         return f"[background {record.label} status={record.status}{exit_note}]\n{body}"
 
-    def _on_complete(record) -> None:
+    def _on_complete(record: TaskRecord) -> None:
         # Foreground results already returned to the model synchronously; only
         # detached (background) tasks need a wake.
         if not record.background or record.status not in TERMINAL_STATUSES:
@@ -106,7 +112,7 @@ def _wire_task_autowake(app: FastAPI) -> None:
     task_manager.set_completion_listener(_on_complete)
 
 
-def _make_schedule_runner(app: FastAPI):
+def _make_schedule_runner(app: FastAPI) -> Callable[[ScheduledJob], Awaitable[None]]:
     """Build the tick-loop callback: due jobs become background tasks.
 
     Fire-and-forget on purpose: the executor persists the terminal schedule
@@ -114,7 +120,7 @@ def _make_schedule_runner(app: FastAPI):
     is logged here and surfaces as ``failed`` via the tick loop.
     """
 
-    async def _run_job(job) -> None:
+    async def _run_job(job: ScheduledJob) -> None:
         manager = app.state.background_task_manager
         try:
             manager.submit(
@@ -142,7 +148,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         registry = app.state.request_registry
         registry.start_reaper()
         scheduler = None
@@ -195,7 +201,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # the task is still running.
     from nova.tasks.models import TERMINAL_STATUSES
 
-    def _publish_task(record) -> None:
+    def _publish_task(record: TaskRecord) -> None:
         # A foreground command is synchronous from the outside: the request
         # that issued it is blocked on the answer, so a queued or running frame
         # tells the user nothing they can act on -- it only makes a spinner

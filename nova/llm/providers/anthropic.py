@@ -5,6 +5,8 @@ Anthropic LLM Provider
 import json
 import logging
 import re
+from collections.abc import Callable, Iterable
+from typing import Any
 
 import aiohttp  # noqa: F401  # kept so tests can patch nova.llm.providers.anthropic.aiohttp
 
@@ -14,6 +16,7 @@ from nova.llm.http_provider import HttpProvider
 from nova.llm.policy import StreamPolicy, TransportPolicy
 from nova.llm.provider import (
     RETRY_STATUS_CODES,
+    ChatStreamEvent,
     Done,
     Error,
     ReasoningDelta,
@@ -210,7 +213,7 @@ class _AnthropicStreamParser(StreamParser):
         self._final_thinking_blocks: list[dict] = []
         self._stop_reason: str | None = None
 
-    def feed(self, event: dict, acc: StreamAccumulator):
+    def feed(self, event: dict, acc: StreamAccumulator) -> Iterable[ChatStreamEvent]:
         event_type = event.get("type", "")
 
         if event_type == "message_start":
@@ -417,7 +420,7 @@ class _AnthropicStreamParser(StreamParser):
         # ping / unknown -> ignore
         return
 
-    def on_eof(self, acc: StreamAccumulator):
+    def on_eof(self, acc: StreamAccumulator) -> Iterable[ChatStreamEvent]:
         # message_stop is this protocol's terminal event, so reaching the end of
         # the transport without it means the response was cut short -- observed
         # with a relaying gateway that stalls for many seconds after the
@@ -517,7 +520,7 @@ class AnthropicProvider(HttpProvider):
         extra_headers: dict | None = None,
         request_hook: str | None = None,
         request_session_hook: str | None = None,
-    ):
+    ) -> None:
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
@@ -598,7 +601,7 @@ class AnthropicProvider(HttpProvider):
         return anthropic_tools
 
     def _replay_thinking_blocks(
-        self, get_attr, message: object, model: str | None
+        self, get_attr: Callable[[object, str], Any], message: object, model: str | None
     ) -> list[dict]:
         message_model = get_attr(message, "model")
         if message_model and model and str(message_model) != str(model):
@@ -640,7 +643,7 @@ class AnthropicProvider(HttpProvider):
     def _format_messages(
         self, messages: list, include_thinking: bool = False, model: str | None = None
     ) -> tuple[list[dict], str]:
-        def get_attr(message: object, key: str):
+        def get_attr(message: object, key: str) -> Any:  # noqa: ANN401
             if isinstance(message, dict):
                 return message.get(key)
             return getattr(message, key, None)

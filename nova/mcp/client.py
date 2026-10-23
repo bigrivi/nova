@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 
 
 class McpClient:
-    def __init__(self, name: str, transport: McpTransport):
+    def __init__(self, name: str, transport: McpTransport) -> None:
         self.name = name
         self._transport = transport
         self._capabilities: dict[str, Any] = {}

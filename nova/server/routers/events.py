@@ -14,12 +14,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from nova.server.deps import get_session_event_bus, is_server_stopping
+from nova.server.session_event_bus import SessionEventBus
 
 log = logging.getLogger(__name__)
 
@@ -34,11 +36,11 @@ def _frame(payload: dict[str, Any]) -> bytes:
 
 @router.get("/api/events")
 async def session_events(
-    http_request: Request, bus: Any = Depends(get_session_event_bus)
+    http_request: Request, bus: SessionEventBus = Depends(get_session_event_bus)
 ) -> StreamingResponse:
     queue = bus.subscribe()
 
-    def task_snapshot() -> list[dict[str, Any]]:
+    def task_snapshot() -> list[dict[str, object]]:
         manager = getattr(http_request.app.state, "background_task_manager", None)
         if manager is None:
             return []
@@ -51,7 +53,7 @@ async def session_events(
             for record in manager.list_all()
         ]
 
-    async def event_stream():
+    async def event_stream() -> AsyncIterator[bytes]:
         try:
             yield _frame(
                 {

@@ -11,8 +11,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from nova.gateway.platform import InboundMessage, MessageHandler, PlatformAdapter
+
+if TYPE_CHECKING:
+    import botpy
+    from botpy.message import C2CMessage, DirectMessage, GroupMessage, Message
 
 log = logging.getLogger(__name__)
 
@@ -21,7 +26,7 @@ class QQAdapter(PlatformAdapter):
     name = "qq"
     max_message_chars = 2000
 
-    def __init__(self, app_id: str, token: str, agent_key: str = "main", **options):
+    def __init__(self, app_id: str, token: str, agent_key: str = "main", **options: str) -> None:
         self.app_id = app_id
         self.token = token
         self.agent_key = agent_key
@@ -36,7 +41,7 @@ class QQAdapter(PlatformAdapter):
     def on_message(self, handler: MessageHandler) -> None:
         self._handler = handler
 
-    def _make_client(self):
+    def _make_client(self) -> botpy.Client:
         """Build the SDK client with every message event wired.
 
         Kept separate from :meth:`start` so the wiring can be exercised
@@ -57,10 +62,14 @@ class QQAdapter(PlatformAdapter):
         adapter = self
 
         class _Client(botpy.Client):
-            def __init__(self):
+            def __init__(self) -> None:
                 super().__init__(intents=intents)
 
-            async def _dispatch(self, message, sender: str) -> None:
+            async def _dispatch(
+                self,
+                message: Message | DirectMessage | GroupMessage | C2CMessage,
+                sender: str,
+            ) -> None:
                 if not sender or adapter._handler is None:
                     log.warning(
                         "qq: dropping message (%s) sender=%r handler=%s",
@@ -86,25 +95,25 @@ class QQAdapter(PlatformAdapter):
                     )
                 )
 
-            async def on_message_create(self, message):
+            async def on_message_create(self, message: Message) -> None:
                 # Guild channel, every message (private bots).
                 await self._dispatch(message, str(message.author.id or ""))
 
-            async def on_at_message_create(self, message):
+            async def on_at_message_create(self, message: Message) -> None:
                 # Guild channel, @-mentions only (public bots).
                 await self._dispatch(message, str(message.author.id or ""))
 
-            async def on_direct_message_create(self, message):
+            async def on_direct_message_create(self, message: DirectMessage) -> None:
                 # Direct message to the bot.
                 await self._dispatch(message, str(message.author.id or ""))
 
-            async def on_group_at_message_create(self, message):
+            async def on_group_at_message_create(self, message: GroupMessage) -> None:
                 # Group chat, @-mentions.
                 await self._dispatch(
                     message, str(message.author.member_openid or "")
                 )
 
-            async def on_c2c_message_create(self, message):
+            async def on_c2c_message_create(self, message: C2CMessage) -> None:
                 # One-to-one chat from the QQ platform.
                 await self._dispatch(message, str(message.author.user_openid or ""))
 
@@ -123,7 +132,9 @@ class QQAdapter(PlatformAdapter):
                 pass
             self._task = None
 
-    async def _collect_voice(self, message) -> list[dict]:
+    async def _collect_voice(
+        self, message: Message | DirectMessage | GroupMessage | C2CMessage
+    ) -> list[dict]:
         """Download voice attachments so the core can transcribe them."""
         from nova.gateway.voice import download_attachment, is_audio_attachment
 

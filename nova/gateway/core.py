@@ -95,7 +95,7 @@ def describe_approval(
 class NovaClient:
     """Minimal client for the Nova server's chat and approval endpoints."""
 
-    def __init__(self, base_url: str, timeout: float = 600.0):
+    def __init__(self, base_url: str, timeout: float = 600.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
@@ -167,7 +167,7 @@ class GatewayCore:
         adapters: dict[str, PlatformAdapter],
         allowed_senders: set[str] | None = None,
         segment_chars: int = 2000,
-    ):
+    ) -> None:
         self.nova = nova
         self.adapters = adapters
         self.allowed_senders = allowed_senders or set()

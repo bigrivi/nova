@@ -1,7 +1,13 @@
 """Token estimation utilities with type-aware character estimation."""
 
+from __future__ import annotations
+
 import logging
 import re
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nova.llm.provider import Message
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +77,7 @@ def estimate_tokens_by_type(text: str, is_tool_result: bool = False) -> int:
     return max(1, estimated)
 
 
-def estimate_message_tokens(message, model: str = "unknown") -> int:
+def estimate_message_tokens(message: Message | dict[str, Any], model: str = "unknown") -> int:
     """Estimate tokens for a single message.
 
     Uses type-aware character estimation, or tiktoken for OpenAI models when
@@ -140,7 +146,7 @@ def estimate_messages_tokens(messages: list, model: str = "unknown") -> int:
     return total
 
 
-def _estimate_with_tiktoken(message, model: str):
+def _estimate_with_tiktoken(message: Message | dict[str, Any], model: str) -> int | None:
     """Use tiktoken for OpenAI models if available."""
     try:
         import tiktoken
@@ -387,19 +393,19 @@ def resolve_context_limit(model: str, provider: str) -> int:
 
 
 # Keep existing helper functions
-def _get_content(msg):
+def _get_content(msg: Message | dict[str, Any]) -> str:
     if isinstance(msg, dict):
         return msg.get("content", "") or ""
     return getattr(msg, "content", "") or ""
 
 
-def _get_role(msg):
+def _get_role(msg: Message | dict[str, Any]) -> str:
     if isinstance(msg, dict):
         return msg.get("role", "?")
     return getattr(msg, "role", "?")
 
 
-def _get_tool_calls(msg):
+def _get_tool_calls(msg: Message | dict[str, Any]) -> list[dict[str, Any]]:
     if isinstance(msg, dict):
         return msg.get("tool_calls", []) or []
     return getattr(msg, "tool_calls", []) or []

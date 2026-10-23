@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 class AgentSession:
     """Composed service: session resolution and turn persistence."""
 
-    def __init__(self, agent: Agent):
+    def __init__(self, agent: Agent) -> None:
         self.agent = agent
         self.ctx: AgentContext = agent.ctx
 

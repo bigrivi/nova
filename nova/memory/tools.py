@@ -11,13 +11,13 @@ while still giving every call an explicit owner.
 from __future__ import annotations
 
 from nova.llm import ToolResult
-from nova.memory.models import MemoryWriteRequest
+from nova.memory.models import MemoryRecord, MemoryWriteRequest
 from nova.memory.service import MemoryService
 from nova.prompt.threat_patterns import has_threats
 from nova.tools.registry import tool
 
 
-def _format_memory(record) -> str:
+def _format_memory(record: MemoryRecord) -> str:
     parts = [
         f"- id: {record.id}",
         f"  key: {record.key}",

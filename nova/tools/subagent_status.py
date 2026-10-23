@@ -10,17 +10,18 @@ import logging
 import time
 
 from nova.llm import ToolResult
+from nova.tasks.models import TaskRecord
 from nova.tools.registry import tool
 
 log = logging.getLogger(__name__)
 
 
-def _target_of(record) -> str:
+def _target_of(record: TaskRecord) -> str:
     target = record.metadata.get("target") if record.metadata else None
     return str(target) if target else record.label
 
 
-def _format_record(record) -> str:
+def _format_record(record: TaskRecord) -> str:
     created = record.created_at_ms
     end = record.finished_at_ms or int(time.time() * 1000)
     elapsed = max(0, end - created) / 1000

@@ -19,7 +19,7 @@ class ProjectService:
     path return a list.
     """
 
-    def __init__(self, data_source: DataSourceProtocol | None = None):
+    def __init__(self, data_source: DataSourceProtocol | None = None) -> None:
         self._data_source = data_source
 
     async def _get_data_source(self) -> DataSourceProtocol:
@@ -27,11 +27,11 @@ class ProjectService:
             self._data_source = await get_default_data_source()
         return self._data_source
 
-    async def list_projects(self) -> list[dict]:
+    async def list_projects(self) -> list[dict[str, Any]]:
         data_source = await self._get_data_source()
         return await data_source.list_projects()
 
-    async def get_project(self, project_id: str) -> dict | None:
+    async def get_project(self, project_id: str) -> dict[str, Any] | None:
         data_source = await self._get_data_source()
         return await data_source.get_project(project_id)
 
@@ -39,7 +39,7 @@ class ProjectService:
         self,
         name: str | None = None,
         path: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         data_source = await self._get_data_source()
         normalized_path = normalize_project_path(path)
         label = (name or "").strip() or project_label_from_path(normalized_path)
@@ -68,9 +68,9 @@ class ProjectService:
         self,
         project_id: str,
         *,
-        name: Any = UNSET,
-        path: Any = UNSET,
-    ) -> dict | None:
+        name: str | object | None = UNSET,
+        path: str | object | None = UNSET,
+    ) -> dict[str, Any] | None:
         data_source = await self._get_data_source()
         stored = await data_source.get_project(project_id)
         if stored is None:
@@ -99,7 +99,9 @@ class ProjectService:
         data_source = await self._get_data_source()
         return await data_source.delete_project(project_id)
 
-    async def resolve_for_path(self, path: str, name: str | None = None) -> dict:
+    async def resolve_for_path(
+        self, path: str, name: str | None = None
+    ) -> dict[str, Any]:
         """Return the project for a path, creating one when none exists."""
         normalized_path = normalize_project_path(path)
         if not normalized_path:

@@ -8,10 +8,13 @@ import logging
 import time
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 from nova.scheduler.models import ScheduledJob
 from nova.scheduler.schedule import next_fire_time
+
+if TYPE_CHECKING:
+    from nova.db.repository import NovaRepository
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +41,7 @@ class SchedulerService:
 
     def __init__(
         self,
-        repository: Any,
+        repository: NovaRepository,
         *,
         tick_interval: float = 60.0,
         runner: Runner | None = None,

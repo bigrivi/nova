@@ -27,16 +27,20 @@ import asyncio
 import inspect
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING
 
 from nova.agent import Agent
+
+if TYPE_CHECKING:
+    from nova.server.stream_buffer import StreamBuffer
 
 log = logging.getLogger(__name__)
 
 # Reservation marker placed by try_register while a stream reserves a session
 # before its Agent exists. Approve treats it as "no active agent" (clean 404).
-_RESERVED: Any = object()
+_RESERVED: object = object()
 
 # TTL / reaper bounds (seconds).
 IDLE_TTL = 30 * 60  # evict slots idle (no touch) longer than this
@@ -52,7 +56,7 @@ DONE = "done"
 
 @dataclass
 class _Slot:
-    owner: Any = None
+    owner: object | None = None
     stream_sequence: int = 0
     state: str = ACTIVE
     last_access: float = field(default_factory=time.monotonic)
@@ -65,15 +69,15 @@ class RequestRegistry:
         self._session_locks: dict[str, asyncio.Lock] = {}
         self._reaper_task: asyncio.Task[None] | None = None
         self._reaper_interval = REAP_INTERVAL
-        self._stream_buffer: Any = None
+        self._stream_buffer: StreamBuffer | None = None
         # Per-session "slot is free for try_register" signal. Set when a slot
         # becomes DONE or is removed; cleared when a slot goes ACTIVE. The
         # auto-wake drain awaits this instead of polling slot_state, and the
         # set-on-free / clear-on-active ordering closes the lost-wakeup race.
         self._free_events: dict[str, asyncio.Event] = {}
-        self._state_listener: Any = None
+        self._state_listener: Callable[[str, str], None] | None = None
 
-    def set_state_listener(self, listener: Any) -> None:
+    def set_state_listener(self, listener: Callable[[str, str], None] | None) -> None:
         """Register a callback fired on active/idle transitions (push, not poll)."""
         self._state_listener = listener
 
@@ -158,7 +162,7 @@ class RequestRegistry:
             self._mark_active_locked(session_id)
             self._enforce_cap_locked()
 
-    async def try_register(self, session_id: str, agent: Any) -> bool:
+    async def try_register(self, session_id: str, agent: object) -> bool:
         """Atomically reserve a session slot; False if already held.
 
         The stream endpoint uses this with _RESERVED to refuse overlapping
@@ -182,7 +186,7 @@ class RequestRegistry:
             self._enforce_cap_locked()
             return True
 
-    async def unregister_if_current(self, session_id: str, agent: Any) -> bool:
+    async def unregister_if_current(self, session_id: str, agent: object) -> bool:
         """Remove the entry only if it still belongs to *agent*.
 
         A stream that ends must not delete a newer reservation made after
@@ -203,7 +207,7 @@ class RequestRegistry:
             self._slots.pop(session_id, None)
             self._mark_free_locked(session_id)
 
-    async def get(self, session_id: str) -> Any:
+    async def get(self, session_id: str) -> object | None:
         """Return the slot owner (Agent or _RESERVED), touching the slot."""
         lock = await self._session_lock(session_id)
         async with lock, self._map_lock:
@@ -259,7 +263,7 @@ class RequestRegistry:
             slot.last_access = time.monotonic()
             return True
 
-    async def reattach(self, session_id: str, agent: Any) -> bool:
+    async def reattach(self, session_id: str, agent: object) -> bool:
         """Rebind a detached slot to a resumed stream agent."""
         lock = await self._session_lock(session_id)
         async with lock, self._map_lock:
@@ -299,7 +303,7 @@ class RequestRegistry:
             self._mark_free_locked(session_id)
             return True
 
-    def attach_buffer(self, buffer: Any) -> None:
+    def attach_buffer(self, buffer: StreamBuffer | None) -> None:
         """Bind a StreamBuffer whose lifetime tracks slot eviction.
 
         Evicted sessions are discarded from the buffer on the same reaper

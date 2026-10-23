@@ -1,13 +1,19 @@
 """Prompt template builder."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from nova.prompt.project_instructions import ProjectInstructions
 from nova.prompt.threat_patterns import has_threats
 from nova.settings import get_settings
 from nova.tools.shell_utils import get_shell_label
+
+if TYPE_CHECKING:
+    from nova.skills.models import SkillSummary
 
 DEFAULT_AGENT_IDENTITY = (
     "You are Nova, a general-purpose personal AI assistant and autonomous agent.\n"
@@ -41,14 +47,12 @@ class PromptConfig:
     workspace_dir: str = ""
 
     @classmethod
-    def from_agent_dir(cls, agent_dir) -> "PromptConfig":
+    def from_agent_dir(cls, agent_dir: str | Path) -> PromptConfig:
         """Load an agent's persona files from its directory.
 
         SOUL/IDENTITY/USER/MEMORY are optional; a missing file is an empty
         section rather than an error.
         """
-        from pathlib import Path
-
         agent_dir = Path(agent_dir)
 
         def read(name: str, strip: bool = False) -> str:
@@ -112,12 +116,12 @@ class PromptBuilder:
 - Shell: {shell}
 """
 
-    def __init__(self, config: PromptConfig | None = None):
+    def __init__(self, config: PromptConfig | None = None) -> None:
         self.config = config or PromptConfig()
 
     def build(
         self,
-        available_skills: list[Any] | None = None,
+        available_skills: list[SkillSummary] | None = None,
         date: str | None = None,
         workspace_override: str | None = None,
         project_instructions: ProjectInstructions | None = None,
@@ -248,7 +252,7 @@ class PromptBuilder:
         return "\n".join(lines).rstrip()
 
     def _build_available_skills_section(
-        self, available_skills: list[Any] | None
+        self, available_skills: list[SkillSummary] | None
     ) -> str:
         if not available_skills:
             return "- No skills currently installed in the runtime catalog."

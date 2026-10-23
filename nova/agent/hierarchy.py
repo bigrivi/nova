@@ -7,7 +7,7 @@ agent runtime.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nova.db import DataSourceProtocol, get_default_data_source
 
@@ -58,7 +58,7 @@ class AgentHierarchy:
         return None
 
     @staticmethod
-    async def _records(store: Any, keys: list[str]) -> list[dict]:
+    async def _records(store: DataSourceProtocol, keys: list[str]) -> list[dict]:
         records = []
         for key in keys:
             record = await store.get_agent(key)

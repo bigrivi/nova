@@ -16,7 +16,7 @@ class TelegramAdapter(PlatformAdapter):
     name = "telegram"
     max_message_chars = 4096
 
-    def __init__(self, token: str, *, agent_key: str = "main", poll_timeout: int = 30):
+    def __init__(self, token: str, *, agent_key: str = "main", poll_timeout: int = 30) -> None:
         self.token = token
         self.agent_key = agent_key
         self.poll_timeout = poll_timeout

@@ -4,6 +4,7 @@ import time
 import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from typing import Any
 
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import get_default_data_source
@@ -30,7 +31,7 @@ class SessionContext:
     agent_key: str = DEFAULT_AGENT_KEY
     created_at: int = 0
     updated_at: int = 0
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     title: str | None = None
     parent_id: str | None = None
     workspace_dir: str | None = None
@@ -59,7 +60,7 @@ _current_session: ContextVar[SessionContext | None] = ContextVar(
 
 
 class SessionManager(SessionProtocol):
-    def __init__(self, data_source: NovaRepository | None = None):
+    def __init__(self, data_source: NovaRepository | None = None) -> None:
         self._lock = asyncio.Lock()
         self._data_source = data_source
 
@@ -76,7 +77,7 @@ class SessionManager(SessionProtocol):
 
     async def create_session(
         self,
-        metadata: dict | None = None,
+        metadata: dict[str, Any] | None = None,
         persist: bool = True,
         first_message: str | None = None,
         agent_key: str = DEFAULT_AGENT_KEY,
@@ -99,7 +100,7 @@ class SessionManager(SessionProtocol):
         self,
         parent_session_id: str,
         agent_key: str = DEFAULT_AGENT_KEY,
-        metadata: dict | None = None,
+        metadata: dict[str, Any] | None = None,
         first_message: str | None = None,
     ) -> SessionContext:
         """Create a child session linked to a parent session."""
@@ -189,7 +190,7 @@ class SessionManager(SessionProtocol):
         self,
         role: str,
         content: str,
-        tool_calls: list | None = None,
+        tool_calls: list[dict[str, Any]] | None = None,
         tool_call_id: str | None = None,
         images: list[str] | None = None,
         reasoning_content: str | None = None,
@@ -198,7 +199,7 @@ class SessionManager(SessionProtocol):
         error: str | None = None,
         tokens_input: int | None = None,
         tokens_output: int | None = None,
-        provider_meta: dict | None = None,
+        provider_meta: dict[str, Any] | None = None,
         model: str | None = None,
         reasoning_effort: str | None = None,
         variant: str | None = None,

@@ -11,7 +11,10 @@ import logging
 from collections.abc import Callable
 from enum import Enum
 from inspect import iscoroutinefunction
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nova.llm import ToolCall
 
 log = logging.getLogger(__name__)
 
@@ -82,7 +85,9 @@ class EventBus:
         if event in self._handlers:
             self._handlers[event].remove(handler)
 
-    async def emit(self, event: AgentEvent, data: Any = None) -> None:
+    async def emit(
+        self, event: AgentEvent, data: dict[str, Any] | str | ToolCall | None = None
+    ) -> None:
         for handler in self._handlers.get(event, []):
             try:
                 if iscoroutinefunction(handler):

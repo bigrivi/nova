@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
 
 import aiosqlite
+
+if TYPE_CHECKING:
+    from nova.llm.provider import LLMProvider
 
 
 @dataclass
@@ -18,9 +21,9 @@ class SearchHit:
 class SessionSearch:
     """Incremental FTS5 index over session messages."""
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str) -> None:
         self.db_path = db_path
-        self._conn: Any = None
+        self._conn: aiosqlite.Connection | None = None
 
     async def connect(self) -> None:
         self._conn = await aiosqlite.connect(self.db_path)
@@ -68,7 +71,7 @@ class SessionSearch:
             for r in rows
         ]
 
-    async def summarize(self, hits: list[SearchHit], query: str, llm, model: str = "", session_id: str = "") -> str:
+    async def summarize(self, hits: list[SearchHit], query: str, llm: LLMProvider, model: str = "", session_id: str = "") -> str:
         if not hits:
             return "No matching sessions found."
         context = "\n\n".join(f"[{h.session_id}] {h.snippet}" for h in hits)

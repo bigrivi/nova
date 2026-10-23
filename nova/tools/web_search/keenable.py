@@ -101,7 +101,7 @@ class KeenableBackend(RestBackend):
             return None
         return _rejection_detail(payload)
 
-    def rows_from_payload(self, payload: Any, limit: int = 0) -> list[SearchHit]:
+    def rows_from_payload(self, payload: object, limit: int = 0) -> list[SearchHit]:
         """Build result rows from an already-decoded Keenable payload.
 
         Keenable reports a rejected request in the body alongside a 4xx status,
@@ -121,6 +121,7 @@ class KeenableBackend(RestBackend):
             SearchBackendError: If the body is an error or lacks results.
         """
         reject_non_object(self.name, payload)
+        assert isinstance(payload, dict)  # narrowed by reject_non_object above
         if payload.get("error"):
             raise SearchBackendError(
                 f"{self.name} rejected the request: {_rejection_detail(payload)}",
@@ -130,7 +131,7 @@ class KeenableBackend(RestBackend):
         return hits_to_rows(self, hits, limit, ("description", "snippet"))
 
 
-def _rejection_detail(payload: dict) -> str:
+def _rejection_detail(payload: dict[str, Any]) -> str:
     """Return the human-readable half of a rejection, falling back to its code.
 
     Args:

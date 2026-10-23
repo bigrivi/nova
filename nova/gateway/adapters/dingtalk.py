@@ -14,7 +14,7 @@ class DingTalkAdapter(PlatformAdapter):
     name = "dingtalk"
     max_message_chars = 4000
 
-    def __init__(self, app_key: str, app_secret: str, agent_key: str = "main"):
+    def __init__(self, app_key: str, app_secret: str, agent_key: str = "main") -> None:
         self.app_key = app_key
         self.app_secret = app_secret
         self.agent_key = agent_key
@@ -32,11 +32,11 @@ class DingTalkAdapter(PlatformAdapter):
             raise RuntimeError("dingtalk-stream is required for the DingTalk adapter") from exc
 
         class _Handler(dingtalk_stream.ChatbotHandler):
-            def __init__(self, adapter: DingTalkAdapter):
+            def __init__(self, adapter: DingTalkAdapter) -> None:
                 super().__init__()
                 self.adapter = adapter
 
-            async def process(self, callback):
+            async def process(self, callback: object) -> tuple[object, str]:
                 data = dingtalk_stream.ChatbotMessage.from_dict(callback.data)
                 if self.adapter._handler is not None:
                     await self.adapter._handler(

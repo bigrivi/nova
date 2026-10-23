@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from nova.learning.nudges import build_nudge_reminder, should_nudge
 from nova.learning.session_search import SessionSearch
 from nova.learning.skill_extractor import SkillExtractor, TurnContext
 from nova.learning.user_model import UserModel
+
+if TYPE_CHECKING:
+    from nova.llm.provider import LLMProvider
+    from nova.settings import LearningSettings
 
 log = logging.getLogger(__name__)
 
@@ -19,7 +25,12 @@ _loops: dict[str, LearningLoop] = {}
 
 
 def get_learning_loop(
-    agent_key: str, settings, skills_dir, db_path, llm=None, model: str = ""
+    agent_key: str,
+    settings: LearningSettings,
+    skills_dir: Path | str,
+    db_path: str,
+    llm: LLMProvider | None = None,
+    model: str = "",
 ) -> LearningLoop:
     """Return the process-wide loop for *agent_key*, creating it on first use.
 
@@ -44,7 +55,14 @@ def get_learning_loop(
 
 
 class LearningLoop:
-    def __init__(self, settings, skills_dir, db_path, llm=None, model: str = ""):
+    def __init__(
+        self,
+        settings: LearningSettings,
+        skills_dir: Path | str,
+        db_path: str,
+        llm: LLMProvider | None = None,
+        model: str = "",
+    ) -> None:
         self.settings = settings
         self.skills_dir = skills_dir
         self.db_path = db_path

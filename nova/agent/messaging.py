@@ -24,12 +24,12 @@ class AgentMessaging:
     service can be replaced or mocked independently of the agent.
     """
 
-    def __init__(self, agent: Agent):
+    def __init__(self, agent: Agent) -> None:
         self.agent = agent
         self.ctx: AgentContext = agent.ctx
 
     @property
-    def _self(self):
+    def _self(self) -> Agent:
         return self.agent
 
     def build_system_prompt(self, session_ctx: SessionContext | None = None) -> str:

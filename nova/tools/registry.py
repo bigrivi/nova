@@ -5,10 +5,12 @@ Tool registry.
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
     from nova.tools.behavior import ToolBehavior
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 _tool_metadata: dict = {}
 
@@ -17,10 +19,10 @@ def tool(
     name: str | None = None,
     description: str = "",
     parameters: dict | None = None,
-):
+) -> Callable[[F], F]:
     """Tool decorator."""
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: F) -> F:
         tool_name = name or func.__name__
         _tool_metadata[tool_name] = {
             "name": tool_name,
@@ -54,7 +56,7 @@ class Tool:
 class ToolRegistry:
     """Tool registry."""
 
-    def __init__(self, source: "ToolRegistry | None" = None):
+    def __init__(self, source: "ToolRegistry | None" = None) -> None:
         if source is not None:
             self.tools = dict(source.tools)
             self._behaviors = dict(getattr(source, "_behaviors", {}))
@@ -74,7 +76,7 @@ class ToolRegistry:
         )
         self.tools[t.name] = t
 
-    def set_behavior(self, name: str, behavior) -> None:
+    def set_behavior(self, name: str, behavior: "ToolBehavior") -> None:
         """Bind a ToolBehavior to a registered tool."""
         self._behaviors[name] = behavior
 
@@ -121,7 +123,7 @@ class ToolRegistry:
             from_mcp=from_mcp,
         )
 
-    def unregister(self, name: str):
+    def unregister(self, name: str) -> None:
         """Unregister a tool."""
         self.tools.pop(name, None)
 
@@ -163,7 +165,7 @@ class ToolRegistry:
             "required": schema.get("required", []),
         }
 
-    async def call(self, name: str, **kwargs) -> dict:
+    async def call(self, name: str, **kwargs: object) -> dict[str, Any]:
         """Invoke a tool."""
         tool = self.get(name)
         if not tool:

@@ -218,7 +218,7 @@ def _load_config_payload(config_path: Path) -> dict[str, Any]:
     return payload
 
 
-def _parse_provider_configs(raw_providers: Any) -> dict[str, ProviderConfig]:
+def _parse_provider_configs(raw_providers: object) -> dict[str, ProviderConfig]:
     if raw_providers is None:
         raw_providers = {}
     if not isinstance(raw_providers, dict):
@@ -292,7 +292,7 @@ def _resolve_transcription_api_key() -> str:
     return os.getenv("GROQ_API_KEY", "").strip()
 
 
-def _parse_transcription_config(raw: Any) -> TranscriptionSettings:
+def _parse_transcription_config(raw: object) -> TranscriptionSettings:
     if raw is None:
         raw = {}
     if not isinstance(raw, dict):
@@ -311,7 +311,7 @@ def _parse_transcription_config(raw: Any) -> TranscriptionSettings:
     )
 
 
-def _parse_web_search_config(raw: Any) -> WebSearchSettings:
+def _parse_web_search_config(raw: object) -> WebSearchSettings:
     if raw is None:
         raw = {}
     if not isinstance(raw, dict):
@@ -336,7 +336,7 @@ def _parse_web_search_config(raw: Any) -> WebSearchSettings:
     )
 
 
-def _parse_approval_review_config(raw: Any) -> ApprovalReviewSettings:
+def _parse_approval_review_config(raw: object) -> ApprovalReviewSettings:
     if raw is None:
         return ApprovalReviewSettings()
     if not isinstance(raw, dict):
@@ -353,7 +353,7 @@ def _parse_approval_review_config(raw: Any) -> ApprovalReviewSettings:
     )
 
 
-def _parse_learning_config(raw: Any) -> LearningSettings:
+def _parse_learning_config(raw: object) -> LearningSettings:
     if raw is None:
         return LearningSettings()
     if not isinstance(raw, dict):
@@ -371,7 +371,7 @@ def _parse_learning_config(raw: Any) -> LearningSettings:
     )
 
 
-def _parse_compaction_config(raw: Any) -> CompactionSettings:
+def _parse_compaction_config(raw: object) -> CompactionSettings:
     if raw is None:
         return CompactionSettings()
     if not isinstance(raw, dict):
@@ -403,7 +403,7 @@ def _parse_compaction_config(raw: Any) -> CompactionSettings:
 _MIN_SUMMARY_KEEP_TOKENS = 1024
 
 
-def _parse_summary_keep_tokens(raw: dict, default_window: int) -> int:
+def _parse_summary_keep_tokens(raw: dict[str, Any], default_window: int) -> int:
     """Read the recent-portion budget, honouring the ratio that preceded it.
 
     The budget is absolute because a share of the history grew with the history:
@@ -425,7 +425,7 @@ def _parse_summary_keep_tokens(raw: dict, default_window: int) -> int:
     return CompactionSettings.summary_keep_tokens
 
 
-def _parse_server_config(raw: Any) -> tuple[str, int, str, str, str]:
+def _parse_server_config(raw: object) -> tuple[str, int, str, str, str]:
     if raw is None:
         raw = {}
     if not isinstance(raw, dict):
@@ -620,8 +620,8 @@ class Settings:
         return provider_config
 
     def get_provider_option(
-        self, provider_name: str, key: str, default: Any = None
-    ) -> Any:
+        self, provider_name: str, key: str, default: object = None
+    ) -> object:
         provider_config = self.get_provider_config(provider_name)
         return provider_config.options.get(key, default)
 
@@ -683,7 +683,7 @@ class Settings:
 
 
 def resolve_model_name(
-    model_key: str, providers: dict, provider_name: str | None = None
+    model_key: str, providers: dict[str, Any], provider_name: str | None = None
 ) -> str:
     resolved_provider = provider_name or (next(iter(providers)) if providers else "")
     provider_config = providers.get(resolved_provider)
@@ -698,7 +698,7 @@ def resolve_model_name(
     return model_key
 
 
-def get_provider_name(providers: dict, provider_key: str) -> str:
+def get_provider_name(providers: dict[str, Any], provider_key: str) -> str:
     provider_config = providers.get(provider_key)
     if provider_config:
         return getattr(provider_config, "name", "") or ""

@@ -5,6 +5,7 @@ Database-backed memory repository.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from nova.db import get_default_data_source
 from nova.db.repository import NovaRepository
@@ -12,7 +13,7 @@ from nova.memory.models import MemoryRecord, MemorySearchFilters
 
 
 class MemoryRepository:
-    def __init__(self, data_source: NovaRepository | None = None):
+    def __init__(self, data_source: NovaRepository | None = None) -> None:
         self._data_source = data_source
 
     async def _get_data_source(self) -> NovaRepository:
@@ -100,7 +101,7 @@ class MemoryRepository:
             self.canonical(key), scope, session_id, owner_agent_key
         )
 
-    def _row_to_record(self, row) -> MemoryRecord:
+    def _row_to_record(self, row: dict[str, Any]) -> MemoryRecord:
         return MemoryRecord(
             id=row["id"],
             key=row["key"],

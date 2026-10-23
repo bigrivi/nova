@@ -20,6 +20,9 @@ The styling is installed as a wrapper around pywebview's
 Every entry point is a safe no-op on other platforms and never raises.
 """
 
+# ruff: noqa: ANN401 -- AppKit/pywebview bridge objects have no static types;
+# the remaining `Any` below is opaque native handles, not inferable types.
+
 from __future__ import annotations
 
 import logging
@@ -274,7 +277,7 @@ def _apply_on_main_thread(native: Any) -> bool:
     if _APPLIER_CLS is None:
 
         class _Applier(NSObject):  # type: ignore[no-redef]
-            def apply_(self, _sender: Any) -> None:
+            def apply_(self, _sender: object) -> None:
                 try:
                     import AppKit  # type: ignore[import-not-found]
 
@@ -289,7 +292,7 @@ def _apply_on_main_thread(native: Any) -> bool:
                 except Exception:
                     logger.debug("Delayed re-apply failed", exc_info=True)
 
-            def reapply_(self, _sender: Any) -> None:
+            def reapply_(self, _sender: object) -> None:
                 try:
                     import AppKit  # type: ignore[import-not-found]
 
@@ -310,7 +313,7 @@ def _apply_on_main_thread(native: Any) -> bool:
     return True
 
 
-def _on_shown(window: Any) -> None:
+def _on_shown(window: object) -> None:
     """pywebview shown-event handler: post-show fixup on the main thread."""
     if not is_macos():
         return
@@ -320,7 +323,7 @@ def _on_shown(window: Any) -> None:
     _apply_on_main_thread(native)
 
 
-def _on_resized(window: Any, *_args: Any) -> None:
+def _on_resized(window: object, *_args: object) -> None:
     """pywebview resized-event handler: re-pin chrome on the main thread."""
     if not is_macos():
         return

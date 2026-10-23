@@ -13,6 +13,10 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nova.llm.provider import LLMProvider
 
 log = logging.getLogger(__name__)
 
@@ -87,7 +91,7 @@ Conversation:
 
 
 class SkillExtractor:
-    def __init__(self, skills_dir: Path, min_tool_calls: int = 4, llm=None, model: str = ""):
+    def __init__(self, skills_dir: Path | str, min_tool_calls: int = 4, llm: LLMProvider | None = None, model: str = "") -> None:
         self.skills_dir = Path(skills_dir)
         self.min_tool_calls = min_tool_calls
         self.llm = llm
@@ -224,7 +228,7 @@ class SkillExtractor:
             return best
         return None
 
-    def _write_references(self, skill_dir: Path, references: dict) -> None:
+    def _write_references(self, skill_dir: Path, references: dict[str, Any]) -> None:
         ref_dir = skill_dir / "references"
         ref_dir.mkdir(parents=True, exist_ok=True)
         for topic, body in references.items():
@@ -263,7 +267,7 @@ class SkillExtractor:
         return f"version: {version}\n\n{body}\n"
 
 
-def _parse_json(raw: str) -> dict | None:
+def _parse_json(raw: str) -> dict[str, Any] | None:
     raw = (raw or "").strip()
     if raw.startswith("```"):
         raw = raw.strip("`").strip()

@@ -20,7 +20,7 @@ def encode_ai_sdk_done() -> bytes:
     return b"data: [DONE]\n\n"
 
 
-def _parse_done_payload(payload: Any) -> tuple[str, str]:
+def _parse_done_payload(payload: object) -> tuple[str, str]:
     if isinstance(payload, dict):
         reason = payload.get("reason")
         content = payload.get("content")
@@ -33,7 +33,7 @@ def _parse_done_payload(payload: Any) -> tuple[str, str]:
     return "", ""
 
 
-def _parse_tool_input(arguments: Any) -> Any:
+def _parse_tool_input(arguments: object) -> object:
     if isinstance(arguments, (dict, list)):
         return arguments
     if not isinstance(arguments, str):
@@ -47,7 +47,7 @@ def _parse_tool_input(arguments: Any) -> Any:
         return {"raw": arguments}
 
 
-def _parse_tool_output(result: Any) -> Any:
+def _parse_tool_output(result: object) -> object:
     content = getattr(result, "content", "")
     if isinstance(content, (dict, list)):
         return content
@@ -116,7 +116,7 @@ class AISDKStreamAdapter:
             self._step_started = False
         return chunks
 
-    def feed(self, event: AgentEvent, data: Any) -> list[bytes]:
+    def feed(self, event: AgentEvent, data: object) -> list[bytes]:
         chunks: list[bytes] = []
 
         if event == AgentEvent.SESSION:
@@ -258,6 +258,8 @@ class AISDKStreamAdapter:
             return chunks
 
         if event == AgentEvent.TOOL_RESULT:
+            # Both producers yield a payload dict for this event.
+            assert isinstance(data, dict)
             result = data["result"]
             tool_call_id = data.get("tool_call_id", "")
             tool_name = data["tool"]

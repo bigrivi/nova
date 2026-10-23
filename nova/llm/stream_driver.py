@@ -9,13 +9,20 @@ in a :class:`StreamParser`.
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterable
+from typing import TYPE_CHECKING
 
 from nova.llm.accumulator import RunawayOutput, StreamAccumulator
 from nova.llm.provider import ChatStreamEvent, Done, Error
 from nova.llm.stream_read import StreamAborted, StreamPoller
 from nova.llm.stream_trace import StreamTrace
+
+if TYPE_CHECKING:
+    import aiohttp
+
+    from nova.llm.framing import NDJSONFramer, SSEFramer
 
 
 def output_limit_error(reason: str) -> Error:
@@ -123,13 +130,13 @@ class StreamParser(ABC):
 
 async def drive_stream(
     *,
-    resp,
+    resp: aiohttp.ClientResponse,
     read_line: Callable[[], Coroutine[object, object, bytes]],
-    abort_event,
+    abort_event: asyncio.Event | None,
     trace: StreamTrace,
     accumulator: StreamAccumulator,
     parser: StreamParser,
-    framer,
+    framer: SSEFramer | NDJSONFramer,
 ) -> AsyncIterator[ChatStreamEvent]:
     """Run the read/frame/feed loop for one streaming response.
 

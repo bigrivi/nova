@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 class WeChatAdapter(PlatformAdapter):
     name = "wechat"
 
-    def __init__(self, token: str = "", agent_key: str = "main", **options):
+    def __init__(self, token: str = "", agent_key: str = "main", **options: str) -> None:
         self.token = token
         self.agent_key = agent_key
         self.options = options
@@ -40,7 +40,7 @@ class WeChatAdapter(PlatformAdapter):
         bot = wechatbot.WeChatBot(token=self.token) if self.token else wechatbot.WeChatBot()
 
         @bot.on_message
-        async def _on_message(message):  # pragma: no cover - SDK callback
+        async def _on_message(message: object) -> None:  # pragma: no cover - SDK callback
             if self._handler is not None:
                 await self._handler(
                     InboundMessage(sender=str(message.sender_id), text=str(message.text))
