@@ -50,8 +50,6 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                 useChatStore.setState({
                     provider: agent.provider,
                     model: agent.model,
-                    providerName: agent.provider_name ?? agent.provider,
-                    modelName: agent.model_name ?? agent.model,
                     agentKey: agent.key ?? "main",
                     agentName: agent.name ?? "Nova",
                 });

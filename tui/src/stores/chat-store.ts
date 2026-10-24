@@ -43,8 +43,6 @@ type ChatState = {
     isStreaming: boolean;
     provider: string;
     model: string;
-    providerName: string;
-    modelName: string;
     agentKey: string;
     agentName: string;
 
@@ -143,8 +141,6 @@ export const useChatStore = create<ChatState>((set) => ({
     isStreaming: false,
     provider: DEFAULT_PROVIDER,
     model: DEFAULT_MODEL,
-    providerName: DEFAULT_PROVIDER,
-    modelName: DEFAULT_MODEL,
     agentKey: DEFAULT_AGENT_KEY,
     agentName: DEFAULT_AGENT_KEY,
 

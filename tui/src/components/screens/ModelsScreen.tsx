@@ -40,8 +40,6 @@ export function ModelsScreen() {
         useChatStore.setState({
             provider: model.provider,
             model: model.model,
-            providerName: model.provider_name,
-            modelName: model.label,
         });
         try {
             await updateAgent("main", {
