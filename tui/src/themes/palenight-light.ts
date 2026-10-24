@@ -1,26 +1,26 @@
-/** Palenight light theme (ported from OpenCode). */
+/** Palenight light theme (palette aligned with OpenCode). */
 import type { Theme } from "./types.ts";
 
 export const palenightLightTheme: Theme = {
     background: "#fafafa",
     foreground: "#292d3e",
     muted: "#8796b0",
-    subtle: "#6e7a94",
+    subtle: "#8796b0",
     accent: "#4976eb",
     running: "#ffb300",
     success: "#91b859",
     error: "#e53935",
-    surface: "#f0f0f0",
+    surface: "#f5f5f5",
     surfaceDeep: "#fafafa",
-    border: "#d8d8d8",
+    border: "#e0e0e0",
     diff: {
         addedBg: "#e8f5e9",
         removedBg: "#ffebee",
-        contextBg: "#f0f0f0",
+        contextBg: "#f5f5f5",
         addedSign: "#91b859",
         removedSign: "#e53935",
-        lineNumber: "#8796b0",
-        lineNumberBg: "#f0f0f0",
+        lineNumber: "#6a6e70",
+        lineNumberBg: "#f5f5f5",
         addedLineNumberBg: "#e8f5e9",
         removedLineNumberBg: "#ffebee",
     },
@@ -30,7 +30,7 @@ export const palenightLightTheme: Theme = {
     linkUrl: "#00acc1",
     quote: "#8796b0",
     bullet: "#4976eb",
-    rule: "#d8d8d8",
+    rule: "#8796b0",
     strong: "#f4511e",
     italic: "#ffb300",
     strikethrough: "#8796b0",

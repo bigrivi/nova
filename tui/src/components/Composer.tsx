@@ -157,7 +157,7 @@ export function Composer({ onCommand }: { onCommand: ComposerCommandHandler }) {
             gap={0}
             border={["top", "bottom"]}
             borderStyle="single"
-            borderColor={theme.border}
+            borderColor={theme.muted}
         >
             <CommandSuggestions
                 items={suggestions}

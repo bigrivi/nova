@@ -1,4 +1,4 @@
-/** palenightTheme theme. */
+/** Palenight theme (palette aligned with OpenCode). */
 import type { Theme } from "./types.ts";
 
 export const palenightTheme: Theme = {
@@ -10,30 +10,30 @@ export const palenightTheme: Theme = {
     running: "#ffcb6b",
     success: "#c3e88d",
     error: "#f07178",
-    surface: "#32374d",
+    surface: "#1e2132",
     surfaceDeep: "#292d3e",
-    border: "#444267",
+    border: "#32364a",
     diff: {
-        addedBg: "#304230",
-        removedBg: "#422b2b",
-        contextBg: "#32374d",
+        addedBg: "#2e3c2b",
+        removedBg: "#3c2b2b",
+        contextBg: "#1e2132",
         addedSign: "#c3e88d",
         removedSign: "#f07178",
-        lineNumber: "#676e95",
-        lineNumberBg: "#32374d",
-        addedLineNumberBg: "#304230",
-        removedLineNumberBg: "#422b2b",
+        lineNumber: "#a0a2af",
+        lineNumberBg: "#1e2132",
+        addedLineNumberBg: "#2e3c2b",
+        removedLineNumberBg: "#3c2b2b",
     },
-    heading: "#82aaff",
-    codeInline: "#c792ea",
+    heading: "#c792ea",
+    codeInline: "#c3e88d",
     link: "#82aaff",
-    linkUrl: "#8796b0",
-    quote: "#8796b0",
+    linkUrl: "#89ddff",
+    quote: "#676e95",
     bullet: "#82aaff",
-    rule: "#444267",
-    strong: "#ffcb6b",
-    italic: "#c792ea",
-    strikethrough: "#8796b0",
+    rule: "#676e95",
+    strong: "#f78c6c",
+    italic: "#ffcb6b",
+    strikethrough: "#676e95",
     syntaxKeyword: "#c792ea",
     syntaxString: "#c3e88d",
     syntaxComment: "#676e95",
@@ -46,4 +46,3 @@ export const palenightTheme: Theme = {
     syntaxVariableBuiltin: "#a6accd",
     syntaxLabel: "#c3e88d",
 };
-
