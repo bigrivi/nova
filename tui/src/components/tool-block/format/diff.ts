@@ -12,6 +12,75 @@ export function looksLikeDiff(text: string): boolean {
     return false;
 }
 
+const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+const TRUNCATION_MARKER = /^\[\.\.\. \d+ more lines \.\.\.\]$/;
+
+/** Whether the hunk at *headerIndex* has exactly the lines its header promises. */
+function isHunkComplete(lines: string[], headerIndex: number): boolean {
+    const match = HUNK_HEADER.exec(lines[headerIndex] ?? "");
+    if (!match) return false;
+    const oldCount = Number(match[2] ?? 1);
+    const newCount = Number(match[4] ?? 1);
+    let oldSeen = 0;
+    let newSeen = 0;
+    for (let index = headerIndex + 1; index < lines.length; index++) {
+        const line = lines[index] ?? "";
+        if (HUNK_HEADER.test(line) || line.startsWith("--- ") || line.startsWith("+++ ")) {
+            break;
+        }
+        const prefix = line[0];
+        if (prefix === "+") newSeen += 1;
+        else if (prefix === "-") oldSeen += 1;
+        else if (prefix === " " || line === "") {
+            oldSeen += 1;
+            newSeen += 1;
+        } else if (prefix !== "\\") {
+            return false;
+        }
+    }
+    return oldSeen === oldCount && newSeen === newCount;
+}
+
+/**
+ * Extract a valid unified diff from a tool output that prefixes it with prose.
+ *
+ * Three things would otherwise make the result unparsable:
+ * - a prose preamble (sliced off),
+ * - a trailing blank context line (`" "`), which `trim()` deletes,
+ * - a server-side `[... N more lines ...]` marker, which can sit inside a hunk
+ *   whose body was cut. The marker is dropped and the incomplete trailing hunk
+ *   is removed, so every shown header stays honest.
+ */
+export function extractDiff(text: string): string {
+    const index = text.indexOf("--- ");
+    if (index === -1) return "";
+
+    const lines = text
+        .slice(index)
+        .split("\n")
+        .filter((line) => !TRUNCATION_MARKER.test(line));
+    while (lines.length > 0 && lines[lines.length - 1] === "") {
+        lines.pop();
+    }
+
+    const headers: number[] = [];
+    lines.forEach((line, position) => {
+        if (HUNK_HEADER.test(line)) headers.push(position);
+    });
+    if (headers.length === 0) return lines.join("\n");
+
+    for (let position = headers.length - 1; position >= 0; position--) {
+        const header = headers[position]!;
+        if (isHunkComplete(lines, header)) {
+            const next = headers[position + 1];
+            return lines.slice(0, next ?? lines.length).join("\n");
+        }
+    }
+    // Only a cut hunk survived; keep the file headers so the patch is still
+    // well-formed and renders as empty rather than as a parse error.
+    return lines.slice(0, headers[0]).join("\n");
+}
+
 function splitFragment(value: string): string[] {
     if (value === "") return [];
     const lines = value.split("\n");

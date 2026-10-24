@@ -1,5 +1,5 @@
 import { backtick } from "../format/text.ts";
-import { editArgsDiff, diffStat } from "../format/diff.ts";
+import { diffStat, editArgsDiff, extractDiff } from "../format/diff.ts";
 import type { RenderCtx, ToolRenderer } from "../types.ts";
 
 type FileArgs = {
@@ -49,7 +49,7 @@ function contentLines(args: FileArgs): number | undefined {
 }
 
 function writeDiffText(ctx: RenderCtx<FileArgs>): string {
-    return ctx.outputText.includes("--- ") ? ctx.outputText.trim() : "";
+    return extractDiff(ctx.outputText);
 }
 
 export const readRenderer: ToolRenderer<FileArgs> = {
@@ -98,15 +98,17 @@ export const editRenderer: ToolRenderer<FileArgs> = {
     verbs: { running: "Editing", done: "Edited", error: "Failed to edit" },
     subject,
     meta: (ctx) => {
-        if (!ctx.outputText.includes("--- ")) return undefined;
-        const diff = ctx.outputText.includes("--- ") ? ctx.outputText.trim() : editArgsDiff(ctx.args);
+        const diff = ctx.outputText.includes("--- ")
+            ? extractDiff(ctx.outputText)
+            : editArgsDiff(ctx.args);
+        if (!diff) return undefined;
         const stat = diffStat(diff);
         if (stat.added === 0 && stat.removed === 0) return undefined;
         return `+${stat.added} -${stat.removed}`;
     },
     result: (ctx) => {
         const diff = ctx.outputText.includes("--- ")
-            ? ctx.outputText.trim()
+            ? extractDiff(ctx.outputText)
             : editArgsDiff(ctx.args);
         if (!diff) return { kind: "none" };
         return {

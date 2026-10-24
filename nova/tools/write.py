@@ -9,6 +9,45 @@ from nova.tools.registry import tool
 from nova.tools.workspace_context import resolve_path
 
 
+def truncate_diff(diff_lines: list[str], limit: int = 80) -> tuple[list[str], int]:
+    """Keep whole hunks so a truncated diff is still a valid unified diff.
+
+    Cutting inside a hunk leaves the header promising more lines than the body
+    contains, and diff parsers reject it. Dropping the partial hunk instead
+    keeps every shown header honest; the marker then goes after the last one.
+
+    Args:
+        diff_lines: The unified diff, one string per line (newlines kept).
+        limit: Soft line budget. The first hunk is always kept so the output
+            still shows what changed, even when that hunk alone exceeds it.
+
+    Returns:
+        The shown lines and how many source lines were omitted.
+    """
+    first_hunk = next(
+        (index for index, line in enumerate(diff_lines) if line.startswith("@@")),
+        len(diff_lines),
+    )
+    shown = list(diff_lines[:first_hunk])
+    hunks: list[list[str]] = []
+    index = first_hunk
+    while index < len(diff_lines):
+        start = index
+        index += 1
+        while index < len(diff_lines) and not diff_lines[index].startswith("@@"):
+            index += 1
+        hunks.append(diff_lines[start:index])
+
+    used = len(shown)
+    for position, hunk in enumerate(hunks):
+        if position > 0 and used + len(hunk) > limit:
+            break
+        shown.extend(hunk)
+        used += len(hunk)
+
+    return shown, len(diff_lines) - len(shown)
+
+
 @tool(
     name="write",
     description="Create or overwrite a file. Use for creating new files or replacing entire file content. WARNING: This will overwrite existing files without confirmation.",
@@ -67,8 +106,7 @@ async def write(content: str, filePath: str) -> ToolResult:
             return ToolResult(success=True, content=f"No changes in {p}")
 
         if len(diff) > 80:
-            shown = diff[:80]
-            remaining = len(diff) - 80
+            shown, remaining = truncate_diff(diff)
             diff_text = "".join(shown) + f"\n\n[... {remaining} more lines ...]"
         else:
             diff_text = "".join(diff)
