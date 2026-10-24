@@ -15,22 +15,26 @@ export function DiffView({ diff, synthesized }: { diff: string; synthesized: boo
     const view = dims.width > SPLIT_VIEW_MIN_COLS ? "split" : "unified";
 
     return (
-        <diff
-            width="100%"
-            diff={diff}
-            view={view}
-            showLineNumbers={!synthesized}
-            fg={theme.foreground}
-            addedBg={theme.diff.addedBg}
-            removedBg={theme.diff.removedBg}
-            addedSignColor={theme.diff.addedSign}
-            removedSignColor={theme.diff.removedSign}
-            lineNumberFg={theme.diff.lineNumber}
-            addedLineNumberBg={theme.diff.addedLineNumberBg}
-            removedLineNumberBg={theme.diff.removedLineNumberBg}
-            syntaxStyle={syntaxStyle}
-            treeSitterClient={treeSitterClient}
-            wrapMode="word"
-        />
+        <box backgroundColor={theme.diff.contextBg}>
+            <diff
+                width="100%"
+                diff={diff}
+                view={view}
+                showLineNumbers={!synthesized}
+                fg={theme.foreground}
+                contextBg={theme.diff.contextBg}
+                addedBg={theme.diff.addedBg}
+                removedBg={theme.diff.removedBg}
+                addedSignColor={theme.diff.addedSign}
+                removedSignColor={theme.diff.removedSign}
+                lineNumberFg={theme.diff.lineNumber}
+                lineNumberBg={theme.diff.contextBg}
+                addedLineNumberBg={theme.diff.addedLineNumberBg}
+                removedLineNumberBg={theme.diff.removedLineNumberBg}
+                syntaxStyle={syntaxStyle}
+                treeSitterClient={treeSitterClient}
+                wrapMode="word"
+            />
+        </box>
     );
 }
