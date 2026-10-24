@@ -16,11 +16,11 @@ export const draculaTheme: Theme = {
     diff: {
         addedBg: "#2d3a2d",
         removedBg: "#3a2d2d",
-        contextBg: "#282a36",
+        contextBg: "#343746",
         addedSign: "#50fa7b",
         removedSign: "#ff5555",
         lineNumber: "#6272a4",
-        lineNumberBg: "#282a36",
+        lineNumberBg: "#343746",
         addedLineNumberBg: "#2d3a2d",
         removedLineNumberBg: "#3a2d2d",
     },

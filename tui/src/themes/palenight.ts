@@ -16,11 +16,11 @@ export const palenightTheme: Theme = {
     diff: {
         addedBg: "#304230",
         removedBg: "#422b2b",
-        contextBg: "#292d3e",
+        contextBg: "#32374d",
         addedSign: "#c3e88d",
         removedSign: "#f07178",
         lineNumber: "#676e95",
-        lineNumberBg: "#292d3e",
+        lineNumberBg: "#32374d",
         addedLineNumberBg: "#304230",
         removedLineNumberBg: "#422b2b",
     },

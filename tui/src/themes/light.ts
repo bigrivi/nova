@@ -16,11 +16,11 @@ export const lightTheme: Theme = {
     diff: {
         addedBg: "#e6ffec",
         removedBg: "#ffebe9",
-        contextBg: "#f6f8fa",
+        contextBg: "#eaeef2",
         addedSign: "#1a7f37",
         removedSign: "#cf222e",
         lineNumber: "#656d76",
-        lineNumberBg: "#f6f8fa",
+        lineNumberBg: "#eaeef2",
         addedLineNumberBg: "#ccffd8",
         removedLineNumberBg: "#ffd7d5",
     },

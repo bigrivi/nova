@@ -16,11 +16,11 @@ export const matrixTheme: Theme = {
     diff: {
         addedBg: "#10241a",
         removedBg: "#2a0f0f",
-        contextBg: "#0a0e0a",
+        contextBg: "#121a12",
         addedSign: "#77ffaf",
         removedSign: "#ff7171",
         lineNumber: "#8ca391",
-        lineNumberBg: "#0a0e0a",
+        lineNumberBg: "#121a12",
         addedLineNumberBg: "#10241a",
         removedLineNumberBg: "#2a0f0f",
     },

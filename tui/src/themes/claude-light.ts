@@ -16,11 +16,11 @@ export const claudeLightTheme: Theme = {
     diff: {
         addedBg: "#e6f4e6",
         removedBg: "#fdeaea",
-        contextBg: "#faf9f5",
+        contextBg: "#f0eee6",
         addedSign: "#2f8a3e",
         removedSign: "#c0392b",
         lineNumber: "#6b6b6b",
-        lineNumberBg: "#faf9f5",
+        lineNumberBg: "#f0eee6",
         addedLineNumberBg: "#e6f4e6",
         removedLineNumberBg: "#fdeaea",
     },

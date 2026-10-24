@@ -16,11 +16,11 @@ export const matrixLightTheme: Theme = {
     diff: {
         addedBg: "#d8f0dd",
         removedBg: "#f8d8d8",
-        contextBg: "#eef3ea",
+        contextBg: "#e4ece0",
         addedSign: "#5dac7e",
         removedSign: "#d53a3a",
         lineNumber: "#748476",
-        lineNumberBg: "#eef3ea",
+        lineNumberBg: "#e4ece0",
         addedLineNumberBg: "#d8f0dd",
         removedLineNumberBg: "#f8d8d8",
     },
