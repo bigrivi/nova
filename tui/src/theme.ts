@@ -27,7 +27,18 @@ export const theme = {
     surfaceDeep: "#0d1117",
     /** Borders */
     border: "#30363d",
-
+    /** Diff rendering tokens */
+    diff: {
+        addedBg: "#162a1a",
+        removedBg: "#2a1616",
+        contextBg: "#0d1117",
+        addedSign: "#3fb950",
+        removedSign: "#e5534b",
+        lineNumber: "#6e7681",
+        lineNumberBg: "#0d1117",
+        addedLineNumberBg: "#162a1a",
+        removedLineNumberBg: "#2a1616",
+    },
     // ── Markdown semantic tokens (consumed by MarkdownPart syntaxStyle) ──
     /** Headings h1..h6 — distinct from body, bold via syntaxStyle */
     heading: "#79c0ff",

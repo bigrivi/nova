@@ -2,7 +2,7 @@ import { SyntaxStyle, getTreeSitterClient } from "@opentui/core";
 import { useMemo } from "react";
 import { theme } from "../../theme.ts";
 
-const SYNTAX_STYLES = {
+export const SYNTAX_STYLES = {
     default: { fg: theme.foreground },
     conceal: { fg: theme.muted },
 

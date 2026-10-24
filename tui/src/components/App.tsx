@@ -5,6 +5,7 @@ import { getAgent } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
+import { useExpandStore } from "../stores/expand-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
 import { submitAskAnswers, submitAskCancel } from "../stream/chat-stream.ts";
@@ -59,6 +60,10 @@ export function App({ onExit }: { onExit: ExitHandler }) {
         }
         if (useScreenStore.getState().current) {
             // Screen keyboard is handled by each screen's useKeyboard
+            return;
+        }
+        if (key.ctrl && key.name === "o") {
+            useExpandStore.getState().toggle();
             return;
         }
         if (key.ctrl && key.name === "c") {
