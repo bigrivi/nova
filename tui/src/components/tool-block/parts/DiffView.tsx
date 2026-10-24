@@ -23,11 +23,9 @@ export function DiffView({ diff, synthesized }: { diff: string; synthesized: boo
             fg={theme.foreground}
             addedBg={theme.diff.addedBg}
             removedBg={theme.diff.removedBg}
-            contextBg={theme.diff.contextBg}
             addedSignColor={theme.diff.addedSign}
             removedSignColor={theme.diff.removedSign}
             lineNumberFg={theme.diff.lineNumber}
-            lineNumberBg={theme.diff.lineNumberBg}
             addedLineNumberBg={theme.diff.addedLineNumberBg}
             removedLineNumberBg={theme.diff.removedLineNumberBg}
             syntaxStyle={syntaxStyle}
