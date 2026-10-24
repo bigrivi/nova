@@ -18,6 +18,7 @@ import { AgentsScreen } from "./screens/AgentsScreen.tsx";
 import { CreateAgentScreen } from "./screens/CreateAgentScreen.tsx";
 import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
+import { ThemeScreen } from "./screens/ThemeScreen.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 import { useThemePreference } from "../context/theme.tsx";
 import { Toast } from "./Toast.tsx";
@@ -107,6 +108,8 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                 const arg = (_args || "").trim().toLowerCase();
                 if (arg && themePref.available.includes(arg)) {
                     themePref.setPreference(arg);
+                } else {
+                    screens.open({ kind: "theme" });
                 }
                 return;
             }
@@ -143,6 +146,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             )}
             <StatusBar />
             {screen?.kind === "sessions" ? <SessionsScreen /> : null}
+            {screen?.kind === "theme" ? <ThemeScreen /> : null}
             {screen?.kind === "models" ? <ModelsScreen /> : null}
             {screen?.kind === "agents" || screen?.kind === "delete-agent" ? (
                 <AgentsScreen deletable={screen.kind === "delete-agent"} />

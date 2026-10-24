@@ -4,6 +4,7 @@ import { create } from "zustand";
 export type Screen =
     | { kind: "sessions" }
     | { kind: "models" }
+    | { kind: "theme" }
     | { kind: "agents" }
     | { kind: "create-agent" }
     | { kind: "delete-agent" };
