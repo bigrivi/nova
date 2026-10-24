@@ -24,6 +24,7 @@ export type StreamChatOptions = {
     projectId?: string | null;
     provider?: string | null;
     model?: string | null;
+    agentKey?: string | null;
     attachments?: NovaAttachmentData[];
     /** Replay buffered frames after this sequence, then live-tail the turn. */
     resumeFromSequence?: number | null;
@@ -121,7 +122,7 @@ export async function updateAgent(
 
 export async function getAgent(
     key: string,
-): Promise<{ model: string; provider: string } | null> {
+): Promise<{ key: string; name: string; model: string; provider: string } | null> {
     const res = await fetch(buildUrl(`/api/agents/${encodeURIComponent(key)}`));
     if (!res.ok) return null;
     return res.json();
@@ -273,6 +274,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
             project_id: options.projectId || undefined,
             provider: options.provider || undefined,
             model: options.model || undefined,
+            agent_key: options.agentKey || undefined,
             attachments: options.attachments || [],
             resume_from_seq: options.resumeFromSequence ?? undefined,
         }),

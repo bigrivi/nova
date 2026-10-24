@@ -62,6 +62,9 @@ class AgentConfig:
     # with nobody at the keyboard. Read from ``mode`` in permissions.json -- the
     # security-policy file, next to the rules whose answer it changes.
     permission_mode: str = "ask"
+    # When True, the shell tool refuses anything it cannot prove only reads.
+    # Used by read-only agents that still get shell for inspection.
+    shell_read_only: bool = False
 
 
 def build_user_message(
@@ -682,6 +685,7 @@ class Agent:
             reviewer=reviewer,
             tool_policy=load_tool_policy(permissions_path()),
             permission_mode=self.config.permission_mode,
+            shell_read_only=self.config.shell_read_only,
         )
         await builder.build()
         self._skill_tools = builder.skill_tools

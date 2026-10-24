@@ -146,6 +146,7 @@ class ShellToolBehavior(DefaultToolBehavior):
         is_sub_agent: bool = False,
         reviewer: Reviewer | None = None,
         permission_mode: str = "ask",
+        shell_read_only: bool = False,
     ) -> None:
         self._approval = approval_manager
         self._is_sub_agent = is_sub_agent
@@ -153,6 +154,7 @@ class ShellToolBehavior(DefaultToolBehavior):
         # the user, which is the pre-review behaviour.
         self._reviewer = reviewer
         self._permission_mode = permission_mode
+        self._shell_read_only = shell_read_only
 
     async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
         cmd = args.get("command", "")
@@ -167,6 +169,20 @@ class ShellToolBehavior(DefaultToolBehavior):
         # Codex's pairing is the same -- `approval_policy = "never"` leaves
         # auto_review nothing to review. There is no third outcome for "nobody is
         # watching" to have.
+        if self._shell_read_only:
+            from nova.tools.shell.readonly import is_read_only_command
+
+            if not is_read_only_command(cmd):
+                return PreExecutionCheck(
+                    allowed=False,
+                    reject_reason=(
+                        "Refused: this shell command is not provably read-only, "
+                        "and this agent runs in read-only (plan) mode. "
+                        "Use read/grep/find/git log/diff and similar inspection "
+                        "commands; avoid writes, redirections, and interpreters."
+                    ),
+                )
+
         verdict = await decide(
             cmd,
             get_active_workspace(),

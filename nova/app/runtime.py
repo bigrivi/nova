@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from nova.agent import Agent, AgentConfig
-from nova.agent.posture import allowed_tools_for
+from nova.agent.posture import normalize_posture, resolve_allowed_tools, READ_ONLY
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.llm import (
@@ -372,9 +372,10 @@ async def build_agent(
         agent_effort=None if is_sub_agent else (record or {}).get("reasoning_effort"),
     )
 
-    allowed_tools = (
-        allowed_tools_for((record or {}).get("posture")) if is_sub_agent else None
-    )
+    allowed_tools = resolve_allowed_tools(record)
+    # A read-only agent may still be given the shell for inspection. The flag
+    # makes that shell refuse anything it cannot prove only reads.
+    shell_read_only = normalize_posture((record or {}).get("posture")) == READ_ONLY
 
     # Cache 2: LLMProvider
     llm = llm or build_llm(provider=resolved_provider, model=resolved_model)
@@ -408,6 +409,7 @@ async def build_agent(
             reasoning_effort=resolved_effort,
             shell_review=review.enabled,
             permission_mode=permission_mode,
+            shell_read_only=shell_read_only,
         ),
         llm_provider=llm,
         review_llm=review_llm,
@@ -428,7 +430,12 @@ async def build_agent(
     # bound to every tool changes with the mode, so a dontAsk registry reused
     # for an ask session would refuse commands the session is meant to prompt
     # for -- or the reverse, which is worse.
-    posture_marker = "ro" if allowed_tools is not None else ""
+    posture_marker = (
+        ""
+        if allowed_tools is None and not shell_read_only
+        else f"{int(shell_read_only)}:"
+        + ",".join(sorted(allowed_tools or ()))
+    )
     reg_key = registry_cache_key(
         agent_key,
         resolved_model,

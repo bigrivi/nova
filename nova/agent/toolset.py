@@ -56,6 +56,7 @@ class ToolsetBuilder:
         reviewer: Reviewer | None = None,
         tool_policy: ToolPolicy | None = None,
         permission_mode: str = "ask",
+        shell_read_only: bool = False,
         learning_loop: LearningLoop | None = None,
     ) -> None:
         self._registry = registry
@@ -64,6 +65,7 @@ class ToolsetBuilder:
         self._is_sub_agent = is_sub_agent
         self._allowed_tools = allowed_tools
         self._agent_key = agent_key
+        self._shell_read_only = shell_read_only
         # Model second opinion on flagged shell commands; None disables it.
         self._reviewer = reviewer
         # Per-tool allow/ask/deny; an empty policy allows everything.
@@ -192,6 +194,8 @@ class ToolsetBuilder:
             )
 
     async def _register_delegation(self) -> None:
+        if not self._allows("delegate_to_agent"):
+            return
         """Register delegation with a target enum of this agent's children.
 
         The roster in the system prompt is advisory text; a model can still emit
@@ -236,6 +240,10 @@ class ToolsetBuilder:
             mcp_manager = MCPManager.get_shared()
             await mcp_manager.ensure_initialized()
             mcp_manager.register_tools(self._registry)
+            if self._allowed_tools is not None:
+                for tool in list(self._registry.list_tools()):
+                    if tool.from_mcp and tool.name not in self._allowed_tools:
+                        self._registry.unregister(tool.name)
         except Exception:
             log.exception("Failed to initialize MCP servers")
 
@@ -253,6 +261,7 @@ class ToolsetBuilder:
                 is_sub_agent=self._is_sub_agent,
                 reviewer=self._reviewer,
                 permission_mode=self._permission_mode,
+                shell_read_only=self._shell_read_only,
             ),
         )
         self._registry.set_behavior("read_image", ImageReturningToolBehavior())

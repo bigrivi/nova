@@ -11,6 +11,7 @@ export function StatusBar() {
     const isStreaming = useChatStore((state) => state.isStreaming);
     const provider = useChatStore((state) => state.provider);
     const model = useChatStore((state) => state.model);
+    const agentName = useChatStore((state) => state.agentName);
     const sessionId = useChatStore((state) => state.sessionId);
     const used = useCtxStore((state) => state.used);
     const limit = useCtxStore((state) => state.limit);
@@ -64,6 +65,7 @@ export function StatusBar() {
                         fg={isStreaming ? theme.running : theme.muted}
                         content={isStreaming ? "●" : "○"}
                     />
+                    <text fg={theme.accent} content={agentName} />
                     <text fg={theme.foreground} content={model} />
                     <text fg={theme.muted} content={provider} />
                     <text fg={theme.subtle} content="·" />

@@ -35,6 +35,7 @@ export type TuiMessage = {
 /** Model selection for this conversation (P3: taken over by the model selection screen) */
 export const DEFAULT_PROVIDER = "";
 export const DEFAULT_MODEL = "";
+export const DEFAULT_AGENT_KEY = "main";
 
 type ChatState = {
     messages: TuiMessage[];
@@ -42,6 +43,8 @@ type ChatState = {
     isStreaming: boolean;
     provider: string;
     model: string;
+    agentKey: string;
+    agentName: string;
 
     setSessionId: (sessionId: string) => void;
     setPending: (messageId: string, pending: boolean) => void;
@@ -138,6 +141,8 @@ export const useChatStore = create<ChatState>((set) => ({
     isStreaming: false,
     provider: DEFAULT_PROVIDER,
     model: DEFAULT_MODEL,
+    agentKey: DEFAULT_AGENT_KEY,
+    agentName: DEFAULT_AGENT_KEY,
 
     setSessionId: (sessionId) => set({ sessionId }),
 

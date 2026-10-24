@@ -63,6 +63,8 @@ export type NovaAgentRecord = {
     provider: string;
     tools: string | null;
     workspace_dir: string | null;
+    mode?: "primary" | "subagent";
+    kind?: "main" | "sub";
     created_at: number;
     updated_at: number;
 };
