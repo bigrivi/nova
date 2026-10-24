@@ -37,10 +37,10 @@ export const COMMANDS: CommandSpec[] = [
         aliases: [],
     },
     {
-        id: "theme",
-        label: "Theme",
-        description: "View or switch UI theme",
-        usage: "/theme",
+        id: "themes",
+        label: "Themes",
+        description: "Browse and switch UI themes",
+        usage: "/themes",
         aliases: [],
     },
     {

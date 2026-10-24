@@ -20,7 +20,6 @@ import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
 import { ThemeScreen } from "./screens/ThemeScreen.tsx";
 import { StatusBar } from "./StatusBar.tsx";
-import { useThemePreference } from "../context/theme.tsx";
 import { Toast } from "./Toast.tsx";
 
 export type ExitHandler = () => void;
@@ -29,7 +28,6 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     const askQuestions = useAskUserStore((state) => state.active);
     const approval = useApprovalStore((state) => state.pending);
     const screen = useScreenStore((state) => state.current);
-    const themePref = useThemePreference();
 
     // Tail server-initiated turns so a background-task wake appears in place.
     useEffect(() => startSessionEvents(), []);
@@ -104,15 +102,9 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             case "delete-agent":
                 screens.open({ kind: "delete-agent" });
                 return;
-            case "theme": {
-                const arg = (_args || "").trim().toLowerCase();
-                if (arg && themePref.available.includes(arg)) {
-                    themePref.setPreference(arg);
-                } else {
-                    screens.open({ kind: "theme" });
-                }
+            case "themes":
+                screens.open({ kind: "theme" });
                 return;
-            }
             default:
                 // /install-skill /install-global-skill → not implemented yet
                 return;
