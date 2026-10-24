@@ -70,7 +70,7 @@ export function StatusBar() {
                     <text fg={theme.muted} content={provider} />
                     <text fg={theme.subtle} content="·" />
                     <text fg={theme.muted} content="ctx" />
-                    <text fg="#d29922" content={formatK(used)} />
+                    <text fg={theme.running} content={formatK(used)} />
                     <text fg={theme.muted} content="/" />
                     <text fg={theme.muted} content={limit ? formatK(limit) : "—"} />
                     <text

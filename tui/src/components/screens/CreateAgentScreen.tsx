@@ -4,6 +4,7 @@ import { useKeyboard } from "@opentui/react";
 import type { InputRenderable } from "@opentui/core";
 import { createAgent } from "../../api/nova-api.ts";
 import { useScreenStore } from "../../stores/screen-store.ts";
+import { useTheme } from "../../context/theme.tsx";
 
 const FIELDS = [
     { key: "key", label: "Agent key (3-32 chars: [a-z0-9-])", required: true },
@@ -15,6 +16,7 @@ type FieldKey = (typeof FIELDS)[number]["key"];
 type Values = Record<FieldKey, string>;
 
 export function CreateAgentScreen() {
+    const theme = useTheme();
     const [step, setStep] = useState(0);
     const [values, setValues] = useState<Values>({
         key: "",
@@ -58,10 +60,10 @@ export function CreateAgentScreen() {
             paddingY={2}
             border
             borderStyle="rounded"
-            borderColor="#4f9cf9"
-            backgroundColor="#0d1117"
+            borderColor={theme.accent}
+            backgroundColor={theme.surfaceDeep}
         >
-            <text fg="#4f9cf9">Create Agent — {field.label}</text>
+            <text fg={theme.accent}>Create Agent — {field.label}</text>
             <input
                 ref={inputRef}
                 flexGrow={1}
@@ -73,7 +75,7 @@ export function CreateAgentScreen() {
                           ? "My Agent"
                           : "(optional)"
                 }
-                placeholderColor="#6e7681"
+                placeholderColor={theme.muted}
                 onSubmit={() => {
                     const value = inputRef.current?.value ?? "";
                     const next: Values = { ...values, [field.key]: value };
@@ -89,8 +91,8 @@ export function CreateAgentScreen() {
                     }
                 }}
             />
-            {error ? <text fg="#e5534b" content={error} /> : null}
-            <text fg="#6e7681">
+            {error ? <text fg={theme.error} content={error} /> : null}
+            <text fg={theme.muted}>
                 {step + 1}/{FIELDS.length} • enter next • esc cancel
             </text>
         </box>

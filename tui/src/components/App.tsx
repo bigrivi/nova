@@ -1,5 +1,5 @@
 /** Root component: layout orchestration, modal layer, global keybindings, and command dispatch */
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useRenderer } from "@opentui/react";
 import { useEffect } from "react";
 import { getAgent } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
@@ -8,6 +8,7 @@ import { useChatStore } from "../stores/chat-store.ts";
 import { useExpandStore } from "../stores/expand-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
+import { useTheme } from "../context/theme.tsx";
 import { submitAskAnswers, submitAskCancel } from "../stream/chat-stream.ts";
 import { startSessionEvents } from "../stream/session-events.ts";
 import { ApprovalDialog } from "./ApprovalDialog.tsx";
@@ -28,6 +29,12 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     const askQuestions = useAskUserStore((state) => state.active);
     const approval = useApprovalStore((state) => state.pending);
     const screen = useScreenStore((state) => state.current);
+    const theme = useTheme();
+    const renderer = useRenderer();
+
+    useEffect(() => {
+        renderer.setBackgroundColor(theme.background);
+    }, [renderer, theme.background]);
 
     // Tail server-initiated turns so a background-task wake appears in place.
     useEffect(() => startSessionEvents(), []);
@@ -116,11 +123,14 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     // file kept for future overlay use, history visible via MessageList.
     return (
         <box
+            width="100%"
+            height="100%"
             flexDirection="column"
             flexGrow={1}
             padding={0}
             gap={0}
             marginBottom={1}
+            backgroundColor={theme.background}
         >
             <MessageList />
             {askQuestions ? (

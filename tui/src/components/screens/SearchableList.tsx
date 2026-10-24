@@ -2,6 +2,7 @@
 import type { InputRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { useMemo, useRef, useState } from "react";
+import { useTheme } from "../../context/theme.tsx";
 
 const PAGE_SIZE = 12;
 
@@ -22,6 +23,7 @@ export function SearchableList<T>({
     onClose: () => void;
     emptyText?: string;
 }) {
+    const theme = useTheme();
     const [query, setQuery] = useState("");
     const [selected, setSelected] = useState(0);
     const [scrollOffset, setScrollOffset] = useState(0);
@@ -111,17 +113,17 @@ export function SearchableList<T>({
             paddingY={2}
             border
             borderStyle="rounded"
-            borderColor="#4f9cf9"
-            backgroundColor="#0d1117"
+            borderColor={theme.accent}
+            backgroundColor={theme.surfaceDeep}
         >
-            <text fg="#4f9cf9">{title}</text>
+            <text fg={theme.accent}>{title}</text>
             <input
                 ref={inputRef}
                 flexGrow={1}
                 focused
                 value={query}
                 placeholder="Filter…"
-                placeholderColor="#6e7681"
+                placeholderColor={theme.muted}
                 onInput={(value) => {
                     setQuery(value);
                     setSelected(0);
@@ -142,16 +144,16 @@ export function SearchableList<T>({
                         <text
                             key={realIndex}
                             height={1}
-                            fg={realIndex === selected ? "#4f9cf9" : "#8b949e"}
+                            fg={realIndex === selected ? theme.accent : theme.subtle}
                             content={`${realIndex === selected ? "▸ " : "  "}${renderLabel(item)}`}
                         />
                     );
                 })}
                 {filtered.length === 0 ? (
-                    <text height={1} fg="#6e7681" content={`  ${emptyText}`} />
+                    <text height={1} fg={theme.muted} content={`  ${emptyText}`} />
                 ) : null}
             </box>
-            <text fg="#6e7681">
+            <text fg={theme.muted}>
                 {filtered.length > PAGE_SIZE
                     ? `↑↓ select • PgUp/PgDn page ${currentPage}/${totalPages} • enter confirm • esc close`
                     : "↑↓ select • enter confirm • esc close"}
