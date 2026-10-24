@@ -5,6 +5,22 @@ import { useTheme } from "../context/theme.tsx";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { WORKSPACE_DIR } from "../workspace.ts";
+import type { NovaModelRecord, NovaProviderRecord } from "../api/types.ts";
+
+type Catalog = {
+    models: NovaModelRecord[];
+    providers: NovaProviderRecord[];
+};
+
+/** Fetched once per TUI process and reused for every lookup. */
+let catalogPromise: Promise<Catalog> | null = null;
+
+function loadCatalog(): Promise<Catalog> {
+    catalogPromise ??= Promise.all([listModels(), listProviders()]).then(
+        ([models, providers]) => ({ models, providers }),
+    );
+    return catalogPromise;
+}
 
 export function StatusBar() {
     const theme = useTheme();
@@ -12,8 +28,7 @@ export function StatusBar() {
     const provider = useChatStore((state) => state.provider);
     const model = useChatStore((state) => state.model);
     const agentName = useChatStore((state) => state.agentName);
-    const [modelName, setModelName] = useState(model);
-    const [providerName, setProviderName] = useState(provider);
+    const [catalog, setCatalog] = useState<Catalog | null>(null);
     const sessionId = useChatStore((state) => state.sessionId);
     const used = useCtxStore((state) => state.used);
     const limit = useCtxStore((state) => state.limit);
@@ -49,27 +64,22 @@ export function StatusBar() {
 
     useEffect(() => {
         let cancelled = false;
-        void (async () => {
-            try {
-                const [models, providers] = await Promise.all([
-                    listModels(),
-                    listProviders(),
-                ]);
-                if (cancelled) return;
-                const m = models.find((x) => x.provider === provider && x.model === model);
-                const p = providers.find((x) => x.key === provider);
-                setModelName(m?.label ?? model);
-                setProviderName(p?.name ?? provider);
-            } catch {
-                if (cancelled) return;
-                setModelName(model);
-                setProviderName(provider);
-            }
-        })();
+        void loadCatalog()
+            .then((next) => {
+                if (!cancelled) setCatalog(next);
+            })
+            .catch(() => {});
         return () => {
             cancelled = true;
         };
-    }, [provider, model]);
+    }, []);
+
+    const modelName =
+        catalog?.models.find(
+            (item) => item.provider === provider && item.model === model,
+        )?.label ?? model;
+    const providerName =
+        catalog?.providers.find((item) => item.key === provider)?.name ?? provider;
 
     const cwd = WORKSPACE_DIR;
 
