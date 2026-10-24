@@ -15,20 +15,18 @@ export function DiffView({ diff, synthesized }: { diff: string; synthesized: boo
     const view = dims.width > SPLIT_VIEW_MIN_COLS ? "split" : "unified";
 
     return (
-        <box backgroundColor={theme.diff.contextBg}>
+        <box backgroundColor={theme.diff.contextBg} paddingLeft={4} paddingBottom={1} paddingTop={1}>
             <diff
                 width="100%"
                 diff={diff}
                 view={view}
                 showLineNumbers={!synthesized}
                 fg={theme.foreground}
-                contextBg={theme.diff.contextBg}
                 addedBg={theme.diff.addedBg}
                 removedBg={theme.diff.removedBg}
                 addedSignColor={theme.diff.addedSign}
                 removedSignColor={theme.diff.removedSign}
                 lineNumberFg={theme.diff.lineNumber}
-                lineNumberBg={theme.diff.contextBg}
                 addedLineNumberBg={theme.diff.addedLineNumberBg}
                 removedLineNumberBg={theme.diff.removedLineNumberBg}
                 syntaxStyle={syntaxStyle}
