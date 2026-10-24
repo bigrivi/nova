@@ -1,14 +1,13 @@
-/** Reactive theme context. Follows the terminal's dark/light mode by default;
- *  can be overridden manually via /theme. Preference is persisted to disk. */
+/** Reactive theme context. Supports named themes plus "system" (follow terminal). */
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useRenderer } from "@opentui/react";
 import { CliRenderEvents, type ThemeMode } from "@opentui/core";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { darkTheme, lightTheme, type Theme } from "../theme.ts";
+import { themes, themeNames, darkTheme, lightTheme, type Theme } from "../theme.ts";
 
-export type ThemePreference = "system" | "dark" | "light";
+export type ThemePreference = string; // theme name or "system"
 
 const PREF_FILE = join(process.env.NOVA_HOME || join(homedir(), ".nova"), "tui-theme.json");
 
@@ -16,7 +15,7 @@ function readPreference(): ThemePreference {
     try {
         const raw = readFileSync(PREF_FILE, "utf-8");
         const v = JSON.parse(raw)?.preference;
-        if (v === "dark" || v === "light" || v === "system") return v;
+        if (v === "system" || (typeof v === "string" && v in themes)) return v;
     } catch {
         // fall through
     }
@@ -36,7 +35,8 @@ const ThemeContext = createContext<Theme>(darkTheme);
 const PreferenceContext = createContext<{
     preference: ThemePreference;
     setPreference: (p: ThemePreference) => void;
-}>({ preference: "system", setPreference: () => {} });
+    available: string[];
+}>({ preference: "system", setPreference: () => {}, available: themeNames });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
     const renderer = useRenderer();
@@ -58,12 +58,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         writePreference(p);
     };
 
-    const effectiveMode: ThemeMode =
-        preference === "system" ? systemMode : preference;
+    let theme: Theme;
+    if (preference === "system") {
+        theme = systemMode === "light" ? lightTheme : darkTheme;
+    } else if (preference in themes) {
+        theme = themes[preference]!;
+    } else {
+        theme = darkTheme;
+    }
 
     return (
-        <PreferenceContext.Provider value={{ preference, setPreference }}>
-            <ThemeContext.Provider value={effectiveMode === "light" ? lightTheme : darkTheme}>
+        <PreferenceContext.Provider value={{ preference, setPreference, available: ["system", ...themeNames] }}>
+            <ThemeContext.Provider value={theme}>
                 {children}
             </ThemeContext.Provider>
         </PreferenceContext.Provider>
@@ -77,6 +83,7 @@ export function useTheme(): Theme {
 export function useThemePreference(): {
     preference: ThemePreference;
     setPreference: (p: ThemePreference) => void;
+    available: string[];
 } {
     return useContext(PreferenceContext);
 }

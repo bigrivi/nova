@@ -66,17 +66,16 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
         return activeRenderer.result?.(ctx) ?? { kind: "none" as const };
     }, [status, activeRenderer, ctx]);
 
-
     const glyph =
         status === "running" ? null : GLYPH[status as Exclude<ToolStatus, "running">];
 
     return (
         <box flexDirection="column" marginBottom={1}>
-            <box flexDirection="row">
+            <box flexDirection="row" gap={1}>
                 {status === "running" ? (
-                    <Spinner/>
+                    <box flexShrink={0} ><Spinner/></box>
                 ) : (
-                    <text fg={GLYPH_COLOR[status]} content={`${glyph} `} flexShrink={0} />
+                    <text fg={GLYPH_COLOR[status]} content={`${glyph}`} flexShrink={0} />
                 )}
                 <text fg={theme.foreground} content={title} />
             </box>

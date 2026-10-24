@@ -28,7 +28,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     const askQuestions = useAskUserStore((state) => state.active);
     const approval = useApprovalStore((state) => state.pending);
     const screen = useScreenStore((state) => state.current);
-    const { setPreference } = useThemePreference();
+    const themePref = useThemePreference();
 
     // Tail server-initiated turns so a background-task wake appears in place.
     useEffect(() => startSessionEvents(), []);
@@ -105,8 +105,8 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                 return;
             case "theme": {
                 const arg = (_args || "").trim().toLowerCase();
-                if (arg === "dark" || arg === "light" || arg === "system") {
-                    setPreference(arg);
+                if (arg && themePref.available.includes(arg)) {
+                    themePref.setPreference(arg);
                 }
                 return;
             }
