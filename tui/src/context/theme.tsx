@@ -5,7 +5,7 @@ import { CliRenderEvents, type ThemeMode } from "@opentui/core";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { themes, themeNames, darkTheme, lightTheme, type Theme } from "../theme.ts";
+import { themes, themeNames, darkTheme, lightTheme, type Theme } from "../themes/index.ts";
 
 export type ThemePreference = string; // theme name or "system"
 

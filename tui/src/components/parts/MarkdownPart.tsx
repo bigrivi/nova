@@ -1,7 +1,7 @@
 import { SyntaxStyle, getTreeSitterClient } from "@opentui/core";
 import { useMemo } from "react";
 import { useTheme } from "../../context/theme.tsx";
-import type { Theme } from "../../theme.ts";
+import type { Theme } from "../../themes/index.ts";
 
 export function buildSyntaxStyles(theme: Theme) {
     return {
