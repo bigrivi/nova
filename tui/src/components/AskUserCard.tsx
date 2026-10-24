@@ -223,7 +223,7 @@ export function AskUserCard({
                     }
                     return (
                         <box key={q.id} paddingX={1}>
-                            <text>{label}</text>
+                            <text fg={theme.foreground}>{label}</text>
                         </box>
                     );
                 })}
@@ -234,7 +234,7 @@ export function AskUserCard({
                         </box>
                     ) : (
                         <box paddingX={1}>
-                            <text>Confirm</text>
+                            <text fg={theme.foreground}>Confirm</text>
                         </box>
                     )
                 ) : null}

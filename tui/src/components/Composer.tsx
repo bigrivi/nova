@@ -171,6 +171,8 @@ export function Composer({ onCommand }: { onCommand: ComposerCommandHandler }) {
                     focused
                     placeholder="Message Nova (Enter to send, Shift+Enter for newline)"
                     placeholderColor={theme.muted}
+                    textColor={theme.foreground}
+                    focusedTextColor={theme.foreground}
                     keyBindings={COMPOSER_KEY_BINDINGS}
                     onSubmit={submitCurrent}
                     onContentChange={() => {

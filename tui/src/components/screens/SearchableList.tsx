@@ -124,6 +124,8 @@ export function SearchableList<T>({
                 value={query}
                 placeholder="Filter…"
                 placeholderColor={theme.muted}
+                textColor={theme.foreground}
+                focusedTextColor={theme.foreground}
                 onInput={(value) => {
                     setQuery(value);
                     setSelected(0);

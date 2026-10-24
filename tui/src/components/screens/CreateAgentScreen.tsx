@@ -76,6 +76,8 @@ export function CreateAgentScreen() {
                           : "(optional)"
                 }
                 placeholderColor={theme.muted}
+                textColor={theme.foreground}
+                focusedTextColor={theme.foreground}
                 onSubmit={() => {
                     const value = inputRef.current?.value ?? "";
                     const next: Values = { ...values, [field.key]: value };
