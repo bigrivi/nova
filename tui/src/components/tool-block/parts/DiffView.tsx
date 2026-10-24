@@ -1,6 +1,6 @@
-import { useMemo } from "react";
-import { useTerminalDimensions } from "@opentui/react";
 import { SyntaxStyle, getTreeSitterClient } from "@opentui/core";
+import { useTerminalDimensions } from "@opentui/react";
+import { useMemo } from "react";
 import { theme } from "../../../theme.ts";
 import { SYNTAX_STYLES } from "../../parts/MarkdownPart.tsx";
 

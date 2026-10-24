@@ -31,11 +31,11 @@ export const theme = {
     diff: {
         addedBg: "#162a1a",
         removedBg: "#2a1616",
-        contextBg: "#0d1117",
+        contextBg: "#161616",
         addedSign: "#3fb950",
         removedSign: "#e5534b",
         lineNumber: "#6e7681",
-        lineNumberBg: "#0d1117",
+        lineNumberBg: "#161616",
         addedLineNumberBg: "#162a1a",
         removedLineNumberBg: "#2a1616",
     },
