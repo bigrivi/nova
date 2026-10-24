@@ -327,26 +327,45 @@ async function runTurn(options: TurnOptions): Promise<void> {
                         return;
                     }
                     case "data-nova-approval-required": {
+                        const data = event.data ?? {};
+                        const text = (key: string): string =>
+                            typeof data[key] === "string"
+                                ? (data[key] as string)
+                                : "";
                         useApprovalStore.getState().setPending({
-                            sessionId: String(
-                                event.data?.sessionId ||
-                                    current.sessionId ||
-                                    "",
-                            ),
-                            requestId: String(event.data?.requestId ?? ""),
-                            command: String(event.data?.command ?? ""),
-                            description: String(event.data?.description ?? ""),
+                            sessionId:
+                                text("sessionId") || current.sessionId || "",
+                            requestId: text("requestId"),
+                            command: text("command"),
+                            description: text("description"),
+                            toolName: text("toolName"),
+                            rememberable: data.rememberable !== false,
+                            family: text("family"),
+                            target: text("target"),
+                            scriptScoped: data.scriptScoped === true,
+                            dangerous: data.dangerous === true,
+                            workspace: text("workspace"),
                             runId,
                         });
-                        const blockedToolCallId = String(
-                            event.data?.toolCallId ?? "",
-                        );
+                        const blockedToolCallId = text("toolCallId");
                         if (blockedToolCallId) {
                             current.setToolStatus(
                                 assistantId,
                                 blockedToolCallId,
                                 "blocked",
                             );
+                        }
+                        return;
+                    }
+                    case "data-nova-approval-resolved": {
+                        // A replayed retraction clears a prompt that was already
+                        // answered, so a resume never resurrects a ghost dialog.
+                        const requestId = String(
+                            event.data?.requestId ?? "",
+                        );
+                        const pending = useApprovalStore.getState().pending;
+                        if (pending && pending.requestId === requestId) {
+                            useApprovalStore.getState().setPending(null);
                         }
                         return;
                     }

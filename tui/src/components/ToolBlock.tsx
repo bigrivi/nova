@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useTerminalDimensions } from "@opentui/react";
 import type { ToolCallPart as ToolCallPartData } from "../stores/chat-store.ts";
 import { theme } from "../theme.ts";
 
@@ -413,6 +414,7 @@ function labelFor(
 export function ToolBlock({ part }: { part: ToolCallPartData }) {
     const { toolName, status, args, outputText, error } = part;
     const displayStatus = status as DisplayStatus;
+    const dims = useTerminalDimensions();
     const [frame, setFrame] = useState(0);
     useEffect(() => {
         if (status !== "running") return;
@@ -439,6 +441,7 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
 
     const argsDiff = showDiff ? "" : editArgsDiff(args);
     const diffText = showDiff ? outputText : argsDiff;
+    const view = dims.width > 124 ? "split" : "unified";
 
     const resultLines =
         status === "done" && result && !diffText ? result.split("\n") : [];
@@ -467,7 +470,22 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
             ) : null}
             {diffText ? (
                 <box paddingLeft={2} marginTop={1}>
-                    <diff diff={diffText} view="unified" showLineNumbers={false} />
+                    <diff
+                    diff={diffText}
+                    view={view}
+                    wrapMode="word"
+                    showLineNumbers={true}
+                    fg={theme.foreground}
+                    addedBg="#162a1a"
+                    removedBg="#2a1616"
+                    contextBg={theme.surfaceDeep}
+                    addedSignColor={theme.success}
+                    removedSignColor={theme.error}
+                    lineNumberFg={theme.muted}
+                    lineNumberBg={theme.surfaceDeep}
+                    addedLineNumberBg="#162a1a"
+                    removedLineNumberBg="#2a1616"
+                />
                 </box>
             ) : null}
         </box>

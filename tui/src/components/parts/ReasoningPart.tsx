@@ -21,7 +21,13 @@ export function ReasoningPart({ part }: { part: ReasoningPartData }) {
             <text marginBottom={1} fg={theme.running}>
                 {label}
             </text>
-            <text fg={theme.muted} content={part.text} />
+            <box
+                border={["left"]}
+                borderColor={theme.border}
+                paddingLeft={1}
+            >
+                <text fg={theme.muted} content={part.text} />
+            </box>
         </box>
     );
 }

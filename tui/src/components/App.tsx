@@ -123,12 +123,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                     onCancel={() => submitAskCancel(askQuestions)}
                 />
             ) : approval ? (
-                <ApprovalDialog
-                    sessionId={approval.sessionId}
-                    requestId={approval.requestId}
-                    command={approval.command}
-                    description={approval.description}
-                />
+                <ApprovalDialog pending={approval} />
             ) : (
                 <Composer onCommand={handleCommand} />
             )}
