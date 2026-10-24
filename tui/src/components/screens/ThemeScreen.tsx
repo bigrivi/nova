@@ -22,6 +22,7 @@ export function ThemeScreen() {
             }}
             onClose={() => useScreenStore.getState().close()}
             emptyText="no themes available"
+            initialIndex={Math.max(0, available.indexOf(preference))}
         />
     );
 }

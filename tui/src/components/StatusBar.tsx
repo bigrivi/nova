@@ -1,11 +1,11 @@
 /** Bottom status bar: model info + running status */
 import { useEffect } from "react";
 import { getSessionContext } from "../api/nova-api.ts";
-import { StatusActivityIndicator } from "./StatusActivityIndicator.tsx";
+import { useTheme } from "../context/theme.tsx";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { WORKSPACE_DIR } from "../workspace.ts";
-import { useTheme } from "../context/theme.tsx";
+import { StatusActivityIndicator } from "./StatusActivityIndicator.tsx";
 
 export function StatusBar() {
     const theme = useTheme();
@@ -75,7 +75,7 @@ export function StatusBar() {
                     <text fg={theme.muted} content={limit ? formatK(limit) : "—"} />
                     <text
                         fg={percentColor}
-                        content={limit ? `${percent}%` : "—%"}
+                        content={limit ? `(${percent}%)` : "(—%)"}
                     />
                 </box>
                 <box flexDirection="row" flexShrink={0} gap={1}>

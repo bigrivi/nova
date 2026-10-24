@@ -14,6 +14,7 @@ export function SearchableList<T>({
     onSelect,
     onClose,
     emptyText = "(empty)",
+    initialIndex = 0,
 }: {
     title: string;
     items: T[];
@@ -22,11 +23,17 @@ export function SearchableList<T>({
     onSelect: (item: T) => void;
     onClose: () => void;
     emptyText?: string;
+    initialIndex?: number;
 }) {
     const theme = useTheme();
     const [query, setQuery] = useState("");
-    const [selected, setSelected] = useState(0);
-    const [scrollOffset, setScrollOffset] = useState(0);
+    const [selected, setSelected] = useState(() =>
+        Math.max(0, Math.min(initialIndex, items.length - 1)),
+    );
+    const [scrollOffset, setScrollOffset] = useState(() => {
+        const index = Math.max(0, Math.min(initialIndex, items.length - 1));
+        return Math.floor(index / PAGE_SIZE) * PAGE_SIZE;
+    });
     const inputRef = useRef<InputRenderable>(null);
 
     const filtered = useMemo(
