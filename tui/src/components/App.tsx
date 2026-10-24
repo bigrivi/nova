@@ -19,7 +19,7 @@ import { CreateAgentScreen } from "./screens/CreateAgentScreen.tsx";
 import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
 import { StatusBar } from "./StatusBar.tsx";
-import { ThemeProvider } from "../context/theme.tsx";
+import { useThemePreference } from "../context/theme.tsx";
 import { Toast } from "./Toast.tsx";
 
 export type ExitHandler = () => void;
@@ -28,6 +28,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     const askQuestions = useAskUserStore((state) => state.active);
     const approval = useApprovalStore((state) => state.pending);
     const screen = useScreenStore((state) => state.current);
+    const { setPreference } = useThemePreference();
 
     // Tail server-initiated turns so a background-task wake appears in place.
     useEffect(() => startSessionEvents(), []);
@@ -102,8 +103,15 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             case "delete-agent":
                 screens.open({ kind: "delete-agent" });
                 return;
+            case "theme": {
+                const arg = (_args || "").trim().toLowerCase();
+                if (arg === "dark" || arg === "light" || arg === "system") {
+                    setPreference(arg);
+                }
+                return;
+            }
             default:
-                // /theme /install-skill /install-global-skill → not implemented yet
+                // /install-skill /install-global-skill → not implemented yet
                 return;
         }
     };
@@ -112,7 +120,6 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     // Composer was crowded/duplicated the todo_write ToolBlock summary line;
     // file kept for future overlay use, history visible via MessageList.
     return (
-        <ThemeProvider>
         <box
             flexDirection="column"
             flexGrow={1}
@@ -143,6 +150,5 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             {screen?.kind === "create-agent" ? <CreateAgentScreen /> : null}
             <Toast />
         </box>
-        </ThemeProvider>
     );
 }
