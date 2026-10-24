@@ -2,34 +2,14 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useRenderer } from "@opentui/react";
 import { CliRenderEvents, type ThemeMode } from "@opentui/core";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { themes, themeNames, darkTheme, lightTheme, type Theme } from "../themes/index.ts";
+import {
+    readPreference,
+    writePreference,
+    type ThemePreference,
+} from "../themes/preference.ts";
 
-export type ThemePreference = string; // theme name or "system"
-
-const PREF_FILE = join(process.env.NOVA_HOME || join(homedir(), ".nova"), "tui-theme.json");
-
-function readPreference(): ThemePreference {
-    try {
-        const raw = readFileSync(PREF_FILE, "utf-8");
-        const v = JSON.parse(raw)?.preference;
-        if (v === "system" || (typeof v === "string" && v in themes)) return v;
-    } catch {
-        // fall through
-    }
-    return "system";
-}
-
-function writePreference(pref: ThemePreference) {
-    try {
-        mkdirSync(join(process.env.NOVA_HOME || join(homedir(), ".nova")), { recursive: true });
-        writeFileSync(PREF_FILE, JSON.stringify({ preference: pref }));
-    } catch {
-        // ignore persistence failures
-    }
-}
+export type { ThemePreference };
 
 const ThemeContext = createContext<Theme>(darkTheme);
 const PreferenceContext = createContext<{

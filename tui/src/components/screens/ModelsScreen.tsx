@@ -1,39 +1,24 @@
 /** Models screen: browse/switch models (persisted to the agent config) */
-import { useEffect, useState } from "react";
 import type { NovaModelRecord } from "../../api/types.ts";
 import { listModels, updateAgent } from "../../api/nova-api.ts";
 import { useChatStore } from "../../stores/chat-store.ts";
 import { useScreenStore } from "../../stores/screen-store.ts";
-import { useTheme } from "../../context/theme.tsx";
 import { SearchableList } from "./SearchableList.tsx";
+import { ScreenLoading } from "./ScreenLoading.tsx";
+import { useListScreen } from "./use-list-screen.ts";
 
 export function ModelsScreen() {
-    const theme = useTheme();
-    const [models, setModels] = useState<NovaModelRecord[]>([]);
-    const [loaded, setLoaded] = useState(false);
-    const [error, setError] = useState("");
-
-    useEffect(() => {
-        void listModels()
-            .then((items) => {
-                setModels(items);
-                setLoaded(true);
-            })
-            .catch((err: unknown) =>
-                setError(err instanceof Error ? err.message : String(err)),
-            );
-    }, []);
-
-    const currentProvider = useChatStore((s) => s.provider);
-    const currentModel = useChatStore((s) => s.model);
-    const currentIndex = loaded
-        ? Math.max(
-              0,
-              models.findIndex(
-                  (m) => m.provider === currentProvider && m.model === currentModel,
-              ),
-          )
-        : 0;
+    const currentProvider = useChatStore((state) => state.provider);
+    const currentModel = useChatStore((state) => state.model);
+    const { items: models, ready, error, initialIndex } = useListScreen(
+        listModels,
+        (items) =>
+            items.findIndex(
+                (model) =>
+                    model.provider === currentProvider &&
+                    model.model === currentModel,
+            ),
+    );
 
     async function handleSelect(model: NovaModelRecord): Promise<void> {
         useScreenStore.getState().close();
@@ -51,23 +36,8 @@ export function ModelsScreen() {
         }
     }
 
-    if (!loaded) {
-        return (
-            <box
-                position="absolute"
-                left="15%"
-                right="15%"
-                top="15%"
-                paddingX={2}
-                paddingY={2}
-                border
-                borderStyle="rounded"
-                borderColor={theme.accent}
-                backgroundColor={theme.surfaceDeep}
-            >
-                <text fg={theme.muted}>{error || "Loading..."}</text>
-            </box>
-        );
+    if (!ready) {
+        return <ScreenLoading message={error || "Loading models..."} />;
     }
 
     return (
@@ -84,7 +54,7 @@ export function ModelsScreen() {
             onSelect={(model) => void handleSelect(model)}
             onClose={() => useScreenStore.getState().close()}
             emptyText={error || "no models configured"}
-            initialIndex={currentIndex}
+            initialIndex={initialIndex}
         />
     );
 }

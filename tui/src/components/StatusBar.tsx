@@ -1,27 +1,16 @@
 /** Bottom status bar: model info + running status */
 import { useEffect, useState } from "react";
-import { getSessionContext, listModels, listProviders } from "../api/nova-api.ts";
+import { getSessionContext } from "../api/nova-api.ts";
+import {
+    loadCatalog,
+    modelLabel,
+    providerLabel,
+    type Catalog,
+} from "../lib/catalog.ts";
 import { useTheme } from "../context/theme.tsx";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { WORKSPACE_DIR } from "../workspace.ts";
-import type { NovaModelRecord, NovaProviderRecord } from "../api/types.ts";
-
-type Catalog = {
-    models: NovaModelRecord[];
-    providers: NovaProviderRecord[];
-};
-
-/** Fetched once per TUI process and reused for every lookup. */
-let catalogPromise: Promise<Catalog> | null = null;
-
-function loadCatalog(): Promise<Catalog> {
-    catalogPromise ??= Promise.all([listModels(), listProviders()]).then(
-        ([models, providers]) => ({ models, providers }),
-    );
-    return catalogPromise;
-}
-
 export function StatusBar() {
     const theme = useTheme();
     const isStreaming = useChatStore((state) => state.isStreaming);
@@ -74,12 +63,8 @@ export function StatusBar() {
         };
     }, []);
 
-    const modelName =
-        catalog?.models.find(
-            (item) => item.provider === provider && item.model === model,
-        )?.label ?? model;
-    const providerName =
-        catalog?.providers.find((item) => item.key === provider)?.name ?? provider;
+    const modelName = modelLabel(catalog, provider, model);
+    const providerName = providerLabel(catalog, provider);
 
     const cwd = WORKSPACE_DIR;
 

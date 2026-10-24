@@ -110,6 +110,24 @@ function lastPartOfType<T extends MessagePart["type"]>(
     return null;
 }
 
+
+/** Patch one tool-call part in a message, leaving every other part untouched. */
+function patchToolPart(
+    messages: TuiMessage[],
+    messageId: string,
+    toolCallId: string,
+    patch: (part: ToolCallPart) => ToolCallPart,
+): TuiMessage[] {
+    return patchMessage(messages, messageId, (msg) => ({
+        ...msg,
+        parts: msg.parts.map((part) =>
+            part.type === "tool-call" && part.toolCallId === toolCallId
+                ? patch(part)
+                : part,
+        ),
+    }));
+}
+
 /** Display text for tool output/args (object → recursively unwrap content field; otherwise compact JSON) */
 function toDisplayText(value: unknown): string {
     if (value == null) return "";
@@ -358,57 +376,36 @@ export const useChatStore = create<ChatState>((set) => ({
 
     setToolInput: (messageId, toolCallId, input) =>
         set((state) => ({
-            messages: patchMessage(state.messages, messageId, (msg) => ({
-                ...msg,
-                parts: msg.parts.map((part) =>
-                    part.type === "tool-call" && part.toolCallId === toolCallId
-                        ? {
-                              ...part,
-                              argsText: toDisplayText(input),
-                              args: toArgsObject(input),
-                          }
-                        : part,
-                ),
+            messages: patchToolPart(state.messages, messageId, toolCallId, (part) => ({
+                ...part,
+                argsText: toDisplayText(input),
+                args: toArgsObject(input),
             })),
         })),
 
     setToolOutput: (messageId, toolCallId, output) =>
         set((state) => ({
-            messages: patchMessage(state.messages, messageId, (msg) => ({
-                ...msg,
-                parts: msg.parts.map((part) =>
-                    part.type === "tool-call" && part.toolCallId === toolCallId
-                        ? {
-                              ...part,
-                              outputText: toDisplayText(output),
-                              status: "done",
-                          }
-                        : part,
-                ),
+            messages: patchToolPart(state.messages, messageId, toolCallId, (part) => ({
+                ...part,
+                outputText: toDisplayText(output),
+                status: "done",
             })),
         })),
 
     setToolStatus: (messageId, toolCallId, status) =>
         set((state) => ({
-            messages: patchMessage(state.messages, messageId, (msg) => ({
-                ...msg,
-                parts: msg.parts.map((part) =>
-                    part.type === "tool-call" && part.toolCallId === toolCallId
-                        ? { ...part, status }
-                        : part,
-                ),
+            messages: patchToolPart(state.messages, messageId, toolCallId, (part) => ({
+                ...part,
+                status,
             })),
         })),
 
     failToolCall: (messageId, toolCallId, message) =>
         set((state) => ({
-            messages: patchMessage(state.messages, messageId, (msg) => ({
-                ...msg,
-                parts: msg.parts.map((part) =>
-                    part.type === "tool-call" && part.toolCallId === toolCallId
-                        ? { ...part, status: "error", error: message }
-                        : part,
-                ),
+            messages: patchToolPart(state.messages, messageId, toolCallId, (part) => ({
+                ...part,
+                status: "error",
+                error: message,
             })),
         })),
 

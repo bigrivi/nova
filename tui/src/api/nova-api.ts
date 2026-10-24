@@ -69,16 +69,33 @@ async function parseJson<T>(response: Response): Promise<T> {
     return (await response.json()) as T;
 }
 
+/** Fetch a path and decode JSON, raising the backend's error message on failure. */
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+    return parseJson<T>(await fetch(buildUrl(path), init));
+}
+
+/** Fetch a path and require a successful status, discarding the body. */
+async function send(path: string, init?: RequestInit): Promise<void> {
+    await parseJson<unknown>(await fetch(buildUrl(path), init));
+}
+
+/** JSON request body init for the mutating endpoints. */
+function jsonInit(method: string, body: unknown): RequestInit {
+    return {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    };
+}
+
 export async function listModels(): Promise<NovaModelRecord[]> {
-    const payload = await parseJson<JsonResponse<NovaModelRecord>>(
-        await fetch(buildUrl("/api/models")),
-    );
+    const payload = await request<JsonResponse<NovaModelRecord>>("/api/models");
     return payload.items;
 }
 
 export async function listProviders(): Promise<NovaProviderRecord[]> {
-    const payload = await parseJson<JsonResponse<NovaProviderRecord>>(
-        await fetch(buildUrl("/api/providers")),
+    const payload = await request<JsonResponse<NovaProviderRecord>>(
+        "/api/providers",
     );
     return payload.items;
 }
@@ -86,12 +103,9 @@ export async function listProviders(): Promise<NovaProviderRecord[]> {
 export async function createProvider(
     payload: NovaProviderCreateRequest,
 ): Promise<NovaModelRecord[]> {
-    const response = await parseJson<JsonResponse<NovaModelRecord>>(
-        await fetch(buildUrl("/api/config/providers"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        }),
+    const response = await request<JsonResponse<NovaModelRecord>>(
+        "/api/config/providers",
+        jsonInit("POST", payload),
     );
     return response.items;
 }
@@ -99,12 +113,9 @@ export async function createProvider(
 export async function createModel(
     payload: NovaModelCreateRequest,
 ): Promise<NovaModelRecord[]> {
-    const response = await parseJson<JsonResponse<NovaModelRecord>>(
-        await fetch(buildUrl("/api/config/models"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        }),
+    const response = await request<JsonResponse<NovaModelRecord>>(
+        "/api/config/models",
+        jsonInit("POST", payload),
     );
     return response.items;
 }
@@ -113,11 +124,10 @@ export async function updateAgent(
     key: string,
     data: { model: string; provider: string },
 ): Promise<void> {
-    await fetch(buildUrl(`/api/agents/${encodeURIComponent(key)}`), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-    });
+    await send(
+        `/api/agents/${encodeURIComponent(key)}`,
+        jsonInit("PATCH", data),
+    );
 }
 
 export async function getAgent(
@@ -134,8 +144,8 @@ export async function listSessions(options?: {
     const query = options?.workspaceDir
         ? `?workspace_dir=${encodeURIComponent(options.workspaceDir)}`
         : "";
-    const payload = await parseJson<JsonResponse<NovaSessionSummary>>(
-        await fetch(buildUrl(`/api/sessions${query}`)),
+    const payload = await request<JsonResponse<NovaSessionSummary>>(
+        `/api/sessions${query}`,
     );
     return payload.items;
 }
@@ -160,36 +170,18 @@ export async function resolveProject(
 }
 
 export async function listAgents(): Promise<NovaAgentRecord[]> {
-    const payload = await parseJson<JsonResponse<NovaAgentRecord>>(
-        await fetch(buildUrl("/api/agents")),
-    );
+    const payload = await request<JsonResponse<NovaAgentRecord>>("/api/agents");
     return payload.items;
 }
 
 export async function createAgent(
     payload: NovaAgentCreateRequest,
 ): Promise<NovaAgentRecord> {
-    const response = await fetch(buildUrl("/api/agents"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-        throw new Error(await parseErrorMessage(response));
-    }
-    return response.json();
+    return request<NovaAgentRecord>("/api/agents", jsonInit("POST", payload));
 }
 
 export async function deleteAgent(key: string): Promise<void> {
-    const response = await fetch(
-        buildUrl(`/api/agents/${encodeURIComponent(key)}`),
-        {
-            method: "DELETE",
-        },
-    );
-    if (!response.ok) {
-        throw new Error(await parseErrorMessage(response));
-    }
+    await send(`/api/agents/${encodeURIComponent(key)}`, { method: "DELETE" });
 }
 
 export async function interruptChat(sessionId: string): Promise<void> {
@@ -210,31 +202,22 @@ export async function approveCommand(options: {
     approved: boolean;
     remember?: boolean;
 }): Promise<void> {
-    const response = await fetch(
-        buildUrl("/api/chat/approve") +
+    await send(
+        "/api/chat/approve" +
             `?session_id=${encodeURIComponent(options.sessionId)}`,
-        {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                request_id: options.requestId,
-                approved: options.approved,
-                remember: options.remember ?? false,
-            }),
-        },
+        jsonInit("POST", {
+            request_id: options.requestId,
+            approved: options.approved,
+            remember: options.remember ?? false,
+        }),
     );
-    if (!response.ok) {
-        throw new Error(await parseErrorMessage(response));
-    }
 }
 
 export async function listMessages(
     sessionId: string,
 ): Promise<NovaMessageRecord[]> {
-    const payload = await parseJson<JsonResponse<NovaMessageRecord>>(
-        await fetch(
-            buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/messages`),
-        ),
+    const payload = await request<JsonResponse<NovaMessageRecord>>(
+        `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
     );
     return payload.items;
 }
@@ -242,9 +225,12 @@ export async function listMessages(
 export async function getSessionContext(
     sessionId: string,
 ): Promise<{ used: number; limit: number; percent: number; message_count: number }> {
-    return parseJson<{ used: number; limit: number; percent: number; message_count: number }>(
-        await fetch(buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/context`)),
-    );
+    return request<{
+        used: number;
+        limit: number;
+        percent: number;
+        message_count: number;
+    }>(`/api/sessions/${encodeURIComponent(sessionId)}/context`);
 }
 
 function emitFrame(

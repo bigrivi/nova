@@ -120,9 +120,6 @@ export function App({ onExit }: { onExit: ExitHandler }) {
         }
     };
 
-    // TodoPanel intentionally not rendered here — the persistent panel above
-    // Composer was crowded/duplicated the todo_write ToolBlock summary line;
-    // file kept for future overlay use, history visible via MessageList.
     return (
         <box
             width="100%"

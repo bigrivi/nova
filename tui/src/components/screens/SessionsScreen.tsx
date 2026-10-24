@@ -1,11 +1,12 @@
 /** Sessions screen: browse/load persisted sessions */
-import { useEffect, useState } from "react";
 import { listMessages, listSessions } from "../../api/nova-api.ts";
 import type { NovaSessionSummary } from "../../api/types.ts";
 import { useChatStore } from "../../stores/chat-store.ts";
 import { useScreenStore } from "../../stores/screen-store.ts";
 import { recordsToMessages } from "../../utils/history.ts";
 import { SearchableList } from "./SearchableList.tsx";
+import { ScreenLoading } from "./ScreenLoading.tsx";
+import { useListScreen } from "./use-list-screen.ts";
 import { WORKSPACE_DIR } from "../../workspace.ts";
 
 function formatTime(ms: number): string {
@@ -21,18 +22,11 @@ function formatTime(ms: number): string {
 }
 
 export function SessionsScreen() {
-    const [sessions, setSessions] = useState<NovaSessionSummary[]>([]);
-    const [error, setError] = useState("");
     const workspaceDir = WORKSPACE_DIR;
     const folder = workspaceDir.split("/").filter(Boolean).at(-1) ?? workspaceDir;
-
-    useEffect(() => {
-        void listSessions({ workspaceDir })
-            .then(setSessions)
-            .catch((err: unknown) =>
-                setError(err instanceof Error ? err.message : String(err)),
-            );
-    }, [workspaceDir]);
+    const { items: sessions, ready, error } = useListScreen(() =>
+        listSessions({ workspaceDir }),
+    );
 
     async function handleSelect(session: NovaSessionSummary): Promise<void> {
         useScreenStore.getState().close();
@@ -45,6 +39,10 @@ export function SessionsScreen() {
                 .getState()
                 .failStream(err instanceof Error ? err.message : String(err));
         }
+    }
+
+    if (!ready) {
+        return <ScreenLoading message={error || "Loading sessions..."} />;
     }
 
     return (

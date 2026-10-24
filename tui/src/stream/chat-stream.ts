@@ -11,6 +11,11 @@
  * - abort / finish / error  finalization
  */
 import { resolveProject, streamChat } from "../api/nova-api.ts";
+import {
+    applyStreamEvent,
+    type StreamAccumulator,
+    type StreamEffects,
+} from "./apply-event.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore, type AskQuestion } from "../stores/ask-user-store.ts";
 import { getChatState } from "../stores/chat-store.ts";
@@ -76,50 +81,6 @@ function clearStaleApproval(runId: number, notify: boolean): void {
     }
 }
 
-/** Parse the ask_user tool's input into a list of questions (compatible with both {questions:[...]} and {question:{...}}) */
-export function parseAskQuestions(input: unknown): AskQuestion[] {
-    if (!input || typeof input !== "object") return [];
-    const obj = input as Record<string, unknown>;
-    const raw = Array.isArray(obj.questions) ? obj.questions : obj.question;
-    const list = Array.isArray(raw) ? raw : raw != null ? [raw] : [];
-    const result: AskQuestion[] = [];
-    for (let i = 0; i < list.length; i++) {
-        const q = list[i];
-        if (!q || typeof q !== "object") continue;
-        const qo = q as Record<string, unknown>;
-        const inputType = String(qo.input_type ?? "text").toLowerCase();
-        const options = Array.isArray(qo.options)
-            ? qo.options
-                  .filter(
-                      (o): o is Record<string, unknown> =>
-                          !!o && typeof o === "object",
-                  )
-                  .map((o) => ({
-                      label: String(o.label ?? o.value ?? "").trim(),
-                      value:
-                          o.value !== undefined ? String(o.value) : undefined,
-                      description: String(o.description ?? "").trim(),
-                  }))
-                  .filter((o) => o.label)
-            : [];
-        result.push({
-            id: String(qo.id ?? `q${i}`).trim() || `q${i}`,
-            header: String(qo.header ?? "").trim(),
-            question: String(qo.question ?? "").trim(),
-            inputType:
-                inputType === "select"
-                    ? "select"
-                    : inputType === "textarea"
-                      ? "textarea"
-                      : "text",
-            options,
-            multiple: Boolean(qo.multiple),
-            required: qo.required !== false,
-            default: String(qo.default ?? ""),
-        });
-    }
-    return result;
-}
 
 /** Answer format: matches the frontend handleSubmit (Q/A lines, submitted as a new message) */
 /** Submit ask_user answers: clears the active form and starts a new stream */
@@ -209,10 +170,49 @@ async function runTurn(options: TurnOptions): Promise<void> {
         expectOwnActive.add(sessionId);
     }
 
-    let pendingAskQuestions: AskQuestion[] | null = null;
+    const acc: StreamAccumulator = { askQuestions: null };
 
     const workspaceDir = WORKSPACE_DIR;
     const projectId = await projectIdForPath(workspaceDir);
+
+    const effects: StreamEffects = {
+        runId,
+        getSessionId: () => getChatState().sessionId,
+        setSessionId: (id) => getChatState().setSessionId(id),
+        markOwnActive: (id) => expectOwnActive.add(id),
+        getApproval: () => useApprovalStore.getState().pending,
+        setApproval: (pending) => useApprovalStore.getState().setPending(pending),
+        setAskActive: (questions) => useAskUserStore.getState().setActive(questions),
+        setCtx: (used, limit, percent) =>
+            useCtxStore.getState().setCtx(used, limit, percent),
+        setTodos: (input) => useTodoStore.getState().setTodos(parseTodos(input)),
+        startCompaction: (messages, tokens) =>
+            useCompactionStore.getState().start(messages, tokens),
+        endCompaction: () => useCompactionStore.getState().end(),
+        setPending: (messageId, pending) =>
+            getChatState().setPending(messageId, pending),
+        insertWakeMessage: (text, wakeFor) =>
+            getChatState().insertWakeMessage(text, wakeFor),
+        startTextPart: (messageId) => getChatState().startTextPart(messageId),
+        appendTextDelta: (messageId, delta) =>
+            getChatState().appendTextDelta(messageId, delta),
+        startReasoningPart: (messageId) =>
+            getChatState().startReasoningPart(messageId),
+        appendReasoningDelta: (messageId, delta) =>
+            getChatState().appendReasoningDelta(messageId, delta),
+        endReasoningPart: (messageId, elapsedMs) =>
+            getChatState().endReasoningPart(messageId, elapsedMs),
+        startToolCall: (messageId, tool) =>
+            getChatState().startToolCall(messageId, tool),
+        setToolInput: (messageId, toolCallId, input) =>
+            getChatState().setToolInput(messageId, toolCallId, input),
+        setToolOutput: (messageId, toolCallId, output) =>
+            getChatState().setToolOutput(messageId, toolCallId, output),
+        setToolStatus: (messageId, toolCallId, status) =>
+            getChatState().setToolStatus(messageId, toolCallId, status),
+        failToolCall: (messageId, toolCallId, message) =>
+            getChatState().failToolCall(messageId, toolCallId, message),
+    };
 
     try {
         await streamChat({
@@ -225,204 +225,7 @@ async function runTurn(options: TurnOptions): Promise<void> {
             agentKey,
             resumeFromSequence: options.resumeFromSequence ?? null,
             onEvent: (event) => {
-                const current = getChatState();
-                switch (event.type) {
-                    case "data-nova-session": {
-                        const next = String(event.data?.sessionId ?? "");
-                        if (next && next !== current.sessionId) {
-                            current.setSessionId(next);
-                        }
-                        if (next) {
-                            expectOwnActive.add(next);
-                        }
-                        return;
-                    }
-                    case "data-nova-wake": {
-                        // Server-injected user message for a background-task
-                        // completion: the AI SDK protocol carries no user
-                        // message frame, so insert it before the reply.
-                        const data = event.data ?? {};
-                        const text =
-                            typeof data.text === "string" ? data.text : "";
-                        const wakeFor =
-                            typeof data.messageId === "string"
-                                ? data.messageId
-                                : "";
-                        if (text && wakeFor) {
-                            current.insertWakeMessage(text, wakeFor);
-                        }
-                        return;
-                    }
-                    case "start-step": {
-                        // Fired on every LLM turn, including the tool-loop calls
-                        // after the first. Mark the message pending so the UI can
-                        // show the thinking indicator again before the next part.
-                        current.setPending(assistantId, true);
-                        return;
-                    }
-                    case "text-start": {
-                        current.startTextPart(assistantId);
-                        return;
-                    }
-                    case "text-delta": {
-                        current.appendTextDelta(assistantId, event.delta ?? "");
-                        return;
-                    }
-                    case "reasoning-start": {
-                        current.startReasoningPart(assistantId);
-                        return;
-                    }
-                    case "reasoning-delta": {
-                        current.appendReasoningDelta(
-                            assistantId,
-                            event.delta ?? "",
-                        );
-                        return;
-                    }
-                    case "reasoning-end": {
-                        current.endReasoningPart(
-                            assistantId,
-                            event.elapsedMs ?? null,
-                        );
-                        return;
-                    }
-                    case "tool-input-start": {
-                        current.startToolCall(assistantId, {
-                            toolCallId: event.toolCallId ?? "",
-                            toolName: event.toolName ?? "unknown",
-                        });
-                        return;
-                    }
-                    case "tool-input-available": {
-                        current.setToolInput(
-                            assistantId,
-                            event.toolCallId ?? "",
-                            event.input,
-                        );
-                        if (event.toolName === "ask_user") {
-                            pendingAskQuestions = parseAskQuestions(
-                                event.input,
-                            );
-                        }
-                        if (event.toolName === "todo_write") {
-                            useTodoStore
-                                .getState()
-                                .setTodos(parseTodos(event.input));
-                        }
-                        return;
-                    }
-                    case "tool-output-available": {
-                        current.setToolOutput(
-                            assistantId,
-                            event.toolCallId ?? "",
-                            event.output,
-                        );
-                        return;
-                    }
-                    case "data-nova-tool-error": {
-                        current.failToolCall(
-                            assistantId,
-                            String(event.data?.toolCallId ?? ""),
-                            String(event.data?.message ?? "Tool failed"),
-                        );
-                        return;
-                    }
-                    case "data-nova-approval-required": {
-                        const data = event.data ?? {};
-                        const text = (key: string): string =>
-                            typeof data[key] === "string"
-                                ? (data[key] as string)
-                                : "";
-                        useApprovalStore.getState().setPending({
-                            sessionId:
-                                text("sessionId") || current.sessionId || "",
-                            requestId: text("requestId"),
-                            command: text("command"),
-                            description: text("description"),
-                            toolName: text("toolName"),
-                            rememberable: data.rememberable !== false,
-                            family: text("family"),
-                            target: text("target"),
-                            scriptScoped: data.scriptScoped === true,
-                            dangerous: data.dangerous === true,
-                            workspace: text("workspace"),
-                            runId,
-                        });
-                        const blockedToolCallId = text("toolCallId");
-                        if (blockedToolCallId) {
-                            current.setToolStatus(
-                                assistantId,
-                                blockedToolCallId,
-                                "blocked",
-                            );
-                        }
-                        return;
-                    }
-                    case "data-nova-approval-resolved": {
-                        // A replayed retraction clears a prompt that was already
-                        // answered, so a resume never resurrects a ghost dialog.
-                        const requestId = String(
-                            event.data?.requestId ?? "",
-                        );
-                        const pending = useApprovalStore.getState().pending;
-                        if (pending && pending.requestId === requestId) {
-                            useApprovalStore.getState().setPending(null);
-                        }
-                        return;
-                    }
-                    case "data-nova-input-required": {
-                        if (
-                            pendingAskQuestions &&
-                            pendingAskQuestions.length > 0
-                        ) {
-                            useAskUserStore
-                                .getState()
-                                .setActive(pendingAskQuestions);
-                        }
-                        // The server will follow with finish + [DONE], so the stream ends naturally;
-                        // do not call completeStream here to avoid synchronously triggering a React update in the SSE callback
-                        return;
-                    }
-                    case "abort": {
-                        // Same as above: wait for the stream to end naturally; finalize uniformly after resolve
-                        return;
-                    }
-                    case "error": {
-                        throw new Error(
-                            event.errorText ?? "Unknown stream error",
-                        );
-                    }
-                    case "data-nova-context": {
-                        const ctxData = (event as unknown as { data?: { used?: number; limit?: number; percent?: number } }).data;
-                        const d = ctxData ?? (event as unknown as { used?: number; limit?: number; percent?: number });
-                        const used = Number((d as { used?: number }).used ?? 0);
-                        const limit = Number((d as { limit?: number }).limit ?? 0);
-                        const percent = Number(
-                            (d as { percent?: number }).percent ?? (limit ? Math.round((used / limit) * 100) : 0),
-                        );
-                        useCtxStore.getState().setCtx(used, limit, percent);
-                        return;
-                    }
-                    case "data-nova-compaction-start": {
-                        const d = (event as unknown as {
-                            data?: { message_count?: number; token_count?: number };
-                        }).data;
-                        useCompactionStore
-                            .getState()
-                            .start(
-                                Number(d?.message_count ?? 0),
-                                Number(d?.token_count ?? 0),
-                            );
-                        return;
-                    }
-                    case "data-nova-compaction-end": {
-                        useCompactionStore.getState().end();
-                        return;
-                    }
-                    default:
-                        // data-nova-heartbeat / start / finish
-                        return;
-                }
+                applyStreamEvent(event, assistantId, effects, acc);
             },
         });
         getChatState().completeStream();
@@ -435,7 +238,6 @@ async function runTurn(options: TurnOptions): Promise<void> {
     } finally {
         const finishedSessionId = sessionId ?? getChatState().sessionId;
         if (finishedSessionId) {
-            expectOwnActive.delete(finishedSessionId);
             expectOwnActive.delete(finishedSessionId);
             // A wake went active while this stream was still draining; tail it
             // now that the local stream is gone.
