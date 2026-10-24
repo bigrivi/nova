@@ -58,6 +58,13 @@ export const COMMANDS: CommandSpec[] = [
         aliases: ["q", "exit"],
     },
     {
+        id: "agents",
+        label: "Agents",
+        description: "Browse and switch the active agent",
+        usage: "/agents",
+        aliases: [],
+    },
+    {
         id: "list-agents",
         label: "List Agents",
         description: "List all available agents",

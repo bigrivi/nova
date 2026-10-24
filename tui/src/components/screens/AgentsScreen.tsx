@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { NovaAgentRecord } from "../../api/types.ts";
 import { deleteAgent, listAgents } from "../../api/nova-api.ts";
 import { useScreenStore } from "../../stores/screen-store.ts";
+import { useChatStore } from "../../stores/chat-store.ts";
 import { SearchableList } from "./SearchableList.tsx";
 
 export function AgentsScreen({ deletable }: { deletable: boolean }) {
@@ -23,6 +24,12 @@ export function AgentsScreen({ deletable }: { deletable: boolean }) {
 
     async function handleSelect(agent: NovaAgentRecord): Promise<void> {
         if (!deletable) {
+            if (agent.provider && agent.model) {
+                useChatStore.setState({
+                    provider: agent.provider,
+                    model: agent.model,
+                });
+            }
             useScreenStore.getState().close();
             return;
         }
