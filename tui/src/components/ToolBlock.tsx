@@ -444,7 +444,7 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
         status === "done" && result && !diffText ? result.split("\n") : [];
 
     return (
-        <box flexDirection="column" marginBottom={1}>
+        <box flexDirection="column">
             <box flexDirection="row">
                 <text
                     fg={GLYPH_COLOR[displayStatus]}

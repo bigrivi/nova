@@ -28,6 +28,8 @@ export type TuiMessage = {
     parts: MessagePart[];
     status: "streaming" | "done" | "error";
     error?: string;
+    /** Backend message id of a server-injected wake turn, for replay dedup. */
+    wakeFor?: string;
 };
 
 /** Model selection for this conversation (P3: taken over by the model selection screen) */
@@ -44,6 +46,7 @@ type ChatState = {
     setSessionId: (sessionId: string) => void;
     setPending: (messageId: string, pending: boolean) => void;
     addUserMessage: (text: string) => void;
+    insertWakeMessage: (text: string, wakeFor: string) => void;
     startAssistantMessage: () => string;
     startTextPart: (messageId: string) => void;
     appendTextDelta: (messageId: string, delta: string) => void;
@@ -170,6 +173,33 @@ export const useChatStore = create<ChatState>((set) => ({
                 },
             ],
         })),
+
+    insertWakeMessage: (text, wakeFor) =>
+        set((state) => {
+            if (state.messages.some((msg) => msg.wakeFor === wakeFor)) {
+                return state;
+            }
+            const message: TuiMessage = {
+                id: makeId(),
+                role: "user",
+                parts: [{ type: "text", text }],
+                status: "done",
+                wakeFor,
+            };
+            const last = state.messages[state.messages.length - 1];
+            // The resume stream seeds its assistant placeholder first; insert the
+            // wake message above it so the chip reads before its reply.
+            if (last?.role === "assistant" && last.status === "streaming") {
+                return {
+                    messages: [
+                        ...state.messages.slice(0, -1),
+                        message,
+                        last,
+                    ],
+                };
+            }
+            return { messages: [...state.messages, message] };
+        }),
 
     startAssistantMessage: () => {
         const id = makeId();

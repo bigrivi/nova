@@ -8,6 +8,7 @@ import { useChatStore } from "../stores/chat-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
 import { submitAskAnswers, submitAskCancel } from "../stream/chat-stream.ts";
+import { startSessionEvents } from "../stream/session-events.ts";
 import { ApprovalDialog } from "./ApprovalDialog.tsx";
 import { AskUserCard } from "./AskUserCard.tsx";
 import { Composer, type ComposerCommandHandler } from "./Composer.tsx";
@@ -25,6 +26,9 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     const askQuestions = useAskUserStore((state) => state.active);
     const approval = useApprovalStore((state) => state.pending);
     const screen = useScreenStore((state) => state.current);
+
+    // Tail server-initiated turns so a background-task wake appears in place.
+    useEffect(() => startSessionEvents(), []);
 
     // Read the initial provider/model from the agent table on startup to stay in sync with the model selected by the frontend/desktop
     useEffect(() => {

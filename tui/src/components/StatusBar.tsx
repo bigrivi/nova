@@ -4,6 +4,7 @@ import { getSessionContext } from "../api/nova-api.ts";
 import { StatusActivityIndicator } from "./StatusActivityIndicator.tsx";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
+import { WORKSPACE_DIR } from "../workspace.ts";
 import { theme } from "../theme.ts";
 
 export function StatusBar() {
@@ -43,37 +44,47 @@ export function StatusBar() {
         };
     }, [sessionId, isStreaming]);
 
+    const cwd = WORKSPACE_DIR;
+
     return (
         <box
-            flexDirection="row"
-            justifyContent="space-between"
+            flexDirection="column"
             paddingX={2}
             paddingY={0}
             marginTop={0}
             flexShrink={0}
         >
-            <box flexDirection="row" flexShrink={0} gap={1} alignItems="center">
-                {isStreaming ? <StatusActivityIndicator /> : null}
-                <text
-                    fg={isStreaming ? theme.running : theme.muted}
-                    content={isStreaming ? "●" : "○"}
-                />
-                <text fg={theme.foreground} content={model} />
-                <text fg={theme.muted} content={provider} />
-                <text fg={theme.subtle} content="·" />
-                <text fg={theme.muted} content="ctx" />
-                <text fg="#d29922" content={formatK(used)} />
-                <text fg={theme.muted} content="/" />
-                <text fg={theme.muted} content={limit ? formatK(limit) : "—"} />
-                <text
-                    fg={percentColor}
-                    content={limit ? `${percent}%` : "—%"}
-                />
+            <box
+                flexDirection="row"
+                justifyContent="space-between"
+                flexShrink={0}
+            >
+                <box flexDirection="row" flexShrink={0} gap={1} alignItems="center">
+                    {isStreaming ? <StatusActivityIndicator /> : null}
+                    <text
+                        fg={isStreaming ? theme.running : theme.muted}
+                        content={isStreaming ? "●" : "○"}
+                    />
+                    <text fg={theme.foreground} content={model} />
+                    <text fg={theme.muted} content={provider} />
+                    <text fg={theme.subtle} content="·" />
+                    <text fg={theme.muted} content="ctx" />
+                    <text fg="#d29922" content={formatK(used)} />
+                    <text fg={theme.muted} content="/" />
+                    <text fg={theme.muted} content={limit ? formatK(limit) : "—"} />
+                    <text
+                        fg={percentColor}
+                        content={limit ? `${percent}%` : "—%"}
+                    />
+                </box>
+                <box flexDirection="row" flexShrink={0} gap={1}>
+                    <text fg={theme.subtle} content="Ctrl+C exit" />
+                    <text fg={theme.subtle} content="·" />
+                    <text fg={theme.subtle} content="/ for commands" />
+                </box>
             </box>
-            <box flexDirection="row" flexShrink={0} gap={1}>
-                <text fg={theme.subtle} content="Ctrl+C exit" />
-                <text fg={theme.subtle} content="·" />
-                <text fg={theme.subtle} content="/ for commands" />
+            <box flexDirection="row" flexShrink={0}>
+                <text fg={theme.subtle} content={cwd} />
             </box>
         </box>
     );

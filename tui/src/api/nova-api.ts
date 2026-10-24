@@ -25,6 +25,8 @@ export type StreamChatOptions = {
     provider?: string | null;
     model?: string | null;
     attachments?: NovaAttachmentData[];
+    /** Replay buffered frames after this sequence, then live-tail the turn. */
+    resumeFromSequence?: number | null;
     onEvent: (event: NovaStreamEvent) => void;
 };
 
@@ -37,6 +39,10 @@ const API_BASE = (process.env.NOVA_API_BASE_URL || DEFAULT_API_BASE).replace(
 
 function buildUrl(path: string): string {
     return `${API_BASE}${path}`;
+}
+
+export function sessionEventsUrl(): string {
+    return buildUrl("/api/events");
 }
 
 async function parseErrorMessage(response: Response): Promise<string> {
@@ -268,6 +274,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
             provider: options.provider || undefined,
             model: options.model || undefined,
             attachments: options.attachments || [],
+            resume_from_seq: options.resumeFromSequence ?? undefined,
         }),
     });
 

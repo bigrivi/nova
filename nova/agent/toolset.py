@@ -85,7 +85,7 @@ class ToolsetBuilder:
         self._register_learning_tools()
         self._register_skill_tools()
         if not self._is_sub_agent:
-            self._register_delegation()
+            await self._register_delegation()
             await self._register_mcp_tools()
         self._register_behaviors()
         self._register_tool_policies()
@@ -165,6 +165,7 @@ class ToolsetBuilder:
             self._registry.register(
                 self.learning_tools.session_search, name="session_search"
             )
+
     def _register_builtin_tools(self) -> None:
         from nova import tools as tools_module
 
@@ -190,10 +191,45 @@ class ToolsetBuilder:
                 self.skill_tools.install_skill, name="install_skill"
             )
 
-    def _register_delegation(self) -> None:
-        from nova.tools.delegate import delegate_to_agent
+    async def _register_delegation(self) -> None:
+        """Register delegation with a target enum of this agent's children.
 
-        self._registry.register(delegate_to_agent, name="delegate_to_agent")
+        The roster in the system prompt is advisory text; a model can still emit
+        a sub-agent key as a tool name. Constraining `target` in the schema makes
+        the legal choices visible where the model selects a tool call.
+        """
+        from copy import deepcopy
+
+        from nova.tools.delegate import delegate_to_agent
+        from nova.tools.registry import _tool_metadata
+
+        metadata = _tool_metadata["delegate_to_agent"]
+        schema = deepcopy(metadata["parameters"])
+        target_keys = await self._delegate_targets()
+        if target_keys:
+            target = schema.setdefault("properties", {}).setdefault("target", {})
+            target["enum"] = sorted(target_keys)
+        self._registry.register_direct(
+            name="delegate_to_agent",
+            description=metadata["description"],
+            func=delegate_to_agent,
+            params_schema=schema,
+        )
+
+    async def _delegate_targets(self) -> list[str]:
+        """Child agent keys, or an empty list when there is nobody to delegate to."""
+        if not self._agent_key:
+            return []
+        try:
+            from nova.db import get_default_data_source
+
+            data_source = await get_default_data_source()
+            return await data_source.get_agent_children(self._agent_key)
+        except Exception:
+            # A broken parent lookup must not remove delegation entirely; the
+            # unconstrained schema is the old behaviour.
+            log.exception("Failed to load delegation targets for %s", self._agent_key)
+            return []
 
     async def _register_mcp_tools(self) -> None:
         try:

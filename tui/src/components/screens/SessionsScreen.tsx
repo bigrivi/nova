@@ -6,6 +6,7 @@ import { useChatStore } from "../../stores/chat-store.ts";
 import { useScreenStore } from "../../stores/screen-store.ts";
 import { recordsToMessages } from "../../utils/history.ts";
 import { SearchableList } from "./SearchableList.tsx";
+import { WORKSPACE_DIR } from "../../workspace.ts";
 
 function formatTime(ms: number): string {
     const diff = Date.now() - ms;
@@ -22,7 +23,7 @@ function formatTime(ms: number): string {
 export function SessionsScreen() {
     const [sessions, setSessions] = useState<NovaSessionSummary[]>([]);
     const [error, setError] = useState("");
-    const workspaceDir = process.env.NOVA_WORKSPACE_DIR || process.cwd();
+    const workspaceDir = WORKSPACE_DIR;
     const folder = workspaceDir.split("/").filter(Boolean).at(-1) ?? workspaceDir;
 
     useEffect(() => {

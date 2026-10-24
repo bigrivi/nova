@@ -1,5 +1,8 @@
 /** Assistant message card: renders by parts (markdown / reasoning / tool-call) */
+import { useState } from "react";
 import type { MessagePart, TuiMessage } from "../stores/chat-store.ts";
+import { groupAssistantParts } from "../lib/group-parts.ts";
+import { ExploredGroup } from "./ExploredGroup.tsx";
 import { MarkdownPart } from "./parts/MarkdownPart.tsx";
 import { ReasoningPart } from "./parts/ReasoningPart.tsx";
 import { ThinkingSpinner } from "./parts/ThinkingSpinner.tsx";
@@ -8,12 +11,33 @@ import { theme } from "../theme.ts";
 
 export function AssistantMessage({ message }: { message: TuiMessage }) {
     const isStreaming = message.status === "streaming";
+    const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+    const items = groupAssistantParts(message.id, message.parts);
+
+    const toggle = (key: string) =>
+        setExpanded((state) => ({
+            ...state,
+            [key]: !state[key],
+        }));
 
     return (
         <box flexDirection="column" paddingX={2} marginBottom={1}>
-            {message.parts.map((part, index) => (
-                <PartView key={index} part={part} streaming={isStreaming} />
-            ))}
+            {items.map((item) =>
+                item.kind === "explore" ? (
+                    <ExploredGroup
+                        key={item.key}
+                        parts={item.parts}
+                        expanded={Boolean(expanded[item.key])}
+                        onToggle={() => toggle(item.key)}
+                    />
+                ) : (
+                    <PartView
+                        key={`${message.id}:part:${item.index}`}
+                        part={item.part}
+                        streaming={isStreaming}
+                    />
+                ),
+            )}
             {message.error ? (
                 <text fg={theme.error} content={message.error} />
             ) : null}

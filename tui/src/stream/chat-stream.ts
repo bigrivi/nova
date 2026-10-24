@@ -21,6 +21,7 @@ import {
     parseTodos,
     useTodoStore,
 } from "../stores/todo-store.ts";
+import { WORKSPACE_DIR } from "../workspace.ts";
 
 export type ChatRunOptions = {
     message: string;
@@ -44,6 +45,21 @@ async function projectIdForPath(path: string): Promise<string | null> {
 /** Monotonic id per runChatStream call: lets stream teardown clear only the
 approval its own run created, never a newer live one from a later run. */
 let runCounter = 0;
+
+/** Session ids whose next `state: active` event is this client's own turn. */
+const expectOwnActive = new Set<string>();
+/** Active events that arrived while a local stream was still draining. */
+const pendingTail = new Set<string>();
+
+/** Consume the "this active event is our own turn" marker. */
+export function consumeOwnActive(sessionId: string): boolean {
+    return expectOwnActive.delete(sessionId);
+}
+
+/** Park a wake request for the draining stream's cleanup to tail. */
+export function parkTail(sessionId: string): void {
+    pendingTail.add(sessionId);
+}
 
 /** Drop a pending approval created by *this* run when its stream ends with
 the dialog still showing: the backend unregisters in its finally, so the
@@ -142,18 +158,60 @@ export function formatAskAnswers(
     return lines.join("\n").trim();
 }
 
-/** Run one conversation round: optimistically insert the message → consume the stream → finalize the state machine. */
+/** Run one user-initiated conversation round. */
 export async function runChatStream(options: ChatRunOptions): Promise<void> {
-    const store = getChatState();
-    const { sessionId, provider, model } = store;
-    const runId = ++runCounter;
+    await runTurn({ message: options.message });
+}
 
-    store.addUserMessage(options.message);
+/**
+ * Tail a server-initiated turn without sending a message.
+ *
+ * A background task completion wakes its session with a headless turn after the
+ * original SSE closed. Reattaching with a sequence cursor replays that turn and
+ * follows it live, so the wake message and reply appear in place.
+ */
+export async function resumeChatStream(sessionId: string): Promise<void> {
+    if (getChatState().isStreaming) {
+        parkTail(sessionId);
+        return;
+    }
+    if (getChatState().sessionId !== sessionId) {
+        return;
+    }
+    await runTurn({
+        message: "",
+        resumeSessionId: sessionId,
+        resumeFromSequence: 0,
+    });
+}
+
+type TurnOptions = {
+    message: string;
+    /** Set when tailing an existing turn instead of starting a new one. */
+    resumeSessionId?: string;
+    /** Sequence cursor; null/undefined starts a fresh turn. */
+    resumeFromSequence?: number | null;
+};
+
+/** Run one conversation round: optimistically insert the message → consume the stream → finalize the state machine. */
+async function runTurn(options: TurnOptions): Promise<void> {
+    const store = getChatState();
+    const sessionId = options.resumeSessionId ?? store.sessionId;
+    const { provider, model } = store;
+    const runId = ++runCounter;
+    const resuming = options.resumeFromSequence != null;
+
+    if (!resuming) {
+        store.addUserMessage(options.message);
+    }
     const assistantId = store.startAssistantMessage();
+    if (sessionId) {
+        expectOwnActive.add(sessionId);
+    }
 
     let pendingAskQuestions: AskQuestion[] | null = null;
 
-    const workspaceDir = process.env.NOVA_WORKSPACE_DIR || process.cwd();
+    const workspaceDir = WORKSPACE_DIR;
     const projectId = await projectIdForPath(workspaceDir);
 
     try {
@@ -164,6 +222,7 @@ export async function runChatStream(options: ChatRunOptions): Promise<void> {
             projectId,
             provider,
             model,
+            resumeFromSequence: options.resumeFromSequence ?? null,
             onEvent: (event) => {
                 const current = getChatState();
                 switch (event.type) {
@@ -171,6 +230,25 @@ export async function runChatStream(options: ChatRunOptions): Promise<void> {
                         const next = String(event.data?.sessionId ?? "");
                         if (next && next !== current.sessionId) {
                             current.setSessionId(next);
+                        }
+                        if (next) {
+                            expectOwnActive.add(next);
+                        }
+                        return;
+                    }
+                    case "data-nova-wake": {
+                        // Server-injected user message for a background-task
+                        // completion: the AI SDK protocol carries no user
+                        // message frame, so insert it before the reply.
+                        const data = event.data ?? {};
+                        const text =
+                            typeof data.text === "string" ? data.text : "";
+                        const wakeFor =
+                            typeof data.messageId === "string"
+                                ? data.messageId
+                                : "";
+                        if (text && wakeFor) {
+                            current.insertWakeMessage(text, wakeFor);
                         }
                         return;
                     }
@@ -335,6 +413,16 @@ export async function runChatStream(options: ChatRunOptions): Promise<void> {
         );
         clearStaleApproval(runId, true);
     } finally {
+        const finishedSessionId = sessionId ?? getChatState().sessionId;
+        if (finishedSessionId) {
+            expectOwnActive.delete(finishedSessionId);
+            expectOwnActive.delete(finishedSessionId);
+            // A wake went active while this stream was still draining; tail it
+            // now that the local stream is gone.
+            if (pendingTail.delete(finishedSessionId)) {
+                void resumeChatStream(finishedSessionId);
+            }
+        }
         // A stream that dies mid-compaction never delivers compaction-end, so
         // the banner would spin forever without this.
         useCompactionStore.getState().end();

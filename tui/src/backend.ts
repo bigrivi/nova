@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { WORKSPACE_DIR } from "./workspace.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 import { DEFAULT_API_BASE } from "./api/nova-api.ts";
 
@@ -109,7 +110,7 @@ export async function startBackend(): Promise<void> {
         env: {
             ...process.env,
             NOVA_WORKSPACE_DIR:
-                process.env.NOVA_WORKSPACE_DIR || process.cwd(),
+                WORKSPACE_DIR,
         },
     });
 

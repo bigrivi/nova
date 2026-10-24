@@ -14,7 +14,12 @@ export function UserMessage({ message }: { message: TuiMessage }) {
             justifyContent="center"
             backgroundColor={theme.surface}
         >
-            <text content={text} />
+            <box flexDirection="row" gap={1}>
+                <text fg={theme.accent} content=">" />
+                <box flexGrow={1}>
+                    <text content={text} />
+                </box>
+            </box>
         </box>
     );
 }

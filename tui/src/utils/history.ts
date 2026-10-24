@@ -2,12 +2,29 @@
 import type { NovaMessageRecord } from "../api/types.ts";
 import type { MessagePart, TuiMessage } from "../stores/chat-store.ts";
 
-function parseToolArgs(argumentsValue: unknown): string {
-    if (typeof argumentsValue === "string") return argumentsValue;
+function parseToolArgs(argumentsValue: unknown): {
+    args: Record<string, unknown> | null;
+    argsText: string;
+} {
+    let value: unknown = argumentsValue;
+    if (typeof argumentsValue === "string") {
+        try {
+            value = JSON.parse(argumentsValue);
+        } catch {
+            return { args: null, argsText: argumentsValue };
+        }
+    }
+    const args =
+        value != null && typeof value === "object" && !Array.isArray(value)
+            ? (value as Record<string, unknown>)
+            : null;
+    if (typeof value === "string") {
+        return { args, argsText: value };
+    }
     try {
-        return JSON.stringify(argumentsValue, null, 2);
+        return { args, argsText: JSON.stringify(value, null, 2) ?? "" };
     } catch {
-        return String(argumentsValue);
+        return { args, argsText: String(value) };
     }
 }
 
@@ -38,18 +55,13 @@ export function recordToMessage(record: NovaMessageRecord): TuiMessage {
             name?: string;
             arguments?: unknown;
         };
-        const rawArgs = call.arguments;
+        const parsed = parseToolArgs(call.arguments);
         parts.push({
             type: "tool-call",
             toolCallId: call.id ?? "",
             toolName: call.name ?? "unknown",
-            argsText: parseToolArgs(rawArgs),
-            args:
-                rawArgs != null &&
-                typeof rawArgs === "object" &&
-                !Array.isArray(rawArgs)
-                    ? (rawArgs as Record<string, unknown>)
-                    : null,
+            argsText: parsed.argsText,
+            args: parsed.args,
             outputText: "",
             status: "done",
         });
