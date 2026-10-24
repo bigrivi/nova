@@ -101,7 +101,6 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                 screens.open({ kind: "models" });
                 return;
             case "agents":
-            case "list-agents":
                 screens.open({ kind: "agents" });
                 return;
             case "create-agent":

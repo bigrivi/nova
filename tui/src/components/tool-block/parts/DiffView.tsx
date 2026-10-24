@@ -15,8 +15,9 @@ export function DiffView({ diff, synthesized }: { diff: string; synthesized: boo
     const view = dims.width > SPLIT_VIEW_MIN_COLS ? "split" : "unified";
 
     return (
-        <box paddingLeft={2} marginTop={1}>
+        <box paddingLeft={2} paddingY={1} marginTop={1} backgroundColor={theme.surface}>
             <diff
+                width="100%"
                 diff={diff}
                 view={view}
                 showLineNumbers={!synthesized}

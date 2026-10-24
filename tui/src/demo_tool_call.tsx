@@ -82,6 +82,8 @@ const CATEGORIES: Array<{
                     "+++ b/main.py",
                     "@@ -1,3 +1,3 @@",
                     '-"""Application entry point."""',
+                    "-import sys",
+                    "-def main():",
                     '+"""Application entry point with logging."""',
                     "+import logging",
                     "+logger = logging.getLogger(__name__)",

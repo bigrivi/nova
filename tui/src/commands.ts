@@ -65,13 +65,6 @@ export const COMMANDS: CommandSpec[] = [
         aliases: [],
     },
     {
-        id: "list-agents",
-        label: "List Agents",
-        description: "List all available agents",
-        usage: "/list-agents",
-        aliases: [],
-    },
-    {
         id: "create-agent",
         label: "Create Agent",
         description: "Create a new agent",
