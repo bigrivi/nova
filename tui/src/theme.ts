@@ -4,7 +4,7 @@
  * running, error) instead of hex values, so re-theming is a single-file edit.
  */
 
-export const theme = {
+export const darkTheme = {
     /** App background */
     background: "#0d1117",
     /** Primary text */
@@ -75,4 +75,58 @@ export const theme = {
     syntaxLabel: "#a5d6ff",
 } as const;
 
-export type Theme = typeof theme;
+export type Theme = {
+    [K in keyof typeof darkTheme]: (typeof darkTheme)[K] extends string
+        ? string
+        : { [P in keyof (typeof darkTheme)[K]]: string };
+};
+
+export const lightTheme: Theme = {
+    ...darkTheme,
+    background: "#f6f8fa",
+    foreground: "#1f2328",
+    muted: "#656d76",
+    subtle: "#57606a",
+    accent: "#0969da",
+    running: "#9a6700",
+    success: "#1a7f37",
+    error: "#cf222e",
+    surface: "#eaeef2",
+    surfaceDeep: "#f6f8fa",
+    border: "#d0d7de",
+    diff: {
+        addedBg: "#e6ffec",
+        removedBg: "#ffebe9",
+        contextBg: "#f6f8fa",
+        addedSign: "#1a7f37",
+        removedSign: "#cf222e",
+        lineNumber: "#656d76",
+        lineNumberBg: "#f6f8fa",
+        addedLineNumberBg: "#ccffd8",
+        removedLineNumberBg: "#ffd7d5",
+    },
+    heading: "#0550ae",
+    codeInline: "#8250df",
+    link: "#0969da",
+    linkUrl: "#57606a",
+    quote: "#57606a",
+    bullet: "#0550ae",
+    rule: "#d0d7de",
+    strong: "#953800",
+    italic: "#8250df",
+    strikethrough: "#57606a",
+    syntaxKeyword: "#cf222e",
+    syntaxString: "#0a3069",
+    syntaxComment: "#6e7781",
+    syntaxFunction: "#8250df",
+    syntaxType: "#953800",
+    syntaxNumber: "#0550ae",
+    syntaxOperator: "#cf222e",
+    syntaxPunctuation: "#24292f",
+    syntaxVariable: "#24292f",
+    syntaxVariableBuiltin: "#24292f",
+    syntaxLabel: "#0a3069",
+};
+
+export const darkThemeTokens = darkTheme;
+export const theme = darkTheme;
