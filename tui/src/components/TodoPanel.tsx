@@ -11,13 +11,6 @@ const STATUS_ICON: Record<TodoStatus, string> = {
     cancelled: "❌",
 };
 
-const STATUS_COLOR: Record<TodoStatus, string> = {
-    completed: "#6e7681",
-    in_progress: "#d29922",
-    pending: "#8b949e",
-    cancelled: "#6e7681",
-};
-
 function truncateWide(text: string, max: number): string {
     const chars = Array.from(text);
     return chars.length > max ? `${chars.slice(0, max).join("")}…` : text;
@@ -35,6 +28,12 @@ function summaryLine(todos: TodoItem[]): string {
 
 export function TodoPanel() {
     const theme = useTheme();
+    const STATUS_COLOR: Record<TodoStatus, string> = {
+        completed: theme.muted,
+        in_progress: theme.running,
+        pending: theme.subtle,
+        cancelled: theme.muted,
+    };
     const todos = useTodoStore((state) => state.todos);
     if (todos.length === 0) {
         return null;

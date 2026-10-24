@@ -2,10 +2,11 @@
  *
  * A bright braille block sweeps back and forth across a row of dim dots.
  * Braille glyphs (not solid blocks) keep the cell thin and match the
- * spinner's visual language. BRIGHT mirrors theme.running as RGB channels
- * because the interpolation needs numbers, not the token's hex string.
+ * spinner's visual language. Colors are parsed from the active theme so the
+ * sweep follows theme switching.
  */
 import { useEffect, useRef, useState } from "react";
+import { useTheme } from "../context/theme.tsx";
 
 const BRAILLE_LEVELS = ["⠀", "⠁", "⠃", "⡇", "⣇", "⣷"] as const;
 
@@ -28,8 +29,14 @@ function mix(dim: [number, number, number], bright: [number, number, number], t:
     );
 }
 
-const DIM: [number, number, number] = [70, 70, 80];
-const BRIGHT: [number, number, number] = [210, 153, 34]; // theme.running #d29922
+function parseHex(hex: string): [number, number, number] {
+    const value = hex.replace("#", "");
+    return [
+        parseInt(value.slice(0, 2), 16),
+        parseInt(value.slice(2, 4), 16),
+        parseInt(value.slice(4, 6), 16),
+    ];
+}
 
 /** Renders nothing when idle; when running, a back-and-forth scanner sweep. */
 export function StatusActivityIndicator({
@@ -39,6 +46,9 @@ export function StatusActivityIndicator({
     width?: number;
     speedMs?: number;
 }) {
+    const theme = useTheme();
+    const DIM = parseHex(theme.muted);
+    const BRIGHT = parseHex(theme.running);
     const [position, setPosition] = useState(0);
     const directionRef = useRef(1);
 
