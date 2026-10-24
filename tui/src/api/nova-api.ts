@@ -122,7 +122,7 @@ export async function updateAgent(
 
 export async function getAgent(
     key: string,
-): Promise<{ key: string; name: string; model: string; provider: string } | null> {
+): Promise<{ key: string; name: string; model: string; provider: string; provider_name?: string; model_name?: string } | null> {
     const res = await fetch(buildUrl(`/api/agents/${encodeURIComponent(key)}`));
     if (!res.ok) return null;
     return res.json();

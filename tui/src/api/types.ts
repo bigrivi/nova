@@ -61,6 +61,8 @@ export type NovaAgentRecord = {
     description: string;
     model: string;
     provider: string;
+    provider_name?: string;
+    model_name?: string;
     tools: string | null;
     workspace_dir: string | null;
     mode?: "primary" | "subagent";

@@ -11,6 +11,8 @@ export function StatusBar() {
     const isStreaming = useChatStore((state) => state.isStreaming);
     const provider = useChatStore((state) => state.provider);
     const model = useChatStore((state) => state.model);
+    const modelName = useChatStore((state) => state.modelName);
+    const providerName = useChatStore((state) => state.providerName);
     const agentName = useChatStore((state) => state.agentName);
     const sessionId = useChatStore((state) => state.sessionId);
     const used = useCtxStore((state) => state.used);
@@ -66,25 +68,26 @@ export function StatusBar() {
                         content={isStreaming ? "●" : "○"}
                     />
                     <text fg={theme.accent} content={agentName} />
-                    <text fg={theme.foreground} content={model} />
-                    <text fg={theme.muted} content={provider} />
                     <text fg={theme.subtle} content="·" />
-                    <text fg={theme.muted} content="ctx" />
-                    <text fg={theme.running} content={formatK(used)} />
-                    <text fg={theme.muted} content="/" />
-                    <text fg={theme.muted} content={limit ? formatK(limit) : "—"} />
-                    <text
-                        fg={percentColor}
-                        content={limit ? `(${percent}%)` : "(—%)"}
-                    />
+                    <text fg={theme.foreground} content={modelName || model} />
+                    <text fg={theme.muted} content={`(${providerName || provider})`} />
                 </box>
                 <box flexDirection="row" flexShrink={0} gap={1}>
                     <text fg={theme.subtle} content="Ctrl+C exit" />
                     <text fg={theme.subtle} content="·" />
-                    <text fg={theme.subtle} content="/ for commands" />
+                    <text fg={theme.subtle} content="/commands" />
                 </box>
             </box>
-            <box flexDirection="row" flexShrink={0}>
+            <box flexDirection="row" flexShrink={0} gap={1}>
+                <text fg={theme.muted} content="ctx" />
+                <text fg={theme.running} content={formatK(used)} />
+                <text fg={theme.muted} content="/" />
+                <text fg={theme.muted} content={limit ? formatK(limit) : "—"} />
+                <text
+                    fg={percentColor}
+                    content={limit ? `(${percent}%)` : "(—%)"}
+                />
+                <text fg={theme.subtle} content="·" />
                 <text fg={theme.subtle} content={cwd} />
             </box>
         </box>

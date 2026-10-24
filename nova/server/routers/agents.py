@@ -28,6 +28,24 @@ class AgentImportRequest(BaseModel):
     parent_ids: list[str] | None = None
 
 
+
+def _display_names(settings: Settings, agent: dict) -> dict:
+    """Attach provider/model display names to an agent record."""
+    provider_key = agent.get("provider") or ""
+    model_key = agent.get("model") or ""
+    provider_name = provider_key
+    model_name = model_key
+    provider_config = settings.providers.get(provider_key)
+    if provider_config is not None:
+        provider_name = provider_config.name or provider_key
+        model_config = provider_config.models.get(model_key)
+        if isinstance(model_config, dict):
+            model_name = model_config.get("name") or model_key
+        elif model_config is not None:
+            model_name = getattr(model_config, "name", None) or model_key
+    return {**agent, "provider_name": provider_name, "model_name": model_name}
+
+
 def _annotate(agent: dict, parents: list[str] | None = None) -> dict:
     mode = agent.get("mode") or "primary"
     is_sub = mode == "subagent"
@@ -47,7 +65,7 @@ async def list_agents(
     service = ConfigService(settings)
     agents = await service.list_agents()
     items = [
-        _annotate(agent, await service.get_agent_parents(agent["key"]))
+        _display_names(settings, _annotate(agent, await service.get_agent_parents(agent["key"])))
         for agent in agents
     ]
     return {"items": items}
@@ -61,7 +79,7 @@ async def get_agent(
     agent = await service.get_agent(key)
     if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent '{key}' not found")
-    return _annotate(agent, await service.get_agent_parents(key))
+    return _display_names(settings, _annotate(agent, await service.get_agent_parents(key)))
 
 
 @router.post("/api/agents")

@@ -35,6 +35,8 @@ export function AgentsScreen({ deletable }: { deletable: boolean }) {
                 ...(agent.provider && agent.model
                     ? { provider: agent.provider, model: agent.model }
                     : {}),
+                ...(agent.provider_name ? { providerName: agent.provider_name } : {}),
+                ...(agent.model_name ? { modelName: agent.model_name } : {}),
             });
             useScreenStore.getState().close();
             return;
