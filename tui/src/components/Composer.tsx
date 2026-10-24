@@ -13,7 +13,7 @@ import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
 import { runChatStream } from "../stream/chat-stream.ts";
-import { theme } from "../theme.ts";
+import { useTheme } from "../context/theme.tsx";
 import { CommandSuggestions } from "./CommandSuggestions.tsx";
 
 const COMPOSER_KEY_BINDINGS: KeyBinding[] = [
@@ -27,6 +27,7 @@ const TEXTAREA_MAX_HEIGHT = 12;
 export type ComposerCommandHandler = (id: string, args: string) => void;
 
 export function Composer({ onCommand }: { onCommand: ComposerCommandHandler }) {
+    const theme = useTheme();
     const isStreaming = useChatStore((state) => state.isStreaming);
     const sessionId = useChatStore((state) => state.sessionId);
     const askActive = useAskUserStore((state) => state.active) !== null;

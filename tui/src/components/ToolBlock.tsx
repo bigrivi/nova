@@ -1,7 +1,7 @@
 /** Tool call block: status glyph + verb-tense label, output lines below. */
 import { useMemo } from "react";
 import type { ToolCallPart as ToolCallPartData } from "../stores/chat-store.ts";
-import { theme } from "../theme.ts";
+import { useTheme } from "../context/theme.tsx";
 import { useExpandStore } from "../stores/expand-store.ts";
 import { Spinner } from "./tool-block/Spinner.tsx";
 import { getRenderer } from "./tool-block/registry.ts";
@@ -16,21 +16,22 @@ const GLYPH: Record<Exclude<ToolStatus, "running">, string> = {
     error: "✗",
 };
 
-const GLYPH_COLOR: Record<ToolStatus, string> = {
-    running: theme.running,
-    blocked: theme.accent,
-    done: theme.success,
-    error: theme.error,
-};
-
 export function ToolBlock({ part }: { part: ToolCallPartData }) {
     const { toolName, status, args, outputText, error } = part;
     const expanded = useExpandStore((state) => state.expanded);
 
     const renderer = getRenderer(toolName);
+    const theme = useTheme();
     const parsedArgs = renderer.parseArgs(args);
     const activeRenderer = parsedArgs === null ? createFallbackRenderer(toolName) : renderer;
     const ctxArgs = parsedArgs ?? args ?? {};
+
+    const GLYPH_COLOR: Record<ToolStatus, string> = {
+        running: theme.running,
+        blocked: theme.accent,
+        done: theme.success,
+        error: theme.error,
+    };
 
     const ctx = {
         part,

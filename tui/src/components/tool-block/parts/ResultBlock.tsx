@@ -1,4 +1,4 @@
-import { theme } from "../../../theme.ts";
+import { useTheme } from "../../../context/theme.tsx";
 import { RESULT_LIMITS } from "../format/text.ts";
 import type { ResultView } from "../types.ts";
 import { DiffView } from "./DiffView.tsx";
@@ -10,6 +10,7 @@ export function ResultBlock({
     view: ResultView;
     expanded: boolean;
 }) {
+    const theme = useTheme();
     if (view.kind === "none") return null;
     if (view.kind === "diff") {
         return <DiffView diff={view.diff} synthesized={view.synthesized} />;

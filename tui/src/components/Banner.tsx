@@ -1,7 +1,7 @@
 /** Welcome banner — mirrors nova/cli/chat_app.py::_print_banner */
 import { useChatStore } from "../stores/chat-store.ts";
 import { COMMANDS } from "../commands.ts";
-import { theme } from "../theme.ts";
+import { useTheme } from "../context/theme.tsx";
 
 function bannerText(): string {
     const usages = COMMANDS.map((c) => c.usage).filter(Boolean);
@@ -11,6 +11,7 @@ function bannerText(): string {
 }
 
 export function Banner() {
+    const theme = useTheme();
     const provider = useChatStore((s) => s.provider);
     const model = useChatStore((s) => s.model);
 

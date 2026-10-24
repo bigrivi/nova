@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useCompactionStore } from "../../stores/compaction-store.ts";
-import { theme } from "../../theme.ts";
+import { useTheme } from "../../context/theme.tsx";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const TICK_MS = 100;
@@ -16,6 +16,7 @@ function formatTokens(count: number): string {
 }
 
 export function CompactionBanner() {
+    const theme = useTheme();
     const compacting = useCompactionStore((s) => s.compacting);
     const messageCount = useCompactionStore((s) => s.messageCount);
     const tokenCount = useCompactionStore((s) => s.tokenCount);

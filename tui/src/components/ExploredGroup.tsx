@@ -5,7 +5,7 @@ import {
     explorationLabel,
 } from "../lib/group-parts.ts";
 import type { ToolCallPart as ToolCallPartData } from "../stores/chat-store.ts";
-import { theme } from "../theme.ts";
+import { useTheme } from "../context/theme.tsx";
 import { ToolCallPartView } from "./parts/ToolCallPart.tsx";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -19,6 +19,7 @@ export function ExploredGroup({
     expanded: boolean;
     onToggle: () => void;
 }) {
+    const theme = useTheme();
     const completed = explorationCompleted(parts);
     const label = explorationLabel(parts, completed);
     const [frame, setFrame] = useState(0);

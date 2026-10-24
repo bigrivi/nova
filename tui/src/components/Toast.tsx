@@ -1,7 +1,8 @@
 import { useToastStore } from "../stores/toast-store.ts";
-import { theme } from "../theme.ts";
+import { useTheme } from "../context/theme.tsx";
 
 export function Toast() {
+    const theme = useTheme();
     const message = useToastStore((s) => s.message);
     if (!message) return null;
     return (

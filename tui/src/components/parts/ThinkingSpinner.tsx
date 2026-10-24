@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { theme } from "../../theme.ts";
+import { useTheme } from "../../context/theme.tsx";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const TICK_MS = 100;
@@ -10,6 +10,7 @@ function formatElapsed(ms: number): string {
 }
 
 export function ThinkingSpinner() {
+    const theme = useTheme();
     const [frame, setFrame] = useState(0);
     const [elapsed, setElapsed] = useState(0);
 

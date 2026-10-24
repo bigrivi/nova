@@ -5,9 +5,10 @@ import { StatusActivityIndicator } from "./StatusActivityIndicator.tsx";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { WORKSPACE_DIR } from "../workspace.ts";
-import { theme } from "../theme.ts";
+import { useTheme } from "../context/theme.tsx";
 
 export function StatusBar() {
+    const theme = useTheme();
     const isStreaming = useChatStore((state) => state.isStreaming);
     const provider = useChatStore((state) => state.provider);
     const model = useChatStore((state) => state.model);

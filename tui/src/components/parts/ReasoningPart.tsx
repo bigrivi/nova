@@ -1,6 +1,6 @@
 /** Reasoning part: header line (Thinking…/Thought (Xs)) + reasoning content */
+import { useTheme } from "../../context/theme.tsx";
 import type { ReasoningPart as ReasoningPartData } from "../../stores/chat-store.ts";
-import { theme } from "../../theme.ts";
 
 function formatElapsed(ms: number): string {
     if (ms < 1000) return `${ms}ms`;
@@ -11,6 +11,7 @@ function formatElapsed(ms: number): string {
 }
 
 export function ReasoningPart({ part }: { part: ReasoningPartData }) {
+    const theme = useTheme();
     const label = part.completed
         ? part.elapsedMs != null
             ? `Thought (${formatElapsed(part.elapsedMs)})`

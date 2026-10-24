@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { theme } from "../../theme.ts";
+import { useTheme } from "../../context/theme.tsx";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const TICK_MS = 80;
@@ -30,6 +30,7 @@ function getSnapshot(): number {
 }
 
 export function Spinner() {
+    const theme = useTheme();
     const current = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
     return <text fg={theme.running}>{FRAMES[current]}</text>;
 }

@@ -19,6 +19,7 @@ import { CreateAgentScreen } from "./screens/CreateAgentScreen.tsx";
 import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
 import { StatusBar } from "./StatusBar.tsx";
+import { ThemeProvider } from "../context/theme.tsx";
 import { Toast } from "./Toast.tsx";
 
 export type ExitHandler = () => void;
@@ -111,6 +112,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     // Composer was crowded/duplicated the todo_write ToolBlock summary line;
     // file kept for future overlay use, history visible via MessageList.
     return (
+        <ThemeProvider>
         <box
             flexDirection="column"
             flexGrow={1}
@@ -141,5 +143,6 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             {screen?.kind === "create-agent" ? <CreateAgentScreen /> : null}
             <Toast />
         </box>
+        </ThemeProvider>
     );
 }

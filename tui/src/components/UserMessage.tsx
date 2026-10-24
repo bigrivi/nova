@@ -1,7 +1,8 @@
 import type { TuiMessage } from "../stores/chat-store.ts";
-import { theme } from "../theme.ts";
+import { useTheme } from "../context/theme.tsx";
 
 export function UserMessage({ message }: { message: TuiMessage }) {
+    const theme = useTheme();
     const text = message.parts[0]?.type === "text" ? message.parts[0].text : "";
     return (
         <box

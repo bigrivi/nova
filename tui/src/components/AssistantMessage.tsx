@@ -7,9 +7,10 @@ import { MarkdownPart } from "./parts/MarkdownPart.tsx";
 import { ReasoningPart } from "./parts/ReasoningPart.tsx";
 import { ThinkingSpinner } from "./parts/ThinkingSpinner.tsx";
 import { ToolCallPartView } from "./parts/ToolCallPart.tsx";
-import { theme } from "../theme.ts";
+import { useTheme } from "../context/theme.tsx";
 
 export function AssistantMessage({ message }: { message: TuiMessage }) {
+    const theme = useTheme();
     const isStreaming = message.status === "streaming";
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const items = groupAssistantParts(message.id, message.parts);
@@ -52,6 +53,7 @@ function PartView({
     part: MessagePart;
     streaming: boolean;
 }) {
+    const theme = useTheme();
     switch (part.type) {
         case "text":
             if (!part.text.trim()) {

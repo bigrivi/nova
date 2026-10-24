@@ -1,8 +1,10 @@
 import { SyntaxStyle, getTreeSitterClient } from "@opentui/core";
 import { useMemo } from "react";
-import { theme } from "../../theme.ts";
+import { useTheme } from "../../context/theme.tsx";
+import type { Theme } from "../../theme.ts";
 
-export const SYNTAX_STYLES = {
+export function buildSyntaxStyles(theme: Theme) {
+    return {
     default: { fg: theme.foreground },
     conceal: { fg: theme.muted },
 
@@ -49,6 +51,7 @@ export const SYNTAX_STYLES = {
     variable: { fg: theme.syntaxVariable },
     parameter: { fg: theme.syntaxVariableBuiltin },
 } as const;
+}
 
 export function MarkdownPart({
     text,
@@ -57,7 +60,8 @@ export function MarkdownPart({
     text: string;
     streaming: boolean;
 }) {
-    const syntaxStyle = useMemo(() => SyntaxStyle.fromStyles(SYNTAX_STYLES), []);
+    const theme = useTheme();
+    const syntaxStyle = useMemo(() => SyntaxStyle.fromStyles(buildSyntaxStyles(theme)), [theme]);
     const treeSitterClient = useMemo(() => getTreeSitterClient(), []);
     return (
         <markdown

@@ -17,11 +17,8 @@ import type {
 import { useKeyboard } from "@opentui/react";
 import { useEffect, useRef, useState } from "react";
 import type { AskQuestion } from "../stores/ask-user-store.ts";
-import { theme } from "../theme.ts";
+import { useTheme } from "../context/theme.tsx";
 
-const ACCENT = theme.accent;
-const MUTED = theme.muted;
-const SURFACE = theme.surface
 
 const FREEFORM_KEY_BINDINGS: KeyBinding[] = [
     { name: "enter", action: "submit" },
@@ -37,6 +34,7 @@ export function AskUserCard({
     onSubmit: (answers: Record<string, string>) => void;
     onCancel: () => void;
 }) {
+    const theme = useTheme();
     const [active, setActive] = useState(0);
     const [answers, setAnswers] = useState<Record<string, string>>(() => {
         const seeded: Record<string, string> = {};
@@ -208,9 +206,9 @@ export function AskUserCard({
             paddingY={1}
             marginBottom={1}
             borderStyle="heavy"
-            borderColor={ACCENT}
+            borderColor={theme.accent}
             border = {["left"]}
-            backgroundColor={SURFACE}
+            backgroundColor={theme.surface}
             gap={0}
         >
             <box marginBottom={1} flexDirection="row" columnGap={2} flexShrink={0}>
@@ -218,8 +216,8 @@ export function AskUserCard({
                     const label = q.header || `Q${index + 1}`;
                     if (index === active) {
                         return (
-                            <box key={q.id} paddingX={1} backgroundColor={ACCENT}>
-                                <text fg={SURFACE}>{label}</text>
+                            <box key={q.id} paddingX={1} backgroundColor={theme.accent}>
+                                <text fg={theme.surface}>{label}</text>
                             </box>
                         );
                     }
@@ -231,8 +229,8 @@ export function AskUserCard({
                 })}
                 {isWizard ? (
                     isReview ? (
-                        <box paddingX={1} backgroundColor={ACCENT}>
-                            <text fg={SURFACE}>Confirm</text>
+                        <box paddingX={1} backgroundColor={theme.accent}>
+                            <text fg={theme.surface}>Confirm</text>
                         </box>
                     ) : (
                         <box paddingX={1}>
@@ -244,7 +242,7 @@ export function AskUserCard({
 
             {isReview ? (
                 <box flexDirection="column" flexShrink={0}>
-                    <text fg={ACCENT}>Confirm</text>
+                    <text fg={theme.accent}>Confirm</text>
                     {questions.map((q) => {
                         const answer = answers[q.id] ?? "";
                         return (
@@ -252,7 +250,7 @@ export function AskUserCard({
                                 <text fg={theme.foreground}>
                                     {q.header || q.question}
                                 </text>
-                                <text fg={MUTED}>
+                                <text fg={theme.muted}>
                                     {answer ||
                                         (q.required
                                             ? "(not answered)"
@@ -265,7 +263,7 @@ export function AskUserCard({
             ) : question ? (
                 <box flexDirection="column" flexShrink={0}>
                 {!isWizard && question.header ? (
-                    <text fg={ACCENT}>{question.header}</text>
+                    <text fg={theme.accent}>{question.header}</text>
                 ) : null}
                 <text fg={theme.foreground} content={question.question} />
 
@@ -293,21 +291,21 @@ export function AskUserCard({
                                     columnGap={1}
                                 >
                                     <text
-                                        fg={pointed ? ACCENT : theme.foreground}
+                                        fg={pointed ? theme.accent : theme.foreground}
                                     >
                                         {pointed ? "▸ " : "  "}
                                         {mark}
                                         {option.label}
                                     </text>
                                     {option.description ? (
-                                        <text fg={MUTED}>
+                                        <text fg={theme.muted}>
                                             {option.description}
                                         </text>
                                     ) : null}
                                 </box>
                             );
                         })}
-                        <text fg={MUTED}>
+                        <text fg={theme.muted}>
                             {question.multiple
                                 ? "↑↓ move · space toggle · enter confirm"
                                 : "↑↓ move · enter select"}
@@ -322,7 +320,7 @@ export function AskUserCard({
                         focused
                         marginTop={1}
                         placeholder="Your answer…"
-                        placeholderColor={MUTED}
+                        placeholderColor={theme.muted}
                         onInput={(value) => setDraft(value ?? "")}
                         onSubmit={() => commit(live.current.draft)}
                     />
@@ -335,7 +333,7 @@ export function AskUserCard({
                         focused
                         marginTop={1}
                         placeholder="Your answer… (enter submits, shift+enter newline)"
-                        placeholderColor={MUTED}
+                        placeholderColor={theme.muted}
                         keyBindings={FREEFORM_KEY_BINDINGS}
                         onContentChange={() =>
                             setDraft(textareaRef.current?.plainText ?? "")
@@ -348,7 +346,7 @@ export function AskUserCard({
                 </box>
             ) : null}
 
-            <text fg={MUTED} marginTop={1}>
+            <text fg={theme.muted} marginTop={1}>
                 {active + 1}/{totalSteps} ·{" "}
                 {isReview || (!isWizard && isLast)
                     ? "enter submits"

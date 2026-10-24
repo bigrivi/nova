@@ -1,7 +1,7 @@
 /** Persistent todo progress panel: always shows the latest todo_write state */
 
 import { useTodoStore } from "../stores/todo-store.ts";
-import { theme } from "../theme.ts";
+import { useTheme } from "../context/theme.tsx";
 import type { TodoItem, TodoStatus } from "../stores/todo-store.ts";
 
 const STATUS_ICON: Record<TodoStatus, string> = {
@@ -34,6 +34,7 @@ function summaryLine(todos: TodoItem[]): string {
 }
 
 export function TodoPanel() {
+    const theme = useTheme();
     const todos = useTodoStore((state) => state.todos);
     if (todos.length === 0) {
         return null;

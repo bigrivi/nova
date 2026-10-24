@@ -15,7 +15,7 @@ import { createCliRenderer } from "@opentui/core";
 import { createRoot, useKeyboard } from "@opentui/react";
 import { join } from "node:path";
 import { ThinkingSpinner } from "./components/parts/ThinkingSpinner.tsx";
-import { theme } from "./theme.ts";
+import { useTheme } from "./context/theme.tsx";
 import { ToolBlock } from "./components/ToolBlock.tsx";
 import type { ToolCallPart as ToolCallPartData } from "./stores/chat-store.ts";
 
@@ -236,6 +236,7 @@ const RUNNING_SAMPLES = [
 ];
 
 function CategoryLabel({ children }: { children: string }) {
+    const theme = useTheme();
     return (
         <text fg={theme.accent} marginTop={1}>
             ▌{children}
@@ -244,6 +245,7 @@ function CategoryLabel({ children }: { children: string }) {
 }
 
 function DemoApp() {
+    const theme = useTheme();
     useKeyboard((key) => {
         if (key.name === "q" || key.name === "escape") process.exit(0);
     });

@@ -7,9 +7,10 @@ import {
     useApprovalStore,
 } from "../stores/approval-store.ts";
 import { useToastStore } from "../stores/toast-store.ts";
-import { theme } from "../theme.ts";
+import { useTheme } from "../context/theme.tsx";
 
 export function ApprovalDialog({ pending }: { pending: ApprovalPending }) {
+    const theme = useTheme();
     const { title, block, scope } = approvalCopy(pending);
     const color = pending.dangerous ? theme.error : theme.running;
 
