@@ -5,7 +5,6 @@ import { useTheme } from "../context/theme.tsx";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { WORKSPACE_DIR } from "../workspace.ts";
-import { StatusActivityIndicator } from "./StatusActivityIndicator.tsx";
 
 export function StatusBar() {
     const theme = useTheme();
@@ -61,7 +60,6 @@ export function StatusBar() {
                 flexShrink={0}
             >
                 <box flexDirection="row" flexShrink={0} gap={1} alignItems="center">
-                    {isStreaming ? <StatusActivityIndicator /> : null}
                     <text
                         fg={isStreaming ? theme.running : theme.muted}
                         content={isStreaming ? "●" : "○"}
