@@ -105,13 +105,19 @@ async def write(content: str, filePath: str) -> ToolResult:
         if not diff:
             return ToolResult(success=True, content=f"No changes in {p}")
 
+        note = ""
         if len(diff) > 80:
             shown, remaining = truncate_diff(diff)
-            diff_text = "".join(shown) + f"\n\n[... {remaining} more lines ...]"
+            diff_text = "".join(shown)
+            # Keep the truncation note out of the diff itself: a marker line
+            # inside the patch is not valid unified-diff syntax.
+            note = f" (diff truncated, {remaining} lines omitted)"
         else:
             diff_text = "".join(diff)
 
-        return ToolResult(success=True, content=f"File updated — {p}:\n\n{diff_text}")
+        return ToolResult(
+            success=True, content=f"File updated — {p}{note}:\n\n{diff_text}"
+        )
 
     except Exception as e:
         return ToolResult(success=False, content=f"Error: {e}")

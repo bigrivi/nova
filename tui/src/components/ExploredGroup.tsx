@@ -1,11 +1,11 @@
 /** Collapsible summary for consecutive exploration tool calls. */
 import { useEffect, useState } from "react";
+import { useTheme } from "../context/theme.tsx";
 import {
     explorationCompleted,
     explorationLabel,
 } from "../lib/group-parts.ts";
 import type { ToolCallPart as ToolCallPartData } from "../stores/chat-store.ts";
-import { useTheme } from "../context/theme.tsx";
 import { ToolCallPartView } from "./parts/ToolCallPart.tsx";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -36,7 +36,7 @@ export function ExploredGroup({
     const glyph = completed ? "→" : SPINNER_FRAMES[frame];
 
     return (
-        <box flexDirection="column">
+        <box flexDirection="column" marginBottom={1}>
             <box
                 flexDirection="row"
                 onMouseUp={() => onToggle()}

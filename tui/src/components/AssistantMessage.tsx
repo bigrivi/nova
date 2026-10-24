@@ -1,19 +1,19 @@
 /** Assistant message card: renders by parts (markdown / reasoning / tool-call) */
 import { useState } from "react";
-import type { MessagePart, TuiMessage } from "../stores/chat-store.ts";
+import { useTheme } from "../context/theme.tsx";
 import { groupAssistantParts } from "../lib/group-parts.ts";
+import type { MessagePart, TuiMessage } from "../stores/chat-store.ts";
 import { ExploredGroup } from "./ExploredGroup.tsx";
 import { MarkdownPart } from "./parts/MarkdownPart.tsx";
 import { ReasoningPart } from "./parts/ReasoningPart.tsx";
 import { ThinkingSpinner } from "./parts/ThinkingSpinner.tsx";
 import { ToolCallPartView } from "./parts/ToolCallPart.tsx";
-import { useTheme } from "../context/theme.tsx";
 
 export function AssistantMessage({ message }: { message: TuiMessage }) {
-    const theme = useTheme();
     const isStreaming = message.status === "streaming";
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const items = groupAssistantParts(message.id, message.parts);
+    const theme = useTheme();
 
     const toggle = (key: string) =>
         setExpanded((state) => ({
