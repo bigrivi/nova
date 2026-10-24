@@ -77,7 +77,7 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
                 ) : (
                     <text fg={GLYPH_COLOR[status]} content={`${glyph}`} flexShrink={0} />
                 )}
-                <text fg={theme.foreground} content={title} />
+                <text fg={theme.foreground} content={title} flexShrink={1} minWidth={0} wrapMode="word" />
             </box>
             <ResultBlock view={resultView} expanded={expanded} />
         </box>
