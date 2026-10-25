@@ -36,7 +36,7 @@ export function ExploredGroup({
     const glyph = completed ? "→" : SPINNER_FRAMES[frame];
 
     return (
-        <box flexDirection="column" marginBottom={1}>
+        <box flexDirection="column" marginTop={1}>
             <box
                 flexDirection="row"
                 onMouseUp={() => onToggle()}
@@ -52,7 +52,7 @@ export function ExploredGroup({
                 />
             </box>
             {expanded ? (
-                <box flexDirection="column" marginTop={0}>
+                <box flexDirection="column">
                     {parts.map((part, index) => (
                         <box key={index} gap={0} paddingLeft={2}>
                             <ToolCallPartView part={part} />

@@ -16,7 +16,7 @@ export function SubagentNotice({ message }: { message: TuiMessage }) {
     const status = notice ? (failed ? "Error" : "Done") : "Update";
 
     return (
-        <box flexDirection="row" gap={1} paddingX={2} marginBottom={1}>
+        <box flexDirection="row" gap={1} paddingX={2} marginTop={1}>
             <text fg={theme.muted} content="↩" flexShrink={0} />
             <text fg={theme.muted} content="Subagent" flexShrink={0} />
             {notice ? (

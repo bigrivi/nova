@@ -22,7 +22,7 @@ export function ReasoningPart({ part }: { part: ReasoningPartData }) {
             : "Thought"
         : "Thinking…";
     return (
-        <box flexDirection="column" marginBottom={1} marginLeft={2}>
+        <box flexDirection="column" marginTop={1} marginLeft={2}>
             <text marginBottom={1} fg={thoughtFg}>
                 {label}
             </text>

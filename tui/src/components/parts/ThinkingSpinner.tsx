@@ -24,7 +24,7 @@ export function ThinkingSpinner() {
     }, []);
 
     return (
-        <text fg={theme.running}>
+        <text fg={theme.running} marginTop={1}>
             {FRAMES[frame]} Thinking… {formatElapsed(elapsed)}
         </text>
     );

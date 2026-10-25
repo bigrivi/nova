@@ -42,7 +42,7 @@ export function CompactionBanner() {
 
     const detail = `${messageCount} msgs / ${formatTokens(tokenCount)}`;
     return (
-        <box paddingX={2} marginBottom={1}>
+        <box paddingX={2} marginTop={1}>
             <text fg={theme.running}>
                 {`${FRAMES[frame]} Compacting conversation history… ${detail} · ${formatElapsed(elapsed)}`}
             </text>

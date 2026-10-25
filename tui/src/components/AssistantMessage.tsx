@@ -22,7 +22,7 @@ export function AssistantMessage({ message }: { message: TuiMessage }) {
         }));
 
     return (
-        <box flexDirection="column" paddingX={2} marginBottom={1}>
+        <box flexDirection="column" paddingX={2}>
             {items.map((item) =>
                 item.kind === "explore" ? (
                     <ExploredGroup
@@ -40,7 +40,7 @@ export function AssistantMessage({ message }: { message: TuiMessage }) {
                 ),
             )}
             {message.error ? (
-                <text fg={theme.error} content={message.error} />
+                <box marginTop={1}><text fg={theme.error} content={message.error} /></box>
             ) : null}
         </box>
     );
@@ -60,7 +60,7 @@ function PartView({
                 return null;
             }
             return (
-                <box flexDirection="row">
+                <box flexDirection="row" marginTop={1}>
                     <text fg={theme.success} content="●" flexShrink={0} />
                     <box flexGrow={1} paddingX={1} flexShrink={1}>
                         <MarkdownPart text={part.text} streaming={streaming} />

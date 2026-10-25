@@ -1,9 +1,9 @@
 /** Welcome banner — mirrors nova/cli/chat_app.py::_print_banner */
 import { COMMANDS } from "../commands.ts";
-import { useTheme } from "../context/theme.tsx";
-import { shortenPath } from "../lib/status-format.ts";
-import { modelLabel, providerLabel } from "../lib/catalog.ts";
 import { useApp } from "../context/app.tsx";
+import { useTheme } from "../context/theme.tsx";
+import { modelLabel, providerLabel } from "../lib/catalog.ts";
+import { shortenPath } from "../lib/status-format.ts";
 import { useChatStore } from "../stores/chat-store.ts";
 import { WORKSPACE_DIR } from "../workspace.ts";
 
@@ -32,7 +32,6 @@ export function Banner() {
             borderColor={theme.border}
             paddingX={2}
             paddingY={1}
-            marginBottom={1}
         >
             <text fg={theme.accent} content="Nova TUI  v0.1.0" />
             <box flexDirection="row" marginTop={1}>

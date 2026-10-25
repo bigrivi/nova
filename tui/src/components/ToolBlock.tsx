@@ -70,7 +70,7 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
         status === "running" ? null : GLYPH[status as Exclude<ToolStatus, "running">];
 
     return (
-        <box flexDirection="column" marginBottom={1}>
+        <box flexDirection="column" marginTop={1}>
             <box flexDirection="row" gap={1}>
                 {status === "running" ? (
                     <box flexShrink={0} ><Spinner/></box>

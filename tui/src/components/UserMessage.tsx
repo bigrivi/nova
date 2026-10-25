@@ -1,5 +1,5 @@
-import type { TuiMessage } from "../stores/chat-store.ts";
 import { useTheme } from "../context/theme.tsx";
+import type { TuiMessage } from "../stores/chat-store.ts";
 
 export function UserMessage({ message }: { message: TuiMessage }) {
     const theme = useTheme();
@@ -10,7 +10,7 @@ export function UserMessage({ message }: { message: TuiMessage }) {
             paddingX={2}
             paddingTop={1}
             paddingBottom={1}
-            marginBottom={1}
+            marginTop={1}
             minHeight={3}
             justifyContent="center"
             backgroundColor={theme.surface}
