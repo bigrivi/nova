@@ -152,17 +152,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: tui/package-lock.json
-
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - run: npm ci
+      - run: bun install --frozen-lockfile
         working-directory: tui
 
       - run: bun run build
