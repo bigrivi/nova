@@ -5,6 +5,7 @@ export type Screen =
     | { kind: "sessions" }
     | { kind: "models" }
     | { kind: "theme" }
+    | { kind: "variants" }
     | { kind: "agents" }
     | { kind: "create-agent" }
     | { kind: "delete-agent" };

@@ -25,6 +25,7 @@ export type StreamChatOptions = {
     provider?: string | null;
     model?: string | null;
     agentKey?: string | null;
+    reasoningEffort?: string | null;
     attachments?: NovaAttachmentData[];
     /** Replay buffered frames after this sequence, then live-tail the turn. */
     resumeFromSequence?: number | null;
@@ -122,7 +123,7 @@ export async function createModel(
 
 export async function updateAgent(
     key: string,
-    data: { model: string; provider: string },
+    data: { model: string; provider: string; reasoning_effort?: string | null },
 ): Promise<void> {
     await send(
         `/api/agents/${encodeURIComponent(key)}`,
@@ -132,7 +133,7 @@ export async function updateAgent(
 
 export async function getAgent(
     key: string,
-): Promise<{ key: string; name: string; model: string; provider: string; provider_name?: string; model_name?: string } | null> {
+): Promise<{ key: string; name: string; model: string; provider: string; provider_name?: string; model_name?: string; reasoning_effort?: string | null } | null> {
     const res = await fetch(buildUrl(`/api/agents/${encodeURIComponent(key)}`));
     if (!res.ok) return null;
     return res.json();
@@ -261,6 +262,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
             provider: options.provider || undefined,
             model: options.model || undefined,
             agent_key: options.agentKey || undefined,
+            reasoning_effort: options.reasoningEffort || undefined,
             attachments: options.attachments || [],
             resume_from_seq: options.resumeFromSequence ?? undefined,
         }),

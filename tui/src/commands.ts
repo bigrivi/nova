@@ -37,6 +37,13 @@ export const COMMANDS: CommandSpec[] = [
         aliases: [],
     },
     {
+        id: "variants",
+        label: "Variants",
+        description: "Browse and switch reasoning effort levels",
+        usage: "/variants",
+        aliases: [],
+    },
+    {
         id: "themes",
         label: "Themes",
         description: "Browse and switch UI themes",

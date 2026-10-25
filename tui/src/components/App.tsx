@@ -20,6 +20,7 @@ import { CreateAgentScreen } from "./screens/CreateAgentScreen.tsx";
 import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
 import { ThemeScreen } from "./screens/ThemeScreen.tsx";
+import { VariantsScreen } from "./screens/VariantsScreen.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 import { Toast } from "./Toast.tsx";
 
@@ -50,6 +51,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                 useChatStore.setState({
                     provider: agent.provider,
                     model: agent.model,
+                    reasoningEffort: agent.reasoning_effort ?? "",
                     agentKey: agent.key ?? "main",
                     agentName: agent.name ?? "Nova",
                 });
@@ -111,6 +113,9 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             case "delete-agent":
                 screens.open({ kind: "delete-agent" });
                 return;
+            case "variants":
+                screens.open({ kind: "variants" });
+                return;
             case "themes":
                 screens.open({ kind: "theme" });
                 return;
@@ -148,6 +153,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             <StatusBar />
             {screen?.kind === "sessions" ? <SessionsScreen /> : null}
             {screen?.kind === "theme" ? <ThemeScreen /> : null}
+            {screen?.kind === "variants" ? <VariantsScreen /> : null}
             {screen?.kind === "models" ? <ModelsScreen /> : null}
             {screen?.kind === "agents" || screen?.kind === "delete-agent" ? (
                 <AgentsScreen deletable={screen.kind === "delete-agent"} />

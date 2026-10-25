@@ -22,14 +22,18 @@ export function ModelsScreen() {
 
     async function handleSelect(model: NovaModelRecord): Promise<void> {
         useScreenStore.getState().close();
+        const nextEffort =
+            model.efforts.length > 0 ? model.efforts[0] : "";
         useChatStore.setState({
             provider: model.provider,
             model: model.model,
+            reasoningEffort: nextEffort,
         });
         try {
             await updateAgent("main", {
                 provider: model.provider,
                 model: model.model,
+                reasoning_effort: nextEffort || null,
             });
         } catch {
             // A persistence failure must not block this switch

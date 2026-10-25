@@ -49,6 +49,8 @@ export type NovaModelRecord = {
     model: string;
     label: string;
     tools: boolean;
+    /** Reasoning levels this model offers; empty means none. */
+    efforts: string[];
 };
 
 export type NovaProviderRecord = {

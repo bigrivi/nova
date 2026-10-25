@@ -44,6 +44,7 @@ export function StatusBar() {
     const isStreaming = useChatStore((state) => state.isStreaming);
     const provider = useChatStore((state) => state.provider);
     const model = useChatStore((state) => state.model);
+    const reasoningEffort = useChatStore((state) => state.reasoningEffort);
     const agentName = useChatStore((state) => state.agentName);
     const sessionId = useChatStore((state) => state.sessionId);
     const assistantStatus = useChatStore((state) =>
@@ -145,6 +146,21 @@ export function StatusBar() {
                                 />
                             </>
                         )}
+                        {reasoningEffort ? (
+                            <>
+                                <text
+                                    fg={theme.muted}
+                                    content="·"
+                                    flexShrink={0}
+                                />
+                                <text
+                                    fg={theme.running}
+                                    content={reasoningEffort}
+                                    wrapMode="none"
+                                    flexShrink={0}
+                                />
+                            </>
+                        ) : null}
                     </>
                 }
                 right={

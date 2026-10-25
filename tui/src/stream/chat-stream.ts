@@ -158,7 +158,7 @@ type TurnOptions = {
 async function runTurn(options: TurnOptions): Promise<void> {
     const store = getChatState();
     const sessionId = options.resumeSessionId ?? store.sessionId;
-    const { provider, model, agentKey } = store;
+    const { provider, model, agentKey, reasoningEffort } = store;
     const runId = ++runCounter;
     const resuming = options.resumeFromSequence != null;
 
@@ -223,6 +223,7 @@ async function runTurn(options: TurnOptions): Promise<void> {
             provider,
             model,
             agentKey,
+            reasoningEffort,
             resumeFromSequence: options.resumeFromSequence ?? null,
             onEvent: (event) => {
                 applyStreamEvent(event, assistantId, effects, acc);
