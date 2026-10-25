@@ -35,8 +35,8 @@ function makeEffects(overrides: Partial<StreamEffects> = {}) {
             calls.push(`compaction-start:${messages}/${tokens}`),
         endCompaction: () => calls.push("compaction-end"),
         setPending: (id, pending) => calls.push(`pending:${id}:${pending}`),
-        insertWakeMessage: (text, wakeFor) =>
-            calls.push(`wake:${text}:${wakeFor}`),
+        insertWakeMessage: (text, wakeFor, variant) =>
+            calls.push(`wake:${text}:${wakeFor}:${variant ?? ""}`),
         startTextPart: (id) => calls.push(`text-start:${id}`),
         appendTextDelta: (id, delta) => calls.push(`text:${id}:${delta}`),
         startReasoningPart: (id) => calls.push(`reasoning-start:${id}`),
@@ -142,7 +142,19 @@ describe("applyStreamEvent", () => {
             },
             effects,
         );
-        expect(calls).toEqual(["wake:done:job1"]);
+        expect(calls).toEqual(["wake:done:job1:"]);
+    });
+
+    test("passes the server-set variant to the wake message", () => {
+        const { effects, calls } = makeEffects();
+        run(
+            {
+                type: "data-nova-wake",
+                data: { text: "done", messageId: "job1", variant: "subagent" },
+            },
+            effects,
+        );
+        expect(calls).toEqual(["wake:done:job1:subagent"]);
     });
 
     test("routes text and reasoning deltas", () => {

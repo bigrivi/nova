@@ -191,8 +191,8 @@ async function runTurn(options: TurnOptions): Promise<void> {
         endCompaction: () => useCompactionStore.getState().end(),
         setPending: (messageId, pending) =>
             getChatState().setPending(messageId, pending),
-        insertWakeMessage: (text, wakeFor) =>
-            getChatState().insertWakeMessage(text, wakeFor),
+        insertWakeMessage: (text, wakeFor, variant) =>
+            getChatState().insertWakeMessage(text, wakeFor, variant),
         startTextPart: (messageId) => getChatState().startTextPart(messageId),
         appendTextDelta: (messageId, delta) =>
             getChatState().appendTextDelta(messageId, delta),

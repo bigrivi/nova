@@ -28,7 +28,7 @@ export type StreamEffects = {
     endCompaction(): void;
 
     setPending(messageId: string, pending: boolean): void;
-    insertWakeMessage(text: string, wakeFor: string): void;
+    insertWakeMessage(text: string, wakeFor: string, variant?: string): void;
     startTextPart(messageId: string): void;
     appendTextDelta(messageId: string, delta: string): void;
     startReasoningPart(messageId: string): void;
@@ -178,8 +178,9 @@ export function applyStreamEvent(
             const data = event.data ?? {};
             const body = text(data, "text");
             const wakeFor = text(data, "messageId");
+            const variant = text(data, "variant");
             if (body && wakeFor) {
-                ctx.insertWakeMessage(body, wakeFor);
+                ctx.insertWakeMessage(body, wakeFor, variant || undefined);
             }
             return;
         }

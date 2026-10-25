@@ -154,6 +154,11 @@ describe("chat-store wake messages", () => {
         expect(messages()).toHaveLength(1);
     });
 
+    test("stores the server variant on a wake message", () => {
+        useChatStore.getState().insertWakeMessage("done", "job1", "subagent");
+        expect(messages()[0]?.variant).toBe("subagent");
+    });
+
     test("inserts above a streaming assistant message", () => {
         useChatStore.getState().startAssistantMessage();
         useChatStore.getState().insertWakeMessage("done", "job1");

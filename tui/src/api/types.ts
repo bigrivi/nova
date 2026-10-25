@@ -38,6 +38,8 @@ export type NovaMessageRecord = {
     reasoning_elapsed_ms?: number | null;
     group_id?: string | null;
     error?: string | null;
+    /** Server-set marker for messages the user did not type (e.g. subagent). */
+    variant?: string | null;
 };
 
 export type NovaModelRecord = {

@@ -35,6 +35,7 @@ export function recordToMessage(record: NovaMessageRecord): TuiMessage {
             role: "user",
             parts: [{ type: "text", text: record.content }],
             status: "done",
+            ...(record.variant ? { variant: record.variant } : {}),
         };
     }
     const parts: MessagePart[] = [];

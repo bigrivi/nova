@@ -30,6 +30,8 @@ export type TuiMessage = {
     error?: string;
     /** Backend message id of a server-injected wake turn, for replay dedup. */
     wakeFor?: string;
+    /** Server-set marker for messages the user did not type (e.g. subagent). */
+    variant?: string;
 };
 
 /** Model selection for this conversation (P3: taken over by the model selection screen) */
@@ -49,7 +51,7 @@ type ChatState = {
     setSessionId: (sessionId: string) => void;
     setPending: (messageId: string, pending: boolean) => void;
     addUserMessage: (text: string) => void;
-    insertWakeMessage: (text: string, wakeFor: string) => void;
+    insertWakeMessage: (text: string, wakeFor: string, variant?: string) => void;
     startAssistantMessage: () => string;
     startTextPart: (messageId: string) => void;
     appendTextDelta: (messageId: string, delta: string) => void;
@@ -197,7 +199,7 @@ export const useChatStore = create<ChatState>((set) => ({
             ],
         })),
 
-    insertWakeMessage: (text, wakeFor) =>
+    insertWakeMessage: (text, wakeFor, variant) =>
         set((state) => {
             if (state.messages.some((msg) => msg.wakeFor === wakeFor)) {
                 return state;
@@ -208,6 +210,7 @@ export const useChatStore = create<ChatState>((set) => ({
                 parts: [{ type: "text", text }],
                 status: "done",
                 wakeFor,
+                ...(variant ? { variant } : {}),
             };
             const last = state.messages[state.messages.length - 1];
             // The resume stream seeds its assistant placeholder first; insert the
