@@ -1,9 +1,9 @@
 /** Welcome banner — mirrors nova/cli/chat_app.py::_print_banner */
 import { COMMANDS } from "../commands.ts";
-import { useEffect, useState } from "react";
 import { useTheme } from "../context/theme.tsx";
 import { shortenPath } from "../lib/status-format.ts";
-import { loadCatalog, modelLabel, providerLabel } from "../lib/catalog.ts";
+import { modelLabel, providerLabel } from "../lib/catalog.ts";
+import { useCatalog } from "../context/catalog.tsx";
 import { useChatStore } from "../stores/chat-store.ts";
 import { WORKSPACE_DIR } from "../workspace.ts";
 
@@ -18,18 +18,7 @@ export function Banner() {
     const theme = useTheme();
     const provider = useChatStore((s) => s.provider);
     const model = useChatStore((s) => s.model);
-    const [catalog, setCatalog] = useState<Awaited<ReturnType<typeof loadCatalog>> | null>(null);
-    useEffect(() => {
-        let cancelled = false;
-        void loadCatalog()
-            .then((next) => {
-                if (!cancelled) setCatalog(next);
-            })
-            .catch(() => {});
-        return () => {
-            cancelled = true;
-        };
-    }, []);
+    const catalog = useCatalog();
     const modelName = modelLabel(catalog, provider, model);
     const providerName = providerLabel(catalog, provider);
     const home = process.env.HOME || "";

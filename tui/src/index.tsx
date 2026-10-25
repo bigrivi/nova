@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { startBackend, stopBackend } from "./backend.ts";
 import { App } from "./components/App.tsx";
 import { ThemeProvider } from "./context/theme.tsx";
+import { CatalogProvider } from "./context/catalog.tsx";
 import { registerExtraParsers } from "./tree-sitter.ts";
 
 if (!process.env.OTUI_ASSET_ROOT) {
@@ -46,7 +47,7 @@ async function main(): Promise<void> {
         const ok = renderer!.copyToClipboardOSC52(text);
         if (ok) useToastStore.getState().show("Copied to clipboard");
     });
-    createRoot(renderer).render(<ThemeProvider><App onExit={() => void exitApp()} /></ThemeProvider>);
+    createRoot(renderer).render(<ThemeProvider><CatalogProvider><App onExit={() => void exitApp()} /></CatalogProvider></ThemeProvider>);
     renderer.start();
 
     const shutdown = () => void exitApp();

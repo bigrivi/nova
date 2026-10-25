@@ -11,11 +11,10 @@ import { useTerminalDimensions } from "@opentui/react";
 import { getSessionContext } from "../api/nova-api.ts";
 import { useTheme } from "../context/theme.tsx";
 import {
-    loadCatalog,
     modelLabel,
     providerLabel,
-    type Catalog,
 } from "../lib/catalog.ts";
+import { useCatalog } from "../context/catalog.tsx";
 import { readGitBranch } from "../lib/git-branch.ts";
 import { displayWidth } from "../lib/display-width.ts";
 import { deriveAgentStatus, lastAssistantStatus } from "../lib/status.ts";
@@ -57,7 +56,7 @@ export function StatusBar() {
     const limit = useCtxStore((state) => state.limit);
     const percent = useCtxStore((state) => state.percent);
 
-    const [catalog, setCatalog] = useState<Catalog | null>(null);
+    const catalog = useCatalog();
     const [branch, setBranch] = useState<string | null>(null);
 
     // Live turns are driven by SSE data-nova-context; only refresh from /context
@@ -85,18 +84,6 @@ export function StatusBar() {
 
     useEffect(() => {
         setBranch(readGitBranch(WORKSPACE_DIR));
-    }, []);
-
-    useEffect(() => {
-        let cancelled = false;
-        void loadCatalog()
-            .then((next) => {
-                if (!cancelled) setCatalog(next);
-            })
-            .catch(() => {});
-        return () => {
-            cancelled = true;
-        };
     }, []);
 
     const status = deriveAgentStatus({
