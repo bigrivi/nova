@@ -1,41 +1,39 @@
-/** Status dot: idle ring, animated spinner while working, coloured dot when
- *  waiting on the user or after a failure. */
+/** Status dot: one glyph in every state, so the label never shifts. Running
+ *  pulses the accent colour instead of swapping characters. */
+import { RGBA } from "@opentui/core";
 import { useEffect, useState } from "react";
 import { useTheme } from "../../context/theme.tsx";
 import type { AgentStatus } from "../../lib/status.ts";
 
-// Half-filled circles sit on the text baseline; braille spinners render
-// their dots at the top of the cell and look raised next to a label.
-const FRAMES = ["◐", "◓", "◑", "◒"];
-const TICK_MS = 80;
+const PULSE_MS = 500;
+const DIM_ALPHA = 0.35;
 
 export function StatusGlyph({ status }: { status: AgentStatus }) {
     const theme = useTheme();
-    const [frame, setFrame] = useState(0);
-    status = "running"
+    const [pulse, setPulse] = useState(false);
 
     useEffect(() => {
         if (status !== "running") {
-            setFrame(0);
+            setPulse(false);
             return;
         }
-        const timer = setInterval(
-            () => setFrame((value) => (value + 1) % FRAMES.length),
-            TICK_MS,
-        );
+        const timer = setInterval(() => setPulse((value) => !value), PULSE_MS);
         return () => clearInterval(timer);
     }, [status]);
 
-    if (status === "running") {
-        return <text fg={theme.accent}>{FRAMES[frame]}</text>;
-    }
+    const accent = RGBA.fromHex(theme.accent);
+    const runningFg = pulse
+        ? accent
+        : RGBA.fromValues(accent.r, accent.g, accent.b, DIM_ALPHA);
 
-    const content =  "●";
     const color =
-        status === "waiting"
-            ? theme.running
-            : status === "error"
-              ? theme.error
-              : theme.muted;
-    return <text fg={color}>{content}</text>;
+        status === "running"
+            ? runningFg
+            : status === "waiting"
+              ? theme.running
+              : status === "error"
+                ? theme.error
+                : theme.muted;
+
+    return <text fg={color}>●</text>;
 }
