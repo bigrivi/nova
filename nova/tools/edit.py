@@ -11,7 +11,7 @@ from nova.tools.workspace_context import resolve_path
 
 @tool(
     name="edit",
-    description="Precisely edit specific parts of a file by exact string matching. Use for targeted modifications without overwriting the entire file.",
+    description="Edit an existing file by exact string match. Default for any change, including whole-file rewrites. Use replaceAll for repeated matches.",
     parameters={
         "type": "object",
         "properties": {

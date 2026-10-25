@@ -97,7 +97,7 @@ class PromptBuilder:
 - If you are unsure whether a skill is already installed locally, call `list_skills` before `install_skill`.
 - If the skill is already installed and the user did not ask to update or replace it, prefer `load_skill` instead of reinstalling.
 - When calling `shell` or `code_run`, always include a `description` that briefly explains what the command or code does in active voice.
-- For file work, use the dedicated tools: `write` to create, `edit` to modify, `read` to read, `grep`/`glob` to search. Do not emulate them with `shell` redirection, heredocs, or `sed`/`awk` in-place edits.
+- For file work, `edit` changes existing files (including rewrites); `write` only creates new ones. `read` reads, `grep`/`glob` search. Do not emulate them with `shell` redirection, heredocs, or `sed`/`awk` in-place edits.
 - Prefer purpose-built tools over shell pipelines: use `web_fetch` instead of curl, `jq` instead of piping into an interpreter. Inline scripts that execute fetched bytes require user approval.
 
 # Memory

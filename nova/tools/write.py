@@ -50,7 +50,7 @@ def truncate_diff(diff_lines: list[str], limit: int = 80) -> tuple[list[str], in
 
 @tool(
     name="write",
-    description="Create or overwrite a file. Use for creating new files or replacing entire file content. WARNING: This will overwrite existing files without confirmation.",
+    description="Create a new file only. Use edit to modify an existing file.",
     parameters={
         "type": "object",
         "properties": {
