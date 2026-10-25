@@ -49,7 +49,7 @@ export function Banner() {
             </box>
             <box flexDirection="row">
                 <box width={14} flexShrink={0}>
-                    <text fg={theme.muted} content="工作空间目录" />
+                    <text fg={theme.muted} content="Workspace" />
                 </box>
                 <text fg={theme.foreground} content={cwd} />
             </box>
