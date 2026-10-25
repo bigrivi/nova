@@ -27,7 +27,7 @@ export function StatusGlyph({ status }: { status: AgentStatus }) {
         return <text fg={theme.accent}>{FRAMES[frame]}</text>;
     }
 
-    const content = status === "idle" ? "○" : "●";
+    const content =  "●";
     const color =
         status === "waiting"
             ? theme.running
