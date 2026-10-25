@@ -47,6 +47,40 @@ def _build_frontend(project_root: Path) -> Path:
     return dist_dir
 
 
+def _build_tui(project_root: Path, tui_dir: Path) -> Path:
+    """Return the built TUI bundle, building it with bun when absent."""
+    bundle = tui_dir / "dist" / "index.js"
+    if bundle.is_file():
+        return bundle
+
+    # Check a pre-built bundle downloaded by the install script.
+    from pathlib import Path as _Path
+
+    nova_home = _Path(os.environ.get("NOVA_HOME", str(Path.home() / ".nova")))
+    downloaded = nova_home / "tui" / "dist" / "index.js"
+    if downloaded.is_file():
+        return downloaded
+
+    bun = shutil.which("bun")
+    if bun is None:
+        raise SystemExit(
+            "Nova TUI requires Bun. Install it from https://bun.sh"
+        )
+    if not (tui_dir / "package.json").is_file():
+        raise SystemExit(f"Nova TUI sources not found: {tui_dir}")
+
+    if not (tui_dir / "node_modules").is_dir():
+        print("Nova TUI: installing dependencies...", file=sys.stderr)
+        subprocess.run([bun, "install"], cwd=str(tui_dir), check=True)
+    print("Nova TUI: building bundle...", file=sys.stderr)
+    subprocess.run(
+        [bun, "run", "build"], cwd=str(tui_dir), check=True
+    )
+    if not bundle.is_file():
+        raise SystemExit("Nova TUI: build produced no dist/index.js")
+    return bundle
+
+
 def _open_browser_when_ready(url: str) -> None:
     """Open the default browser once the server answers, off the main thread."""
 
@@ -100,15 +134,8 @@ def _run_tui() -> None:
     environment.setdefault("NOVA_WORKSPACE_DIR", str(Path.cwd().resolve()))
 
     os.chdir(tui_dir)
-    bundle = tui_dir / "dist" / "index.js"
-    if bundle.is_file():
-        os.execvpe(bun, [bun, str(bundle)], environment)
-    print(
-        "Nova TUI bundle not found at tui/dist/index.js; "
-        "run `cd tui && bun install && bun run build`. Falling back to source.",
-        file=sys.stderr,
-    )
-    os.execvpe(bun, [bun, "run", "src/index.tsx"], environment)
+    bundle = _build_tui(project_root, tui_dir)
+    os.execvpe(bun, [bun, str(bundle)], environment)
 
 
 def main() -> None:

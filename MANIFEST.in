@@ -1,0 +1,12 @@
+recursive-include tui/src *.ts *.tsx
+include tui/package.json
+include tui/tsconfig.json
+include tui/bunfig.toml
+include tui/bun.lock
+include install
+global-exclude node_modules
+global-exclude dist
+global-exclude *.pyc
+global-exclude __pycache__
+EOF
+echo done

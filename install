@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP=nova
+REPO=bigrivi/nova
+MUTED='\033[0;2m'
+RED='\033[0;31m'
+ORANGE='\033[38;5;214m'
+NC='\033[0m'
+
+usage() {
+    cat <<EOF
+Nova Installer
+
+Usage: install.sh [options]
+
+Options:
+    -h, --help              Display this help message
+    -v, --version <version> Install a specific version (e.g. 1.0.1)
+        --no-modify-path    Don't modify shell config files (.zshrc, .bashrc, etc.)
+
+Examples:
+    curl -fsSL https://raw.githubusercontent.com/bigrivi/nova/main/install | bash
+    curl -fsSL https://raw.githubusercontent.com/bigrivi/nova/main/install | bash -s -- --version 1.0.1
+EOF
+}
+
+requested_version=${VERSION:-}
+no_modify_path=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        -v|--version)
+            if [[ -n "${2:-}" ]]; then
+                requested_version="$2"; shift 2
+            else
+                echo -e "${RED}Error: --version requires a version argument${NC}"; exit 1
+            fi
+            ;;
+        --no-modify-path) no_modify_path=true; shift ;;
+        *) echo -e "${ORANGE}Warning: Unknown option '$1'${NC}" >&2; shift ;;
+    esac
+done
+
+# ── Python 3.12+ ──────────────────────────────────────────────────
+if ! command -v python3 >/dev/null 2>&1; then
+    echo -e "${RED}Python 3.12+ is required.${NC}"
+    echo "  macOS:  brew install python@3.12"
+    echo "  Ubuntu: sudo apt-get install python3.12 python3.12-venv"
+    echo "  Windows: https://www.python.org/downloads/"
+    exit 1
+fi
+py_version=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+py_major=${py_version%%.*}; py_minor=${py_version##*.}
+if [ "$py_major" -lt 3 ] || { [ "$py_major" -eq 3 ] && [ "$py_minor" -lt 12 ]; }; then
+    echo -e "${RED}Python 3.12+ required, found $py_version${NC}"; exit 1
+fi
+
+# ── Bun ───────────────────────────────────────────────────────────
+if ! command -v bun >/dev/null 2>&1; then
+    echo -e "${RED}Bun is required for the TUI. Install it:${NC}"
+    echo "  curl -fsSL https://bun.sh/install | bash"
+    echo "  Then re-run this script."
+    exit 1
+fi
+
+# ── Install Nova (Python backend) ─────────────────────────────────
+echo -e "${MUTED}Installing Nova backend...${NC}"
+if [ -n "$requested_version" ]; then
+    python3 -m pip install --user "nova==$requested_version"
+else
+    python3 -m pip install --user nova
+fi
+
+# ── PATH ──────────────────────────────────────────────────────────
+SCRIPTS_DIR=$(python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))")
+if [[ ":$PATH:" != *":$SCRIPTS_DIR:"* ]]; then
+    if [ "$no_modify_path" = false ]; then
+        case "$SHELL" in
+            */zsh) shell_rc="$HOME/.zshrc" ;;
+            */bash) shell_rc="$HOME/.bashrc" ;;
+            *) shell_rc="$HOME/.profile" ;;
+        esac
+        echo "export PATH=\"$SCRIPTS_DIR:\$PATH\"" >> "$shell_rc"
+        export PATH="$SCRIPTS_DIR:$PATH"
+        echo -e "${MUTED}Added $SCRIPTS_DIR to PATH in $shell_rc${NC}"
+    fi
+fi
+
+if ! command -v nova >/dev/null 2>&1; then
+    echo -e "${RED}nova launcher not found on PATH after install${NC}"
+    echo "Try: export PATH=\"$SCRIPTS_DIR:\$PATH\""
+    exit 1
+fi
+
+# ── Version tag alignment ─────────────────────────────────────────
+INSTALLED_VERSION=$(python3 -c "import nova; print(nova.__version__)")
+echo -e "${MUTED}Installed Nova $INSTALLED_VERSION${NC}"
+
+# ── Download pre-built TUI bundle (optional, falls back to auto-build) ──
+NOVA_HOME="${NOVA_HOME:-$HOME/.nova}"
+TUI_DIR="$NOVA_HOME/tui"
+mkdir -p "$TUI_DIR"
+
+raw_os=$(uname -s)
+os=$(echo "$raw_os" | tr '[:upper:]' '[:lower:]')
+case "$raw_os" in
+    Darwin*) os="darwin" ;;
+    Linux*) os="linux" ;;
+    MINGW*|MSYS*|CYGWIN*) os="windows" ;;
+esac
+
+arch=$(uname -m)
+case "$arch" in
+    aarch64) arch="arm64" ;;
+    x86_64) arch="x64" ;;
+esac
+# Rosetta on macOS
+if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
+    rosetta=$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)
+    [ "$rosetta" = "1" ] && arch="arm64"
+fi
+
+target="$os-$arch"
+bundle_name="nova-tui-$target-$INSTALLED_VERSION.tar.gz"
+bundle_url="https://github.com/$REPO/releases/download/v$INSTALLED_VERSION/$bundle_name"
+
+echo -e "${MUTED}Downloading TUI bundle ($target, v$INSTALLED_VERSION)...${NC}"
+if curl -fsSL "$bundle_url" -o "$TUI_DIR/$bundle_name" 2>/dev/null; then
+    echo -e "${MUTED}Extracting...${NC}"
+    tar -xzf "$TUI_DIR/$bundle_name" -C "$TUI_DIR"
+    rm -f "$TUI_DIR/$bundle_name"
+    # Verify version alignment
+    if [ -f "$TUI_DIR/dist/index.js" ]; then
+        echo -e "${MUTED}TUI bundle installed.${NC}"
+    else
+        echo -e "${ORANGE}Bundle extracted but dist/index.js not found. Will build on first run.${NC}"
+    fi
+else
+    echo -e "${ORANGE}No pre-built TUI bundle for $target (v$INSTALLED_VERSION). Will build on first run.${NC}"
+fi
+
+echo ""
+echo -e "${NC}Nova installed. Run ${ORANGE}nova tui${NC} to start."
+EOF
+echo "written"
