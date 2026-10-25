@@ -4,12 +4,15 @@ import { useEffect, useState } from "react";
 import { useTheme } from "../../context/theme.tsx";
 import type { AgentStatus } from "../../lib/status.ts";
 
-const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+// Half-filled circles sit on the text baseline; braille spinners render
+// their dots at the top of the cell and look raised next to a label.
+const FRAMES = ["◐", "◓", "◑", "◒"];
 const TICK_MS = 80;
 
 export function StatusGlyph({ status }: { status: AgentStatus }) {
     const theme = useTheme();
     const [frame, setFrame] = useState(0);
+    status = "running"
 
     useEffect(() => {
         if (status !== "running") {
