@@ -4,10 +4,10 @@ import type { NovaSessionSummary } from "../../api/types.ts";
 import { useChatStore } from "../../stores/chat-store.ts";
 import { useScreenStore } from "../../stores/screen-store.ts";
 import { recordsToMessages } from "../../utils/history.ts";
-import { SearchableList } from "./SearchableList.tsx";
-import { ScreenLoading } from "./ScreenLoading.tsx";
-import { useListScreen } from "./use-list-screen.ts";
 import { WORKSPACE_DIR } from "../../workspace.ts";
+import { ScreenLoading } from "./ScreenLoading.tsx";
+import { SearchableList } from "./SearchableList.tsx";
+import { useListScreen } from "./use-list-screen.ts";
 
 function formatTime(ms: number): string {
     const diff = Date.now() - ms;
@@ -23,9 +23,11 @@ function formatTime(ms: number): string {
 
 export function SessionsScreen() {
     const workspaceDir = WORKSPACE_DIR;
+    const currentSessionId = useChatStore((state) => state.sessionId);
     const folder = workspaceDir.split("/").filter(Boolean).at(-1) ?? workspaceDir;
-    const { items: sessions, ready, error } = useListScreen(() =>
+    const { items: sessions, ready, error, initialIndex } = useListScreen(() =>
         listSessions({ workspaceDir }),
+        (items) => items.findIndex((session) => session.id === currentSessionId),
     );
 
     async function handleSelect(session: NovaSessionSummary): Promise<void> {
@@ -60,6 +62,7 @@ export function SessionsScreen() {
             renderLabel={(session) =>
                 `${session.title ?? "(untitled)"}  —  ${formatTime(session.updated_at)}`
             }
+            initialIndex={initialIndex}
             emptyText={error || "no sessions in this folder yet"}
         />
     );
