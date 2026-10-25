@@ -5,7 +5,7 @@
  * Optional pieces drop in a fixed order as the terminal narrows; the status dot
  * and model name are always kept.
  */
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { homedir } from "node:os";
 import { useTerminalDimensions } from "@opentui/react";
 import { getSessionContext } from "../api/nova-api.ts";
@@ -15,7 +15,7 @@ import {
     providerLabel,
 } from "../lib/catalog.ts";
 import { useCatalog } from "../context/catalog.tsx";
-import { readGitBranch } from "../lib/git-branch.ts";
+import { useApp } from "../context/app.tsx";
 import { displayWidth } from "../lib/display-width.ts";
 import { deriveAgentStatus, lastAssistantStatus } from "../lib/status.ts";
 import {
@@ -57,7 +57,8 @@ export function StatusBar() {
     const percent = useCtxStore((state) => state.percent);
 
     const catalog = useCatalog();
-    const [branch, setBranch] = useState<string | null>(null);
+    const app = useApp();
+    const branch = app.branch;
 
     // Live turns are driven by SSE data-nova-context; only refresh from /context
     // on history load / session switch, so the fetch never fights the live value.
@@ -81,10 +82,6 @@ export function StatusBar() {
             cancelled = true;
         };
     }, [sessionId, isStreaming]);
-
-    useEffect(() => {
-        setBranch(readGitBranch(WORKSPACE_DIR));
-    }, []);
 
     const status = deriveAgentStatus({
         isStreaming,
