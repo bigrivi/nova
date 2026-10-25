@@ -1,13 +1,14 @@
 /** Root component: layout orchestration, modal layer, global keybindings, and command dispatch */
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useEffect } from "react";
-import { getAgent } from "../api/nova-api.ts";
+import { getAgent, listModels } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useExpandStore } from "../stores/expand-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
+import { useToastStore } from "../stores/toast-store.ts";
 import { useTheme } from "../context/theme.tsx";
 import { submitAskAnswers, submitAskCancel } from "../stream/chat-stream.ts";
 import { startSessionEvents } from "../stream/session-events.ts";
@@ -113,9 +114,29 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             case "delete-agent":
                 screens.open({ kind: "delete-agent" });
                 return;
-            case "variants":
-                screens.open({ kind: "variants" });
+            case "variants": {
+                const current = useChatStore.getState();
+                void listModels()
+                    .then((models) => {
+                        const match = models.find(
+                            (m) =>
+                                m.provider === current.provider &&
+                                m.model === current.model,
+                        );
+                        if (!match || match.efforts.length === 0) {
+                            useToastStore
+                                .getState()
+                                .show(
+                                    "this model has no reasoning effort levels configured",
+                                    3000,
+                                );
+                            return;
+                        }
+                        screens.open({ kind: "variants" });
+                    })
+                    .catch(() => screens.open({ kind: "variants" }));
                 return;
+            }
             case "themes":
                 screens.open({ kind: "theme" });
                 return;
