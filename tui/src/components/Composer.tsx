@@ -169,7 +169,7 @@ export function Composer({ onCommand }: { onCommand: ComposerCommandHandler }) {
                     ref={textareaRef}
                     flexGrow={1}
                     focused
-                    placeholder="Message Nova (Enter to send, Shift+Enter for newline)"
+                    placeholder="Message Nova…"
                     placeholderColor={theme.muted}
                     textColor={theme.foreground}
                     focusedTextColor={theme.foreground}

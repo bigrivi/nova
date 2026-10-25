@@ -1,33 +1,64 @@
-/** Bottom status bar: model info + running status */
+/** Bottom status bar: two rows, running state on top and environment/help below.
+ *
+ * Row 1 (dynamic): status dot, model, provider — context usage on the right.
+ * Row 2 (static): shortened workspace path, git branch — shortcuts on the right.
+ * Optional pieces drop in a fixed order as the terminal narrows; the status dot
+ * and model name are always kept.
+ */
 import { useEffect, useState } from "react";
+import { homedir } from "node:os";
+import { useTerminalDimensions } from "@opentui/react";
 import { getSessionContext } from "../api/nova-api.ts";
+import { useTheme } from "../context/theme.tsx";
 import {
     loadCatalog,
     modelLabel,
     providerLabel,
     type Catalog,
 } from "../lib/catalog.ts";
-import { useTheme } from "../context/theme.tsx";
+import { readGitBranch } from "../lib/git-branch.ts";
+import { displayWidth } from "../lib/display-width.ts";
+import { deriveAgentStatus, lastAssistantStatus } from "../lib/status.ts";
+import {
+    SHORTCUTS_COMPACT,
+    SHORTCUTS_FULL,
+    shortenPath,
+    shortcutText,
+    statusDensity,
+} from "../lib/status-format.ts";
+import { useApprovalStore } from "../stores/approval-store.ts";
+import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { WORKSPACE_DIR } from "../workspace.ts";
+import { ContextMeter } from "./status/ContextMeter.tsx";
+import { ShortcutHints } from "./status/ShortcutHints.tsx";
+import { StatusGlyph } from "./status/StatusGlyph.tsx";
+import { StatusLine } from "./status/StatusLine.tsx";
+
+const PADDING_X = 2;
+
 export function StatusBar() {
     const theme = useTheme();
+    const dimensions = useTerminalDimensions();
+    const contentWidth = Math.max(1, dimensions.width - PADDING_X * 2);
+
     const isStreaming = useChatStore((state) => state.isStreaming);
     const provider = useChatStore((state) => state.provider);
     const model = useChatStore((state) => state.model);
     const agentName = useChatStore((state) => state.agentName);
-    const [catalog, setCatalog] = useState<Catalog | null>(null);
     const sessionId = useChatStore((state) => state.sessionId);
+    const assistantStatus = useChatStore((state) =>
+        lastAssistantStatus(state.messages),
+    );
+    const hasApproval = useApprovalStore((state) => state.pending !== null);
+    const hasQuestion = useAskUserStore((state) => state.active !== null);
     const used = useCtxStore((state) => state.used);
     const limit = useCtxStore((state) => state.limit);
     const percent = useCtxStore((state) => state.percent);
-    const percentColor =
-        percent >= 80
-            ? theme.error
-            : percent >= 60
-              ? theme.running
-              : theme.muted;
+
+    const [catalog, setCatalog] = useState<Catalog | null>(null);
+    const [branch, setBranch] = useState<string | null>(null);
 
     // Live turns are driven by SSE data-nova-context; only refresh from /context
     // on history load / session switch, so the fetch never fights the live value.
@@ -40,16 +71,21 @@ export function StatusBar() {
         let cancelled = false;
         void getSessionContext(sessionId)
             .then((ctx) => {
-                if (!cancelled)
+                if (!cancelled) {
                     useCtxStore
                         .getState()
                         .setCtx(ctx.used, ctx.limit, ctx.percent);
+                }
             })
             .catch(() => {});
         return () => {
             cancelled = true;
         };
     }, [sessionId, isStreaming]);
+
+    useEffect(() => {
+        setBranch(readGitBranch(WORKSPACE_DIR));
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
@@ -63,60 +99,103 @@ export function StatusBar() {
         };
     }, []);
 
+    const status = deriveAgentStatus({
+        isStreaming,
+        hasApproval,
+        hasQuestion,
+        lastAssistantStatus: assistantStatus,
+    });
+    const density = statusDensity(dimensions.width);
+    const shortcuts = density.compactHints
+        ? SHORTCUTS_COMPACT
+        : SHORTCUTS_FULL;
+    const branchText = !density.hideBranch && branch ? `⎇ ${branch}` : "";
+    const reserved =
+        displayWidth(shortcutText(shortcuts)) +
+        2 +
+        (branchText ? displayWidth(branchText) + 1 : 0);
+    const pathWidth = Math.max(8, contentWidth - reserved);
+    const path = shortenPath(WORKSPACE_DIR, homedir(), pathWidth);
     const modelName = modelLabel(catalog, provider, model);
     const providerName = providerLabel(catalog, provider);
-
-    const cwd = WORKSPACE_DIR;
 
     return (
         <box
             flexDirection="column"
-            paddingX={2}
+            paddingX={PADDING_X}
             paddingY={0}
             marginTop={0}
             flexShrink={0}
+            gap={0}
         >
-            <box
-                flexDirection="row"
-                justifyContent="space-between"
-                flexShrink={0}
-            >
-                <box flexDirection="row" flexShrink={0} gap={1} alignItems="center">
-                    <text
-                        fg={isStreaming ? theme.running : theme.muted}
-                        content={isStreaming ? "●" : "○"}
+            <StatusLine
+                left={
+                    <>
+                        <StatusGlyph status={status} />
+                        <text
+                            fg={theme.accent}
+                            content={agentName || "main"}
+                            wrapMode="none"
+                            flexShrink={0}
+                        />
+                        <text fg={theme.subtle} content="·" flexShrink={0} />
+                        <text
+                            fg={theme.muted}
+                            content={modelName || model || "no model"}
+                            wrapMode="none"
+                            truncate
+                            flexShrink={1}
+                            minWidth={0}
+                        />
+                        {density.hideProvider || !providerName ? null : (
+                            <>
+                                <text
+                                    fg={theme.subtle}
+                                    content="·"
+                                    flexShrink={0}
+                                />
+                                <text
+                                    fg={theme.subtle}
+                                    content={providerName}
+                                    wrapMode="none"
+                                    flexShrink={0}
+                                />
+                            </>
+                        )}
+                    </>
+                }
+                right={
+                    <ContextMeter
+                        used={used}
+                        limit={limit}
+                        percent={percent}
+                        density={density}
                     />
-                    <text fg={theme.accent} content={agentName} />
-                    <text fg={theme.subtle} content="·" />
-                    <text fg={theme.foreground} content={modelName || model} />
-                    <text fg={theme.muted} content={`(${providerName || provider})`} />
-                </box>
-                <box flexDirection="row" flexShrink={0} gap={1}>
-                    <text fg={theme.subtle} content="Ctrl+C exit" />
-                    <text fg={theme.subtle} content="·" />
-                    <text fg={theme.subtle} content="/commands" />
-                </box>
-            </box>
-            <box flexDirection="row" flexShrink={0} gap={1}>
-                <text fg={theme.muted} content="ctx" />
-                <text fg={theme.running} content={formatK(used)} />
-                <text fg={theme.muted} content="/" />
-                <text fg={theme.muted} content={limit ? formatK(limit) : "—"} />
-                <text
-                    fg={percentColor}
-                    content={limit ? `(${percent}%)` : "(—%)"}
-                />
-                <text fg={theme.subtle} content="·" />
-                <text fg={theme.subtle} content={cwd} />
-            </box>
+                }
+            />
+            <StatusLine
+                left={
+                    <>
+                        <text
+                            fg={theme.subtle}
+                            content={path}
+                            wrapMode="none"
+                            truncate
+                            flexShrink={1}
+                            minWidth={0}
+                        />
+                        {branchText ? (
+                            <text
+                                fg={theme.muted}
+                                content={branchText}
+                                wrapMode="none"
+                                flexShrink={0}
+                            />
+                        ) : null}
+                    </>
+                }
+                right={<ShortcutHints shortcuts={shortcuts} />}
+            />
         </box>
     );
-}
-
-function formatK(n: number): string {
-    if (n >= 1000) {
-        const k = n / 1000;
-        return `${k.toFixed(1).replace(/\.0$/, "")}k`;
-    }
-    return String(n);
 }
