@@ -138,9 +138,9 @@ export function StatusBar() {
                             wrapMode="none"
                             flexShrink={0}
                         />
-                        <text fg={theme.subtle} content="·" flexShrink={0} />
+                        <text fg={theme.muted} content="·" flexShrink={0} />
                         <text
-                            fg={theme.muted}
+                            fg={theme.foreground}
                             content={modelName || model || "no model"}
                             wrapMode="none"
                             truncate
@@ -150,12 +150,12 @@ export function StatusBar() {
                         {density.hideProvider || !providerName ? null : (
                             <>
                                 <text
-                                    fg={theme.subtle}
+                                    fg={theme.muted}
                                     content="·"
                                     flexShrink={0}
                                 />
                                 <text
-                                    fg={theme.subtle}
+                                    fg={theme.muted}
                                     content={providerName}
                                     wrapMode="none"
                                     flexShrink={0}
