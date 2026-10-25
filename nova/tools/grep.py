@@ -6,6 +6,9 @@ from nova.tools.registry import tool
 from nova.tools.search_paths import _relative_to
 from nova.tools.workspace_context import get_active_workspace, resolve_path
 
+#: Cap on rendered output lines; the match count still reports the full total.
+MAX_RESULT_LINES = 100
+
 
 @tool(
     name="grep",
@@ -98,9 +101,15 @@ async def grep(
         # The count is hits, not output lines: with context on, one match prints
         # a whole block, and "Found 6 matches" for a single hit is the number the
         # agent will quote back.
+        shown = matches[:MAX_RESULT_LINES]
+        truncated = (
+            f"\n… output truncated; {len(matches) - len(shown)} more lines not shown."
+            if len(matches) > len(shown)
+            else ""
+        )
         return ToolResult(
             success=True,
-            content=f"Found {hits} matches:\n" + "\n".join(matches[:100]),
+            content=f"Found {hits} matches:\n" + "\n".join(shown) + truncated,
         )
     except re.error as e:
         return ToolResult(success=False, content=f"Invalid regex: {e}")
