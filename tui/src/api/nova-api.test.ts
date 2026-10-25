@@ -136,6 +136,7 @@ describe("nova-api", () => {
         await streamChat({
             message: "hi",
             agentKey: "plan",
+            reasoningEffort: "high",
             onEvent: (event) => received.push(event),
         });
 
@@ -148,6 +149,7 @@ describe("nova-api", () => {
             unknown
         >;
         expect(body.agent_key).toBe("plan");
+        expect(body.reasoning_effort).toBe("high");
         expect(body.message).toBe("hi");
     });
 });
