@@ -14,7 +14,6 @@ import {
     modelLabel,
     providerLabel,
 } from "../lib/catalog.ts";
-import { useCatalog } from "../context/catalog.tsx";
 import { useApp } from "../context/app.tsx";
 import { displayWidth } from "../lib/display-width.ts";
 import { deriveAgentStatus, lastAssistantStatus } from "../lib/status.ts";
@@ -56,7 +55,7 @@ export function StatusBar() {
     const limit = useCtxStore((state) => state.limit);
     const percent = useCtxStore((state) => state.percent);
 
-    const catalog = useCatalog();
+    const catalog = useApp().catalog;
     const app = useApp();
     const branch = app.branch;
 
