@@ -1,6 +1,6 @@
-/** Python backend process lifecycle management: spawn `python -m nova serve`, health check, exit cleanup */
+/** Python backend process lifecycle management: spawn or reuse `python -m nova serve`, health check */
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { WORKSPACE_DIR } from "./workspace.ts";
@@ -68,19 +68,6 @@ async function waitForHealthy(baseUrl: string): Promise<void> {
     );
 }
 
-/** Backend log file: keep uvicorn access logs from polluting the TUI terminal rendering */
-function backendLogPath(): string {
-    const home = process.env.NOVA_HOME || join(homedir(), ".nova");
-    const dir = join(home, "logs");
-    try {
-        mkdirSync(dir, { recursive: true });
-    } catch {
-        // Fall back to the current directory if the log directory is unavailable
-        return "nova-tui-backend.log";
-    }
-    return join(dir, "nova-tui-backend.log");
-}
-
 /** Start the Python backend and wait for it to be healthy. Reuse an already-running instance if the health check passes. */
 export async function startBackend(): Promise<void> {
     const port = backendPort();
@@ -90,7 +77,6 @@ export async function startBackend(): Promise<void> {
     try {
         const res = await fetch(`${baseUrl}/health`);
         if (res.ok) {
-            console.log(`[tui] Reusing existing Nova backend at ${baseUrl}`);
             return;
         }
     } catch {
@@ -98,19 +84,18 @@ export async function startBackend(): Promise<void> {
     }
 
     const python = pickPython();
-    const logPath = backendLogPath();
-    console.log(
-        `[tui] Starting Nova backend (${python} -m nova serve) on port ${port} (logs: ${logPath})`,
-    );
-    const logFd = openSync(logPath, "a");
+    // Only this one line goes to the terminal; everything else goes through
+    // nova's own logging program into ~/.nova/logs/nova.log.
+    console.log(`Starting Nova backend on port ${port}...`);
     // Detached so the backend survives the TUI's exit: this is what lets a
     // second TUI terminal reuse it instead of spawning its own, and lets the
-    // user keep working after closing the client.
+    // user keep working after closing the client. stdout/stderr are discarded
+    // here; the backend writes its own logs to ~/.nova/logs/nova.log through
+    // nova's logging program.
     child = spawn(python, ["-m", "nova", "serve"], {
         cwd: PROJECT_ROOT,
         detached: true,
-        // Redirect stdout/stderr to the log file to keep the terminal clean
-        stdio: ["ignore", logFd, logFd],
+        stdio: "ignore",
         env: {
             ...process.env,
             NOVA_WORKSPACE_DIR:
@@ -119,21 +104,30 @@ export async function startBackend(): Promise<void> {
     });
     child.unref();
 
-    child.on("exit", (code) => {
-        if (child && !child.killed) {
-            console.log(
-                `[tui] Backend exited with code ${code} (logs: ${logPath})`,
-            );
-        }
+    child.on("exit", () => {
         child = null;
     });
-    child.on("error", (err) => {
-        console.error(`[tui] Failed to spawn backend: ${err.message}`);
+    child.on("error", () => {
+        child = null;
     });
 
     try {
         await waitForHealthy(baseUrl);
     } catch (err) {
+        // Race: another TUI terminal may have started the backend in the
+        // meantime. If it is healthy now, reuse it instead of failing.
+        try {
+            const res = await fetch(`${baseUrl}/health`);
+            if (res.ok) {
+                if (child && child.exitCode === null) {
+                    child.kill("SIGKILL");
+                }
+                child = null;
+                return;
+            }
+        } catch {
+            // fall through to the original error
+        }
         // Spawned but never became healthy: don't leave an orphan behind.
         if (child && child.exitCode === null) {
             child.kill("SIGKILL");
@@ -141,7 +135,6 @@ export async function startBackend(): Promise<void> {
         child = null;
         throw err;
     }
-    console.log(`[tui] Backend ready at ${baseUrl}`);
 }
 
 /** Stop the backend child process (SIGTERM → SIGKILL after timeout). */
