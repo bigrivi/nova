@@ -35,5 +35,5 @@ export function StatusGlyph({ status }: { status: AgentStatus }) {
                 ? theme.error
                 : theme.muted;
 
-    return <text fg={color}>●</text>;
+    return <text flexShrink={0} fg={color}>●</text>;
 }
