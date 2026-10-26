@@ -103,8 +103,12 @@ export async function startBackend(): Promise<void> {
         `[tui] Starting Nova backend (${python} -m nova serve) on port ${port} (logs: ${logPath})`,
     );
     const logFd = openSync(logPath, "a");
+    // Detached so the backend survives the TUI's exit: this is what lets a
+    // second TUI terminal reuse it instead of spawning its own, and lets the
+    // user keep working after closing the client.
     child = spawn(python, ["-m", "nova", "serve"], {
         cwd: PROJECT_ROOT,
+        detached: true,
         // Redirect stdout/stderr to the log file to keep the terminal clean
         stdio: ["ignore", logFd, logFd],
         env: {
@@ -113,6 +117,7 @@ export async function startBackend(): Promise<void> {
                 WORKSPACE_DIR,
         },
     });
+    child.unref();
 
     child.on("exit", (code) => {
         if (child && !child.killed) {
@@ -126,7 +131,16 @@ export async function startBackend(): Promise<void> {
         console.error(`[tui] Failed to spawn backend: ${err.message}`);
     });
 
-    await waitForHealthy(baseUrl);
+    try {
+        await waitForHealthy(baseUrl);
+    } catch (err) {
+        // Spawned but never became healthy: don't leave an orphan behind.
+        if (child && child.exitCode === null) {
+            child.kill("SIGKILL");
+        }
+        child = null;
+        throw err;
+    }
     console.log(`[tui] Backend ready at ${baseUrl}`);
 }
 

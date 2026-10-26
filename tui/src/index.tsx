@@ -1,9 +1,9 @@
-/** Nova TUI entry: start the backend → create the renderer → render App → exit and clean up */
+/** Nova TUI entry: start or reuse the backend → create the renderer → render App → exit (backend keeps running) */
 import { CliRenderEvents, createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { useToastStore } from "./stores/toast-store.ts";
 import { join } from "node:path";
-import { startBackend, stopBackend } from "./backend.ts";
+import { startBackend } from "./backend.ts";
 import { App } from "./components/App.tsx";
 import { AppProvider } from "./context/app.tsx";
 import { registerExtraParsers } from "./tree-sitter.ts";
@@ -26,7 +26,8 @@ async function exitApp(): Promise<void> {
     } catch {
         // ignore renderer shutdown errors
     }
-    await stopBackend();
+    // The backend is intentionally left running so a later `nova tui`
+    // (or another terminal) can reuse it instead of restarting it.
     process.exit(0);
 }
 
