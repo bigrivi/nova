@@ -34,6 +34,18 @@ export type TuiMessage = {
     variant?: string;
 };
 
+/** A transport retry the provider announced: it is still waiting, and this is why. */
+export type RetryState = {
+    /** 1-based: the attempt that just failed. */
+    attempt: number;
+    /** The budget that attempt is counted against. */
+    total: number;
+    /** How long the provider will wait before trying again. */
+    waitSeconds: number;
+    /** The upstream's own words, already unwrapped from its JSON envelope. */
+    reason: string;
+};
+
 /** Model selection for this conversation (P3: taken over by the model selection screen) */
 export const DEFAULT_PROVIDER = "";
 export const DEFAULT_MODEL = "";
@@ -48,8 +60,11 @@ type ChatState = {
     reasoningEffort: string;
     agentKey: string;
     agentName: string;
+    /** Set while the provider is waiting to re-send a request; null otherwise. */
+    retry: RetryState | null;
 
     setSessionId: (sessionId: string) => void;
+    setRetry: (retry: RetryState | null) => void;
     setPending: (messageId: string, pending: boolean) => void;
     addUserMessage: (text: string) => void;
     insertWakeMessage: (text: string, wakeFor: string, variant?: string) => void;
@@ -165,8 +180,14 @@ export const useChatStore = create<ChatState>((set) => ({
     reasoningEffort: "",
     agentKey: DEFAULT_AGENT_KEY,
     agentName: DEFAULT_AGENT_KEY,
+    retry: null,
 
     setSessionId: (sessionId) => set({ sessionId }),
+
+    // Returning the same state keeps the clearing call from re-rendering on
+    // every heartbeat-sized event.
+    setRetry: (retry) =>
+        set((state) => (state.retry === null && retry === null ? state : { retry })),
 
     setPending: (messageId, pending) =>
         set((state) => ({
@@ -417,6 +438,7 @@ export const useChatStore = create<ChatState>((set) => ({
     completeStream: () =>
         set((state) => ({
             isStreaming: false,
+            retry: null,
             messages: state.messages.map((msg) =>
                 msg.status === "streaming"
                     ? {
@@ -431,6 +453,7 @@ export const useChatStore = create<ChatState>((set) => ({
     failStream: (error) =>
         set((state) => ({
             isStreaming: false,
+            retry: null,
             messages: state.messages.map((msg) =>
                 msg.status === "streaming"
                     ? {
@@ -444,9 +467,9 @@ export const useChatStore = create<ChatState>((set) => ({
         })),
 
     loadHistory: (sessionId, messages) =>
-        set({ sessionId, messages, isStreaming: false }),
+        set({ sessionId, messages, isStreaming: false, retry: null }),
 
-    reset: () => set({ messages: [], sessionId: null, isStreaming: false }),
+    reset: () => set({ messages: [], sessionId: null, isStreaming: false, retry: null }),
 }));
 
 /** Read the latest state for stream logic (avoid closures capturing stale values) */

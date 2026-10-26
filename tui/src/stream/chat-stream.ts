@@ -189,6 +189,7 @@ async function runTurn(options: TurnOptions): Promise<void> {
         startCompaction: (messages, tokens) =>
             useCompactionStore.getState().start(messages, tokens),
         endCompaction: () => useCompactionStore.getState().end(),
+        setRetry: (retry) => getChatState().setRetry(retry),
         setPending: (messageId, pending) =>
             getChatState().setPending(messageId, pending),
         insertWakeMessage: (text, wakeFor, variant) =>

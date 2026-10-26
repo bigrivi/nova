@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { NovaStreamEvent } from "../api/types.ts";
 import type { ApprovalPending } from "../stores/approval-store.ts";
+import type { RetryState } from "../stores/chat-store.ts";
 import {
     applyStreamEvent,
     parseAskQuestions,
@@ -13,6 +14,7 @@ function makeEffects(overrides: Partial<StreamEffects> = {}) {
     const calls: string[] = [];
     let sessionId: string | null = "s1";
     let approval: ApprovalPending | null = null;
+    let retry: RetryState | null = null;
     const effects: StreamEffects = {
         runId: 7,
         getSessionId: () => sessionId,
@@ -34,6 +36,9 @@ function makeEffects(overrides: Partial<StreamEffects> = {}) {
         startCompaction: (messages, tokens) =>
             calls.push(`compaction-start:${messages}/${tokens}`),
         endCompaction: () => calls.push("compaction-end"),
+        setRetry: (next) => {
+            retry = next;
+        },
         setPending: (id, pending) => calls.push(`pending:${id}:${pending}`),
         insertWakeMessage: (text, wakeFor, variant) =>
             calls.push(`wake:${text}:${wakeFor}:${variant ?? ""}`),
@@ -54,7 +59,7 @@ function makeEffects(overrides: Partial<StreamEffects> = {}) {
             calls.push(`tool-fail:${id}:${callId}:${message}`),
         ...overrides,
     };
-    return { effects, calls };
+    return { effects, calls, getRetry: () => retry };
 }
 
 function run(
@@ -312,5 +317,55 @@ describe("applyStreamEvent", () => {
         run({ type: "data-nova-heartbeat" }, effects);
         run({ type: "finish" }, effects);
         expect(calls).toEqual([]);
+    });
+});
+
+describe("retry notices", () => {
+    test("records the attempt, the wait and the upstream reason", () => {
+        const { effects, getRetry } = makeEffects();
+        run(
+            {
+                type: "data-nova-retry",
+                data: {
+                    attempt: 1,
+                    total: 6,
+                    wait_seconds: 60,
+                    reason: "HTTP 429",
+                },
+            },
+            effects,
+        );
+        expect(getRetry()).toEqual({
+            attempt: 1,
+            total: 6,
+            waitSeconds: 60,
+            reason: "HTTP 429",
+        });
+    });
+
+    test("a progress frame clears the line", () => {
+        const { effects, getRetry } = makeEffects();
+        run(
+            {
+                type: "data-nova-retry",
+                data: { attempt: 1, total: 6, wait_seconds: 60, reason: "HTTP 429" },
+            },
+            effects,
+        );
+        run({ type: "text-delta", delta: "hi" }, effects);
+        expect(getRetry()).toBeNull();
+    });
+
+    test("a heartbeat keeps the line up", () => {
+        const { effects, getRetry } = makeEffects();
+        run(
+            {
+                type: "data-nova-retry",
+                data: { attempt: 2, total: 6, wait_seconds: 120, reason: "" },
+            },
+            effects,
+        );
+        run({ type: "data-nova-heartbeat" }, effects);
+        expect(getRetry()?.attempt).toBe(2);
     });
 });

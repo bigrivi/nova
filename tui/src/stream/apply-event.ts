@@ -6,7 +6,7 @@
 import type { NovaStreamEvent } from "../api/types.ts";
 import type { ApprovalPending } from "../stores/approval-store.ts";
 import type { AskQuestion } from "../stores/ask-user-store.ts";
-import type { ToolCallPart } from "../stores/chat-store.ts";
+import type { RetryState, ToolCallPart } from "../stores/chat-store.ts";
 
 /** Mutable per-turn state the handlers accumulate across events. */
 export type StreamAccumulator = {
@@ -26,6 +26,7 @@ export type StreamEffects = {
     setTodos(input: unknown): void;
     startCompaction(messageCount: number, tokenCount: number): void;
     endCompaction(): void;
+    setRetry(retry: RetryState | null): void;
 
     setPending(messageId: string, pending: boolean): void;
     insertWakeMessage(text: string, wakeFor: string, variant?: string): void;
@@ -161,6 +162,17 @@ export function applyStreamEvent(
     ctx: StreamEffects,
     acc: StreamAccumulator,
 ): void {
+    // A retry describes a wait that is happening now, so progress means the
+    // wait ended and the line is stale. `finish` is excluded because the turn
+    // teardown (completeStream/failStream) clears it.
+    if (
+        event.type !== "data-nova-retry" &&
+        event.type !== "data-nova-heartbeat" &&
+        event.type !== "finish"
+    ) {
+        ctx.setRetry(null);
+    }
+
     switch (event.type) {
         case "data-nova-session": {
             const next = String(event.data?.sessionId ?? "");
@@ -276,6 +288,16 @@ export function applyStreamEvent(
         case "data-nova-compaction-end":
             ctx.endCompaction();
             return;
+        case "data-nova-retry": {
+            const data = (event.data ?? {}) as EventData;
+            ctx.setRetry({
+                attempt: Number(data.attempt ?? 0),
+                total: Number(data.total ?? 0),
+                waitSeconds: Number(data.wait_seconds ?? 0),
+                reason: text(data, "reason"),
+            });
+            return;
+        }
         default:
             // data-nova-heartbeat / start / finish
             return;
