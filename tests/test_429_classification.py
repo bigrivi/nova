@@ -68,6 +68,11 @@ def test_the_shared_retry_policy_is_still_single_sourced() -> None:
         "billing hard limit reached",
         "your credit balance is too low",
         "you exceeded your current quota",
+        # The real body, verbatim, from OpenCode Zen's free tier.
+        '{"type":"error","error":{"type":"FreeUsageLimitError","message":'
+        '"Free usage limit reached. Free models work in OpenCode '
+        '(https://opencode.ai); subscribe to OpenCode Go to keep going: '
+        'https://opencode.ai/go"}}',
     ],
 )
 def test_a_quota_body_is_terminal(body: str) -> None:
@@ -87,6 +92,8 @@ def test_a_quota_body_is_terminal(body: str) -> None:
         "too many requests",
         "rate limit exceeded",
         "Rate limit reached for gpt-4o in organization org-xxx",
+        # A per-minute budget clears on its own; only a spent one is terminal.
+        "usage limit per minute exceeded",
         # A body nobody has seen before is retried rather than refused: the cost
         # of being wrong is one request, and the cost of the other direction is
         # a dead turn.

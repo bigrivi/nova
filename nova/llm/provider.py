@@ -37,6 +37,7 @@ QUOTA_429_MARKERS = frozenset(
         "quota exceeded",
         "current quota",
         "exceeded your quota",
+        "usage limit reached",
         "billing",
         "credit balance",
     }
