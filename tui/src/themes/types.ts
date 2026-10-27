@@ -23,8 +23,8 @@ export type Theme = {
     accentForeground: string;
     /** Accent hue shifted for use as *text* on `background` (group labels, section
      *  titles): at least 4.5:1, so it never inherits the accent's fill contrast.
-     *  A monochrome theme (matrix) borrows its heading hue here, because accent
-     *  and foreground share a hue and text would be indistinguishable. */
+     *  A monochrome theme (matrix) darkens the accent instead of switching hue,
+     *  so the label still reads as part of the same colour family. */
     accentText: string;
     /** Activity indicator (spinner, running task). */
     running: string;
