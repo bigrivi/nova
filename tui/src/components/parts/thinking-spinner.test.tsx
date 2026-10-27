@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
-import { darkTheme } from "../../themes/index.ts";
+import { mockedThemeModule } from "../../test-utils/mocked-theme.ts";
 
-mock.module("../../context/theme.tsx", () => ({ useTheme: () => darkTheme }));
+mock.module("../../context/theme.tsx", mockedThemeModule);
 
 const { retrySuffix, ThinkingSpinner } = await import("./ThinkingSpinner.tsx");
 const { useChatStore } = await import("../../stores/chat-store.ts");

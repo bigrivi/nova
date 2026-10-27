@@ -1,8 +1,9 @@
 import { expect, mock, test } from "bun:test";
 import { contrastRatio } from "../../themes/contrast.ts";
 import { darkTheme } from "../../themes/index.ts";
+import { mockedThemeModule } from "../../test-utils/mocked-theme.ts";
 
-mock.module("../../context/theme.tsx", () => ({ useTheme: () => darkTheme }));
+mock.module("../../context/theme.tsx", mockedThemeModule);
 
 const { testRender } = await import("@opentui/react/test-utils");
 const { MouseButtons } = await import("@opentui/core/testing");

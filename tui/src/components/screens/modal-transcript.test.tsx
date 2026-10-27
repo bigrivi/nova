@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 
 const { testRender } = await import("@opentui/react/test-utils");
 const { act } = await import("react");
@@ -81,4 +81,8 @@ test("rows above the panel are left exactly as they were", async () => {
     for (let y = 0; y < title - 2; y += 1) {
         expect(after[y]).toBe(before[y]);
     }
+});
+
+afterEach(() => {
+    useScreenStore.setState({ current: null });
 });

@@ -7,10 +7,10 @@
  * error) rather than body copy.
  */
 import { beforeAll, describe, expect, mock, test } from "bun:test";
-import { darkTheme } from "../themes/index.ts";
+import { mockedThemeModule } from "../test-utils/mocked-theme.ts";
 import type { TuiMessage } from "../stores/chat-store.ts";
 
-mock.module("../context/theme.tsx", () => ({ useTheme: () => darkTheme }));
+mock.module("../context/theme.tsx", mockedThemeModule);
 
 // The spacing contract is about boxes, not prose: a plain text node keeps the
 // frame readable and avoids pulling real syntax highlighting into the test.
