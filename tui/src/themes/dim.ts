@@ -4,23 +4,8 @@
  *  cell drops double-width glyphs (CJK), so the transcript would lose words.
  *  Recolouring the palette instead keeps every glyph intact.
  */
+import { mixColor } from "./color.ts";
 import type { Theme } from "./types.ts";
-
-function channels(hex: string): [number, number, number] {
-    return [1, 3, 5].map((offset) =>
-        parseInt(hex.slice(offset, offset + 2), 16),
-    ) as [number, number, number];
-}
-
-/** Linear mix of two `#rrggbb` colours; `amount` 0 keeps *from*, 1 returns *to*. */
-export function mixColor(from: string, to: string, amount: number): string {
-    const [r1, g1, b1] = channels(from);
-    const [r2, g2, b2] = channels(to);
-    const mix = (a: number, b: number) => Math.round(a + (b - a) * amount);
-    return `#${[mix(r1, r2), mix(g1, g2), mix(b1, b2)]
-        .map((value) => value.toString(16).padStart(2, "0"))
-        .join("")}`;
-}
 
 /**
  * The same theme with every colour pulled towards its background.

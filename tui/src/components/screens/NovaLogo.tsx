@@ -7,7 +7,7 @@
 import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import { useTheme } from "../../context/theme.tsx";
-import { mixColor } from "../../themes/dim.ts";
+import { mixColor } from "../../themes/color.ts";
 
 /** Below this terminal height the mark is dropped to save room. */
 export const LOGO_MIN_HEIGHT = 14;

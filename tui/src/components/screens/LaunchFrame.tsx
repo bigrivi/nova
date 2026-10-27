@@ -5,8 +5,8 @@
  *  identity — a re-render every tick would otherwise reach the textarea. */
 import { useEffect, useState, type ReactNode } from "react";
 import { useTheme } from "../../context/theme.tsx";
-import { mixColor } from "../../themes/dim.ts";
-import { breath, TICK_MS } from "./launch.ts";
+import { mixColor } from "../../themes/color.ts";
+import { breath, motionEnabled, TICK_MS } from "./launch.ts";
 
 /** Terminal width of the launch card, as a share of the screen. */
 const CARD_WIDTH = "60%";
@@ -22,16 +22,17 @@ export function LaunchFrame({
 }) {
     const theme = useTheme();
     const [tick, setTick] = useState(0);
+    const animate = active && motionEnabled(process.env);
 
     useEffect(() => {
-        if (!active) return;
+        if (!animate) return;
         const timer = setInterval(() => {
             setTick((value) => value + 1);
         }, TICK_MS);
         return () => {
             clearInterval(timer);
         };
-    }, [active]);
+    }, [animate]);
 
     // BoxRenderable turns the border on as soon as borderStyle is present, so
     // the border props must be absent rather than falsy when inactive.
@@ -39,11 +40,9 @@ export function LaunchFrame({
         ? {
               border: true as const,
               borderStyle: "rounded" as const,
-              borderColor: mixColor(
-                  theme.border,
-                  theme.accent,
-                  breath(tick) * 0.7,
-              ),
+              borderColor: animate
+                  ? mixColor(theme.border, theme.accent, breath(tick) * 0.7)
+                  : theme.border,
           }
         : {};
 
