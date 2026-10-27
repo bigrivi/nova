@@ -1,7 +1,7 @@
 /** Root component: layout orchestration, modal layer, global keybindings, and command dispatch */
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useEffect, useMemo, useState } from "react";
-import { getAgent, listModels } from "../api/nova-api.ts";
+import { getAgent, listModels, listSessions } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
@@ -20,7 +20,7 @@ import { MessageList } from "./MessageList.tsx";
 import { AgentsScreen } from "./screens/AgentsScreen.tsx";
 import { LaunchFrame } from "./screens/LaunchFrame.tsx";
 import { LaunchScreen } from "./screens/LaunchScreen.tsx";
-import { hintAt, HINTS, HINT_MS } from "./screens/launch.ts";
+import { buildHints, hintAt, HINT_MS, motionEnabled } from "./screens/launch.ts";
 import { CreateAgentScreen } from "./screens/CreateAgentScreen.tsx";
 import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
@@ -28,6 +28,7 @@ import { ThemeScreen } from "./screens/ThemeScreen.tsx";
 import { VariantsScreen } from "./screens/VariantsScreen.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 import { Toast } from "./Toast.tsx";
+import { WORKSPACE_DIR } from "../workspace.ts";
 
 export type ExitHandler = () => void;
 
@@ -44,15 +45,33 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     // fields at once, so picking a session never flashes the launch screen.
     const launching = messages.length === 0 && !isStreaming && sessionId === null;
     const [hintIndex, setHintIndex] = useState(0);
+    const [savedSessions, setSavedSessions] = useState(0);
+    const hints = useMemo(() => buildHints(savedSessions), [savedSessions]);
     const theme = useTheme();
     const renderer = useRenderer();
+    const animate = motionEnabled(process.env);
+
     useEffect(() => {
-        if (!launching) return;
+        if (!launching || !animate) return;
         const timer = setInterval(() => {
             setHintIndex((value) => value + 1);
         }, HINT_MS);
         return () => {
             clearInterval(timer);
+        };
+    }, [launching, animate]);
+
+    // Offering the resume hint needs the count, not the sessions themselves.
+    useEffect(() => {
+        if (!launching) return;
+        let cancelled = false;
+        void listSessions({ workspaceDir: WORKSPACE_DIR })
+            .then((sessions) => {
+                if (!cancelled) setSavedSessions(sessions.length);
+            })
+            .catch(() => {});
+        return () => {
+            cancelled = true;
         };
     }, [launching]);
 
@@ -215,7 +234,9 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                                 variant={launching ? "card" : "bar"}
                                 placeholder={
                                     launching
-                                        ? hintAt(hintIndex, HINTS)
+                                        ? animate
+                                            ? hintAt(hintIndex, hints)
+                                            : hints[0]
                                         : undefined
                                 }
                             />

@@ -16,14 +16,29 @@ export const HINTS = [
     "Paste an error, I'll track it down...",
 ];
 
-/** 0 at rest, 1 fully lit, triangle wave so the border eases both ways. */
+/** 0 at rest, 1 fully lit, cosine wave so the border eases at both ends. */
 export function breath(tick: number): number {
-    const phase = (tick % BREATH_TICKS) / BREATH_TICKS;
-    return 1 - Math.abs(phase * 2 - 1);
+    return (1 - Math.cos((2 * Math.PI * (tick % BREATH_TICKS)) / BREATH_TICKS)) / 2;
 }
 
 /** The hint shown on rotation *index*, wrapping around *options*. */
 export function hintAt(index: number, options: readonly string[]): string {
     if (options.length === 0) return "";
     return options[index % options.length]!;
+}
+
+/** Whether the pulse and the hint rotation should run.
+ *
+ *  `NO_COLOR` (no-colour terminals) and `NOVA_MOTION=0` both mean "hold still":
+ *  screen recordings and reduced-motion users get a static card.
+ */
+export function motionEnabled(env: Record<string, string | undefined>): boolean {
+    return env.NOVA_MOTION !== "0" && env.NO_COLOR === undefined;
+}
+
+/** Hints for a composer, leading with the saved sessions when there are any. */
+export function buildHints(savedSessions: number): string[] {
+    if (savedSessions <= 0) return [...HINTS];
+    const label = savedSessions === 1 ? "1 saved session" : `${savedSessions} saved sessions`;
+    return [`${label} · /sessions to resume`, ...HINTS];
 }
