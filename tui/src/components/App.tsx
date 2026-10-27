@@ -1,6 +1,6 @@
 /** Root component: layout orchestration, modal layer, global keybindings, and command dispatch */
 import { useKeyboard, useRenderer } from "@opentui/react";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { getAgent, listModels } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
@@ -9,7 +9,8 @@ import { useExpandStore } from "../stores/expand-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
 import { useToastStore } from "../stores/toast-store.ts";
-import { useTheme } from "../context/theme.tsx";
+import { ThemeOverride, useTheme } from "../context/theme.tsx";
+import { dimTheme } from "../themes/dim.ts";
 import { submitAskAnswers, submitAskCancel } from "../stream/chat-stream.ts";
 import { startSessionEvents } from "../stream/session-events.ts";
 import { ApprovalDialog } from "./ApprovalDialog.tsx";
@@ -22,7 +23,6 @@ import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
 import { ThemeScreen } from "./screens/ThemeScreen.tsx";
 import { VariantsScreen } from "./screens/VariantsScreen.tsx";
-import { ScreenBackdrop } from "./ScreenBackdrop.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 import { Toast } from "./Toast.tsx";
 
@@ -34,6 +34,12 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     const screen = useScreenStore((state) => state.current);
     const theme = useTheme();
     const renderer = useRenderer();
+    // A translucent scrim eats double-width glyphs, so the transcript is dimmed
+    // by recolouring its palette instead of drawing over it.
+    const quiet = useMemo(
+        () => (screen ? dimTheme(theme) : null),
+        [screen, theme],
+    );
 
     useEffect(() => {
         renderer.setBackgroundColor(theme.background);
@@ -158,22 +164,23 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             marginBottom={1}
             backgroundColor={theme.background}
         >
-            <MessageList />
-            {askQuestions ? (
-                <AskUserCard
-                    questions={askQuestions}
-                    onSubmit={(answers) => {
-                        void submitAskAnswers(askQuestions, answers);
-                    }}
-                    onCancel={() => submitAskCancel(askQuestions)}
-                />
-            ) : approval ? (
-                <ApprovalDialog pending={approval} />
-            ) : (
-                <Composer onCommand={handleCommand} />
-            )}
-            <StatusBar />
-            {screen ? <ScreenBackdrop /> : null}
+            <ThemeOverride value={quiet}>
+                <MessageList />
+                {askQuestions ? (
+                    <AskUserCard
+                        questions={askQuestions}
+                        onSubmit={(answers) => {
+                            void submitAskAnswers(askQuestions, answers);
+                        }}
+                        onCancel={() => submitAskCancel(askQuestions)}
+                    />
+                ) : approval ? (
+                    <ApprovalDialog pending={approval} />
+                ) : (
+                    <Composer onCommand={handleCommand} />
+                )}
+                <StatusBar />
+            </ThemeOverride>
             {screen?.kind === "sessions" ? <SessionsScreen /> : null}
             {screen?.kind === "theme" ? <ThemeScreen /> : null}
             {screen?.kind === "variants" ? <VariantsScreen /> : null}

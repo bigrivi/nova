@@ -52,7 +52,7 @@ export function CreateAgentScreen() {
     }
 
     return (
-        <ScreenPanel width="60%" border>
+        <ScreenPanel width="60%">
             <text fg={theme.accent}>Create Agent — {field.label}</text>
             <input
                 ref={inputRef}

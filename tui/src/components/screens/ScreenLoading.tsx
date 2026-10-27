@@ -5,7 +5,7 @@ import { ScreenPanel } from "./ScreenPanel.tsx";
 export function ScreenLoading({ message }: { message: string }) {
     const theme = useTheme();
     return (
-        <ScreenPanel border>
+        <ScreenPanel>
             <text fg={theme.muted}>{message}</text>
         </ScreenPanel>
     );

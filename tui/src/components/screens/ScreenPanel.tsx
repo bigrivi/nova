@@ -6,18 +6,11 @@ import { useTheme } from "../../context/theme.tsx";
 export function ScreenPanel({
     children,
     width = "50%",
-    border = false,
 }: {
     children: ReactNode;
     width?: `${number}%`;
-    border?: boolean;
 }) {
     const theme = useTheme();
-    // BoxRenderable turns the border on whenever borderStyle/borderColor is
-    // passed, so the border props must be absent, not merely falsy.
-    const frame = border
-        ? { border: true, borderStyle: "rounded" as const, borderColor: theme.accent }
-        : {};
     return (
         <box
             position="absolute"
@@ -28,12 +21,13 @@ export function ScreenPanel({
             justifyContent="center"
             alignItems="center"
         >
+            {/* `surface` is one step above `background` in every theme, so the
+                panel reads as a raised block without needing a border. */}
             <box
                 width={width}
                 paddingX={2}
                 paddingY={2}
-                backgroundColor={theme.surfaceDeep}
-                {...frame}
+                backgroundColor={theme.surface}
             >
                 {children}
             </box>
