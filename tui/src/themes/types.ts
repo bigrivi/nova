@@ -22,7 +22,9 @@ export type Theme = {
     /** Text and glyphs drawn on `accent`; guaranteed at least 4.5:1 against it. */
     accentForeground: string;
     /** Accent hue shifted for use as *text* on `background` (group labels, section
-     *  titles): at least 4.5:1, so it never inherits the accent's fill contrast. */
+     *  titles): at least 4.5:1, so it never inherits the accent's fill contrast.
+     *  A monochrome theme (matrix) borrows its heading hue here, because accent
+     *  and foreground share a hue and text would be indistinguishable. */
     accentText: string;
     /** Activity indicator (spinner, running task). */
     running: string;

@@ -9,7 +9,7 @@ export const matrixTheme: Theme = {
     subtle: "#8ca391",
     accent: "#2eff6a",
     accentForeground: "#0a0e0a",
-    accentText: "#2eff6a",
+    accentText: "#00efff",
     running: "#e6ff57",
     success: "#62ff94",
     error: "#ff4b4b",
