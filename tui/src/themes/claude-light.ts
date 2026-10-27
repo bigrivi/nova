@@ -4,9 +4,12 @@ import type { Theme } from "./types.ts";
 export const claudeLightTheme: Theme = {
     background: "#faf9f5",
     foreground: "#191919",
+    foregroundMuted: "#515150",
     muted: "#6b6b6b",
     subtle: "#4a4a4a",
     accent: "#c15f3c",
+    accentForeground: "#000000",
+    accentText: "#b05839",
     running: "#a8741a",
     success: "#2f8a3e",
     error: "#c0392b",

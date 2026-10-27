@@ -4,9 +4,12 @@ import type { Theme } from "./types.ts";
 export const lightTheme: Theme = {
     background: "#ffffff",
     foreground: "#24292f",
+    foregroundMuted: "#505459",
     muted: "#57606a",
     subtle: "#57606a",
     accent: "#0969da",
+    accentForeground: "#ffffff",
+    accentText: "#0969da",
     running: "#9a6700",
     success: "#1a7f37",
     error: "#cf222e",

@@ -4,9 +4,12 @@ import type { Theme } from "./types.ts";
 export const draculaTheme: Theme = {
     background: "#282a36",
     foreground: "#f8f8f2",
+    foregroundMuted: "#bababa",
     muted: "#6272a4",
     subtle: "#6272a4",
     accent: "#bd93f9",
+    accentForeground: "#282a36",
+    accentText: "#bd93f9",
     running: "#f1fa8c",
     success: "#50fa7b",
     error: "#ff5555",

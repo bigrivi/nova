@@ -4,9 +4,12 @@ import type { Theme } from "./types.ts";
 export const matrixTheme: Theme = {
     background: "#0a0e0a",
     foreground: "#62ff94",
+    foregroundMuted: "#48b76b",
     muted: "#8ca391",
     subtle: "#8ca391",
     accent: "#2eff6a",
+    accentForeground: "#0a0e0a",
+    accentText: "#2eff6a",
     running: "#e6ff57",
     success: "#62ff94",
     error: "#ff4b4b",

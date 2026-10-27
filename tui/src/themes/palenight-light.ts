@@ -4,9 +4,12 @@ import type { Theme } from "./types.ts";
 export const palenightLightTheme: Theme = {
     background: "#fafafa",
     foreground: "#292d3e",
+    foregroundMuted: "#484c5a",
     muted: "#8796b0",
     subtle: "#8796b0",
     accent: "#4976eb",
+    accentForeground: "#000000",
+    accentText: "#446bd1",
     running: "#ffb300",
     success: "#91b859",
     error: "#e53935",

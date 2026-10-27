@@ -4,9 +4,12 @@ import type { Theme } from "./types.ts";
 export const matrixLightTheme: Theme = {
     background: "#eef3ea",
     foreground: "#203022",
+    foregroundMuted: "#3f4d40",
     muted: "#748476",
     subtle: "#748476",
     accent: "#1cc24b",
+    accentForeground: "#203022",
+    accentText: "#1e7937",
     running: "#e6ff57",
     success: "#1cc24b",
     error: "#ff4b4b",
