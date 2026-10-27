@@ -1,5 +1,5 @@
-/** Shared async loading for list screens: one fetch, a ready gate, and a
- *  preselection index computed only after the data arrives. */
+/** Shared async loading for list screens: one fetch, a ready gate, and the
+ *  value to preselect computed only after the data arrives. */
 import { useEffect, useRef, useState } from "react";
 
 export type LoadedList<T> = {
@@ -25,36 +25,20 @@ export async function loadList<T>(
     }
 }
 
-/**
- * The index of the preselected item, clamped to the list.
- *
- * Returns 0 when nothing matches, which is also the correct index for an empty
- * list (the caller renders a loading/empty state instead).
- */
-export function resolveInitialIndex<T>(
-    items: T[],
-    preselect?: (items: T[]) => number,
-): number {
-    if (!preselect || items.length === 0) {
-        return 0;
-    }
-    return Math.max(0, Math.min(preselect(items), items.length - 1));
-}
-
 export type ListScreen<T> = LoadedList<T> & {
     ready: boolean;
-    initialIndex: number;
+    defaultValue?: string;
     /** Refetch and re-run the ready gate. */
     reload: () => void;
 };
 
 /**
  * Load a list once, exposing a `ready` gate so screens never compute a
- * preselection index against an empty array.
+ * preselection value against an empty array.
  */
 export function useListScreen<T>(
     loader: () => Promise<T[]>,
-    preselect?: (items: T[]) => number,
+    preselect?: (items: T[]) => string | undefined,
 ): ListScreen<T> {
     const [state, setState] = useState<LoadedList<T>>({
         items: [],
@@ -82,7 +66,11 @@ export function useListScreen<T>(
     return {
         ...state,
         ready,
-        initialIndex: ready ? resolveInitialIndex(state.items, preselect) : 0,
+        // Never compute a preselection against an empty list.
+        defaultValue:
+            ready && state.items.length > 0
+                ? preselect?.(state.items)
+                : undefined,
         reload: () => {
             setReady(false);
             setVersion((value) => value + 1);

@@ -38,7 +38,9 @@ async function main(): Promise<void> {
         await startBackend();
     }
 
-    renderer = await createCliRenderer({ exitOnCtrlC: false });
+    // The Composer/Filter inputs own focus; clicking a scrollbox or a message
+    // must not steal it, otherwise typing stops after a wheel/selection.
+    renderer = await createCliRenderer({ exitOnCtrlC: false, autoFocus: false });
     renderer.on(CliRenderEvents.SELECTION, (selection) => {
         if (selection.isDragging) return;
         const text = selection.getSelectedText();

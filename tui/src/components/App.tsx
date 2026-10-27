@@ -22,6 +22,7 @@ import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
 import { ThemeScreen } from "./screens/ThemeScreen.tsx";
 import { VariantsScreen } from "./screens/VariantsScreen.tsx";
+import { ScreenBackdrop } from "./ScreenBackdrop.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 import { Toast } from "./Toast.tsx";
 
@@ -172,6 +173,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                 <Composer onCommand={handleCommand} />
             )}
             <StatusBar />
+            {screen ? <ScreenBackdrop /> : null}
             {screen?.kind === "sessions" ? <SessionsScreen /> : null}
             {screen?.kind === "theme" ? <ThemeScreen /> : null}
             {screen?.kind === "variants" ? <VariantsScreen /> : null}

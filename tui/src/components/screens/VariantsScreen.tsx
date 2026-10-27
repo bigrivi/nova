@@ -1,78 +1,45 @@
 /** Variants screen: browse/switch reasoning effort levels for the active model */
-import { useEffect, useState } from "react";
 import { listModels, updateAgent } from "../../api/nova-api.ts";
 import { useChatStore } from "../../stores/chat-store.ts";
 import { useScreenStore } from "../../stores/screen-store.ts";
-import { useTheme } from "../../context/theme.tsx";
 import { SearchableList } from "./SearchableList.tsx";
 import { ScreenLoading } from "./ScreenLoading.tsx";
+import { useListScreen } from "./use-list-screen.ts";
 
 export function VariantsScreen() {
-    const theme = useTheme();
     const provider = useChatStore((s) => s.provider);
     const model = useChatStore((s) => s.model);
     const currentEffort = useChatStore((s) => s.reasoningEffort);
 
-    const [levels, setLevels] = useState<string[]>([]);
-    const [loaded, setLoaded] = useState(false);
-    const [error, setError] = useState("");
+    const { items: models, ready, error } = useListScreen(listModels);
 
-    useEffect(() => {
-        let cancelled = false;
-        void listModels()
-            .then((items) => {
-                if (cancelled) return;
-                const match = items.find(
-                    (m) => m.provider === provider && m.model === model,
-                );
-                setLevels(match?.efforts ?? []);
-                setLoaded(true);
-            })
-            .catch((err: unknown) => {
-                if (cancelled) return;
-                setError(err instanceof Error ? err.message : String(err));
-                setLoaded(true);
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [provider, model]);
+    const levels =
+        models.find((m) => m.provider === provider && m.model === model)
+            ?.efforts ?? [];
 
-    if (!loaded) {
+    if (!ready) {
         return <ScreenLoading message={error || "Loading variants..."} />;
     }
 
     if (levels.length === 0) {
         return (
-            <box
-                position="absolute"
-                left="15%"
-                right="15%"
-                top="15%"
-                paddingX={2}
-                paddingY={2}
-                border
-                borderStyle="rounded"
-                borderColor={theme.accent}
-                backgroundColor={theme.surfaceDeep}
-            >
-                <text fg={theme.muted}>
-                    this model has no reasoning effort levels configured
-                </text>
-            </box>
+            <ScreenLoading
+                message={
+                    error ||
+                    "this model has no reasoning effort levels configured"
+                }
+            />
         );
     }
 
-    const currentIndex = Math.max(0, levels.indexOf(currentEffort));
-
-    async function handleSelect(level: string): Promise<void> {
+    async function handleSelect(value: string): Promise<void> {
         useScreenStore.getState().close();
-        useChatStore.setState({ reasoningEffort: level });
+        useChatStore.setState({ reasoningEffort: value });
         try {
             await updateAgent("main", {
                 provider,
                 model,
-                reasoning_effort: level,
+                reasoning_effort: value,
             });
         } catch {
             // persistence failure must not block the switch
@@ -82,17 +49,11 @@ export function VariantsScreen() {
     return (
         <SearchableList
             title="Variants"
-            items={levels}
-            filter={(level, query) =>
-                !query || level.toLowerCase().includes(query.toLowerCase())
-            }
-            renderLabel={(level) =>
-                level === currentEffort ? `${level}  (current)` : level
-            }
-            onSelect={(level) => void handleSelect(level)}
+            items={levels.map((level) => ({ label: level, value: level }))}
+            defaultValue={currentEffort}
+            onSelect={(value) => void handleSelect(value)}
             onClose={() => useScreenStore.getState().close()}
             emptyText={error || "no variants"}
-            initialIndex={currentIndex}
         />
     );
 }

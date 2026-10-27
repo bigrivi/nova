@@ -5,6 +5,7 @@ import type { InputRenderable } from "@opentui/core";
 import { createAgent } from "../../api/nova-api.ts";
 import { useScreenStore } from "../../stores/screen-store.ts";
 import { useTheme } from "../../context/theme.tsx";
+import { ScreenPanel } from "./ScreenPanel.tsx";
 
 const FIELDS = [
     { key: "key", label: "Agent key (3-32 chars: [a-z0-9-])", required: true },
@@ -51,18 +52,7 @@ export function CreateAgentScreen() {
     }
 
     return (
-        <box
-            position="absolute"
-            left="20%"
-            right="20%"
-            top="20%"
-            paddingX={2}
-            paddingY={2}
-            border
-            borderStyle="rounded"
-            borderColor={theme.accent}
-            backgroundColor={theme.surfaceDeep}
-        >
+        <ScreenPanel width="60%" border>
             <text fg={theme.accent}>Create Agent — {field.label}</text>
             <input
                 ref={inputRef}
@@ -97,6 +87,6 @@ export function CreateAgentScreen() {
             <text fg={theme.muted}>
                 {step + 1}/{FIELDS.length} • enter next • esc cancel
             </text>
-        </box>
+        </ScreenPanel>
     );
 }

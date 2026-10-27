@@ -9,20 +9,14 @@ export function ThemeScreen() {
     return (
         <SearchableList
             title="Themes"
-            items={available}
-            filter={(item, query) =>
-                !query || item.toLowerCase().includes(query.toLowerCase())
-            }
-            renderLabel={(item) =>
-                item === preference ? `${item}  (current)` : item
-            }
-            onSelect={(item) => {
-                setPreference(item);
+            items={available.map((name) => ({ label: name, value: name }))}
+            defaultValue={preference}
+            onSelect={(value) => {
+                setPreference(value);
                 useScreenStore.getState().close();
             }}
             onClose={() => useScreenStore.getState().close()}
             emptyText="no themes available"
-            initialIndex={Math.max(0, available.indexOf(preference))}
         />
     );
 }

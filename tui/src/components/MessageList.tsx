@@ -6,6 +6,9 @@ import { CompactionBanner } from "./parts/CompactionBanner.tsx";
 import { SubagentNotice } from "./SubagentNotice.tsx";
 import { UserMessage } from "./UserMessage.tsx";
 
+/** Stable identity: a fresh object each render would re-apply the options. */
+const HIDDEN_SCROLLBAR = { visible: false } as const;
+
 export function MessageList() {
     const messages = useChatStore((state) => state.messages);
 
@@ -16,6 +19,7 @@ export function MessageList() {
             stickyScroll
             stickyStart="bottom"
             viewportCulling
+            scrollbarOptions={HIDDEN_SCROLLBAR}
         >
             <box paddingX={1} paddingTop={1}>
                 <Banner />

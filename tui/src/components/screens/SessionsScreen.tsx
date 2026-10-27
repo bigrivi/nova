@@ -1,6 +1,5 @@
 /** Sessions screen: browse/load persisted sessions */
 import { listMessages, listSessions } from "../../api/nova-api.ts";
-import type { NovaSessionSummary } from "../../api/types.ts";
 import { useChatStore } from "../../stores/chat-store.ts";
 import { useScreenStore } from "../../stores/screen-store.ts";
 import { recordsToMessages } from "../../utils/history.ts";
@@ -25,12 +24,14 @@ export function SessionsScreen() {
     const workspaceDir = WORKSPACE_DIR;
     const currentSessionId = useChatStore((state) => state.sessionId);
     const folder = workspaceDir.split("/").filter(Boolean).at(-1) ?? workspaceDir;
-    const { items: sessions, ready, error, initialIndex } = useListScreen(() =>
-        listSessions({ workspaceDir }),
-        (items) => items.findIndex((session) => session.id === currentSessionId),
+    const { items: sessions, ready, error, defaultValue } = useListScreen(
+        () => listSessions({ workspaceDir }),
+        (items) => items.find((s) => s.id === currentSessionId)?.id,
     );
 
-    async function handleSelect(session: NovaSessionSummary): Promise<void> {
+    async function handleSelect(value: string): Promise<void> {
+        const session = sessions.find((record) => record.id === value);
+        if (!session) return;
         useScreenStore.getState().close();
         try {
             const records = await listMessages(session.id);
@@ -50,19 +51,17 @@ export function SessionsScreen() {
     return (
         <SearchableList
             title={`Sessions · ${folder}`}
-            items={sessions}
-            filter={(session, query) =>
-                !query ||
-                (session.title ?? "")
-                    .toLowerCase()
-                    .includes(query.toLowerCase())
-            }
-            onSelect={(session) => void handleSelect(session)}
-            onClose={() => useScreenStore.getState().close()}
+            items={sessions.map((session) => ({
+                label: session.title ?? "(untitled)",
+                value: session.id,
+                updatedAt: session.updated_at,
+            }))}
             renderLabel={(session) =>
-                `${session.title ?? "(untitled)"}  —  ${formatTime(session.updated_at)}`
+                `${session.label}  —  ${formatTime(session.updatedAt)}`
             }
-            initialIndex={initialIndex}
+            onSelect={(value) => void handleSelect(value)}
+            onClose={() => useScreenStore.getState().close()}
+            defaultValue={defaultValue}
             emptyText={error || "no sessions in this folder yet"}
         />
     );
