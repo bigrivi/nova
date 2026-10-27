@@ -175,7 +175,7 @@ test("the panel sits in the middle at any terminal height", async () => {
     await setup.flush();
     const lines = setup.captureCharFrame().split("\n");
     const top = lines.findIndex((line) => line.includes("Models"));
-    const bottom = lines.findLastIndex((line) => line.includes("↑↓ •"));
+    const bottom = lines.findLastIndex((line) => line.includes("↑↓ "));
     expect(Math.abs(top - (height - 1 - bottom))).toBeLessThanOrEqual(1);
 });
 
@@ -357,3 +357,47 @@ test("pressing Enter once submits once", async () => {
 });
 
 
+
+
+test("pressing up at the first row scrolls the group header back into view", async () => {
+    const items = [
+        ...Array.from({ length: 10 }, (_, i) => ({
+            label: `a-${i}`,
+            value: `a${i}`,
+            group: "Alpha",
+        })),
+        ...Array.from({ length: 10 }, (_, i) => ({
+            label: `b-${i}`,
+            value: `b${i}`,
+            group: "Beta",
+        })),
+    ];
+    const setup = await testRender(
+        <SearchableList
+            title="Models"
+            items={items}
+            onSelect={() => {}}
+            onClose={() => {}}
+        />,
+        { width: WIDTH, height: HEIGHT },
+    );
+    await setup.flush();
+    const frame = () => setup.captureCharFrame();
+    expect(frame()).toContain("Alpha");
+
+    const y = rowY(frame(), "a-3");
+    await act(async () => {
+        await setup.mockMouse.scroll(20, y, "down");
+    });
+    await setup.flush();
+    expect(frame()).not.toContain("Alpha");
+
+    for (let press = 0; press < 10; press += 1) {
+        await act(async () => {
+            setup.renderer.stdin.emit("data", Buffer.from("\x1b[A"));
+        });
+        await setup.flush();
+    }
+    expect(frame()).toContain("Alpha");
+    expect(frame()).toContain("1/20");
+});

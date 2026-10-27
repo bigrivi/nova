@@ -115,7 +115,21 @@ export function SearchableList<T extends SearchableItem>({
             let index = cur + dir;
             if (index < 0) index = 0;
             if (index >= list.length) index = list.length - 1;
-            if (index === cur) return;
+            if (index === cur) {
+                // At the end of the list: keep scrolling so the group header
+                // above the first row can come back into view.
+                const box = scrollRef.current;
+                if (box) {
+                    box.scrollTop = Math.max(
+                        0,
+                        Math.min(
+                            box.scrollTop + dir,
+                            box.scrollHeight - box.height,
+                        ),
+                    );
+                }
+                return;
+            }
             setCursor(index);
             return;
         }
@@ -227,7 +241,7 @@ export function SearchableList<T extends SearchableItem>({
             </scrollbox>
             <text marginLeft={MARKER_WIDTH} marginTop={1} fg={theme.muted}>
                 {filtered.length > 0
-                    ? `↑↓ • ${cursor + 1}/${filtered.length} • enter • esc`
+                    ? `↑↓ ${cursor + 1}/${filtered.length} • enter • esc`
                     : "↑↓ • enter • esc"}
             </text>
         </ScreenPanel>
