@@ -224,11 +224,11 @@ test("the row text stays readable on the accent band when hovered", async () => 
     expect(dot).toBeDefined();
     const band = Array.from(dot!.bg.buffer).slice(0, 3);
     const ink = Array.from(dot!.fg.buffer).slice(0, 3);
-    expect(band).toEqual(rgbOf(darkTheme.accent));
+    expect(band).toEqual(rgbOf(darkTheme.primary.base));
     // the paired token, not a per-render guess
-    expect(ink).toEqual(rgbOf(darkTheme.accentForeground));
+    expect(ink).toEqual(rgbOf(darkTheme.primary.foreground));
     expect(
-        contrastRatio(darkTheme.accentForeground, darkTheme.accent),
+        contrastRatio(darkTheme.primary.foreground, darkTheme.primary.base),
     ).toBeGreaterThan(4);
 });
 
@@ -251,10 +251,10 @@ test("items read in the foreground colour", async () => {
         Array.from(
             spanAt(spans, rowY(frame, "model-b"), "model-b")!.fg.buffer,
         ).slice(0, 3),
-    ).toEqual(rgbOf(darkTheme.foreground));
+    ).toEqual(rgbOf(darkTheme.text.base));
     expect(
         Array.from(spanAt(spans, rowY(frame, "OpenAI"), "OpenAI")!.fg.buffer).slice(0, 3),
-    ).toEqual(rgbOf(darkTheme.accentText));
+    ).toEqual(rgbOf(darkTheme.primary.muted));
     expect(lines.length).toBeGreaterThan(0);
 });
 
@@ -326,10 +326,10 @@ test("group headers use the accent text colour, items the body colour", async ()
     const header = spanAt(spans, rowY(frame, "OpenAI"), "OpenAI")!;
     const item = spanAt(spans, rowY(frame, "model-b"), "model-b")!;
     expect(Array.from(header.fg.buffer).slice(0, 3)).toEqual(
-        rgbOf(darkTheme.accentText),
+        rgbOf(darkTheme.primary.muted),
     );
     expect(Array.from(item.fg.buffer).slice(0, 3)).toEqual(
-        rgbOf(darkTheme.foreground),
+        rgbOf(darkTheme.text.base),
     );
     expect(Array.from(header.fg.buffer)).not.toEqual(
         Array.from(item.fg.buffer),

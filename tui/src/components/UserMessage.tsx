@@ -13,12 +13,12 @@ export function UserMessage({ message }: { message: TuiMessage }) {
             marginTop={1}
             minHeight={3}
             justifyContent="center"
-            backgroundColor={theme.surface}
+            backgroundColor={theme.background.raised}
         >
             <box flexDirection="row" gap={1}>
-                <text fg={theme.accent} content=">" />
+                <text fg={theme.primary.base} content=">" />
                 <box flexGrow={1}>
-                    <text fg={theme.foreground} content={text} />
+                    <text fg={theme.text.base} content={text} />
                 </box>
             </box>
         </box>

@@ -53,7 +53,7 @@ export function CreateAgentScreen() {
 
     return (
         <ScreenPanel width="60%">
-            <text fg={theme.accent}>Create Agent — {field.label}</text>
+            <text fg={theme.primary.base}>Create Agent — {field.label}</text>
             <input
                 ref={inputRef}
                 flexGrow={1}
@@ -65,9 +65,9 @@ export function CreateAgentScreen() {
                           ? "My Agent"
                           : "(optional)"
                 }
-                placeholderColor={theme.muted}
-                textColor={theme.foreground}
-                focusedTextColor={theme.foreground}
+                placeholderColor={theme.text.faint}
+                textColor={theme.text.base}
+                focusedTextColor={theme.text.base}
                 onSubmit={() => {
                     const value = inputRef.current?.value ?? "";
                     const next: Values = { ...values, [field.key]: value };
@@ -83,8 +83,8 @@ export function CreateAgentScreen() {
                     }
                 }}
             />
-            {error ? <text fg={theme.error} content={error} /> : null}
-            <text fg={theme.muted}>
+            {error ? <text fg={theme.feedback.error} content={error} /> : null}
+            <text fg={theme.text.muted}>
                 {step + 1}/{FIELDS.length} • enter next • esc cancel
             </text>
         </ScreenPanel>

@@ -83,8 +83,8 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     );
 
     useEffect(() => {
-        renderer.setBackgroundColor(theme.background);
-    }, [renderer, theme.background]);
+        renderer.setBackgroundColor(theme.background.base);
+    }, [renderer, theme.background.base]);
 
     // Tail server-initiated turns so a background-task wake appears in place.
     useEffect(() => startSessionEvents(), []);
@@ -203,7 +203,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             padding={0}
             gap={0}
             marginBottom={1}
-            backgroundColor={theme.background}
+            backgroundColor={theme.background.base}
         >
             <ThemeOverride value={quiet}>
                 {launching ? null : <MessageList />}
@@ -244,7 +244,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                         {launching && (!provider || !model) ? (
                             <box marginTop={1}>
                                 <text
-                                    fg={theme.running}
+                                    fg={theme.feedback.running}
                                     content="No model selected — type /models"
                                 />
                             </box>

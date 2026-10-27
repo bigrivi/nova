@@ -6,7 +6,7 @@ export function ScreenLoading({ message }: { message: string }) {
     const theme = useTheme();
     return (
         <ScreenPanel>
-            <text fg={theme.muted}>{message}</text>
+            <text fg={theme.text.muted}>{message}</text>
         </ScreenPanel>
     );
 }

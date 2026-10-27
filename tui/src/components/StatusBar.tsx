@@ -117,14 +117,14 @@ export function StatusBar() {
                     <>
                         <StatusGlyph status={status} />
                         <text
-                            fg={theme.accent}
+                            fg={theme.primary.base}
                             content={agentName || "main"}
                             wrapMode="none"
                             flexShrink={0}
                         />
-                        <text fg={theme.muted} content="·" flexShrink={0} />
+                        <text fg={theme.text.muted} content="·" flexShrink={0} />
                         <text
-                            fg={theme.foreground}
+                            fg={theme.text.base}
                             content={modelName || model || "no model"}
                             wrapMode="none"
                             truncate
@@ -134,12 +134,12 @@ export function StatusBar() {
                         {density.hideProvider || !providerName ? null : (
                             <>
                                 <text
-                                    fg={theme.muted}
+                                    fg={theme.text.muted}
                                     content="·"
                                     flexShrink={0}
                                 />
                                 <text
-                                    fg={theme.muted}
+                                    fg={theme.text.muted}
                                     content={providerName}
                                     wrapMode="none"
                                     flexShrink={0}
@@ -149,12 +149,12 @@ export function StatusBar() {
                         {reasoningEffort ? (
                             <>
                                 <text
-                                    fg={theme.muted}
+                                    fg={theme.text.muted}
                                     content="·"
                                     flexShrink={0}
                                 />
                                 <text
-                                    fg={theme.running}
+                                    fg={theme.feedback.running}
                                     content={reasoningEffort}
                                     wrapMode="none"
                                     flexShrink={0}
@@ -176,7 +176,7 @@ export function StatusBar() {
                 left={
                     <>
                         <text
-                            fg={theme.subtle}
+                            fg={theme.text.faint}
                             content={path}
                             wrapMode="none"
                             truncate
@@ -185,7 +185,7 @@ export function StatusBar() {
                         />
                         {branchText ? (
                             <text
-                                fg={theme.muted}
+                                fg={theme.text.muted}
                                 content={branchText}
                                 wrapMode="none"
                                 flexShrink={0}

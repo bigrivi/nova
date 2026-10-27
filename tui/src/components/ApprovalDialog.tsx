@@ -12,7 +12,7 @@ import { useTheme } from "../context/theme.tsx";
 export function ApprovalDialog({ pending }: { pending: ApprovalPending }) {
     const theme = useTheme();
     const { title, block, scope } = approvalCopy(pending);
-    const color = pending.dangerous ? theme.error : theme.running;
+    const color = pending.dangerous ? theme.feedback.error : theme.feedback.running;
 
     useKeyboard((key) => {
         if (key.name === "y" || key.name === "return" || key.name === "enter") {
@@ -78,21 +78,21 @@ export function ApprovalDialog({ pending }: { pending: ApprovalPending }) {
             border={["top", "bottom"]}
             borderStyle="single"
             borderColor={color}
-            backgroundColor={theme.surfaceDeep}
+            backgroundColor={theme.background.base}
         >
             <text fg={color}>{title}</text>
             {pending.description &&
             pending.description !== pending.command ? (
-                <text fg={theme.subtle} content={pending.description} />
+                <text fg={theme.text.faint} content={pending.description} />
             ) : null}
-            {block ? <text fg={theme.foreground} content={block} /> : null}
-            {scope ? <text fg={theme.muted} content={scope} /> : null}
+            {block ? <text fg={theme.text.base} content={block} /> : null}
+            {scope ? <text fg={theme.text.muted} content={scope} /> : null}
             <box flexDirection="row" gap={2}>
-                <text fg={theme.muted} content="[y] Approve" />
+                <text fg={theme.text.muted} content="[y] Approve" />
                 {pending.rememberable ? (
-                    <text fg={theme.muted} content="[a] Approve & Remember" />
+                    <text fg={theme.text.muted} content="[a] Approve & Remember" />
                 ) : null}
-                <text fg={theme.muted} content="[n] Reject" />
+                <text fg={theme.text.muted} content="[n] Reject" />
             </box>
         </box>
     );

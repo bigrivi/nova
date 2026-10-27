@@ -206,9 +206,9 @@ export function AskUserCard({
             paddingY={1}
             marginBottom={1}
             borderStyle="heavy"
-            borderColor={theme.accent}
+            borderColor={theme.primary.base}
             border = {["left"]}
-            backgroundColor={theme.surface}
+            backgroundColor={theme.background.raised}
             gap={0}
         >
             <box marginBottom={1} flexDirection="row" columnGap={2} flexShrink={0}>
@@ -216,25 +216,25 @@ export function AskUserCard({
                     const label = q.header || `Q${index + 1}`;
                     if (index === active) {
                         return (
-                            <box key={q.id} paddingX={1} backgroundColor={theme.accent}>
-                                <text fg={theme.surface}>{label}</text>
+                            <box key={q.id} paddingX={1} backgroundColor={theme.primary.base}>
+                                <text fg={theme.background.raised}>{label}</text>
                             </box>
                         );
                     }
                     return (
                         <box key={q.id} paddingX={1}>
-                            <text fg={theme.foreground}>{label}</text>
+                            <text fg={theme.text.base}>{label}</text>
                         </box>
                     );
                 })}
                 {isWizard ? (
                     isReview ? (
-                        <box paddingX={1} backgroundColor={theme.accent}>
-                            <text fg={theme.surface}>Confirm</text>
+                        <box paddingX={1} backgroundColor={theme.primary.base}>
+                            <text fg={theme.background.raised}>Confirm</text>
                         </box>
                     ) : (
                         <box paddingX={1}>
-                            <text fg={theme.foreground}>Confirm</text>
+                            <text fg={theme.text.base}>Confirm</text>
                         </box>
                     )
                 ) : null}
@@ -242,15 +242,15 @@ export function AskUserCard({
 
             {isReview ? (
                 <box flexDirection="column" flexShrink={0}>
-                    <text fg={theme.accent}>Confirm</text>
+                    <text fg={theme.primary.base}>Confirm</text>
                     {questions.map((q) => {
                         const answer = answers[q.id] ?? "";
                         return (
                             <box key={q.id} flexDirection="column" marginTop={1}>
-                                <text fg={theme.foreground}>
+                                <text fg={theme.text.base}>
                                     {q.header || q.question}
                                 </text>
-                                <text fg={theme.muted}>
+                                <text fg={theme.text.muted}>
                                     {answer ||
                                         (q.required
                                             ? "(not answered)"
@@ -263,9 +263,9 @@ export function AskUserCard({
             ) : question ? (
                 <box flexDirection="column" flexShrink={0}>
                 {!isWizard && question.header ? (
-                    <text fg={theme.accent}>{question.header}</text>
+                    <text fg={theme.primary.base}>{question.header}</text>
                 ) : null}
-                <text fg={theme.foreground} content={question.question} />
+                <text fg={theme.text.base} content={question.question} />
 
                 {question.inputType === "select" ? (
                     <box flexDirection="column" flexShrink={0} marginTop={1}>
@@ -291,21 +291,21 @@ export function AskUserCard({
                                     columnGap={1}
                                 >
                                     <text
-                                        fg={pointed ? theme.accent : theme.foreground}
+                                        fg={pointed ? theme.primary.base : theme.text.base}
                                     >
                                         {pointed ? "▸ " : "  "}
                                         {mark}
                                         {option.label}
                                     </text>
                                     {option.description ? (
-                                        <text fg={theme.muted}>
+                                        <text fg={theme.text.muted}>
                                             {option.description}
                                         </text>
                                     ) : null}
                                 </box>
                             );
                         })}
-                        <text fg={theme.muted}>
+                        <text fg={theme.text.muted}>
                             {question.multiple
                                 ? "↑↓ move · space toggle · enter confirm"
                                 : "↑↓ move · enter select"}
@@ -320,7 +320,7 @@ export function AskUserCard({
                         focused
                         marginTop={1}
                         placeholder="Your answer…"
-                        placeholderColor={theme.muted}
+                        placeholderColor={theme.text.faint}
                         onInput={(value) => setDraft(value ?? "")}
                         onSubmit={() => commit(live.current.draft)}
                     />
@@ -333,7 +333,7 @@ export function AskUserCard({
                         focused
                         marginTop={1}
                         placeholder="Your answer… (enter submits, shift+enter newline)"
-                        placeholderColor={theme.muted}
+                        placeholderColor={theme.text.faint}
                         keyBindings={FREEFORM_KEY_BINDINGS}
                         onContentChange={() =>
                             setDraft(textareaRef.current?.plainText ?? "")
@@ -346,7 +346,7 @@ export function AskUserCard({
                 </box>
             ) : null}
 
-            <text fg={theme.muted} marginTop={1}>
+            <text fg={theme.text.muted} marginTop={1}>
                 {active + 1}/{totalSteps} ·{" "}
                 {isReview || (!isWizard && isLast)
                     ? "enter submits"

@@ -21,7 +21,7 @@ import type { Theme } from "./types.ts";
 export function dimTheme(theme: Theme, amount = 0.55): Theme {
     const map = (value: unknown): unknown => {
         if (typeof value === "string") {
-            return mixColor(value, theme.background, amount);
+            return mixColor(value, theme.background.base, amount);
         }
         if (value !== null && typeof value === "object") {
             return Object.fromEntries(

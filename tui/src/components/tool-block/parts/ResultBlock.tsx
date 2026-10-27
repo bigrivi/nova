@@ -34,17 +34,17 @@ export function ResultBlock({
     return (
         <box flexDirection="column">
             {view.hiddenAt === "top" && foldedText ? (
-                <text fg={theme.muted} content={foldedText} />
+                <text fg={theme.text.muted} content={foldedText} />
             ) : null}
             {visible.map((line, index) => (
                 <text
                     key={index}
-                    fg={theme.muted}
+                    fg={theme.text.muted}
                     content={`${index === 0 ? "  └ " : "    "}${line}`}
                 />
             ))}
             {view.hiddenAt === "bottom" && foldedText ? (
-                <text fg={theme.muted} content={foldedText} />
+                <text fg={theme.text.muted} content={foldedText} />
             ) : null}
         </box>
     );

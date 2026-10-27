@@ -17,13 +17,13 @@ export function SubagentNotice({ message }: { message: TuiMessage }) {
 
     return (
         <box flexDirection="row" gap={1} paddingX={2} marginTop={1}>
-            <text fg={theme.muted} content="↩" flexShrink={0} />
-            <text fg={theme.muted} content="Subagent" flexShrink={0} />
+            <text fg={theme.text.muted} content="↩" flexShrink={0} />
+            <text fg={theme.text.muted} content="Subagent" flexShrink={0} />
             {notice ? (
-                <text fg={theme.foreground} content={notice.target} flexShrink={0} />
+                <text fg={theme.text.base} content={notice.target} flexShrink={0} />
             ) : null}
             <text
-                fg={failed ? theme.error : theme.success}
+                fg={failed ? theme.feedback.error : theme.feedback.success}
                 content={status}
                 flexShrink={0}
             />

@@ -42,12 +42,12 @@ export function ExploredGroup({
                 onMouseUp={() => onToggle()}
             >
                 <text
-                    fg={completed ? theme.muted : theme.running}
+                    fg={completed ? theme.text.muted : theme.feedback.running}
                     content={`${glyph} `}
                     flexShrink={0}
                 />
                 <text
-                    fg={completed ? theme.muted : theme.running}
+                    fg={completed ? theme.text.muted : theme.feedback.running}
                     content={label}
                 />
             </box>

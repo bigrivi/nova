@@ -14,7 +14,7 @@ function formatElapsed(ms: number): string {
 export function ReasoningPart({ part }: { part: ReasoningPartData }) {
     const theme = useTheme();
     // OpenCode renders the expanded "Thought" label as warning at 60% opacity.
-    const warning = RGBA.fromHex(theme.running);
+    const warning = RGBA.fromHex(theme.feedback.running);
     const thoughtFg = RGBA.fromValues(warning.r, warning.g, warning.b, 0.6);
     const label = part.completed
         ? part.elapsedMs != null
@@ -28,10 +28,10 @@ export function ReasoningPart({ part }: { part: ReasoningPartData }) {
             </text>
             <box
                 border={["left"]}
-                borderColor={theme.surface}
+                borderColor={theme.background.raised}
                 paddingLeft={1}
             >
-                <text fg={theme.muted} content={part.text} />
+                <text fg={theme.text.muted} content={part.text} />
             </box>
         </box>
     );

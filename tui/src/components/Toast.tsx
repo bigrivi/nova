@@ -12,10 +12,10 @@ export function Toast() {
                 paddingY={1}
                 border
                 borderStyle="rounded"
-                borderColor={theme.success}
-                backgroundColor={theme.surfaceDeep}
+                borderColor={theme.feedback.success}
+                backgroundColor={theme.background.base}
             >
-                <text fg={theme.success} content={`✓ ${message}`} />
+                <text fg={theme.feedback.success} content={`✓ ${message}`} />
             </box>
         </box>
     );

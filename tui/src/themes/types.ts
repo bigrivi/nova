@@ -1,91 +1,85 @@
 /** Theme contract.
  *
- *  Every value is a `#rrggbb` colour. The names follow the shadcn/ui and
- *  Radix conventions: a surface token plus a matching `*Foreground` token for
- *  whatever is drawn on top of it.
+ *  Every value is a `#rrggbb` colour. Tokens are grouped by role and follow the
+ *  shadcn/Radix convention: a surface plus a matching foreground for whatever
+ *  is drawn on it. Names state the job, not the shade.
  */
 export type Theme = {
-    /** Application canvas. Everything else is layered on it. */
-    background: string;
-    /** Default body text and icons on `background`. Highest-emphasis neutral. */
-    foreground: string;
-    /** Secondary text on `background` (group labels, helper text): quieter than
-     *  `foreground` but still at least 4.5:1, unlike `muted`. */
-    foregroundMuted: string;
-    /** Low-emphasis text such as placeholders and disabled copy. May fall under
-     *  4.5:1, so never use it for information the user has to read. */
-    muted: string;
-    /** Third neutral step for de-emphasised marks and separators in text. */
-    subtle: string;
-    /** Brand/accent fill: focus, current item, selected row background. */
-    accent: string;
-    /** Text and glyphs drawn on `accent`; guaranteed at least 4.5:1 against it. */
-    accentForeground: string;
-    /** Accent hue shifted for use as *text* on `background` (group labels, section
-     *  titles): at least 4.5:1, so it never inherits the accent's fill contrast.
-     *  A monochrome theme (matrix) darkens the accent instead of switching hue,
-     *  so the label still reads as part of the same colour family. */
-    accentText: string;
-    /** Activity indicator (spinner, running task). */
-    running: string;
-    /** Success state text and glyphs. */
-    success: string;
-    /** Error state text and glyphs. */
-    error: string;
-    /** Raised surface (cards, user bubbles, panels) on `background`. */
-    surface: string;
-    /** Deepest/raised modal surface; content sits here rather than on `background`. */
-    surfaceDeep: string;
+    /** Layers, lightest job first: the canvas, then raised panels. */
+    background: {
+        /** Application canvas. Everything else is drawn on it. */
+        base: string;
+        /** One step above the canvas: modal panels, user bubbles, cards. */
+        raised: string;
+    };
+    /** Neutral text, three emphasis levels. */
+    text: {
+        /** Body copy: the highest-contrast neutral. */
+        base: string;
+        /** Secondary copy at AA contrast: group labels, footers, hints. */
+        muted: string;
+        /** Decoration only (placeholders, disabled copy); may fall under 4.5:1. */
+        faint: string;
+    };
+    /** The one strong accent: selection, focus and brand marks. */
+    primary: {
+        /** Fill: cursor band, current-item dot, focus rings, titles. */
+        base: string;
+        /** Text and glyphs drawn on `base`; at least 4.5:1 against it. */
+        foreground: string;
+        /** `base` shifted for use as text on the background (labels, headers);
+         *  same hue family as `base`, at least 4.5:1 on the canvas. */
+        muted: string;
+    };
     /** Hairlines around panels, dividers and inactive borders. */
-    border: string;
-
-    /** Diff body backgrounds for added/removed/context lines. */
+    border: {
+        base: string;
+    };
+    /** Status colours; each is text/glyph only, never a fill. */
+    feedback: {
+        success: string;
+        error: string;
+        /** A tool or turn is still running. */
+        running: string;
+    };
+    /** Diff bodies: line backgrounds, gutter signs and line numbers. */
     diff: {
         addedBg: string;
         removedBg: string;
         contextBg: string;
-        /** +/− gutter signs. */
         addedSign: string;
         removedSign: string;
-        /** Line numbers and their gutter backgrounds, including per-sign variants. */
         lineNumber: string;
-        lineNumberBg: string;
         addedLineNumberBg: string;
         removedLineNumberBg: string;
     };
-
-    /** Markdown headings. Content role, not chrome: list/group labels use
-     *  `foregroundMuted` instead. */
-    heading: string;
-    /** Inline code spans. */
-    codeInline: string;
-    /** Link label. */
-    link: string;
-    /** Link target printed next to the label. */
-    linkUrl: string;
-    /** Block quote text. */
-    quote: string;
-    /** List bullets and ordered-list numbers. */
-    bullet: string;
-    /** Horizontal rules. */
-    rule: string;
-    /** Bold text. */
-    strong: string;
-    /** Italic text. */
-    italic: string;
-    /** Struck-through text. */
-    strikethrough: string;
-
+    /** Markdown roles. Headers in dialogs are `primary.muted`, not `heading`:
+     *  this group is content, that one is chrome. */
+    markdown: {
+        heading: string;
+        code: string;
+        link: string;
+        /** The URL printed after a link label. */
+        linkText: string;
+        quote: string;
+        bullet: string;
+        rule: string;
+        strong: string;
+        emphasis: string;
+        strikethrough: string;
+    };
     /** Syntax highlighting, one role per token class. */
-    syntaxKeyword: string;
-    syntaxString: string;
-    syntaxComment: string;
-    syntaxFunction: string;
-    syntaxType: string;
-    syntaxNumber: string;
-    syntaxOperator: string;
-    syntaxPunctuation: string;
-    syntaxVariable: string;
-    syntaxVariableBuiltin: string;
-    syntaxLabel: string;
+    syntax: {
+        comment: string;
+        keyword: string;
+        function: string;
+        string: string;
+        number: string;
+        type: string;
+        operator: string;
+        punctuation: string;
+        variable: string;
+        variableBuiltin: string;
+        label: string;
+    };
 };

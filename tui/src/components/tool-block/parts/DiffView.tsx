@@ -21,7 +21,7 @@ export function DiffView({ diff, synthesized }: { diff: string; synthesized: boo
                 diff={diff}
                 view={view}
                 showLineNumbers={!synthesized}
-                fg={theme.foreground}
+                fg={theme.text.base}
                 addedBg={theme.diff.addedBg}
                 removedBg={theme.diff.removedBg}
                 addedSignColor={theme.diff.addedSign}

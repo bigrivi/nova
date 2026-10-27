@@ -27,10 +27,10 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
     const ctxArgs = parsedArgs ?? args ?? {};
 
     const GLYPH_COLOR: Record<ToolStatus, string> = {
-        running: theme.running,
-        blocked: theme.accent,
-        done: theme.success,
-        error: theme.error,
+        running: theme.feedback.running,
+        blocked: theme.primary.base,
+        done: theme.feedback.success,
+        error: theme.feedback.error,
     };
 
     const ctx = {
@@ -77,7 +77,7 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
                 ) : (
                     <text fg={GLYPH_COLOR[status]} content={`${glyph}`} flexShrink={0} />
                 )}
-                <text fg={theme.foreground} content={title} flexShrink={1} minWidth={0} wrapMode="word" />
+                <text fg={theme.text.base} content={title} flexShrink={1} minWidth={0} wrapMode="word" />
             </box>
             <ResultBlock view={resultView} expanded={expanded} />
         </box>

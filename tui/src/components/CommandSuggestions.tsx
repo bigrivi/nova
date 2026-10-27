@@ -20,18 +20,18 @@ export function CommandSuggestions({
             paddingY={1}
             border
             borderStyle="single"
-            borderColor={theme.border}
+            borderColor={theme.border.base}
         >
             {items.slice(0, 6).map((item, index) => (
                 <text
                     key={item.id}
                     height={1}
-                    fg={index === selectedIndex ? theme.accent : theme.subtle}
+                    fg={index === selectedIndex ? theme.primary.base : theme.text.faint}
                     content={`${index === selectedIndex ? "▸ " : "  "}${item.usage}  ${item.description}`}
                 />
             ))}
             {items.length > 6 ? (
-                <text height={1} fg={theme.muted} content="  …" />
+                <text height={1} fg={theme.text.muted} content="  …" />
             ) : null}
         </box>
     );

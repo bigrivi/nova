@@ -29,31 +29,31 @@ export function Banner() {
             flexDirection="column"
             border
             borderStyle="rounded"
-            borderColor={theme.border}
+            borderColor={theme.border.base}
             paddingX={2}
             paddingY={1}
         >
-            <text fg={theme.accent} content="Nova TUI  v0.1.0" />
+            <text fg={theme.primary.base} content="Nova TUI  v0.1.0" />
             <box flexDirection="row" marginTop={1}>
                 <box width={14} flexShrink={0}>
-                    <text fg={theme.muted} content="Model" />
+                    <text fg={theme.text.muted} content="Model" />
                 </box>
-                <text fg={theme.foreground} content={modelName || model || "—"} />
+                <text fg={theme.text.base} content={modelName || model || "—"} />
             </box>
             <box flexDirection="row">
                 <box width={14} flexShrink={0}>
-                    <text fg={theme.muted} content="Provider" />
+                    <text fg={theme.text.muted} content="Provider" />
                 </box>
-                <text fg={theme.foreground} content={providerName || provider || "—"} />
+                <text fg={theme.text.base} content={providerName || provider || "—"} />
             </box>
             <box flexDirection="row">
                 <box width={14} flexShrink={0}>
-                    <text fg={theme.muted} content="Workspace" />
+                    <text fg={theme.text.muted} content="Workspace" />
                 </box>
-                <text fg={theme.foreground} content={cwd} />
+                <text fg={theme.text.base} content={cwd} />
             </box>
             <box marginTop={1}>
-                <text fg={theme.muted} content={bannerText()} />
+                <text fg={theme.text.muted} content={bannerText()} />
             </box>
         </box>
     );

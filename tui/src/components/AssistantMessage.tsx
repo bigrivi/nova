@@ -40,7 +40,7 @@ export function AssistantMessage({ message }: { message: TuiMessage }) {
                 ),
             )}
             {message.error ? (
-                <box marginTop={1}><text fg={theme.error} content={message.error} /></box>
+                <box marginTop={1}><text fg={theme.feedback.error} content={message.error} /></box>
             ) : null}
         </box>
     );
@@ -61,7 +61,7 @@ function PartView({
             }
             return (
                 <box flexDirection="row" marginTop={1}>
-                    <text fg={theme.success} content="●" flexShrink={0} />
+                    <text fg={theme.feedback.success} content="●" flexShrink={0} />
                     <box flexGrow={1} paddingX={1} flexShrink={1}>
                         <MarkdownPart text={part.text} streaming={streaming} />
                     </box>

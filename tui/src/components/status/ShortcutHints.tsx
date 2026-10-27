@@ -17,8 +17,8 @@ export function ShortcutHints({
                     alignItems="center"
                     gap={1}
                 >
-                    <text fg={theme.subtle} content={item.key} />
-                    <text fg={theme.muted} content={item.label} />
+                    <text fg={theme.text.faint} content={item.key} />
+                    <text fg={theme.text.muted} content={item.label} />
                 </box>
             ))}
         </box>

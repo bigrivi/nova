@@ -37,10 +37,10 @@ describe("every theme", () => {
         for (const [name, theme] of entries) {
             expect({
                 name,
-                ratio: contrastRatio(theme.foreground, theme.background),
+                ratio: contrastRatio(theme.text.base, theme.background.base),
             }).toMatchObject({ name, ratio: expect.any(Number) });
             expect(
-                contrastRatio(theme.foreground, theme.background),
+                contrastRatio(theme.text.base, theme.background.base),
             ).toBeGreaterThanOrEqual(AA_TEXT);
         }
     });
@@ -49,10 +49,10 @@ describe("every theme", () => {
         for (const [name, theme] of entries) {
             expect({
                 name,
-                ratio: contrastRatio(theme.foregroundMuted, theme.background),
+                ratio: contrastRatio(theme.text.muted, theme.background.base),
             }).toMatchObject({ name, ratio: expect.any(Number) });
             expect(
-                contrastRatio(theme.foregroundMuted, theme.background),
+                contrastRatio(theme.text.muted, theme.background.base),
             ).toBeGreaterThanOrEqual(AA_TEXT);
         }
     });
@@ -61,10 +61,10 @@ describe("every theme", () => {
         for (const [name, theme] of entries) {
             expect({
                 name,
-                ratio: contrastRatio(theme.accentText, theme.background),
+                ratio: contrastRatio(theme.primary.muted, theme.background.base),
             }).toMatchObject({ name, ratio: expect.any(Number) });
             expect(
-                contrastRatio(theme.accentText, theme.background),
+                contrastRatio(theme.primary.muted, theme.background.base),
             ).toBeGreaterThanOrEqual(AA_TEXT);
         }
     });
@@ -73,10 +73,10 @@ describe("every theme", () => {
         for (const [name, theme] of entries) {
             expect({
                 name,
-                ratio: contrastRatio(theme.accentForeground, theme.accent),
+                ratio: contrastRatio(theme.primary.foreground, theme.primary.base),
             }).toMatchObject({ name, ratio: expect.any(Number) });
             expect(
-                contrastRatio(theme.accentForeground, theme.accent),
+                contrastRatio(theme.primary.foreground, theme.primary.base),
             ).toBeGreaterThanOrEqual(4);
         }
     });
@@ -87,15 +87,15 @@ describe("accentText", () => {
         // a monochrome theme (matrix) darkens the accent; switching hue there
         // would make the label look unrelated to the selection colour
         for (const [name, theme] of Object.entries(themes)) {
-            expect({ name, hue: Math.round(hueDistance(theme.accentText, theme.accent)) })
+            expect({ name, hue: Math.round(hueDistance(theme.primary.muted, theme.primary.base)) })
                 .toMatchObject({ name });
-            expect(hueDistance(theme.accentText, theme.accent)).toBeLessThan(20);
+            expect(hueDistance(theme.primary.muted, theme.primary.base)).toBeLessThan(20);
         }
     });
 
     test("still differs from the body text it sits above", () => {
         for (const [name, theme] of Object.entries(themes)) {
-            expect({ name, same: theme.accentText === theme.foreground }).toMatchObject({
+            expect({ name, same: theme.primary.muted === theme.text.base }).toMatchObject({
                 name,
                 same: false,
             });

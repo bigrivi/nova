@@ -142,7 +142,7 @@ export function SearchableList<T extends SearchableItem>({
 
     return (
         <ScreenPanel>
-            <text marginLeft={MARKER_WIDTH} fg={theme.accent}>{title}</text>
+            <text marginLeft={MARKER_WIDTH} fg={theme.primary.base}>{title}</text>
             <input
                 ref={inputRef}
                 marginLeft={MARKER_WIDTH}
@@ -150,9 +150,9 @@ export function SearchableList<T extends SearchableItem>({
                 focused
                 value={query}
                 placeholder="Filter…"
-                placeholderColor={theme.muted}
-                textColor={theme.foreground}
-                focusedTextColor={theme.foreground}
+                placeholderColor={theme.text.faint}
+                textColor={theme.text.base}
+                focusedTextColor={theme.text.base}
                 onInput={(value) => {
                     setQuery(value);
                     setCursor(0);
@@ -183,7 +183,7 @@ export function SearchableList<T extends SearchableItem>({
                             <text
                                 key={`h:${entry.label}`}
                                 height={1}
-                                fg={theme.accentText}
+                                fg={theme.primary.muted}
                                 content={`${" ".repeat(MARKER_WIDTH)}${entry.label}`}
                             />
                         );
@@ -194,11 +194,11 @@ export function SearchableList<T extends SearchableItem>({
                     // On the accent band the row switches to the theme's paired
                     // foreground; the dot follows so it cannot sink into it.
                     const dotFg = isCursor
-                        ? theme.accentForeground
-                        : theme.accent;
+                        ? theme.primary.foreground
+                        : theme.primary.base;
                     const itemFg = isCursor
-                        ? theme.accentForeground
-                        : theme.foreground;
+                        ? theme.primary.foreground
+                        : theme.text.base;
                     return (
                         <box
                             key={`i:${entry.index}`}
@@ -207,7 +207,7 @@ export function SearchableList<T extends SearchableItem>({
                             height={1}
                             // Only the cursor row is banded; the current item is
                             // marked by `●` alone, so hovering paints it too.
-                            backgroundColor={isCursor ? theme.accent : undefined}
+                            backgroundColor={isCursor ? theme.primary.base : undefined}
                             onMouseOver={() => setCursor(entry.index)}
                             onMouseUp={(event) => {
                                 if (event.button === LEFT_BUTTON) {
@@ -234,12 +234,12 @@ export function SearchableList<T extends SearchableItem>({
                 {filtered.length === 0 ? (
                     <text
                         height={1}
-                        fg={theme.foregroundMuted}
+                        fg={theme.text.muted}
                         content={`${" ".repeat(MARKER_WIDTH)}${emptyText}`}
                     />
                 ) : null}
             </scrollbox>
-            <text marginLeft={MARKER_WIDTH} marginTop={1} fg={theme.muted}>
+            <text marginLeft={MARKER_WIDTH} marginTop={1} fg={theme.text.muted}>
                 {filtered.length > 0
                     ? `↑↓ ${cursor + 1}/${filtered.length} • enter • esc`
                     : "↑↓ • enter • esc"}

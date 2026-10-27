@@ -39,7 +39,7 @@ export function ThinkingSpinner() {
     }, []);
 
     return (
-        <text fg={theme.running} marginTop={1}>
+        <text fg={theme.feedback.running} marginTop={1}>
             {FRAMES[frame]} Thinking… {formatElapsed(elapsed)}
             {retrySuffix(retry)}
         </text>

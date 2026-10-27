@@ -27,7 +27,7 @@ export function ScreenPanel({
                 width={width}
                 paddingX={2}
                 paddingY={2}
-                backgroundColor={theme.surface}
+                backgroundColor={theme.background.raised}
             >
                 {children}
             </box>

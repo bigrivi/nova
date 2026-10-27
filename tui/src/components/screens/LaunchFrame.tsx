@@ -41,8 +41,8 @@ export function LaunchFrame({
               border: true as const,
               borderStyle: "rounded" as const,
               borderColor: animate
-                  ? mixColor(theme.border, theme.accent, breath(tick) * 0.7)
-                  : theme.border,
+                  ? mixColor(theme.border.base, theme.primary.base, breath(tick) * 0.7)
+                  : theme.border.base,
           }
         : {};
 

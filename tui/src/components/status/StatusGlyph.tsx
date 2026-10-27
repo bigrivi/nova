@@ -21,7 +21,7 @@ export function StatusGlyph({ status }: { status: AgentStatus }) {
         return () => clearInterval(timer);
     }, [status]);
 
-    const accent = RGBA.fromHex(theme.accent);
+    const accent = RGBA.fromHex(theme.primary.base);
     const runningFg = pulse
         ? accent
         : RGBA.fromValues(accent.r, accent.g, accent.b, DIM_ALPHA);
@@ -30,10 +30,10 @@ export function StatusGlyph({ status }: { status: AgentStatus }) {
         status === "running"
             ? runningFg
             : status === "waiting"
-              ? theme.running
+              ? theme.feedback.running
               : status === "error"
-                ? theme.error
-                : theme.muted;
+                ? theme.feedback.error
+                : theme.text.muted;
 
     return <text flexShrink={0} fg={color}>●</text>;
 }

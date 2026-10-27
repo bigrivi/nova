@@ -32,8 +32,8 @@ export function NovaLogo() {
     const dims = useTerminalDimensions();
     if (dims.height < LOGO_MIN_HEIGHT) return null;
 
-    const fg = theme.accentText;
-    const shadow = mixColor(theme.background, fg, 0.25);
+    const fg = theme.primary.muted;
+    const shadow = mixColor(theme.background.base, fg, 0.25);
     const bold = TextAttributes.BOLD;
 
     if (dims.width < LOGO_COMPACT_WIDTH) {

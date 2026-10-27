@@ -171,7 +171,7 @@ export function Composer({
                 : {
                       border: ["top", "bottom"] as const,
                       borderStyle: "single" as const,
-                      borderColor: theme.muted,
+                      borderColor: theme.text.muted,
                   })}
         >
             <CommandSuggestions
@@ -179,15 +179,15 @@ export function Composer({
                 selectedIndex={selectedIndex}
             />
             <box flexDirection="row" flexGrow={1}>
-                <text fg={theme.accent} content="> " height={textareaHeight} />
+                <text fg={theme.primary.base} content="> " height={textareaHeight} />
                 <textarea
                     ref={textareaRef}
                     flexGrow={1}
                     focused
                     placeholder={placeholder}
-                    placeholderColor={theme.muted}
-                    textColor={theme.foreground}
-                    focusedTextColor={theme.foreground}
+                    placeholderColor={theme.text.faint}
+                    textColor={theme.text.base}
+                    focusedTextColor={theme.text.base}
                     keyBindings={COMPOSER_KEY_BINDINGS}
                     onSubmit={submitCurrent}
                     onContentChange={() => {

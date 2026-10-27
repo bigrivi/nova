@@ -32,5 +32,5 @@ function getSnapshot(): number {
 export function Spinner() {
     const theme = useTheme();
     const current = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-    return <text fg={theme.running}>{FRAMES[current]}</text>;
+    return <text fg={theme.feedback.running}>{FRAMES[current]}</text>;
 }

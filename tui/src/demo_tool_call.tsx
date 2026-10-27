@@ -240,7 +240,7 @@ const RUNNING_SAMPLES = [
 function CategoryLabel({ children }: { children: string }) {
     const theme = useTheme();
     return (
-        <text fg={theme.accent} marginTop={1}>
+        <text fg={theme.primary.base} marginTop={1}>
             ▌{children}
         </text>
     );
@@ -254,10 +254,10 @@ function DemoApp() {
 
     return (
         <box flexDirection="column" padding={1} flexGrow={1}>
-            <text fg={theme.foreground}>
+            <text fg={theme.text.base}>
                 Demo: tool call rendering — q to quit
             </text>
-            <text fg={theme.muted}>
+            <text fg={theme.text.muted}>
                 Verb-tense labels · glyph-only coloring · per-tool sentences
             </text>
             <scrollbox flexGrow={1} scrollY viewportCulling>
