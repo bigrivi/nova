@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { breath, placeholderAt, TICK_MS } from "./launch.ts";
+import { breath, hintAt, TICK_MS } from "./launch.ts";
 
 describe("breath", () => {
     test("starts dark, peaks in the middle and comes back", () => {
@@ -18,19 +18,18 @@ describe("breath", () => {
     });
 });
 
-describe("placeholderAt", () => {
+describe("hintAt", () => {
     const options = ["a", "b", "c"];
 
-    test("holds each placeholder for a while, then advances", () => {
-        expect(placeholderAt(0, options)).toBe("a");
-        expect(placeholderAt(31, options)).toBe("a");
-        expect(placeholderAt(32, options)).toBe("b");
-        expect(placeholderAt(64, options)).toBe("c");
-        expect(placeholderAt(96, options)).toBe("a");
+    test("walks the list and wraps around", () => {
+        expect(hintAt(0, options)).toBe("a");
+        expect(hintAt(1, options)).toBe("b");
+        expect(hintAt(2, options)).toBe("c");
+        expect(hintAt(3, options)).toBe("a");
     });
 
     test("is empty for an empty list", () => {
-        expect(placeholderAt(5, [])).toBe("");
+        expect(hintAt(5, [])).toBe("");
     });
 
     test("ticks fast enough to look smooth", () => {

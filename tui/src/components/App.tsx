@@ -1,6 +1,6 @@
 /** Root component: layout orchestration, modal layer, global keybindings, and command dispatch */
 import { useKeyboard, useRenderer } from "@opentui/react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getAgent, listModels } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
@@ -18,7 +18,9 @@ import { AskUserCard } from "./AskUserCard.tsx";
 import { Composer, type ComposerCommandHandler } from "./Composer.tsx";
 import { MessageList } from "./MessageList.tsx";
 import { AgentsScreen } from "./screens/AgentsScreen.tsx";
+import { LaunchFrame } from "./screens/LaunchFrame.tsx";
 import { LaunchScreen } from "./screens/LaunchScreen.tsx";
+import { hintAt, HINTS, HINT_MS } from "./screens/launch.ts";
 import { CreateAgentScreen } from "./screens/CreateAgentScreen.tsx";
 import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
@@ -35,9 +37,25 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     const screen = useScreenStore((state) => state.current);
     const messages = useChatStore((state) => state.messages);
     const isStreaming = useChatStore((state) => state.isStreaming);
-    const launching = messages.length === 0 && !isStreaming;
+    const sessionId = useChatStore((state) => state.sessionId);
+    const provider = useChatStore((state) => state.provider);
+    const model = useChatStore((state) => state.model);
+    // A null session means nothing has been loaded yet; `loadHistory` sets both
+    // fields at once, so picking a session never flashes the launch screen.
+    const launching = messages.length === 0 && !isStreaming && sessionId === null;
+    const [hintIndex, setHintIndex] = useState(0);
     const theme = useTheme();
     const renderer = useRenderer();
+    useEffect(() => {
+        if (!launching) return;
+        const timer = setInterval(() => {
+            setHintIndex((value) => value + 1);
+        }, HINT_MS);
+        return () => {
+            clearInterval(timer);
+        };
+    }, [launching]);
+
     // A translucent scrim eats double-width glyphs, so the transcript is dimmed
     // by recolouring its palette instead of drawing over it.
     const quiet = useMemo(
@@ -169,7 +187,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             backgroundColor={theme.background}
         >
             <ThemeOverride value={quiet}>
-                {launching ? <LaunchScreen onCommand={handleCommand} /> : <MessageList />}
+                {launching ? null : <MessageList />}
                 {askQuestions ? (
                     <AskUserCard
                         questions={askQuestions}
@@ -180,8 +198,37 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                     />
                 ) : approval ? (
                     <ApprovalDialog pending={approval} />
-                ) : launching ? null : (
-                    <Composer onCommand={handleCommand} />
+                ) : (
+                    // One wrapper for both layouts: only its props change, so the
+                    // composer (and any draft inside it) survives the switch.
+                    <box
+                        flexDirection="column"
+                        flexGrow={launching ? 1 : 0}
+                        flexShrink={0}
+                        justifyContent={launching ? "center" : "flex-start"}
+                        alignItems={launching ? "center" : "stretch"}
+                    >
+                        {launching ? <LaunchScreen /> : null}
+                        <LaunchFrame active={launching}>
+                            <Composer
+                                onCommand={handleCommand}
+                                variant={launching ? "card" : "bar"}
+                                placeholder={
+                                    launching
+                                        ? hintAt(hintIndex, HINTS)
+                                        : undefined
+                                }
+                            />
+                        </LaunchFrame>
+                        {launching && (!provider || !model) ? (
+                            <box marginTop={1}>
+                                <text
+                                    fg={theme.running}
+                                    content="No model selected — type /models"
+                                />
+                            </box>
+                        ) : null}
+                    </box>
                 )}
                 <StatusBar />
             </ThemeOverride>

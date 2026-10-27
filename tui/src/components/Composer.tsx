@@ -30,13 +30,12 @@ export function Composer({
     onCommand,
     variant = "bar",
     placeholder = "Message Nova…",
-    borderColor,
 }: {
     onCommand: ComposerCommandHandler;
-    /** "bar" sits at the bottom of the transcript; "card" floats on the launch screen. */
+    /** "bar" sits at the bottom of the transcript; "card" floats on the launch
+     *  screen, where `LaunchFrame` owns the border. */
     variant?: "bar" | "card";
     placeholder?: string;
-    borderColor?: string;
 }) {
     const theme = useTheme();
     const isStreaming = useChatStore((state) => state.isStreaming);
@@ -167,9 +166,13 @@ export function Composer({
             marginTop={0}
             marginBottom={0}
             gap={0}
-            border={card ? true : ["top", "bottom"]}
-            borderStyle={card ? "rounded" : "single"}
-            borderColor={borderColor ?? theme.muted}
+            {...(card
+                ? {}
+                : {
+                      border: ["top", "bottom"] as const,
+                      borderStyle: "single" as const,
+                      borderColor: theme.muted,
+                  })}
         >
             <CommandSuggestions
                 items={suggestions}
