@@ -12,7 +12,8 @@ function channels(hex: string): [number, number, number] {
     ) as [number, number, number];
 }
 
-function towards(from: string, to: string, amount: number): string {
+/** Linear mix of two `#rrggbb` colours; `amount` 0 keeps *from*, 1 returns *to*. */
+export function mixColor(from: string, to: string, amount: number): string {
     const [r1, g1, b1] = channels(from);
     const [r2, g2, b2] = channels(to);
     const mix = (a: number, b: number) => Math.round(a + (b - a) * amount);
@@ -35,7 +36,7 @@ function towards(from: string, to: string, amount: number): string {
 export function dimTheme(theme: Theme, amount = 0.55): Theme {
     const map = (value: unknown): unknown => {
         if (typeof value === "string") {
-            return towards(value, theme.background, amount);
+            return mixColor(value, theme.background, amount);
         }
         if (value !== null && typeof value === "object") {
             return Object.fromEntries(

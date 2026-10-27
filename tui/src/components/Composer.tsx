@@ -26,7 +26,18 @@ const TEXTAREA_MAX_HEIGHT = 12;
 
 export type ComposerCommandHandler = (id: string, args: string) => void;
 
-export function Composer({ onCommand }: { onCommand: ComposerCommandHandler }) {
+export function Composer({
+    onCommand,
+    variant = "bar",
+    placeholder = "Message Nova…",
+    borderColor,
+}: {
+    onCommand: ComposerCommandHandler;
+    /** "bar" sits at the bottom of the transcript; "card" floats on the launch screen. */
+    variant?: "bar" | "card";
+    placeholder?: string;
+    borderColor?: string;
+}) {
     const theme = useTheme();
     const isStreaming = useChatStore((state) => state.isStreaming);
     const sessionId = useChatStore((state) => state.sessionId);
@@ -146,18 +157,19 @@ export function Composer({ onCommand }: { onCommand: ComposerCommandHandler }) {
         }
     }
 
+    const card = variant === "card";
     return (
         <box
             flexDirection="column"
             flexShrink={0}
-            paddingX={1}
-            paddingY={0}
+            paddingX={card ? 2 : 1}
+            paddingY={card ? 1 : 0}
             marginTop={0}
             marginBottom={0}
             gap={0}
-            border={["top", "bottom"]}
-            borderStyle="single"
-            borderColor={theme.muted}
+            border={card ? true : ["top", "bottom"]}
+            borderStyle={card ? "rounded" : "single"}
+            borderColor={borderColor ?? theme.muted}
         >
             <CommandSuggestions
                 items={suggestions}
@@ -169,7 +181,7 @@ export function Composer({ onCommand }: { onCommand: ComposerCommandHandler }) {
                     ref={textareaRef}
                     flexGrow={1}
                     focused
-                    placeholder="Message Nova…"
+                    placeholder={placeholder}
                     placeholderColor={theme.muted}
                     textColor={theme.foreground}
                     focusedTextColor={theme.foreground}

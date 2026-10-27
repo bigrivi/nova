@@ -18,6 +18,7 @@ import { AskUserCard } from "./AskUserCard.tsx";
 import { Composer, type ComposerCommandHandler } from "./Composer.tsx";
 import { MessageList } from "./MessageList.tsx";
 import { AgentsScreen } from "./screens/AgentsScreen.tsx";
+import { LaunchScreen } from "./screens/LaunchScreen.tsx";
 import { CreateAgentScreen } from "./screens/CreateAgentScreen.tsx";
 import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
@@ -32,6 +33,9 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     const askQuestions = useAskUserStore((state) => state.active);
     const approval = useApprovalStore((state) => state.pending);
     const screen = useScreenStore((state) => state.current);
+    const messages = useChatStore((state) => state.messages);
+    const isStreaming = useChatStore((state) => state.isStreaming);
+    const launching = messages.length === 0 && !isStreaming;
     const theme = useTheme();
     const renderer = useRenderer();
     // A translucent scrim eats double-width glyphs, so the transcript is dimmed
@@ -165,7 +169,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             backgroundColor={theme.background}
         >
             <ThemeOverride value={quiet}>
-                <MessageList />
+                {launching ? <LaunchScreen onCommand={handleCommand} /> : <MessageList />}
                 {askQuestions ? (
                     <AskUserCard
                         questions={askQuestions}
@@ -176,7 +180,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                     />
                 ) : approval ? (
                     <ApprovalDialog pending={approval} />
-                ) : (
+                ) : launching ? null : (
                     <Composer onCommand={handleCommand} />
                 )}
                 <StatusBar />
