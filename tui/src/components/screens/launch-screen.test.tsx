@@ -1,4 +1,14 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, mock, test } from "bun:test";
+
+// No backend: `getAgent` resolving against a live server would fill in a model
+// between render and assertion, and the test that clears the model would race
+// it. The startup effect is the only caller, so stub just that.
+const api = await import("../../api/nova-api.ts");
+mock.module("../../api/nova-api.ts", () => ({
+    ...api,
+    getAgent: async () => null,
+    listSessions: async () => [],
+}));
 
 const { testRender } = await import("@opentui/react/test-utils");
 const { act } = await import("react");
