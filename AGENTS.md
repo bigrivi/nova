@@ -45,6 +45,29 @@ Lint and mypy are not gates — a change can go green with both broken.
 - mypy has ~200 pre-existing errors and no config. Judge only new errors in files you
   touched.
 
+## Stream protocol
+
+One invariant holds the chat surface together: **every tool call the server announces
+must be answered in the same turn** — with a result, an error, or a refusal. A client
+draws a tool block from `tool-input-start` and stops drawing it as running only when
+`tool-output-available` or `data-nova-tool-error` arrives for that id. When neither
+arrives the block spins forever in a turn whose stream is already over, so the ESC
+handler — which requires a live stream — cannot clear it. That is exactly how a refused
+`plan`-mode command left the TUI frozen on "Running cd ...".
+
+Three layers enforce it, and removing any one is how it comes back:
+
+- `ToolInvoker` answers every terminal path it owns (`nova/agent/tool_invoker.py`).
+- `AISDKStreamAdapter` answers whatever is still open on `DONE`/`ERROR`
+  (`nova/server/ai_sdk_stream.py`), so a path that forgets cannot reach a client.
+- The TUI settles leftovers at stream end (`tui/src/stores/chat-store.ts`
+  `settleParts`).
+
+`tests/test_ai_sdk_tool_lifecycle.py` pins the wire contract. The same shape applies to
+cancellation: `RequestRegistry.interrupt` on a slot that only holds a *reservation*
+returns True and remembers it (`take_pending_interrupt`), because a cancel the client
+believes in and the server silently drops is worse than no cancel button.
+
 ## Where things live
 
 - `nova/prompt/builder.py` assembles the system prompt: identity, soul, user, memory,
