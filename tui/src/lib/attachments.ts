@@ -5,8 +5,9 @@
  *  composer has to answer: which path did the user mean, and is it an image the
  *  model can read?
  */
-import { basename, extname } from "node:path";
+import { basename, extname, isAbsolute, relative } from "node:path";
 import type { NovaAttachmentData } from "../api/types.ts";
+import { WORKSPACE_DIR } from "../workspace.ts";
 
 /** Same ceiling the backend enforces for one image. */
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -21,6 +22,15 @@ const IMAGE_MIME: Record<string, string> = {
     ".gif": "image/gif",
     ".webp": "image/webp",
     ".avif": "image/avif",
+};
+
+/** A pasted path the composer kept: an image, or a file it only references. */
+export type PastedFile = {
+    path: string;
+    name: string;
+    kind: "image" | "file";
+    /** Present for images: the decoded payload the request carries. */
+    image?: LocalImage;
 };
 
 export type LocalImage = {
@@ -160,29 +170,44 @@ export async function readImageAttachment(
 }
 
 /**
- * Attachments for a paste, all-or-nothing like the rest of the composer.
+ * Readable form of a path: relative when it lives in the workspace, absolute
+ * otherwise, so the model gets a path its tools can resolve and logs do not
+ * carry the whole home directory.
+ */
+export function displayPath(path: string): string {
+    const rel = relative(WORKSPACE_DIR, path);
+    if (!rel || rel.startsWith("..") || isAbsolute(rel)) return path;
+    return rel;
+}
+
+/**
+ * Resolve a paste into files the composer can keep.
  *
  * Args:
- *   text: The pasted text.
+ *   text: Pasted text, possibly several paths.
  *   platform: `process.platform`, injectable for tests.
  *
  * Returns:
- *   One image per readable path, or undefined when the paste is not a set of
- *   image paths (a single non-image file, prose, or a partially unreadable set).
+ *   One entry per path, or undefined when any path is missing (prose, a typo, a
+ *   half-copied list) — the composer then inserts the text unchanged.
  */
-export async function resolvePastedImages(
+export async function resolvePastedFiles(
     text: string,
     platform: string = process.platform,
-): Promise<LocalImage[] | undefined> {
+): Promise<PastedFile[] | undefined> {
     const paths = parsePastedPaths(text.trim(), platform);
     if (paths.length === 0) return undefined;
-    const images: LocalImage[] = [];
+    const files: PastedFile[] = [];
     for (const path of paths) {
         const image = await readImageAttachment(path);
-        if (!image) return undefined;
-        images.push(image);
+        if (image) {
+            files.push({ path, name: image.name, kind: "image", image });
+            continue;
+        }
+        if (!(await Bun.file(path).exists())) return undefined;
+        files.push({ path, name: basename(path), kind: "file" });
     }
-    return images;
+    return files;
 }
 
 let nextAttachmentId = 0;

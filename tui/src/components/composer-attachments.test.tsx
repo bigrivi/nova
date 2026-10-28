@@ -70,7 +70,7 @@ test("pasting an image path inserts a chip, not the path", async () => {
     expect(frame).not.toContain("/shot.png");
 });
 
-test("a non-image paste keeps the default text behaviour", async () => {
+test("a non-image path becomes a reference chip showing its path", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nova-composer-"));
     const path = join(dir, "notes.txt");
     writeFileSync(path, "hello");
@@ -80,7 +80,41 @@ test("a non-image paste keeps the default text behaviour", async () => {
     });
     await settle(setup);
     const frame = setup.captureCharFrame();
+    expect(frame).toContain("▧");
     expect(frame).toContain("notes.txt");
+});
+
+test("a submitted file reference becomes an Attached file line", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nova-composer-"));
+    const path = join(dir, "notes.txt");
+    writeFileSync(path, "hello");
+    const setup = await composer();
+    await act(async () => {
+        setup.renderer.stdin.emit("data", Buffer.from(paste(path)));
+    });
+    await settle(setup);
+    await act(async () => {
+        setup.renderer.stdin.emit("data", Buffer.from("summarise this"));
+    });
+    await settle(setup);
+    await act(async () => {
+        setup.renderer.stdin.emit("data", Buffer.from("\r"));
+    });
+    await settle(setup);
+
+    const last = submitted.at(-1);
+    expect(last?.message).toBe(`summarise this\nAttached file: \`${path}\``);
+    expect(last?.attachments).toEqual([]);
+});
+
+test("prose pasted as text stays text", async () => {
+    const setup = await composer();
+    await act(async () => {
+        setup.renderer.stdin.emit("data", Buffer.from(paste("hello there")));
+    });
+    await settle(setup);
+    const frame = setup.captureCharFrame();
+    expect(frame).toContain("hello there");
     expect(frame).not.toContain("▧");
 });
 

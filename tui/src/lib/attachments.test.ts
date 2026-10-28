@@ -4,11 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+    displayPath,
     MAX_ATTACHMENT_BYTES,
     normalizePastedPath,
     parsePastedPaths,
     readImageAttachment,
-    resolvePastedImages,
+    resolvePastedFiles,
     toNovaAttachment,
 } from "./attachments.ts";
 
@@ -122,28 +123,54 @@ describe("readImageAttachment", () => {
     });
 });
 
-describe("resolvePastedImages", () => {
-    test("returns one image per readable path", async () => {
+describe("resolvePastedFiles", () => {
+    test("marks images and plain files differently", async () => {
         const dir = tempDir();
-        const first = join(dir, "a.png");
-        const second = join(dir, "b.gif");
-        writeFileSync(first, PNG_BYTES);
-        writeFileSync(second, PNG_BYTES);
-        const images = await resolvePastedImages(`${first}\n${second}`, "darwin");
-        expect(images?.map((image) => image.name)).toEqual(["a.png", "b.gif"]);
+        const image = join(dir, "a.png");
+        const text = join(dir, "notes.md");
+        writeFileSync(image, PNG_BYTES);
+        writeFileSync(text, "# hi");
+        const files = await resolvePastedFiles(`${image}\n${text}`, "darwin");
+        expect(files?.map((file) => [file.name, file.kind])).toEqual([
+            ["a.png", "image"],
+            ["notes.md", "file"],
+        ]);
+        expect(files?.[0]?.image?.mime).toBe("image/png");
+        expect(files?.[1]?.image).toBeUndefined();
     });
 
-    test("is all-or-nothing: one bad path means plain text", async () => {
+    test("is all-or-nothing: one missing path means plain text", async () => {
         const dir = tempDir();
         const good = join(dir, "a.png");
         writeFileSync(good, PNG_BYTES);
         expect(
-            await resolvePastedImages(`${good}\n${join(dir, "notes.txt")}`, "darwin"),
+            await resolvePastedFiles(`${good}\n${join(dir, "missing.txt")}`, "darwin"),
         ).toBeUndefined();
     });
 
     test("declines prose", async () => {
-        expect(await resolvePastedImages("hello there", "darwin")).toBeUndefined();
+        expect(await resolvePastedFiles("hello there", "darwin")).toBeUndefined();
+    });
+
+    test("a file over the image budget is still a reference", async () => {
+        const dir = tempDir();
+        const big = join(dir, "big.png");
+        writeFileSync(big, Buffer.alloc(MAX_ATTACHMENT_BYTES + 1));
+        const files = await resolvePastedFiles(big, "darwin");
+        expect(files?.[0]?.kind).toBe("file");
+    });
+});
+
+describe("displayPath", () => {
+    test("keeps paths outside the workspace absolute", () => {
+        expect(displayPath("/definitely/not/in/the/workspace/x.ts")).toBe(
+            "/definitely/not/in/the/workspace/x.ts",
+        );
+    });
+
+    test("makes workspace paths relative", () => {
+        const inside = join(process.cwd(), "src", "lib", "attachments.ts");
+        expect(displayPath(inside)).toBe("src/lib/attachments.ts");
     });
 });
 

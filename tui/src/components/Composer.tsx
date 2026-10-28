@@ -9,9 +9,10 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { interruptChat } from "../api/nova-api.ts";
 import {
-    resolvePastedImages,
+    displayPath,
+    resolvePastedFiles,
     toNovaAttachment,
-    type LocalImage,
+    type PastedFile,
 } from "../lib/attachments.ts";
 import { truncateMiddle } from "../lib/display-width.ts";
 import {
@@ -68,7 +69,7 @@ export function Composer({
     // Keyed by the extmark that draws the chip: opentui deletes a virtual
     // extmark as a whole, so the attachment disappears with its label.
     const [attachments, setAttachments] = useState<
-        { extmarkId: number; image: LocalImage }[]
+        { extmarkId: number; file: PastedFile }[]
     >([]);
     const attachmentType = useRef<number | null>(null);
 
@@ -80,8 +81,8 @@ export function Composer({
         }
     }, [modalOpen]);
 
-    const chipOf = (image: LocalImage): string =>
-        `▧ ${truncateMiddle(image.name, CHIP_NAME_WIDTH)} ×`;
+    const chipOf = (file: PastedFile): string =>
+        `▧ ${truncateMiddle(file.kind === "image" ? file.name : displayPath(file.path), CHIP_NAME_WIDTH)} ×`;
 
     /** Register the chip style once, after the textarea exists. */
     function attachmentTypeId(): number | null {
@@ -94,11 +95,11 @@ export function Composer({
     }
 
     /** Insert a chip for *image* without putting its path in the prompt. */
-    function insertAttachment(image: LocalImage): void {
+    function insertAttachment(file: PastedFile): void {
         const input = textareaRef.current;
         const typeId = attachmentTypeId();
         if (!input || typeId === null) return;
-        const label = chipOf(image);
+        const label = chipOf(file);
         const start = input.cursorOffset;
         input.insertText(`${label} `);
         const extmarkId = input.extmarks.create({
@@ -109,7 +110,7 @@ export function Composer({
             virtual: true,
             typeId,
         });
-        setAttachments((list) => [...list, { extmarkId, image }]);
+        setAttachments((list) => [...list, { extmarkId, file }]);
     }
 
     /** Drop attachments whose chip is no longer in the textarea. */
@@ -144,16 +145,16 @@ export function Composer({
         // Read the disk asynchronously, so the default paste has to be cancelled
         // now: after an await it has already inserted the text.
         event.preventDefault();
-        void resolvePastedImages(text).then((images) => {
+        void resolvePastedFiles(text).then((files) => {
             const input = textareaRef.current;
             if (!input) return;
-            // Not a set of image paths: insert the text ourselves, so a file
-            // shows up as its path, which is what the user expects.
-            if (!images) {
+            // Not a set of existing paths: insert the text ourselves (prose, a
+            // URL, a half-copied list), which is the old paste behaviour.
+            if (!files) {
                 input.insertText(text.replace(/\r\n?/g, "\n"));
                 return;
             }
-            for (const image of images) insertAttachment(image);
+            for (const file of files) insertAttachment(file);
         });
     };
 
@@ -216,17 +217,26 @@ export function Composer({
         if (!value.trim() || isStreaming) {
             return;
         }
-        const outgoing = attachments.reduce(
-            (text, item) => text.replace(chipOf(item.image), ""),
-            value,
+        const body = attachments
+            .reduce((text, item) => text.replace(`${chipOf(item.file)} `, ""), value)
+            .trim();
+        // Images travel as attachments; files are referenced by path so the
+        // agent reads them with its own tools (permissions still apply).
+        const images = attachments.flatMap((item) =>
+            item.file.kind === "image" && item.file.image
+                ? [toNovaAttachment(item.file.image)]
+                : [],
         );
-        const payload = attachments.map((item) => toNovaAttachment(item.image));
+        const references = attachments.flatMap((item) =>
+            item.file.kind === "file"
+                ? [`Attached file: \`${displayPath(item.file.path)}\``]
+                : [],
+        );
+        const message = [body, ...references].filter(Boolean).join("\n");
+        if (!message || isStreaming) return;
         clearComposer();
         clearAttachments();
-        await runChatStream({
-            message: outgoing.trim() || value.trim(),
-            attachments: payload,
-        });
+        await runChatStream({ message, attachments: images });
     }
 
     function handleKeyDown(event: KeyEvent): void {
