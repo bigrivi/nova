@@ -80,7 +80,7 @@ function JumpToLatest({
         >
             {atBottom ? null : (
                 <box onMouseUp={jump}>
-                    <text fg={theme.primary.muted} content="Jump to latest ↓" />
+                    <text fg={theme.text.muted} content="Jump to latest ↓" />
                 </box>
             )}
         </box>
