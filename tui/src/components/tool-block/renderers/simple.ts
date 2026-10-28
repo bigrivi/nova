@@ -13,7 +13,6 @@ interface SimpleConfig {
 
 const CONFIGS: SimpleConfig[] = [
     { name: "browser_use", running: "Running", done: "Ran", error: "Failed", argKeys: ["action", "url", "query"] },
-    { name: "read_image", running: "Reading", done: "Read", error: "Failed to read", argKeys: ["filePath"] },
     { name: "save_memory", running: "Saving", done: "Saved", error: "Failed to save", argKeys: ["key"] },
     { name: "search_memory", running: "Searching", done: "Searched", error: "Failed to search", argKeys: ["query"] },
     { name: "delete_memory", running: "Deleting", done: "Deleted", error: "Failed to delete", argKeys: ["key", "memory_id"] },

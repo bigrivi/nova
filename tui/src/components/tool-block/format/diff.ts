@@ -52,12 +52,20 @@ function isHunkComplete(lines: string[], headerIndex: number): boolean {
  *   is removed, so every shown header stays honest.
  */
 export function extractDiff(text: string): string {
-    const index = text.indexOf("--- ");
-    if (index === -1) return "";
+    // Anchor on a file header pair: prose can contain "--- " anywhere, and
+    // starting there used to swallow the rest of the tool output.
+    const all = text.split("\n");
+    let start = -1;
+    for (let index = 0; index < all.length - 1; index++) {
+        if (/^--- .+/.test(all[index]!) && /^\+\+\+ .+/.test(all[index + 1]!)) {
+            start = index;
+            break;
+        }
+    }
+    if (start < 0) return "";
 
-    const lines = text
-        .slice(index)
-        .split("\n")
+    const lines = all
+        .slice(start)
         .filter((line) => !TRUNCATION_MARKER.test(line));
     while (lines.length > 0 && lines[lines.length - 1] === "") {
         lines.pop();

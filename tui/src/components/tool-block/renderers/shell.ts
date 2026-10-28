@@ -1,4 +1,4 @@
-import { backtick, RESULT_LIMITS, tailLines, cleanLines } from "../format/text.ts";
+import { backtick, RESULT_LIMITS, sanitizeInline, tailLines, cleanLines } from "../format/text.ts";
 import type { RenderCtx, ResultView, ToolRenderer } from "../types.ts";
 
 type ShellArgs = { command?: string; script_path?: string };
@@ -10,12 +10,12 @@ function parseArgs(raw: Record<string, unknown> | null): ShellArgs | null {
 
 function subject(args: ShellArgs): string {
     if (typeof args.command === "string" && args.command.trim()) {
-        const firstLine = args.command.trim().split(/\r?\n/)[0] ?? "";
-        const collapsed = firstLine.trim().replace(/\s+/g, " ");
+        const firstLine = args.command.split(/\r?\n/)[0] ?? "";
+        const collapsed = sanitizeInline(firstLine);
         return args.command.includes("\n") ? `${collapsed}…` : collapsed;
     }
     if (typeof args.script_path === "string" && args.script_path.trim()) {
-        return args.script_path.trim();
+        return sanitizeInline(args.script_path);
     }
     return "inline code";
 }

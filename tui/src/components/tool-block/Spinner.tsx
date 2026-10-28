@@ -15,6 +15,8 @@ function subscribe(listener: () => void): () => void {
             frame = (frame + 1) % FRAMES.length;
             for (const notify of listeners) notify();
         }, TICK_MS);
+        // A spinning glyph must never keep a script or a test run alive.
+        timer.unref?.();
     }
     return () => {
         listeners.delete(listener);

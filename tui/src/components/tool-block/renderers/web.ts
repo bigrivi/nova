@@ -1,4 +1,4 @@
-import { backtick, RESULT_LIMITS, cleanLines } from "../format/text.ts";
+import { backtick, RESULT_LIMITS, cleanLines, sanitizeInline } from "../format/text.ts";
 import type { ToolRenderer } from "../types.ts";
 
 type WebArgs = { query?: string; url?: string };
@@ -9,11 +9,11 @@ function parseArgs(raw: Record<string, unknown> | null): WebArgs | null {
 }
 
 function querySubject(args: WebArgs): string {
-    return typeof args.query === "string" && args.query.trim() ? args.query.trim() : "";
+    return typeof args.query === "string" && args.query.trim() ? sanitizeInline(args.query) : "";
 }
 
 function urlSubject(args: WebArgs): string {
-    return typeof args.url === "string" && args.url.trim() ? args.url.trim() : "";
+    return typeof args.url === "string" && args.url.trim() ? sanitizeInline(args.url) : "";
 }
 
 function domain(url: string): string {

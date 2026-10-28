@@ -164,3 +164,20 @@ describe("extractDiff on a server-truncated write diff", () => {
         expect(diff.startsWith("--- a/x.py")).toBe(true);
     });
 });
+
+describe("extractDiff anchoring", () => {
+    const DIFF = ["--- a/x.ts", "+++ b/x.ts", "@@ -1,1 +1,1 @@", "-old", "+new"].join("\n");
+
+    test("finds a diff that follows prose", () => {
+        expect(extractDiff(`Edited x.ts\n${DIFF}`)).toBe(DIFF);
+    });
+
+    test("ignores a bare separator in prose", () => {
+        // "--- " used to be enough to start a diff and swallow the rest
+        expect(extractDiff("result\n--- not a header\nmore prose")).toBe("");
+    });
+
+    test("ignores a --- line without a +++ line after it", () => {
+        expect(extractDiff("--- a/x.ts\nno plus header")).toBe("");
+    });
+});

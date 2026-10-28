@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { getRenderer } from "../registry.ts";
+import { buildRegistry, getRenderer } from "../registry.ts";
+import type { ToolRenderer } from "../types.ts";
 
 describe("tool renderers", () => {
     test("shell has verbs and subject", () => {
@@ -83,5 +84,64 @@ describe("tool renderers", () => {
         const renderer = getRenderer("read");
         expect(renderer.verbs.error).toBe("Failed to read");
         expect(renderer.verbs.done).toBe("Read");
+    });
+
+    test("prototype keys fall back instead of resolving Object members", () => {
+        for (const name of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+            const renderer = getRenderer(name);
+            expect({ name, running: renderer.verbs.running }).toEqual({
+                name,
+                running: "Running",
+            });
+        }
+    });
+
+    test("the fallback is built once per tool name", () => {
+        expect(getRenderer("some_mcp_tool")).toBe(getRenderer("some_mcp_tool"));
+    });
+
+    test("read_image comes from the file renderer, not the simple configs", () => {
+        const renderer = getRenderer("read_image");
+        const args = renderer.parseArgs({ path: "shot.png" });
+        const ctx = {
+            part: {} as never,
+            args: args!,
+            status: "done" as const,
+            outputText: JSON.stringify({
+                images: ["…"],
+                text: "Image loaded: shot.png, format: png, size: 234567 bytes",
+            }),
+            width: 80,
+            expanded: false,
+        };
+        expect(renderer.subject(args!)).toBe("shot.png");
+        expect(renderer.meta?.(ctx)).toBe("png · 229 KB");
+        expect(renderer.result?.(ctx)?.kind).toBe("none");
+    });
+
+    test("read_image meta is dropped when the payload is not readable", () => {
+        const renderer = getRenderer("read_image");
+        const args = renderer.parseArgs({ path: "shot.png" });
+        for (const outputText of ["", "not json", '{"images":[]}']) {
+            const ctx = {
+                part: {} as never,
+                args: args!,
+                status: "done" as const,
+                outputText,
+                width: 80,
+                expanded: false,
+            };
+            expect(renderer.meta?.(ctx)).toBeUndefined();
+        }
+    });
+
+    test("buildRegistry rejects a duplicate tool name", () => {
+        const renderer = getRenderer("shell");
+        expect(() =>
+            buildRegistry([
+                ["shell", renderer as ToolRenderer],
+                ["shell", renderer as ToolRenderer],
+            ]),
+        ).toThrow(/duplicate tool renderer/);
     });
 });

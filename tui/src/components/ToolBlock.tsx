@@ -4,7 +4,7 @@ import { useTheme } from "../context/theme.tsx";
 import type { ToolCallPart as ToolCallPartData } from "../stores/chat-store.ts";
 import { useExpandStore } from "../stores/expand-store.ts";
 import { Spinner } from "./tool-block/Spinner.tsx";
-import { errorResult } from "./tool-block/format/text.ts";
+import { errorResult, sanitizeOutput } from "./tool-block/format/text.ts";
 import { ResultBlock } from "./tool-block/parts/ResultBlock.tsx";
 import { getRenderer } from "./tool-block/registry.ts";
 import { createFallbackRenderer } from "./tool-block/renderers/fallback.ts";
@@ -37,7 +37,8 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
         part,
         args: ctxArgs,
         status,
-        outputText,
+        // Every renderer, including the error path, sees the same cleaned text.
+        outputText: sanitizeOutput(outputText),
         error,
         width: 0,
         expanded,

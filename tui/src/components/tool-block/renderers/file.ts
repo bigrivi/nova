@@ -66,13 +66,31 @@ export const readRenderer: ToolRenderer<FileArgs> = {
     blockedTitle: (args) => `Waiting for approval — Read ${backtick(subject(args))}`,
 };
 
+/** `format` and `size` from the tool's JSON payload, when it is parseable. */
+function imageMeta(ctx: RenderCtx<FileArgs>): string | undefined {
+    if (!ctx.outputText.trimStart().startsWith("{")) return undefined;
+    let text = "";
+    try {
+        const payload = JSON.parse(ctx.outputText) as { text?: unknown };
+        text = typeof payload.text === "string" ? payload.text : "";
+    } catch {
+        // Not JSON: a streamed or truncated payload has no meta to show.
+        return undefined;
+    }
+    const format = /format: ([^,\s]+)/.exec(text)?.[1];
+    const bytes = Number(/size: (\d+) bytes/.exec(text)?.[1] ?? Number.NaN);
+    const size = Number.isFinite(bytes)
+        ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+        : undefined;
+    const parts = [format, size].filter((part): part is string => Boolean(part));
+    return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
 export const readImageRenderer: ToolRenderer<FileArgs> = {
     ...readRenderer,
     verbs: { running: "Reading", done: "Read", error: "Failed to read" },
-    meta: (ctx) => {
-        const lines = readLines(ctx);
-        return lines > 0 ? `${lines} lines` : undefined;
-    },
+    meta: imageMeta,
+    result: () => ({ kind: "none" }),
 };
 
 export const writeRenderer: ToolRenderer<FileArgs> = {
