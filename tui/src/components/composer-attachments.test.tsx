@@ -13,10 +13,18 @@ const { AppProvider } = await import("../context/app.tsx");
 const { Composer } = await import("./Composer.tsx");
 const { useChatStore } = await import("../stores/chat-store.ts");
 
-const submitted: { message: string; attachments?: unknown[] }[] = [];
+const submitted: {
+    message: string;
+    displayText?: string;
+    attachments?: unknown[];
+}[] = [];
 
 mock.module("../stream/chat-stream.ts", () => ({
-    runChatStream: async (options: { message: string; attachments?: unknown[] }) => {
+    runChatStream: async (options: {
+        message: string;
+        displayText?: string;
+        attachments?: unknown[];
+    }) => {
         submitted.push(options);
     },
     interruptChat: async () => {},
@@ -103,7 +111,9 @@ test("a submitted file reference becomes an Attached file line", async () => {
     await settle(setup);
 
     const last = submitted.at(-1);
+    // The model gets the reference; the transcript shows what the user typed.
     expect(last?.message).toBe(`summarise this\nAttached file: \`${path}\``);
+    expect(last?.displayText).toBe("summarise this");
     expect(last?.attachments).toEqual([]);
 });
 

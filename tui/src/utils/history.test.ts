@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { NovaMessageRecord } from "../api/types.ts";
-import { recordToMessage } from "./history.ts";
+import { recordToMessage, stripFileReferences } from "./history.ts";
 
 function userRecord(overrides: Partial<NovaMessageRecord> = {}): NovaMessageRecord {
     return {
@@ -29,5 +29,20 @@ describe("recordToMessage", () => {
     test("omits the variant for a normal user message", () => {
         const message = recordToMessage(userRecord());
         expect(message.variant).toBeUndefined();
+    });
+
+    test("hides the Attached file references appended for the model", () => {
+        const message = recordToMessage(
+            userRecord({
+                content: "summarise this\nAttached file: `src/notes.md`",
+            }),
+        );
+        const part = message.parts[0];
+        expect(part?.type === "text" && part.text).toBe("summarise this");
+    });
+
+    test("keeps a reference the user typed mid-message out of the filter", () => {
+        const content = "look at Attached file: `x` then done";
+        expect(stripFileReferences(content)).toBe(content);
     });
 });

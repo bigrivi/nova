@@ -234,9 +234,20 @@ export function Composer({
         );
         const message = [body, ...references].filter(Boolean).join("\n");
         if (!message || isStreaming) return;
+        // A file-only message still needs something to show in the bubble.
+        const display =
+            body ||
+            attachments
+                .filter((item) => item.file.kind === "file")
+                .map((item) => `▧ ${item.file.name}`)
+                .join(" ");
         clearComposer();
         clearAttachments();
-        await runChatStream({ message, attachments: images });
+        await runChatStream({
+            message,
+            displayText: display || undefined,
+            attachments: images,
+        });
     }
 
     function handleKeyDown(event: KeyEvent): void {

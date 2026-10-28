@@ -1,5 +1,13 @@
 /** History message conversion: NovaMessageRecord → TuiMessage (simplified: restores text/reasoning/tool-call, attaches tool results to the corresponding call) */
 import type { NovaMessageRecord } from "../api/types.ts";
+
+/** Drop the `Attached file:` lines appended for the model, keeping the prose. */
+export function stripFileReferences(content: string): string {
+    const kept = content
+        .split("\n")
+        .filter((line) => !/^Attached file: `[^`]+`$/.test(line.trim()));
+    return kept.join("\n").trim();
+}
 import type { MessagePart, TuiMessage } from "../stores/chat-store.ts";
 
 function parseToolArgs(argumentsValue: unknown): {
@@ -36,7 +44,7 @@ export function recordToMessage(record: NovaMessageRecord): TuiMessage {
             parts: [
                 {
                     type: "text",
-                    text: record.content,
+                    text: stripFileReferences(record.content),
                     ...(record.images && record.images.length > 0
                         ? {
                               images: record.images.map(

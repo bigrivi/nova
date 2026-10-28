@@ -31,6 +31,8 @@ import { WORKSPACE_DIR } from "../workspace.ts";
 
 export type ChatRunOptions = {
     message: string;
+    /** What the transcript shows; defaults to `message`. */
+    displayText?: string;
     /** Images pasted into the composer; the backend folds them into the turn. */
     attachments?: NovaAttachmentData[];
 };
@@ -126,6 +128,7 @@ export function formatAskAnswers(
 export async function runChatStream(options: ChatRunOptions): Promise<void> {
     await runTurn({
         message: options.message,
+        displayText: options.displayText,
         attachments: options.attachments,
     });
 }
@@ -154,6 +157,7 @@ export async function resumeChatStream(sessionId: string): Promise<void> {
 
 type TurnOptions = {
     message: string;
+    displayText?: string;
     attachments?: NovaAttachmentData[];
     /** Set when tailing an existing turn instead of starting a new one. */
     resumeSessionId?: string;
@@ -171,7 +175,9 @@ async function runTurn(options: TurnOptions): Promise<void> {
 
     if (!resuming) {
         store.addUserMessage(
-            options.message,
+            // The `Attached file:` lines are for the model; the bubble shows
+            // what the user actually typed.
+            options.displayText ?? options.message,
             options.attachments?.map((attachment) => attachment.name),
         );
     }
