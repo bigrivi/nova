@@ -43,3 +43,20 @@ export function readToolOutcome(
             (isError === true || statusError || taskFailed) && !taskRunning,
     };
 }
+/**
+ * The failure text the server sent for a tool call, if it sent one.
+ *
+ * `isError` says only "failed"; the reason is what the user needs to know
+ * whether to retry, fix the arguments, or change the agent's permissions. It
+ * arrives on `data-nova-tool-error` and is stored beside the part.
+ *
+ * @param part - The tool call part, as the runtime hands it to a renderer.
+ * @returns The trimmed reason, or null when there is none.
+ */
+export function readToolErrorMessage(part: unknown): string | null {
+    if (!part || typeof part !== "object") return null;
+    const message = (part as { errorMessage?: unknown }).errorMessage;
+    return typeof message === "string" && message.trim()
+        ? message.trim()
+        : null;
+}

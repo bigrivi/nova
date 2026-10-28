@@ -12,6 +12,15 @@ export type StreamPatchContext = {
 
 export type AssistantPart = Exclude<ThreadMessageLike["content"], string>[number];
 
+/** A tool part plus the failure text the server sent with it.
+ *
+ * The library's part union has nowhere to put a reason and `isError` alone only
+ * says "failed", which leaves the user with a red card and no explanation.
+ */
+export type NovaToolCallPart = Extract<AssistantPart, { type: "tool-call" }> & {
+    errorMessage?: string;
+};
+
 export type ToolCallPatch = {
     toolCallId: string;
     toolName?: string;
@@ -202,6 +211,7 @@ export function upsertAssistantToolCall(
         input?: NovaJsonObject;
         output?: unknown;
         isError?: boolean;
+        errorMessage?: string;
     },
 ) {
     return messages.map((message) => {
@@ -221,12 +231,12 @@ export function upsertAssistantToolCall(
                 part.toolCallId === payload.toolCallId,
         );
 
-        const current =
+        const current: NovaToolCallPart | null =
             toolIndex >= 0 && parts[toolIndex]?.type === "tool-call"
-                ? parts[toolIndex]
+                ? (parts[toolIndex] as NovaToolCallPart)
                 : null;
 
-        const nextPart: AssistantPart = {
+        const nextPart: NovaToolCallPart = {
             type: "tool-call",
             toolCallId: payload.toolCallId,
             toolName: payload.toolName || current?.toolName || "tool",
@@ -245,6 +255,13 @@ export function upsertAssistantToolCall(
                 : current?.isError !== undefined
                   ? { isError: current.isError }
                   : {}),
+            ...(payload.errorMessage !== undefined
+                ? { errorMessage: payload.errorMessage }
+                : payload.output !== undefined
+                  ? {}
+                  : current?.errorMessage !== undefined
+                    ? { errorMessage: current.errorMessage }
+                    : {}),
         };
 
         if (toolIndex >= 0) {
@@ -535,6 +552,9 @@ export function applyStreamEvent(
         return upsertAssistantToolCall(messages, assistantMessageId, {
             toolCallId: event.toolCallId,
             output: event.output,
+            // A returned call is no longer a failed one, and its reason is
+            // stale. A failed result re-marks both with its own error frame.
+            isError: false,
         });
     }
 
@@ -543,9 +563,15 @@ export function applyStreamEvent(
         if (!toolCallId) {
             return messages;
         }
+        const reason = event.data?.message;
         return upsertAssistantToolCall(messages, assistantMessageId, {
             toolCallId,
             isError: true,
+            // The reason is the only part of a server-side refusal a user can
+            // act on, so it travels with the part instead of being dropped.
+            ...(typeof reason === "string" && reason.trim()
+                ? { errorMessage: reason.trim() }
+                : {}),
         });
     }
 

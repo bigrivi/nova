@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { errorTextFromResult } from "@/lib/tool-result";
-import { readToolOutcome } from "@/lib/tool-outcome";
+import { readToolErrorMessage, readToolOutcome } from "@/lib/tool-outcome";
 import {
     readBackgroundTaskEnvelope,
     readBackgroundTaskReference,
@@ -429,18 +429,16 @@ function ToolFallbackError({
     );
 }
 
-const ToolFallbackImpl: ToolCallMessagePartComponent = ({
-    toolName,
-    argsText,
-    result,
-    status,
-    isError,
-}) => {
+const ToolFallbackImpl: ToolCallMessagePartComponent = (props) => {
+    const { toolName, argsText, result, status, isError } = props;
     const { t } = useTranslation();
     // Part status only: the detached task is deliberately excluded here so the
     // result block stays rendered for a task that later fails.
     const { isCancelled, errored } = readToolOutcome(status, isError, null);
-    const errorMessage = errored ? errorTextFromResult(result) : null;
+    // The server's own reason wins over one dug out of the result.
+    const errorMessage = errored
+        ? (readToolErrorMessage(props) ?? errorTextFromResult(result))
+        : null;
     const backgroundTask = readBackgroundTaskReference(argsText, result);
     const trackedTask = useBackgroundTaskStore((state) =>
         backgroundTask?.taskId

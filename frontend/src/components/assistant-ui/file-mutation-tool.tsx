@@ -11,6 +11,7 @@ import {
     ToolFallbackRoot,
     ToolFallbackTrigger,
 } from "@/components/assistant-ui/tool-fallback";
+import { readToolErrorMessage } from "@/lib/tool-outcome";
 import { errorTextFromResult } from "@/lib/tool-result";
 import { mutationVerbKey } from "@/lib/file-mutation-verb";
 import { cn } from "@/lib/utils";
@@ -272,14 +273,8 @@ const SplitDiffBlock = ({ diff }: { diff: string }) => {
     );
 };
 
-const FileMutationToolImpl: ToolCallMessagePartComponent = ({
-    toolName,
-    args,
-    argsText,
-    result,
-    status,
-    isError,
-}) => {
+const FileMutationToolImpl: ToolCallMessagePartComponent = (props) => {
+    const { toolName, args, argsText, result, status, isError } = props;
     const { t } = useTranslation();
     const model = useMemo(
         () => buildViewModel(t, toolName, args, argsText, result, isError === true),
@@ -307,7 +302,12 @@ const FileMutationToolImpl: ToolCallMessagePartComponent = ({
             <ToolFallbackContent>
                 <ToolFallbackError
                     status={status}
-                    message={errored ? errorTextFromResult(result) : null}
+                    message={
+                        errored
+                            ? (readToolErrorMessage(props) ??
+                              errorTextFromResult(result))
+                            : null
+                    }
                 />
                 {model.filePath ? (
                     <div className="font-mono text-xs font-medium text-brand">

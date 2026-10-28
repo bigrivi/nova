@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { readToolErrorMessage } from "@/lib/tool-outcome";
 import { errorTextFromResult } from "@/lib/tool-result";
 import { readBackgroundTaskReference } from "@/lib/background-task";
 import { useBackgroundTaskStore } from "@/stores/background-task-store";
@@ -17,12 +18,8 @@ import {
     ToolFallbackTrigger,
 } from "./tool-fallback";
 
-const CodeRunToolImpl: ToolCallMessagePartComponent = ({
-    argsText,
-    result,
-    status,
-    isError,
-}) => {
+const CodeRunToolImpl: ToolCallMessagePartComponent = (props) => {
+    const { argsText, result, status, isError } = props;
     const { t } = useTranslation();
     let code = "";
     let description = "";
@@ -74,7 +71,12 @@ const CodeRunToolImpl: ToolCallMessagePartComponent = ({
             <ToolFallbackContent>
                 <ToolFallbackError
                     status={status}
-                    message={errored ? errorTextFromResult(result) : null}
+                    message={
+                        errored
+                            ? (readToolErrorMessage(props) ??
+                              errorTextFromResult(result))
+                            : null
+                    }
                 />
                 {code && (
                     <div data-slot="tool-fallback-args" className="w-full min-w-0 max-w-full">

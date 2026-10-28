@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { NovaBackgroundTaskStatus } from "@/types/nova";
 
-import { readToolOutcome } from "./tool-outcome";
+import { readToolErrorMessage, readToolOutcome } from "./tool-outcome";
 
 type Status = ToolCallMessagePartStatus | undefined;
 type Background = NovaBackgroundTaskStatus | null;
@@ -171,5 +171,28 @@ describe("readToolOutcome resolves the states the UI depends on", () => {
             isCancelled: false,
             errored: false,
         });
+    });
+});
+describe("readToolErrorMessage", () => {
+    it("returns the reason the server attached to the part", () => {
+        expect(
+            readToolErrorMessage({
+                type: "tool-call",
+                errorMessage: "Refused: not provably read-only.",
+            }),
+        ).toBe("Refused: not provably read-only.");
+    });
+
+    it("returns null when there is no reason to show", () => {
+        const parts = [
+            null,
+            undefined,
+            {},
+            { errorMessage: "  " },
+            { errorMessage: 7 },
+        ];
+        for (const part of parts) {
+            expect(readToolErrorMessage(part)).toBeNull();
+        }
     });
 });

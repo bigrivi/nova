@@ -252,6 +252,64 @@ describe("applyStreamEvent tool branches", () => {
         expect(part?.type === "tool-call" && part.toolName).toBe("shell");
     });
 
+    it("keeps the reason the server sent with a tool error", () => {
+        const context = { assistantMessageId: ASSISTANT_ID };
+        let messages = applyStreamEvent(
+            [assistantMessage()],
+            {
+                type: "tool-input-available",
+                toolCallId: "call-10",
+                toolName: "shell",
+                input: { command: "ls" },
+            },
+            context,
+        );
+        messages = applyStreamEvent(
+            messages,
+            {
+                type: "data-nova-tool-error",
+                data: {
+                    toolCallId: "call-10",
+                    message: "Refused: not provably read-only.",
+                },
+            } as NovaStreamEvent,
+            context,
+        );
+
+        const part = toolCallOf(messages[0]!, "call-10") as
+            | { isError?: boolean; errorMessage?: string }
+            | null;
+        expect(part?.isError).toBe(true);
+        expect(part?.errorMessage).toBe("Refused: not provably read-only.");
+    });
+
+    it("drops a stale error when a result arrives later for the same call", () => {
+        const context = { assistantMessageId: ASSISTANT_ID };
+        let messages = applyStreamEvent(
+            [assistantMessage()],
+            {
+                type: "data-nova-tool-error",
+                data: { toolCallId: "call-11", message: "Refused." },
+            } as NovaStreamEvent,
+            context,
+        );
+        messages = applyStreamEvent(
+            messages,
+            {
+                type: "tool-output-available",
+                toolCallId: "call-11",
+                output: "ok",
+            },
+            context,
+        );
+
+        const part = toolCallOf(messages[0]!, "call-11") as
+            | { isError?: boolean; errorMessage?: string }
+            | null;
+        expect(part?.errorMessage).toBeUndefined();
+        expect(part?.isError).toBe(false);
+    });
+
     it("returns messages unchanged when tool ids are missing", () => {
         const context = { assistantMessageId: ASSISTANT_ID };
         const cases: NovaStreamEvent[] = [
