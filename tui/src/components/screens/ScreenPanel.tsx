@@ -20,11 +20,16 @@ export function ScreenPanel({
             bottom={0}
             justifyContent="center"
             alignItems="center"
+            // A centred child taller than the screen would overflow both ways
+            // and paint over the composer; clip it instead.
+            overflow="hidden"
         >
-            {/* `surface` is one step above `background` in every theme, so the
+            {/* `raised` is one step above the canvas in every theme, so the
                 panel reads as a raised block without needing a border. */}
             <box
                 width={width}
+                maxHeight="100%"
+                flexDirection="column"
                 paddingX={2}
                 paddingY={2}
                 backgroundColor={theme.background.raised}

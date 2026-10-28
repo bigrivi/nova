@@ -4,7 +4,7 @@
  * cursor row is scrolled back into view whenever it moves.
  */
 import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../../context/theme.tsx";
 import { buildRows, rowOf } from "./list-nav.ts";
@@ -20,6 +20,9 @@ export type SearchableItem = {
 };
 
 const VIEWPORT_ROWS = 12;
+/** Rows the panel spends before and after the list: padding (4), title, input
+ *  and footer (3), status bar (2) and the app's bottom margin (1). */
+const CHROME_ROWS = 10;
 /** Leading gutter every row shares, so group headers line up with labels. */
 const MARKER_WIDTH = 3;
 
@@ -53,6 +56,7 @@ export function SearchableList<T extends SearchableItem>({
     defaultValue?: string;
 }) {
     const theme = useTheme();
+    const dimensions = useTerminalDimensions();
     const [query, setQuery] = useState("");
     const [cursor, setCursor] = useState(() =>
         Math.max(
@@ -73,6 +77,12 @@ export function SearchableList<T extends SearchableItem>({
     const rows = useMemo(
         () => buildRows(filtered, (item) => item.group),
         [filtered],
+    );
+    // A fixed 12-row viewport pushes the panel past the screen on short
+    // terminals, which clipped the title and bled over the composer.
+    const listRows = Math.max(
+        1,
+        Math.min(rows.length, VIEWPORT_ROWS, dimensions.height - CHROME_ROWS),
     );
     const live = useRef({ filtered, cursor });
     live.current = { filtered, cursor };
@@ -142,7 +152,7 @@ export function SearchableList<T extends SearchableItem>({
 
     return (
         <ScreenPanel>
-            <text marginLeft={MARKER_WIDTH} fg={theme.primary.base}>{title}</text>
+            <text marginLeft={MARKER_WIDTH} fg={theme.primary.muted}>{title}</text>
             <input
                 ref={inputRef}
                 marginLeft={MARKER_WIDTH}
@@ -167,7 +177,9 @@ export function SearchableList<T extends SearchableItem>({
             />
             <scrollbox
                 ref={scrollRef}
-                height={Math.min(Math.max(rows.length, 1), VIEWPORT_ROWS)}
+                height={listRows}
+                flexShrink={1}
+                minHeight={1}
                 scrollY
                 focusable={false}
                 viewportCulling
