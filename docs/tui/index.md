@@ -82,3 +82,33 @@ npm run dev
 ```
 
 Open `http://localhost:5173` in your browser.
+
+## Theming
+
+Themes live in `tui/src/themes/*.ts`; `tui/src/themes/types.ts` is the contract
+and documents every token. Tokens are grouped by job, and a group pairs a
+surface with the foreground drawn on it:
+
+| Group | Use |
+| --- | --- |
+| `background.base` / `background.raised` | Canvas, and the step above it for panels and bubbles |
+| `text.base` / `text.muted` / `text.faint` | Body copy, secondary copy at AA contrast, decoration (placeholders) |
+| `primary.base` / `primary.foreground` / `primary.muted` | Selection fill, text on that fill, the accent used as text |
+| `border.base` | Hairlines and dividers |
+| `feedback.success` / `.error` / `.running` | Status text and glyphs |
+| `markdown.*`, `syntax.*`, `diff.*` | Content roles, one token per markdown/syntax/diff element |
+
+Three rules keep the palette honest:
+
+- `text.muted` and `primary.muted` stay at 4.5:1 against their surface;
+  `text.faint` is the only token allowed below that.
+- `background.raised` has to differ from `background.base` by at least 1.3:1,
+  otherwise a borderless panel is invisible.
+- Components never blend colours to express a state. Semantic values are
+  written down in the theme; `themes/fx/dim.ts` is the one exception, and it
+  only dims the transcript behind a modal.
+
+The preference is stored in `$NOVA_HOME/tui-theme.json` (see `/theme` in the
+chat). Adding a theme means copying a file and filling every token — the type
+system enforces completeness, and `bun run test` checks contrast, token usage
+and that every token a component asks for exists in every theme.

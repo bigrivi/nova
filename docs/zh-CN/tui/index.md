@@ -78,3 +78,31 @@ npm run dev
 ```
 
 在浏览器里打开 `http://localhost:5173`。
+
+## 主题
+
+主题定义在 `tui/src/themes/*.ts`，契约与每个 token 的用途写在
+`tui/src/themes/types.ts`。token 按"职责"分组，并且成对出现：一个面，加上画在
+这个面上的前景色。
+
+| 分组 | 用途 |
+| --- | --- |
+| `background.base` / `background.raised` | 画布，以及抬高一层的面板/气泡底色 |
+| `text.base` / `text.muted` / `text.faint` | 正文、达到 AA 对比度的次要文字、装饰性文字（占位符） |
+| `primary.base` / `primary.foreground` / `primary.muted` | 选中填充、填充上的文字、当文字用的强调色 |
+| `border.base` | 分隔线与面板描边 |
+| `feedback.success` / `.error` / `.running` | 状态文字与图标 |
+| `markdown.*`、`syntax.*`、`diff.*` | 内容角色，每个 markdown/语法/diff 元素一个 token |
+
+三条规则保证配色不跑偏：
+
+- `text.muted` 与 `primary.muted` 对其所在背景保持 4.5:1；只有 `text.faint`
+  允许低于这个值。
+- `background.raised` 与 `background.base` 的对比度至少 1.3:1，否则无边框面板
+  会"消失"。
+- 组件不靠运行时混色表达状态：语义色一律在主题里写明，唯一例外是
+  `themes/fx/dim.ts`，它只负责把弹框背后的对话区压暗。
+
+主题偏好保存在 `$NOVA_HOME/tui-theme.json`（对话里用 `/theme` 切换）。新增主题
+= 复制一个文件并填满所有 token：类型系统会强制补全，`bun run test` 会检查对比度、
+token 是否被真正使用，以及组件引用的每条路径在每个主题里都存在。
