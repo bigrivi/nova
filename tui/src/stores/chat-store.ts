@@ -1,7 +1,12 @@
 /** Chat global state: messages (parts structure), session ID, streaming state (zustand) */
 import { create } from "zustand";
 
-export type TextPart = { type: "text"; text: string };
+export type TextPart = {
+    type: "text";
+    text: string;
+    /** Attachment names to show under the bubble; the payload travels separately. */
+    images?: string[];
+};
 export type ReasoningPart = {
     type: "reasoning";
     text: string;
@@ -66,7 +71,7 @@ type ChatState = {
     setSessionId: (sessionId: string) => void;
     setRetry: (retry: RetryState | null) => void;
     setPending: (messageId: string, pending: boolean) => void;
-    addUserMessage: (text: string) => void;
+    addUserMessage: (text: string, images?: string[]) => void;
     insertWakeMessage: (text: string, wakeFor: string, variant?: string) => void;
     startAssistantMessage: () => string;
     startTextPart: (messageId: string) => void;
@@ -209,14 +214,20 @@ export const useChatStore = create<ChatState>((set) => ({
             }),
         })),
 
-    addUserMessage: (text) =>
+    addUserMessage: (text, images) =>
         set((state) => ({
             messages: [
                 ...state.messages,
                 {
                     id: makeId(),
                     role: "user",
-                    parts: [{ type: "text", text }],
+                    parts: [
+                        {
+                            type: "text",
+                            text,
+                            ...(images && images.length > 0 ? { images } : {}),
+                        },
+                    ],
                     status: "done",
                 },
             ],

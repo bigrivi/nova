@@ -33,7 +33,19 @@ export function recordToMessage(record: NovaMessageRecord): TuiMessage {
         return {
             id: record.id,
             role: "user",
-            parts: [{ type: "text", text: record.content }],
+            parts: [
+                {
+                    type: "text",
+                    text: record.content,
+                    ...(record.images && record.images.length > 0
+                        ? {
+                              images: record.images.map(
+                                  (_image, index) => `image ${index + 1}`,
+                              ),
+                          }
+                        : {}),
+                },
+            ],
             status: "done",
             ...(record.variant ? { variant: record.variant } : {}),
         };

@@ -1,7 +1,19 @@
 /** Bottom input area: multi-line textarea, Enter to submit, Shift+Enter for newline, slash command suggestions, ESC to interrupt */
-import type { KeyBinding, KeyEvent, TextareaRenderable } from "@opentui/core";
+import {
+    decodePasteBytes,
+    type KeyBinding,
+    type KeyEvent,
+    type PasteEvent,
+    type TextareaRenderable,
+} from "@opentui/core";
 import { useEffect, useRef, useState } from "react";
 import { interruptChat } from "../api/nova-api.ts";
+import {
+    resolvePastedImages,
+    toNovaAttachment,
+    type LocalImage,
+} from "../lib/attachments.ts";
+import { truncateMiddle } from "../lib/display-width.ts";
 import {
     COMMANDS,
     matchCommands,
@@ -23,6 +35,9 @@ const COMPOSER_KEY_BINDINGS: KeyBinding[] = [
 
 const TEXTAREA_MIN_HEIGHT = 1;
 const TEXTAREA_MAX_HEIGHT = 12;
+
+/** Width reserved for the file name inside an attachment chip. */
+const CHIP_NAME_WIDTH = 28;
 
 export type ComposerCommandHandler = (id: string, args: string) => void;
 
@@ -50,6 +65,12 @@ export function Composer({
     const [suggestions, setSuggestions] = useState<CommandSpec[]>([]);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [textareaHeight, setTextareaHeight] = useState(TEXTAREA_MIN_HEIGHT);
+    // Keyed by the extmark that draws the chip: opentui deletes a virtual
+    // extmark as a whole, so the attachment disappears with its label.
+    const [attachments, setAttachments] = useState<
+        { extmarkId: number; image: LocalImage }[]
+    >([]);
+    const attachmentType = useRef<number | null>(null);
 
     useEffect(() => {
         if (modalOpen) {
@@ -58,6 +79,83 @@ export function Composer({
             textareaRef.current?.focus();
         }
     }, [modalOpen]);
+
+    const chipOf = (image: LocalImage): string =>
+        `▧ ${truncateMiddle(image.name, CHIP_NAME_WIDTH)} ×`;
+
+    /** Register the chip style once, after the textarea exists. */
+    function attachmentTypeId(): number | null {
+        const input = textareaRef.current;
+        if (!input) return null;
+        if (attachmentType.current === null) {
+            attachmentType.current = input.extmarks.registerType("attachment");
+        }
+        return attachmentType.current;
+    }
+
+    /** Insert a chip for *image* without putting its path in the prompt. */
+    function insertAttachment(image: LocalImage): void {
+        const input = textareaRef.current;
+        const typeId = attachmentTypeId();
+        if (!input || typeId === null) return;
+        const label = chipOf(image);
+        const start = input.cursorOffset;
+        input.insertText(`${label} `);
+        const extmarkId = input.extmarks.create({
+            start,
+            // Cover the trailing space too: one backspace removes the chip
+            // instead of nibbling at the separator first.
+            end: start + label.length + 1,
+            virtual: true,
+            typeId,
+        });
+        setAttachments((list) => [...list, { extmarkId, image }]);
+    }
+
+    /** Drop attachments whose chip is no longer in the textarea. */
+    function syncAttachments(): void {
+        const input = textareaRef.current;
+        const typeId = attachmentType.current;
+        if (!input || typeId === null) return;
+        const live = new Set(
+            input.extmarks.getAllForTypeId(typeId).map((mark) => mark.id),
+        );
+        setAttachments((list) => {
+            const kept = list.filter((item) => live.has(item.extmarkId));
+            return kept.length === list.length ? list : kept;
+        });
+    }
+
+    /** Remove every chip (they travel as attachments instead). */
+    function clearAttachments(): void {
+        const input = textareaRef.current;
+        const typeId = attachmentType.current;
+        if (input && typeId !== null) {
+            for (const mark of input.extmarks.getAllForTypeId(typeId)) {
+                input.extmarks.delete(mark.id);
+            }
+        }
+        setAttachments([]);
+    }
+
+    const handlePaste = (event: PasteEvent): void => {
+        const text = decodePasteBytes(event.bytes);
+        if (!text.trim()) return;
+        // Read the disk asynchronously, so the default paste has to be cancelled
+        // now: after an await it has already inserted the text.
+        event.preventDefault();
+        void resolvePastedImages(text).then((images) => {
+            const input = textareaRef.current;
+            if (!input) return;
+            // Not a set of image paths: insert the text ourselves, so a file
+            // shows up as its path, which is what the user expects.
+            if (!images) {
+                input.insertText(text.replace(/\r\n?/g, "\n"));
+                return;
+            }
+            for (const image of images) insertAttachment(image);
+        });
+    };
 
     function refreshSuggestions(value: string): void {
         if (value.trim().startsWith("/")) {
@@ -118,8 +216,17 @@ export function Composer({
         if (!value.trim() || isStreaming) {
             return;
         }
+        const outgoing = attachments.reduce(
+            (text, item) => text.replace(chipOf(item.image), ""),
+            value,
+        );
+        const payload = attachments.map((item) => toNovaAttachment(item.image));
         clearComposer();
-        await runChatStream({ message: value });
+        clearAttachments();
+        await runChatStream({
+            message: outgoing.trim() || value.trim(),
+            attachments: payload,
+        });
     }
 
     function handleKeyDown(event: KeyEvent): void {
@@ -193,7 +300,9 @@ export function Composer({
                     onContentChange={() => {
                         const value = textareaRef.current?.plainText ?? "";
                         refreshSuggestions(value);
+                        syncAttachments();
                     }}
+                    onPaste={handlePaste}
                     onKeyDown={handleKeyDown}
                     wrapMode="word"
                     height={textareaHeight}

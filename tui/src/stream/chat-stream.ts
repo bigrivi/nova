@@ -19,6 +19,7 @@ import {
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore, type AskQuestion } from "../stores/ask-user-store.ts";
 import { getChatState } from "../stores/chat-store.ts";
+import type { NovaAttachmentData } from "../api/types.ts";
 import { useCompactionStore } from "../stores/compaction-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { useToastStore } from "../stores/toast-store.ts";
@@ -30,6 +31,8 @@ import { WORKSPACE_DIR } from "../workspace.ts";
 
 export type ChatRunOptions = {
     message: string;
+    /** Images pasted into the composer; the backend folds them into the turn. */
+    attachments?: NovaAttachmentData[];
 };
 
 /** The TUI keeps one working directory for its lifetime, so resolve it once. */
@@ -121,7 +124,10 @@ export function formatAskAnswers(
 
 /** Run one user-initiated conversation round. */
 export async function runChatStream(options: ChatRunOptions): Promise<void> {
-    await runTurn({ message: options.message });
+    await runTurn({
+        message: options.message,
+        attachments: options.attachments,
+    });
 }
 
 /**
@@ -148,6 +154,7 @@ export async function resumeChatStream(sessionId: string): Promise<void> {
 
 type TurnOptions = {
     message: string;
+    attachments?: NovaAttachmentData[];
     /** Set when tailing an existing turn instead of starting a new one. */
     resumeSessionId?: string;
     /** Sequence cursor; null/undefined starts a fresh turn. */
@@ -163,7 +170,10 @@ async function runTurn(options: TurnOptions): Promise<void> {
     const resuming = options.resumeFromSequence != null;
 
     if (!resuming) {
-        store.addUserMessage(options.message);
+        store.addUserMessage(
+            options.message,
+            options.attachments?.map((attachment) => attachment.name),
+        );
     }
     const assistantId = store.startAssistantMessage();
     if (sessionId) {

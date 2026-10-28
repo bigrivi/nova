@@ -3,7 +3,9 @@ import type { TuiMessage } from "../stores/chat-store.ts";
 
 export function UserMessage({ message }: { message: TuiMessage }) {
     const theme = useTheme();
-    const text = message.parts[0]?.type === "text" ? message.parts[0].text : "";
+    const part = message.parts[0]?.type === "text" ? message.parts[0] : undefined;
+    const text = part?.text ?? "";
+    const images = part?.images ?? [];
     return (
         <box
             flexDirection="column"
@@ -17,8 +19,15 @@ export function UserMessage({ message }: { message: TuiMessage }) {
         >
             <box flexDirection="row" gap={1}>
                 <text fg={theme.primary.muted} content=">" />
-                <box flexGrow={1}>
+                <box flexGrow={1} flexDirection="column">
                     <text fg={theme.text.base} content={text} />
+                    {images.map((name, index) => (
+                        <text
+                            key={`${name}:${index}`}
+                            fg={theme.primary.muted}
+                            content={`▧ ${name}`}
+                        />
+                    ))}
                 </box>
             </box>
         </box>
