@@ -46,7 +46,6 @@ export const webSearchRenderer: ToolRenderer<WebArgs> = {
             const parsed = JSON.parse(ctx.outputText) as { results?: unknown };
             if (Array.isArray(parsed.results)) {
                 const lines = parsed.results
-                    .slice(0, 3)
                     .map((item) => {
                         const row = item as { title?: unknown; url?: unknown };
                         const title = typeof row.title === "string" ? row.title : "Untitled";
@@ -54,15 +53,15 @@ export const webSearchRenderer: ToolRenderer<WebArgs> = {
                         return url ? `${title} — ${domain(url)}` : title;
                     });
                 return lines.length > 0
-                    ? { kind: "lines", lines, hidden: 0, hiddenAt: "bottom", limit: RESULT_LIMITS.list }
+                    ? { kind: "lines", lines, hiddenAt: "bottom", limit: RESULT_LIMITS.list }
                     : { kind: "none" };
             }
         } catch {
             // Fall back to generic lines.
         }
-        const lines = cleanLines(ctx.outputText).slice(0, RESULT_LIMITS.generic);
+        const lines = cleanLines(ctx.outputText);
         return lines.length > 0
-            ? { kind: "lines", lines, hidden: 0, hiddenAt: "bottom", limit: RESULT_LIMITS.generic }
+            ? { kind: "lines", lines, hiddenAt: "bottom", limit: RESULT_LIMITS.generic }
             : { kind: "none" };
     },
     blockedTitle: (args) => `Waiting for approval — Search ${backtick(querySubject(args))}`,
@@ -75,7 +74,7 @@ export const webFetchRenderer: ToolRenderer<WebArgs> = {
     result: (ctx) => {
         const title = ctx.outputText.match(/^#\s+(.+)$/m)?.[1]?.trim();
         return title
-            ? { kind: "lines", lines: [title], hidden: 0, hiddenAt: "bottom", limit: 1 }
+            ? { kind: "lines", lines: [title], hiddenAt: "bottom", limit: 1 }
             : { kind: "none" };
     },
     blockedTitle: (args) => `Waiting for approval — Fetch ${backtick(urlSubject(args))}`,

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
     buildEditDiff,
     extractDiff,
+    parseToolDiff,
     looksLikeDiff,
 } from "./diff.ts";
 
@@ -146,7 +147,7 @@ describe("extractDiff on a server-truncated write diff", () => {
         expect(headerCounts(diff)).toEqual(bodyCounts(diff));
     });
 
-    test("keeps only the headers when the first hunk was cut", () => {
+    test("reports no diff when the only hunk was cut", () => {
         const cut = [
             "File updated — /tmp/x.py:",
             "",
@@ -159,9 +160,10 @@ describe("extractDiff on a server-truncated write diff", () => {
             "",
             "[... 9 more lines ...]",
         ].join("\n");
-        const diff = extractDiff(cut);
-        expect(diff).not.toContain("@@");
-        expect(diff.startsWith("--- a/x.py")).toBe(true);
+        // A header-only patch renders as an empty box, so it is not a diff;
+        // the caller shows the truncation notice instead.
+        expect(extractDiff(cut)).toBe("");
+        expect(parseToolDiff(cut)).toEqual({ diff: "", truncated: true, hiddenLines: 9 });
     });
 });
 

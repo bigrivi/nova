@@ -144,4 +144,56 @@ describe("tool renderers", () => {
             ]),
         ).toThrow(/duplicate tool renderer/);
     });
+
+    test("a truncated write diff is reported as truncated", () => {
+        const renderer = getRenderer("write");
+        const args = renderer.parseArgs({ filePath: "x.ts" });
+        const ctx = {
+            part: {} as never,
+            args: args!,
+            status: "done" as const,
+            outputText: [
+                "File updated — x.ts:",
+                "--- a/x.ts",
+                "+++ b/x.ts",
+                "@@ -1,2 +1,2 @@",
+                " one",
+                "-two",
+                "+TWO",
+                "[... 5 more lines ...]",
+            ].join("\n"),
+            width: 80,
+            expanded: false,
+        };
+        const view = renderer.result?.(ctx);
+        expect(view?.kind).toBe("diff");
+        if (view?.kind === "diff") {
+            expect(view.truncated).toBe(true);
+            expect(view.hiddenLines).toBe(5);
+            expect(view.diff).toContain("+TWO");
+            expect(view.diff).not.toContain("more lines");
+        }
+    });
+
+    test("a cut edit patch marks its stat as partial", () => {
+        const renderer = getRenderer("edit");
+        const args = renderer.parseArgs({ filePath: "x.ts" });
+        const ctx = {
+            part: {} as never,
+            args: args!,
+            status: "done" as const,
+            outputText: [
+                "--- a/x.ts",
+                "+++ b/x.ts",
+                "@@ -1,2 +1,2 @@",
+                " one",
+                "-two",
+                "+TWO",
+                "[... 3 more lines ...]",
+            ].join("\n"),
+            width: 80,
+            expanded: false,
+        };
+        expect(renderer.meta?.(ctx)).toBe("+1+ -1");
+    });
 });

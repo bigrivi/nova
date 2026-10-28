@@ -1,5 +1,5 @@
 import { backtick } from "../format/text.ts";
-import { diffStat, editArgsDiff, extractDiff } from "../format/diff.ts";
+import { diffStat, editArgsDiff, parseToolDiff } from "../format/diff.ts";
 import type { RenderCtx, ToolRenderer } from "../types.ts";
 
 type FileArgs = {
@@ -48,8 +48,8 @@ function contentLines(args: FileArgs): number | undefined {
     return args.content.endsWith("\n") ? lines.length - 1 : lines.length;
 }
 
-function writeDiffText(ctx: RenderCtx<FileArgs>): string {
-    return extractDiff(ctx.outputText);
+function writeDiff(ctx: RenderCtx<FileArgs>) {
+    return parseToolDiff(ctx.outputText);
 }
 
 export const readRenderer: ToolRenderer<FileArgs> = {
@@ -102,11 +102,15 @@ export const writeRenderer: ToolRenderer<FileArgs> = {
         return lines !== undefined ? `${lines} lines` : undefined;
     },
     result: (ctx) => {
-        const diff = writeDiffText(ctx);
-        if (diff) {
-            return { kind: "diff", diff, synthesized: false };
-        }
-        return { kind: "none" };
+        const parsed = writeDiff(ctx);
+        if (!parsed.diff) return { kind: "none" };
+        return {
+            kind: "diff",
+            diff: parsed.diff,
+            synthesized: false,
+            truncated: parsed.truncated,
+            hiddenLines: parsed.hiddenLines,
+        };
     },
     blockedTitle: (args) => `Waiting for approval — Write ${backtick(subject(args))}`,
 };
@@ -116,23 +120,27 @@ export const editRenderer: ToolRenderer<FileArgs> = {
     verbs: { running: "Editing", done: "Edited", error: "Failed to edit" },
     subject,
     meta: (ctx) => {
-        const diff = ctx.outputText.includes("--- ")
-            ? extractDiff(ctx.outputText)
-            : editArgsDiff(ctx.args);
-        if (!diff) return undefined;
-        const stat = diffStat(diff);
+        const parsed = ctx.outputText.includes("--- ")
+            ? parseToolDiff(ctx.outputText)
+            : { diff: editArgsDiff(ctx.args), truncated: false };
+        if (!parsed.diff) return undefined;
+        const stat = diffStat(parsed.diff);
         if (stat.added === 0 && stat.removed === 0) return undefined;
-        return `+${stat.added} -${stat.removed}`;
+        // A cut patch undercounts, so say so rather than implying a total.
+        const suffix = parsed.truncated ? "+" : "";
+        return `+${stat.added}${suffix} -${stat.removed}`;
     },
     result: (ctx) => {
-        const diff = ctx.outputText.includes("--- ")
-            ? extractDiff(ctx.outputText)
-            : editArgsDiff(ctx.args);
-        if (!diff) return { kind: "none" };
+        const parsed = ctx.outputText.includes("--- ")
+            ? parseToolDiff(ctx.outputText)
+            : { diff: editArgsDiff(ctx.args), truncated: false };
+        if (!parsed.diff) return { kind: "none" };
         return {
             kind: "diff",
-            diff,
-            synthesized: !ctx.outputText.includes("--- "),
+            diff: parsed.diff,
+            synthesized: ctx.args.oldString !== undefined && !ctx.outputText.includes("--- "),
+            truncated: parsed.truncated,
+            hiddenLines: parsed.hiddenLines,
         };
     },
     blockedTitle: (args) => `Waiting for approval — Edit ${backtick(subject(args))}`,

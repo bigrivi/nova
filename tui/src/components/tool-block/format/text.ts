@@ -139,7 +139,6 @@ export function errorResult<A>(ctx: RenderCtx<A>): ResultView {
         return {
             kind: "lines",
             lines,
-            hidden: 0,
             hiddenAt: "bottom",
             limit: RESULT_LIMITS.shellErr,
         };
@@ -148,7 +147,6 @@ export function errorResult<A>(ctx: RenderCtx<A>): ResultView {
         return {
             kind: "lines",
             lines: [ctx.error],
-            hidden: 0,
             hiddenAt: "bottom",
             limit: RESULT_LIMITS.shellErr,
         };

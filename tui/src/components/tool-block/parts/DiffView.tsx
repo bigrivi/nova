@@ -7,12 +7,31 @@ import { buildSyntaxStyles } from "../../parts/MarkdownPart.tsx";
 /** Terminal columns required before a diff switches from unified to split. */
 const SPLIT_VIEW_MIN_COLS = 124;
 
-export function DiffView({ diff, synthesized }: { diff: string; synthesized: boolean }) {
+export function DiffView({
+    diff,
+    synthesized,
+    truncated = false,
+    hiddenLines,
+}: {
+    diff: string;
+    synthesized: boolean;
+    truncated?: boolean;
+    hiddenLines?: number;
+}) {
     const theme = useTheme();
     const dims = useTerminalDimensions();
     const syntaxStyle = useMemo(() => SyntaxStyle.fromStyles(buildSyntaxStyles(theme)), [theme]);
     const treeSitterClient = useMemo(() => getTreeSitterClient(), []);
     const view = dims.width > SPLIT_VIEW_MIN_COLS ? "split" : "unified";
+
+    if (!diff) return null;
+
+    const note =
+        truncated && hiddenLines !== undefined
+            ? `… diff truncated (+${hiddenLines} lines)`
+            : truncated
+              ? "… diff truncated"
+              : null;
 
     return (
         <box backgroundColor={theme.diff.contextBg} paddingLeft={4} paddingBottom={1} paddingTop={1}>
@@ -33,6 +52,9 @@ export function DiffView({ diff, synthesized }: { diff: string; synthesized: boo
                 treeSitterClient={treeSitterClient}
                 wrapMode="word"
             />
+            {note ? (
+                <text fg={theme.text.muted} content={`    ${note}`} />
+            ) : null}
         </box>
     );
 }

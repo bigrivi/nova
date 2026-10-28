@@ -63,14 +63,9 @@ export const todoRenderer: ToolRenderer<TodoArgs> = {
     result: (ctx) => {
         const todos = todosFromArgs(ctx.args) ?? todosFromOutput(ctx.outputText);
         if (!todos || todos.length === 0) return { kind: "none" };
-        const lines = todos.map((todo) => `${icon(todo.status)} ${todo.content}`);
-        if (lines.length <= RESULT_LIMITS.todos) {
-            return { kind: "lines", lines, hidden: 0, hiddenAt: "bottom", limit: RESULT_LIMITS.todos };
-        }
         return {
             kind: "lines",
-            lines: lines.slice(0, RESULT_LIMITS.todos),
-            hidden: lines.length - RESULT_LIMITS.todos,
+            lines: todos.map((todo) => `${icon(todo.status)} ${todo.content}`),
             hiddenAt: "bottom",
             limit: RESULT_LIMITS.todos,
         };

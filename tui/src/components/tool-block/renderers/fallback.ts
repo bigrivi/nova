@@ -25,10 +25,10 @@ export function createFallbackRenderer(toolName: string): ToolRenderer<Record<st
             }
             const lines =
                 parsed !== null
-                    ? JSON.stringify(parsed, null, 2).split("\n").slice(0, RESULT_LIMITS.generic)
-                    : text.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, RESULT_LIMITS.generic);
+                    ? JSON.stringify(parsed, null, 2).split("\n")
+                    : text.split("\n").map((line) => line.trim()).filter(Boolean);
             if (lines.length === 0) return { kind: "none" };
-            return { kind: "lines", lines, hidden: 0, hiddenAt: "bottom", limit: RESULT_LIMITS.generic };
+            return { kind: "lines", lines, hiddenAt: "bottom", limit: RESULT_LIMITS.generic };
         },
         blockedTitle: (args) => {
             const subject = pickArg(args) || toolName;

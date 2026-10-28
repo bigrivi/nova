@@ -14,8 +14,8 @@ export interface RenderCtx<A> {
 
 export type ResultView =
     | { kind: "none" }
-    | { kind: "lines"; lines: string[]; hidden: number; hiddenAt: "top" | "bottom"; limit?: number }
-    | { kind: "diff"; diff: string; synthesized: boolean };
+    | { kind: "lines"; lines: string[]; hiddenAt: "top" | "bottom"; limit?: number }
+    | { kind: "diff"; diff: string; synthesized: boolean; truncated?: boolean; hiddenLines?: number };
 
 export interface ToolRenderer<A = unknown> {
     parseArgs(raw: Record<string, unknown> | null): A | null;

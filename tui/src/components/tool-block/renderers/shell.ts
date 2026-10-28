@@ -31,18 +31,16 @@ function result(ctx: RenderCtx<ShellArgs>): ResultView {
     if (ctx.status === "running") {
         const tail = tailLines(ctx.outputText, 2);
         return tail.length > 0
-            ? { kind: "lines", lines: tail, hidden: 0, hiddenAt: "bottom", limit: RESULT_LIMITS.shellOk }
+            ? { kind: "lines", lines: tail, hiddenAt: "bottom", limit: RESULT_LIMITS.shellOk }
             : { kind: "none" };
     }
     if (lines.length === 0) return { kind: "none" };
     if (lines.length <= RESULT_LIMITS.shellOk) {
-        return { kind: "lines", lines, hidden: 0, hiddenAt: "bottom", limit: RESULT_LIMITS.shellOk };
+        return { kind: "lines", lines, hiddenAt: "bottom", limit: RESULT_LIMITS.shellOk };
     }
-    const tail = tailLines(ctx.outputText, RESULT_LIMITS.shellOk);
     return {
         kind: "lines",
-        lines: tail,
-        hidden: lines.length - tail.length,
+        lines: tailLines(ctx.outputText, RESULT_LIMITS.expandedMax),
         hiddenAt: "top",
         limit: RESULT_LIMITS.shellOk,
     };

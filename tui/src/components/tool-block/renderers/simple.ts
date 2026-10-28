@@ -41,16 +41,7 @@ function genericResult(ctx: RenderCtx<SimpleArgs>): ResultView {
     const text = ctx.outputText.trim();
     const lines = text.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
     if (lines.length === 0) return { kind: "none" };
-    if (lines.length <= RESULT_LIMITS.generic) {
-        return { kind: "lines", lines, hidden: 0, hiddenAt: "bottom", limit: RESULT_LIMITS.generic };
-    }
-    return {
-        kind: "lines",
-        lines: lines.slice(0, RESULT_LIMITS.generic),
-        hidden: lines.length - RESULT_LIMITS.generic,
-        hiddenAt: "bottom",
-        limit: RESULT_LIMITS.generic,
-    };
+    return { kind: "lines", lines, hiddenAt: "bottom", limit: RESULT_LIMITS.generic };
 }
 
 export function simpleRenderer(config: SimpleConfig): ToolRenderer<SimpleArgs> {

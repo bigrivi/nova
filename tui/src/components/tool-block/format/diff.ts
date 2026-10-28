@@ -13,7 +13,7 @@ export function looksLikeDiff(text: string): boolean {
 }
 
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
-const TRUNCATION_MARKER = /^\[\.\.\. \d+ more lines \.\.\.\]$/;
+const TRUNCATION_MARKER = /^\[\.\.\. (\d+) more lines \.\.\.\]$/m;
 
 /** Whether the hunk at *headerIndex* has exactly the lines its header promises. */
 function isHunkComplete(lines: string[], headerIndex: number): boolean {
@@ -51,6 +51,37 @@ function isHunkComplete(lines: string[], headerIndex: number): boolean {
  *   whose body was cut. The marker is dropped and the incomplete trailing hunk
  *   is removed, so every shown header stays honest.
  */
+export type ParsedToolDiff = {
+    /** The diff that can be rendered; empty when the output carries none. */
+    diff: string;
+    /** The server cut the tail: the last hunk was dropped. */
+    truncated: boolean;
+    /** Lines the server said it omitted, when it said. */
+    hiddenLines?: number;
+};
+
+/**
+ * Extract a unified diff and report whether the server cut it short.
+ *
+ * Args:
+ *   text: Tool output, possibly prefixed with prose and possibly truncated.
+ *
+ * Returns:
+ *   The renderable diff, plus `truncated`/`hiddenLines` so the view can say so
+ *   instead of quietly showing a shorter patch.
+ */
+export function parseToolDiff(text: string): ParsedToolDiff {
+    const marker = TRUNCATION_MARKER.exec(text);
+    const hiddenLines = marker ? Number(marker[1]) : undefined;
+    const truncated = marker !== null;
+    return {
+        diff: extractDiff(text),
+        truncated,
+        ...(hiddenLines === undefined ? {} : { hiddenLines }),
+    };
+}
+
+/** The diff alone, for callers that do not render truncation. */
 export function extractDiff(text: string): string {
     // Anchor on a file header pair: prose can contain "--- " anywhere, and
     // starting there used to swallow the rest of the tool output.
@@ -75,7 +106,9 @@ export function extractDiff(text: string): string {
     lines.forEach((line, position) => {
         if (HUNK_HEADER.test(line)) headers.push(position);
     });
-    if (headers.length === 0) return lines.join("\n");
+    // File headers with no hunk are not a diff: render nothing rather than an
+    // empty diff box.
+    if (headers.length === 0) return "";
 
     for (let position = headers.length - 1; position >= 0; position--) {
         const header = headers[position]!;
@@ -84,9 +117,9 @@ export function extractDiff(text: string): string {
             return lines.slice(0, next ?? lines.length).join("\n");
         }
     }
-    // Only a cut hunk survived; keep the file headers so the patch is still
-    // well-formed and renders as empty rather than as a parse error.
-    return lines.slice(0, headers[0]).join("\n");
+    // Every hunk was cut short: a header-only patch would render as an empty
+    // box, so report no diff at all.
+    return "";
 }
 
 function splitFragment(value: string): string[] {
