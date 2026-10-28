@@ -1,6 +1,6 @@
 /** Message list: ScrollBox virtual scrolling + role routing */
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useTheme } from "../context/theme.tsx";
 import { useChatStore } from "../stores/chat-store.ts";
 import { AssistantMessage } from "./AssistantMessage.tsx";
@@ -12,10 +12,17 @@ import { UserMessage } from "./UserMessage.tsx";
 /** Stable identity: a fresh object each render would re-apply the options. */
 const HIDDEN_SCROLLBAR = { visible: false } as const;
 
-export function MessageList() {
-    const messages = useChatStore((state) => state.messages);
+/**
+ * One row that is both the breathing room above the composer and the way back
+ * down. It keeps its own state so a scroll re-renders this row, not the whole
+ * transcript.
+ */
+function JumpToLatest({
+    scrollRef,
+}: {
+    scrollRef: RefObject<ScrollBoxRenderable | null>;
+}) {
     const theme = useTheme();
-    const scrollRef = useRef<ScrollBoxRenderable>(null);
     const [atBottom, setAtBottom] = useState(true);
 
     // The scrollbar is the only thing that reports a position change, and the
@@ -36,9 +43,9 @@ export function MessageList() {
         return () => {
             bar.off("change", track);
         };
-    }, []);
+    }, [scrollRef]);
 
-    const jumpToLatest = (): void => {
+    const jump = (): void => {
         const box = scrollRef.current;
         if (!box) return;
         box.scrollTop = box.scrollHeight;
@@ -46,6 +53,27 @@ export function MessageList() {
         box.stickyScroll = true;
         setAtBottom(true);
     };
+
+    return (
+        <box
+            height={1}
+            flexDirection="row"
+            justifyContent="flex-end"
+            paddingX={1}
+            flexShrink={0}
+        >
+            {atBottom ? null : (
+                <box onMouseUp={jump}>
+                    <text fg={theme.primary.muted} content="Jump to latest ↓" />
+                </box>
+            )}
+        </box>
+    );
+}
+
+export function MessageList() {
+    const messages = useChatStore((state) => state.messages);
+    const scrollRef = useRef<ScrollBoxRenderable>(null);
 
     return (
         <box flexGrow={1} flexDirection="column">
@@ -74,22 +102,7 @@ export function MessageList() {
                 )}
                 <CompactionBanner />
             </scrollbox>
-            {/* One row that is both the breathing room above the composer and the
-                way back down; it never changes height, so the transcript does not
-                jump when it appears. */}
-            <box
-                height={1}
-                flexDirection="row"
-                justifyContent="flex-end"
-                paddingX={1}
-                flexShrink={0}
-            >
-                {atBottom ? null : (
-                    <box onMouseUp={jumpToLatest}>
-                        <text fg={theme.primary.muted} content="Jump to latest ↓" />
-                    </box>
-                )}
-            </box>
+            <JumpToLatest scrollRef={scrollRef} />
         </box>
     );
 }
