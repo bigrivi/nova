@@ -1,12 +1,27 @@
 /** History message conversion: NovaMessageRecord → TuiMessage (simplified: restores text/reasoning/tool-call, attaches tool results to the corresponding call) */
 import type { NovaMessageRecord } from "../api/types.ts";
 
+const FILE_REFERENCE = /^Attached file: `([^`]+)`$/;
+
 /** Drop the `Attached file:` lines appended for the model, keeping the prose. */
 export function stripFileReferences(content: string): string {
-    const kept = content
+    return content
         .split("\n")
-        .filter((line) => !/^Attached file: `[^`]+`$/.test(line.trim()));
-    return kept.join("\n").trim();
+        .filter((line) => !FILE_REFERENCE.test(line.trim()))
+        .join("\n")
+        .trim();
+}
+
+/** File names named by the references, for a message that carried nothing else. */
+export function referencedFileNames(content: string): string[] {
+    return content
+        .split("\n")
+        .flatMap((line) => {
+            const match = FILE_REFERENCE.exec(line.trim());
+            if (!match) return [];
+            // Windows separators survive into the stored text on that platform.
+            return [match[1]!.split(/[\\/]/).filter(Boolean).at(-1) ?? match[1]!];
+        });
 }
 import type { MessagePart, TuiMessage } from "../stores/chat-store.ts";
 
@@ -44,7 +59,12 @@ export function recordToMessage(record: NovaMessageRecord): TuiMessage {
             parts: [
                 {
                     type: "text",
-                    text: stripFileReferences(record.content),
+                    // A file-only turn would otherwise replay as an empty bubble.
+                    text:
+                        stripFileReferences(record.content) ||
+                        referencedFileNames(record.content)
+                            .map((name) => `▧ ${name}`)
+                            .join(" "),
                     ...(record.images && record.images.length > 0
                         ? {
                               images: record.images.map(

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { NovaMessageRecord } from "../api/types.ts";
-import { recordToMessage, stripFileReferences } from "./history.ts";
+import {
+    recordToMessage,
+    referencedFileNames,
+    stripFileReferences,
+} from "./history.ts";
 
 function userRecord(overrides: Partial<NovaMessageRecord> = {}): NovaMessageRecord {
     return {
@@ -44,5 +48,21 @@ describe("recordToMessage", () => {
     test("keeps a reference the user typed mid-message out of the filter", () => {
         const content = "look at Attached file: `x` then done";
         expect(stripFileReferences(content)).toBe(content);
+    });
+
+    test("a file-only turn replays as a chip, not an empty bubble", () => {
+        const message = recordToMessage(
+            userRecord({ content: "Attached file: `src/lib/notes.md`" }),
+        );
+        const part = message.parts[0];
+        expect(part?.type === "text" && part.text).toBe("▧ notes.md");
+    });
+
+    test("referenced names survive Windows and absolute paths", () => {
+        expect(
+            referencedFileNames(
+                "Attached file: `C:\\repo\\a.md`\nAttached file: `/tmp/b.ts`",
+            ),
+        ).toEqual(["a.md", "b.ts"]);
     });
 });
