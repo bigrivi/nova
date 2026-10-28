@@ -21,6 +21,7 @@ READ_ONLY_PROGRAMS = frozenset(
     {
         "basename",
         "cat",
+        "cd",
         "column",
         "comm",
         "cut",
@@ -107,13 +108,16 @@ _VARIABLE = re.compile(r"\$")
 
 def _git_is_read_only(argv: tuple[str, ...]) -> bool:
     """Whether a ``git`` invocation is one of the read-only subcommands."""
-    for argument in argv:
-        if argument.startswith("-"):
-            # `git -c alias.x='!rm -rf /' x` runs a shell. No global flags at all
-            # is the only form we can prove.
-            return False
-        return argument in _GIT_READ_SUBCOMMANDS
-    return False
+    arguments = list(argv)
+    # `-C <dir>` only chooses the working directory, so it is provable and is
+    # skipped. Every other global flag stays refused: `git -c
+    # alias.x='!rm -rf /' x` runs a shell, and proving the command from its
+    # parse is the point rather than trusting a list of harmless-looking flags.
+    while len(arguments) >= 2 and arguments[0] == "-C":
+        arguments = arguments[2:]
+    if not arguments or arguments[0].startswith("-"):
+        return False
+    return arguments[0] in _GIT_READ_SUBCOMMANDS
 
 
 def _is_program_read_only(command: object) -> bool:
@@ -134,6 +138,32 @@ def _is_program_read_only(command: object) -> bool:
     return True
 
 
+def unprovable_segment(command: str) -> str | None:
+    """Return the piece of *command* that stops it being provably read-only.
+
+    Names the offender rather than the whole line: a reason that says "this
+    command" for a five-segment ``&&`` chain leaves the model guessing which
+    part to drop, and every guess costs a turn.
+
+    Args:
+        command: The command line the model wrote.
+
+    Returns:
+        The text of the first command that is not provably read-only, the whole
+        line when the objection is line-wide (a redirection or a substitution)
+        or the line cannot be parsed, and None when every command is provable.
+    """
+    parsed = scan(command)
+    if parsed is None or parsed.parse_failed or not parsed.commands:
+        return command.strip() or None
+    if _REDIRECT.search(parsed.text) or _SUBSTITUTION.search(parsed.text):
+        return parsed.text.strip()
+    for item in parsed.commands:
+        if not _is_program_read_only(item):
+            return item.text.strip()
+    return None
+
+
 def is_read_only_command(command: str) -> bool:
     """Whether *command* provably only reads.
 
@@ -145,9 +175,4 @@ def is_read_only_command(command: str) -> bool:
         with no write redirection, substitution, or mutating flag. False when the
         line cannot be parsed or contains anything not provably read-only.
     """
-    parsed = scan(command)
-    if parsed is None or parsed.parse_failed or not parsed.commands:
-        return False
-    if _REDIRECT.search(parsed.text) or _SUBSTITUTION.search(parsed.text):
-        return False
-    return all(_is_program_read_only(item) for item in parsed.commands)
+    return unprovable_segment(command) is None
