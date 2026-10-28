@@ -338,3 +338,57 @@ async def test_a_failed_turn_with_no_text_writes_no_message(db):
 
     messages = await agent.session.get_messages()
     assert [(msg.role, msg.content) for msg in messages] == [("user", "ask")]
+
+
+@pytest.mark.asyncio
+async def test_interrupt_while_a_prompt_is_pending_cancels_the_call(db):
+    """The approval dialog is not a hole in the cancel path.
+
+    The wait used to watch only its own verdict event, so a cancel could not
+    reach a turn parked there. Ending the wait without a verdict must land in
+    the cancelled path -- not in "the user rejected this command", which would
+    tell the model the opposite of what happened.
+    """
+    provider = ScriptedProvider(
+        [[ToolCall(id="tool-1", name="shell", arguments='{"command":"ls"}')]]
+    )
+    agent = Agent(
+        config=AgentConfig(model="test-model", max_iterations=1), llm_provider=provider
+    )
+
+    from nova.tools.behavior import PreExecutionCheck, ShellToolBehavior
+
+    behavior = ShellToolBehavior(agent._approval)
+
+    async def ask(arguments, ctx):
+        req_id = agent._approval.pre_request("ls", "list", session_id=ctx.session_id)
+        return PreExecutionCheck(
+            allowed=True,
+            approval_request={"id": req_id, "command": "ls", "description": "list"},
+        )
+
+    behavior.before_execute = ask
+    agent.tool_registry._behaviors["shell"] = behavior
+
+    events = []
+    async for event, data in agent.chat_stream("go"):
+        events.append((event, data))
+        if event == AgentEvent.APPROVAL_REQUIRED:
+            agent.interrupt()
+
+    assert any(
+        event == AgentEvent.DONE and _done_reason(data) == "stopped"
+        for event, _data in events
+    )
+    messages = await agent.session.get_messages()
+    assert [msg.content for msg in messages if msg.role == "tool"] == [
+        "Tool call cancelled by user."
+    ]
+    # The manager is process-global, so only this session's prompts are the
+    # subject: an earlier test can legitimately leave one of its own pending.
+    session_id = agent.session.get_current_session().id
+    assert [
+        request
+        for request in agent._approval.get_pending()
+        if request.session_id == session_id
+    ] == [], "the prompt died with the turn"

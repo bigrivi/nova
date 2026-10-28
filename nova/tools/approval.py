@@ -180,9 +180,23 @@ class ApprovalManager:
         self,
         req_id: str,
         heartbeat_interval: int = 15,
+        abort_event: asyncio.Event | None = None,
     ) -> AsyncGenerator[bool | None, None]:
         """Async generator: yields None for each heartbeat tick,
-        then yields True if approved, False if rejected."""
+        then yields True if approved, False if rejected.
+
+        Args:
+            req_id: The request to wait on.
+            heartbeat_interval: Seconds between heartbeat ticks.
+            abort_event: Set to stop waiting. The generator then ends without a
+                verdict, which sends the caller's turn down its cancellation
+                path. A wait that ignored this held the turn open forever: the
+                prompt was gone, nobody could answer it, and nothing else could
+                end the round.
+
+        Yields:
+            None once per heartbeat, then the verdict.
+        """
         if not req_id:
             yield True
             return
@@ -190,11 +204,28 @@ class ApprovalManager:
         if event is None:
             yield False
             return
+        # One waiter each, awaited repeatedly: `event.wait()` completes once and
+        # stays complete, so the loop re-checks the same finished task. Creating
+        # a fresh task per tick would leak one per heartbeat.
+        verdict_task = asyncio.ensure_future(event.wait())
+        abort_task = (
+            asyncio.ensure_future(abort_event.wait())
+            if abort_event is not None
+            else None
+        )
         try:
             while True:
-                try:
-                    await asyncio.wait_for(event.wait(), timeout=heartbeat_interval)
-                except TimeoutError:
+                waiters: set[asyncio.Task[bool]] = {verdict_task}
+                if abort_task is not None:
+                    waiters.add(abort_task)
+                done, _ = await asyncio.wait(
+                    waiters,
+                    timeout=heartbeat_interval,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if abort_task is not None and abort_task in done:
+                    return
+                if verdict_task not in done:
                     yield None
                     continue
                 req = self._pending.get(req_id)
@@ -209,7 +240,10 @@ class ApprovalManager:
                 yield req.approved
                 return
         finally:
-            # Covers the abandoned case: the consumer walked away without a verdict.
+            _settle(verdict_task)
+            _settle(abort_task)
+            # Covers the abandoned case: the consumer walked away without a
+            # verdict, and the abort case, where the prompt is no longer sayable.
             self._discard(req_id)
 
     def _discard(self, req_id: str) -> None:
@@ -268,6 +302,35 @@ class ApprovalManager:
 
 
 _manager: ApprovalManager | None = None
+
+
+def _settle(task: asyncio.Task[bool] | None) -> None:
+    """Drop a waiter without leaving an unread exception or a stray task.
+
+    Same rule as ``stream_read._settle``: a finished task that nobody reads
+    reports "exception was never retrieved" at collection, and a cancel that is
+    never awaited leaves a task pending into the next loop iteration.
+
+    Args:
+        task: The waiter to drop, or None.
+    """
+    if task is None:
+        return
+    if task.done():
+        _retrieve(task)
+        return
+    task.cancel()
+    task.add_done_callback(_retrieve)
+
+
+def _retrieve(task: asyncio.Task[bool]) -> None:
+    """Read a finished waiter's outcome so it is never reported as unread."""
+    if task.cancelled():
+        return
+    try:
+        task.exception()
+    except Exception:
+        log.debug("approval waiter raised", exc_info=True)
 
 
 def get_approval_manager() -> ApprovalManager:

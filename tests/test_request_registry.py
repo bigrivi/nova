@@ -206,3 +206,40 @@ async def test_taking_a_pending_interrupt_leaves_the_slot_live():
 
     assert await registry.take_pending_interrupt("s1") is True
     assert await registry.get("s1") is agent
+
+
+# ── an abandoned turn is stopped when its slot is reaped ──────────────
+
+
+@pytest.mark.asyncio
+async def test_evicting_a_detached_slot_interrupts_its_owner():
+    """A detached turn has no client and, once the buffer goes, no way back.
+
+    Left alone it waits forever on whatever it was doing -- a pending approval
+    is the usual case -- while a later message on the session starts a second
+    turn alongside it.
+    """
+    registry = RequestRegistry()
+    agent = StubAgent()
+    await registry.register("s1", agent)
+    assert await registry.detach("s1") is True
+
+    assert await registry.evict_idle(now=time.monotonic() + IDLE_TTL + 1) == ["s1"]
+
+    assert agent.interrupted is True
+
+
+@pytest.mark.asyncio
+async def test_evicting_an_active_slot_leaves_its_owner_running():
+    """A long turn looks stale here too: nothing touches a slot while it runs.
+
+    Interrupting that owner would kill live work, so eviction only stops the
+    client-less case.
+    """
+    registry = RequestRegistry()
+    agent = StubAgent()
+    await registry.register("s1", agent)
+
+    assert await registry.evict_idle(now=time.monotonic() + IDLE_TTL + 1) == ["s1"]
+
+    assert agent.interrupted is False

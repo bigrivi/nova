@@ -247,15 +247,7 @@ class RequestRegistry:
                 return False
             if owner is _RESERVED:
                 return True
-            interrupt_fn = getattr(owner, "interrupt", None)
-            if interrupt_fn is None:
-                return False
-            try:
-                result = interrupt_fn()
-                if inspect.isawaitable(result):
-                    await result
-            except Exception:
-                log.exception("registry interrupt failed for %s", session_id)
+            if not await self._interrupt_owner(session_id, owner):
                 return False
             async with self._map_lock:
                 current = self._slots.get(session_id)
@@ -263,6 +255,24 @@ class RequestRegistry:
                     del self._slots[session_id]
                     self._mark_free_locked(session_id)
             return True
+
+    async def _interrupt_owner(self, session_id: str, owner: object) -> bool:
+        """Call an owner's interrupt hook, reporting False when it has none.
+
+        The hook may be sync or a coroutine, so the same call serves the live
+        Agent and the test doubles.
+        """
+        interrupt_fn = getattr(owner, "interrupt", None)
+        if interrupt_fn is None:
+            return False
+        try:
+            result = interrupt_fn()
+            if inspect.isawaitable(result):
+                await result
+        except Exception:
+            log.exception("registry interrupt failed for %s", session_id)
+            return False
+        return True
 
     async def take_pending_interrupt(self, session_id: str) -> bool:
         """Consume a cancel that arrived while the session had no Agent.
@@ -397,6 +407,7 @@ class RequestRegistry:
             lock = await self._session_lock(session_id)
             async with lock:
                 discarded = False
+                abandoned_owner: object | None = None
                 async with self._map_lock:
                     live = self._slots.get(session_id)
                     if live is None:
@@ -409,6 +420,21 @@ class RequestRegistry:
                         self._evict_free_locked(session_id)
                         evicted.append(session_id)
                         discarded = True
+                        # A detached owner is a turn nobody is watching: its
+                        # client is gone and, once the buffer goes, it can never
+                        # reattach. Left alone it waits forever on whatever it
+                        # was doing -- a pending approval is the usual case --
+                        # and a later message on the session starts a second
+                        # turn alongside it.
+                        #
+                        # An ACTIVE owner is deliberately left running: nothing
+                        # touches a slot while its stream is flowing, so a
+                        # legitimately long turn also looks stale here, and
+                        # interrupting it would kill live work.
+                        if live.state == DETACHED and live.owner is not _RESERVED:
+                            abandoned_owner = live.owner
+                if abandoned_owner is not None:
+                    await self._interrupt_owner(session_id, abandoned_owner)
                 # P1: discard the buffer while still holding the per-session
                 # lock. A concurrent try_register for the same session blocks
                 # on this lock, so its fresh frames can no longer slip in

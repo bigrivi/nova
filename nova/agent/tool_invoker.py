@@ -136,7 +136,7 @@ class ToolInvoker:
                 )
                 yield AgentEvent.APPROVAL_REQUIRED, precheck.approval_request
                 async for approved in self._approval.wait_with_heartbeat(
-                    approval_request_id
+                    approval_request_id, abort_event=self._abort_event
                 ):
                     if approved is None:
                         yield AgentEvent.APPROVAL_HEARTBEAT, None

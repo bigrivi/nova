@@ -141,3 +141,52 @@ async def test_an_unanswered_request_stays_pending() -> None:
 
     assert manager.resolve(req_id, approved=True) is True
     assert manager.get_pending() == []
+
+
+# ── the wait must be able to end without a verdict ───────────────────
+
+
+@pytest.mark.asyncio
+async def test_an_abort_ends_the_wait_without_a_verdict() -> None:
+    """The prompt can outlive the client that could answer it.
+
+    Waiting only on the verdict event meant a turn whose dialog nobody would
+    ever reach heartbeated forever: the round could not end, the session stayed
+    held, and every cancel path was powerless against it.
+    """
+    manager = ApprovalManager()
+    req_id = manager.pre_request("rm -rf /", "", session_id="s1", rule="r")
+    abort = asyncio.Event()
+    ticks = 0
+
+    async def consume() -> None:
+        nonlocal ticks
+        async for _tick in manager.wait_with_heartbeat(
+            req_id, heartbeat_interval=5, abort_event=abort
+        ):
+            ticks += 1
+
+    task = asyncio.create_task(consume())
+    await asyncio.sleep(0.05)
+    abort.set()
+    await asyncio.wait_for(task, timeout=2)
+
+    assert ticks == 0, "the wait ended before its first heartbeat"
+    assert manager.get_pending() == [], "the prompt is no longer sayable"
+
+
+@pytest.mark.asyncio
+async def test_a_verdict_still_wins_over_an_abort_that_fires_later() -> None:
+    manager = ApprovalManager()
+    req_id = manager.pre_request("x", "", session_id="s1", rule="r")
+    abort = asyncio.Event()
+    manager.resolve(req_id, approved=True)
+
+    async for verdict in manager.wait_with_heartbeat(
+        req_id, heartbeat_interval=0.01, abort_event=abort
+    ):
+        assert verdict is True
+        break
+
+    abort.set()
+    assert manager.resolve(req_id, approved=True) is False
