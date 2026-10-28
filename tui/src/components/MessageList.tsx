@@ -36,6 +36,9 @@ export function MessageList() {
                 ),
             )}
             <CompactionBanner />
+            {/* Breathing room under the last message: a spacer scrolls with the
+                content, so the viewport keeps its rows when scrolled up. */}
+            <box height={1} />
         </scrollbox>
     );
 }
