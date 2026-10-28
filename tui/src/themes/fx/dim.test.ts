@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import { contrastRatio } from "./contrast.ts";
+import { contrastRatio } from "../contrast.ts";
 import { dimTheme } from "./dim.ts";
-import { themes } from "./index.ts";
+import { themes } from "../index.ts";
 
 describe("dimTheme", () => {
     const theme = themes.dark!;

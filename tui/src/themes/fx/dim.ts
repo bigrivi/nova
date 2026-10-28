@@ -1,11 +1,14 @@
-/** Dimming for the quiet layer behind a modal.
+/** Dimming for the quiet layer behind a modal — effect only, never semantics.
  *
  *  A translucent full-screen fill cannot be used for this: compositing it per
  *  cell drops double-width glyphs (CJK), so the transcript would lose words.
  *  Recolouring the palette instead keeps every glyph intact.
+ *
+ *  Everything a component needs in a *specific* state should be an explicit
+ *  theme token; this module exists for the transient "behind a modal" look.
  */
-import { mixColor } from "./color.ts";
-import type { Theme } from "./types.ts";
+import { mixColor } from "../color.ts";
+import type { Theme } from "../types.ts";
 
 /**
  * The same theme with every colour pulled towards its background.
