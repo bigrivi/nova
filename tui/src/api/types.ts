@@ -34,6 +34,8 @@ export type NovaMessageRecord = {
     tool_calls: NovaJsonObject[];
     time_created: number;
     images?: string[] | null;
+    /** Text to render in the transcript; `content` is what the model read. */
+    display_text?: string | null;
     reasoning_content?: string | null;
     reasoning_elapsed_ms?: number | null;
     group_id?: string | null;

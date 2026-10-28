@@ -82,6 +82,7 @@ class _FakeAgent:
         workspace_dir=None,
         project_id=None,
         message_variant=None,
+        display_text=None,
     ):
         if message == "__raise_immediately__":
             raise RuntimeError("agent failed before first frame")

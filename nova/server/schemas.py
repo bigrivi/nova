@@ -47,6 +47,9 @@ class ChatRequest(BaseModel):
     project_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     attachments: list[AttachmentData] = Field(default_factory=list)
+    # What the client showed the user; `message` may carry prompt decoration
+    # (`Attached file:` lines, inlined documents) that the transcript hides.
+    display_text: str | None = None
     # Optional permission-mode override for this turn ("ask", "dontAsk",
     # "acceptEdits"). None keeps the previous behaviour: build_agent reads the
     # permissions file. Headless runs (scheduled jobs) pass "dontAsk" so a tool
@@ -180,6 +183,8 @@ class MessageRecord(BaseModel):
     group_id: str | None = None
     error: str | None = None
     variant: str | None = None
+    # Text a UI should render instead of `content`; None means "same as content".
+    display_text: str | None = None
 
 
 class MessageListResponse(BaseModel):

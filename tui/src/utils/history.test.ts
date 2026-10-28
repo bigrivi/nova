@@ -65,4 +65,23 @@ describe("recordToMessage", () => {
             ),
         ).toEqual(["a.md", "b.ts"]);
     });
+
+    test("prefers the stored display text over the prompt decoration", () => {
+        const message = recordToMessage(
+            userRecord({
+                content: "look\nAttached file: `src/notes.md`",
+                display_text: "look",
+            }),
+        );
+        const part = message.parts[0];
+        expect(part?.type === "text" && part.text).toBe("look");
+    });
+
+    test("falls back to stripping when an old row has no display text", () => {
+        const message = recordToMessage(
+            userRecord({ content: "look\nAttached file: `a.md`", display_text: null }),
+        );
+        const part = message.parts[0];
+        expect(part?.type === "text" && part.text).toBe("look");
+    });
 });

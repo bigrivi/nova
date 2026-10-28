@@ -23,7 +23,7 @@ from nova.memory.models import MemoryRecord, MemorySearchFilters
 from nova.project.models import Project
 from nova.project.paths import normalize_project_path, project_label_from_path
 from nova.scheduler.models import ScheduledJob
-from nova.session.models import Message, MessageFilter
+from nova.session.models import Message, MessageFilter, decode_display_text
 
 if TYPE_CHECKING:
     from nova.session.manager import SessionContext
@@ -185,6 +185,17 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 """
 
 
+def _legacy_content(data: str | None) -> str:
+    """Content of a row written before messages had a `content` column.
+
+    Older rows kept the text in `data`; newer ones use `data` for metadata such
+    as the display text, which must not be mistaken for the message body.
+    """
+    if not data:
+        return ""
+    return "" if decode_display_text(data) is not None else data
+
+
 def _parse_tool_calls(raw: str | None) -> list[dict[str, Any]] | None:
     if not raw:
         return None
@@ -227,7 +238,7 @@ def _row_to_message(row_dict: dict[str, Any]) -> Message:
         content=(
             row_dict.get("content")
             if row_dict.get("content") is not None
-            else (row_dict.get("data") or "")
+            else _legacy_content(row_dict.get("data"))
         ),
         tool_calls=_parse_tool_calls(row_dict.get("tool_calls")),
         tool_call_id=row_dict.get("tool_call_id"),
@@ -245,6 +256,7 @@ def _row_to_message(row_dict: dict[str, Any]) -> Message:
         tokens_output=row_dict.get("tokens_output"),
         variant=row_dict.get("variant"),
         reasoning_effort=row_dict.get("reasoning_effort"),
+        data=row_dict.get("data"),
     )
 
 
@@ -904,6 +916,7 @@ class SqliteRepository(NovaRepository):
         error: str | None = None,
         variant: str | None = None,
         time_created: int | None = None,
+        data: str | None = None,
     ) -> Message:
         await self._ensure_connected()
         msg_id = str(uuid.uuid4())
@@ -931,7 +944,7 @@ class SqliteRepository(NovaRepository):
                     session_id,
                     role,
                     content,
-                    None,
+                    data,
                     _serialize_tool_calls(tool_calls),
                     tool_call_id,
                     stamp,
@@ -971,6 +984,7 @@ class SqliteRepository(NovaRepository):
             provider_meta=provider_meta,
             model=model,
             reasoning_effort=reasoning_effort,
+            data=data,
             tokens_input=tokens_input,
             tokens_output=tokens_output,
             variant=variant,

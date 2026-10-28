@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
 
@@ -74,3 +75,48 @@ class MessageFilter:
     exclude_tool_role: bool = False
     only_non_summary: bool = False
     limit: int | None = None
+
+
+DISPLAY_TEXT_KEY = "display_text"
+
+
+def encode_display_text(display: str | None, content: str) -> str | None:
+    """Pack the text a UI should render into the message's `data` column.
+
+    `content` is what the model reads, which can carry prompt decoration
+    (`Attached file:` lines, inlined document text). The bubble wants the text
+    the user actually typed, so it is stored beside it instead of being guessed
+    per client.
+
+    Args:
+        display: The text the user saw, or None when it matches `content`.
+        content: The stored, model-facing text.
+
+    Returns:
+        JSON for the `data` column, or None when there is nothing extra to keep.
+    """
+    if display is None or display == content:
+        return None
+    return json.dumps({DISPLAY_TEXT_KEY: display}, ensure_ascii=False)
+
+
+def decode_display_text(data: str | None) -> str | None:
+    """Read back what `encode_display_text` wrote.
+
+    Args:
+        data: The raw `data` column. Older rows used it as the content itself,
+            so anything that is not our JSON object is ignored.
+
+    Returns:
+        The display text, or None when the row does not carry one.
+    """
+    if not data:
+        return None
+    try:
+        payload = json.loads(data)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get(DISPLAY_TEXT_KEY)
+    return value if isinstance(value, str) else None

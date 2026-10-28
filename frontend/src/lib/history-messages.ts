@@ -103,8 +103,11 @@ export function toThreadMessages(
                     });
                 }
             }
-            if (message.content) {
-                parts.push({ type: "text" as const, text: message.content });
+            // `content` may carry prompt decoration (`Attached file:` lines,
+            // inlined documents); `display_text` is what the user typed.
+            const text = message.display_text ?? message.content;
+            if (text) {
+                parts.push({ type: "text" as const, text });
             }
             // Backend flags sub-agent completion turns with variant="subagent".
             // Surface it on metadata.custom so the thread renderer can show a

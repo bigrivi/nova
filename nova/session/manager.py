@@ -203,6 +203,7 @@ class SessionManager(SessionProtocol):
         model: str | None = None,
         reasoning_effort: str | None = None,
         variant: str | None = None,
+        data: str | None = None,
     ) -> Message:
         session = self.get_current_session()
         if not session:
@@ -227,6 +228,7 @@ class SessionManager(SessionProtocol):
                 model=model,
                 reasoning_effort=reasoning_effort,
                 variant=variant,
+                data=data,
             )
             session.updated_at = int(time.time() * 1000)
             session.turn_count += 1

@@ -37,6 +37,7 @@ from nova.llm.images import (
 )
 from nova.prompt import PromptBuilder, PromptConfig
 from nova.session import get_session_manager
+from nova.session.models import encode_display_text
 from nova.session.protocol import SessionProtocol
 from nova.skills.service import SkillService
 from nova.tools.approval import get_approval_manager
@@ -76,7 +77,8 @@ class AgentConfig:
 def build_user_message(
     user_input: str,
     attachments: list[dict] | None = None,
-) -> tuple[str, list[str]]:
+    display_text: str | None = None,
+) -> tuple[str, list[str], str]:
     """Fold attachments into the text and image payload of a user message.
 
     Documents are prepended to the prompt because the model reads them as
@@ -88,7 +90,9 @@ def build_user_message(
         attachments: Attachment dicts from the client, if any.
 
     Returns:
-        ``(message_text, image_data_urls)``; images over the size budget are
+        ``(message_text, image_data_urls, display_text)``. The first is what the
+        model reads (documents inlined, references appended by the client); the
+        last is what a transcript should show. Images over the size budget are
         dropped with a warning rather than failing the whole message.
     """
     image_data: list[str] = []
@@ -117,7 +121,7 @@ def build_user_message(
             for content_part in attachment.get("content", []):
                 if content_part.get("type") == "text":
                     message_text = content_part.get("text", "") + "\n\n" + message_text
-    return message_text, image_data
+    return message_text, image_data, display_text if display_text is not None else user_input
 
 
 class Agent:
@@ -374,6 +378,7 @@ class Agent:
         workspace_dir: str | None = None,
         project_id: str | None = None,
         message_variant: str | None = None,
+        display_text: str | None = None,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         self._abort_event.clear()
         # Per-request latch: one compact-and-retry per user request. Reset here,
@@ -390,7 +395,9 @@ class Agent:
         await self._emit(AgentEvent.START, user_input)
         yield AgentEvent.START, user_input
 
-        message_text, image_data = build_user_message(user_input, attachments)
+        message_text, image_data, display = build_user_message(
+            user_input, attachments, display_text
+        )
         self._last_user_input = message_text
         log.info(
             "[Session %s] Chat start agent=%s provider=%s model=%s workspace=%s "
@@ -408,6 +415,7 @@ class Agent:
             content=message_text,
             images=image_data or None,
             variant=message_variant,
+            data=encode_display_text(display, message_text),
         )
 
         tool_schemas = (

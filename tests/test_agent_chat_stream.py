@@ -85,7 +85,7 @@ async def isolated_agent(provider: LLMProvider, **agent_kwargs):
 
 class TestBuildUserMessage:
     def test_plain_input_without_attachments(self):
-        text, images = build_user_message("hello", None)
+        text, images, _display = build_user_message("hello", None)
         assert text == "hello"
         assert images == []
 
@@ -99,16 +99,31 @@ class TestBuildUserMessage:
                 ],
             }
         ]
-        text, images = build_user_message("hi", attachments)
+        text, images, _display = build_user_message("hi", attachments)
         assert text == "hi"
         # the media type travels with the payload; remote URLs are not inlined
         assert images == ["data:image/jpeg;base64,QUJD"]
+
+    def test_display_text_defaults_to_what_the_user_typed(self):
+        text, _images, display = build_user_message("hello", None)
+        assert text == "hello"
+        assert display == "hello"
+
+    def test_display_text_can_differ_from_the_model_text(self):
+        attachments = [
+            {"type": "document", "content": [{"type": "text", "text": "DOC"}]}
+        ]
+        text, _images, display = build_user_message(
+            "question\nAttached file: `a.ts`", attachments, "question"
+        )
+        assert text.startswith("DOC")
+        assert display == "question"
 
     def test_bare_base64_is_read_as_png(self):
         attachments = [
             {"type": "image", "content": [{"type": "image", "image": "QUJD"}]}
         ]
-        _, images = build_user_message("hi", attachments)
+        _, images, _display = build_user_message("hi", attachments)
         assert images == ["data:image/png;base64,QUJD"]
 
     def test_oversized_image_is_dropped(self):
@@ -118,7 +133,7 @@ class TestBuildUserMessage:
         attachments = [
             {"type": "image", "content": [{"type": "image", "image": oversized}]}
         ]
-        text, images = build_user_message("hi", attachments)
+        text, images, _display = build_user_message("hi", attachments)
         assert text == "hi"
         assert images == []
 
@@ -126,7 +141,7 @@ class TestBuildUserMessage:
         attachments = [
             {"type": "document", "content": [{"type": "text", "text": "DOC"}]}
         ]
-        text, images = build_user_message("question", attachments)
+        text, images, _display = build_user_message("question", attachments)
         assert text == "DOC\n\nquestion"
         assert images == []
 
@@ -138,7 +153,7 @@ class TestBuildUserMessage:
             },
             {"type": "document", "content": [{"type": "text", "text": "REF"}]},
         ]
-        text, images = build_user_message("ask", attachments)
+        text, images, _display = build_user_message("ask", attachments)
         assert text == "REF\n\nask"
         assert images == ["data:image/png;base64,AAA"]
 

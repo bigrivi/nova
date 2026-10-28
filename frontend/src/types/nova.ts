@@ -97,6 +97,8 @@ export type NovaMessageRecord = {
     tool_calls: NovaJsonObject[];
     time_created: number;
     images?: string[] | null;
+  /** Text to render instead of `content`; `content` is the model-facing text. */
+  display_text?: string | null;
     reasoning_content?: string | null;
     reasoning_elapsed_ms?: number | null;
     group_id?: string | null;

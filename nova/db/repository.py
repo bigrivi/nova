@@ -59,6 +59,7 @@ class NovaRepository(Protocol):
         error: str | None = None,
         variant: str | None = None,
         time_created: int | None = None,
+        data: str | None = None,
     ) -> Message: ...
     async def get_messages(
         self, session_id: str, msg_filter: MessageFilter | None = None

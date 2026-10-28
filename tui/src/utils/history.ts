@@ -61,10 +61,11 @@ export function recordToMessage(record: NovaMessageRecord): TuiMessage {
                     type: "text",
                     // A file-only turn would otherwise replay as an empty bubble.
                     text:
-                        stripFileReferences(record.content) ||
-                        referencedFileNames(record.content)
-                            .map((name) => `▧ ${name}`)
-                            .join(" "),
+                        record.display_text ??
+                        (stripFileReferences(record.content) ||
+                            referencedFileNames(record.content)
+                                .map((name) => `▧ ${name}`)
+                                .join(" ")),
                     ...(record.images && record.images.length > 0
                         ? {
                               images: record.images.map(

@@ -51,6 +51,7 @@ from nova.server.schemas import (
 )
 from nova.server.stream_buffer import StreamBuffer
 from nova.session.history_projection import get_user_visible_history
+from nova.session.models import decode_display_text
 from nova.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -292,6 +293,7 @@ class ChatService:
                 group_id=message.group_id,
                 error=message.error,
                 variant=message.variant,
+                display_text=decode_display_text(message.data),
             )
             for message in messages
         ]
@@ -581,6 +583,7 @@ class ChatService:
                 workspace_dir=workspace_dir,
                 project_id=project_id,
                 message_variant=message_variant,
+                display_text=request.display_text,
             ):
                 if event == AgentEvent.SESSION and data and not register_key:
                     register_key = data

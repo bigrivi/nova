@@ -221,6 +221,7 @@ class InMemoryRepository(NovaRepository):
         error: str | None = None,
         variant: str | None = None,
         time_created: int | None = None,
+        data: str | None = None,
     ) -> Message:
         now = int(time.time() * 1000)
         message = Message(
@@ -242,6 +243,7 @@ class InMemoryRepository(NovaRepository):
             tokens_input=tokens_input,
             tokens_output=tokens_output,
             variant=variant,
+            data=data,
             # A caller may place a row at an earlier point in time (compaction
             # summaries do); updated_at below still tracks insertion order so
             # sidebar ordering is unaffected.
