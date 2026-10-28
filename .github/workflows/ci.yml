@@ -41,7 +41,7 @@ jobs:
         working-directory: frontend
 
   tui:
-    name: TUI typecheck and build
+    name: TUI typecheck, test and build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +49,8 @@ jobs:
       - run: bun install --frozen-lockfile
         working-directory: tui
       - run: bun run typecheck
+        working-directory: tui
+      - run: bun run test
         working-directory: tui
       - run: bun run build
         working-directory: tui
