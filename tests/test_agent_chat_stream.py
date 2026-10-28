@@ -370,6 +370,71 @@ class TestApprovalFlow:
             assert "rejected" in (tool_msgs[-1].content or "").lower()
 
 
+class TestPolicyRejectFlow:
+    """A refusal is the tool's answer, not the end of the turn.
+
+    The read-only shell axis writes its reason for the *model* ("use read/grep
+    instead of this shape"). Ending the turn on it dropped that reason, left the
+    announced call unanswered -- which the client draws as still running, with
+    ESC already disabled -- and showed the user nothing.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_refused_command_reaches_the_model_as_a_tool_result(self):
+        reason = (
+            "Refused: this shell command is not provably read-only, and this "
+            "agent runs in read-only (plan) mode."
+        )
+        provider = ScriptedProvider(
+            [
+                [
+                    ToolCall(
+                        id="call-1",
+                        name="shell",
+                        arguments='{"command":"cd /tmp && ls"}',
+                    )
+                ],
+                # The model gets another turn after the refusal and can say why
+                # it could not run the command.
+                [
+                    TextDelta(content="Plan mode refuses that shape."),
+                    Done(content="Plan mode refuses that shape.", tool_calls=[]),
+                ],
+            ]
+        )
+
+        async with isolated_agent(provider) as (agent, _db):
+            from nova.tools.behavior import PreExecutionCheck, ShellToolBehavior
+
+            behavior = ShellToolBehavior(agent._approval)
+
+            async def refuse(arguments, ctx):
+                return PreExecutionCheck(allowed=False, reject_reason=reason)
+
+            behavior.before_execute = refuse
+            agent.tool_registry._behaviors["shell"] = behavior
+
+            events = []
+            async for event, data in agent.chat_stream("look around"):
+                events.append((event, data))
+
+            results = [d for e, d in events if e == AgentEvent.TOOL_RESULT]
+            assert results, "a refused call must still be answered"
+            assert results[0]["result"].success is False
+            assert reason in results[0]["result"].content
+            assert any(
+                e == AgentEvent.DONE and d.get("reason") == "completed"
+                for e, d in events
+            ), "the turn must continue so the model can report the refusal"
+            tool_messages = [
+                message
+                for message in await agent.session.get_messages()
+                if message.role == "tool"
+            ]
+            assert tool_messages, "the refusal must be persisted as a tool result"
+            assert reason in (tool_messages[-1].content or "")
+
+
 class TestMemoryReviewScheduling:
     @pytest.mark.asyncio
     async def test_schedules_review_after_completed_turn(self):

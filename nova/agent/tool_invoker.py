@@ -110,12 +110,17 @@ class ToolInvoker:
                     _name_of(tool_call),
                     precheck.reject_reason,
                 )
-                self.outcome = ToolOutcome.STOPPED
-                yield (
-                    AgentEvent.DONE,
-                    done_payload("stopped", precheck.reject_reason or "Tool rejected"),
+                # A refusal is a tool answer, not the end of the turn. The
+                # reason is written for the model ("use read/grep instead of
+                # this shape"), and stopping here left the client with an
+                # announced call nobody ever answered: it rendered as still
+                # running, and the user got no explanation at all.
+                payload = await self._record_rejection(
+                    tool_call, group_id, precheck.reject_reason or "Tool rejected"
                 )
-                return
+                await self._emit(AgentEvent.TOOL_RESULT, payload)
+                yield AgentEvent.TOOL_RESULT, payload
+                continue
 
             approval_request_id = ""
             rejected = False
@@ -161,25 +166,9 @@ class ToolInvoker:
                     # assistant->tool pairing the provider requires, and
                     # _executed_ids keeps a later persist_cancelled from
                     # writing a second result for the same call.
-                    tool_call_id = _id_of(tool_call)
-                    result = ToolResult(
-                        success=False,
-                        content=REJECTED_TOOL_CONTENT,
-                        error=REJECTED_TOOL_CONTENT,
+                    payload = await self._record_rejection(
+                        tool_call, group_id, REJECTED_TOOL_CONTENT
                     )
-                    await self._session.add_message(
-                        role="tool",
-                        content=result.content,
-                        tool_call_id=tool_call_id,
-                        group_id=group_id,
-                        error=result.error,
-                    )
-                    self._executed_ids.add(tool_call_id)
-                    payload = {
-                        "tool": _name_of(tool_call),
-                        "tool_call_id": tool_call_id,
-                        "result": result,
-                    }
                     await self._emit(AgentEvent.TOOL_RESULT, payload)
                     yield AgentEvent.TOOL_RESULT, payload
                     # Continue: remaining tool calls still run, and the model
@@ -352,6 +341,30 @@ class ToolInvoker:
             current_session = self._session.get_current_session()
             if current_session is not None and current_session.id:
                 arguments["session_id"] = current_session.id
+
+    async def _record_rejection(
+        self, tool_call: ToolCall, group_id: str | None, content: str
+    ) -> dict:
+        """Persist a call that will never run and build its result payload.
+
+        An announced call with no result breaks the assistant->tool pairing the
+        provider requires and leaves the client drawing it as still running, so
+        every refusal is written back as the tool's own answer.
+        """
+        tool_call_id = _id_of(tool_call)
+        await self._session.add_message(
+            role="tool",
+            content=content,
+            tool_call_id=tool_call_id,
+            group_id=group_id,
+            error=content,
+        )
+        self._executed_ids.add(tool_call_id)
+        return {
+            "tool": _name_of(tool_call),
+            "tool_call_id": tool_call_id,
+            "result": ToolResult(success=False, content=content, error=content),
+        }
 
     async def persist_cancelled(
         self,

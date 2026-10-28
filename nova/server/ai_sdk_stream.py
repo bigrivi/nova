@@ -5,10 +5,13 @@ AI SDK UI stream protocol adapter for assistant-ui compatible SSE responses.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from typing import Any
 
 from nova.agent import AgentEvent
+
+log = logging.getLogger(__name__)
 
 
 def encode_ai_sdk_sse(part: dict[str, Any]) -> bytes:
@@ -18,6 +21,11 @@ def encode_ai_sdk_sse(part: dict[str, Any]) -> bytes:
 
 def encode_ai_sdk_done() -> bytes:
     return b"data: [DONE]\n\n"
+
+
+#: Shown on a tool call whose result never arrived. Deliberately a statement
+#: about the turn, not a guess at why: the adapter cannot know.
+UNANSWERED_TOOL_MESSAGE = "Tool call did not finish: the turn ended before it returned."
 
 
 def _parse_done_payload(payload: object) -> tuple[str, str]:
@@ -85,6 +93,11 @@ class AISDKStreamAdapter:
         self._wake_variant = wake_variant
         self._wake_text = wake_text
         self._wake_sent = False
+        # Announced tool calls awaiting their result, by id. Every terminal
+        # frame must leave this empty: a client draws an unanswered call as
+        # still running forever, and a turn that stops here leaves it nothing
+        # to cancel.
+        self._open_tool_calls: dict[str, str] = {}
 
     def _wake_frame(self) -> list[bytes]:
         """The injected-message frame, emitted at most once per turn.
@@ -111,6 +124,33 @@ class AISDKStreamAdapter:
 
     def _close_open_parts(self) -> list[bytes]:
         chunks: list[bytes] = []
+        # An announced call with no result keeps a client's tool block spinning
+        # in a turn whose stream is already over -- the failure is invisible and
+        # uncancellable at that point. Whatever the reason the result never came
+        # (a dropped malformed call, a refusal path that ends the turn, a bug in
+        # a tool invoker), the wire owes the client an answer before it closes.
+        for tool_call_id, tool_name in self._open_tool_calls.items():
+            # The wire is repaired here, but a result that never arrived is a
+            # bug upstream; say so, because the frame alone is indistinguishable
+            # from a legitimately failed tool.
+            log.warning(
+                "Turn ended with an unanswered tool call: %s (%s)",
+                tool_name,
+                tool_call_id,
+            )
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "data-nova-tool-error",
+                        "data": {
+                            "toolName": tool_name,
+                            "toolCallId": tool_call_id,
+                            "message": UNANSWERED_TOOL_MESSAGE,
+                        },
+                    }
+                )
+            )
+        self._open_tool_calls.clear()
         if self._step_started:
             chunks.append(encode_ai_sdk_sse({"type": "finish-step"}))
             self._step_started = False
@@ -236,6 +276,7 @@ class AISDKStreamAdapter:
             tool_name = getattr(data, "name", str(data))
             tool_call_id = getattr(data, "id", "") or f"tool_{uuid.uuid4().hex}"
             tool_input = _parse_tool_input(getattr(data, "arguments", ""))
+            self._open_tool_calls[tool_call_id] = tool_name
             chunks.append(
                 encode_ai_sdk_sse(
                     {
@@ -263,6 +304,7 @@ class AISDKStreamAdapter:
             result = data["result"]
             tool_call_id = data.get("tool_call_id", "")
             tool_name = data["tool"]
+            self._open_tool_calls.pop(tool_call_id, None)
             chunks.append(
                 encode_ai_sdk_sse(
                     {

@@ -54,6 +54,32 @@ describe("chat-store messages", () => {
         expect(messages()[0]?.status).toBe("error");
         expect(messages()[0]?.error).toBe("nope");
     });
+
+    test("a finished stream resolves a tool call it never answered", () => {
+        // The backend can end a turn right after announcing a call (a refused
+        // command used to send no result at all). Nothing arrives later to
+        // clear the spinner, and isStreaming is false, so ESC cannot help.
+        const id = useChatStore.getState().startAssistantMessage();
+        useChatStore.getState().startToolCall(id, {
+            toolCallId: "t1",
+            toolName: "shell",
+        });
+        useChatStore.getState().completeStream();
+        const part = messages()[0]?.parts[0];
+        expect(part?.type === "tool-call" && part.status).toBe("error");
+        expect(part?.type === "tool-call" && part.error).toBeTruthy();
+    });
+
+    test("a failed stream resolves its tool call too", () => {
+        const id = useChatStore.getState().startAssistantMessage();
+        useChatStore.getState().startToolCall(id, {
+            toolCallId: "t1",
+            toolName: "shell",
+        });
+        useChatStore.getState().failStream("connection lost");
+        const part = messages()[0]?.parts[0];
+        expect(part?.type === "tool-call" && part.status).toBe("error");
+    });
 });
 
 describe("chat-store text and reasoning", () => {

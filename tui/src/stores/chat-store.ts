@@ -176,6 +176,27 @@ function toArgsObject(value: unknown): Record<string, unknown> | null {
     return value as Record<string, unknown>;
 }
 
+/** Text shown for a tool call the stream ended under, so the block stops spinning. */
+const UNFINISHED_TOOL_ERROR = "The turn ended before this tool returned.";
+
+/** Resolve parts a finished stream can no longer paint.
+ *
+ * A tool call is announced by `tool-input-start` and only resolved by
+ * `tool-output-available` / `data-nova-tool-error`. Any frame missing between
+ * them (a dropped malformed call, a policy refusal sent by an older backend, a
+ * connection that died mid-tool) would otherwise leave the spinner running
+ * forever, in a turn whose ESC handler is already disabled.
+ */
+function settleParts(parts: MessagePart[]): MessagePart[] {
+    return parts.flatMap((part): MessagePart[] => {
+        if (part.type === "pending") return [];
+        if (part.type === "tool-call" && part.status === "running") {
+            return [{ ...part, status: "error", error: UNFINISHED_TOOL_ERROR }];
+        }
+        return [part];
+    });
+}
+
 export const useChatStore = create<ChatState>((set) => ({
     messages: [],
     sessionId: null,
@@ -455,7 +476,7 @@ export const useChatStore = create<ChatState>((set) => ({
                     ? {
                           ...msg,
                           status: "done",
-                          parts: msg.parts.filter((p) => p.type !== "pending"),
+                          parts: settleParts(msg.parts),
                       }
                     : msg,
             ),
@@ -471,7 +492,7 @@ export const useChatStore = create<ChatState>((set) => ({
                           ...msg,
                           status: "error",
                           error,
-                          parts: msg.parts.filter((p) => p.type !== "pending"),
+                          parts: settleParts(msg.parts),
                       }
                     : msg,
             ),
