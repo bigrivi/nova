@@ -19,8 +19,12 @@ const HIDDEN_SCROLLBAR = { visible: false } as const;
  */
 function JumpToLatest({
     scrollRef,
+    wheelRef,
 }: {
     scrollRef: RefObject<ScrollBoxRenderable | null>;
+    /** Set by the scrollbox's wheel handler; the only thing allowed to reveal
+     *  the hint, so auto-follow during streaming never flashes it. */
+    wheelRef: RefObject<boolean>;
 }) {
     const theme = useTheme();
     const [atBottom, setAtBottom] = useState(true);
@@ -37,17 +41,29 @@ function JumpToLatest({
             // Sticky scrolling parks the viewport exactly at max; one row up
             // is already "away", which is why the slack is zero.
             const next = box.scrollTop >= max;
-            setAtBottom((current) => (current === next ? current : next));
+            if (next) {
+                wheelRef.current = false;
+                setAtBottom(true);
+                return;
+            }
+            // Streaming grows the content and re-sticks the viewport; a frame
+            // caught between those two steps reports "not at bottom" without
+            // anyone having scrolled, which used to flash the hint. Only a
+            // wheel may reveal it.
+            if (!wheelRef.current) return;
+            wheelRef.current = false;
+            setAtBottom(false);
         };
         bar.on("change", track);
         return () => {
             bar.off("change", track);
         };
-    }, [scrollRef]);
+    }, [scrollRef, wheelRef]);
 
     const jump = (): void => {
         const box = scrollRef.current;
         if (!box) return;
+        wheelRef.current = false;
         box.scrollTop = box.scrollHeight;
         // Re-arm auto-follow for the next streamed message.
         box.stickyScroll = true;
@@ -74,6 +90,7 @@ function JumpToLatest({
 export function MessageList() {
     const messages = useChatStore((state) => state.messages);
     const scrollRef = useRef<ScrollBoxRenderable>(null);
+    const wheelRef = useRef(false);
 
     return (
         <box flexGrow={1} flexDirection="column">
@@ -85,6 +102,9 @@ export function MessageList() {
                 stickyStart="bottom"
                 viewportCulling
                 scrollbarOptions={HIDDEN_SCROLLBAR}
+                onMouseScroll={() => {
+                    wheelRef.current = true;
+                }}
             >
                 <box paddingX={1} paddingTop={1}>
                     <Banner />
@@ -102,7 +122,7 @@ export function MessageList() {
                 )}
                 <CompactionBanner />
             </scrollbox>
-            <JumpToLatest scrollRef={scrollRef} />
+            <JumpToLatest scrollRef={scrollRef} wheelRef={wheelRef} />
         </box>
     );
 }

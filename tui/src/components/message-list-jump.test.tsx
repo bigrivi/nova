@@ -85,3 +85,66 @@ test("the hint occupies the single row directly above the composer", async () =>
     expect(lines[hint + 1]).toContain("───");
     expect(lines[hint + 2]).toContain("essage Nova");
 });
+
+test("streaming never reveals the hint by itself", async () => {
+    useChatStore.setState({
+        messages: [],
+        sessionId: "s1",
+        isStreaming: true,
+        provider: "test",
+        model: "test",
+    });
+    const setup = await testRender(
+        <AppProvider>
+            <App onExit={() => {}} />
+        </AppProvider>,
+        { width: 70, height: 20 },
+    );
+    await settle(setup);
+    const id = useChatStore.getState().startAssistantMessage();
+    act(() => useChatStore.getState().startTextPart(id));
+
+    let flashes = 0;
+    for (let index = 0; index < 40; index += 1) {
+        act(() =>
+            useChatStore.getState().appendTextDelta(id, `streamed ${index}\n`),
+        );
+        await setup.flush();
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        if (setup.captureCharFrame().includes("Jump to latest")) flashes += 1;
+    }
+    expect(flashes).toBe(0);
+});
+
+test("a wheel opens the hint and further streaming leaves it open", async () => {
+    useChatStore.setState({
+        messages: [],
+        sessionId: "s1",
+        isStreaming: true,
+        provider: "test",
+        model: "test",
+    });
+    const setup = await testRender(
+        <AppProvider>
+            <App onExit={() => {}} />
+        </AppProvider>,
+        { width: 70, height: 20 },
+    );
+    await settle(setup);
+    const id = useChatStore.getState().startAssistantMessage();
+    act(() => useChatStore.getState().startTextPart(id));
+    for (let index = 0; index < 20; index += 1) {
+        act(() => useChatStore.getState().appendTextDelta(id, `streamed ${index}\n`));
+    }
+    await settle(setup);
+
+    await act(async () => {
+        await setup.mockMouse.scroll(20, 10, "up");
+    });
+    await settle(setup);
+    expect(setup.captureCharFrame()).toContain("Jump to latest");
+
+    act(() => useChatStore.getState().appendTextDelta(id, "more output\n"));
+    await settle(setup);
+    expect(setup.captureCharFrame()).toContain("Jump to latest");
+});
