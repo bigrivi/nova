@@ -201,6 +201,7 @@
     "thread.subagentDone": "已完成",
     "thread.subagentError": "出错",
     "thread.subagentShowDetails": "展开详情",
+    "thread.interruptUnreachable": "取消请求未能送达服务器，该回合可能仍在运行。",
     "thread.subagentHideDetails": "收起详情",
     "tools.original": "原文",
     "tools.modified": "修改后",

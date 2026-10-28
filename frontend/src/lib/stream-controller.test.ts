@@ -1,4 +1,8 @@
-import type { ThreadMessageLike } from "@assistant-ui/react";
+import {
+    fromThreadMessageLike,
+    type ThreadMessageLike,
+} from "@assistant-ui/react";
+import { getAutoStatus, toMessagePartStatus } from "@assistant-ui/core/internal";
 import { describe, expect, it, vi } from "vitest";
 
 import { DRAFT_THREAD_ID } from "./nova-constants";
@@ -74,7 +78,7 @@ function makeHarness(options: HarnessOptions = {}) {
         getLastSequence: vi.fn(() => null),
         setLastSequence: vi.fn(),
         clearLastSequence: vi.fn(),
-        interruptChat: vi.fn(async () => undefined),
+        interruptChat: vi.fn(async () => true as boolean | null),
     } as unknown as StreamControllerDeps["api"];
 
     const askUser = {
@@ -135,6 +139,18 @@ function makeHarness(options: HarnessOptions = {}) {
         fail: (error: unknown) => pending?.reject(error),
         lastArgs: () => pending?.args,
     };
+}
+
+function textOf(messages: ThreadMessageLike[] | undefined): string {
+    return (messages ?? [])
+        .flatMap((message) =>
+            typeof message.content === "string"
+                ? [message.content]
+                : message.content.map((part) =>
+                      part.type === "text" ? part.text : "",
+                  ),
+        )
+        .join("");
 }
 
 describe("stream-controller submit", () => {
@@ -291,6 +307,72 @@ describe("stream-controller cancel", () => {
         const h = makeHarness();
         await h.controller.cancel(DRAFT_THREAD_ID);
         expect(h.deps.api.interruptChat).not.toHaveBeenCalled();
+    });
+
+    it("reports a cancel whose interrupt never reached the server", async () => {
+        const h = makeHarness({ currentThreadId: "s1", sessionId: "s1" });
+        const done = h.controller.resume("s1", 0);
+        vi.mocked(h.deps.api.interruptChat).mockResolvedValueOnce(null);
+
+        await h.controller.cancel("s1");
+        h.finish();
+        await done;
+
+        expect(textOf(h.messages.s1)).toContain("[error]");
+    });
+
+    it("stays quiet when the server answered with no live turn", async () => {
+        const h = makeHarness({ currentThreadId: "s1", sessionId: "s1" });
+        const done = h.controller.resume("s1", 0);
+        vi.mocked(h.deps.api.interruptChat).mockResolvedValueOnce(false);
+
+        await h.controller.cancel("s1");
+        h.finish();
+        await done;
+
+        expect(textOf(h.messages.s1)).not.toContain("[error]");
+    });
+});
+
+describe("stream-controller settled tool parts", () => {
+    it("does not keep a result-less tool call running once the turn settles", async () => {
+        const h = makeHarness({ currentThreadId: "s1", sessionId: "s1" });
+        const done = h.controller.resume("s1", 0);
+        h.emit({
+            type: "tool-input-available",
+            toolCallId: "call-1",
+            toolName: "shell",
+            input: { command: "ls" },
+        });
+        h.finish();
+        await done;
+
+        // The backend announced the call and the turn ended without a result.
+        const stored = h.messages.s1![0]!;
+        const parts = typeof stored.content === "string" ? [] : stored.content;
+        const part = parts.find((item) => item.type === "tool-call");
+        expect(part?.type === "tool-call" && part.result).toBeUndefined();
+
+        // assistant-ui derives a result-less tool part's status from the message
+        // status, which is "running" only while the thread itself is running.
+        const settled = fromThreadMessageLike(
+            stored,
+            "m-1",
+            getAutoStatus(true, h.running.s1 === true, false, false, undefined),
+        );
+        const streaming = fromThreadMessageLike(
+            stored,
+            "m-1",
+            getAutoStatus(true, true, false, false, undefined),
+        );
+
+        expect(h.running.s1).toBe(false);
+        expect(
+            toMessagePartStatus(streaming, 0, streaming.content[0]!).type,
+        ).toBe("running");
+        expect(
+            toMessagePartStatus(settled, 0, settled.content[0]!).type,
+        ).not.toBe("running");
     });
 });
 

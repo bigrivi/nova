@@ -98,13 +98,19 @@ async def test_detach_reattach_resume_happy_path():
 
 
 @pytest.mark.asyncio
-async def test_interrupt_reserved_or_missing_returns_false():
+async def test_interrupt_missing_returns_false_and_reserved_is_remembered():
+    """Missing has nobody to interrupt; a reservation has a turn that will exist.
+
+    The split is the point: answering False for a reservation is what made ESC
+    pressed while the Agent was still being built disappear without a trace.
+    """
     registry = RequestRegistry()
     assert await registry.interrupt("missing") is False
     assert await registry.try_register("s1", _RESERVED) is True
-    assert await registry.interrupt("s1") is False
+    assert await registry.interrupt("s1") is True
     assert await registry.detach("s1") is True
-    assert await registry.interrupt("s1") is False  # reserved has no agent
+    assert await registry.interrupt("s1") is True  # still only a reservation
+    assert await registry.take_pending_interrupt("s1") is True
 
 
 @pytest.mark.asyncio
@@ -156,3 +162,47 @@ async def test_reaper_start_stop_hooks():
     await registry.stop_reaper()
     assert registry._reaper_task is None
     await registry.stop_reaper()  # idempotent
+
+
+# ── a cancel that arrives before the Agent exists ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_an_interrupt_during_the_reservation_window_is_remembered():
+    """The stream reserves the session before `build_agent` returns.
+
+    There is nothing to set in that window, so the cancel used to be answered
+    False and dropped: the client believed it had cancelled and the turn then
+    ran to completion.
+    """
+    registry = RequestRegistry()
+    assert await registry.try_register("s1", _RESERVED) is True
+
+    assert await registry.interrupt("s1") is True
+    assert await registry.take_pending_interrupt("s1") is True
+    assert await registry.take_pending_interrupt("s1") is False, "it is one-shot"
+
+
+@pytest.mark.asyncio
+async def test_a_pending_interrupt_does_not_outlive_its_turn():
+    """A reservation that dies before an Agent exists must not poison the next."""
+    registry = RequestRegistry()
+    await registry.try_register("s1", _RESERVED)
+    await registry.interrupt("s1")
+    await registry.unregister("s1")
+
+    assert await registry.try_register("s1", StubAgent()) is True
+    assert await registry.take_pending_interrupt("s1") is False
+
+
+@pytest.mark.asyncio
+async def test_taking_a_pending_interrupt_leaves_the_slot_live():
+    """The turn stops itself; the slot must stay registered until it does."""
+    registry = RequestRegistry()
+    await registry.try_register("s1", _RESERVED)
+    await registry.interrupt("s1")
+    agent = StubAgent()
+    await registry.register("s1", agent)
+
+    assert await registry.take_pending_interrupt("s1") is True
+    assert await registry.get("s1") is agent

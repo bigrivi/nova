@@ -572,6 +572,7 @@ class ChatService:
             if project and project.get("path"):
                 workspace_dir = project["path"]
         message_variant = _injected_message_variant(request)
+        early_interrupt_checked = False
         try:
             async for event, data in agent.chat_stream(
                 request.message,
@@ -584,6 +585,15 @@ class ChatService:
                 if event == AgentEvent.SESSION and data and not register_key:
                     register_key = data
                     await self._request_registry.register(register_key, agent)
+                if register_key and not early_interrupt_checked:
+                    # The turn's start has reset the agent's abort event by now,
+                    # so a cancel that arrived while the Agent was still being
+                    # built is applied here instead of being erased by that reset.
+                    early_interrupt_checked = True
+                    if await self._request_registry.take_pending_interrupt(
+                        register_key
+                    ):
+                        agent.interrupt()
                 yield event, data
         finally:
             if register_key:

@@ -190,6 +190,9 @@ export function startAssistantReasoningPart(
     });
 }
 
+// Only args and result are written here, never status: assistant-ui derives a
+// result-less tool part's status from the message status, so a call that never
+// receives output cannot keep spinning after the turn ends.
 export function upsertAssistantToolCall(
     messages: ThreadMessageLike[],
     assistantMessageId: string,
@@ -364,6 +367,28 @@ export function appendFailureNotice(text: string, message: string): string {
     const notice = `[error] ${message}`;
     const kept = text.trimEnd();
     return kept ? `${kept}\n\n${notice}` : notice;
+}
+
+/**
+ * Append a failure notice to the thread's most recent assistant message.
+ *
+ * @param messages - Thread messages to update.
+ * @param message - Failure reason, rendered inside the `[error] ` callout.
+ * @returns The updated messages, unchanged when no assistant message has an id.
+ */
+export function appendFailureNoticeToLastAssistant(
+    messages: ThreadMessageLike[],
+    message: string,
+) {
+    const lastAssistant = messages.findLast(
+        (item) => item.role === "assistant" && item.id != null,
+    );
+    if (!lastAssistant?.id) {
+        return messages;
+    }
+    return setAssistantText(messages, lastAssistant.id, (text) =>
+        appendFailureNotice(text, message),
+    );
 }
 
 export type StreamSideEffect =

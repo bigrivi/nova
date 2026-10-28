@@ -19,6 +19,8 @@ type JsonResponse<T> = {
 
 export type StreamChatOptions = {
     message: string;
+    /** What the client showed; defaults to `message` on the server. */
+    displayText?: string | null;
     sessionId?: string | null;
     workspaceDir?: string | null;
     projectId?: string | null;
@@ -185,15 +187,25 @@ export async function deleteAgent(key: string): Promise<void> {
     await send(`/api/agents/${encodeURIComponent(key)}`, { method: "DELETE" });
 }
 
-export async function interruptChat(sessionId: string): Promise<void> {
+/** Result of asking the backend to cancel a turn: true = confirmed,
+ * false = answered but nothing was live, null = request itself failed. */
+export type InterruptOutcome = boolean | null;
+
+export async function interruptChat(sessionId: string): Promise<InterruptOutcome> {
     try {
-        await fetch(buildUrl("/api/chat/interrupt"), {
+        const response = await fetch(buildUrl("/api/chat/interrupt"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ session_id: sessionId }),
         });
+        if (!response.ok) {
+            return null;
+        }
+        const payload = (await response.json()) as { interrupted?: unknown };
+        return payload.interrupted === true;
     } catch {
-        // ignore errors (e.g., stream already ended)
+        // Never throws: callers report null instead of catching.
+        return null;
     }
 }
 
@@ -256,6 +268,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             message: options.message,
+            display_text: options.displayText || undefined,
             session_id: options.sessionId || undefined,
             workspace_dir: options.workspaceDir || undefined,
             project_id: options.projectId || undefined,

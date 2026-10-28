@@ -7,13 +7,18 @@ import type { ActiveAskUser } from "../stores/ask-user-store";
 import type { ContextUsage } from "../stores/context-usage-store";
 import type { RetryState } from "../stores/reasoning-store";
 import type { NovaAttachmentData, NovaThreadSummary } from "../types/nova";
+import i18n from "../i18n";
 import { DRAFT_THREAD_ID } from "./nova-constants";
 import {
     handleStreamEvent,
     type StreamEngineDeps,
     type StreamHandlerEnv,
 } from "./stream-engine";
-import { appendFailureNotice, setAssistantText } from "./thread-stream";
+import {
+    appendFailureNotice,
+    appendFailureNoticeToLastAssistant,
+    setAssistantText,
+} from "./thread-stream";
 import {
     buildDraftMessages,
     buildUserMessageParts,
@@ -384,8 +389,19 @@ export function createStreamController(
         }
         abortControllers.get(target)?.abort();
         deps.todo.markOpenCancelled();
-        if (target !== DRAFT_THREAD_ID) {
-            await deps.api.interruptChat(target);
+        if (target === DRAFT_THREAD_ID) {
+            return;
+        }
+        const interrupted = await deps.api.interruptChat(target);
+        // A null answer means the POST never landed: the local abort already
+        // ended the visible turn, but the server may still be running detached.
+        if (interrupted === null) {
+            deps.conversation.setThreadMessages(target, (previous) =>
+                appendFailureNoticeToLastAssistant(
+                    previous,
+                    i18n.t("thread.interruptUnreachable"),
+                ),
+            );
         }
     }
 

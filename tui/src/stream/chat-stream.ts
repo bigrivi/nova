@@ -10,7 +10,7 @@
  * - data-nova-compaction-*       history compaction in progress → compaction store
  * - abort / finish / error  finalization
  */
-import { resolveProject, streamChat } from "../api/nova-api.ts";
+import { interruptChat, resolveProject, streamChat } from "../api/nova-api.ts";
 import {
     applyStreamEvent,
     type StreamAccumulator,
@@ -124,6 +124,34 @@ export function formatAskAnswers(
     return lines.join("\n").trim();
 }
 
+/** Last requestInterrupt post: one ESC keypress reaches both the composer and
+the global handler, and key repeat fires fast, so guard here for one post. */
+let lastInterruptAt = 0;
+
+/** Reset the interrupt guard (tests only). */
+export function resetInterruptGuardForTest(): void {
+    lastInterruptAt = 0;
+}
+
+/** Cancel the live turn from any ESC entry point: no-op off-stream, one post per keypress. */
+export async function requestInterrupt(): Promise<void> {
+    const { sessionId, isStreaming } = getChatState();
+    if (!isStreaming || !sessionId) {
+        return;
+    }
+    const now = Date.now();
+    if (now - lastInterruptAt < 500) {
+        return;
+    }
+    lastInterruptAt = now;
+    const outcome = await interruptChat(sessionId);
+    if (outcome === false) {
+        useToastStore.getState().show("Nothing to cancel: this turn already ended.");
+    } else if (outcome === null) {
+        useToastStore.getState().show("Could not reach the server to cancel.");
+    }
+}
+
 /** Run one user-initiated conversation round. */
 export async function runChatStream(options: ChatRunOptions): Promise<void> {
     await runTurn({
@@ -234,6 +262,7 @@ async function runTurn(options: TurnOptions): Promise<void> {
     try {
         await streamChat({
             message: options.message,
+            displayText: options.displayText,
             sessionId,
             workspaceDir,
             projectId,

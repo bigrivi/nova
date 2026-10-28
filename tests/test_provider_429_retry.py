@@ -498,3 +498,27 @@ async def test_an_empty_retry_after_falls_back(no_sleep) -> None:
     )
 
     assert no_sleep == [1.0]
+
+
+# ── the backoff is cancellable ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_an_abort_during_the_backoff_ends_the_loop(no_sleep) -> None:
+    """Waiting out a ``Retry-After`` must not make the cancel button inert.
+
+    The notice is announced before the wait, so the client can already show
+    "retrying"; an abort arriving during that wait has to cut it short instead
+    of leaving the turn hung for the whole delay.
+    """
+    abort = asyncio.Event()
+    session = _ScriptedSession([_Response(429, UNAVAILABLE), _Response(200, "{}")])
+    items: list[object] = []
+
+    async for item in _Provider()._post_with_retry(session, "https://x", {}, {}, abort):
+        items.append(item)
+        if isinstance(item, RetryNotice):
+            abort.set()
+
+    assert items[-1] is None, "an aborted retry yields no response"
+    assert session.posts == 1, "no further attempt is made once aborted"

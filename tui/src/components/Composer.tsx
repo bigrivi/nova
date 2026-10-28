@@ -7,7 +7,6 @@ import {
     type TextareaRenderable,
 } from "@opentui/core";
 import { useEffect, useRef, useState } from "react";
-import { interruptChat } from "../api/nova-api.ts";
 import {
     displayPath,
     resolvePastedFiles,
@@ -25,7 +24,7 @@ import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
-import { runChatStream } from "../stream/chat-stream.ts";
+import { runChatStream, requestInterrupt } from "../stream/chat-stream.ts";
 import { useTheme } from "../context/theme.tsx";
 import { CommandSuggestions } from "./CommandSuggestions.tsx";
 
@@ -55,7 +54,6 @@ export function Composer({
 }) {
     const theme = useTheme();
     const isStreaming = useChatStore((state) => state.isStreaming);
-    const sessionId = useChatStore((state) => state.sessionId);
     const askActive = useAskUserStore((state) => state.active) !== null;
     const approvalPending = useApprovalStore((state) => state.pending) !== null;
     const screenCurrent = useScreenStore((state) => state.current) !== null;
@@ -279,8 +277,9 @@ export function Composer({
                 return;
             }
         }
-        if (event.name === "escape" && isStreaming && sessionId) {
-            void interruptChat(sessionId);
+        if (event.name === "escape") {
+            // Both this handler and the global one in App fire for one keypress; the guard in requestInterrupt keeps it to one post.
+            void requestInterrupt();
         }
     }
 

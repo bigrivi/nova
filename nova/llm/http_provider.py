@@ -47,6 +47,35 @@ from nova.llm.stream_trace import StreamTrace
 log = logging.getLogger(__name__)
 
 
+async def sleep_unless_aborted(
+    seconds: float, abort_event: asyncio.Event | None
+) -> bool:
+    """Wait out a retry delay, returning True when an abort arrives first.
+
+    A backoff honours ``Retry-After``, which can name tens of seconds, so a
+    sleep that ignores the abort event is a window where the user's cancel
+    button does nothing -- the same silent hang the retry notice exists to
+    explain.
+
+    Args:
+        seconds: How long to wait.
+        abort_event: Set to cut the wait short; None waits the full time.
+
+    Returns:
+        True when the abort fired first, False when the wait was served.
+    """
+    if abort_event is None:
+        await asyncio.sleep(seconds)
+        return False
+    if seconds <= 0:
+        return abort_event.is_set()
+    try:
+        await asyncio.wait_for(abort_event.wait(), timeout=seconds)
+    except TimeoutError:
+        return False
+    return True
+
+
 class HttpProvider(LLMProvider):
     """Base class for the aiohttp-backed providers.
 
@@ -304,7 +333,9 @@ class HttpProvider(LLMProvider):
                         wait_seconds=delay,
                         reason=reason,
                     )
-                    await asyncio.sleep(delay)
+                    if await sleep_unless_aborted(delay, abort_event):
+                        yield None
+                        return
                     delay *= 2
                     continue
                 log.error("Connection error after %d attempts: %s", general_attempts, e)
@@ -338,7 +369,9 @@ class HttpProvider(LLMProvider):
                     wait_seconds=wait,
                     reason=reason or f"HTTP {resp.status}",
                 )
-                await asyncio.sleep(wait)
+                if await sleep_unless_aborted(wait, abort_event):
+                    yield None
+                    return
                 delay *= 2
                 continue
 
@@ -378,7 +411,9 @@ class HttpProvider(LLMProvider):
                         wait_seconds=wait,
                         reason=self._retry_reason(response_text) or "HTTP 429",
                     )
-                    await asyncio.sleep(wait)
+                    if await sleep_unless_aborted(wait, abort_event):
+                        yield None
+                        return
                     rate_delay *= 2
                     continue
 

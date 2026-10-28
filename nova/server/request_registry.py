@@ -76,6 +76,10 @@ class RequestRegistry:
         # set-on-free / clear-on-active ordering closes the lost-wakeup race.
         self._free_events: dict[str, asyncio.Event] = {}
         self._state_listener: Callable[[str, str], None] | None = None
+        # Sessions whose stream has reserved a slot but has no Agent yet, and
+        # where a cancel arrived in that window. Consumed by the stream as soon
+        # as its Agent is live (see ``take_pending_interrupt``).
+        self._interrupt_pending: set[str] = set()
 
     def set_state_listener(self, listener: Callable[[str, str], None] | None) -> None:
         """Register a callback fired on active/idle transitions (push, not poll)."""
@@ -182,6 +186,9 @@ class RequestRegistry:
                 state=ACTIVE,
                 last_access=time.monotonic(),
             )
+            # A cancel recorded against a turn that never got an Agent must not
+            # outlive it; the next turn on this session starts clean.
+            self._interrupt_pending.discard(session_id)
             self._mark_active_locked(session_id)
             self._enforce_cap_locked()
             return True
@@ -222,14 +229,24 @@ class RequestRegistry:
 
         On success the slot is unregistered (terminal), so a later
         try_register on the session succeeds instead of 409.
+
+        A slot that only holds a reservation is answered True and remembered:
+        the stream has the session but the Agent is still being built, so there
+        is nothing to set yet. ``take_pending_interrupt`` is what applies it
+        once the Agent exists -- answering False here instead was a cancel the
+        client believed in and the server silently ignored.
         """
         lock = await self._session_lock(session_id)
         async with lock:
             async with self._map_lock:
                 slot = self._slots.get(session_id)
                 owner = slot.owner if slot is not None else None
-            if owner is None or owner is _RESERVED:
+                if owner is _RESERVED:
+                    self._interrupt_pending.add(session_id)
+            if owner is None:
                 return False
+            if owner is _RESERVED:
+                return True
             interrupt_fn = getattr(owner, "interrupt", None)
             if interrupt_fn is None:
                 return False
@@ -245,6 +262,22 @@ class RequestRegistry:
                 if current is not None and current.owner is owner:
                     del self._slots[session_id]
                     self._mark_free_locked(session_id)
+            return True
+
+    async def take_pending_interrupt(self, session_id: str) -> bool:
+        """Consume a cancel that arrived while the session had no Agent.
+
+        The stream calls this once its Agent is live and its turn has begun:
+        the turn's start resets the abort event, so an interrupt set any earlier
+        would be erased by that reset rather than acted on.
+
+        Returns:
+            True when a pending interrupt was waiting, and it is now consumed.
+        """
+        async with self._map_lock:
+            if session_id not in self._interrupt_pending:
+                return False
+            self._interrupt_pending.discard(session_id)
             return True
 
     # ── detach / reattach / touch ──

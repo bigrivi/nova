@@ -11,7 +11,7 @@ import { useScreenStore } from "../stores/screen-store.ts";
 import { useToastStore } from "../stores/toast-store.ts";
 import { ThemeOverride, useTheme } from "../context/theme.tsx";
 import { dimTheme } from "../themes/fx/dim.ts";
-import { submitAskAnswers, submitAskCancel } from "../stream/chat-stream.ts";
+import { submitAskAnswers, submitAskCancel, requestInterrupt } from "../stream/chat-stream.ts";
 import { startSessionEvents } from "../stream/session-events.ts";
 import { ApprovalDialog } from "./ApprovalDialog.tsx";
 import { AskUserCard } from "./AskUserCard.tsx";
@@ -129,6 +129,9 @@ export function App({ onExit }: { onExit: ExitHandler }) {
         }
         if (key.ctrl && key.name === "c") {
             onExit();
+        }
+        if (key.name === "escape") {
+            void requestInterrupt();
         }
     });
 

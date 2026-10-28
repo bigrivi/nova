@@ -3,6 +3,7 @@ import {
     createAgent,
     deleteAgent,
     getSessionContext,
+    interruptChat,
     listAgents,
     listModels,
     listProviders,
@@ -113,6 +114,34 @@ describe("nova-api", () => {
     test("non-2xx without JSON falls back to the status", async () => {
         mockFetch(() => new Response("", { status: 500 }));
         await expect(listModels()).rejects.toThrow("Request failed with status 500");
+    });
+
+    test("interruptChat returns true when the server confirms", async () => {
+        mockFetch(() => jsonResponse({ session_id: "s1", interrupted: true }));
+        expect(await interruptChat("s1")).toBe(true);
+        expect(calls[0]?.url).toEndWith("/api/chat/interrupt");
+        expect(calls[0]?.init?.method).toBe("POST");
+    });
+
+    test("interruptChat returns false when nothing was live", async () => {
+        mockFetch(() => jsonResponse({ session_id: "s1", interrupted: false }));
+        expect(await interruptChat("s1")).toBe(false);
+    });
+
+    test("interruptChat returns null on non-2xx", async () => {
+        mockFetch(() => new Response("err", { status: 500 }));
+        expect(await interruptChat("s1")).toBeNull();
+    });
+
+    test("interruptChat returns null on network error", async () => {
+        globalThis.fetch = (() =>
+            Promise.reject(new Error("down"))) as unknown as typeof fetch;
+        expect(await interruptChat("s1")).toBeNull();
+    });
+
+    test("interruptChat returns null on non-JSON body", async () => {
+        mockFetch(() => new Response("not json", { status: 200 }));
+        expect(await interruptChat("s1")).toBeNull();
     });
 
     test("streamChat emits one event per SSE frame", async () => {

@@ -797,15 +797,30 @@ export async function approveCommand(options: {
     return response.ok;
 }
 
-export async function interruptChat(sessionId: string): Promise<void> {
+/**
+ * Ask the server to stop whatever turn is live for a session.
+ *
+ * @param sessionId - Session whose turn should be interrupted.
+ * @returns `true` when the server stopped a live turn, `false` when the server
+ *   answered but had no live turn, `null` when the request itself failed.
+ *   Never throws: a `null` result leaves a detached turn possibly running.
+ */
+export async function interruptChat(
+    sessionId: string,
+): Promise<boolean | null> {
     try {
-        await apiFetch("/api/chat/interrupt", {
+        const response = await apiFetch("/api/chat/interrupt", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ session_id: sessionId }),
         });
+        if (!response.ok) {
+            return null;
+        }
+        const payload = await parseJson<{ interrupted: boolean }>(response);
+        return payload.interrupted === true;
     } catch {
-        // ignore errors (e.g., stream already ended)
+        return null;
     }
 }
 
