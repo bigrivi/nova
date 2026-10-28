@@ -9,6 +9,7 @@ import aiohttp  # noqa: F401 - kept so tests can patch nova.llm.providers.openai
 from nova.llm.accumulator import StreamAccumulator
 from nova.llm.framing import SSEFramer
 from nova.llm.http_provider import HttpProvider
+from nova.llm.images import image_data_url
 from nova.llm.policy import StreamPolicy, TransportPolicy
 from nova.llm.provider import (
     PROVIDER_TYPE_OPENAI_RESPONSE,
@@ -323,7 +324,7 @@ class OpenAIResponsesProvider(HttpProvider):
                         *(
                             {
                                 "type": "input_image",
-                                "image_url": f"data:image/png;base64,{img}",
+                                "image_url": image_data_url(img),
                             }
                             for img in images
                         ),
@@ -376,7 +377,7 @@ class OpenAIResponsesProvider(HttpProvider):
                     content_parts.append(
                         {
                             "type": "input_image",
-                            "image_url": f"data:image/png;base64,{img}",
+                            "image_url": image_data_url(img),
                         }
                     )
                 result.append({"role": role, "content": content_parts})

@@ -12,6 +12,7 @@ import aiohttp  # noqa: F401 - kept so tests can patch nova.llm.providers.openai
 from nova.llm.accumulator import StreamAccumulator
 from nova.llm.framing import SSEFramer
 from nova.llm.http_provider import HttpProvider
+from nova.llm.images import image_data_url
 from nova.llm.policy import StreamPolicy, TransportPolicy
 from nova.llm.provider import (
     RETRY_STATUS_CODES,
@@ -322,7 +323,7 @@ class OpenAIProvider(HttpProvider):
                 image_parts = [
                     {
                         "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{img}"},
+                        "image_url": {"url": image_data_url(img)},
                     }
                     for img in images
                 ]

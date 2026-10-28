@@ -693,6 +693,19 @@ def test_images_user_and_tool():
     )
 
 
+def test_image_media_type_comes_from_the_data_url():
+    provider = AnthropicProvider()
+    messages = [
+        Message(role="user", content="hi", images=["data:image/jpeg;base64,QUJD"])
+    ]
+    formatted, _ = provider._format_messages(messages)
+    assert formatted[0]["content"][1]["source"] == {
+        "type": "base64",
+        "media_type": "image/jpeg",
+        "data": "QUJD",
+    }
+
+
 def test_leading_assistant_dropped():
     provider = AnthropicProvider()
     messages = [

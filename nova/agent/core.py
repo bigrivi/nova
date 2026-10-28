@@ -29,6 +29,12 @@ from nova.agent.toolset import ToolsetBuilder
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.llm import ChatStreamEvent, LLMProvider, ToolCall
+from nova.llm.images import (
+    MAX_IMAGE_BYTES,
+    MAX_IMAGES_BYTES,
+    image_data_url,
+    image_size_bytes,
+)
 from nova.prompt import PromptBuilder, PromptConfig
 from nova.session import get_session_manager
 from nova.session.protocol import SessionProtocol
@@ -74,9 +80,19 @@ def build_user_message(
     """Fold attachments into the text and image payload of a user message.
 
     Documents are prepended to the prompt because the model reads them as
-    context for the request; images travel separately as base64 data.
+    context for the request; images travel separately as data URLs so the media
+    type reaches the provider (providers used to be told every image was PNG).
+
+    Args:
+        user_input: The text the user typed.
+        attachments: Attachment dicts from the client, if any.
+
+    Returns:
+        ``(message_text, image_data_urls)``; images over the size budget are
+        dropped with a warning rather than failing the whole message.
     """
     image_data: list[str] = []
+    image_bytes = 0
     message_text = user_input
     for attachment in attachments or []:
         if attachment.get("type") == "image":
@@ -84,8 +100,19 @@ def build_user_message(
                 if content_part.get("type") != "image":
                     continue
                 image_url = content_part.get("image", "")
-                if image_url.startswith("data:"):
-                    image_data.append(image_url.split(",", 1)[1])
+                # Remote references cannot be inlined without fetching them.
+                if not image_url or "://" in image_url:
+                    continue
+                size = image_size_bytes(image_url)
+                if size > MAX_IMAGE_BYTES or image_bytes + size > MAX_IMAGES_BYTES:
+                    log.warning(
+                        "Dropping attachment image (%d bytes, budget %d)",
+                        size,
+                        MAX_IMAGES_BYTES,
+                    )
+                    continue
+                image_bytes += size
+                image_data.append(image_data_url(image_url))
         elif attachment.get("type") == "document":
             for content_part in attachment.get("content", []):
                 if content_part.get("type") == "text":

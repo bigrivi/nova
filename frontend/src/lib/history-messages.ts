@@ -95,7 +95,11 @@ export function toThreadMessages(
                 for (const img of message.images) {
                     parts.push({
                         type: "image" as const,
-                        image: `data:image/png;base64,${img}`,
+                        // Stored as a data URL since the media type started
+                        // travelling with the image; older rows are bare base64.
+                        image: img.startsWith("data:")
+                            ? img
+                            : `data:image/png;base64,${img}`,
                     });
                 }
             }

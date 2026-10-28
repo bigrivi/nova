@@ -6,13 +6,32 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from nova.llm.images import MAX_IMAGE_BYTES, image_size_bytes
+
 
 class AttachmentData(BaseModel):
+    """One client attachment: an image, or a document folded into the prompt."""
+
     id: str
     type: str
     name: str
     content_type: str | None = None
     content: list[dict[str, Any]]
+
+    @model_validator(mode="after")
+    def _images_are_usable(self) -> AttachmentData:
+        for part in self.content:
+            if part.get("type") != "image":
+                continue
+            ref = part.get("image")
+            if not isinstance(ref, str) or not ref.strip():
+                raise ValueError("image attachment is missing its data")
+            size = image_size_bytes(ref)
+            if size > MAX_IMAGE_BYTES:
+                raise ValueError(
+                    f"image attachment is {size} bytes, limit is {MAX_IMAGE_BYTES}"
+                )
+        return self
 
 
 class ChatRequest(BaseModel):

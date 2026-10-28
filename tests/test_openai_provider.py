@@ -245,6 +245,17 @@ def test_user_message_with_image_keeps_single_turn():
     assert [c["type"] for c in formatted[0]["content"]] == ["text", "image_url"]
 
 
+def test_image_data_url_keeps_its_media_type():
+    provider = OpenAIProvider(api_key="k")
+    formatted = provider._format_messages(
+        [{"role": "user", "content": "look", "images": ["data:image/webp;base64,QUJD"]}]
+    )
+    assert formatted[0]["content"][1] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/webp;base64,QUJD"},
+    }
+
+
 def test_message_without_images_is_untouched():
     provider = OpenAIProvider(api_key="k")
     formatted = provider._format_messages(

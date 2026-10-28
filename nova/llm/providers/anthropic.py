@@ -13,6 +13,7 @@ import aiohttp  # noqa: F401 - kept so tests can patch nova.llm.providers.anthro
 from nova.llm.accumulator import StreamAccumulator
 from nova.llm.framing import SSEFramer
 from nova.llm.http_provider import HttpProvider
+from nova.llm.images import parse_image_ref
 from nova.llm.policy import StreamPolicy, TransportPolicy
 from nova.llm.provider import (
     RETRY_STATUS_CODES,
@@ -699,14 +700,15 @@ class AnthropicProvider(HttpProvider):
                 if content:
                     blocks.append({"type": "text", "text": str(content)})
                 if images:
-                    for image_base64 in images:
+                    for image_ref in images:
+                        media_type, data = parse_image_ref(image_ref)
                         blocks.append(
                             {
                                 "type": "image",
                                 "source": {
                                     "type": "base64",
-                                    "media_type": "image/png",
-                                    "data": image_base64,
+                                    "media_type": media_type,
+                                    "data": data,
                                 },
                             }
                         )
@@ -786,14 +788,15 @@ class AnthropicProvider(HttpProvider):
                 text = content if content else "(no output)"
                 tool_result_content.append({"type": "text", "text": str(text)})
                 if images:
-                    for image_base64 in images:
+                    for image_ref in images:
+                        media_type, data = parse_image_ref(image_ref)
                         tool_result_content.append(
                             {
                                 "type": "image",
                                 "source": {
                                     "type": "base64",
-                                    "media_type": "image/png",
-                                    "data": image_base64,
+                                    "media_type": media_type,
+                                    "data": data,
                                 },
                             }
                         )

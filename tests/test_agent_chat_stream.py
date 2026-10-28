@@ -89,19 +89,38 @@ class TestBuildUserMessage:
         assert text == "hello"
         assert images == []
 
-    def test_image_attachment_extracts_base64(self):
+    def test_image_attachment_keeps_its_media_type(self):
         attachments = [
             {
                 "type": "image",
                 "content": [
-                    {"type": "image", "image": "data:image/png;base64,QUJD"},
+                    {"type": "image", "image": "data:image/jpeg;base64,QUJD"},
                     {"type": "image", "image": "https://example.com/x.png"},
                 ],
             }
         ]
         text, images = build_user_message("hi", attachments)
         assert text == "hi"
-        assert images == ["QUJD"]
+        # the media type travels with the payload; remote URLs are not inlined
+        assert images == ["data:image/jpeg;base64,QUJD"]
+
+    def test_bare_base64_is_read_as_png(self):
+        attachments = [
+            {"type": "image", "content": [{"type": "image", "image": "QUJD"}]}
+        ]
+        _, images = build_user_message("hi", attachments)
+        assert images == ["data:image/png;base64,QUJD"]
+
+    def test_oversized_image_is_dropped(self):
+        from nova.llm.images import MAX_IMAGE_BYTES
+
+        oversized = "A" * ((MAX_IMAGE_BYTES // 3) * 4 + 8)
+        attachments = [
+            {"type": "image", "content": [{"type": "image", "image": oversized}]}
+        ]
+        text, images = build_user_message("hi", attachments)
+        assert text == "hi"
+        assert images == []
 
     def test_document_attachment_prepends_text(self):
         attachments = [
@@ -121,7 +140,7 @@ class TestBuildUserMessage:
         ]
         text, images = build_user_message("ask", attachments)
         assert text == "REF\n\nask"
-        assert images == ["AAA"]
+        assert images == ["data:image/png;base64,AAA"]
 
 
 class TestSessionResolution:
