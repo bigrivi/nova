@@ -102,3 +102,39 @@ describe("accentText", () => {
         }
     });
 });
+
+describe("surfaces and rules", () => {
+    test("raised panels stand out from the canvas", () => {
+        // a borderless modal is only visible if the fill differs; 1.3 is the
+        // smallest step that reads as a separate surface on a real terminal
+        for (const [name, theme] of Object.entries(themes)) {
+            expect({
+                name,
+                ratio: contrastRatio(theme.background.raised, theme.background.base),
+            }).toMatchObject({ name });
+            expect(
+                contrastRatio(theme.background.raised, theme.background.base),
+            ).toBeGreaterThanOrEqual(1.3);
+        }
+    });
+
+    test("markdown rules stay visible against the canvas", () => {
+        // table borders used to sit at 1.34:1 and looked like missing text
+        for (const [name, theme] of Object.entries(themes)) {
+            expect({
+                name,
+                ratio: contrastRatio(theme.markdown.rule, theme.background.base),
+            }).toMatchObject({ name });
+            expect(
+                contrastRatio(theme.markdown.rule, theme.background.base),
+            ).toBeGreaterThanOrEqual(2.5);
+        }
+    });
+
+    test("text never uses the accent as a fill colour", () => {
+        // `primary.base` is the fill; readable copy uses `primary.muted`
+        expect(
+            contrastRatio(themes.dark!.primary.muted, themes.dark!.background.base),
+        ).toBeGreaterThanOrEqual(4.5);
+    });
+});

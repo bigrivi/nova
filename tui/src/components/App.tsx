@@ -10,7 +10,7 @@ import { useCtxStore } from "../stores/ctx-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
 import { useToastStore } from "../stores/toast-store.ts";
 import { ThemeOverride, useTheme } from "../context/theme.tsx";
-import { dimTheme } from "../themes/dim.ts";
+import { dimTheme } from "../themes/fx/dim.ts";
 import { submitAskAnswers, submitAskCancel } from "../stream/chat-stream.ts";
 import { startSessionEvents } from "../stream/session-events.ts";
 import { ApprovalDialog } from "./ApprovalDialog.tsx";

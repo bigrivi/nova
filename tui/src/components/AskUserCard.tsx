@@ -242,7 +242,7 @@ export function AskUserCard({
 
             {isReview ? (
                 <box flexDirection="column" flexShrink={0}>
-                    <text fg={theme.primary.base}>Confirm</text>
+                    <text fg={theme.primary.muted}>Confirm</text>
                     {questions.map((q) => {
                         const answer = answers[q.id] ?? "";
                         return (
@@ -263,7 +263,7 @@ export function AskUserCard({
             ) : question ? (
                 <box flexDirection="column" flexShrink={0}>
                 {!isWizard && question.header ? (
-                    <text fg={theme.primary.base}>{question.header}</text>
+                    <text fg={theme.primary.muted}>{question.header}</text>
                 ) : null}
                 <text fg={theme.text.base} content={question.question} />
 

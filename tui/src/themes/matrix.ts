@@ -4,7 +4,7 @@ import type { Theme } from "./types.ts";
 export const matrixTheme: Theme = {
     background: {
         base: "#0a0e0a",
-        raised: "#0e130d",
+        raised: "#182f1d",
     },
     text: {
         base: "#62ff94",

@@ -4,7 +4,7 @@ import type { Theme } from "./types.ts";
 export const lightTheme: Theme = {
     background: {
         base: "#ffffff",
-        raised: "#f6f8fa",
+        raised: "#dddfe2",
     },
     text: {
         base: "#24292f",
@@ -41,7 +41,7 @@ export const lightTheme: Theme = {
         linkText: "#1b7c83",
         quote: "#57606a",
         bullet: "#0969da",
-        rule: "#d0d7de",
+        rule: "#9da3a9",
         strong: "#bc4c00",
         emphasis: "#9a6700",
         strikethrough: "#57606a",

@@ -4,7 +4,7 @@ import type { Theme } from "./types.ts";
 export const darkTheme: Theme = {
     background: {
         base: "#0d1117",
-        raised: "#010409",
+        raised: "#292d33",
     },
     text: {
         base: "#c9d1d9",
@@ -41,7 +41,7 @@ export const darkTheme: Theme = {
         linkText: "#39c5cf",
         quote: "#8b949e",
         bullet: "#58a6ff",
-        rule: "#30363d",
+        rule: "#50565d",
         strong: "#d29922",
         emphasis: "#e3b341",
         strikethrough: "#8b949e",

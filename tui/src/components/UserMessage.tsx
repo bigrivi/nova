@@ -16,7 +16,7 @@ export function UserMessage({ message }: { message: TuiMessage }) {
             backgroundColor={theme.background.raised}
         >
             <box flexDirection="row" gap={1}>
-                <text fg={theme.primary.base} content=">" />
+                <text fg={theme.primary.muted} content=">" />
                 <box flexGrow={1}>
                     <text fg={theme.text.base} content={text} />
                 </box>

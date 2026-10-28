@@ -4,7 +4,7 @@ import type { Theme } from "./types.ts";
 export const palenightTheme: Theme = {
     background: {
         base: "#292d3e",
-        raised: "#1e2132",
+        raised: "#3c4054",
     },
     text: {
         base: "#a6accd",

@@ -33,7 +33,7 @@ export function Banner() {
             paddingX={2}
             paddingY={1}
         >
-            <text fg={theme.primary.base} content="Nova TUI  v0.1.0" />
+            <text fg={theme.primary.muted} content="Nova TUI  v0.1.0" />
             <box flexDirection="row" marginTop={1}>
                 <box width={14} flexShrink={0}>
                     <text fg={theme.text.muted} content="Model" />

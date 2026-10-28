@@ -53,7 +53,7 @@ export function CreateAgentScreen() {
 
     return (
         <ScreenPanel width="60%">
-            <text fg={theme.primary.base}>Create Agent — {field.label}</text>
+            <text fg={theme.primary.muted}>Create Agent — {field.label}</text>
             <input
                 ref={inputRef}
                 flexGrow={1}

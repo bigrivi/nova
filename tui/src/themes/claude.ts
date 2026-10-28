@@ -4,7 +4,7 @@ import type { Theme } from "./types.ts";
 export const claudeTheme: Theme = {
     background: {
         base: "#1f1e1d",
-        raised: "#2a2928",
+        raised: "#353433",
     },
     text: {
         base: "#e5e5e5",
@@ -41,7 +41,7 @@ export const claudeTheme: Theme = {
         linkText: "#8a8a8a",
         quote: "#8a8a8a",
         bullet: "#d97757",
-        rule: "#3a3a3a",
+        rule: "#5e5e5e",
         strong: "#e5c07b",
         emphasis: "#b0b0b0",
         strikethrough: "#8a8a8a",

@@ -179,7 +179,7 @@ export function Composer({
                 selectedIndex={selectedIndex}
             />
             <box flexDirection="row" flexGrow={1}>
-                <text fg={theme.primary.base} content="> " height={textareaHeight} />
+                <text fg={theme.primary.muted} content="> " height={textareaHeight} />
                 <textarea
                     ref={textareaRef}
                     flexGrow={1}

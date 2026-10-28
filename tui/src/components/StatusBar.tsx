@@ -117,7 +117,7 @@ export function StatusBar() {
                     <>
                         <StatusGlyph status={status} />
                         <text
-                            fg={theme.primary.base}
+                            fg={theme.primary.muted}
                             content={agentName || "main"}
                             wrapMode="none"
                             flexShrink={0}
