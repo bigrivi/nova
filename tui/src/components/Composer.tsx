@@ -540,6 +540,10 @@ export function Composer({
                     x: box?.x ?? 0,
                     y: box?.y ?? 0,
                     width: box?.width ?? 0,
+                    // Flush against the composer's outer top edge. In the card
+                    // layout the composer sits one row inside the frame's
+                    // border, so the menu has to stop one row higher.
+                    edgeY: (box?.y ?? 0) - (card ? 1 : 0),
                 },
                 instanceId.current,
             );
@@ -556,7 +560,12 @@ export function Composer({
             if (!box) return;
             useMenuStore
                 .getState()
-                .setAnchor({ x: box.x, y: box.y, width: box.width });
+                .setAnchor({
+                    x: box.x,
+                    y: box.y,
+                    width: box.width,
+                    edgeY: box.y - (card ? 1 : 0),
+                });
         };
         update();
         const timer = setInterval(update, 50);
@@ -568,6 +577,33 @@ export function Composer({
         () => () => useMenuStore.getState().clear(instanceId.current),
         [],
     );
+
+    // Pointer handlers for the root-painted menu. Kept in a ref so a click sees
+    // the menu that is on screen now, not the one that existed at mount.
+    const pickRef = useRef<(index: number) => void>(() => {});
+    pickRef.current = (index: number): void => {
+        // The mention list and the command list are built from different sources;
+        // the same index means a different row in each.
+        if (mentions.length > 0) {
+            const mention = mentions[index];
+            if (mention) acceptMention(mention);
+            return;
+        }
+        const item = menuItems[index];
+        if (!item) return;
+        const parsed = parseCommand(item.usage);
+        if (parsed) {
+            clearComposer();
+            onCommand(parsed.id, parsed.args);
+        }
+    };
+    useEffect(() => {
+        useMenuStore.getState().setHandlers({
+            owner: instanceId.current,
+            hover: (index) => setSelectedIndex(index),
+            pick: (index) => pickRef.current(index),
+        });
+    }, []);
 
     return (
         <box

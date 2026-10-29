@@ -8,7 +8,13 @@
 import { create } from "zustand";
 import type { CommandSpec } from "../commands.ts";
 
-export type MenuAnchor = { x: number; y: number; width: number };
+export type MenuAnchor = {
+    x: number;
+    y: number;
+    width: number;
+    /** Row the menu's bottom edge sits on: the composer's outer top edge. */
+    edgeY: number;
+};
 
 type MenuState = {
     items: CommandSpec[];
@@ -19,6 +25,12 @@ type MenuState = {
     anchor: MenuAnchor;
     /** Which composer published this menu; only it may clear it. */
     owner: number;
+    /** Pointer callbacks registered by the composer that owns the menu. */
+    handlers: {
+        owner: number;
+        hover?: (index: number) => void;
+        pick?: (index: number) => void;
+    };
     show: (
         items: CommandSpec[],
         selectedIndex: number,
@@ -27,6 +39,10 @@ type MenuState = {
         owner: number,
     ) => void;
     setAnchor: (anchor: MenuAnchor) => void;
+    setHandlers: (handlers: MenuState["handlers"]) => void;
+    /** Forward a pointer event, but only to the composer that published. */
+    hover: (index: number) => void;
+    pick: (index: number) => void;
     clear: (owner?: number) => void;
 };
 
@@ -34,11 +50,23 @@ export const useMenuStore = create<MenuState>((set) => ({
     items: [],
     selectedIndex: 0,
     height: 0,
-    anchor: { x: 0, y: 0, width: 0 },
+    anchor: { x: 0, y: 0, width: 0, edgeY: 0 },
     owner: 0,
+    handlers: { owner: 0 },
     show: (items, selectedIndex, height, anchor, owner) =>
         set({ items, selectedIndex, height, anchor, owner }),
     setAnchor: (anchor) => set({ anchor }),
+    setHandlers: (handlers) => set({ handlers }),
+    hover: (index) => {
+        const state = useMenuStore.getState();
+        if (state.handlers.owner !== state.owner) return;
+        state.handlers.hover?.(index);
+    },
+    pick: (index) => {
+        const state = useMenuStore.getState();
+        if (state.handlers.owner !== state.owner) return;
+        state.handlers.pick?.(index);
+    },
     // An unmounting composer from another screen (or another test) must not wipe
     // a menu someone else published.
     clear: (owner) =>

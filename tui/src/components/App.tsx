@@ -365,6 +365,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                 anchorY={menuAnchor.y}
                 anchorX={menuAnchor.x}
                 anchorWidth={menuAnchor.width}
+                anchorEdgeY={menuAnchor.edgeY}
             />
             <Toast />
         </box>

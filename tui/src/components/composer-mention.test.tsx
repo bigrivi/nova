@@ -158,3 +158,25 @@ test("backspace mid-token still edits a half-typed directory", async () => {
 
     expect(setup.captureCharFrame()).toContain("@src/lib");
 });
+
+test("a menu row accepts on click and moves the selection on hover", async () => {
+    const setup = await composer();
+
+    await type(setup, "@src/l");
+    await settle(setup);
+    expect(useMenuStore.getState().items.length).toBeGreaterThan(0);
+
+    // Hover moves the selection so the keyboard continues from the pointer.
+    await act(async () => {
+        useMenuStore.getState().hover(0);
+    });
+    await settle(setup);
+    expect(useMenuStore.getState().selectedIndex).toBe(0);
+
+    // A click accepts, exactly like Enter.
+    await act(async () => {
+        useMenuStore.getState().pick(0);
+    });
+    await settle(setup);
+    expect(setup.captureCharFrame()).toContain("@src/lib/");
+});

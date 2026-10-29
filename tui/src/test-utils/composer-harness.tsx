@@ -11,9 +11,11 @@ import { MenuOverlay } from "../components/MenuOverlay.tsx";
 export function ComposerShell({
     variant = "bar",
     height = 24,
+    onCommand = () => {},
 }: {
     variant?: "bar" | "card";
     height?: number;
+    onCommand?: (id: string, args: string) => void;
 }) {
     const anchor = useMenuStore((state) => state.anchor);
     return (
@@ -23,11 +25,12 @@ export function ComposerShell({
             height={height}
             justifyContent="flex-end"
         >
-            <Composer onCommand={() => {}} variant={variant} />
+            <Composer onCommand={onCommand} variant={variant} />
             <MenuOverlay
                 anchorY={anchor.y}
                 anchorX={anchor.x}
                 anchorWidth={anchor.width}
+                anchorEdgeY={anchor.edgeY}
             />
         </box>
     );
