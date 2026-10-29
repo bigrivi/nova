@@ -1,6 +1,7 @@
 /** Bottom status bar: two rows, running state on top and environment/help below.
  *
- * Row 1 (dynamic): status dot, model, provider — context usage on the right.
+ * Row 1 (dynamic): status dot, model, provider, permission mode — context usage
+ * on the right.
  * Row 2 (static): shortened workspace path, git branch — shortcuts on the right.
  * Optional pieces drop in a fixed order as the terminal narrows; the status dot
  * and model name are always kept.
@@ -27,6 +28,7 @@ import {
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
+import { MODE_LABEL, usePermissionStore } from "../stores/permission-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { WORKSPACE_DIR } from "../workspace.ts";
 import { ContextMeter } from "./status/ContextMeter.tsx";
@@ -55,6 +57,13 @@ export function StatusBar() {
     const used = useCtxStore((state) => state.used);
     const limit = useCtxStore((state) => state.limit);
     const percent = useCtxStore((state) => state.percent);
+    const mode = usePermissionStore((state) => state.mode);
+    const modeColor =
+        mode === "dontAsk"
+            ? theme.feedback.error
+            : mode === "acceptEdits"
+              ? theme.feedback.running
+              : theme.text.muted;
 
     const catalog = useApp().catalog;
     const app = useApp();
@@ -161,6 +170,24 @@ export function StatusBar() {
                                 />
                             </>
                         ) : null}
+                        {density.hideMode ? null : (
+                            <>
+                                <text
+                                    fg={theme.text.muted}
+                                    content="·"
+                                    flexShrink={0}
+                                />
+                                {/* Red once prompts are off: a mode the user
+                                    forgot is how a refusal gets mistaken for a
+                                    broken tool. */}
+                                <text
+                                    fg={modeColor}
+                                    content={MODE_LABEL[mode]}
+                                    wrapMode="none"
+                                    flexShrink={0}
+                                />
+                            </>
+                        )}
                     </>
                 }
                 right={

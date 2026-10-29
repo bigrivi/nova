@@ -22,6 +22,7 @@ import { getChatState } from "../stores/chat-store.ts";
 import type { NovaAttachmentData } from "../api/types.ts";
 import { useCompactionStore } from "../stores/compaction-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
+import { usePermissionStore } from "../stores/permission-store.ts";
 import { useToastStore } from "../stores/toast-store.ts";
 import {
     parseTodos,
@@ -270,6 +271,7 @@ async function runTurn(options: TurnOptions): Promise<void> {
             model,
             agentKey,
             reasoningEffort,
+            permissionMode: usePermissionStore.getState().mode,
             resumeFromSequence: options.resumeFromSequence ?? null,
             onEvent: (event) => {
                 applyStreamEvent(event, assistantId, effects, acc);

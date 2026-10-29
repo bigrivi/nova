@@ -5,9 +5,11 @@ import {
     getSessionContext,
     interruptChat,
     listAgents,
+    listCheckpoints,
     listModels,
     listProviders,
     listSessions,
+    restoreCheckpoint,
     streamChat,
     updateAgent,
 } from "./nova-api.ts";
@@ -94,8 +96,30 @@ describe("nova-api", () => {
         expect(calls[0]?.init?.method).toBe("DELETE");
     });
 
-    test("getSessionContext parses the body", async () => {
+    test("listCheckpoints unwraps items", async () => {
         mockFetch(() =>
+            jsonResponse({ items: [{ checkpoint_id: "m1", files: 2 }] }),
+        );
+
+        expect(await listCheckpoints("s1")).toEqual([
+            { checkpoint_id: "m1", files: 2 },
+        ] as never);
+        expect(calls[0]?.url).toEndWith("/api/sessions/s1/checkpoints");
+    });
+
+    test("restoreCheckpoint posts to the checkpoint route", async () => {
+        mockFetch(() => jsonResponse({ restored: ["a"], dropped_messages: 3 }));
+
+        const report = await restoreCheckpoint("s1", "m1");
+
+        expect(report.dropped_messages).toBe(3);
+        expect(calls[0]?.url).toEndWith(
+            "/api/sessions/s1/checkpoints/m1/restore",
+        );
+        expect(calls[0]?.init?.method).toBe("POST");
+    });
+
+    test("getSessionContext parses the body", async () => {        mockFetch(() =>
             jsonResponse({ used: 1, limit: 2, percent: 50, message_count: 3 }),
         );
         expect(await getSessionContext("s1")).toEqual({
@@ -166,6 +190,7 @@ describe("nova-api", () => {
             message: "hi",
             agentKey: "plan",
             reasoningEffort: "high",
+            permissionMode: "acceptEdits",
             onEvent: (event) => received.push(event),
         });
 
@@ -179,6 +204,9 @@ describe("nova-api", () => {
         >;
         expect(body.agent_key).toBe("plan");
         expect(body.reasoning_effort).toBe("high");
+        // The mode has to reach the backend per turn: the agent cache is keyed
+        // on it, which is what makes Shift+Tab take effect without a restart.
+        expect(body.permission_mode).toBe("acceptEdits");
         expect(body.message).toBe("hi");
     });
 });

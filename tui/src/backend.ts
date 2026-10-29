@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { WORKSPACE_DIR } from "./workspace.ts";
 import { setTimeout as sleep } from "node:timers/promises";
-import { DEFAULT_API_BASE } from "./api/nova-api.ts";
+import { DEFAULT_API_BASE } from "./api/client.ts";
 
 /** "../.." because this file lives in tui/src/ */
 const PROJECT_ROOT = process.env.NOVA_PROJECT_ROOT

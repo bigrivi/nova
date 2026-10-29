@@ -1,21 +1,28 @@
 /** Nova backend HTTP/SSE client (ported from frontend/src/lib/nova-api.ts, without the Vite dependency) */
+import {
+    buildUrl,
+    type JsonResponse,
+    jsonInit,
+    parseErrorMessage,
+    request,
+    send,
+} from "./client.ts";
 import type {
     NovaAgentCreateRequest,
     NovaAgentRecord,
     NovaAttachmentData,
+    NovaCheckpoint,
     NovaMessageRecord,
     NovaModelCreateRequest,
     NovaModelRecord,
+    NovaPermissionPolicy,
     NovaProjectRecord,
     NovaProviderCreateRequest,
     NovaProviderRecord,
+    NovaRestoreReport,
     NovaSessionSummary,
     NovaStreamEvent,
 } from "./types.ts";
-
-type JsonResponse<T> = {
-    items: T[];
-};
 
 export type StreamChatOptions = {
     message: string;
@@ -28,68 +35,19 @@ export type StreamChatOptions = {
     model?: string | null;
     agentKey?: string | null;
     reasoningEffort?: string | null;
+    /** Per-turn override of the permissions mode; unset uses the config file. */
+    permissionMode?: string | null;
     attachments?: NovaAttachmentData[];
     /** Replay buffered frames after this sequence, then live-tail the turn. */
     resumeFromSequence?: number | null;
     onEvent: (event: NovaStreamEvent) => void;
 };
 
-export const DEFAULT_API_BASE = "http://127.0.0.1:8765";
-
-const API_BASE = (process.env.NOVA_API_BASE_URL || DEFAULT_API_BASE).replace(
-    /\/$/,
-    "",
-);
-
-function buildUrl(path: string): string {
-    return `${API_BASE}${path}`;
-}
-
 export function sessionEventsUrl(): string {
     return buildUrl("/api/events");
 }
 
-async function parseErrorMessage(response: Response): Promise<string> {
-    const raw = await response.text();
-    if (!raw) {
-        return `Request failed with status ${response.status}`;
-    }
-    try {
-        const payload = JSON.parse(raw) as {
-            detail?: string;
-            message?: string;
-        };
-        return payload.detail || payload.message || raw;
-    } catch {
-        return raw;
-    }
-}
 
-async function parseJson<T>(response: Response): Promise<T> {
-    if (!response.ok) {
-        throw new Error(await parseErrorMessage(response));
-    }
-    return (await response.json()) as T;
-}
-
-/** Fetch a path and decode JSON, raising the backend's error message on failure. */
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-    return parseJson<T>(await fetch(buildUrl(path), init));
-}
-
-/** Fetch a path and require a successful status, discarding the body. */
-async function send(path: string, init?: RequestInit): Promise<void> {
-    await parseJson<unknown>(await fetch(buildUrl(path), init));
-}
-
-/** JSON request body init for the mutating endpoints. */
-function jsonInit(method: string, body: unknown): RequestInit {
-    return {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-    };
-}
 
 export async function listModels(): Promise<NovaModelRecord[]> {
     const payload = await request<JsonResponse<NovaModelRecord>>("/api/models");
@@ -101,6 +59,32 @@ export async function listProviders(): Promise<NovaProviderRecord[]> {
         "/api/providers",
     );
     return payload.items;
+}
+
+/** The mode and rules the backend would judge a tool call by. */
+export async function getPermissions(): Promise<NovaPermissionPolicy> {
+    return request<NovaPermissionPolicy>("/api/permissions");
+}
+
+/** Turns of this session that changed files, newest first. */
+export async function listCheckpoints(
+    sessionId: string,
+): Promise<NovaCheckpoint[]> {
+    const payload = await request<JsonResponse<NovaCheckpoint>>(
+        `/api/sessions/${sessionId}/checkpoints`,
+    );
+    return payload.items;
+}
+
+/** Put the files back and drop the turns from *checkpointId* on. */
+export async function restoreCheckpoint(
+    sessionId: string,
+    checkpointId: string,
+): Promise<NovaRestoreReport> {
+    return request<NovaRestoreReport>(
+        `/api/sessions/${sessionId}/checkpoints/${checkpointId}/restore`,
+        { method: "POST" },
+    );
 }
 
 export async function createProvider(
@@ -276,6 +260,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
             model: options.model || undefined,
             agent_key: options.agentKey || undefined,
             reasoning_effort: options.reasoningEffort || undefined,
+            permission_mode: options.permissionMode || undefined,
             attachments: options.attachments || [],
             resume_from_seq: options.resumeFromSequence ?? undefined,
         }),

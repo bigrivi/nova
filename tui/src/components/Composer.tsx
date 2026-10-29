@@ -1,9 +1,11 @@
 /** Bottom input area: multi-line textarea, Enter to submit, Shift+Enter for newline, slash command suggestions, ESC to interrupt */
 import {
+    type BoxRenderable,
     decodePasteBytes,
     type KeyBinding,
     type KeyEvent,
     type PasteEvent,
+    SyntaxStyle,
     type TextareaRenderable,
 } from "@opentui/core";
 import { useEffect, useRef, useState } from "react";
@@ -14,6 +16,23 @@ import {
     type PastedFile,
 } from "../lib/attachments.ts";
 import { truncateMiddle } from "../lib/display-width.ts";
+import { activeMention, completeMentions } from "../lib/file-completion.ts";
+import {
+    buildMentionCandidates,
+    mentionText,
+    selectableSubagents,
+    type MentionCandidate,
+} from "../lib/mentions.ts";
+import { listAgents } from "../api/nova-api.ts";
+import type { NovaAgentRecord } from "../api/types.ts";
+import {
+    historyDown,
+    historyUp,
+    isNavigatingHistory,
+    rememberInput,
+    resetHistoryCursor,
+} from "../lib/input-history.ts";
+import { cycleMode } from "../stores/permission-store.ts";
 import {
     COMMANDS,
     matchCommands,
@@ -26,7 +45,12 @@ import { useChatStore } from "../stores/chat-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
 import { runChatStream, requestInterrupt } from "../stream/chat-stream.ts";
 import { useTheme } from "../context/theme.tsx";
-import { CommandSuggestions } from "./CommandSuggestions.tsx";
+import { WORKSPACE_DIR } from "../workspace.ts";
+import { useMenuStore } from "../stores/menu-store.ts";
+
+/** Distinguishes composers, so one instance cannot clear another's menu. */
+let composerInstances = 0;
+import { MENU_CHROME, MENU_ROWS } from "./MenuOverlay.tsx";
 
 const COMPOSER_KEY_BINDINGS: KeyBinding[] = [
     { name: "enter", action: "submit" },
@@ -61,7 +85,19 @@ export function Composer({
     // earlier modal is open, desyncing React's hook chain.
     const modalOpen = askActive || approvalPending || screenCurrent;
     const textareaRef = useRef<TextareaRenderable>(null);
+    const boxRef = useRef<BoxRenderable>(null);
+    const instanceId = useRef(0);
+    if (instanceId.current === 0) {
+        instanceId.current = ++composerInstances;
+    }
     const [suggestions, setSuggestions] = useState<CommandSpec[]>([]);
+    const [mentions, setMentions] = useState<MentionCandidate[]>([]);
+    // Sub-agents are fetched once: the agent catalog changes when the user edits
+    // it, not while they are typing a prompt.
+    const [subagents, setSubagents] = useState<NovaAgentRecord[]>([]);
+    // Which `@token` the current candidates belong to. The listing is async, so
+    // a stale list must never be applied to a token the user has since edited.
+    const [mentionQuery, setMentionQuery] = useState<string | null>(null);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [textareaHeight, setTextareaHeight] = useState(TEXTAREA_MIN_HEIGHT);
     // Keyed by the extmark that draws the chip: opentui deletes a virtual
@@ -70,6 +106,42 @@ export function Composer({
         { extmarkId: number; file: PastedFile }[]
     >([]);
     const attachmentType = useRef<number | null>(null);
+    const mentionType = useRef<number | null>(null);
+    const mentionStyleId = useRef<number | null>(null);
+    const [mentionStyle, setMentionStyle] = useState<SyntaxStyle | null>(null);
+    const mentionSeq = useRef(0);
+    const navigatingHistory = useRef(false);
+
+    // One syntax style for accepted mentions: the textarea needs it at
+    // construction, and the id is what an extmark paints with.
+    useEffect(() => {
+        try {
+            const style = SyntaxStyle.create();
+            mentionStyleId.current = style.registerStyle("nova.mention", {
+                fg: theme.feedback.running,
+            });
+            setMentionStyle(style);
+        } catch {
+            // Without a renderer the style cannot be created; mentions still work.
+        }
+    }, [theme.feedback.running]);
+
+    useEffect(() => {
+        let cancelled = false;
+        void listAgents()
+            .then((agents) => {
+                if (!cancelled) {
+                    setSubagents(selectableSubagents(agents, "main"));
+                }
+            })
+            .catch(() => {
+                // An empty catalog only costs the agent suggestions; the file
+                // half of the menu still works.
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     useEffect(() => {
         if (modalOpen) {
@@ -160,9 +232,11 @@ export function Composer({
         if (value.trim().startsWith("/")) {
             const items = matchCommands(value);
             setSuggestions(items);
+            setMentions([]);
             setSelectedIndex(0);
         } else {
             setSuggestions([]);
+            void refreshMentions(value);
         }
         const ta = textareaRef.current;
         if (ta) {
@@ -177,9 +251,81 @@ export function Composer({
         }
     }
 
+    /** List `@` candidates for the token at the end of *value*. */
+    async function refreshMentions(value: string): Promise<void> {
+        const token = activeMention(value);
+        if (!token) {
+            setMentions([]);
+            setMentionQuery(null);
+            return;
+        }
+        // The listing is async, so a slower older request must not overwrite the
+        // answer for what is now in the composer.
+        const seq = ++mentionSeq.current;
+        const paths = await completeMentions(token.query, WORKSPACE_DIR);
+        if (seq !== mentionSeq.current) return;
+        setMentions(buildMentionCandidates(subagents, paths, token.query));
+        setMentionQuery(token.query);
+        setSelectedIndex(0);
+    }
+
+    /** Replace the active `@` token with the chosen agent or path.
+     *
+     *  Returns false when the text no longer matches the menu it came from — the
+     *  caller must then fall through instead of swallowing the keypress. */
+    function acceptMention(item: MentionCandidate): boolean {
+        const input = textareaRef.current;
+        const value = input?.plainText ?? "";
+        const token = activeMention(value);
+        if (!input || !token || token.query !== mentionQuery) {
+            setMentions([]);
+            setMentionQuery(null);
+            return false;
+        }
+        const text = mentionText(item);
+        const next = `${value.slice(0, token.start)}${text}${value.slice(token.start + 1 + token.query.length)}`;
+        input.setText(next);
+        input.cursorOffset = next.length;
+        // A directory is a half-typed path — the user keeps appending to it, so
+        // only a finished reference becomes one delete-able unit.
+        if (item.kind !== "dir") {
+            markMention(token.start, text);
+        }
+        refreshSuggestions(next);
+        return true;
+    }
+
+    /** Make an accepted mention one unit: coloured, and removed by one backspace.
+     *
+     *  Virtual, like the attachment chips, is what makes the deletion wrapper
+     *  swallow the whole span instead of one character. Styling is best-effort —
+     *  a reference that is not yellow is still usable, so a failure here must not
+     *  throw away the completion. */
+    function markMention(start: number, text: string): void {
+        const input = textareaRef.current;
+        if (!input) return;
+        try {
+            if (mentionType.current === null) {
+                mentionType.current = input.extmarks.registerType("mention");
+            }
+            input.extmarks.create({
+                start,
+                // Includes the trailing space, so deleting the mention does not
+                // leave a stray separator behind.
+                end: start + text.length,
+                virtual: true,
+                typeId: mentionType.current,
+                styleId: mentionStyleId.current ?? undefined,
+            });
+        } catch {
+            // Styling is a nicety; the text already landed.
+        }
+    }
+
     function clearComposer(): void {
         textareaRef.current?.clear();
         setSuggestions([]);
+        setMentions([]);
         setTextareaHeight(TEXTAREA_MIN_HEIGHT);
     }
 
@@ -200,6 +346,13 @@ export function Composer({
                 onCommand(parsed.id, parsed.args);
                 return;
             }
+        }
+        // The mention menu owns Enter while it is open. Without this the textarea
+        // submits whatever is typed — a bare `@` — and the user gets an answer to
+        // a question they were still composing.
+        if (mentions.length > 0) {
+            const item = mentions[selectedIndex] ?? mentions[0];
+            if (item && acceptMention(item)) return;
         }
         if (suggestions.length > 0) {
             const item = suggestions[selectedIndex];
@@ -232,6 +385,9 @@ export function Composer({
         );
         const message = [body, ...references].filter(Boolean).join("\n");
         if (!message || isStreaming) return;
+        // Only the typed prompt goes into history; the decorated `message`
+        // carries attachment lines the user never wrote.
+        if (body) rememberInput(body);
         // A file-only message still needs something to show in the bubble.
         const display =
             body ||
@@ -249,6 +405,38 @@ export function Composer({
     }
 
     function handleKeyDown(event: KeyEvent): void {
+        // Handled here as well as in App: whichever listener runs first, the
+        // textarea must not insert a tab for Shift+Tab.
+        if (event.shift && event.name === "tab") {
+            cycleMode();
+            event.preventDefault();
+            return;
+        }
+        // The mention menu and the command menu never share the composer, but
+        // they do share the selection index, so whichever is showing wins.
+        if (mentions.length > 0) {
+            if (event.name === "up") {
+                setSelectedIndex((i) => Math.max(0, i - 1));
+                event.preventDefault();
+                return;
+            }
+            if (event.name === "down") {
+                setSelectedIndex((i) => Math.min(mentions.length - 1, i + 1));
+                event.preventDefault();
+                return;
+            }
+            if (event.name === "escape") {
+                setMentions([]);
+                event.preventDefault();
+                return;
+            }
+            if (event.name === "tab") {
+                const item = mentions[selectedIndex] ?? mentions[0];
+                if (item) acceptMention(item);
+                event.preventDefault();
+                return;
+            }
+        }
         if (suggestions.length > 0) {
             if (event.name === "up") {
                 setSelectedIndex((i) => Math.max(0, i - 1));
@@ -277,6 +465,35 @@ export function Composer({
                 return;
             }
         }
+        // Recall from a single-line composer, and keep going while already
+        // recalling: a recalled multi-line prompt must not trap the arrows.
+        const input = textareaRef.current;
+        const value = input?.plainText ?? "";
+        if (
+            input &&
+            (!value.includes("\n") || isNavigatingHistory())
+        ) {
+            if (event.name === "up") {
+                const previous = historyUp(value);
+                if (previous !== null) {
+                    navigatingHistory.current = true;
+                    input.setText(previous);
+                    input.cursorOffset = previous.length;
+                    event.preventDefault();
+                    return;
+                }
+            }
+            if (event.name === "down") {
+                const next = historyDown();
+                if (next !== null) {
+                    navigatingHistory.current = true;
+                    input.setText(next);
+                    input.cursorOffset = next.length;
+                    event.preventDefault();
+                    return;
+                }
+            }
+        }
         if (event.name === "escape") {
             // Both this handler and the global one in App fire for one keypress; the guard in requestInterrupt keeps it to one post.
             void requestInterrupt();
@@ -284,8 +501,77 @@ export function Composer({
     }
 
     const card = variant === "card";
+    // One popup serves both menus; the mention list wins because a `@` token and
+    // a leading `/` cannot be active in the same composer text.
+    const menuItems: CommandSpec[] = mentions.length
+        ? mentions.map((item) => ({
+              id: item.value,
+              label: item.label,
+              description: item.hint,
+              usage: item.label,
+              aliases: [],
+          }))
+        : suggestions;
+    // The root paints the menu (see MenuOverlay); the composer only owns its
+    // state. Publishing here keeps one source of truth for which row is
+    // selected.
+    const menuKey = `${menuItems.length}:${selectedIndex}`;
+    // Only the instance that published may clear: with a second composer mounted
+    // (tests, or a future split view) an empty one would wipe a live menu.
+    const publishedMenu = useRef(false);
+    useEffect(() => {
+        if (menuItems.length === 0) {
+            if (publishedMenu.current) {
+                publishedMenu.current = false;
+                useMenuStore.getState().clear(instanceId.current);
+            }
+            return;
+        }
+        publishedMenu.current = true;
+        const rows = Math.min(MENU_ROWS, menuItems.length);
+        const box = boxRef.current;
+        useMenuStore
+            .getState()
+            .show(
+                menuItems,
+                selectedIndex,
+                rows + MENU_CHROME,
+                {
+                    x: box?.x ?? 0,
+                    y: box?.y ?? 0,
+                    width: box?.width ?? 0,
+                },
+                instanceId.current,
+            );
+    }, [menuKey]);
+
+    // The composer moves when the textarea grows and when a turn ends. Poll the
+    // measured box while the menu is open, the same way opencode does it (50 ms);
+    // a stale anchor leaves the menu floating in the wrong place.
+    const menuOpen = menuItems.length > 0;
+    useEffect(() => {
+        if (!menuOpen) return;
+        const update = (): void => {
+            const box = boxRef.current;
+            if (!box) return;
+            useMenuStore
+                .getState()
+                .setAnchor({ x: box.x, y: box.y, width: box.width });
+        };
+        update();
+        const timer = setInterval(update, 50);
+        return () => clearInterval(timer);
+    }, [menuOpen]);
+
+    // A menu that outlives the composer would hang over the next screen.
+    useEffect(
+        () => () => useMenuStore.getState().clear(instanceId.current),
+        [],
+    );
+
     return (
         <box
+            ref={boxRef}
             flexDirection="column"
             flexShrink={0}
             paddingX={card ? 2 : 1}
@@ -301,10 +587,6 @@ export function Composer({
                       borderColor: theme.text.muted,
                   })}
         >
-            <CommandSuggestions
-                items={suggestions}
-                selectedIndex={selectedIndex}
-            />
             <box flexDirection="row" flexGrow={1}>
                 <text fg={theme.primary.muted} content="> " height={textareaHeight} />
                 <textarea
@@ -316,9 +598,17 @@ export function Composer({
                     textColor={theme.text.base}
                     focusedTextColor={theme.text.base}
                     keyBindings={COMPOSER_KEY_BINDINGS}
+                    syntaxStyle={mentionStyle ?? undefined}
                     onSubmit={submitCurrent}
                     onContentChange={() => {
                         const value = textareaRef.current?.plainText ?? "";
+                        // Our own setText must not be mistaken for new typing,
+                        // which would drop the recall position.
+                        if (navigatingHistory.current) {
+                            navigatingHistory.current = false;
+                        } else {
+                            resetHistoryCursor();
+                        }
                         refreshSuggestions(value);
                         syncAttachments();
                     }}

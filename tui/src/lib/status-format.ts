@@ -41,6 +41,8 @@ export type StatusDensity = {
     hideNumbers: boolean;
     /** Drop the provider name, keeping the status dot and model name. */
     hideProvider: boolean;
+    /** Drop the permission-mode chip. */
+    hideMode: boolean;
     /** Drop the git branch from the environment line. */
     hideBranch: boolean;
 };
@@ -57,6 +59,7 @@ export function statusDensity(width: number): StatusDensity {
         hideBar: width < 68,
         hideNumbers: width < 54,
         hideProvider: width < 48,
+        hideMode: width < 58,
         hideBranch: width < 64,
     };
 }

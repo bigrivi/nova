@@ -8,7 +8,15 @@ export type Screen =
     | { kind: "variants" }
     | { kind: "agents" }
     | { kind: "create-agent" }
-    | { kind: "delete-agent" };
+    | { kind: "delete-agent" }
+    | { kind: "permissions" }
+    | { kind: "rewind" }
+    | { kind: "tasks" }
+    | { kind: "mcp" }
+    | { kind: "memory" }
+    | { kind: "diff" }
+    | { kind: "commit" }
+    | { kind: "review" };
 
 type ScreenState = {
     current: Screen | null;

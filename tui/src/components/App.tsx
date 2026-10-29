@@ -1,12 +1,13 @@
 /** Root component: layout orchestration, modal layer, global keybindings, and command dispatch */
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useEffect, useMemo, useState } from "react";
-import { getAgent, listModels, listSessions } from "../api/nova-api.ts";
+import { getAgent, getPermissions, listModels, listSessions } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useExpandStore } from "../stores/expand-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
+import { cycleMode, normalizeMode, usePermissionStore } from "../stores/permission-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
 import { useToastStore } from "../stores/toast-store.ts";
 import { ThemeOverride, useTheme } from "../context/theme.tsx";
@@ -22,13 +23,25 @@ import { LaunchFrame } from "./screens/LaunchFrame.tsx";
 import { LaunchScreen } from "./screens/LaunchScreen.tsx";
 import { buildHints, hintAt, HINT_MS, motionEnabled } from "./screens/launch.ts";
 import { CreateAgentScreen } from "./screens/CreateAgentScreen.tsx";
+import { CommitScreen } from "./screens/CommitScreen.tsx";
+import { MenuOverlay } from "./MenuOverlay.tsx";
+import { useMenuStore } from "../stores/menu-store.ts";
+import { DiffScreen } from "./screens/DiffScreen.tsx";
+import { McpScreen } from "./screens/McpScreen.tsx";
+import { MemoryScreen } from "./screens/MemoryScreen.tsx";
 import { ModelsScreen } from "./screens/ModelsScreen.tsx";
+import { PermissionsScreen } from "./screens/PermissionsScreen.tsx";
+import { ReviewScreen } from "./screens/ReviewScreen.tsx";
+import { RewindScreen } from "./screens/RewindScreen.tsx";
+import { TasksScreen } from "./screens/TasksScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
 import { ThemeScreen } from "./screens/ThemeScreen.tsx";
 import { VariantsScreen } from "./screens/VariantsScreen.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 import { Toast } from "./Toast.tsx";
 import { WORKSPACE_DIR } from "../workspace.ts";
+import { compactOpenSession } from "../lib/compact-session.ts";
+import { forkOpenSession } from "../lib/fork-session.ts";
 
 export type ExitHandler = () => void;
 
@@ -46,6 +59,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     const launching = messages.length === 0 && !isStreaming && sessionId === null;
     const [hintIndex, setHintIndex] = useState(0);
     const [savedSessions, setSavedSessions] = useState(0);
+    const menuAnchor = useMenuStore((state) => state.anchor);
     const hints = useMemo(() => buildHints(savedSessions), [savedSessions]);
     const theme = useTheme();
     const renderer = useRenderer();
@@ -111,12 +125,35 @@ export function App({ onExit }: { onExit: ExitHandler }) {
         };
     }, []);
 
+    // Start from the mode in permissions.json; a later Shift+Tab overrides it
+    // for the rest of the session without touching the file.
+    useEffect(() => {
+        let cancelled = false;
+        void getPermissions()
+            .then((policy) => {
+                if (cancelled) return;
+                const store = usePermissionStore.getState();
+                store.setPolicy(policy);
+                store.setMode(normalizeMode(policy.mode));
+            })
+            .catch(() => {});
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     useKeyboard((key) => {
         if (
             useAskUserStore.getState().active ||
             useApprovalStore.getState().pending
         ) {
             // Modal keyboard is handled by AskUserCard / ApprovalDialog
+            return;
+        }
+        // Before the screen guard: the mode belongs to the session, so it stays
+        // switchable from any screen, not just an empty composer.
+        if (key.shift && key.name === "tab") {
+            cycleMode();
             return;
         }
         if (useScreenStore.getState().current) {
@@ -191,6 +228,58 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             case "themes":
                 screens.open({ kind: "theme" });
                 return;
+            case "permissions":
+                screens.open({ kind: "permissions" });
+                return;
+            case "rewind":
+                screens.open({ kind: "rewind" });
+                return;
+            case "tasks":
+                screens.open({ kind: "tasks" });
+                return;
+            case "diff":
+                screens.open({ kind: "diff" });
+                return;
+            case "review":
+                screens.open({ kind: "review" });
+                return;
+            case "commit":
+                screens.open({ kind: "commit" });
+                return;
+            case "mcp":
+                screens.open({ kind: "mcp" });
+                return;
+            case "memory":
+                screens.open({ kind: "memory" });
+                return;
+            case "fork":
+                void forkOpenSession()
+                    .then((message) => {
+                        useToastStore.getState().show(message, 3000);
+                    })
+                    .catch((err: unknown) => {
+                        useToastStore
+                            .getState()
+                            .show(
+                                `Fork failed: ${err instanceof Error ? err.message : String(err)}`,
+                                4000,
+                            );
+                    });
+                return;
+            case "compact":
+                void compactOpenSession()
+                    .then((message) => {
+                        useToastStore.getState().show(message, 3000);
+                    })
+                    .catch((err: unknown) => {
+                        useToastStore
+                            .getState()
+                            .show(
+                                `Compact failed: ${err instanceof Error ? err.message : String(err)}`,
+                                4000,
+                            );
+                    });
+                return;
             default:
                 // /install-skill /install-global-skill → not implemented yet
                 return;
@@ -264,6 +353,19 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                 <AgentsScreen deletable={screen.kind === "delete-agent"} />
             ) : null}
             {screen?.kind === "create-agent" ? <CreateAgentScreen /> : null}
+            {screen?.kind === "permissions" ? <PermissionsScreen /> : null}
+            {screen?.kind === "rewind" ? <RewindScreen /> : null}
+            {screen?.kind === "tasks" ? <TasksScreen /> : null}
+            {screen?.kind === "mcp" ? <McpScreen /> : null}
+            {screen?.kind === "memory" ? <MemoryScreen /> : null}
+            {screen?.kind === "diff" ? <DiffScreen /> : null}
+            {screen?.kind === "review" ? <ReviewScreen /> : null}
+            {screen?.kind === "commit" ? <CommitScreen /> : null}
+            <MenuOverlay
+                anchorY={menuAnchor.y}
+                anchorX={menuAnchor.x}
+                anchorWidth={menuAnchor.width}
+            />
             <Toast />
         </box>
     );
