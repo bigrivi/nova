@@ -63,9 +63,7 @@ def _build_tui(project_root: Path, tui_dir: Path) -> Path:
 
     bun = shutil.which("bun")
     if bun is None:
-        raise SystemExit(
-            "Nova TUI requires Bun. Install it from https://bun.sh"
-        )
+        raise SystemExit("Nova TUI requires Bun. Install it from https://bun.sh")
     if not (tui_dir / "package.json").is_file():
         raise SystemExit(f"Nova TUI sources not found: {tui_dir}")
 
@@ -73,9 +71,7 @@ def _build_tui(project_root: Path, tui_dir: Path) -> Path:
         print("Nova TUI: installing dependencies...", file=sys.stderr)
         subprocess.run([bun, "install"], cwd=str(tui_dir), check=True)
     print("Nova TUI: building bundle...", file=sys.stderr)
-    subprocess.run(
-        [bun, "run", "build"], cwd=str(tui_dir), check=True
-    )
+    subprocess.run([bun, "run", "build"], cwd=str(tui_dir), check=True)
     if not bundle.is_file():
         raise SystemExit("Nova TUI: build produced no dist/index.js")
     return bundle
@@ -138,6 +134,60 @@ def _run_tui() -> None:
     os.execvpe(bun, [bun, str(bundle)], environment)
 
 
+def _console_exit_code(args: argparse.Namespace, settings: Settings) -> int:
+    """Run ``run`` / ``sessions`` / ``delete`` and return the process exit code."""
+    from nova.app import console
+
+    if args.mode == "sessions":
+        coro = console.list_sessions(
+            settings=settings,
+            workspace_dir=args.workspace,
+            all_workspaces=args.all_workspaces,
+            as_json=args.json_output,
+        )
+    elif args.mode == "fork":
+        if not args.target:
+            raise SystemExit("nova fork needs a session id: nova fork <id>")
+        coro = console.fork(
+            args.target,
+            settings=settings,
+            message_id=args.from_message,
+            title=args.title,
+        )
+    elif args.mode == "rewind":
+        if not args.target:
+            raise SystemExit("nova rewind needs a session id: nova rewind <id>")
+        coro = console.rewind(
+            args.target,
+            args.to,
+            settings=settings,
+            files_only=args.files_only,
+            force=args.force,
+        )
+    elif args.mode == "delete":
+        if not args.target:
+            raise SystemExit("nova delete needs a session id: nova delete <id>")
+        coro = console.delete_session(args.target, settings=settings)
+    else:
+        if not args.target:
+            raise SystemExit('nova run needs a prompt: nova run "..."')
+        coro = console.run_prompt(
+            args.target,
+            settings=settings,
+            session_id=args.session,
+            workspace_dir=args.workspace,
+            agent_key=args.agent,
+            provider=args.provider,
+            model=args.model,
+            as_json=args.json_output,
+        )
+
+    try:
+        return asyncio.run(coro)
+    except KeyboardInterrupt:
+        return console.EXIT_INTERRUPTED
+
+
 def main() -> None:
     # Internal flag: run a Python script and exit (no GUI).
     # Used by code_run in PyInstaller desktop builds where sys.executable
@@ -160,9 +210,76 @@ def main() -> None:
     parser.add_argument(
         "mode",
         nargs="?",
-        choices=["serve", "web", "tui", "desktop", "websearch-stats", "gateway"],
+        choices=[
+            "serve",
+            "web",
+            "tui",
+            "desktop",
+            "run",
+            "sessions",
+            "rewind",
+            "fork",
+            "delete",
+            "websearch-stats",
+            "gateway",
+        ],
         default="serve",
-        help="Run mode: serve (HTTP backend, default), web (backend + browser UI), tui (OpenTUI client), desktop (GUI window), websearch-stats (summarise web_search backend usage), gateway (messaging gateway for Telegram/Feishu/QQ)",
+        help="Run mode: serve (HTTP backend, default), web (backend + browser UI), tui (OpenTUI client), desktop (GUI window), run (one non-interactive turn), sessions (list sessions), delete (delete a session), websearch-stats (summarise web_search backend usage), gateway (messaging gateway for Telegram/Feishu/QQ)",
+    )
+    parser.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        help="[run] the prompt to send, [delete] the session id",
+    )
+    parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="[run|sessions] emit JSON instead of text",
+    )
+    parser.add_argument(
+        "--session",
+        default=None,
+        help="[run] continue this session id instead of starting a new one",
+    )
+    parser.add_argument(
+        "--workspace",
+        default=None,
+        help="[run|sessions] workspace directory (default: current directory)",
+    )
+    parser.add_argument(
+        "--all",
+        dest="all_workspaces",
+        action="store_true",
+        help="[sessions] list sessions from every workspace, not just this one",
+    )
+    parser.add_argument(
+        "--to",
+        default=None,
+        help="[rewind] the checkpoint id to roll back to; omit to list them",
+    )
+    parser.add_argument(
+        "--files-only",
+        dest="files_only",
+        action="store_true",
+        help="[rewind] restore files without dropping the messages after them",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="[rewind] overwrite files that changed after the agent wrote them",
+    )
+    parser.add_argument(
+        "--from",
+        dest="from_message",
+        default=None,
+        help="[fork] last message id to copy (default: the whole history)",
+    )
+    parser.add_argument(
+        "--title",
+        default=None,
+        help="[fork] title for the copy",
     )
     parser.add_argument(
         "--days",
@@ -170,13 +287,15 @@ def main() -> None:
         default=7,
         help="[websearch-stats] Days of history to summarise",
     )
-    provider_default = provider_names[0] if provider_names else None
     parser.add_argument(
         "--provider",
         "-p",
         choices=provider_names,
-        default=provider_default,
-        help="LLM provider alias (default: first configured provider)",
+        default=None,
+        help=(
+            "LLM provider alias (default: the session's provider, then the "
+            "agent's)"
+        ),
     )
     parser.add_argument(
         "--model", "-m", default=None, help="Model name (default: per-agent DB config)"
@@ -203,6 +322,26 @@ def main() -> None:
     configure_logging(settings, console=args.mode in ("serve", "web", "gateway"))
 
     try:
+        if args.mode in ("run", "sessions", "rewind", "fork", "delete"):
+            try:
+                code = _console_exit_code(args, settings)
+            except Exception:
+                # An exception that escapes here would leave the aiosqlite worker
+                # thread holding the interpreter open: the traceback prints and
+                # the process then hangs instead of exiting.
+                import traceback
+
+                traceback.print_exc()
+                code = 1
+            # A reader that closed the pipe (e.g. `| head -2`) makes this flush
+            # raise; an unhandled raise here skips the exit below and the
+            # interpreter then hangs on the non-daemon aiosqlite thread.
+            for stream in (sys.stdout, sys.stderr):
+                try:
+                    stream.flush()
+                except OSError:
+                    pass
+            os._exit(code)
         if args.mode == "websearch-stats":
             _print_web_search_stats(args.days)
             return
