@@ -4,22 +4,24 @@ import { useChatStore, type RetryState } from "../../stores/chat-store.ts";
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const TICK_MS = 100;
-/** Keep the retry line on one row: the upstream reason can be a whole URL+error. */
-const REASON_MAX = 60;
 
 function formatElapsed(ms: number): string {
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(1)}s`;
 }
 
-/** " · retry 1/6 in 60s · HTTP 429", or "" while the model is just thinking. */
+/** " · retry 1/6 in 60s · HTTP 429", or "" while the model is just thinking.
+ *
+ *  The reason is the upstream's own words -- "quota is exhausted" tells a user
+ *  to stop, "endpoint unavailable" to wait -- so it is passed through whole and
+ *  left to wrap; the backend already cut it to one line of at most 200 chars.
+ */
 export function retrySuffix(retry: RetryState | null): string {
     if (!retry) return "";
     const budget = retry.total > 0 ? `${retry.attempt}/${retry.total}` : `${retry.attempt}`;
     const wait =
         retry.waitSeconds > 0 ? ` in ${Math.round(retry.waitSeconds)}s` : "";
-    const raw = retry.reason.trim();
-    const reason = raw.length > REASON_MAX ? `${raw.slice(0, REASON_MAX - 1)}…` : raw;
+    const reason = retry.reason.trim();
     return ` · retry ${budget}${wait}${reason ? ` · ${reason}` : ""}`;
 }
 

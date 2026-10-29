@@ -30,15 +30,16 @@ describe("retrySuffix", () => {
         ).toBe(" · retry 2");
     });
 
-    test("keeps a long upstream reason on one row", () => {
-        const suffix = retrySuffix({
-            attempt: 1,
-            total: 6,
-            waitSeconds: 5,
-            reason: "x".repeat(200),
-        });
-        expect(suffix.length).toBeLessThan(90);
-        expect(suffix.endsWith("…")).toBe(true);
+    test("passes the whole upstream reason through to be wrapped", () => {
+        const reason = "quota is exhausted for this IP/account, upgrade or wait";
+        expect(
+            retrySuffix({
+                attempt: 1,
+                total: 6,
+                waitSeconds: 5,
+                reason: `  ${reason}  `,
+            }),
+        ).toBe(` · retry 1/6 in 5s · ${reason}`);
     });
 });
 
@@ -62,6 +63,28 @@ describe("ThinkingSpinner", () => {
         expect(frame).toContain("Thinking…");
         expect(frame).toContain("retry 1/6 in 60s");
         expect(frame).toContain("HTTP 429");
+
+        act(() => useChatStore.getState().setRetry(null));
+    });
+
+    test("wraps a long reason instead of cutting it", async () => {
+        act(() =>
+            useChatStore.getState().setRetry({
+                attempt: 1,
+                total: 6,
+                waitSeconds: 60,
+                reason: "OpenCode Zen free-tier quota is exhausted for this IP/account, upgrade or wait.",
+            }),
+        );
+        const setup = await testRender(<ThinkingSpinner />, {
+            width: 60,
+            height: 6,
+        });
+        await setup.flush();
+        const frame = setup.captureCharFrame();
+
+        expect(frame).toContain("quota is exhausted");
+        expect(frame).toContain("upgrade or wait.");
 
         act(() => useChatStore.getState().setRetry(null));
     });
