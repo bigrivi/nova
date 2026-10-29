@@ -41,6 +41,7 @@ from nova.session.models import encode_display_text
 from nova.session.protocol import SessionProtocol
 from nova.skills.service import SkillService
 from nova.tools.approval import get_approval_manager
+from nova.tools.checkpoints import begin_turn
 from nova.tools.registry import ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -121,11 +122,16 @@ def build_user_message(
             for content_part in attachment.get("content", []):
                 if content_part.get("type") == "text":
                     message_text = content_part.get("text", "") + "\n\n" + message_text
-    return message_text, image_data, display_text if display_text is not None else user_input
+    return (
+        message_text,
+        image_data,
+        display_text if display_text is not None else user_input,
+    )
 
 
 class Agent:
     """Nova agent: chat stream, tool use, session management."""
+
     def __init__(
         self,
         config: AgentConfig | None = None,
@@ -199,11 +205,20 @@ class Agent:
         # new Agent is built per request, so a loop held on the agent would
         # reset its turn counter every turn and never reach the nudge interval.
         from nova.settings import get_settings
+
         _settings = get_settings()
         self._learning_loop = None
-        if getattr(_settings, "learning", None) is not None and _settings.learning.enabled:
+        if (
+            getattr(_settings, "learning", None) is not None
+            and _settings.learning.enabled
+        ):
             from nova.learning.loop import get_learning_loop
-            skills_dir = self._skill_service.skills_dir if hasattr(self._skill_service, "skills_dir") else (self.agent_dir / "skills")
+
+            skills_dir = (
+                self._skill_service.skills_dir
+                if hasattr(self._skill_service, "skills_dir")
+                else (self.agent_dir / "skills")
+            )
             self._learning_loop = get_learning_loop(
                 agent_key,
                 settings=_settings.learning,
@@ -243,6 +258,7 @@ class Agent:
         self.messaging = AgentMessaging(self)
         self.background = AgentBackground(self)
         self.session_service = AgentSession(self)
+
     @staticmethod
     def _build_skill_service(agent_key: str, agent_dir: Path) -> SkillService:
         if agent_key == DEFAULT_AGENT_KEY:
@@ -333,7 +349,9 @@ class Agent:
             log.info(
                 f"[Turn {turn_count}] Calling tool: {tool_call.name}({tool_call.arguments})"
             )
-        await self.session_service._persist_assistant_message(reader, tool_calls, group_id)
+        await self.session_service._persist_assistant_message(
+            reader, tool_calls, group_id
+        )
 
         if not tool_calls:
             payload = _done_payload("completed", reader.final_content)
@@ -410,12 +428,20 @@ class Agent:
             len(message_text),
             len(attachments or []),
         )
-        await self.session.add_message(
+        user_message = await self.session.add_message(
             role="user",
             content=message_text,
             images=image_data or None,
             variant=message_variant,
             data=encode_display_text(display, message_text),
+        )
+        # The turn's own user message is the rewind point: the client already
+        # has its id, so `/rewind` can name the same moment the transcript does.
+        begin_turn(
+            session_id=session_id,
+            checkpoint_id=user_message.id,
+            label=display or message_text,
+            workspace=self._active_workspace,
         )
 
         tool_schemas = (
@@ -538,6 +564,46 @@ class Agent:
         await self._emit(AgentEvent.ERROR, error_payload)
         log.warning(f"[Turn {turn_count}] Maximum iterations reached")
         yield AgentEvent.ERROR, error_payload
+
+    async def compact_now(self, session_id: str) -> dict[str, Any]:
+        """Force one compaction pass on *session_id*, outside a turn.
+
+        The same path a turn takes, with the overflow latch set: compaction then
+        ignores the token threshold but still refuses when the history cannot be
+        split safely, so a small session reports "not compacted" rather than
+        rewriting anything.
+
+        Args:
+            session_id: Session to compact.
+
+        Returns:
+            ``{"compacted": bool}``.
+
+        Raises:
+            FileNotFoundError: when the session does not exist.
+            RuntimeError: when the agent has no provider to summarise with.
+        """
+        if not await self.session.load_session(session_id):
+            raise FileNotFoundError(f"Session {session_id} not found")
+        current = self.session.get_current_session()
+        if current is None:
+            raise FileNotFoundError(f"Session {session_id} not found")
+        if self.llm is None:
+            raise RuntimeError("Agent has no LLM provider to compact with")
+
+        data_source = self._data_source or await get_default_data_source()
+        messages = await self.session.get_messages()
+        self._compaction.force_next = True
+        async for _event, _payload in self._compaction.maybe_compact(
+            messages,
+            current,
+            data_source,
+            self.llm,
+            self._emit,
+            tools=self.tool_registry.get_schema() if self.tool_registry.tools else None,
+        ):
+            pass
+        return {"compacted": self._compaction.compacted}
 
     async def _refresh_memory_index(self) -> None:
         """Build the memory index from DB for system prompt inclusion.
@@ -724,4 +790,3 @@ class Agent:
         )
         await builder.build()
         self._skill_tools = builder.skill_tools
-

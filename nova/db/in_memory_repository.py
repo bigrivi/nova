@@ -55,6 +55,8 @@ class InMemoryRepository(NovaRepository):
             "agent_key": getattr(session, "agent_key", "main"),
             "title": getattr(session, "title", None),
             "parent_id": getattr(session, "parent_id", None),
+            "forked_from": getattr(session, "forked_from", None),
+            "fork_point_message_id": getattr(session, "fork_point_message_id", None),
             "workspace_dir": getattr(session, "workspace_dir", None),
             "project_id": getattr(session, "project_id", None),
             "pinned": bool(getattr(session, "pinned", False)),

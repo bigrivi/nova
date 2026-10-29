@@ -175,6 +175,8 @@ class ChatService:
                 workspace_dir=session.get("workspace_dir"),
                 pinned=bool(session.get("pinned", 0)),
                 project_id=session.get("project_id"),
+                forked_from=session.get("forked_from"),
+                fork_point_message_id=session.get("fork_point_message_id"),
             )
             for session in sessions
         ]
@@ -266,6 +268,9 @@ class ChatService:
             log.exception("delete_session buffer discard failed for %s", session_id)
         deleted = await data_source.delete_session(session_id)
         if deleted:
+            from nova.tools.checkpoints import remove_session
+
+            remove_session(session_id)
             from nova.tasks.manager import get_background_task_manager
 
             await get_background_task_manager().cancel_for_session(session_id)
@@ -274,6 +279,171 @@ class ChatService:
 
             await MemoryService().delete_by_session(session_id)
         return deleted
+
+    async def rewind(
+        self,
+        session_id: str,
+        checkpoint_id: str,
+        *,
+        force: bool = False,
+        keep_chat: bool = False,
+    ) -> dict[str, object]:
+        """Undo the files a turn changed and drop the turns after it.
+
+        The chat is only truncated when the checkpoint's user message is still in
+        the visible history; a compaction that rewrote it away would otherwise
+        make "delete everything after index -1" delete the whole session.
+
+        Args:
+            session_id: Session the checkpoint belongs to.
+            checkpoint_id: The turn's user message id.
+            force: Restore files that changed after the agent wrote them.
+            keep_chat: Restore files only, leaving the conversation intact.
+
+        Returns:
+            The restore report plus how many messages were dropped.
+
+        Raises:
+            SessionBusy: when a turn is still streaming in this session.
+            FileNotFoundError: when the checkpoint does not exist.
+        """
+        from nova import checkpoints as checkpoint_store
+        from nova.session.errors import SessionBusy
+
+        owner = await self._request_registry.get(session_id)
+        if owner is not None:
+            raise SessionBusy(session_id, "rewind")
+
+        report = checkpoint_store.restore_files(session_id, checkpoint_id, force=force)
+        dropped = 0
+        chat_truncated = False
+        if not keep_chat:
+            response = await self.list_messages(session_id)
+            ids = [message.id for message in response.items]
+            if checkpoint_id in ids:
+                stale = ids[ids.index(checkpoint_id) :]
+                data_source = await self._get_data_source()
+                dropped = await data_source.delete_messages(session_id, stale)
+                checkpoint_store.discard_checkpoints_from(session_id, checkpoint_id)
+                chat_truncated = True
+
+        return {
+            "restored": report.restored,
+            "deleted": report.deleted,
+            "skipped": report.skipped,
+            "dropped_messages": dropped,
+            "chat_truncated": chat_truncated,
+        }
+
+    async def compact(self, session_id: str) -> dict[str, object]:
+        """Force one compaction pass so the user can free context on demand.
+
+        Args:
+            session_id: Session to compact.
+
+        Returns:
+            ``{"compacted": bool}``: False when the history is not splittable yet.
+
+        Raises:
+            SessionBusy: when a turn is streaming in this session.
+            FileNotFoundError: when the session does not exist.
+        """
+        from nova.app import build_agent
+        from nova.constants import DEFAULT_AGENT_KEY
+        from nova.session.errors import SessionBusy
+
+        owner = await self._request_registry.get(session_id)
+        if owner is not None:
+            raise SessionBusy(session_id, "compact")
+
+        data_source = await self._get_data_source()
+        record = await data_source.get_session(session_id)
+        if record is None:
+            raise FileNotFoundError(f"Session {session_id} not found")
+
+        agent = await build_agent(
+            agent_key=record.get("agent_key") or DEFAULT_AGENT_KEY,
+            session_id=session_id,
+            data_source=data_source,
+        )
+        return await agent.compact_now(session_id)
+
+    async def workspace_of(self, session_id: str) -> str | None:
+        """The workspace directory a session runs in, or None.
+
+        Routers that shell out (git) need the session's tree, not the server
+        process's cwd: the two are different as soon as one client changes
+        directory.
+
+        Args:
+            session_id: Session to look up.
+
+        Returns:
+            The stored absolute path, or None when the session has no workspace.
+
+        Raises:
+            FileNotFoundError: when the session does not exist, so a caller can
+                answer 404 rather than blaming the workspace.
+        """
+        data_source = await self._get_data_source()
+        record = await data_source.get_session(session_id)
+        if record is None:
+            raise FileNotFoundError(f"Session {session_id} not found")
+        workspace = record.get("workspace_dir")
+        return str(workspace) if workspace else None
+
+    async def route_of(self, session_id: str) -> tuple[str | None, str | None]:
+        """The provider and model a session was last run with.
+
+        Args:
+            session_id: Session to look up.
+
+        Returns:
+            ``(provider, model)``; either may be None for a session that never
+            recorded a route.
+
+        Raises:
+            FileNotFoundError: when the session does not exist.
+        """
+        data_source = await self._get_data_source()
+        record = await data_source.get_session(session_id)
+        if record is None:
+            raise FileNotFoundError(f"Session {session_id} not found")
+        return record.get("provider"), record.get("model")
+
+    async def fork_session(
+        self,
+        session_id: str,
+        *,
+        message_id: str | None = None,
+        title: str | None = None,
+    ) -> dict[str, object]:
+        """Copy a conversation into a new session, leaving the original alone.
+
+        Args:
+            session_id: Session to copy.
+            message_id: Last message to include; omitted copies everything.
+            title: Title for the copy.
+
+        Returns:
+            The new session's id, title and message count.
+
+        Raises:
+            SessionBusy: when a turn is streaming in the source session.
+            FileNotFoundError: when the source session does not exist.
+            ForkPointNotFound: when *message_id* is not in the source session.
+        """
+        from nova.session.errors import SessionBusy
+        from nova.session.fork import fork_session
+
+        owner = await self._request_registry.get(session_id)
+        if owner is not None:
+            raise SessionBusy(session_id, "fork")
+
+        data_source = await self._get_data_source()
+        return await fork_session(
+            data_source, session_id, message_id=message_id, title=title
+        )
 
     async def list_messages(self, session_id: str) -> MessageListResponse:
         data_source = await self._get_data_source()

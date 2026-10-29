@@ -5,6 +5,7 @@ Edit tool - perform precise file edits.
 import difflib
 
 from nova.llm import ToolResult
+from nova.tools.checkpoints import record_write
 from nova.tools.registry import tool
 from nova.tools.workspace_context import resolve_path
 
@@ -83,6 +84,9 @@ async def edit(
         if final_content and not final_content.endswith("\n"):
             final_content += "\n"
 
+        # The raw file as it was read: `old_content_final` is line-ending
+        # normalised, and restoring that would rewrite every CRLF in the file.
+        record_write(p, content, final_content)
         p.write_text(final_content, encoding="utf-8")
 
         old_lines = old_content_final.splitlines(keepends=True)

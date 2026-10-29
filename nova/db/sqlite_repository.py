@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     agent_key TEXT NOT NULL DEFAULT 'main',
     title TEXT,
     parent_id TEXT,
+    forked_from TEXT,
+    fork_point_message_id TEXT,
     workspace_dir TEXT,
     project_id TEXT,
     pinned INTEGER DEFAULT 0,
@@ -353,6 +355,11 @@ class SqliteRepository(NovaRepository):
             # One entry per table: a repeated key would silently drop the
             # earlier columns from the migration.
             "sessions": {
+                # A fork records the session it came from and the last message it
+                # copied, so the list can nest it under its origin and a later
+                # rewind cannot lose where the branch started.
+                "forked_from": "TEXT",
+                "fork_point_message_id": "TEXT",
                 "workspace_dir": "TEXT",
                 "pinned": "INTEGER DEFAULT 0",
                 "project_id": "TEXT",
@@ -661,13 +668,17 @@ class SqliteRepository(NovaRepository):
         async with self._lock:
             await self._conn.execute(
                 """INSERT INTO sessions
-                (id, agent_key, title, parent_id, summary_goal, summary_accomplished, summary_remaining,
+                (id, agent_key, title, parent_id, forked_from, fork_point_message_id,
+                summary_goal, summary_accomplished, summary_remaining,
                 created_at, updated_at, compacted_at, message_count, turn_count, metadata, workspace_dir, pinned, project_id,
                 provider, model, reasoning_effort)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                 agent_key=excluded.agent_key, title=excluded.title,
-                parent_id=excluded.parent_id, summary_goal=excluded.summary_goal,
+                parent_id=excluded.parent_id,
+                forked_from=excluded.forked_from,
+                fork_point_message_id=excluded.fork_point_message_id,
+                summary_goal=excluded.summary_goal,
                 summary_accomplished=excluded.summary_accomplished,
                 summary_remaining=excluded.summary_remaining,
                 updated_at=excluded.updated_at, compacted_at=excluded.compacted_at,
@@ -681,6 +692,8 @@ class SqliteRepository(NovaRepository):
                     agent_key,
                     session.title,
                     session.parent_id,
+                    getattr(session, "forked_from", None),
+                    getattr(session, "fork_point_message_id", None),
                     session.summary_goal,
                     session.summary_accomplished,
                     session.summary_remaining,

@@ -15,9 +15,15 @@ router = APIRouter()
 
 
 @router.get("/api/memories", response_model=MemoryListResponse)
-async def memories(session_id: str | None = None) -> MemoryListResponse:
+async def memories(
+    session_id: str | None = None, q: str | None = None
+) -> MemoryListResponse:
     service = MemoryService()
-    if session_id is not None:
+    if q and q.strip():
+        # Keyword search, not the AI selector: a panel that shows what is stored
+        # must answer the same question twice in a row.
+        records = await service.search(q.strip(), scope="all", limit=50)
+    elif session_id is not None:
         records = await service.list_by_session(session_id)
     else:
         records = await service.list_memories(scope="all", limit=50)

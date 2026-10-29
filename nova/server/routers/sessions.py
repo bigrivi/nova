@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from nova.server.chat_service import ChatService
 from nova.server.deps import get_chat_service
 from nova.server.schemas import (
+    ForkSessionRequest,
     MessageListResponse,
     RenameSessionRequest,
     SessionActionResponse,
@@ -43,6 +44,77 @@ async def session_messages(
     session_id: str, chat_service: ChatService = Depends(get_chat_service)
 ) -> MessageListResponse:
     return await chat_service.list_messages(session_id)
+
+
+@router.post("/api/sessions/{session_id}/fork")
+async def fork_session(
+    session_id: str,
+    body: ForkSessionRequest | None = None,
+    chat_service: ChatService = Depends(get_chat_service),
+) -> dict[str, object]:
+    """Copy the conversation into a new session and return its id."""
+    from nova.session.errors import SessionBusy
+    from nova.session.fork import ForkPointNotFound
+
+    request = body or ForkSessionRequest()
+    try:
+        return await chat_service.fork_session(
+            session_id,
+            message_id=request.message_id,
+            title=request.title,
+        )
+    except SessionBusy as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ForkPointNotFound as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.get("/api/sessions/{session_id}/checkpoints")
+async def session_checkpoints(
+    session_id: str, chat_service: ChatService = Depends(get_chat_service)
+) -> dict[str, object]:
+    """Rewind points of a session: the turns that changed files on disk."""
+    from nova import checkpoints as checkpoint_store
+
+    items = checkpoint_store.list_checkpoints(session_id)
+    return {
+        "items": [
+            {
+                "checkpoint_id": item.checkpoint_id,
+                "label": item.label,
+                "created_at": item.created_at,
+                "files": item.files,
+                "skipped": item.skipped,
+            }
+            for item in items
+        ]
+    }
+
+
+@router.post("/api/sessions/{session_id}/checkpoints/{checkpoint_id}/restore")
+async def restore_checkpoint(
+    session_id: str,
+    checkpoint_id: str,
+    chat_service: ChatService = Depends(get_chat_service),
+    force: bool = False,
+    keep_chat: bool = False,
+) -> dict[str, object]:
+    """Put the files back and drop the turns after *checkpoint_id*."""
+    from nova.session.errors import SessionBusy
+
+    try:
+        return await chat_service.rewind(
+            session_id,
+            checkpoint_id,
+            force=force,
+            keep_chat=keep_chat,
+        )
+    except SessionBusy as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.get("/api/sessions/{session_id}/context")

@@ -5,6 +5,7 @@ Write tool - write file contents.
 import difflib
 
 from nova.llm import ToolResult
+from nova.tools.checkpoints import record_write
 from nova.tools.registry import tool
 from nova.tools.workspace_context import resolve_path
 
@@ -78,6 +79,7 @@ async def write(content: str, filePath: str) -> ToolResult:
             old_content = ""
 
         p.parent.mkdir(parents=True, exist_ok=True)
+        record_write(p, None if is_new else old_content, content)
         p.write_text(content, encoding="utf-8")
 
         if is_new:

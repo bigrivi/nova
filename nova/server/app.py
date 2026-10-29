@@ -19,11 +19,14 @@ from nova.server.request_registry import RequestRegistry
 from nova.server.routers import (
     agents,
     chat,
+    compaction,
     config,
     events,
     fs,
+    git,
     health,
     memory,
+    permissions,
     projects,
     schedules,
     sessions,
@@ -244,6 +247,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tasks,
         schedules,
         speech,
+        permissions,
+        compaction,
+        git,
     ):
         app.include_router(module.router)
 

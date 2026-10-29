@@ -77,6 +77,9 @@ class SessionSummary(BaseModel):
     workspace_dir: str | None = None
     pinned: bool = False
     project_id: str | None = None
+    #: Set on a copy: the session it was forked from, so a client can nest it.
+    forked_from: str | None = None
+    fork_point_message_id: str | None = None
 
 
 class SessionListResponse(BaseModel):
@@ -104,6 +107,25 @@ class DirectoryListing(BaseModel):
     path: str
     parent: str | None = None
     entries: list[DirectoryEntry]
+
+
+class GitCommitRequest(BaseModel):
+    """Paths come from the plan, so the UI cannot commit something unseen."""
+
+    session_id: str
+    message: str
+    paths: list[str]
+
+
+class GitReviewRequest(BaseModel):
+    session_id: str
+
+
+class ForkSessionRequest(BaseModel):
+    """Where to cut the copy; both optional, both default to "all of it"."""
+
+    message_id: str | None = None
+    title: str | None = None
 
 
 class SessionActionResponse(BaseModel):
@@ -579,6 +601,35 @@ type ServerStreamEvent = (
     | RetryEvent
     | ApprovalRequiredEvent
 )
+
+
+class PermissionRuleRecord(BaseModel):
+    """One user rule from the `shell.ask` list: a regex and why it is asked."""
+
+    description: str
+    match: str
+
+
+class ToolEffectRecord(BaseModel):
+    """One entry of the `tools` map, e.g. ``write`` -> ``ask``."""
+
+    name: str
+    effect: str
+
+
+class PermissionPolicy(BaseModel):
+    """The mode and rules a tool call is judged by, as configured on disk."""
+
+    mode: str
+    path: str
+    #: False when the file is absent, so a client can say "built-in defaults"
+    #: instead of showing an empty rule list that looks like "nothing is asked".
+    configured: bool
+    block_reads_outside_workspace: bool
+    shell_allow: list[str] = Field(default_factory=list)
+    shell_ask: list[PermissionRuleRecord] = Field(default_factory=list)
+    shell_disable: list[str] = Field(default_factory=list)
+    tools: list[ToolEffectRecord] = Field(default_factory=list)
 
 
 def stream_event_data_to_dict(data: BaseModel | dict[str, Any]) -> dict[str, Any]:

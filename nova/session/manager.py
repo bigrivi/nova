@@ -34,6 +34,9 @@ class SessionContext:
     metadata: dict[str, Any] = field(default_factory=dict)
     title: str | None = None
     parent_id: str | None = None
+    #: The session this one was copied from, and the last message it copied.
+    forked_from: str | None = None
+    fork_point_message_id: str | None = None
     workspace_dir: str | None = None
     project_id: str | None = None
     summary_goal: str | None = None
