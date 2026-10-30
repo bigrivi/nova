@@ -78,6 +78,7 @@ export function Composer({
 }) {
     const theme = useTheme();
     const isStreaming = useChatStore((state) => state.isStreaming);
+    const activeAgentKey = useChatStore((state) => state.agentKey);
     const askActive = useAskUserStore((state) => state.active) !== null;
     const approvalPending = useApprovalStore((state) => state.pending) !== null;
     const screenCurrent = useScreenStore((state) => state.current) !== null;
@@ -92,12 +93,15 @@ export function Composer({
     }
     const [suggestions, setSuggestions] = useState<CommandSpec[]>([]);
     const [mentions, setMentions] = useState<MentionCandidate[]>([]);
-    // Sub-agents are fetched once: the agent catalog changes when the user edits
-    // it, not while they are typing a prompt.
+    // Sub-agents are re-read when the active agent changes: the roster is that
+    // agent's children, not the whole catalog.
     const [subagents, setSubagents] = useState<NovaAgentRecord[]>([]);
     // Which `@token` the current candidates belong to. The listing is async, so
     // a stale list must never be applied to a token the user has since edited.
     const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+    // The catalog can change while this component stays mounted (a sub-agent was
+    // just created), so it is re-read when the menu opens rather than once.
+    const mentionMenuOpen = useRef(false);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [textareaHeight, setTextareaHeight] = useState(TEXTAREA_MIN_HEIGHT);
     // Keyed by the extmark that draws the chip: opentui deletes a virtual
@@ -126,22 +130,34 @@ export function Composer({
         }
     }, [theme.feedback.running]);
 
-    useEffect(() => {
-        let cancelled = false;
+    function applyAgentCatalog(agents: NovaAgentRecord[]): void {
+        // The active agent decides whose children may be delegated to;
+        // hardcoding "main" offered the wrong roster after a switch.
+        setSubagents(selectableSubagents(agents, activeAgentKey));
+    }
+
+    function loadAgentCatalog(): void {
         void listAgents()
-            .then((agents) => {
-                if (!cancelled) {
-                    setSubagents(selectableSubagents(agents, "main"));
-                }
-            })
+            .then(applyAgentCatalog)
             .catch(() => {
                 // An empty catalog only costs the agent suggestions; the file
                 // half of the menu still works.
             });
+    }
+
+    useEffect(() => {
+        let cancelled = false;
+        void listAgents()
+            .then((agents) => {
+                if (!cancelled) applyAgentCatalog(agents);
+            })
+            .catch(() => {
+                // Same trade-off as loadAgentCatalog.
+            });
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [activeAgentKey]);
 
     useEffect(() => {
         if (modalOpen) {
@@ -255,9 +271,14 @@ export function Composer({
     async function refreshMentions(value: string): Promise<void> {
         const token = activeMention(value);
         if (!token) {
+            mentionMenuOpen.current = false;
             setMentions([]);
             setMentionQuery(null);
             return;
+        }
+        if (!mentionMenuOpen.current) {
+            mentionMenuOpen.current = true;
+            loadAgentCatalog();
         }
         // The listing is async, so a slower older request must not overwrite the
         // answer for what is now in the composer.

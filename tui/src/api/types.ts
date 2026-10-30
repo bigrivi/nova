@@ -206,6 +206,9 @@ export type NovaAgentCreateRequest = {
     model?: string;
     provider?: string;
     tools?: string[];
+    /** Primary agents this record belongs to; supplying it makes the backend
+     *  create a sub-agent (mode=subagent) instead of a primary one. */
+    parent_ids?: string[];
 };
 
 export type NovaProviderCreateRequest = {

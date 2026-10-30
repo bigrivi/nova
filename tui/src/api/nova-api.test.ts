@@ -10,6 +10,7 @@ import {
     listProviders,
     listSessions,
     restoreCheckpoint,
+    setAgentParents,
     streamChat,
     updateAgent,
 } from "./nova-api.ts";
@@ -94,6 +95,16 @@ describe("nova-api", () => {
         await deleteAgent("plan");
         expect(calls[0]?.url).toEndWith("/api/agents/plan");
         expect(calls[0]?.init?.method).toBe("DELETE");
+    });
+
+    test("setAgentParents sends PUT with the parent keys", async () => {
+        mockFetch(() => jsonResponse({ status: "ok" }));
+        await setAgentParents("coder", ["main", "plan"]);
+        expect(calls[0]?.url).toEndWith("/api/agents/coder/parents");
+        expect(calls[0]?.init?.method).toBe("PUT");
+        expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+            parents: ["main", "plan"],
+        });
     });
 
     test("listCheckpoints unwraps items", async () => {

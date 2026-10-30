@@ -49,6 +49,17 @@ describe("selectableSubagents", () => {
         expect(list.map((item) => item.key)).toEqual(["coder", "fixer"]);
     });
 
+    test("follows whichever agent is active, not a fixed key", () => {
+        const list = selectableSubagents(
+            [
+                agent("a-child", { parents: ["primary-a"] }),
+                agent("b-child", { parents: ["primary-b"] }),
+            ],
+            "primary-b",
+        );
+        expect(list.map((item) => item.key)).toEqual(["b-child"]);
+    });
+
     test("offers every sub-agent when parents are missing", () => {
         const list = selectableSubagents(
             [agent("coder", { parents: undefined })],

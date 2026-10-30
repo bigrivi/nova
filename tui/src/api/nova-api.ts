@@ -171,6 +171,17 @@ export async function deleteAgent(key: string): Promise<void> {
     await send(`/api/agents/${encodeURIComponent(key)}`, { method: "DELETE" });
 }
 
+/** Replace which primary agents may delegate to *key* (idempotent, server-side). */
+export async function setAgentParents(
+    key: string,
+    parents: string[],
+): Promise<void> {
+    await send(
+        `/api/agents/${encodeURIComponent(key)}/parents`,
+        jsonInit("PUT", { parents }),
+    );
+}
+
 /** Result of asking the backend to cancel a turn: true = confirmed,
  * false = answered but nothing was live, null = request itself failed. */
 export type InterruptOutcome = boolean | null;
