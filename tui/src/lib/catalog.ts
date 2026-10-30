@@ -14,10 +14,24 @@ export type Catalog = {
 };
 
 let catalogPromise: Promise<Catalog> | null = null;
+let modelsPromise: Promise<NovaModelRecord[]> | null = null;
+
+/**
+ * The model list, fetched once per process.
+ *
+ * Screens that need models (the picker, the effort picker) share this rather
+ * than calling the endpoint themselves: opening a screen must not cost a
+ * request, and the file it reflects is read at startup anyway. A changed
+ * `config.json` is picked up by restarting the TUI, not by refetching per open.
+ */
+export function loadModels(): Promise<NovaModelRecord[]> {
+    modelsPromise ??= listModels();
+    return modelsPromise;
+}
 
 /** Load the catalog, reusing the first in-flight or settled request. */
 export function loadCatalog(): Promise<Catalog> {
-    catalogPromise ??= Promise.all([listModels(), listProviders()]).then(
+    catalogPromise ??= Promise.all([loadModels(), listProviders()]).then(
         ([models, providers]) => ({ models, providers }),
     );
     return catalogPromise;
@@ -26,6 +40,7 @@ export function loadCatalog(): Promise<Catalog> {
 /** Drop the cache. Only tests should need this. */
 export function resetCatalog(): void {
     catalogPromise = null;
+    modelsPromise = null;
 }
 
 /** The model's display label, falling back to its key. */

@@ -1,6 +1,6 @@
 /** Message list: ScrollBox virtual scrolling + role routing */
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { memo, useEffect, useRef, useState, type RefObject } from "react";
 import { useTheme } from "../context/theme.tsx";
 import { useChatStore } from "../stores/chat-store.ts";
 import { AssistantMessage } from "./AssistantMessage.tsx";
@@ -87,7 +87,13 @@ function JumpToLatest({
     );
 }
 
-export function MessageList() {
+/**
+ * Memoised because it has no props: every modal (model picker, sessions, diff)
+ * lives in a sibling of this list, and without this a screen opening re-renders
+ * the whole transcript before the modal can paint -- which reads as the modal
+ * being slow to load, not the list being slow to redraw.
+ */
+export const MessageList = memo(function MessageList() {
     const messages = useChatStore((state) => state.messages);
     const scrollRef = useRef<ScrollBoxRenderable>(null);
     const wheelRef = useRef(false);
@@ -125,4 +131,4 @@ export function MessageList() {
             <JumpToLatest scrollRef={scrollRef} wheelRef={wheelRef} />
         </box>
     );
-}
+});

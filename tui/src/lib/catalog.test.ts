@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
     loadCatalog,
+    loadModels,
     modelLabel,
     providerLabel,
     resetCatalog,
@@ -50,6 +51,24 @@ describe("catalog", () => {
         expect(calls).toBe(2);
         expect(first.models).toHaveLength(1);
         expect(first.providers).toHaveLength(1);
+    });
+
+    test("the model list is fetched once per process", async () => {
+        const first = await loadModels();
+        const second = await loadModels();
+
+        expect(second).toBe(first);
+        // Opening a screen must not cost a request.
+        expect(calls).toBe(1);
+    });
+
+    test("a screen and the catalog share the model request", async () => {
+        const models = await loadModels();
+        const catalog = await loadCatalog();
+
+        expect(catalog.models).toBe(models);
+        // One request for models, one for providers -- shared, not repeated.
+        expect(calls).toBe(2);
     });
 
     test("resolves model and provider labels", async () => {

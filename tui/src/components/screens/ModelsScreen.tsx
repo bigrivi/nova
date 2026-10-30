@@ -1,5 +1,6 @@
 /** Models screen: browse/switch models (persisted to the agent config) */
-import { listModels, updateAgent } from "../../api/nova-api.ts";
+import { updateAgent } from "../../api/nova-api.ts";
+import { loadModels } from "../../lib/catalog.ts";
 import { useChatStore } from "../../stores/chat-store.ts";
 import { useScreenStore } from "../../stores/screen-store.ts";
 import { SearchableList } from "./SearchableList.tsx";
@@ -10,7 +11,7 @@ export function ModelsScreen() {
     const currentProvider = useChatStore((state) => state.provider);
     const currentModel = useChatStore((state) => state.model);
     const { items: models, ready, error, defaultValue } = useListScreen(
-        listModels,
+        loadModels,
         (items) =>
             items.find(
                 (m) =>

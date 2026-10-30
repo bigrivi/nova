@@ -1,7 +1,7 @@
 /** Root component: layout orchestration, modal layer, global keybindings, and command dispatch */
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useEffect, useMemo, useState } from "react";
-import { getAgent, getPermissions, listModels, listSessions } from "../api/nova-api.ts";
+import { getAgent, getPermissions, listSessions } from "../api/nova-api.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
@@ -10,6 +10,7 @@ import { useCtxStore } from "../stores/ctx-store.ts";
 import { cycleMode, normalizeMode, usePermissionStore } from "../stores/permission-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
 import { useToastStore } from "../stores/toast-store.ts";
+import { loadModels } from "../lib/catalog.ts";
 import { ThemeOverride, useTheme } from "../context/theme.tsx";
 import { dimTheme } from "../themes/fx/dim.ts";
 import { submitAskAnswers, submitAskCancel, requestInterrupt } from "../stream/chat-stream.ts";
@@ -126,6 +127,28 @@ export function App({ onExit }: { onExit: ExitHandler }) {
         };
     }, []);
 
+    // A fresh install ships an empty providers map, so the model picker would be
+    // silently empty; say what to do about it instead.
+    useEffect(() => {
+        let cancelled = false;
+        void loadModels()
+            .then((models) => {
+                if (cancelled || models.length > 0) {
+                    return;
+                }
+                useToastStore
+                    .getState()
+                    .show(
+                        "No provider configured. Add one to ~/.nova/config.json (or the web UI).",
+                        6000,
+                    );
+            })
+            .catch(() => {});
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     // Start from the mode in permissions.json; a later Shift+Tab overrides it
     // for the rest of the session without touching the file.
     useEffect(() => {
@@ -205,7 +228,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                 return;
             case "variants": {
                 const current = useChatStore.getState();
-                void listModels()
+                void loadModels()
                     .then((models) => {
                         const match = models.find(
                             (m) =>

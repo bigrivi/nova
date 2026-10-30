@@ -1,5 +1,6 @@
 /** Variants screen: browse/switch reasoning effort levels for the active model */
-import { listModels, updateAgent } from "../../api/nova-api.ts";
+import { updateAgent } from "../../api/nova-api.ts";
+import { loadModels } from "../../lib/catalog.ts";
 import { useChatStore } from "../../stores/chat-store.ts";
 import { useScreenStore } from "../../stores/screen-store.ts";
 import { SearchableList } from "./SearchableList.tsx";
@@ -11,7 +12,7 @@ export function VariantsScreen() {
     const model = useChatStore((s) => s.model);
     const currentEffort = useChatStore((s) => s.reasoningEffort);
 
-    const { items: models, ready, error } = useListScreen(listModels);
+    const { items: models, ready, error } = useListScreen(loadModels);
 
     const levels =
         models.find((m) => m.provider === provider && m.model === model)
