@@ -78,3 +78,72 @@ def test_parses_optional_name_field() -> None:
 def test_slugify_key() -> None:
     assert slugify_key("UI Designer") == "ui-designer"
     assert slugify_key("  Data/Analyst!! ") == "data-analyst"
+
+
+# ── the Claude Code / Cursor dialect ─────────────────────────────────
+
+
+def test_comma_tool_allowlist_without_a_writer_is_read_only() -> None:
+    parsed = parse_agent_markdown(
+        "---\nname: Reviewer\ndescription: d\ntools: Read, Grep, Glob\n---\nB.\n"
+    )
+    assert parsed.name == "Reviewer"
+    assert parsed.posture == "read_only"
+    assert parsed.tools == {"Read": True, "Grep": True, "Glob": True}
+
+
+def test_comma_tool_allowlist_with_bash_is_full() -> None:
+    parsed = parse_agent_markdown(
+        "---\ndescription: d\ntools: Read, Bash(git push *)\n---\nB.\n"
+    )
+    assert parsed.posture == "full", "the specifier still names the bash tool"
+
+
+def test_disallowed_tools_subtract_from_the_allowlist() -> None:
+    parsed = parse_agent_markdown(
+        "---\ndescription: d\ntools: Read, Bash\ndisallowedTools: Bash\n---\nB.\n"
+    )
+    assert parsed.posture == "read_only"
+
+
+def test_an_explicit_permission_grant_is_the_only_way_to_full() -> None:
+    granted = parse_agent_markdown(
+        "---\ndescription: d\npermission:\n  edit: allow\n---\nB.\n"
+    )
+    denied = parse_agent_markdown(
+        "---\ndescription: d\npermission:\n  edit: deny\n  bash: deny\n---\nB.\n"
+    )
+    assert granted.posture == "full"
+    assert denied.posture == "read_only"
+
+
+def test_an_ask_permission_is_not_a_grant() -> None:
+    parsed = parse_agent_markdown(
+        "---\ndescription: d\npermission:\n  bash: ask\n---\nB.\n"
+    )
+    assert parsed.posture == "read_only", "an approval prompt is not a grant"
+
+
+def test_a_provider_model_reference_is_split() -> None:
+    parsed = parse_agent_markdown(
+        "---\ndescription: d\nmodel: opencode-go/deepseek-v4.1-flash\n---\nB.\n"
+    )
+    assert (parsed.provider, parsed.model) == ("opencode-go", "deepseek-v4.1-flash")
+
+
+def test_a_model_alias_is_left_without_a_provider() -> None:
+    """Guessing a provider would point the agent at a model that does not exist."""
+    parsed = parse_agent_markdown("---\ndescription: d\nmodel: sonnet\n---\nB.\n")
+    assert parsed.model == "sonnet"
+    assert parsed.provider == ""
+
+
+def test_mode_all_is_treated_as_primary() -> None:
+    parsed = parse_agent_markdown("---\ndescription: d\nmode: all\n---\nB.\n")
+    assert parsed.mode == "primary"
+    assert not any("mode" in warning for warning in parsed.warnings)
+
+
+def test_invalid_yaml_is_rejected_with_a_parse_error() -> None:
+    with pytest.raises(AgentImportError, match="valid YAML"):
+        parse_agent_markdown("---\ndescription: [unclosed\n---\nB.\n")

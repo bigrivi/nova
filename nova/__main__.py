@@ -17,6 +17,7 @@ import webbrowser
 from dataclasses import replace
 from pathlib import Path
 
+from nova import __version__
 from nova.desktop.main import run_desktop
 from nova.mcp.manager import MCPManager
 from nova.server import run_server
@@ -127,6 +128,7 @@ def _run_tui() -> None:
     environment.setdefault("NOVA_PROJECT_ROOT", str(project_root))
     environment.setdefault("NOVA_PYTHON", sys.executable)
     environment.setdefault("NOVA_TUI_BACKEND", "1")
+    environment.setdefault("NOVA_VERSION", __version__)
     environment.setdefault("NOVA_WORKSPACE_DIR", str(Path.cwd().resolve()))
 
     os.chdir(tui_dir)
@@ -163,6 +165,23 @@ def _console_exit_code(args: argparse.Namespace, settings: Settings) -> int:
             settings=settings,
             files_only=args.files_only,
             force=args.force,
+        )
+    elif args.mode == "agent-import":
+        if not args.target:
+            raise SystemExit(
+                "nova agent-import needs a file: nova agent-import <file.md>"
+            )
+        coro = console.import_agent(
+            args.target,
+            settings=settings,
+            key=args.agent_key,
+            parents=args.parents,
+            provider=args.provider,
+            model=args.model,
+            dry_run=args.dry_run,
+            strict=args.strict,
+            update=args.update,
+            as_json=args.json_output,
         )
     elif args.mode == "delete":
         if not args.target:
@@ -205,6 +224,14 @@ def main() -> None:
         )
         sys.exit(0)
     parser = argparse.ArgumentParser(description="Nova agent runtime")
+    # Before the positional: `nova -v` must not need a mode.
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"nova {__version__}",
+        help="Print the version and exit",
+    )
     settings = get_settings()
     provider_names = settings.provider_names or []
     parser.add_argument(
@@ -217,6 +244,7 @@ def main() -> None:
             "desktop",
             "run",
             "sessions",
+            "agent-import",
             "rewind",
             "fork",
             "delete",
@@ -230,7 +258,7 @@ def main() -> None:
         "target",
         nargs="?",
         default=None,
-        help="[run] the prompt to send, [delete] the session id",
+        help="[run] the prompt to send, [delete] the session id, [agent-import] the Markdown file",
     )
     parser.add_argument(
         "--json",
@@ -247,6 +275,34 @@ def main() -> None:
         "--workspace",
         default=None,
         help="[run|sessions] workspace directory (default: current directory)",
+    )
+    parser.add_argument(
+        "--key",
+        dest="agent_key",
+        default=None,
+        help="[agent-import] agent key (default: derived from the definition)",
+    )
+    parser.add_argument(
+        "--parent",
+        dest="parents",
+        action="append",
+        default=None,
+        help="[agent-import] primary agent to attach; repeat for several",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="[agent-import] parse and report without writing anything",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="[agent-import] refuse when the definition loses information",
+    )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="[agent-import] replace an existing agent with the same key",
     )
     parser.add_argument(
         "--all",
@@ -292,10 +348,7 @@ def main() -> None:
         "-p",
         choices=provider_names,
         default=None,
-        help=(
-            "LLM provider alias (default: the session's provider, then the "
-            "agent's)"
-        ),
+        help=("LLM provider alias (default: the session's provider, then the agent's)"),
     )
     parser.add_argument(
         "--model", "-m", default=None, help="Model name (default: per-agent DB config)"
@@ -322,7 +375,14 @@ def main() -> None:
     configure_logging(settings, console=args.mode in ("serve", "web", "gateway"))
 
     try:
-        if args.mode in ("run", "sessions", "rewind", "fork", "delete"):
+        if args.mode in (
+            "run",
+            "sessions",
+            "rewind",
+            "fork",
+            "delete",
+            "agent-import",
+        ):
             try:
                 code = _console_exit_code(args, settings)
             except Exception:

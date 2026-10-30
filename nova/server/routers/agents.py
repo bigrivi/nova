@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import re
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from nova.config.agent_import import (
-    AgentImportError,
-    parse_agent_markdown,
-    slugify_key,
+from nova.config.agent_import import AGENT_KEY_RE, AgentImportError
+from nova.config.agent_import_service import (
+    AgentExistsError,
+    import_agent_definition,
 )
 from nova.config.service import _UNSET, AgentCreateRequest, ConfigService
 from nova.constants import DEFAULT_AGENT_KEY
@@ -19,7 +17,6 @@ from nova.settings import Settings
 
 router = APIRouter()
 
-_AGENT_KEY_PATTERN = re.compile(r"^[a-z0-9-]{3,32}$")
 
 
 class AgentImportRequest(BaseModel):
@@ -86,7 +83,7 @@ async def get_agent(
 async def create_agent(
     body: AgentCreateRequest, settings: Settings = Depends(get_settings)
 ) -> dict[str, object]:
-    if not _AGENT_KEY_PATTERN.match(body.key):
+    if not AGENT_KEY_RE.match(body.key):
         raise HTTPException(
             status_code=400, detail="Agent key must be 3-32 chars: [a-z0-9-]"
         )
@@ -106,52 +103,29 @@ async def create_agent(
 async def import_agent(
     body: AgentImportRequest, settings: Settings = Depends(get_settings)
 ) -> dict[str, object]:
+    """Create an agent from a Markdown definition.
+
+    The work lives in the import service so the CLI cannot drift from this
+    endpoint on key derivation, conflicts, or what lands on disk.
+    """
+    service = ConfigService(settings)
     try:
-        parsed = parse_agent_markdown(body.content)
+        outcome = await import_agent_definition(
+            service,
+            settings,
+            content=body.content,
+            key=body.key,
+            parent_ids=body.parent_ids,
+        )
     except AgentImportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except AgentExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    key = slugify_key(body.key or parsed.name)
-    if not _AGENT_KEY_PATTERN.match(key):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Could not derive a valid agent key (3-32 chars [a-z0-9-]); "
-                "pass an explicit key."
-            ),
-        )
-
-    service = ConfigService(settings)
-    if await service.get_agent(key):
-        raise HTTPException(status_code=409, detail=f"Agent '{key}' already exists")
-
-    request = AgentCreateRequest(
-        key=key,
-        name=parsed.name or key,
-        description=parsed.description,
-        model=parsed.model,
-        provider=parsed.provider,
-        tools=None,
-        posture=parsed.posture,
-        mode=parsed.mode,
-        parent_ids=body.parent_ids or None,
-    )
-    agent_dir = settings.home / "agents" / key
-    agent_dir.mkdir(parents=True, exist_ok=True)
-    agent = await service.save_agent(request)
-
-    warnings = list(parsed.warnings)
-    if parsed.body.strip():
-        (agent_dir / "IDENTITY.md").write_text(
-            parsed.body.rstrip() + "\n", encoding="utf-8"
-        )
-    else:
-        warnings.append("No prompt body found; the agent uses the default identity.")
-    if not parsed.model or not parsed.provider:
-        warnings.append("No model/provider set; choose one before chatting.")
-
-    annotated = _annotate(agent, await service.get_agent_parents(key))
-    return {"agent": annotated, "warnings": warnings}
+    return {
+        "agent": _annotate(outcome.agent, await service.get_agent_parents(outcome.key)),
+        "warnings": outcome.warnings,
+    }
 
 
 @router.put("/api/agents/{key}/parents")

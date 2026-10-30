@@ -357,3 +357,128 @@ def _one_line(title: str | None) -> str:
     """Collapse a title to one line so it cannot break the table layout."""
     collapsed = " ".join((title or "").split())
     return collapsed or "(untitled)"
+
+
+async def import_agent(
+    path: str,
+    *,
+    settings: Settings,
+    key: str | None = None,
+    parents: list[str] | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    dry_run: bool = False,
+    strict: bool = False,
+    update: bool = False,
+    as_json: bool = False,
+    out: TextIO | None = None,
+    err: TextIO | None = None,
+) -> int:
+    """Create or replace an agent from a Markdown definition.
+
+    The same code path the HTTP import endpoint uses, so key derivation,
+    conflicts and warnings cannot drift between the two.
+
+    Args:
+        path: The definition file.
+        settings: Runtime settings.
+        key: Explicit agent key; otherwise derived from the definition's name.
+        parents: Primary agents to attach; any makes the agent a sub-agent.
+        provider: Provider override (a definition's model alias is not
+            resolvable on its own).
+        model: Model override.
+        dry_run: Parse and report without writing anything.
+        strict: Return ``EXIT_NEEDS_INPUT`` and write nothing when the
+            definition loses information in translation.
+        update: Replace an existing agent with the same key.
+        as_json: Emit JSON instead of text.
+        out: Stream for the report, defaults to stdout.
+        err: Stream for warnings, defaults to stderr.
+
+    Returns:
+        ``EXIT_OK`` on success, ``EXIT_ERROR`` on a bad file or key,
+        ``EXIT_NEEDS_INPUT`` when the caller must decide (a conflict, or a
+        ``--strict`` definition with warnings).
+    """
+    from nova.config.agent_import import AgentImportError
+    from nova.config.agent_import_service import (
+        AgentExistsError,
+        import_agent_definition,
+    )
+    from nova.config.service import ConfigService
+
+    out = out or sys.stdout
+    err = err or sys.stderr
+    source = Path(path).expanduser()
+    try:
+        content = source.read_text(encoding="utf-8")
+    except OSError as error:
+        err.write(f"Cannot read {source}: {error}\n")
+        return EXIT_ERROR
+
+    service = ConfigService(settings)
+
+    async def run(dry: bool):
+        return await import_agent_definition(
+            service,
+            settings,
+            content=content,
+            source_name=source.stem,
+            key=key,
+            parent_ids=parents,
+            provider=provider,
+            model=model,
+            update=update,
+            dry_run=dry,
+        )
+
+    try:
+        # --strict is a validation pass: parse and resolve first, write only when
+        # the definition survives translation unchanged.
+        outcome = await run(dry_run or strict)
+    except AgentExistsError as error:
+        err.write(f"{error}. Re-run with --update to replace it.\n")
+        return EXIT_NEEDS_INPUT
+    except AgentImportError as error:
+        err.write(f"{error}\n")
+        return EXIT_ERROR
+
+    if strict and outcome.warnings:
+        for warning in outcome.warnings:
+            err.write(f"warning: {warning}\n")
+        err.write("Refusing to import under --strict; nothing was written.\n")
+        return EXIT_NEEDS_INPUT
+
+    if strict and not dry_run:
+        try:
+            outcome = await run(dry=False)
+        except (AgentImportError, AgentExistsError) as error:  # pragma: no cover
+            err.write(f"{error}\n")
+            return EXIT_ERROR
+
+    if as_json:
+        out.write(
+            json.dumps(
+                {
+                    "key": outcome.key,
+                    "agent": outcome.agent,
+                    "warnings": outcome.warnings,
+                    "written": outcome.written,
+                    "replaced": outcome.replaced,
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+        return EXIT_OK
+
+    agent = outcome.agent
+    verb = "Would import" if not outcome.written else "Imported"
+    replaced = " (replaced)" if outcome.replaced else ""
+    out.write(
+        f"{verb} '{outcome.key}'{replaced}: {agent.get('name', '')} "
+        f"[{agent.get('mode', 'primary')}, {agent.get('posture', 'full')}]\n"
+    )
+    for warning in outcome.warnings:
+        err.write(f"warning: {warning}\n")
+    return EXIT_OK

@@ -1,18 +1,28 @@
-"""Parse an opencode-style agent Markdown file into Nova's agent model.
+"""Parse an agent definition Markdown file into Nova's agent model.
 
-The file is a small YAML-ish frontmatter block delimited by ``---`` followed by
-a Markdown body that is the agent's persona/instructions. Nova ships no YAML
-dependency (the skill loader parses frontmatter by hand for the same reason), so
-this uses a focused line reader that handles exactly what the agent format uses:
-top-level scalars, wrapped (folded) scalar values, and the one nested block we
-care about, ``tools:``.
+Two frontmatter dialects dominate the ecosystem, and both are accepted here:
 
-Field mapping into Nova:
-- ``description``/``mode``/``model``/``provider`` map directly.
-- ``tools`` (a map of tool -> bool) drives ``posture``: any write-capable tool
-  (write/edit/bash/patch) means ``full``, otherwise ``read_only``. Nova gates
-  tool access by posture, so the concrete list is left to the posture default.
-- ``temperature``/``steps`` have no Nova equivalent and are reported as warnings.
+- **opencode**: ``description`` (required there), ``mode: primary|subagent|all``,
+  ``model: provider/model``, a ``permission:`` map (or the deprecated ``tools:``
+  map). The agent's name is the file name, so the caller supplies it.
+- **Claude Code / Cursor**: ``name``, ``description``, a comma-separated
+  ``tools:`` allowlist, ``disallowedTools``, ``model`` aliases. Cursor reads
+  ``.claude/agents`` too, so this dialect covers it.
+
+Frontmatter is real YAML and is read with PyYAML: these files come from other
+tools, and their quoting, block scalars and inline maps are not worth
+re-implementing by hand. Keys Nova has no equivalent for are reported one by one
+as warnings instead of being dropped silently.
+
+Mapping into Nova:
+
+- ``description`` / ``mode`` / ``model`` / ``provider`` map directly.
+- Tool permissions collapse to ``posture``. Nova gates a sub-agent by posture
+  (an allowlist preset ``read_only`` or ``full``), so the individual tool names
+  are kept for display but do not narrow the runtime set. The rule is
+  fail-safe: a write-capable tool must be *explicitly granted* (``tools:`` entry
+  true, listed in an allowlist, or ``permission: allow``) for ``full``; anything
+  unspecified is ``read_only``.
 - The Markdown body becomes the agent's ``IDENTITY.md`` persona.
 """
 
@@ -21,19 +31,44 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+import yaml
+
 _FRONTMATTER_RE = re.compile(
     r"\A---[ \t]*\r?\n(?P<frontmatter>.*?)(?:\r?\n)---[ \t]*(?P<trailing>\r?\n|$)",
     re.DOTALL,
 )
-_SCALAR_RE = re.compile(r"^(?P<key>[A-Za-z][A-Za-z0-9_-]*)\s*:\s*(?P<value>.*?)\s*$")
-_INDENTED_RE = re.compile(
-    r"^\s+(?P<key>[A-Za-z][A-Za-z0-9_-]*)\s*:\s*(?P<value>.*?)\s*$"
-)
 _SLUG_RE = re.compile(r"[^a-z0-9-]+")
 
-_TRUE = {"true", "yes", "on", "1"}
-_FALSE = {"false", "no", "off", "0"}
-_WRITE_CAPABLE_TOOLS = ("write", "edit", "bash", "patch")
+#: The agent key rule every front door shares (HTTP route, CLI).
+AGENT_KEY_RE = re.compile(r"^[a-z0-9-]{3,32}$")
+
+#: Tools whose availability means "this agent can change the machine".
+_WRITE_CAPABLE = frozenset(
+    {
+        "apply_patch",
+        "bash",
+        "edit",
+        "multiedit",
+        "notebookedit",
+        "patch",
+        "shell",
+        "write",
+    }
+)
+
+#: Frontmatter keys this module understands; everything else is a warning.
+_KNOWN_KEYS = frozenset(
+    {
+        "name",
+        "description",
+        "mode",
+        "model",
+        "provider",
+        "tools",
+        "disallowedTools",
+        "permission",
+    }
+)
 
 
 class AgentImportError(ValueError):
@@ -55,24 +90,124 @@ class ParsedAgent:
     warnings: list[str] = field(default_factory=list)
 
 
-def _strip_quotes(value: str) -> str:
-    text = value.strip()
-    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
-        return text[1:-1]
-    return text
+def _names(value: object) -> list[str]:
+    """Read a tool list that may be a comma string, a YAML list, or one name."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value).strip()]
 
 
-def _as_bool(value: str) -> bool | None:
-    low = value.strip().lower()
-    if low in _TRUE:
-        return True
-    if low in _FALSE:
-        return False
-    return None
+def _base_name(name: str) -> str:
+    """Strip a specifier: ``Bash(git push *)`` is still the bash tool."""
+    return name.split("(", 1)[0].strip().lower()
+
+
+def _value_denies(value: object) -> bool:
+    """Whether one ``permission:`` entry refuses a capability."""
+    if isinstance(value, bool):
+        return value is False
+    if isinstance(value, str):
+        return value.strip().lower() == "deny"
+    if isinstance(value, dict):
+        # `bash: {"*": deny, "git diff": allow}` denies the command family.
+        return any(
+            isinstance(inner, str) and inner.strip().lower() == "deny"
+            for key, inner in value.items()
+            if str(key).strip() == "*"
+        )
+    return False
+
+
+def _value_allows(value: object) -> bool:
+    """Whether one ``permission:`` entry grants a capability without a prompt."""
+    if isinstance(value, bool):
+        return value is True
+    if isinstance(value, str):
+        return value.strip().lower() == "allow"
+    if isinstance(value, dict):
+        return any(
+            isinstance(inner, str) and inner.strip().lower() == "allow"
+            for key, inner in value.items()
+            if str(key).strip() == "*"
+        )
+    return False
+
+
+def _denied_tools(frontmatter: dict) -> set[str]:
+    """Every write-capable capability the definition explicitly withholds."""
+    denied = {_base_name(name) for name in _names(frontmatter.get("disallowedTools"))}
+    tools = frontmatter.get("tools")
+    if isinstance(tools, dict):
+        for name, value in tools.items():
+            if value is False:
+                target = _base_name(str(name))
+                denied |= _WRITE_CAPABLE if target == "*" else {target}
+    permission = frontmatter.get("permission")
+    if isinstance(permission, dict):
+        for name, value in permission.items():
+            target = str(name).strip().lower()
+            if _value_denies(value):
+                denied |= _WRITE_CAPABLE if target == "*" else {target}
+    return denied
+
+
+def _tools_map(frontmatter: dict) -> dict[str, bool]:
+    """The tool set as a plain map, whichever dialect expressed it."""
+    tools = frontmatter.get("tools")
+    if isinstance(tools, dict):
+        return {str(name): bool(value) for name, value in tools.items()}
+    if isinstance(tools, (str, list)):
+        # An allowlist: only what is listed is granted.
+        return {name: True for name in _names(tools)}
+    return {}
+
+
+def _posture(frontmatter: dict) -> str:
+    """Collapse the dialect's permissions into Nova's posture.
+
+    Fail-safe by construction: a write-capable capability must be explicitly
+    granted. An agent definition that says nothing about tools imports read-only,
+    which is the same default the product uses for a sub-agent nobody configured.
+    """
+    denied = _denied_tools(frontmatter)
+    tools = frontmatter.get("tools")
+    granted: set[str] = set()
+    if isinstance(tools, (str, list)):
+        granted = {_base_name(name) for name in _names(tools)}
+    elif isinstance(tools, dict):
+        granted = {_base_name(str(name)) for name, value in tools.items() if value}
+    else:
+        permission = frontmatter.get("permission")
+        if isinstance(permission, dict):
+            granted = {
+                str(name).strip().lower()
+                for name, value in permission.items()
+                if _value_allows(value)
+            }
+    return "full" if (granted - denied) & _WRITE_CAPABLE else "read_only"
+
+
+def _model_and_provider(frontmatter: dict) -> tuple[str, str]:
+    """Split ``provider/model``; an unresolvable alias is the caller's call."""
+    raw_model = str(frontmatter.get("model") or "").strip()
+    raw_provider = str(frontmatter.get("provider") or "").strip()
+    if not raw_model:
+        return "", raw_provider
+    if "/" in raw_model:
+        provider, model = raw_model.split("/", 1)
+        return model.strip(), (raw_provider or provider.strip())
+    # Claude's `sonnet`/`opus`/`haiku` are aliases of a provider Nova cannot
+    # know; guessing would point the agent at a model that does not exist. The
+    # caller supplies the pair, or the import reports the gap.
+    return raw_model, (raw_provider or "")
 
 
 def parse_agent_markdown(content: str) -> ParsedAgent:
-    """Parse agent Markdown into a :class:`ParsedAgent`.
+    """Parse an agent Markdown definition into Nova's fields.
 
     Args:
         content: Full file text: ``---`` frontmatter block then a Markdown body.
@@ -81,82 +216,50 @@ def parse_agent_markdown(content: str) -> ParsedAgent:
         The parsed agent with fields mapped onto Nova's model.
 
     Raises:
-        AgentImportError: If the file has no leading ``---`` frontmatter block.
+        AgentImportError: If the file has no leading ``---`` frontmatter block,
+            or the frontmatter is not valid YAML.
     """
     match = _FRONTMATTER_RE.match(content)
     if match is None:
         raise AgentImportError(
             "Agent Markdown must start with a '---' frontmatter block."
         )
-    body = content[match.end() :].lstrip("\r\n")
+    try:
+        loaded = yaml.safe_load(match.group("frontmatter")) or {}
+    except yaml.YAMLError as error:
+        raise AgentImportError(f"Frontmatter is not valid YAML: {error}") from error
+    if not isinstance(loaded, dict):
+        raise AgentImportError("Frontmatter must be a mapping of keys to values.")
 
-    scalars: dict[str, str] = {}
-    tools: dict[str, bool] = {}
-    in_tools = False
-    last_key: str | None = None
+    frontmatter = {str(key): value for key, value in loaded.items()}
+    body = content[match.end() :].strip()
 
-    for raw_line in match.group("frontmatter").splitlines():
-        if not raw_line.strip():
-            continue
-        if raw_line[:1].isspace():
-            if in_tools:
-                item = _INDENTED_RE.match(raw_line)
-                if item is not None:
-                    flag = _as_bool(item.group("value"))
-                    if flag is not None:
-                        tools[item.group("key").strip().lower()] = flag
-            elif last_key is not None:
-                # A wrapped (folded) scalar value, e.g. a multi-line description.
-                scalars[last_key] = f"{scalars[last_key]} {raw_line.strip()}".strip()
-            continue
-
-        in_tools = False
-        scalar = _SCALAR_RE.match(raw_line)
-        if scalar is None:
-            last_key = None
-            continue
-        key = scalar.group("key").strip().lower()
-        value = scalar.group("value").strip()
-        if key == "tools" and value == "":
-            in_tools = True
-            last_key = None
-            continue
-        scalars[key] = _strip_quotes(value)
-        last_key = key
-
-    mode = scalars.get("mode", "primary").strip().lower()
+    warnings: list[str] = []
+    mode = str(frontmatter.get("mode") or "primary").strip().lower()
     if mode not in {"primary", "subagent"}:
+        # `all` means "usable both ways" in opencode; a parent decides the rest.
+        if mode != "all":
+            warnings.append(f"Unknown mode '{mode}'; treated as primary.")
         mode = "primary"
 
-    warnings = [
-        f"'{key}' is not supported by Nova agents and was ignored."
-        for key in ("temperature", "steps")
-        if key in scalars
-    ]
-
-    posture = (
-        "full" if any(tools.get(name) for name in _WRITE_CAPABLE_TOOLS) else "read_only"
-    )
+    model, provider = _model_and_provider(frontmatter)
+    for key in sorted(set(frontmatter) - _KNOWN_KEYS):
+        warnings.append(f"Ignored frontmatter key '{key}': Nova has no equivalent.")
 
     return ParsedAgent(
-        name=scalars.get("name", "").strip(),
-        description=scalars.get("description", "").strip(),
+        name=str(frontmatter.get("name") or "").strip(),
+        description=str(frontmatter.get("description") or "").strip(),
         mode=mode,
-        model=scalars.get("model", "").strip(),
-        provider=scalars.get("provider", "").strip(),
-        posture=posture,
-        tools=tools,
+        model=model,
+        provider=provider,
+        posture=_posture(frontmatter),
+        tools=_tools_map(frontmatter),
         body=body,
         warnings=warnings,
     )
 
 
-def slugify_key(text: str) -> str:
-    """Derive a candidate agent key ([a-z0-9-]) from free text.
-
-    The caller is responsible for validating the result against the agent key
-    pattern; an over-short or empty slug should be rejected with a clear error.
-    """
-    slug = _SLUG_RE.sub("-", text.strip().lower()).strip("-")
-    slug = re.sub(r"-{2,}", "-", slug)
-    return slug[:32]
+def slugify_key(name: str) -> str:
+    """Reduce a display name to an agent key (``UI Designer`` -> ``ui-designer``)."""
+    slug = _SLUG_RE.sub("-", name.strip().lower()).strip("-")
+    return slug

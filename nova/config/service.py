@@ -249,6 +249,21 @@ class ConfigService:
 
         return agent
 
+    async def save_agent_record(self, agent: dict) -> None:
+        """Write a complete agent row.
+
+        Unlike :meth:`save_agent`, nothing is derived: the caller supplies every
+        column. That is what a merge-style update needs, because ``save_agent``
+        stamps the columns it builds and would blank whatever the caller's
+        source (an imported definition) says nothing about.
+
+        Args:
+            agent: A full row, as stored (``tools`` as the JSON text the column
+                holds).
+        """
+        data_source = await self._get_data_source()
+        await data_source.save_agent(agent)
+
     async def get_agent_parents(self, child_key: str) -> list[str]:
         """Get all parent keys of an agent."""
         data_source = await self._get_data_source()

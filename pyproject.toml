@@ -42,6 +42,11 @@ dependencies = [
     "rich",
     "uvicorn",
     "tiktoken",
+    # Agent definitions are imported from other tools' Markdown, whose
+    # frontmatter uses real YAML (block scalars, nested permission maps). The
+    # parser for our own files stays hand-rolled; this is only for input we did
+    # not write.
+    "pyyaml",
     "playwright",
     "markdownify",
     "pywebview>=5,<7",
