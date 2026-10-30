@@ -458,6 +458,9 @@ class Agent:
         # would extract the same skill several times.
         request_tool_calls = 0
         request_messages_before = len(session_messages)
+        # The route is decided before the turn starts and stays put for the whole
+        # request, so it is stamped once here rather than before every model call.
+        await self.session_service._record_session_route(data_source)
         for _ in range(self.config.max_iterations):
             turn_count += 1
             if turn_count > 1:
@@ -467,7 +470,6 @@ class Agent:
             # request: a single request can run many tool turns and each tool
             # result can be arbitrarily large, so a request that started well
             # inside the window can overrun it halfway through.
-            await self.session_service._record_session_route(data_source)
             try:
                 async for event, data in self._compaction.maybe_compact(
                     session_messages,

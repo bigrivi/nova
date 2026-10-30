@@ -10,6 +10,13 @@ export interface ReadonlyJSONObject {
 export type NovaJsonObject = ReadonlyJSONObject;
 export type NovaJsonValue = ReadonlyJSONValue;
 
+/** The route a conversation was last run with. */
+export type NovaSessionRoute = {
+    provider: string | null;
+    model: string | null;
+    reasoning_effort: string | null;
+};
+
 export type NovaSessionSummary = {
     id: string;
     title: string | null;

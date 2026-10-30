@@ -797,6 +797,50 @@ class SqliteRepository(NovaRepository):
             await self._conn.commit()
             return cursor.rowcount > 0
 
+    async def update_session_route_if_changed(
+        self,
+        session_id: str,
+        provider: str | None,
+        model: str | None,
+        reasoning_effort: str | None,
+    ) -> bool:
+        """Write the route only when it differs from what the row holds.
+
+        Called once per request, so a conversation that keeps the same model
+        would otherwise rewrite the same three columns every turn. ``IS NOT``
+        rather than ``<>`` because any of the three may be NULL, and SQLite
+        compares NULL with ``IS NOT`` only.
+
+        Args:
+            session_id: The session to stamp.
+            provider: Provider this turn runs with.
+            model: Model this turn runs with.
+            reasoning_effort: Effort this turn runs with.
+
+        Returns:
+            True when the row existed and at least one column changed.
+        """
+        await self._ensure_connected()
+        async with self._lock:
+            cursor = await self._conn.execute(
+                """UPDATE sessions
+                SET provider = ?, model = ?, reasoning_effort = ?
+                WHERE id = ?
+                  AND (provider IS NOT ? OR model IS NOT ?
+                       OR reasoning_effort IS NOT ?)""",
+                (
+                    provider,
+                    model,
+                    reasoning_effort,
+                    session_id,
+                    provider,
+                    model,
+                    reasoning_effort,
+                ),
+            )
+            await self._conn.commit()
+            return cursor.rowcount > 0
+
     async def set_session_project(
         self, session_id: str, project_id: str | None
     ) -> bool:

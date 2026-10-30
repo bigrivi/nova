@@ -13,10 +13,7 @@ import { useModelConfig } from "./hooks/useModelConfig";
 import { useNovaRuntime } from "./hooks/useNovaRuntime";
 import { useProjects } from "./hooks/useProjects";
 import { useStartupStatus } from "./hooks/useStartupStatus";
-import {
-    useAgentRouteSync,
-    useSessionRouteSync,
-} from "./hooks/useRouteSync";
+import { useAgentRouteSync } from "./hooks/useRouteSync";
 import { useViewport } from "./hooks/useViewport";
 
 export function NovaAppShell() {
@@ -97,15 +94,6 @@ export function NovaAppShell() {
     });
 
     const isNewChat = conversations.isDraftThread;
-
-    // Two writers, because a route lives in two places: the agent's defaults, and
-    // each conversation's record. See the hooks for why they disagree.
-    useSessionRouteSync({
-        selectedModelId: modelConfig.selectedModelId,
-        reasoningEffort: activeEffort ?? null,
-        isNewChat: conversations.isDraftThread,
-        threadId: conversations.currentThreadId,
-    });
 
     const activeThread = conversations.threads.find(
         (thread) => thread.id === conversations.currentThreadId,

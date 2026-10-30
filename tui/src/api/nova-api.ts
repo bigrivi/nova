@@ -20,6 +20,7 @@ import type {
     NovaProviderCreateRequest,
     NovaProviderRecord,
     NovaRestoreReport,
+    NovaSessionRoute,
     NovaSessionSummary,
     NovaStreamEvent,
 } from "./types.ts";
@@ -151,6 +152,23 @@ export async function resolveProject(
             return null;
         }
         return (await response.json()) as NovaProjectRecord;
+    } catch {
+        return null;
+    }
+}
+
+/** The route a conversation recorded; null when it has none or is unknown. */
+export async function getSessionRoute(
+    sessionId: string,
+): Promise<NovaSessionRoute | null> {
+    try {
+        const response = await fetch(
+            buildUrl(`/api/sessions/${encodeURIComponent(sessionId)}/route`),
+        );
+        if (!response.ok) {
+            return null;
+        }
+        return (await response.json()) as NovaSessionRoute;
     } catch {
         return null;
     }

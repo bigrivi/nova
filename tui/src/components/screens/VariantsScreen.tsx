@@ -36,7 +36,8 @@ export function VariantsScreen() {
         useScreenStore.getState().close();
         useChatStore.setState({ reasoningEffort: value });
         try {
-            await updateAgent("main", {
+            // Same target rule as the model picker: the open conversation's agent.
+            await updateAgent(useChatStore.getState().agentKey || "main", {
                 provider,
                 model,
                 reasoning_effort: value,

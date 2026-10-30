@@ -127,6 +127,29 @@ class InMemoryRepository(NovaRepository):
         session["reasoning_effort"] = reasoning_effort
         return True
 
+    async def update_session_route_if_changed(
+        self,
+        session_id: str,
+        provider: str | None,
+        model: str | None,
+        reasoning_effort: str | None,
+    ) -> bool:
+        session = self._sessions.get(session_id)
+        if session is None:
+            return False
+        wanted = (provider, model, reasoning_effort)
+        current = (
+            session.get("provider"),
+            session.get("model"),
+            session.get("reasoning_effort"),
+        )
+        if current == wanted:
+            return False
+        session["provider"] = provider
+        session["model"] = model
+        session["reasoning_effort"] = reasoning_effort
+        return True
+
     async def set_session_project(
         self, session_id: str, project_id: str | None
     ) -> bool:

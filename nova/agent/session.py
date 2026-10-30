@@ -27,15 +27,20 @@ class AgentSession:
     async def _record_session_route(self, data_source: DataSourceProtocol) -> None:
         """Stamp the route this session is running with onto the session row.
 
-        Written per turn rather than per session load so that reopening an old
-        conversation restores the model and effort it actually ran with, instead
-        of whatever the agent happens to point at today.
+        Written once per request, not per model call: the route was resolved
+        before the turn began and cannot change between iterations, so a tool
+        loop must not rewrite the same row on every pass. The write is also
+        skipped when the row already holds this route -- a conversation that
+        keeps its model should not look modified on every turn.
+
+        Reopening an old conversation restores what it actually ran with,
+        instead of whatever the agent happens to point at today.
         """
         session = self.ctx.session.get_current_session()
         if session is None:
             return
         try:
-            await data_source.set_session_route(
+            await data_source.update_session_route_if_changed(
                 session.id,
                 self.ctx.config.provider,
                 self.ctx.config.model,

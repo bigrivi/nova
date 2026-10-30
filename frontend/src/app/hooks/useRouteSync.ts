@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 
-import { setSessionRoute, updateAgent } from "../../lib/nova-api";
+import { updateAgent } from "../../lib/nova-api";
 
 /** Split `"<provider>:<model>"` into the two values both writers send. */
 function routeOf(selectedModelId: string | null): {
@@ -70,50 +70,4 @@ export function useAgentRouteSync({
     }, []);
 
     return { beginRestore };
-}
-
-/**
- * Push the route onto the conversation currently open, which records what that
- * one conversation ran with.
- *
- * Unlike the agent writer this is never suppressed, because nothing restores a
- * route into the conversation being shown -- the restore targets a different
- * conversation, and its own record is what is being written back.
- *
- * The key includes the conversation, so switching conversations re-pushes even
- * when the model did not change. It is cleared while drafting so that a
- * conversation opened after a draft pushes for itself.
- */
-export function useSessionRouteSync({
-    selectedModelId,
-    reasoningEffort,
-    isNewChat,
-    threadId,
-}: {
-    selectedModelId: string | null;
-    reasoningEffort: string | null;
-    isNewChat: boolean;
-    threadId: string | null;
-}): void {
-    const pushed = useRef("");
-    const { provider, model } = routeOf(selectedModelId);
-
-    useEffect(() => {
-        if (isNewChat || !provider || !model || !threadId) {
-            pushed.current = "";
-            return;
-        }
-        const key = `${threadId}|${provider}:${model}|${reasoningEffort ?? ""}`;
-        if (pushed.current === key) {
-            return;
-        }
-        pushed.current = key;
-        void setSessionRoute(threadId, {
-            provider,
-            model,
-            // snake_case here against camelCase above: two different endpoints,
-            // and the difference is load-bearing rather than cosmetic.
-            reasoning_effort: reasoningEffort,
-        }).catch(() => {});
-    }, [isNewChat, provider, model, reasoningEffort, threadId]);
 }

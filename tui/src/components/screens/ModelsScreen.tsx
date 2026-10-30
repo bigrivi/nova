@@ -31,7 +31,9 @@ export function ModelsScreen() {
             reasoningEffort: nextEffort,
         });
         try {
-            await updateAgent("main", {
+            // The picker sets the default for the agent this conversation
+            // belongs to; a hardcoded key silently edited someone else's row.
+            await updateAgent(useChatStore.getState().agentKey || "main", {
                 provider: model.provider,
                 model: model.model,
                 reasoning_effort: nextEffort || null,

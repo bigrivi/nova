@@ -14,6 +14,6 @@ export async function forkOpenSession(): Promise<string> {
     if (!sessionId) return "Nothing to fork: no open session";
 
     const result = await forkSession(sessionId);
-    await openSession(result.session_id);
+    await openSession(result.session_id, useChatStore.getState().agentKey);
     return `Forked into “${result.title}” (${result.messages} message(s))`;
 }

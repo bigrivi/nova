@@ -11,20 +11,17 @@
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setSessionRoute, updateAgent } from "../../lib/nova-api";
-import { useAgentRouteSync, useSessionRouteSync } from "./useRouteSync";
+import { updateAgent } from "../../lib/nova-api";
+import { useAgentRouteSync } from "./useRouteSync";
 
 vi.mock("../../lib/nova-api", () => ({
     updateAgent: vi.fn().mockResolvedValue(undefined),
-    setSessionRoute: vi.fn().mockResolvedValue(undefined),
 }));
 
 const updateAgentMock = vi.mocked(updateAgent);
-const setSessionRouteMock = vi.mocked(setSessionRoute);
 
 beforeEach(() => {
     updateAgentMock.mockClear();
-    setSessionRouteMock.mockClear();
 });
 
 const AGENT_DEFAULTS = {
@@ -141,91 +138,5 @@ describe("useAgentRouteSync", () => {
             model: "sonnet",
             reasoningEffort: null,
         });
-    });
-});
-
-describe("useSessionRouteSync", () => {
-    const OPEN = {
-        selectedModelId: "openai:gpt-4",
-        reasoningEffort: null,
-        isNewChat: false,
-        threadId: "thread-1",
-    };
-
-    it("records the route on the conversation on screen", () => {
-        renderHook(() => useSessionRouteSync(OPEN));
-
-        expect(setSessionRouteMock).toHaveBeenCalledWith("thread-1", {
-            provider: "openai",
-            model: "gpt-4",
-            reasoning_effort: null,
-        });
-    });
-
-    it("sends reasoning_effort in snake_case, unlike the agent writer", () => {
-        // Two different endpoints. `reasoningEffort` here is a silently ignored
-        // field: the request succeeds, the level is not stored, and nothing
-        // reports an error.
-        renderHook(() =>
-            useSessionRouteSync({ ...OPEN, reasoningEffort: "high" }),
-        );
-
-        expect(setSessionRouteMock.mock.calls[0][1]).toHaveProperty(
-            "reasoning_effort",
-            "high",
-        );
-        expect(setSessionRouteMock.mock.calls[0][1]).not.toHaveProperty(
-            "reasoningEffort",
-        );
-    });
-
-    it("records nothing while drafting", () => {
-        // A draft has no session to record against; inventing one would write a
-        // route to a conversation that does not exist.
-        renderHook(() => useSessionRouteSync({ ...OPEN, isNewChat: true }));
-
-        expect(setSessionRouteMock).not.toHaveBeenCalled();
-    });
-
-    it("does not push the same route to the same conversation twice", () => {
-        const { rerender } = renderHook(() => useSessionRouteSync(OPEN));
-
-        rerender();
-        rerender();
-
-        expect(setSessionRouteMock).toHaveBeenCalledTimes(1);
-    });
-
-    it("records again when another conversation is opened at the same model", () => {
-        // The conversation is part of this key precisely so switching threads
-        // re-pushes. Without it, opening a conversation that ran on something
-        // else leaves its record saying otherwise.
-        const { rerender } = renderHook(
-            ({ threadId }: { threadId: string | null }) =>
-                useSessionRouteSync({ ...OPEN, threadId }),
-            { initialProps: { threadId: "thread-1" as string | null } },
-        );
-
-        rerender({ threadId: "thread-2" });
-
-        expect(setSessionRouteMock).toHaveBeenCalledTimes(2);
-        expect(setSessionRouteMock.mock.calls[1][0]).toBe("thread-2");
-    });
-
-    it("records again after returning from a draft", () => {
-        // A conversation opened after a draft has its own record, so the cleared
-        // draft key must not suppress its first write.
-        const { rerender } = renderHook(
-            ({ isNewChat }: { isNewChat: boolean }) =>
-                useSessionRouteSync({ ...OPEN, isNewChat }),
-            { initialProps: { isNewChat: false } },
-        );
-        setSessionRouteMock.mockClear();
-
-        rerender({ isNewChat: true });
-        expect(setSessionRouteMock).not.toHaveBeenCalled();
-        rerender({ isNewChat: false });
-
-        expect(setSessionRouteMock).toHaveBeenCalledTimes(1);
     });
 });

@@ -84,8 +84,9 @@ export function SessionsScreen() {
 
     async function handleSelect(value: string): Promise<void> {
         useScreenStore.getState().close();
+        const agentKey = sessions.find((session) => session.id === value)?.agent_key;
         try {
-            await openSession(value);
+            await openSession(value, agentKey);
         } catch (err) {
             useChatStore
                 .getState()
