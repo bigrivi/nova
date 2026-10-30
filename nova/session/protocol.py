@@ -47,4 +47,5 @@ class SessionProtocol(Protocol):
         error: str | None = None,
         tokens_input: int | None = None,
         tokens_output: int | None = None,
+        cache_read_tokens: int | None = None,
     ) -> Message: ...

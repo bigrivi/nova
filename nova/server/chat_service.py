@@ -463,6 +463,8 @@ class ChatService:
                 images=message.images,
                 reasoning_content=message.reasoning_content,
                 reasoning_elapsed_ms=message.reasoning_elapsed_ms,
+                tokens_input=message.tokens_input,
+                cache_read_tokens=message.cache_read_tokens,
                 group_id=message.group_id,
                 error=message.error,
                 variant=message.variant,

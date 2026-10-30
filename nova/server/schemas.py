@@ -202,6 +202,11 @@ class MessageRecord(BaseModel):
     images: list[str] | None = None
     reasoning_content: str | None = None
     reasoning_elapsed_ms: int | None = None
+    # Prompt size and how much of it the provider served from cache. Both are
+    # None when the provider reports neither, so a client can tell "unknown"
+    # from "nothing was cached".
+    tokens_input: int | None = None
+    cache_read_tokens: int | None = None
     group_id: str | None = None
     error: str | None = None
     variant: str | None = None

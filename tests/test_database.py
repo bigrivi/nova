@@ -265,6 +265,34 @@ async def test_ensure_db_and_init_db_manage_global_instance(monkeypatch, tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_cache_read_tokens_round_trips_and_defaults_to_unknown(tmp_path):
+    """Absent cache data must read back as None, not as a zero-hit turn."""
+    repository = SqliteRepository(DatabaseConfig(path=str(tmp_path / "cache.db")))
+    await repository.connect()
+    await repository.save_session(Session(id="cache-session"))
+
+    reported = await repository.add_message(
+        "cache-session", "assistant", "a", tokens_input=2000, cache_read_tokens=1800
+    )
+    silent = await repository.add_message(
+        "cache-session", "assistant", "b", tokens_input=2000
+    )
+
+    stored = {
+        message.id: message
+        for message in await repository.get_messages(
+            "cache-session", MessageFilter(include_compacted=True)
+        )
+    }
+    assert reported.cache_read_tokens == 1800
+    assert stored[reported.id].cache_read_tokens == 1800
+    assert stored[reported.id].tokens_input == 2000
+    assert silent.cache_read_tokens is None
+    assert stored[silent.id].cache_read_tokens is None
+    await repository.close()
+
+
+@pytest.mark.asyncio
 async def test_migrate_adds_provider_meta_column_to_legacy_db(tmp_path):
     path = str(tmp_path / "legacy.db")
     old_messages_ddl = """
@@ -335,6 +363,7 @@ async def test_migrate_adds_provider_meta_column_to_legacy_db(tmp_path):
     cursor = await repository._conn.execute("PRAGMA table_info(messages)")
     columns_after = {row[1] for row in await cursor.fetchall()}
     assert "provider_meta" in columns_after
+    assert "cache_read_tokens" in columns_after
 
     await repository.save_session(Session(id="legacy-session"))
     created = await repository.add_message(
@@ -343,12 +372,14 @@ async def test_migrate_adds_provider_meta_column_to_legacy_db(tmp_path):
         "hello",
         provider_meta={"thinking_signature": "SIG123"},
         model="claude-sonnet-4-5",
+        cache_read_tokens=1024,
     )
     messages = await repository.get_messages(
         "legacy-session", MessageFilter(include_compacted=True)
     )
     assert len(messages) == 1
     assert messages[0].provider_meta == {"thinking_signature": "SIG123"}
+    assert messages[0].cache_read_tokens == 1024
     assert isinstance(messages[0].provider_meta, dict)
     assert messages[0].model == "claude-sonnet-4-5"
     assert created.provider_meta == {"thinking_signature": "SIG123"}

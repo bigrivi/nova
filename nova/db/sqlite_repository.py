@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS messages (
     cost REAL,
     tokens_input INTEGER,
     tokens_output INTEGER,
+    cache_read_tokens INTEGER,
     time_created INTEGER NOT NULL,
     data TEXT,
     tool_calls TEXT,
@@ -256,6 +257,7 @@ def _row_to_message(row_dict: dict[str, Any]) -> Message:
         model=row_dict.get("model"),
         tokens_input=row_dict.get("tokens_input"),
         tokens_output=row_dict.get("tokens_output"),
+        cache_read_tokens=row_dict.get("cache_read_tokens"),
         variant=row_dict.get("variant"),
         reasoning_effort=row_dict.get("reasoning_effort"),
         data=row_dict.get("data"),
@@ -370,6 +372,10 @@ class SqliteRepository(NovaRepository):
             "messages": {
                 "provider_meta": "TEXT",
                 "reasoning_effort": "TEXT",
+                # Prompt-cache hits the provider reported for this turn. Null
+                # means the provider stayed silent, which is unknown rather
+                # than zero, so it is nullable on purpose.
+                "cache_read_tokens": "INTEGER",
             },
             "scheduled_jobs": {
                 "name": "TEXT NOT NULL",
@@ -967,6 +973,7 @@ class SqliteRepository(NovaRepository):
         reasoning_elapsed_ms: int | None = None,
         tokens_input: int | None = None,
         tokens_output: int | None = None,
+        cache_read_tokens: int | None = None,
         provider_meta: dict[str, Any] | None = None,
         model: str | None = None,
         reasoning_effort: str | None = None,
@@ -994,8 +1001,8 @@ class SqliteRepository(NovaRepository):
         async with self._lock:
             await self._conn.execute(
                 """INSERT INTO messages
-                (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output, provider_meta, model, error, variant, reasoning_effort)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output, cache_read_tokens, provider_meta, model, error, variant, reasoning_effort)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     msg_id,
                     session_id,
@@ -1012,6 +1019,7 @@ class SqliteRepository(NovaRepository):
                     reasoning_elapsed_ms,
                     tokens_input,
                     tokens_output,
+                    cache_read_tokens,
                     provider_meta_json,
                     model,
                     error,
@@ -1044,6 +1052,7 @@ class SqliteRepository(NovaRepository):
             data=data,
             tokens_input=tokens_input,
             tokens_output=tokens_output,
+            cache_read_tokens=cache_read_tokens,
             variant=variant,
         )
 

@@ -53,6 +53,7 @@ class NovaRepository(Protocol):
         reasoning_elapsed_ms: int | None = None,
         tokens_input: int | None = None,
         tokens_output: int | None = None,
+        cache_read_tokens: int | None = None,
         provider_meta: dict[str, Any] | None = None,
         model: str | None = None,
         reasoning_effort: str | None = None,

@@ -52,6 +52,7 @@ from nova.llm.tokenizer import estimate_tokens_by_type
 from nova.memory.models import MemoryWriteRequest
 from nova.memory.service import MemoryService
 from nova.session import manager as session_manager_module
+from nova.session.models import MessageFilter
 
 _PROVIDERS = ("anthropic", "openai", "openai_response")
 
@@ -644,16 +645,34 @@ async def test_every_llm_call_logs_its_cache_read(caplog):
         ],
     ]
     capturer = _CapturingProvider(scripts)
-    async with _isolated_agent(capturer, model="gpt-5") as (agent, _db):
+    async with _isolated_agent(capturer, model="gpt-5") as (agent, database):
         caplog.set_level(logging.INFO, logger="nova.agent.llm_stream")
         async for _event, _data in agent.chat_stream("hello"):
             pass
 
-    lines = [
-        record.message for record in caplog.records if "cache_read=" in record.message
-    ]
-    assert len(lines) == 2, "the tool-requesting call must be logged too"
-    assert all("hit=90.0%" in line for line in lines)
+        lines = [
+            record.message
+            for record in caplog.records
+            if "cache_read=" in record.message
+        ]
+        assert len(lines) == 2, "the tool-requesting call must be logged too"
+        assert all("hit=90.0%" in line for line in lines)
+
+        # The same number must survive the whole chain into the transcript, or
+        # the log is the only place it ever exists and no client can show a hit
+        # rate. Read through the repository rather than the session manager,
+        # whose read path does not settle in this fixture.
+
+        session_id = agent.session.get_current_session().id
+        stored = [
+            message
+            for message in await database.get_messages(
+                session_id, MessageFilter(include_compacted=True)
+            )
+            if message.role == "assistant"
+        ]
+        assert [message.cache_read_tokens for message in stored] == [900, 1800]
+        assert [message.tokens_input for message in stored] == [1000, 2000]
 
 
 @pytest.mark.asyncio

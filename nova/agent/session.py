@@ -125,6 +125,7 @@ class AgentSession:
             reasoning_elapsed_ms=reader.reasoning_elapsed_ms,
             tokens_input=reader.tokens_input,
             tokens_output=reader.tokens_output,
+            cache_read_tokens=reader.cache_read_tokens,
             provider_meta=reader.provider_meta,
             model=self.ctx.config.model,
             reasoning_effort=self.ctx.config.reasoning_effort,

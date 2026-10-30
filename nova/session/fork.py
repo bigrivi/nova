@@ -99,6 +99,7 @@ async def fork_session(
             reasoning_elapsed_ms=message.reasoning_elapsed_ms,
             tokens_input=message.tokens_input,
             tokens_output=message.tokens_output,
+            cache_read_tokens=message.cache_read_tokens,
             provider_meta=message.provider_meta,
             model=message.model,
             reasoning_effort=message.reasoning_effort,

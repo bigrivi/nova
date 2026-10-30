@@ -240,6 +240,7 @@ class InMemoryRepository(NovaRepository):
         reasoning_elapsed_ms: int | None = None,
         tokens_input: int | None = None,
         tokens_output: int | None = None,
+        cache_read_tokens: int | None = None,
         provider_meta: dict[str, Any] | None = None,
         model: str | None = None,
         reasoning_effort: str | None = None,
@@ -267,6 +268,7 @@ class InMemoryRepository(NovaRepository):
             reasoning_effort=reasoning_effort,
             tokens_input=tokens_input,
             tokens_output=tokens_output,
+            cache_read_tokens=cache_read_tokens,
             variant=variant,
             data=data,
             # A caller may place a row at an earlier point in time (compaction

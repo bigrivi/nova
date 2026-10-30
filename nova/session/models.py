@@ -23,6 +23,7 @@ class Message:
     cost: float | None = None
     tokens_input: int | None = None
     tokens_output: int | None = None
+    cache_read_tokens: int | None = None
     # The effort this turn actually ran with, next to the model it ran on. Pure
     # provenance: it is never read back to make a decision, only to answer "why
     # was this turn slow" after the session has moved on.
