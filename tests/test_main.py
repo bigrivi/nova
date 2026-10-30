@@ -2,6 +2,8 @@ import json
 import sys
 import time
 
+import pytest
+
 import nova.__main__ as nova_main
 from nova.desktop import main as desktop_main
 
@@ -210,3 +212,26 @@ def test_main_websearch_stats_reports_an_empty_log(monkeypatch, tmp_path, capsys
     nova_main.main()
 
     assert "No web_search usage recorded yet" in capsys.readouterr().err
+
+
+def test_version_flag_prints_the_package_version(monkeypatch, capsys):
+    from nova import __version__
+
+    monkeypatch.setattr(sys, "argv", ["nova", "-v"])
+
+    with pytest.raises(SystemExit) as exit_info:
+        nova_main.main()
+
+    assert exit_info.value.code == 0
+    assert capsys.readouterr().out.strip() == f"nova {__version__}"
+
+
+def test_version_long_form_matches(monkeypatch, capsys):
+    from nova import __version__
+
+    monkeypatch.setattr(sys, "argv", ["nova", "--version"])
+
+    with pytest.raises(SystemExit):
+        nova_main.main()
+
+    assert __version__ in capsys.readouterr().out
