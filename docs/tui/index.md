@@ -55,6 +55,7 @@ The server port defaults to `8765` and can be set with `server.port` in `~/.nova
 | `/permissions` | Show the permission mode and the rules in force |
 | `/rewind` | Undo a turn's file changes and drop the turns after it |
 | `/tasks` | Show and cancel background tasks |
+| `/schedules` | Scheduled jobs: what runs, when, and how to stop it |
 | `/compact` | Summarise the history now to free context |
 | `/fork` | Copy this conversation into a new session and switch to it |
 | `/diff` | Show what this session changed in git |
@@ -88,6 +89,16 @@ Type `@` to complete a path under the workspace; the model receives the path and
 reads the file with its own tools, so file permissions still apply. Type `/` to
 filter the command list. Prompt history lives in memory for the life of the
 process and is not written to disk.
+
+## Version
+
+```bash
+nova -v          # nova 1.0.1
+nova --version   # same
+```
+
+The number comes from `nova.__version__`, which is also what `pyproject.toml`
+reads, so the installed package and the CLI cannot disagree.
 
 ## One-Shot and Session Commands
 
@@ -158,6 +169,20 @@ copy would be of a history that is still being written.
 nova fork <session> --title "try redis"      # copy everything
 nova fork <session> --from <message-id>      # copy up to that message
 ```
+
+## Scheduled Jobs
+
+`/schedules` lists cron and interval jobs, including the ones created from the
+web UI. A job fires a headless turn — the same `dontAsk` path `nova run` uses —
+so it never blocks on an approval nobody is there to give.
+
+- `t` pauses or resumes a job. A paused job keeps its old `next_run_at`, and the
+  panel says `paused` rather than promising the next run.
+- `r` fires it now through the background-task channel; the run shows up in
+  `/tasks`.
+- `d` deletes it after a `y` confirmation. The session a job writes into is kept.
+- The first row creates a job: name, then a schedule (`0 9 * * *` or `30m`), then
+  the prompt. Creating needs an open session, because a job runs *into* one.
 
 ## Background Tasks
 
