@@ -356,11 +356,6 @@ class Agent:
         if not tool_calls:
             payload = _done_payload("completed", reader.final_content)
             await self._emit(AgentEvent.DONE, payload)
-            log.info(
-                f"[Turn {turn_count}] Completed tokens_in={reader.tokens_input} "
-                f"tokens_out={reader.tokens_output} "
-                f"cache_read={reader.cache_read_tokens}"
-            )
             yield AgentEvent.DONE, payload
             return
 

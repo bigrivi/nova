@@ -37,7 +37,14 @@ from nova.agent.core import AgentEvent
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite_repository import SqliteRepository
-from nova.llm.provider import Done, LLMProvider, Message, ReasoningDelta, TextDelta
+from nova.llm.provider import (
+    Done,
+    LLMProvider,
+    Message,
+    ReasoningDelta,
+    TextDelta,
+    ToolCall,
+)
 from nova.llm.providers.anthropic import AnthropicProvider
 from nova.llm.providers.openai_chat import OpenAIProvider
 from nova.llm.providers.openai_responses import OpenAIResponsesProvider
@@ -616,13 +623,54 @@ async def test_reader_absorbs_cache_read_tokens():
 
 
 @pytest.mark.asyncio
-async def test_core_logs_cache_read_per_turn(caplog):
+async def test_every_llm_call_logs_its_cache_read(caplog):
+    """One line per LLM call, including the ones that request tools.
+
+    The line used to be emitted at turn end, which only a turn requesting no
+    tools reached -- the rare case, and the one with the longest prefix, so the
+    ratio it reported was the most favourable sample of a session instead of a
+    measure of it. Tool-requesting calls are the bulk of a real session.
+    """
     import logging
 
-    scripts = [[TextDelta(content="hi"), Done(content="hi", cache_read_tokens=1234)]]
+    scripts = [
+        [
+            ToolCall(id="call-1", name="no_such_tool", arguments="{}"),
+            Done(content="", tokens_input=1000, cache_read_tokens=900),
+        ],
+        [
+            TextDelta(content="hi"),
+            Done(content="hi", tokens_input=2000, cache_read_tokens=1800),
+        ],
+    ]
     capturer = _CapturingProvider(scripts)
     async with _isolated_agent(capturer, model="gpt-5") as (agent, _db):
-        caplog.set_level(logging.INFO, logger="nova.agent.core")
+        caplog.set_level(logging.INFO, logger="nova.agent.llm_stream")
         async for _event, _data in agent.chat_stream("hello"):
             pass
-    assert "cache_read=1234" in caplog.text
+
+    lines = [
+        record.message for record in caplog.records if "cache_read=" in record.message
+    ]
+    assert len(lines) == 2, "the tool-requesting call must be logged too"
+    assert all("hit=90.0%" in line for line in lines)
+
+
+@pytest.mark.asyncio
+async def test_a_silent_provider_logs_unknown_not_zero(caplog):
+    """``cache_read`` absent means unknown; printing 0% would read as a miss."""
+    import logging
+
+    scripts = [[TextDelta(content="hi"), Done(content="hi", tokens_input=1000)]]
+    capturer = _CapturingProvider(scripts)
+    async with _isolated_agent(capturer, model="gpt-5") as (agent, _db):
+        caplog.set_level(logging.INFO, logger="nova.agent.llm_stream")
+        async for _event, _data in agent.chat_stream("hello"):
+            pass
+
+    lines = [
+        record.message for record in caplog.records if "cache_read=" in record.message
+    ]
+    assert len(lines) == 1
+    assert "cache_read=None" in lines[0]
+    assert "hit=n/a" in lines[0]

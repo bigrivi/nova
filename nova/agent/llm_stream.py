@@ -182,6 +182,27 @@ class TurnStreamReader:
             getattr(chunk, "cache_read_tokens", None) or self.cache_read_tokens
         )
         self.provider_meta = getattr(chunk, "provider_meta", None) or self.provider_meta
+        self._log_usage()
+
+    def _log_usage(self) -> None:
+        """One line per LLM call, whatever the call was for.
+
+        Logged on usage absorption rather than at turn end, because the turn-end
+        line only ran for a turn that requested no tools -- the rare case, and the
+        one with the longest prefix, so the ratio it reported was the most
+        favourable sample of a session rather than a measure of it. ``cache_read``
+        is None when the provider stays silent: unknown, not a miss.
+        """
+        if not self.tokens_input:
+            return
+        cached = self.cache_read_tokens
+        hit = (
+            f"{cached / self.tokens_input * 100:.1f}%" if cached is not None else "n/a"
+        )
+        log.info(
+            f"[Turn {self._turn_count}] LLM call tokens_in={self.tokens_input} "
+            f"tokens_out={self.tokens_output} cache_read={cached} hit={hit}"
+        )
 
     def _absorb_tool_call(self, chunk: ChatStreamEvent) -> None:
         identifier = getattr(chunk, "id", None) or getattr(chunk, "name", "")
