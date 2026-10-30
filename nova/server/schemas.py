@@ -617,6 +617,15 @@ class ToolEffectRecord(BaseModel):
     effect: str
 
 
+class SavedGrantRecord(BaseModel):
+    """One approval the user chose to keep, for this workspace only."""
+
+    rule: str
+    family: str = ""
+    digest: str = ""
+    created_at: int = 0
+
+
 class PermissionPolicy(BaseModel):
     """The mode and rules a tool call is judged by, as configured on disk."""
 
@@ -630,6 +639,8 @@ class PermissionPolicy(BaseModel):
     shell_ask: list[PermissionRuleRecord] = Field(default_factory=list)
     shell_disable: list[str] = Field(default_factory=list)
     tools: list[ToolEffectRecord] = Field(default_factory=list)
+    #: Remembered approvals for the workspace the caller asked about.
+    saved_grants: list[SavedGrantRecord] = Field(default_factory=list)
 
 
 def stream_event_data_to_dict(data: BaseModel | dict[str, Any]) -> dict[str, Any]:

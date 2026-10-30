@@ -68,3 +68,31 @@ def test_malformed_mode_falls_back_to_ask(monkeypatch, tmp_path):
 
     assert body["mode"] == "ask"
     assert body["configured"] is True
+
+
+def test_saved_grants_are_listed_for_a_workspace(monkeypatch, tmp_path):
+    from nova.tools import grants
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    # The client sets NOVA_HOME, so the grant has to be written after it.
+    client = _client(monkeypatch, tmp_path, {"mode": "ask"})
+    grants.add(str(workspace), "pushing", "git push *", "")
+
+    body = client.get(
+        "/api/permissions", params={"workspace": str(workspace)}
+    ).json()
+
+    assert [entry["rule"] for entry in body["saved_grants"]] == ["pushing"]
+    assert body["saved_grants"][0]["family"] == "git push *"
+
+
+def test_saved_grants_are_empty_without_a_workspace(monkeypatch, tmp_path):
+    from nova.tools import grants
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    client = _client(monkeypatch, tmp_path, {"mode": "ask"})
+    grants.add(str(workspace), "pushing", "", "")
+
+    assert client.get("/api/permissions").json()["saved_grants"] == []

@@ -39,6 +39,8 @@ def test_the_request_carries_no_dead_timestamps() -> None:
         "rule",
         "family",
         "digest",
+        # Not a deadline: the workspace a remembered approval is scoped to.
+        "workspace",
     }
 
 

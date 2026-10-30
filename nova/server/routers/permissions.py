@@ -15,6 +15,7 @@ from fastapi import APIRouter
 from nova.server.schemas import (
     PermissionPolicy,
     PermissionRuleRecord,
+    SavedGrantRecord,
     ToolEffectRecord,
 )
 from nova.tools.permissions import (
@@ -27,8 +28,12 @@ router = APIRouter()
 
 
 @router.get("/api/permissions", response_model=PermissionPolicy)
-async def get_permissions() -> PermissionPolicy:
-    """Return the mode and rules a tool call would be judged by."""
+async def get_permissions(workspace: str | None = None) -> PermissionPolicy:
+    """Return the mode and rules a tool call would be judged by.
+
+    ``workspace`` is optional: remembered approvals are per workspace, so without
+    one there is nothing to list.
+    """
     path = permissions_path()
     payload = load_permissions(path)
     shell = payload.get("shell")
@@ -52,7 +57,26 @@ async def get_permissions() -> PermissionPolicy:
         ],
         shell_disable=[str(item) for item in shell_block.get("disable") or []],
         tools=_tool_effects(payload.get("tools")),
+        saved_grants=_saved_grants(workspace),
     )
+
+
+def _saved_grants(workspace: str | None) -> list[SavedGrantRecord]:
+    """Remembered approvals for *workspace*, newest first."""
+    if not workspace:
+        return []
+    from nova.tools.grants import entries
+
+    return [
+        SavedGrantRecord(
+            rule=str(entry.get("rule") or ""),
+            family=str(entry.get("family") or ""),
+            digest=str(entry.get("digest") or ""),
+            created_at=int(entry.get("created_at") or 0),
+        )
+        for entry in entries(workspace)
+        if entry.get("rule")
+    ]
 
 
 def _tool_effects(value: Any) -> list[ToolEffectRecord]:

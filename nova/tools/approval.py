@@ -6,6 +6,18 @@ import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 
+
+def _active_workspace() -> str | None:
+    """The workspace of the turn running in this task, or None.
+
+    Imported lazily: `workspace_context` is a tool-layer leaf, and this module is
+    imported by the approval API as well, where no workspace is in scope.
+    """
+    from nova.tools.workspace_context import get_active_workspace
+
+    return get_active_workspace()
+
+
 log = logging.getLogger(__name__)
 
 
@@ -27,6 +39,9 @@ class ApprovalRequest:
     # readable `-c` literal, which is also what makes the grant cover the whole
     # family.
     digest: str = ""
+    # Where the approval was asked. A remembered one is saved against this
+    # workspace, never against the session or the whole installation.
+    workspace: str = ""
 
     # There were ``created_at``/``expires_at`` fields and a ``default_timeout=60``
     # here. Nothing ever read them: ``wait_with_heartbeat`` waits on an
@@ -79,6 +94,8 @@ class ApprovalManager:
         self._pending: dict[str, ApprovalRequest] = {}
         self._events: dict[str, asyncio.Event] = {}
         self._grants: dict[str, set[tuple[str, str, str]]] = {}
+        #: workspace path -> grants loaded from disk (or written this run).
+        self._persisted: dict[str, set[tuple[str, str, str]]] = {}
 
     def pre_request(
         self,
@@ -126,6 +143,9 @@ class ApprovalManager:
             rule=rule,
             family=family,
             digest=digest,
+            # Captured here, in the turn's task, because `resolve` runs on the
+            # HTTP side where no workspace is in scope.
+            workspace=_active_workspace() or "",
         )
         self._events[req_id] = asyncio.Event()
         return req_id
@@ -139,9 +159,10 @@ class ApprovalManager:
         its first use, which is the opposite failure: a user who approved something
         would be asked again for the identical command.
         """
-        for granted_rule, granted_family, granted_digest in self._grants.get(
-            session_id, ()
+        for granted in list(self._grants.get(session_id, ())) + list(
+            self._workspace_grants()
         ):
+            granted_rule, granted_family, granted_digest = granted
             if granted_rule != rule:
                 continue
             if granted_family and family and granted_family != family:
@@ -270,6 +291,7 @@ class ApprovalManager:
         req.approved = approved
         if approved and remember and req.rule and req.session_id:
             self._grant(req.rule, req.family, req.digest, req.session_id)
+            self._persist(req)
         event = self._events.get(req_id)
         if event:
             event.set()
@@ -277,6 +299,34 @@ class ApprovalManager:
 
     def _grant(self, rule: str, family: str, digest: str, session_id: str) -> None:
         self._grants.setdefault(session_id, set()).add((rule, family, digest))
+
+    def _workspace_grants(self) -> set[tuple[str, str, str]]:
+        """Grants saved for the workspace this turn runs in.
+
+        Read once per workspace and cached: they are only written by this
+        process, and an edit made outside it takes effect on the next start.
+        """
+        from nova.tools.grants import load
+
+        workspace = _active_workspace()
+        if not workspace:
+            return set()
+        cached = self._persisted.get(workspace)
+        if cached is None:
+            cached = load(workspace)
+            self._persisted[workspace] = cached
+        return cached
+
+    def _persist(self, req: ApprovalRequest) -> None:
+        """Write a remembered approval to the workspace's grant file."""
+        from nova.tools.grants import add
+
+        if not req.workspace:
+            return
+        add(req.workspace, req.rule, req.family, req.digest)
+        self._persisted.setdefault(req.workspace, set()).add(
+            (req.rule, req.family, req.digest)
+        )
 
     def add_to_allowlist(
         self, rule: str, session_id: str = "", family: str = "", digest: str = ""
