@@ -45,21 +45,6 @@ async def test_disabled_loop_does_nothing(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_nudge_consumed(tmp_path):
-    settings = LearningSettings(enabled=True, nudge_interval_turns=1)
-    loop = LearningLoop(settings, tmp_path / "skills", str(tmp_path / "test.db"))
-    await loop.start()
-    turn = TurnContext(session_id="s1", messages=[], tool_call_count=1)
-    await loop.on_turn_completed(turn)
-    await asyncio.sleep(0.1)
-    reminder = loop.consume_nudge()
-    assert reminder is not None
-    assert "save_memory" in reminder
-    assert loop.consume_nudge() is None
-    await loop.stop()
-
-
-@pytest.mark.asyncio
 async def test_search_sessions(tmp_path):
     settings = LearningSettings(enabled=True, session_search_enabled=True)
     loop = LearningLoop(settings, tmp_path / "skills", str(tmp_path / "test.db"))

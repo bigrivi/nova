@@ -266,6 +266,9 @@ class ChatService:
             self._stream_buffer.discard(session_id)
         except Exception:
             log.exception("delete_session buffer discard failed for %s", session_id)
+        from nova.prompt.session_cache import forget_session
+
+        forget_session(session_id)
         deleted = await data_source.delete_session(session_id)
         if deleted:
             from nova.tools.checkpoints import remove_session

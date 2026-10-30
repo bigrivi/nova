@@ -7,7 +7,6 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from nova.learning.nudges import build_nudge_reminder, should_nudge
 from nova.learning.session_search import SessionSearch
 from nova.learning.skill_extractor import SkillExtractor, TurnContext
 from nova.learning.user_model import UserModel
@@ -18,9 +17,13 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-#: One loop per agent key, for the life of the process. A new Agent is built
-#: per request, so a loop held on the agent would reset its turn counter every
-#: turn and the nudge interval would never be reached.
+#: One loop per agent key, for the life of the process: the background work it
+#: owns (session indexing, skill extraction, the user model) is agent-scoped, and
+#: a new Agent is built per request, so a loop held on the agent would be
+#: recreated every turn. The memory nudge is *not* here: it is derived from the
+#: session's own history (see nova/agent/messaging.py), because a counter shared
+#: by every session using this agent delivered one conversation's reminder into
+#: another.
 _loops: dict[str, LearningLoop] = {}
 
 
@@ -68,8 +71,6 @@ class LearningLoop:
         self.db_path = db_path
         self.llm = llm
         self.model = model
-        self._turn_count = 0
-        self._pending_nudge = False
         self._bg_tasks: set[asyncio.Task] = set()
         self._session_search = SessionSearch(db_path)
         self._user_model = UserModel(db_path)
@@ -77,16 +78,6 @@ class LearningLoop:
             skills_dir, settings.skill_extraction_min_tool_calls, llm, model
         )
         self._started = False
-
-    @property
-    def pending_nudge(self) -> bool:
-        return self._pending_nudge
-
-    def consume_nudge(self) -> str | None:
-        if self._pending_nudge:
-            self._pending_nudge = False
-            return build_nudge_reminder()
-        return None
 
     async def start(self) -> None:
         await self._session_search.connect()
@@ -102,7 +93,6 @@ class LearningLoop:
         """Non-blocking entry point."""
         if not self.settings.enabled:
             return
-        self._turn_count += 1
         # Schedule background work, never await
         task = asyncio.create_task(self._background_work(turn))
         self._bg_tasks.add(task)
@@ -112,8 +102,6 @@ class LearningLoop:
         try:
             if self.settings.session_search_enabled:
                 await self._session_search.index_turn(turn.session_id, turn.messages)
-            if should_nudge(self._turn_count, self.settings.nudge_interval_turns):
-                self._pending_nudge = True
             if turn.tool_call_count >= self.settings.skill_extraction_min_tool_calls:
                 await self._skill_extractor.maybe_extract(turn)
             if self.settings.user_model_enabled and turn.user_id:

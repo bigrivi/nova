@@ -10,11 +10,27 @@ if TYPE_CHECKING:
     from nova.agent.core import Agent
 
 from nova.agent.context import AgentContext
+from nova.learning.nudges import build_nudge_reminder, should_nudge
 from nova.llm import Message as LLMMessage
+from nova.prompt import session_cache
 from nova.prompt.project_instructions import discover_project_instructions
 from nova.session.manager import SessionContext
 
 log = logging.getLogger(__name__)
+
+
+def _count_user_turns(messages: list) -> int:
+    """How many user turns this conversation has, including the current one."""
+    return sum(
+        1
+        for message in messages
+        if (
+            message.get("role")
+            if isinstance(message, dict)
+            else getattr(message, "role", None)
+        )
+        == "user"
+    )
 
 
 class AgentMessaging:
@@ -88,7 +104,9 @@ class AgentMessaging:
                 and loaded_message.tool_call_id not in declared_tool_call_ids
             ):
                 continue
-            llm_message = LLMMessage(role=loaded_message.role, content=loaded_message.content)
+            llm_message = LLMMessage(
+                role=loaded_message.role, content=loaded_message.content
+            )
             if loaded_message.tool_calls:
                 llm_message.tool_calls = [
                     tool_call
@@ -118,14 +136,38 @@ class AgentMessaging:
         session = ctx.session.get_current_session()
 
         if agent._base_system_prompt is None:
-            await agent._refresh_memory_index()
-            await agent._refresh_subagent_roster()
-            agent._base_system_prompt = self.build_system_prompt(session)
+            # Frozen per session: this text is the cached prefix every provider
+            # matches, so rebuilding it per request (a new Agent is built for
+            # each one) meant a memory write or a new sub-agent invalidated the
+            # whole conversation. See nova/prompt/session_cache.py.
+            key = session_cache.prompt_key(
+                session.id if session else "",
+                ctx.agent_key,
+                agent._active_workspace or "",
+            )
+            cached_prompt = session_cache.get_session_prompt(key)
+            if cached_prompt is None:
+                await agent._refresh_memory_index()
+                await agent._refresh_subagent_roster()
+                cached_prompt = self.build_system_prompt(session)
+                session_cache.remember_session_prompt(key, cached_prompt)
+            agent._base_system_prompt = cached_prompt
 
         if loaded_messages is None:
             loaded_messages = await ctx.session.get_messages()
 
         system_content = agent._base_system_prompt or ""
+        # Standing learning context rides at the END of the request, never in the
+        # system prompt: that prompt is the cached prefix, so anything present on
+        # only some turns would invalidate every token behind it -- the nudge
+        # appears once every N turns, and the user model changes whenever the
+        # learning loop writes it.
+        #
+        # A trailing user turn is the portable place for it: OpenAI-compatible
+        # endpoints take any role order, Ollama passes roles through, and the
+        # Anthropic converter merges a trailing user turn into the last one with
+        # tool_result blocks first, which is the shape its API requires.
+        notes: list[str] = []
         if ctx.learning_loop is not None:
             try:
                 if not ctx.learning_loop._started:
@@ -138,14 +180,24 @@ class AgentMessaging:
                     getattr(_sess, "user_id", "") or ctx.agent_key
                 )
                 if user_model_text:
-                    system_content = system_content + "\n\n## User Model\n\n" + user_model_text
+                    notes.append("## User Model\n\n" + user_model_text)
             except Exception:
                 pass
-            nudge = ctx.learning_loop.consume_nudge()
-            if nudge:
-                system_content = system_content + "\n\n" + nudge
+            # Derived, not latched: the reminder belongs to *this* conversation,
+            # so the turn count comes from its own history. A counter on the
+            # agent-wide loop was shared by every session using that agent, which
+            # delivered one conversation's reminder into another (and reset on
+            # every restart).
+            if should_nudge(
+                _count_user_turns(loaded_messages),
+                ctx.learning_loop.settings.nudge_interval_turns,
+            ):
+                notes.append(build_nudge_reminder())
 
-        return [
+        messages = [
             LLMMessage(role="system", content=system_content),
             *self.convert_to_llm_messages(loaded_messages),
         ]
+        for note in notes:
+            messages.append(LLMMessage(role="user", content=note))
+        return messages
