@@ -874,3 +874,14 @@ def test_settings_web_search_rejects_non_object_block(monkeypatch, tmp_path):
 
     with pytest.raises(ValueError, match="'web_search' must be an object"):
         Settings.load_config()
+
+
+def test_the_config_write_is_atomic(tmp_path) -> None:
+    """A reader must never see half a file: the server re-reads on mtime change."""
+    from nova.settings import _write_json
+
+    path = tmp_path / "config.json"
+    _write_json(path, {"providers": {}})
+
+    assert json.loads(path.read_text(encoding="utf-8")) == {"providers": {}}
+    assert list(tmp_path.iterdir()) == [path], "the temporary file must be gone"

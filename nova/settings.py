@@ -12,7 +12,6 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from functools import lru_cache
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -207,20 +206,29 @@ def _build_default_config_payload() -> dict[str, Any]:
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    """Write *payload* atomically, keeping the file private.
+
+    A plain write is visible to a concurrent reader half-finished, and the server
+    now re-reads this file whenever its mtime changes: a truncated read would
+    raise and (worse) look like a broken config. Writing beside the target and
+    renaming makes the swap atomic on the same filesystem.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    temporary = path.with_name(f"{path.name}.tmp")
+    temporary.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     try:
         # The config file holds provider API keys and the LAN auth password.
-        os.chmod(path, 0o600)
+        os.chmod(temporary, 0o600)
     except OSError:
         pass
+    os.replace(temporary, path)
 
 
-def _ensure_config_file(home: Path) -> Path:
+def _ensure_config_file(home: Path, *, ensure: bool = True) -> Path:
     config_path = home / "config.json"
-    if not config_path.exists():
+    if ensure and not config_path.exists():
         _write_json(config_path, _build_default_config_payload())
     return config_path
 
@@ -562,9 +570,16 @@ class Settings:
         self.ensure_directories()
 
     @classmethod
-    def load_config(cls) -> Settings:
+    def load_config(cls, *, ensure: bool = True) -> Settings:
+        """Read the config file, creating the default one when *ensure* is set.
+
+        Args:
+            ensure: Write the default payload when the file is missing. A reload
+                passes False so a deleted config stays deleted instead of being
+                silently replaced by empty providers under a running process.
+        """
         home = Path(os.getenv("NOVA_HOME", Path.home() / ".nova")).expanduser()
-        config_path = _ensure_config_file(home)
+        config_path = _ensure_config_file(home, ensure=ensure)
         config_payload = _load_config_payload(config_path)
         providers = _parse_provider_configs(config_payload.get("providers"))
         raw_mcp = config_payload.get("mcp_servers")
@@ -751,14 +766,50 @@ def get_provider_name(providers: dict[str, Any], provider_key: str) -> str:
     return ""
 
 
-@lru_cache(maxsize=1)
+_settings_cache: Settings | None = None
+
+
 def get_settings() -> Settings:
-    return Settings.load_config()
+    """Process-wide settings, read from ``config.json`` on first use."""
+    global _settings_cache
+    if _settings_cache is None:
+        _settings_cache = Settings.load_config()
+    return _settings_cache
 
 
-def reload_settings() -> Settings:
-    get_settings.cache_clear()
-    return get_settings()
+def _clear_settings_cache() -> None:
+    global _settings_cache
+    _settings_cache = None
+
+
+# Fixtures and tests clear the cache between cases. The cache is explicit rather
+# than ``lru_cache`` because a failed reload must leave the previous settings in
+# place, which a decorator cannot express.
+get_settings.cache_clear = _clear_settings_cache  # type: ignore[attr-defined]
+
+
+def reload_settings(*, ensure: bool = True) -> Settings:
+    """Re-read ``config.json``, keeping the last good settings when it fails.
+
+    Args:
+        ensure: Create the default file when it is missing. The server's
+            mtime-driven reload passes False, because a process that already has
+            providers loaded must not silently fall back to the empty defaults
+            when someone moves the file away. Test fixtures and CLI entry points
+            keep the default, which is what makes a fresh ``NOVA_HOME`` usable.
+
+    Returns:
+        The freshly read settings, which also become the process-wide value.
+
+    Raises:
+        FileNotFoundError: The file is absent and *ensure* is False; the previous
+            settings stay in place.
+        ValueError: The file is not valid JSON; the previous settings stay.
+    """
+    global _settings_cache
+    refreshed = Settings.load_config(ensure=ensure)
+    _settings_cache = refreshed
+    return refreshed
 
 
 def configure_logging(settings: Settings, console: bool = False) -> None:

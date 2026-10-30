@@ -14,6 +14,7 @@ from fastapi import FastAPI
 
 from nova.server.auth import BasicAuthMiddleware
 from nova.server.chat_service import ChatService
+from nova.server.deps import apply_config_change, config_mtime
 from nova.server.error_logging import install_error_logging
 from nova.server.request_registry import RequestRegistry
 from nova.server.routers import (
@@ -185,7 +186,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Nova API", lifespan=lifespan)
     # Security: no-op unless the config file server block sets auth credentials.
     app.add_middleware(BasicAuthMiddleware)
+
+    @app.middleware("http")
+    async def _reload_config_when_changed(
+        request, call_next
+    ):  # type: ignore[no-untyped-def]
+        # Before routing, so a request that only touches the chat stream also
+        # runs on the config that is on disk now (the config routes reload on
+        # their own, but they are not on every client's path).
+        apply_config_change(request)
+        return await call_next(request)
+
     app.state.settings = settings
+    # Remember what was read, so the first request does not reload for nothing.
+    app.state.settings_mtime = config_mtime(settings)
     app.state.data_source = None
     # Process-level streaming runtime, owned by the app rather than ChatService
     # so a settings reload never orphans in-flight parallel sessions.

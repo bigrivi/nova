@@ -7,6 +7,8 @@ working. Do not bind these values at import or router-registration time.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import Request
 
 from nova.server.chat_service import ChatService
@@ -15,6 +17,8 @@ from nova.server.session_event_bus import SessionEventBus
 from nova.server.stream_buffer import StreamBuffer
 from nova.settings import Settings, reload_settings
 from nova.speech.service import SpeechService
+
+log = logging.getLogger(__name__)
 
 
 def get_chat_service(request: Request) -> ChatService:
@@ -53,6 +57,47 @@ def get_session_event_bus(request: Request) -> SessionEventBus:
     return request.app.state.session_event_bus
 
 
+def config_mtime(settings: Settings) -> int | None:
+    """The mtime of the file these settings were read from, or None."""
+    path = settings.config_path
+    if path is None:
+        return None
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+def apply_config_change(request: Request) -> None:
+    """Reload settings when ``config.json`` changed since they were read.
+
+    The TUI reuses a detached backend, so a long-lived server would otherwise
+    keep serving the model list it read at boot: edit the config, reopen the
+    terminal, and the picker is still stale. Checking the mtime on every request
+    is cheaper than a file watcher and covers every client, including the ones
+    that never touch the config routes.
+
+    A file that cannot be re-read (half-written, or deleted) leaves the last good
+    settings in place; the bad mtime is remembered so a permanently broken file
+    does not produce one warning per request.
+    """
+    state = request.app.state
+    current = getattr(state, "settings", None)
+    if current is None:
+        return
+    mtime = config_mtime(current)
+    if mtime is None or mtime == getattr(state, "settings_mtime", None):
+        return
+    try:
+        refresh_settings(request)
+    except Exception:
+        log.warning(
+            "config.json changed but could not be reloaded; keeping the last good settings",
+            exc_info=True,
+        )
+        state.settings_mtime = mtime
+
+
 def refresh_settings(request: Request) -> Settings:
     """Reload settings and apply them without discarding streaming runtime.
 
@@ -60,7 +105,10 @@ def refresh_settings(request: Request) -> Settings:
     request registry, stream buffer and reaper, orphaning every in-flight
     parallel session (status/active/resume break, TTL eviction stops).
     """
-    refreshed_settings = reload_settings()
+    # Not ensuring: a config deleted while the server runs must not be
+    # replaced by the empty defaults under the sessions already using it.
+    refreshed_settings = reload_settings(ensure=False)
+    request.app.state.settings_mtime = config_mtime(refreshed_settings)
     request.app.state.settings = refreshed_settings
     speech_service = getattr(request.app.state, "speech_service", None)
     if speech_service is not None:
