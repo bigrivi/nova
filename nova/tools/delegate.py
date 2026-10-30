@@ -9,6 +9,7 @@ model must not wait or poll.
 import logging
 
 from nova.agent.spawn import MAX_SPAWN_DEPTH, SPAWN_DEPTH
+from nova.constants import DEFAULT_AGENT_KEY
 from nova.llm import ToolResult
 from nova.tools.registry import tool
 
@@ -90,6 +91,22 @@ async def delegate_to_agent(
             return ToolResult(
                 success=False,
                 content="Cannot delegate without an active session.",
+            )
+
+        # The roster in the system prompt is the offer; this is the enforcement.
+        # A model that recalled another agent's child key from history must not
+        # be able to call it, or the parent/child table only describes intent.
+        parent_key = current_session.agent_key or DEFAULT_AGENT_KEY
+        children = {
+            child.get("key") for child in await data_source.get_child_agents(parent_key)
+        }
+        if target not in children:
+            return ToolResult(
+                success=False,
+                content=(
+                    f"'{target}' is not one of your sub-agents. Delegate only to a key "
+                    "listed in the 'Available Sub-Agents' section of your system prompt."
+                ),
             )
 
         task_message = task

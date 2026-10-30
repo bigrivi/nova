@@ -767,6 +767,11 @@ class ChatService:
                         register_key
                     ):
                         agent.interrupt()
+                if register_key:
+                    # A slot with no activity signal is indistinguishable from an
+                    # abandoned one, and the reaper would drop a turn that is
+                    # still producing frames.
+                    self._request_registry.note_activity(register_key)
                 yield event, data
         finally:
             if register_key:

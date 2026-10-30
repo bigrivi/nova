@@ -292,6 +292,11 @@ class ChatStreamOrchestrator:
                                 return
                             now = loop.time()
                             if now - last_send >= STREAM_HEARTBEAT_INTERVAL_SECONDS:
+                                # A paused turn (a long tool, a pending prompt)
+                                # emits nothing while its client is still here;
+                                # the heartbeat is the proof it is not abandoned.
+                                if registry is not None:
+                                    registry.note_activity(session_id)
                                 yield STREAM_SSE_PING_BYTES
                                 last_send = now
                             else:
@@ -409,6 +414,10 @@ class ChatStreamOrchestrator:
                                 registry, stream_session_id
                             )
                             break
+                        if registry is not None and stream_session_id:
+                            # Same reason as the resume path: a turn that is slow
+                            # but still attached must not age out of the registry.
+                            registry.note_activity(stream_session_id)
                         yield stream_module.STREAM_SSE_PING_BYTES
                         continue
                     if item is None:

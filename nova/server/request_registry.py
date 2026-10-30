@@ -134,6 +134,33 @@ class RequestRegistry:
         async with self._map_lock:
             return self._is_free_locked(session_id)
 
+    def note_activity(self, session_id: str) -> None:
+        """Refresh an ACTIVE slot's idle clock without taking the locks.
+
+        `last_access` is the only thing between a live turn and the reaper. A
+        stream produces no touch of its own -- the registry only learns about a
+        session when it is registered, resumed, or asked about -- so a turn that
+        keeps running past IDLE_TTL looked abandoned and had its entry and buffer
+        discarded underneath it. That is what made `interrupt` silently fail for
+        a long session, and what let a second message start a turn alongside the
+        first.
+
+        A DETACHED slot is deliberately not refreshed: its client is gone, so
+        "still producing frames" is not evidence that anyone will read them. That
+        turn is the one the reaper must eventually stop -- a prompt nobody can
+        answer keeps heartbeating forever otherwise.
+
+        Deliberately unlocked: it writes one float on a slot that already
+        exists, and a reader seeing a timestamp one frame old is harmless when
+        the margin is a 30-minute TTL.
+
+        Args:
+            session_id: The session whose turn is still making progress.
+        """
+        slot = self._slots.get(session_id)
+        if slot is not None and slot.state == ACTIVE:
+            slot.last_access = time.monotonic()
+
     # ── internal helpers (map ops only, short-held global lock) ──
 
     async def _session_lock(self, session_id: str) -> asyncio.Lock:
