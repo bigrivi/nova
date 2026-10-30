@@ -68,6 +68,12 @@ cancellation: `RequestRegistry.interrupt` on a slot that only holds a *reservati
 returns True and remembers it (`take_pending_interrupt`), because a cancel the client
 believes in and the server silently drops is worse than no cancel button.
 
+The registry's idle clock is refreshed only while a client is attached: every frame a
+turn emits, and every SSE heartbeat, bump an ACTIVE slot (`note_activity`), so a turn
+that runs longer than `IDLE_TTL` is not reaped mid-flight. A DETACHED slot is left to
+expire on purpose — that is what stops a prompt nobody can answer from heartbeating
+forever.
+
 ## Where things live
 
 - `nova/prompt/builder.py` assembles the system prompt: identity, soul, user, memory,
