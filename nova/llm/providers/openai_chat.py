@@ -26,6 +26,7 @@ from nova.llm.provider import (
 from nova.llm.reasoning import apply_effort
 from nova.llm.request_hook import run_request_hook, run_session_hook
 from nova.llm.stream_driver import StreamParser, output_limit_error
+from nova.llm.user_agent import default_user_agent
 
 # Re-exported so the retry policy stays single-sourced; see
 # tests/test_retry_status_codes.py.
@@ -199,7 +200,6 @@ class OpenAIProvider(HttpProvider):
         request_options: dict | None = None,
         timeout_seconds: int = 120,
         reasoning_field: str = "reasoning_content",
-        user_agent: str | None = None,
         extra_headers: dict | None = None,
         request_hook: str | None = None,
         request_session_hook: str | None = None,
@@ -210,7 +210,8 @@ class OpenAIProvider(HttpProvider):
         self.request_options = dict(request_options or {})
         self.timeout_seconds = timeout_seconds
         self._reasoning_field = reasoning_field
-        self._user_agent = user_agent
+        # A bare SDK request names nobody; this one always says Nova.
+        self._user_agent = default_user_agent()
         self._extra_headers = dict(extra_headers or {})
         self._request_hook = request_hook
         self._request_session_hook = request_session_hook
@@ -220,8 +221,6 @@ class OpenAIProvider(HttpProvider):
         headers = {
             "Content-Type": "application/json",
         }
-        if self._user_agent:
-            headers["User-Agent"] = self._user_agent
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         if self._extra_headers:
@@ -230,6 +229,8 @@ class OpenAIProvider(HttpProvider):
             headers.update(run_session_hook(self._request_session_hook, session_id))
         if self._request_hook:
             headers.update(run_request_hook(self._request_hook, session_id))
+        # Written last: config and hooks may add headers, but not this one.
+        headers["User-Agent"] = self._user_agent
         return headers
 
     def _build_body(

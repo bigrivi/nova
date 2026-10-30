@@ -199,17 +199,16 @@ def test_build_headers_omits_key_when_empty():
 
 
 def test_build_headers_betas_and_user_agent():
-    provider = AnthropicProvider(
-        api_key="k", betas=["beta1", "beta2"], user_agent="Nova/1.0"
-    )
+    provider = AnthropicProvider(api_key="k", betas=["beta1", "beta2"])
     headers = provider._build_headers()
     assert headers["anthropic-beta"] == "beta1,beta2"
-    assert headers["User-Agent"] == "Nova/1.0"
+    assert headers["User-Agent"].startswith("nova/")
 
     provider2 = AnthropicProvider(api_key="k")
     headers2 = provider2._build_headers()
     assert "anthropic-beta" not in headers2
-    assert "User-Agent" not in headers2
+    # Unconfigured is no longer anonymous: the default names Nova.
+    assert headers2["User-Agent"].startswith("nova/")
 
 
 def test_build_body_max_tokens_and_system_and_stream():

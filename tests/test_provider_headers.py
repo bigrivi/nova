@@ -11,6 +11,7 @@ from nova.llm.providers.anthropic import AnthropicProvider
 from nova.llm.providers.openai_chat import OpenAIProvider
 from nova.llm.providers.openai_responses import OpenAIResponsesProvider
 from nova.llm.request_hook import RequestHookError, resolve_hook_path
+from nova.llm.user_agent import default_user_agent
 
 
 def _write_hook(tmp_path, name, body):
@@ -31,7 +32,6 @@ def test_hook_headers_merged_and_win(tmp_path):
     hook = _write_hook(tmp_path, "hook.py", ECHO_HOOK)
     provider = OpenAIProvider(
         api_key="k",
-        user_agent="nova/1.0",
         extra_headers={
             "x-opencode-client": "nova/1.0",
             "x-opencode-session": "stale",
@@ -41,7 +41,7 @@ def test_hook_headers_merged_and_win(tmp_path):
 
     headers = provider._build_headers(session_id="sess-1")
 
-    assert headers["User-Agent"] == "nova/1.0"
+    assert headers["User-Agent"] == default_user_agent()
     assert headers["Authorization"] == "Bearer k"
     assert headers["x-opencode-client"] == "nova/1.0"
     assert headers["x-opencode-session"] == "ses-from-hook"
@@ -61,12 +61,11 @@ def test_hook_applies_across_providers(tmp_path):
 def test_no_hook_no_hook_headers():
     provider = OpenAIProvider(
         api_key="k",
-        user_agent="nova/1.0",
         extra_headers={"x-opencode-client": "nova/1.0"},
     )
     headers = provider._build_headers(session_id="sess-1")
 
-    assert headers["User-Agent"] == "nova/1.0"
+    assert headers["User-Agent"] == default_user_agent()
     assert headers["Authorization"] == "Bearer k"
     assert headers["x-opencode-client"] == "nova/1.0"
     assert "x-opencode-session" not in headers
@@ -181,7 +180,6 @@ def test_build_llm_wires_request_hook(tmp_path, monkeypatch):
                         "options": {
                             "base_url": "https://opencode.ai/zen/go/v1",
                             "api_key": "test-key",
-                            "user_agent": "nova/1.0",
                             "headers": {"x-opencode-client": "nova/1.0"},
                             "request_hook": hook,
                         },
@@ -207,7 +205,7 @@ def test_build_llm_wires_request_hook(tmp_path, monkeypatch):
     try:
         llm = runtime.build_llm(provider="oc", model="deepseek-v4-flash")
         headers = llm._build_headers(session_id="sess-1")
-        assert headers["User-Agent"] == "nova/1.0"
+        assert headers["User-Agent"] == default_user_agent()
         assert headers["x-opencode-client"] == "nova/1.0"
         assert headers["x-opencode-session"] == "ses-from-hook"
     finally:

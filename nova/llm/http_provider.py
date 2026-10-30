@@ -139,8 +139,9 @@ class HttpProvider(LLMProvider):
 
     @staticmethod
     def _post_kwargs(headers: dict, body: dict) -> dict:
-        # Ollama sends no headers and its transport never received a ``headers``
-        # kwarg; omit it entirely when empty so that stays true.
+        # Every provider now sends at least its User-Agent, so this is a guard
+        # rather than the normal path: a caller with no headers must not be
+        # handed an empty ``headers`` kwarg it never used to receive.
         kwargs: dict = {"json": body}
         if headers:
             kwargs["headers"] = headers

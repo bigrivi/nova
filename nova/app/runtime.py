@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from nova.agent import Agent, AgentConfig
-from nova.agent.posture import normalize_posture, resolve_allowed_tools, READ_ONLY
+from nova.agent.posture import READ_ONLY, normalize_posture, resolve_allowed_tools
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.llm import (
@@ -95,11 +95,13 @@ def build_llm(
         )
     elif provider_type == "ollama":
         base_url = str(provider_config.options.get("base_url", "")).strip()
-        llm = OllamaProvider(base_url=base_url, request_options=request_options)
+        llm = OllamaProvider(
+            base_url=base_url,
+            request_options=request_options,
+        )
     elif provider_type == "openai-compatible":
         base_url = str(provider_config.options.get("base_url", "")).strip()
         api_key = str(provider_config.options.get("api_key", "")).strip()
-        user_agent = str(provider_config.options.get("user_agent", "")).strip() or None
         model_config = provider_config.models.get(model, {})
         reasoning_field = model_config.get("reasoning_field")
         kwargs = {}
@@ -109,7 +111,6 @@ def build_llm(
             api_key=api_key,
             base_url=base_url,
             request_options=request_options,
-            user_agent=user_agent,
             default_reasoning_effort=default_effort,
             **_header_options(provider_config.options),
             **kwargs,
@@ -117,19 +118,16 @@ def build_llm(
     elif provider_type == "openai-response":
         base_url = str(provider_config.options.get("base_url", "")).strip()
         api_key = str(provider_config.options.get("api_key", "")).strip()
-        user_agent = str(provider_config.options.get("user_agent", "")).strip() or None
         llm = OpenAIResponsesProvider(
             api_key=api_key,
             base_url=base_url,
             request_options=request_options,
-            user_agent=user_agent,
             default_reasoning_effort=default_effort,
             **_header_options(provider_config.options),
         )
     elif provider_type == "anthropic":
         base_url = str(provider_config.options.get("base_url", "")).strip()
         api_key = str(provider_config.options.get("api_key", "")).strip()
-        user_agent = str(provider_config.options.get("user_agent", "")).strip() or None
         anthropic_version = (
             str(provider_config.options.get("anthropic_version", "")).strip()
             or "2023-06-01"
@@ -144,7 +142,6 @@ def build_llm(
             api_key=api_key,
             base_url=base_url,
             request_options=request_options,
-            user_agent=user_agent,
             anthropic_version=anthropic_version,
             betas=betas,
             **_header_options(provider_config.options),

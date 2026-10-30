@@ -74,8 +74,8 @@ class _FakeSession:
         self.calls: list[dict] = []
         self.closed = False
 
-    async def post(self, url, json=None, timeout=None):
-        self.calls.append({"url": url, "json": json})
+    async def post(self, url, headers=None, json=None, timeout=None):
+        self.calls.append({"url": url, "headers": headers, "json": json})
         return self._response
 
     async def close(self) -> None:

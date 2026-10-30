@@ -31,6 +31,7 @@ from nova.llm.stream_driver import (
     output_limit_error,
 )
 from nova.llm.tokenizer import normalise_model_id
+from nova.llm.user_agent import default_user_agent
 
 # Re-exported so a single source of truth for the retry policy is observable on
 # this module; see tests/test_retry_status_codes.py.
@@ -514,7 +515,6 @@ class AnthropicProvider(HttpProvider):
         base_url: str | None = None,
         request_options: dict | None = None,
         timeout_seconds: int = 120,
-        user_agent: str | None = None,
         anthropic_version: str = "2023-06-01",
         betas: list[str] | None = None,
         max_output_tokens: int | None = None,
@@ -526,7 +526,8 @@ class AnthropicProvider(HttpProvider):
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
         self.timeout_seconds = timeout_seconds
-        self._user_agent = user_agent
+        # A bare SDK request names nobody; this one always says Nova.
+        self._user_agent = default_user_agent()
         self._anthropic_version = anthropic_version
         self._betas = list(betas) if betas else None
         self._max_output_tokens_override = max_output_tokens
@@ -545,8 +546,6 @@ class AnthropicProvider(HttpProvider):
             "Content-Type": "application/json",
             "anthropic-version": self._anthropic_version,
         }
-        if self._user_agent:
-            headers["User-Agent"] = self._user_agent
         if self.api_key:
             headers["x-api-key"] = self.api_key
         if self._betas:
@@ -557,6 +556,8 @@ class AnthropicProvider(HttpProvider):
             headers.update(run_session_hook(self._request_session_hook, session_id))
         if self._request_hook:
             headers.update(run_request_hook(self._request_hook, session_id))
+        # Written last: config and hooks may add headers, but not this one.
+        headers["User-Agent"] = self._user_agent
         return headers
 
     def _format_tools(self, tools: list[dict] | None) -> list[dict]:

@@ -20,6 +20,7 @@ from nova.llm.provider import (
     ToolCall,
 )
 from nova.llm.stream_driver import StreamParser
+from nova.llm.user_agent import default_user_agent
 
 log = logging.getLogger(__name__)
 
@@ -121,6 +122,9 @@ class OllamaProvider(HttpProvider):
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
         self.timeout_seconds = timeout_seconds
+        # Ollama sent no headers at all; it now identifies the client like every
+        # other provider does.
+        self._user_agent = default_user_agent()
 
     def _build_body(
         self,
@@ -214,7 +218,7 @@ class OllamaProvider(HttpProvider):
         body = self._build_body(
             messages=formatted_messages, model=model, stream=stream, tools=tools
         )
-        return f"{self.base_url}/api/chat", {}, body
+        return f"{self.base_url}/api/chat", {"User-Agent": self._user_agent}, body
 
     def _parse_response(self, data: dict) -> Done:
         message = data.get("message", {})
