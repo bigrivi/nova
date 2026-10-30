@@ -62,9 +62,14 @@ export async function listProviders(): Promise<NovaProviderRecord[]> {
     return payload.items;
 }
 
-/** The mode and rules the backend would judge a tool call by. */
-export async function getPermissions(): Promise<NovaPermissionPolicy> {
-    return request<NovaPermissionPolicy>("/api/permissions");
+/** The mode, rules and saved approvals the backend would judge a call by. */
+export async function getPermissions(
+    workspace?: string | null,
+): Promise<NovaPermissionPolicy> {
+    const suffix = workspace
+        ? `?workspace=${encodeURIComponent(workspace)}`
+        : "";
+    return request<NovaPermissionPolicy>(`/api/permissions${suffix}`);
 }
 
 /** Turns of this session that changed files, newest first. */

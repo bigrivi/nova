@@ -171,7 +171,35 @@ export type NovaRestoreReport = {
     chat_truncated: boolean;
 };
 
-/** The permission policy configured on the backend (read-only). */export type NovaPermissionPolicy = {
+/** One scheduled job. Timestamps are ISO strings from the wire contract. */
+export type NovaScheduleJob = {
+    id: string;
+    name: string;
+    prompt: string;
+    kind: "cron" | "interval" | "once";
+    cron_expr: string;
+    interval_minutes: number | null;
+    run_at: string;
+    enabled: boolean;
+    session_id: string;
+    agent_key: string;
+    next_run_at: string | null;
+    last_run_at: string | null;
+    last_status: string;
+    last_error: string;
+    created_at: number;
+};
+
+/** One approval the user kept, for this workspace only. */
+export type NovaSavedGrant = {
+    rule: string;
+    family: string;
+    digest: string;
+    created_at: number;
+};
+
+/** The permission policy configured on the backend (read-only). */
+export type NovaPermissionPolicy = {
     mode: string;
     path: string;
     /** False when no permissions file exists yet (built-in defaults apply). */
@@ -181,9 +209,12 @@ export type NovaRestoreReport = {
     shell_ask: { description: string; match: string }[];
     shell_disable: string[];
     tools: { name: string; effect: string }[];
+    /** Remembered approvals for the workspace the policy was asked about. */
+    saved_grants: NovaSavedGrant[];
 };
 
-export type NovaProviderRecord = {    key: string;
+export type NovaProviderRecord = {
+    key: string;
     name: string;
     type: string;
 };

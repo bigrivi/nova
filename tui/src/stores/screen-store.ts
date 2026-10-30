@@ -16,6 +16,7 @@ export type Screen =
     | { kind: "memory" }
     | { kind: "diff" }
     | { kind: "commit" }
+    | { kind: "schedules" }
     | { kind: "review" };
 
 type ScreenState = {

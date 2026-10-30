@@ -65,6 +65,13 @@ export const COMMANDS: CommandSpec[] = [
         aliases: ["undo"],
     },
     {
+        id: "schedules",
+        label: "Schedules",
+        description: "Scheduled jobs: what runs, when, and how to stop it",
+        usage: "/schedules",
+        aliases: ["cron"],
+    },
+    {
         id: "tasks",
         label: "Tasks",
         description: "Show and cancel background tasks",

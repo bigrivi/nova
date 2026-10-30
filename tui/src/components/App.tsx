@@ -33,6 +33,7 @@ import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { PermissionsScreen } from "./screens/PermissionsScreen.tsx";
 import { ReviewScreen } from "./screens/ReviewScreen.tsx";
 import { RewindScreen } from "./screens/RewindScreen.tsx";
+import { SchedulesScreen } from "./screens/SchedulesScreen.tsx";
 import { TasksScreen } from "./screens/TasksScreen.tsx";
 import { SessionsScreen } from "./screens/SessionsScreen.tsx";
 import { ThemeScreen } from "./screens/ThemeScreen.tsx";
@@ -129,7 +130,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     // for the rest of the session without touching the file.
     useEffect(() => {
         let cancelled = false;
-        void getPermissions()
+        void getPermissions(WORKSPACE_DIR)
             .then((policy) => {
                 if (cancelled) return;
                 const store = usePermissionStore.getState();
@@ -236,6 +237,9 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                 return;
             case "tasks":
                 screens.open({ kind: "tasks" });
+                return;
+            case "schedules":
+                screens.open({ kind: "schedules" });
                 return;
             case "diff":
                 screens.open({ kind: "diff" });
@@ -356,6 +360,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             {screen?.kind === "permissions" ? <PermissionsScreen /> : null}
             {screen?.kind === "rewind" ? <RewindScreen /> : null}
             {screen?.kind === "tasks" ? <TasksScreen /> : null}
+            {screen?.kind === "schedules" ? <SchedulesScreen /> : null}
             {screen?.kind === "mcp" ? <McpScreen /> : null}
             {screen?.kind === "memory" ? <MemoryScreen /> : null}
             {screen?.kind === "diff" ? <DiffScreen /> : null}

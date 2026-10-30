@@ -56,5 +56,20 @@ export function policyLines(
             policy.tools.map((tool) => `${tool.name}=${tool.effect}`),
         )}`,
     );
+    // Saved approvals are the one part of this panel the user wrote by
+    // accident, so they are listed by name rather than counted.
+    const saved = policy.saved_grants ?? [];
+    if (saved.length === 0) {
+        lines.push("saved       none for this workspace");
+    } else {
+        lines.push(`saved       ${saved.length} approval(s), this workspace only`);
+        for (const grant of saved.slice(0, 5)) {
+            const scope = grant.family || "any command under the rule";
+            lines.push(`  · ${grant.rule}  (${scope})`);
+        }
+        if (saved.length > 5) {
+            lines.push(`  · … ${saved.length - 5} more`);
+        }
+    }
     return lines;
 }

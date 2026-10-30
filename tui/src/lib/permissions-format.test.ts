@@ -11,6 +11,7 @@ const POLICY: NovaPermissionPolicy = {
     shell_ask: [{ description: "pushing", match: "git push *" }],
     shell_disable: [],
     tools: [{ name: "write", effect: "ask" }],
+    saved_grants: [],
 };
 
 describe("joinLimited", () => {
@@ -45,6 +46,27 @@ describe("policyLines", () => {
         expect(text).toContain("git status *");
         expect(text).toContain("pushing");
         expect(text).toContain("write=ask");
+    });
+
+    test("lists remembered approvals by name", () => {
+        const text = policyLines(
+            {
+                ...POLICY,
+                saved_grants: [
+                    { rule: "pushing", family: "git push *", digest: "", created_at: 1 },
+                ],
+            },
+            "ask",
+        ).join("\n");
+        expect(text).toContain("this workspace only");
+        expect(text).toContain("pushing");
+        expect(text).toContain("git push *");
+    });
+
+    test("says so when nothing is saved", () => {
+        expect(policyLines(POLICY, "ask").join("\n")).toContain(
+            "saved       none",
+        );
     });
 
     test("shows a placeholder before the policy loads", () => {
