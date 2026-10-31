@@ -169,7 +169,7 @@ Nova 扫描目录、建立结构、移动文件。
 
 ## 内置工具
 
-核心自带 26 个工具，接上 MCP 服务后还会在运行时增加。子 Agent 既拿不到 MCP 工具，
+默认自带 27 个工具，接上 MCP 服务后还会在运行时增加。子 Agent 既拿不到 MCP 工具，
 也拿不到 `delegate_to_agent`。
 
 | 工具 | 做什么 |
@@ -184,14 +184,17 @@ Nova 扫描目录、建立结构、移动文件。
 | `todo_write` | 跟踪 Agent 的任务状态 |
 | `ask_user` | 用文本或选项向你提问 |
 | `save_memory` / `search_memory` / `list_memories` / `delete_memory` | 记忆存取 |
+| `session_search` | 搜索你自己的历史会话 |
 | `delegate_to_agent` / `subagent_status` | 拉起子 Agent 并跟踪进度 |
 | `list_skills` / `load_skill` / `install_skill` | 按需加载技能，经请求后从 ClawHub 安装 |
 | `background_task_*` | 在后台跑、看、取消长任务 |
 
 ## 配置
 
-Nova 读 `~/.nova/config.json`（用 `NOVA_HOME` 换根目录）。顶层键是 `providers`、
-`mcp_servers`、`compaction`。
+Nova 读 `~/.nova/config.json`（用 `NOVA_HOME` 换根目录）。常用的键是 `providers`、
+`server`、`mcp_servers`、`compaction`、`transcription`、`web_search`、`learning`、
+`terminal`；加载器还认 `mcp_prefix_tool_names`、`mcp_non_prefixed_servers`、
+`approval_review`、`gateway`。完整形状见[设置](docs/zh-CN/configuration/settings.md)。
 
 ```json
 {
@@ -244,13 +247,13 @@ MCP 服务可以是 stdio 或 HTTP：
 ## 开发
 
 ```bash
-pip install -e .[dev]           # pytest.ini 设好了 pythonpath，不需要 PYTHONPATH
-pytest                          # 约 2160 个测试，不需要桩
+pip install -e .[dev]           # pythonpath 由 pyproject.toml 提供，不需要 PYTHONPATH
+pytest                          # 2700+ 个测试，不需要桩
 pytest tests/test_server.py -q  # 跑一个子集
 RUN_LIVE_OLLAMA_SERVER_E2E=1 pytest tests/e2e -q   # 真实 Ollama，需显式开启
 ```
 
-大约 3.3 万行 Python（`nova/`）、2.2 万行前端（`frontend/src`）、4500 行 TUI
+大约 4.3 万行 Python（`nova/`）、2.7 万行前端（`frontend/src`）、1.8 万行 TUI
 （`tui/src`）。`nova` 命令行入口定义在 `pyproject.toml`。前端和 TUI 各自装依赖：
 
 ```bash

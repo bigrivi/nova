@@ -30,6 +30,11 @@ or Anthropic endpoint and keep the same agent.
 One Python core drives a terminal TUI, an HTTP server, a web frontend, and a desktop
 app. They share the agent loop, the tool registry, and the SQLite store.
 
+<p align="center">
+  <img src="assets/nova-tui-demo.gif" width="900"
+       alt="Nova TUI over three turns: it explains the repository's architecture, recalls a preference stored in an earlier session, and asks for approval before running a bash subshell">
+</p>
+
 ## Why Nova
 
 Most hosted assistants are products. The model, the memory, and the interface belong
@@ -50,19 +55,24 @@ files and your shell.
 
 ## Quick start
 
+You need Python 3.12+. `bun` is only for the terminal UI, and Playwright only for the
+browser tools.
+
 ```bash
 git clone https://github.com/bigrivi/nova.git && cd nova
-pip install -e .                # Python 3.12+
-playwright install chromium     # only if you want the browser tools
+pip install -e .
 ```
 
 If `nova` is not on your `PATH` afterwards, add the environment's `bin/` directory
 (see [Installation](docs/getting-started/installation.md#making-nova-available-on-path)).
-The TUI also needs [bun](https://bun.sh).
 
-Write a provider to `~/.nova/config.json`:
+Point it at a model. With Ollama already running, this needs no API key and nothing
+leaves the machine:
 
-```json
+```bash
+ollama pull qwen2.5:7b
+mkdir -p ~/.nova
+cat > ~/.nova/config.json <<'JSON'
 {
   "providers": {
     "ollama": {
@@ -72,49 +82,22 @@ Write a provider to `~/.nova/config.json`:
     }
   }
 }
+JSON
 ```
 
-Then start whichever surface you want:
+Swap that block for any OpenAI-compatible, Responses, or Anthropic endpoint — the
+shape is the same and [Providers](docs/configuration/providers.md) has each variant.
+
+Start whichever surface you want:
 
 ```bash
-nova serve          # HTTP backend on http://127.0.0.1:8765
+nova tui            # terminal UI, from any directory (needs bun)
 nova web            # web UI in the browser
-nova tui            # terminal UI, from any directory
+nova serve          # HTTP backend on http://127.0.0.1:8765
 nova desktop        # desktop window
 ```
 
 Full walkthrough in [Quickstart](docs/getting-started/quickstart.md).
-
-## What it does for you
-
-```text
-Tidy up my Downloads folder — put images in one place and documents in another.
-```
-
-Nova scans the folder, creates the structure, and moves the files.
-
-```text
-Remember that I live in Austin and prefer morning meetings.
-```
-
-Memories persist in local SQLite, so the next session knows this before you repeat it.
-
-```text
-Find the most interesting phones released this month and compare them for me.
-```
-
-It searches the web, fetches the pages as Markdown, and returns a summary.
-
-```text
-Analyze this spreadsheet and tell me which months had the highest spending.
-```
-
-It reads the file, runs inline Python where it needs to, and returns an answer. Your
-files never leave the machine.
-
-It also drives a Playwright browser, reads images, loads skills from
-`~/.nova/skills/`, connects MCP servers, and delegates work to sub-agents. Long
-conversations stay usable through two-layer context compaction.
 
 ## How Nova is different
 
@@ -171,6 +154,37 @@ to disk and keeps recent turns verbatim. The second asks the model to summarize 
 came before. The trigger is a token estimate you can read at
 `GET /api/sessions/{id}/context`, so the TUI and the agent agree on the number.
 
+## What it does for you
+
+```text
+Tidy up my Downloads folder — put images in one place and documents in another.
+```
+
+Nova scans the folder, creates the structure, and moves the files.
+
+```text
+Remember that I live in Austin and prefer morning meetings.
+```
+
+Memories persist in local SQLite, so the next session knows this before you repeat it.
+
+```text
+Find the most interesting phones released this month and compare them for me.
+```
+
+It searches the web, fetches the pages as Markdown, and returns a summary.
+
+```text
+Analyze this spreadsheet and tell me which months had the highest spending.
+```
+
+It reads the file, runs inline Python where it needs to, and returns an answer. Your
+files never leave the machine.
+
+It also drives a Playwright browser, reads images, loads skills from
+`~/.nova/skills/`, connects MCP servers, and delegates work to sub-agents. Long
+conversations stay usable through two-layer context compaction.
+
 ## Surfaces
 
 | Surface | How to run | What it is |
@@ -179,48 +193,34 @@ came before. The trigger is a token estimate you can read at
 | Server | `nova serve` | FastAPI backend on `http://127.0.0.1:8765`, AI SDK compatible SSE stream at `POST /api/chat/stream`. |
 | Web UI | `nova web` | Serves the built frontend at the backend and opens a browser. |
 | Desktop | `nova desktop [--dev]` | PyWebView window hosting the built frontend. `python build.py --clean` to package. |
+| Script | `nova run "…" [--json]` | One turn with no UI and no server. Exit code `2` means it stopped for a human. |
 
 The server is the hub for the frontend and the desktop app. The TUI can start its
 own backend.
 
 ## Built-in tools
 
-26 tools ship in the core, and connected MCP servers add more at runtime.
-Sub-agents receive neither MCP tools nor `delegate_to_agent`.
+27 tools ship by default, and connected MCP servers add more at runtime. What they
+add up to:
 
-| Tool | What it does |
-|------|--------------|
-| `read` / `write` / `edit` | Read, create, and patch files, with diff preview |
-| `shell` | Run shell commands through the parsed approval gate |
-| `code_run` | Execute inline Python, auto-installing deps |
-| `glob` / `grep` | Find files and search contents |
-| `web_search` / `web_fetch` | Search the web, fetch a URL as Markdown |
-| `browser_use` | Drive a Playwright browser, when available |
-| `read_image` | Read an image as base64 plus extracted text |
-| `todo_write` | Track the agent's task state |
-| `ask_user` | Ask you a question with text or option input |
-| `save_memory` / `search_memory` / `list_memories` / `delete_memory` | The memory store |
-| `delegate_to_agent` / `subagent_status` | Spawn a child agent and follow its progress |
-| `list_skills` / `load_skill` / `install_skill` | Load skills on demand, install from ClawHub on request |
-| `background_task_*` | Run, watch, and cancel long-running work out of band |
+| Capability | Tools |
+|------------|-------|
+| Read and edit code | `read` / `write` / `edit` with diff preview, `glob` / `grep` to find things |
+| Run commands | `shell` through the parsed approval gate, `code_run` for inline Python |
+| Use the web | `web_search`, `web_fetch` (page → Markdown), `browser_use` when Playwright is installed |
+| Remember | `save_memory` / `search_memory` / `list_memories` / `session_search` |
+| Delegate | `delegate_to_agent` / `subagent_status`, plus `background_task_*` for out-of-band work. Sub-agents get neither MCP tools nor `delegate_to_agent` |
+| Extend | `list_skills` / `load_skill` / `install_skill`, and MCP servers registered at runtime |
+
+The full list, one row per tool, is in [Tools](docs/tools/index.md).
 
 ## Configuration
 
-Nova reads `~/.nova/config.json` (override the home with `NOVA_HOME`). The top-level
-keys are `providers`, `mcp_servers`, and `compaction`.
-
-```json
-{
-  "providers": {
-    "ollama": {
-      "type": "ollama",
-      "name": "Ollama (local)",
-      "options": { "base_url": "http://localhost:11434" },
-      "models": { "<model-name>": { "name": "<model-name>", "tools": true } }
-    }
-  }
-}
-```
+Nova reads `~/.nova/config.json` (override the home with `NOVA_HOME`). The keys you
+are likely to touch are `providers`, `server`, `mcp_servers`, `compaction`,
+`transcription`, `web_search`, `learning`, and `terminal`; the loader also accepts
+`mcp_prefix_tool_names`, `mcp_non_prefixed_servers`, `approval_review`, and
+`gateway`. [Settings](docs/configuration/settings.md) documents every one.
 
 Providers can be `ollama`, `openai-compatible`, `openai-response`, or `anthropic`.
 Reasoning effort is configurable per provider and surfaces as a separate stream:
@@ -234,11 +234,39 @@ set both `auth_user` and `auth_password` in the same block. Setting only one lea
 as base64 over plain HTTP, so put a TLS-terminating proxy in front of Nova for
 anything beyond a trusted network. See [Settings](docs/configuration/settings.md).
 
+<details>
+<summary>Provider and MCP server shapes</summary>
+
+```json
+{
+  "providers": {
+    "ollama": {
+      "type": "ollama",
+      "name": "Ollama (local)",
+      "options": { "base_url": "http://localhost:11434" },
+      "models": { "qwen2.5:7b": { "name": "qwen2.5:7b", "tools": true } }
+    }
+  }
+}
+```
+
 MCP servers can be stdio or HTTP:
 
 ```json
 { "mcp_servers": { "my-tools": { "command": "npx", "args": ["-y", "my-mcp"] } } }
 ```
+
+</details>
+
+## Coming from another agent
+
+Nova discovers project instructions per session: `AGENTS.override.md`, then
+`AGENTS.md`, then `CLAUDE.md`, walking from the git root down to the workspace, plus a
+global `$NOVA_HOME/AGENTS.override.md` or `AGENTS.md`. Instructions written for
+another agent in any of those files carry over unchanged.
+
+State is separate: sessions, memories, skills, and permission grants live under
+`~/.nova/`, so Nova can sit next to another agent without touching its files.
 
 ## Documentation
 
@@ -262,13 +290,13 @@ MCP servers can be stdio or HTTP:
 ## Development
 
 ```bash
-pip install -e .[dev]           # pytest.ini sets pythonpath, no PYTHONPATH needed
-pytest                          # ~2160 tests, no stubs needed
+pip install -e .[dev]           # pythonpath comes from pyproject.toml, no PYTHONPATH needed
+pytest                          # 2700+ tests, no stubs needed
 pytest tests/test_server.py -q  # run a subset
 RUN_LIVE_OLLAMA_SERVER_E2E=1 pytest tests/e2e -q   # live Ollama, opt in
 ```
 
-About 33k lines of Python in `nova/`, 22k in `frontend/src`, and 4.5k in `tui/src`.
+About 43k lines of Python in `nova/`, 27k in `frontend/src`, and 18k in `tui/src`.
 The `nova` console script is defined in `pyproject.toml`. The frontend and the TUI
 have their own installs:
 

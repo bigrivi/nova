@@ -119,7 +119,7 @@ The rule was added after 62 commits acquired such trailers, so `git log` before 
 * `tests/` is the Python suite run by `pytest`, including `tests/e2e` for the opt-in live tests.
 * `docs/` holds the documentation site. Start at `docs/index.md`.
 
-About 15.6k lines of Python live in `nova/`, 8.3k in `frontend/src`, and 4.2k in `tui/src`.
+About 43k lines of Python live in `nova/`, 27k in `frontend/src`, and 18k in `tui/src`.
 
 ## Questions
 

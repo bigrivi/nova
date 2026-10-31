@@ -185,6 +185,10 @@ cd frontend && npm run dev -- --host
   "mcp_non_prefixed_servers": [],
   "compaction": {},
   "transcription": {},
+  "web_search": {},
+  "learning": {},
+  "approval_review": {},
+  "terminal": {},
   "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"}
 }
 ```
@@ -212,7 +216,14 @@ cd frontend && npm run dev -- --host
   （见上）。`server` 不是对象或端口非法会在启动时抛 `ValueError`。`port` 也接受数字
   字符串。
 
-加载器识别这九个顶层键；未知的键会被忽略。
+* `terminal`：`shell` 命令在哪里执行。`backend` 为 `local`（默认）、`ssh` 或
+  `docker`；对应的 `ssh_host` / `ssh_user` / `ssh_port` / `ssh_key` 与 `docker_image` /
+  `docker_container` / `docker_workdir` 只在该后端被选中时生效。
+* `gateway`：不由 `Settings.load_config` 读取，消息网关从同一个文件读取它
+  （`nova/gateway/config.py`），键为 `platforms`，另加 `nova_url` 与 `allowed_senders`。
+  见[消息网关](../advanced/messaging-gateway.md)。
+
+加载器识别这十一个顶层键；未知的键会被忽略。
 
 ## 语音转文字 { #voice-to-text }
 

@@ -138,7 +138,7 @@ cd frontend && npm run dev -- --host
 
 ## Config File Shape
 
-`~/.nova/config.json` is the only file `Settings.load_config` reads. The loader understands nine top-level keys:
+`~/.nova/config.json` is the only file `Settings.load_config` reads. The loader understands eleven top-level keys:
 
 ```json
 {
@@ -148,6 +148,10 @@ cd frontend && npm run dev -- --host
   "mcp_non_prefixed_servers": [],
   "compaction": {},
   "transcription": {},
+  "web_search": {},
+  "learning": {},
+  "approval_review": {},
+  "terminal": {},
   "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"}
 }
 ```
@@ -162,8 +166,10 @@ cd frontend && npm run dev -- --host
 * `web_search`: object configuring search backends and optional keys. See [Web Tools](../tools/web.md).
 * `learning`: object configuring the closed learning loop (off by default except session search). Keys: `enabled`, `nudge_interval_turns` (default 5), `skill_extraction_min_tool_calls` (default 4), `user_model_enabled` (default false), `session_search_enabled` (default true). See [Memory](../memory/index.md).
 * `server`: object with `host` (default `127.0.0.1`), `port` (default `8765`, must be 1-65535), `log_level` (default `INFO`), and optional `auth_user` / `auth_password` for LAN auth (see above). A non-object `server` or an invalid port raises `ValueError` at startup. `port` also accepts a numeric string.
+* `terminal`: where `shell` commands run. `backend` is `local` (default), `ssh`, or `docker`; the matching `ssh_host` / `ssh_user` / `ssh_port` / `ssh_key` and `docker_image` / `docker_container` / `docker_workdir` fields are only consulted when that backend is selected.
+* `gateway`: not read by `Settings.load_config`; the messaging gateway reads it from the same file (`nova/gateway/config.py`), keyed under `platforms`, plus `nova_url` and `allowed_senders`. See [Messaging Gateway](../advanced/messaging-gateway.md).
 
-The loader understands these nine top-level keys; an unknown key is ignored.
+The loader understands these eleven keys; an unknown key is ignored.
 
 ## Voice to Text { #voice-to-text }
 

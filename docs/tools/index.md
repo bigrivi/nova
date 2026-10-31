@@ -1,6 +1,6 @@
 # Tool Overview
 
-Nova ships with 26 built-in tools. The LLM decides which tools to call based on
+Nova ships with 27 built-in tools. The LLM decides which tools to call based on
 your request. You don't need to invoke them manually -- just describe what you
 want, and Nova handles the rest.
 
@@ -40,6 +40,7 @@ tools nor `delegate_to_agent`.
 | [search_memory](../memory/index.md) | Search stored memories |
 | [list_memories](../memory/index.md) | List memories |
 | [delete_memory](../memory/index.md) | Delete memories |
+| `session_search` | Search past conversations (learning loop, on by default) |
 
 ## Interaction
 

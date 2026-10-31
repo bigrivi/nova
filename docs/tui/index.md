@@ -1,10 +1,40 @@
-# TUI Reference
+# The Terminal UI
+
+The TUI is Nova's primary surface. It is a real terminal application — not a chat
+wrapper around a CLI — built with Bun, React, and OpenTUI, and it talks to the same
+Python core the web UI and the desktop app use.
+
+It streams the agent's output as it happens: prose, reasoning, every tool call with
+its result, and inline diffs. Slash commands open full screens inside the terminal
+(sessions, models, memory, permissions, MCP, tasks, schedules), so nothing needs a
+browser and nothing needs a second window.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/bigrivi/nova/main/assets/nova-tui-demo.gif"
+       width="820" alt="Three turns in the Nova TUI: it explains the repository's
+       architecture, recalls a stored preference, and asks for approval before
+       running a bash subshell">
+</p>
+
+## What you see
+
+| Area | What lives there |
+|------|------------------|
+| Banner | Version, model, provider, workspace, and the command hint. Replaces the launch mark once the first message is sent |
+| Transcript | Your messages, the agent's reply, collapsible reasoning (`Thought (259ms)`), and a block per tool call with its output |
+| Composer | Multi-line input, `@` file completion, `/` command menu, and image attachments |
+| Status bar | Model · provider · reasoning effort · permission mode, the context meter, and the workspace with its git branch |
+
+Tool calls are the thing to watch: each one renders as `Ran <command>`, `Explored: N
+searches`, `Read <path>`, and so on, with the output attached underneath and long
+output folded behind `+N lines (ctrl+o to expand)`. A call that is still running shows
+a spinner, and a call the turn cannot finish is settled with an error rather than left
+spinning.
 
 ## Starting the TUI
 
-The terminal client lives in `tui/` (OpenTUI + React, run with bun). It spawns
-the Python backend (`nova serve`) itself, so no separate server step is
-needed:
+The TUI spawns the Python backend (`nova serve`) itself, so there is no separate
+server step:
 
 ```bash
 nova tui
@@ -15,7 +45,7 @@ When running directly from a source checkout, `./nova-tui` is also available.
 Both commands preserve the directory where you launched Nova as the default
 workspace for the session. `nova tui` resolves the OpenTUI client from the
 installed Nova checkout, so it can be run from any directory after an
-editable install (`pip install -e .`).
+editable install (`pip install -e .`). The TUI needs [bun](https://bun.sh).
 
 `nova tui` prefers the bundled client at `tui/dist/index.js` and falls back to
 the TypeScript source at `tui/src/index.tsx` when the bundle is absent. Build
@@ -24,22 +54,6 @@ the bundle from the checkout with:
 ```bash
 cd tui && bun install && bun run build
 ```
-
-The build externalizes `@opentui/*` and `react` and leaves them in
-`node_modules`, so `node_modules` and the `tui/assets/` tree-sitter grammar
-must remain next to `dist/`. Run `nova tui` from the same checkout to keep
-them in place.
-
-Two reasons for the external list:
-
-- `@opentui/core` declares eight platform packages as `optionalDependencies`
-  guarded by `os`/`cpu`, so only the current platform's binary is installed.
-  Its runtime deliberately does `await import("@opentui/core-<platform>")` for
-  every platform as string literals; a plain `bun build` statically resolves
-  all of them and fails on the missing ones.
-- `react` must be a singleton. `@opentui/react` and `react-reconciler` load
-  React from `node_modules` at runtime, so inlining a second React copy into
-  the bundle makes hooks fail with `resolveDispatcher() is null`.
 
 The server port defaults to `8765` and can be set with `server.port` in `~/.nova/config.json`. The TUI reads the same file, so both sides always agree.
 
@@ -51,7 +65,8 @@ The server port defaults to `8765` and can be set with `server.port` in `~/.nova
 | `/sessions` | Browse and load past sessions |
 | `/clear` | Clear the screen |
 | `/models` | Show available models |
-| `/theme` | View or switch UI theme |
+| `/variants` | Browse and switch reasoning effort levels |
+| `/themes` | Browse and switch UI themes |
 | `/permissions` | Show the permission mode and the rules in force |
 | `/rewind` | Undo a turn's file changes and drop the turns after it |
 | `/tasks` | Show and cancel background tasks |
@@ -64,8 +79,9 @@ The server port defaults to `8765` and can be set with `server.port` in `~/.nova
 | `/mcp` | Show MCP servers and the tools they loaded |
 | `/memory` | Show and delete stored memories |
 | `/install-skill <slug>` | Install a skill from ClawHub |
-| `/list-agents`, `/create-agent`, `/delete-agent` | Manage agents |
-| `/quit`, `/q`, `exit` | Exit the app |
+| `/install-global-skill <slug>` | Install a skill for every agent |
+| `/agents`, `/create-agent`, `/delete-agent` | Manage agents |
+| `/quit`, `/q`, `/exit` | Exit the app |
 
 ## Composer
 
@@ -89,6 +105,25 @@ Type `@` to complete a path under the workspace; the model receives the path and
 reads the file with its own tools, so file permissions still apply. Type `/` to
 filter the command list. Prompt history lives in memory for the life of the
 process and is not written to disk.
+
+## Approval
+
+A command the policy cannot prove safe stops the turn and asks, in the transcript
+rather than in a modal:
+
+```text
+Needs to run the following command
+bash -c 'echo one; echo two'
+[y] Approve   [a] Approve & Remember   [n] Reject
+```
+
+`y` (or Enter) approves this run. `a` remembers a grant for commands of the same kind
+for the rest of the session. `n` (or Esc) refuses, and the refusal reaches the model
+as a tool error, so the turn keeps going instead of hanging on a spinner.
+
+What gets asked is decided by the parser, not by a string match: read-only commands
+run without a prompt, and `bash -c` is asked because its payload is data as far as
+static analysis is concerned. The rule set is in [Shell](../tools/shell.md).
 
 ## Version
 
@@ -242,6 +277,24 @@ npm run dev
 ```
 
 Open `http://localhost:5173` in your browser.
+
+## Building the client
+
+`bun run build` externalizes `@opentui/*` and `react` and leaves them in
+`node_modules`, so `node_modules` and the `tui/assets/` tree-sitter grammar
+must remain next to `dist/`. Run `nova tui` from the same checkout to keep
+them in place.
+
+Two reasons for the external list:
+
+- `@opentui/core` declares eight platform packages as `optionalDependencies`
+  guarded by `os`/`cpu`, so only the current platform's binary is installed.
+  Its runtime deliberately does `await import("@opentui/core-<platform>")` for
+  every platform as string literals; a plain `bun build` statically resolves
+  all of them and fails on the missing ones.
+- `react` must be a singleton. `@opentui/react` and `react-reconciler` load
+  React from `node_modules` at runtime, so inlining a second React copy into
+  the bundle makes hooks fail with `resolveDispatcher() is null`.
 
 ## Theming
 

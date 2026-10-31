@@ -1,6 +1,6 @@
 # 工具总览
 
-Nova 自带 26 个内置工具。调用哪个工具由模型根据你的请求决定。你不需要手动指定它们 ——
+Nova 自带 27 个内置工具。调用哪个工具由模型根据你的请求决定。你不需要手动指定它们 ——
 说出你要什么，剩下的 Nova 自己处理。
 
 接上 MCP 服务后，运行时还会增加更多工具。子 Agent 既拿不到 MCP 工具，也拿不到
@@ -39,6 +39,7 @@ Nova 自带 26 个内置工具。调用哪个工具由模型根据你的请求�
 | [search_memory](../memory/index.md) | 检索已存记忆 |
 | [list_memories](../memory/index.md) | 列出记忆 |
 | [delete_memory](../memory/index.md) | 删除记忆 |
+| `session_search` | 搜索历史会话（学习闭环，默认开启） |
 
 ## 交互
 
