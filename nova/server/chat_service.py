@@ -536,7 +536,14 @@ class ChatService:
             session = await data_source.get_session(session_id)
         except Exception:
             session = None
-        # Resolve provider/model: explicit query wins, else session's agent, else settings default
+        # Resolve provider/model: explicit query wins, then the route the session
+        # actually ran with, then its agent's default. The session comes before
+        # the agent because the agent holds only the route a *new* conversation
+        # starts from -- once a session switched model, reading the agent divided
+        # its prompt by the window of a model it never ran on.
+        if (not provider or not model) and session:
+            provider = provider or session.get("provider")
+            model = model or session.get("model")
         if not provider or not model:
             agent_key = session.get("agent_key") if session else None
             if agent_key:
@@ -569,11 +576,30 @@ class ChatService:
         )
         limit = get_context_limit(model or "unknown", provider or "ollama")
         percent = int(used / limit * 100) if limit else 0
+        # Cache accounting comes from what the provider charged, never from
+        # `used`: that one is anchored on a real prompt size but its tail is a
+        # character estimate, and a ratio mixing the two is a ratio of nothing.
+        # Both sides are summed over the turns that reported a cache figure, so a
+        # turn whose provider stayed silent drops out entirely -- counting it as
+        # a miss would invent a hit rate for a gateway that never mentioned
+        # caching. A reported zero still counts, because it is a real miss.
+        billed = [
+            message
+            for message in raw_messages
+            if message.tokens_input and message.cache_read_tokens is not None
+        ]
+        prompt_tokens = sum(message.tokens_input for message in billed)
+        cached_tokens = sum(message.cache_read_tokens for message in billed)
         return {
             "used": used,
             "limit": limit,
             "percent": percent,
             "message_count": len(raw_messages),
+            "prompt_tokens": prompt_tokens,
+            "cached_tokens": cached_tokens,
+            "hit_rate": (
+                round(cached_tokens / prompt_tokens * 100, 1) if prompt_tokens else None
+            ),
         }
 
     async def interrupt(self, session_id: str) -> bool:

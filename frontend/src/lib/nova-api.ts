@@ -461,6 +461,12 @@ export type SessionContextUsage = {
     limit: number;
     percent: number;
     message_count: number;
+    // Summed from the usage the provider reported for each turn, so this is
+    // what was billed rather than the estimate behind `used`. Null when no turn
+    // reported any.
+    prompt_tokens: number;
+    cached_tokens: number;
+    hit_rate: number | null;
 };
 
 /**
