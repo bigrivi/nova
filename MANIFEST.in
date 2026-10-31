@@ -8,5 +8,3 @@ global-exclude node_modules
 global-exclude dist
 global-exclude *.pyc
 global-exclude __pycache__
-EOF
-echo done

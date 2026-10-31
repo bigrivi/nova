@@ -180,7 +180,10 @@ jobs:
 
   publish-tui:
     name: Publish TUI release assets
-    needs: build-tui
+    # After publish, not beside it: two jobs racing to create the same release
+    # is a race the release API does not arbitrate, and an interrupted upload
+    # leaves a partial asset set.
+    needs: [build-tui, publish]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -190,3 +193,28 @@ jobs:
         with:
           files: artifacts/**/*
           generate_release_notes: true
+
+  checksums:
+    name: Publish checksums
+    # Last, so every asset it describes is already on the release.
+    needs: [publish, publish-tui]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # The install script verifies the bundle it downloads against this file,
+      # so it has to name assets exactly as they appear on the release — a
+      # path in the manifest is a manifest the script cannot match.
+      - name: Write SHA256SUMS
+        run: |
+          find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' \) \
+            -exec shasum -a 256 {} + \
+            | sed 's#  .*/#  #' | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: SHA256SUMS
+

@@ -55,16 +55,16 @@ files and your shell.
 
 ## Quick start
 
-You need Python 3.12+. `bun` is only for the terminal UI, and Playwright only for the
-browser tools.
+One line installs Nova and its terminal client:
 
 ```bash
-git clone https://github.com/bigrivi/nova.git && cd nova
-pip install -e .
+curl -fsSL https://raw.githubusercontent.com/bigrivi/nova/main/install | bash
 ```
 
-If `nova` is not on your `PATH` afterwards, add the environment's `bin/` directory
-(see [Installation](docs/getting-started/installation.md#making-nova-available-on-path)).
+It needs Python 3.12+ and [bun](https://bun.sh). The script installs Nova into its
+own environment (through `uv` or `pipx` when either is present), puts `nova` on your
+PATH, and downloads the terminal client for your platform — verifying it against the
+release's `SHA256SUMS` before extracting it.
 
 Point it at a model. With Ollama already running, this needs no API key and nothing
 leaves the machine:
@@ -96,6 +96,22 @@ nova web            # web UI in the browser
 nova serve          # HTTP backend on http://127.0.0.1:8765
 nova desktop        # desktop window
 ```
+
+<details>
+<summary>Install from source instead</summary>
+
+For development, or to keep Nova in a virtualenv you control:
+
+```bash
+git clone https://github.com/bigrivi/nova.git && cd nova
+pip install -e .
+playwright install chromium     # only for the browser tools
+```
+
+If `nova` is not on your `PATH` afterwards, add the environment's `bin/` directory
+(see [Installation](docs/getting-started/installation.md#making-nova-available-on-path)).
+
+</details>
 
 Full walkthrough in [Quickstart](docs/getting-started/quickstart.md).
 

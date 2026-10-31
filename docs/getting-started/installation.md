@@ -3,9 +3,33 @@
 ## Prerequisites
 
 - Python 3.12+
-- pip
+- [bun](https://bun.sh) for the terminal UI
+
+## Install with the Script
+
+For most users this is the whole install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bigrivi/nova/main/install | bash
+```
+
+It checks the two prerequisites, installs Nova into its own environment (through
+`uv` or `pipx` when either is present, and `pip install --user` otherwise), adds
+`nova` to your `PATH`, and downloads the prebuilt terminal client for your platform
+into `$NOVA_HOME/tui`.
+
+The client bundle is verified against the release's `SHA256SUMS` before it is
+extracted. If a release carries no manifest entry for your platform, the bundle is
+**not** installed and `nova tui` builds the client from source on first run instead.
+
+```bash
+--version <v>        install a specific release tag (e.g. 1.0.1)
+--no-modify-path     leave your shell rc files alone
+```
 
 ## Install from Source
+
+Use this when you are working on Nova itself:
 
 ```bash
 # Clone the repository

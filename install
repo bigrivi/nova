@@ -8,6 +8,15 @@ RED='\033[0;31m'
 ORANGE='\033[38;5;214m'
 NC='\033[0m'
 
+# sha256sum on Linux, shasum on macOS. Both print "<hash>  <path>".
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
 usage() {
     cat <<EOF
 Nova Installer
@@ -66,37 +75,71 @@ if ! command -v bun >/dev/null 2>&1; then
 fi
 
 # ── Install Nova (Python backend) ─────────────────────────────────
-echo -e "${MUTED}Installing Nova backend...${NC}"
+# Deliberately not from PyPI: the name "nova" there belongs to OpenStack's
+# cloud controller, so `pip install nova` installs the wrong project. Install
+# straight from the release tag instead, so what runs is what this script names.
 if [ -n "$requested_version" ]; then
-    python3 -m pip install --user "nova==$requested_version"
+    source_ref="v$requested_version"
 else
-    python3 -m pip install --user nova
+    source_ref="main"
+fi
+package="git+https://github.com/$REPO@$source_ref"
+
+if ! command -v git >/dev/null 2>&1; then
+    echo -e "${RED}git is required to install Nova.${NC}"
+    exit 1
+fi
+
+echo -e "${MUTED}Installing Nova backend from $source_ref...${NC}"
+if command -v uv >/dev/null 2>&1; then
+    # uv keeps Nova in its own environment, which is also the only path that
+    # works on a distribution-managed Python (PEP 668 refuses `pip --user`).
+    uv tool install --force "$package"
+elif command -v pipx >/dev/null 2>&1; then
+    pipx install --force "$package"
+elif ! python3 -m pip install --user "$package"; then
+    echo -e "${RED}pip refused to install into this Python.${NC}"
+    echo "  Install uv (https://docs.astral.sh/uv/) and re-run:"
+    echo "  uv tool install $package"
+    exit 1
 fi
 
 # ── PATH ──────────────────────────────────────────────────────────
 SCRIPTS_DIR=$(python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))")
-if [[ ":$PATH:" != *":$SCRIPTS_DIR:"* ]]; then
-    if [ "$no_modify_path" = false ]; then
-        case "$SHELL" in
-            */zsh) shell_rc="$HOME/.zshrc" ;;
-            */bash) shell_rc="$HOME/.bashrc" ;;
-            *) shell_rc="$HOME/.profile" ;;
-        esac
-        echo "export PATH=\"$SCRIPTS_DIR:\$PATH\"" >> "$shell_rc"
-        export PATH="$SCRIPTS_DIR:$PATH"
-        echo -e "${MUTED}Added $SCRIPTS_DIR to PATH in $shell_rc${NC}"
-    fi
+NOVA_BIN=$(command -v nova 2>/dev/null || true)
+if [ -z "$NOVA_BIN" ]; then
+    # uv and pipx both land in ~/.local/bin; pip --user lands in the interpreter's
+    # script directory. Try both before deciding the install failed.
+    for candidate in "$HOME/.local/bin" "$SCRIPTS_DIR"; do
+        if [ -x "$candidate/nova" ]; then
+            NOVA_BIN="$candidate/nova"
+            export PATH="$candidate:$PATH"
+            if [ "$no_modify_path" = false ]; then
+                case "$SHELL" in
+                    */zsh) shell_rc="$HOME/.zshrc" ;;
+                    */bash) shell_rc="$HOME/.bashrc" ;;
+                    *) shell_rc="$HOME/.profile" ;;
+                esac
+                echo "export PATH=\"$candidate:\$PATH\"" >> "$shell_rc"
+                echo -e "${MUTED}Added $candidate to PATH in $shell_rc${NC}"
+            fi
+            break
+        fi
+    done
 fi
 
-if ! command -v nova >/dev/null 2>&1; then
-    echo -e "${RED}nova launcher not found on PATH after install${NC}"
-    echo "Try: export PATH=\"$SCRIPTS_DIR:\$PATH\""
+if [ -z "$NOVA_BIN" ]; then
+    echo -e "${RED}nova launcher not found after install${NC}"
+    echo "Try: export PATH=\"$HOME/.local/bin:$PATH\""
     exit 1
 fi
 
 # ── Version tag alignment ─────────────────────────────────────────
-INSTALLED_VERSION=$(python3 -c "import nova; print(nova.__version__)")
-echo -e "${MUTED}Installed Nova $INSTALLED_VERSION${NC}"
+INSTALLED_VERSION=$("$NOVA_BIN" --version 2>/dev/null | awk '{print $2}')
+if [ -z "$INSTALLED_VERSION" ]; then
+    INSTALLED_VERSION="${requested_version:-}"
+fi
+echo -e "${MUTED}Installed Nova ${INSTALLED_VERSION:-unknown}${NC}"
 
 # ── Download pre-built TUI bundle (optional, falls back to auto-build) ──
 NOVA_HOME="${NOVA_HOME:-$HOME/.nova}"
@@ -123,19 +166,40 @@ if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
 fi
 
 target="$os-$arch"
-bundle_name="nova-tui-$target-$INSTALLED_VERSION.tar.gz"
+bundle_name="nova-tui-$target.tar.gz"
 bundle_url="https://github.com/$REPO/releases/download/v$INSTALLED_VERSION/$bundle_name"
 
-echo -e "${MUTED}Downloading TUI bundle ($target, v$INSTALLED_VERSION)...${NC}"
-if curl -fsSL "$bundle_url" -o "$TUI_DIR/$bundle_name" 2>/dev/null; then
-    echo -e "${MUTED}Extracting...${NC}"
-    tar -xzf "$TUI_DIR/$bundle_name" -C "$TUI_DIR"
-    rm -f "$TUI_DIR/$bundle_name"
-    # Verify version alignment
-    if [ -f "$TUI_DIR/dist/index.js" ]; then
-        echo -e "${MUTED}TUI bundle installed.${NC}"
+echo -e "${MUTED}TUI target: $target${NC}"
+if [ -z "$INSTALLED_VERSION" ]; then
+    echo -e "${ORANGE}Could not read the installed version; skipping the TUI bundle.${NC}"
+    echo -e "${ORANGE}Nova will build the client from source on first run.${NC}"
+elif curl -fsSL "$bundle_url" -o "$TUI_DIR/$bundle_name" 2>/dev/null; then
+    # Never extract bytes we cannot check. The manifest is published by the
+    # release workflow alongside the assets; no entry means no install, and a
+    # mismatch means the download was tampered with or truncated.
+    checksums_url="https://github.com/$REPO/releases/download/v$INSTALLED_VERSION/SHA256SUMS"
+    expected=""
+    if curl -fsSL "$checksums_url" -o "$TUI_DIR/SHA256SUMS" 2>/dev/null; then
+        expected=$(awk -v name="$bundle_name" '$2 == name {print $1}' "$TUI_DIR/SHA256SUMS")
+        rm -f "$TUI_DIR/SHA256SUMS"
+    fi
+    if [ -z "$expected" ]; then
+        rm -f "$TUI_DIR/$bundle_name"
+        echo -e "${ORANGE}No published checksum for $bundle_name; not installing it.${NC}"
+        echo -e "${ORANGE}Nova will build the client from source on first run.${NC}"
+    elif [ "$(sha256_of "$TUI_DIR/$bundle_name")" != "$expected" ]; then
+        rm -f "$TUI_DIR/$bundle_name"
+        echo -e "${RED}Checksum mismatch for $bundle_name; refusing to extract.${NC}"
+        exit 1
     else
-        echo -e "${ORANGE}Bundle extracted but dist/index.js not found. Will build on first run.${NC}"
+        echo -e "${MUTED}Extracting...${NC}"
+        tar -xzf "$TUI_DIR/$bundle_name" -C "$TUI_DIR"
+        rm -f "$TUI_DIR/$bundle_name"
+        if [ -f "$TUI_DIR/dist/index.js" ]; then
+            echo -e "${MUTED}TUI bundle installed.${NC}"
+        else
+            echo -e "${ORANGE}Bundle extracted but dist/index.js not found. Will build on first run.${NC}"
+        fi
     fi
 else
     echo -e "${ORANGE}No pre-built TUI bundle for $target (v$INSTALLED_VERSION). Will build on first run.${NC}"
@@ -143,5 +207,3 @@ fi
 
 echo ""
 echo -e "${NC}Nova installed. Run ${ORANGE}nova tui${NC} to start."
-EOF
-echo "written"

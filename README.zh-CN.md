@@ -44,19 +44,22 @@ Agent 循环、工具注册表和 SQLite 存储。
 
 ## 快速开始
 
+一行命令装好 Nova 和它的终端客户端：
+
 ```bash
-git clone https://github.com/bigrivi/nova.git && cd nova
-pip install -e .                # Python 3.12+
-playwright install chromium     # 只在你需要浏览器工具时装
+curl -fsSL https://raw.githubusercontent.com/bigrivi/nova/main/install | bash
 ```
 
-装完 `nova` 不在 `PATH` 里，就把当前环境的 `bin/` 目录加进去，见
-[安装](docs/getting-started/installation.md#making-nova-available-on-path)。TUI 还需要
-[bun](https://bun.sh)。
+需要 Python 3.12+ 和 [bun](https://bun.sh)。脚本会把 Nova 装进独立环境（装了 `uv` 或
+`pipx` 就用它们），把 `nova` 放进 PATH，并下载对应平台的终端客户端——解压前先对照
+该版本发布的 `SHA256SUMS` 校验。
 
-在 `~/.nova/config.json` 里写一个提供方：
+指定一个模型。本机已经在跑 Ollama 的话，这一步不需要任何 API key，也不会把东西发出去：
 
-```json
+```bash
+ollama pull qwen2.5:7b
+mkdir -p ~/.nova
+cat > ~/.nova/config.json <<'JSON'
 {
   "providers": {
     "ollama": {
@@ -66,18 +69,38 @@ playwright install chromium     # 只在你需要浏览器工具时装
     }
   }
 }
+JSON
 ```
+
+换成任意 OpenAI-compatible、Responses 或 Anthropic 端点都行——形状一样，
+[模型提供方](docs/zh-CN/configuration/providers.md)里有每种写法。
 
 然后起你想用的界面：
 
 ```bash
-nova serve          # HTTP 后端，http://127.0.0.1:8765
+nova tui            # 终端界面，任意目录下都能起（需要 bun）
 nova web            # 浏览器里的 Web 界面
-nova tui            # 终端界面，任意目录下都能起
+nova serve          # HTTP 后端，http://127.0.0.1:8765
 nova desktop        # 桌面窗口
 ```
 
-完整流程见[快速上手](docs/getting-started/quickstart.md)。
+<details>
+<summary>改为从源码安装</summary>
+
+做开发，或者想把 Nova 装进自己控制的虚拟环境时：
+
+```bash
+git clone https://github.com/bigrivi/nova.git && cd nova
+pip install -e .
+playwright install chromium     # 只在你需要浏览器工具时装
+```
+
+装完 `nova` 不在 `PATH` 里，就把当前环境的 `bin/` 目录加进去，见
+[安装](docs/zh-CN/getting-started/installation.md#making-nova-available-on-path)。
+
+</details>
+
+完整流程见[快速上手](docs/zh-CN/getting-started/quickstart.md)。
 
 ## 它能帮你做什么
 

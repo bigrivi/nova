@@ -3,9 +3,31 @@
 ## 前置条件
 
 - Python 3.12+
-- pip
+- 终端界面需要 [bun](https://bun.sh)
+
+## 用脚本安装
+
+对大多数用户来说，这一步就是全部：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bigrivi/nova/main/install | bash
+```
+
+脚本会检查上面两个前置条件，把 Nova 装进独立环境（有 `uv` 或 `pipx` 就用它们，
+否则退回 `pip install --user`），把 `nova` 加进 `PATH`，并把对应平台的预编译终端
+客户端下载到 `$NOVA_HOME/tui`。
+
+客户端包在解压前会对照该版本发布的 `SHA256SUMS` 校验。如果某个版本没有为你这个平台
+提供清单条目，包**不会**被安装，`nova tui` 会在首次运行时从源码构建。
+
+```bash
+--version <v>        安装指定的发布 tag（例如 1.0.1）
+--no-modify-path     不改动 shell 的 rc 文件
+```
 
 ## 从源码安装
+
+在开发 Nova 本身时用这个：
 
 ```bash
 # 克隆仓库
