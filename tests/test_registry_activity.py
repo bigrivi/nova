@@ -101,10 +101,14 @@ async def test_activity_does_not_keep_a_detached_slot_alive() -> None:
     registry = RequestRegistry()
     await registry.register(SESSION_ID, _StubAgent())
     assert await registry.detach(SESSION_ID) is True
+    # Relative to the clock, not 0.0: monotonic() is not guaranteed to be past
+    # IDLE_TTL yet (a freshly booted host, a container with its own origin), and
+    # this test is about who refreshes the clock, not about how old 0 is.
+    stale_since = time.monotonic() - IDLE_TTL - 1
     slot = registry._slots[SESSION_ID]
-    slot.last_access = 0.0
+    slot.last_access = stale_since
 
     registry.note_activity(SESSION_ID)
 
-    assert slot.last_access == 0.0
+    assert slot.last_access == stale_since
     assert await registry.evict_idle(now=time.monotonic()) == [SESSION_ID]
