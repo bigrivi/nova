@@ -524,7 +524,11 @@ class ChatService:
     async def get_context(
         self, session_id: str, provider: str | None = None, model: str | None = None
     ) -> dict:
-        from nova.agent.compaction import estimate_context_tokens, get_context_limit
+        from nova.agent.compaction import (
+            compaction_threshold,
+            estimate_context_tokens,
+            get_context_limit,
+        )
 
         data_source = await self._get_data_source()
         # Use raw messages for accurate compaction-aligned estimation
@@ -574,7 +578,14 @@ class ChatService:
             model or "unknown",
             session.get("compacted_at") if session else None,
         )
-        limit = get_context_limit(model or "unknown", provider or "ollama")
+        # Against the compaction threshold, not the raw window: that is what the
+        # streaming CONTEXT_UPDATE frame reports, and both feed the same pill.
+        # Dividing one by the window and the other by the threshold made the
+        # percentage jump the moment a turn started -- 62% on open, 76% in the
+        # stream, for the same history -- and changed what `limit` meant too.
+        limit = compaction_threshold(
+            get_context_limit(model or "unknown", provider or "ollama")
+        )
         percent = int(used / limit * 100) if limit else 0
         # Cache accounting comes from what the provider charged, never from
         # `used`: that one is anchored on a real prompt size but its tail is a

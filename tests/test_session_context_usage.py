@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pytest
 
+from nova.agent.compaction import compaction_threshold
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite_repository import SqliteRepository
 from nova.server.chat_service import ChatService
@@ -37,8 +38,11 @@ async def test_the_sessions_own_route_decides_the_window():
 
         payload = await service.get_context("switched")
 
-        # gpt-5 is 400k; the agent default behind it (DEFAULT_AGENT_KEY) is not.
-        assert payload["limit"] == 400_000
+        # gpt-5 is 400k; the agent default behind it (DEFAULT_AGENT_KEY) is not,
+        # and the reply/summary reserve is subtracted because the streaming
+        # frame subtracts it too -- one denominator for both paths.
+        assert payload["limit"] == compaction_threshold(400_000)
+        assert payload["limit"] != compaction_threshold(128_000)
     finally:
         await repository.close()
 
@@ -55,7 +59,7 @@ async def test_an_explicit_query_still_wins_over_the_session_route():
 
         payload = await service.get_context("pinned", provider="openai", model="gpt-4o")
 
-        assert payload["limit"] == 128_000
+        assert payload["limit"] == compaction_threshold(128_000)
     finally:
         await repository.close()
 
