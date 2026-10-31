@@ -66,7 +66,11 @@ def _build_tui(project_root: Path, tui_dir: Path) -> Path:
     if bun is None:
         raise SystemExit("Nova TUI requires Bun. Install it from https://bun.sh")
     if not (tui_dir / "package.json").is_file():
-        raise SystemExit(f"Nova TUI sources not found: {tui_dir}")
+        raise SystemExit(
+            f"Nova TUI sources not found: {tui_dir}\n"
+            "Run the one-line installer to drop a prebuilt bundle in "
+            "$NOVA_HOME/tui, or run from a checkout that has tui/."
+        )
 
     if not (tui_dir / "node_modules").is_dir():
         print("Nova TUI: installing dependencies...", file=sys.stderr)
@@ -114,11 +118,15 @@ def _web_settings(settings: Settings, project_root: Path) -> Settings:
 
 
 def _run_tui() -> None:
-    """Launch the repository's OpenTUI client from any caller directory."""
+    """Launch the bundled or locally built OpenTUI client from any caller directory."""
     project_root = Path(__file__).resolve().parent.parent
     tui_dir = project_root / "tui"
-    if not (tui_dir / "package.json").is_file():
-        raise SystemExit(f"Nova TUI sources not found: {tui_dir}")
+
+    # _build_tui prefers a checkout bundle, then the one the install script drops
+    # in $NOVA_HOME/tui, and only then builds from source. The two guards that
+    # used to sit here ran before that choice, so a pip-installed Nova with a
+    # downloaded bundle still died on "sources not found" instead of launching it.
+    bundle = _build_tui(project_root, tui_dir)
 
     bun = shutil.which("bun")
     if bun is None:
@@ -131,8 +139,9 @@ def _run_tui() -> None:
     environment.setdefault("NOVA_VERSION", __version__)
     environment.setdefault("NOVA_WORKSPACE_DIR", str(Path.cwd().resolve()))
 
-    os.chdir(tui_dir)
-    bundle = _build_tui(project_root, tui_dir)
+    # node_modules and the tree-sitter grammars sit beside dist/, which is either
+    # the checkout's tui/ or the installer's $NOVA_HOME/tui.
+    os.chdir(bundle.parent.parent)
     os.execvpe(bun, [bun, str(bundle)], environment)
 
 
