@@ -14,6 +14,7 @@ import type {
     NovaModelUpdateRequest,
     NovaProject,
     NovaProviderCreateRequest,
+    NovaProviderPreset,
     NovaProviderRecord,
     NovaProviderUpdateRequest,
     NovaScheduleCreateRequest,
@@ -275,10 +276,35 @@ export async function listProviders(): Promise<NovaProviderRecord[]> {
     return payload.items;
 }
 
+export async function listAvailableModels(
+    providerKey: string,
+): Promise<string[]> {
+    const payload = await parseJson<{
+        provider: string;
+        items: string[];
+    }>(
+        await apiFetch(
+            `/api/providers/${encodeURIComponent(providerKey)}/available-models`,
+        ),
+    );
+    return payload.items;
+}
+
+export async function listProviderPresets(): Promise<NovaProviderPreset[]> {
+    const payload = await parseJson<JsonResponse<NovaProviderPreset>>(
+        await apiFetch("/api/providers/presets"),
+    );
+    return payload.items;
+}
+
 export async function createProvider(
     payload: NovaProviderCreateRequest,
-): Promise<NovaModelRecord[]> {
-    const response = await parseJson<JsonResponse<NovaModelRecord>>(
+): Promise<{ models: NovaModelRecord[]; warning: string | null }> {
+    // The provider is saved with every model it advertises. `warning` is set
+    // when that catalogue could not be read — the provider still exists.
+    const response = await parseJson<
+        JsonResponse<NovaModelRecord> & { warning?: string | null }
+    >(
         await apiFetch("/api/config/providers", {
             method: "POST",
             headers: {
@@ -287,7 +313,7 @@ export async function createProvider(
             body: JSON.stringify(payload),
         }),
     );
-    return response.items;
+    return { models: response.items, warning: response.warning ?? null };
 }
 
 export async function createModel(

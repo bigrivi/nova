@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { createModel, updateModel } from "../../../lib/nova-api";
+import {
+    createModel,
+    listAvailableModels,
+    updateModel,
+} from "../../../lib/nova-api";
 import { cn } from "../../../lib/utils";
 import { Button } from "../../ui/button";
 import {
@@ -12,6 +16,13 @@ import {
     DialogHeader,
     DialogTitle,
 } from "../../ui/dialog";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "../../ui/select";
 import type { NovaModelRecord } from "./types";
 import { inputClassName } from "./types";
 
@@ -40,6 +51,24 @@ export function ModelDialog({
     const [tools, setTools] = useState(model?.tools ?? true);
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+    const [available, setAvailable] = useState<string[]>([]);
+    const [discovering, setDiscovering] = useState(false);
+
+    async function handleDiscover() {
+        setError(null);
+        setDiscovering(true);
+        try {
+            const items = await listAvailableModels(providerKey);
+            setAvailable(items);
+            if (items.length === 0) {
+                setError(t("modelSelector.discoverEmpty"));
+            }
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setDiscovering(false);
+        }
+    }
 
     async function handleCreate() {
         setError(null);
@@ -124,6 +153,43 @@ export function ModelDialog({
                             )}
                         />
                     </label>
+
+                    {!isEdit ? (
+                        <div className="space-y-1">
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={discovering}
+                                onClick={() => void handleDiscover()}
+                            >
+                                {discovering
+                                    ? t("modelSelector.discovering")
+                                    : t("modelSelector.discoverModels")}
+                            </Button>
+                            {available.length > 0 ? (
+                                <Select
+                                    value={modelKey}
+                                    onValueChange={(value) => setModelKey(value)}
+                                >
+                                    <SelectTrigger className="h-9 rounded-lg">
+                                        <SelectValue
+                                            placeholder={t(
+                                                "modelSelector.discoverPlaceholder",
+                                            )}
+                                        />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {available.map((id) => (
+                                            <SelectItem key={id} value={id}>
+                                                {id}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            ) : null}
+                        </div>
+                    ) : null}
                     <label className="block space-y-1">
                         <span className="text-xs font-medium text-foreground">
                             {t("modelSelector.label")}

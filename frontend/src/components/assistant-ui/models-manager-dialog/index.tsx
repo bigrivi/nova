@@ -195,6 +195,9 @@ export function ModelsManagerContent({
                 <ProviderDialog
                     key="new-provider"
                     open
+                    connectedKeys={providers
+                        .filter((provider) => provider.authenticated)
+                        .map((provider) => provider.key)}
                     onOpenChange={setCreatingProvider}
                     onMutated={refreshAfterMutation}
                     onStatusChange={onStatusChange}

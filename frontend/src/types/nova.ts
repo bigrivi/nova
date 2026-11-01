@@ -115,6 +115,9 @@ export type NovaModelRecord = {
     tools: boolean;
     /** Reasoning levels this model accepts; empty means it offers none. */
     efforts: string[];
+    /** Context window Nova plans against, resolved from config, the provider,
+     *  models.dev, then the family table. */
+    context?: number | null;
 };
 
 /** The model a session runs with, restored when the session is reopened. */
@@ -130,6 +133,17 @@ export type NovaProviderRecord = {
     type: string;
     base_url: string;
     has_api_key: boolean;
+    /** A key Nova stores for the machine; a config-only provider is not this. */
+    authenticated?: boolean;
+};
+
+export type NovaProviderPreset = {
+    id: string;
+    label: string;
+    type: string;
+    base_url: string;
+    key_env: string | null;
+    note: string;
 };
 
 export type NovaProviderCreateRequest = {

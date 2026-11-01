@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
     createProvider,
     deleteProvider,
+    listProviderPresets,
     updateProvider,
 } from "../../../lib/nova-api";
 import { Button } from "../../ui/button";
@@ -23,7 +24,11 @@ import {
     SelectTrigger,
     SelectValue,
 } from "../../ui/select";
-import type { NovaModelRecord, NovaProviderRecord } from "./types";
+import type {
+    NovaModelRecord,
+    NovaProviderPreset,
+    NovaProviderRecord,
+} from "./types";
 import {
     PROVIDER_TYPE_LABEL_KEYS,
     PROVIDER_TYPE_PLACEHOLDER_KEYS,
@@ -45,6 +50,8 @@ type ProviderDialogProps = {
     onCreated?: (key: string) => void;
     /** Called after a successful delete in edit mode. */
     onDeleted?: () => void;
+    /** Provider keys that already exist, so the preset list can mark them. */
+    connectedKeys?: string[];
 };
 
 export function ProviderDialog({
@@ -55,6 +62,7 @@ export function ProviderDialog({
     onStatusChange,
     onCreated,
     onDeleted,
+    connectedKeys = [],
 }: ProviderDialogProps) {
     const { t } = useTranslation();
     const isEdit = provider !== undefined;
@@ -71,6 +79,39 @@ export function ProviderDialog({
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [confirmingDelete, setConfirmingDelete] = useState(false);
+    const [presets, setPresets] = useState<NovaProviderPreset[]>([]);
+    const [presetId, setPresetId] = useState("");
+
+    useEffect(() => {
+        if (!open || isEdit) return;
+        let cancelled = false;
+        listProviderPresets()
+            .then((items) => {
+                if (!cancelled) setPresets(items);
+            })
+            .catch(() => {
+                // No preset list only means the form stays manual.
+                if (!cancelled) setPresets([]);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [open, isEdit]);
+
+    function applyPreset(id: string) {
+        setPresetId(id);
+        const preset = presets.find((item) => item.id === id);
+        if (!preset) return;
+        setForm((current) => ({
+            ...current,
+            key: preset.id,
+            name: preset.label,
+            type: preset.type as ProviderFormState["type"],
+            baseUrl: preset.base_url,
+        }));
+    }
+
+    const activePreset = presets.find((item) => item.id === presetId);
 
     function fail(message: unknown) {
         const text = message instanceof Error ? message.message : String(message);
@@ -83,14 +124,17 @@ export function ProviderDialog({
         onStatusChange(null);
         setSaving(true);
         try {
-            const nextModels = await createProvider({
+            const { models, warning } = await createProvider({
                 key: form.key,
                 type: form.type,
                 name: form.name,
                 base_url: form.baseUrl,
                 api_key: form.apiKey,
             });
-            await onMutated(nextModels);
+            await onMutated(models);
+            // The provider is saved either way; a failed catalogue read is a
+            // status line, not an error that keeps the dialog open.
+            onStatusChange(warning);
             onCreated?.(form.key);
             onOpenChange(false);
         } catch (error) {
@@ -178,6 +222,45 @@ export function ProviderDialog({
                 </DialogHeader>
 
                 <div className="space-y-3">
+                    {!isEdit && presets.length > 0 ? (
+                        <div className="space-y-1">
+                            <span className="text-xs font-medium text-foreground">
+                                {t("modelSelector.preset")}
+                            </span>
+                            <Select value={presetId} onValueChange={applyPreset}>
+                                <SelectTrigger className="h-9 rounded-lg">
+                                    <SelectValue
+                                        placeholder={t(
+                                            "modelSelector.presetPlaceholder",
+                                        )}
+                                    />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {presets.map((preset) => (
+                                        <SelectItem
+                                            key={preset.id}
+                                            value={preset.id}
+                                        >
+                                            {connectedKeys.includes(preset.id)
+                                                ? `${preset.label} ✓`
+                                                : preset.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            {activePreset ? (
+                                <p className="text-xs text-muted-foreground">
+                                    {activePreset.note}
+                                    {activePreset.key_env
+                                        ? ` ${t("modelSelector.presetKeyHint", {
+                                              env: activePreset.key_env,
+                                          })}`
+                                        : null}
+                                </p>
+                            ) : null}
+                        </div>
+                    ) : null}
+
                     {!isEdit ? (
                         <label className="block space-y-1">
                             <span className="text-xs font-medium text-foreground">

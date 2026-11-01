@@ -1,9 +1,10 @@
 import type {
     NovaModelRecord,
+    NovaProviderPreset,
     NovaProviderRecord,
 } from "../../../types/nova";
 
-export type { NovaModelRecord, NovaProviderRecord };
+export type { NovaModelRecord, NovaProviderPreset, NovaProviderRecord };
 
 export type ModelsManagerDialogProps = {
     open: boolean;
@@ -17,7 +18,7 @@ export type ModelsManagerDialogProps = {
 
 export type ProviderFormState = {
     key: string;
-    type: "ollama" | "openai-compatible" | "anthropic";
+    type: "ollama" | "openai-compatible" | "openai-response" | "anthropic";
     name: string;
     baseUrl: string;
     apiKey: string;
@@ -32,13 +33,14 @@ export type ModelFormState = {
 
 export type ProviderEditState = {
     name: string;
-    type: "ollama" | "openai-compatible" | "anthropic";
+    type: "ollama" | "openai-compatible" | "openai-response" | "anthropic";
     baseUrl: string;
     apiKey: string;
 };
 
 export const PROVIDER_TYPE_VALUES = [
     "openai-compatible",
+    "openai-response",
     "anthropic",
     "ollama",
 ] as const;
@@ -48,6 +50,7 @@ export const PROVIDER_TYPE_LABEL_KEYS: Record<
     string
 > = {
     "openai-compatible": "modelSelector.openaiCompatible",
+    "openai-response": "modelSelector.openaiResponse",
     anthropic: "modelSelector.anthropic",
     ollama: "modelSelector.ollama",
 };
@@ -57,6 +60,7 @@ export const PROVIDER_TYPE_PLACEHOLDER_KEYS: Record<
     string
 > = {
     "openai-compatible": "modelSelector.baseUrlPlaceholderOpenai",
+    "openai-response": "modelSelector.baseUrlPlaceholderOpenai",
     anthropic: "modelSelector.baseUrlPlaceholderAnthropic",
     ollama: "modelSelector.baseUrlPlaceholderOllama",
 };
