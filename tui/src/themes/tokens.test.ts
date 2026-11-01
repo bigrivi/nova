@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { themes } from "./index.ts";
+import { contrastRatio } from "./contrast.ts";
 
 const SOURCE_ROOT = join(import.meta.dir, "..");
 const SKIP = new Set(["themes"]);
@@ -54,6 +55,23 @@ describe("theme tokens", () => {
             const missing = [...referenced].filter((path) => !paths.has(path));
             expect({ name, missing }).toMatchObject({ name });
             expect({ name, missing }).toMatchObject({ missing: [] });
+        }
+    });
+});
+
+
+describe("text hierarchy", () => {
+    test("base, muted and faint are three distinguishable weights", () => {
+        // They are printed side by side in the status bar — the model in base,
+        // the provider in muted, the workspace in faint — so two tokens that
+        // land on the same luminance read as one run of text.
+        for (const [name, theme] of Object.entries(themes)) {
+            const { base, muted, faint } = theme.text;
+            expect({
+                theme: name,
+                baseMuted: contrastRatio(base, muted) > 1.15,
+                mutedFaint: contrastRatio(muted, faint) > 1.15,
+            }).toEqual({ theme: name, baseMuted: true, mutedFaint: true });
         }
     });
 });

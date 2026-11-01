@@ -9,7 +9,10 @@ export const matrixTheme: Theme = {
     text: {
         base: "#62ff94",
         muted: "#48b76b",
-        faint: "#8ca391",
+        // Dimmer than muted on purpose: 1.06:1 apart read as the same weight,
+        // and the status bar prints the workspace in faint beside the branch in
+        // muted. Now 1.48:1 from muted, still 5:1 on the canvas.
+        faint: "#6f8a74",
     },
     primary: {
         base: "#2eff6a",

@@ -8,7 +8,10 @@ export const palenightTheme: Theme = {
     },
     text: {
         base: "#a6accd",
-        muted: "#a6accd",
+        // One step below base on purpose: the status bar prints the model in
+        // base and the provider in muted, and identical values made them read
+        // as a single run. 4.5:1 on the canvas, 1.35:1 against base.
+        muted: "#8b93b8",
         faint: "#676e95",
     },
     primary: {
