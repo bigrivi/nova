@@ -87,6 +87,11 @@ version = { attr = "nova.__version__" }
 [tool.setuptools.packages.find]
 include = ["nova*"]
 
+# The preset table is data, not code: it ships beside the module that reads it.
+[tool.setuptools.package-data]
+nova = ["*.json"]
+"nova.registry" = ["*.json"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "strict"

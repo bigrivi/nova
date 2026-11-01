@@ -228,10 +228,17 @@ class ModelRecord(BaseModel):
     # Reasoning levels this model accepts, empty when it has none. The UI offers
     # exactly these and nothing when the list is empty.
     efforts: list[str] = []
+    # The context window Nova will plan against, and nothing when no source
+    # stated one: config, then what the provider said, then models.dev, then
+    # the built-in family table.
+    context: int | None = None
 
 
 class ModelListResponse(BaseModel):
     items: list[ModelRecord]
+    #: Set when a provider was connected but its models could not be discovered.
+    #: The provider still exists; only the catalogue is missing.
+    warning: str | None = None
 
 
 class ProviderRecord(BaseModel):
@@ -240,10 +247,43 @@ class ProviderRecord(BaseModel):
     type: str
     base_url: str = ""
     has_api_key: bool = False
+    #: A key Nova stores for the machine, in credentials.json. A provider whose
+    #: key sits in config.json is a hand-authored one, and the UI treats the two
+    #: differently: only this is "connected".
+    authenticated: bool = False
 
 
 class ProviderListResponse(BaseModel):
     items: list[ProviderRecord]
+
+
+class ProviderPresetRecord(BaseModel):
+    """A vendor the add-provider form can fill in for the user."""
+
+    id: str
+    label: str
+    type: str
+    base_url: str = ""
+    key_env: str | None = None
+    note: str = ""
+
+
+class ProviderPresetListResponse(BaseModel):
+    items: list[ProviderPresetRecord]
+
+
+class ProviderSyncResponse(BaseModel):
+    """Result of re-reading every provider's catalogue in one pass."""
+
+    synced: list[str] = []
+    failed: dict[str, str] = {}
+
+
+class AvailableModelListResponse(BaseModel):
+    """What a provider says it serves, asked for by a form rather than cached."""
+
+    provider: str
+    items: list[str]
 
 
 class ProviderCreateRequest(BaseModel):

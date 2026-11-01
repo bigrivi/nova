@@ -4,6 +4,7 @@ FastAPI server app for frontend and desktop integration.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -148,6 +149,18 @@ def _make_schedule_runner(app: FastAPI) -> Callable[[ScheduledJob], Awaitable[No
     return _run_job
 
 
+async def _refresh_registry_quietly(settings: Settings) -> None:
+    """Fetch models.dev in the background; a failure is not the server's problem."""
+    from nova.registry.catalogue import refresh_models_dev
+
+    try:
+        await refresh_models_dev(settings)
+    except asyncio.CancelledError:  # pragma: no cover - shutdown
+        raise
+    except Exception:
+        log.exception("Registry refresh failed; keeping the previous copy")
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
 
@@ -172,9 +185,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # A broken scheduler must not take the whole API down; routes
             # keep serving and runs keep working through manual triggers.
             log.exception("Scheduler failed to start; continuing without ticks")
+        # Derived registry data — provider presets and model facts from
+        # models.dev — is global rather than per client, so it is refreshed here
+        # as well as from the TUI. Without this, `nova web` and the desktop app
+        # only ever see the bundled floor, because neither launches the TUI.
+        # The daily TTL makes this a no-op on most starts, and it never blocks
+        # the port from opening.
+        registry_task = asyncio.create_task(_refresh_registry_quietly(settings))
         try:
             yield
         finally:
+            registry_task.cancel()
             if scheduler is not None:
                 await scheduler.stop()
             await shutdown_background_task_manager()

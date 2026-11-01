@@ -214,6 +214,8 @@ def test_models_endpoint_returns_configured_models(monkeypatch, tmp_path):
             "label": "gpt-5.4",
             "tools": True,
             "efforts": [],
+            # No snapshot in this tmp home, so the family table answers.
+            "context": 400000,
         },
         {
             "id": "ollama:gemma4:26b",
@@ -223,6 +225,7 @@ def test_models_endpoint_returns_configured_models(monkeypatch, tmp_path):
             "label": "gemma4:26b",
             "tools": True,
             "efforts": [],
+            "context": 32000,
         },
     ]
 
@@ -256,16 +259,22 @@ def test_add_provider_endpoint_updates_config_and_models(monkeypatch, tmp_path):
         encoding="utf-8",
     )
     monkeypatch.setenv("NOVA_HOME", str(home))
+    # Connecting now asks the provider first, and a fake key would be rejected
+    # for real; the subject here is where the entry lands, not the probe.
+    async def fake_discovery(**_kwargs: object) -> list[str]:
+        return ["gpt-test"]
+
+    monkeypatch.setattr("nova.server.routers.config.discover_models", fake_discovery)
     app = create_app(settings=Settings.load_config())
     client = TestClient(app)
 
     response = client.post(
         "/api/config/providers",
         json={
-            "key": "openrouter",
+            "key": "openai",
             "type": "openai-compatible",
-            "name": "OpenRouter",
-            "base_url": "https://openrouter.ai/api/v1",
+            "name": "OpenAI",
+            "base_url": "https://api.openai.com/v1",
             "api_key": "sk-test",
         },
     )
@@ -274,15 +283,49 @@ def test_add_provider_endpoint_updates_config_and_models(monkeypatch, tmp_path):
     providers_response = client.get("/api/providers")
     assert providers_response.status_code == 200
     provider_keys = {item["key"] for item in providers_response.json()["items"]}
-    assert "openrouter" in provider_keys
+    assert "openai" in provider_keys
 
+    # `openai` is on the bundled floor, so connecting it stores the key and
+    # leaves config.json alone: the transport facts come from that row.
     config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
-    assert config_payload["providers"]["openrouter"]["type"] == "openai-compatible"
-    assert (
-        config_payload["providers"]["openrouter"]["options"]["base_url"]
-        == "https://openrouter.ai/api/v1"
+    assert "openai" not in config_payload["providers"]
+    credentials = json.loads(
+        (home / "credentials.json").read_text(encoding="utf-8")
     )
-    assert app.state.settings.providers["openrouter"].name == "OpenRouter"
+    assert credentials["providers"]["openai"]["api_key"] == "sk-test"
+    effective = app.state.settings.providers["openai"]
+    assert effective.type == "openai-compatible"
+    assert effective.options["base_url"] == "https://api.openai.com/v1"
+    assert effective.options["api_key"] == "sk-test"
+
+
+def test_add_provider_endpoint_writes_an_unknown_provider_to_config(monkeypatch, tmp_path):
+    home = tmp_path / "nova-server-add-custom-provider"
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.json").write_text('{"providers": {}}', encoding="utf-8")
+    monkeypatch.setenv("NOVA_HOME", str(home))
+    app = create_app(settings=Settings.load_config())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/providers",
+        json={
+            "key": "my-gateway",
+            "type": "openai-compatible",
+            "name": "My Gateway",
+            "base_url": "https://gateway.example/v1",
+            "api_key": "sk-test",
+        },
+    )
+
+    assert response.status_code == 200
+    config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
+    assert config_payload["providers"]["my-gateway"]["options"]["base_url"] == (
+        "https://gateway.example/v1"
+    )
+    # No preset means no place else to keep it, so the key stays where the
+    # provider is: an explicitly declared provider carries its own config.
+    assert not (home / "credentials.json").exists()
 
 
 @pytest.mark.asyncio

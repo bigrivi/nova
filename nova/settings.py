@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
@@ -245,7 +246,72 @@ def _load_config_payload(config_path: Path) -> dict[str, Any]:
     return payload
 
 
-def _parse_provider_configs(raw_providers: object) -> dict[str, ProviderConfig]:
+_ENV_REFERENCE = re.compile(r"^\{env:([A-Za-z_][A-Za-z0-9_]*)\}$")
+
+
+def resolve_secret(value: object) -> str:
+    """Resolve one config value, allowing a secret to stay out of the file.
+
+    ``{"api_key": "{env:OPENAI_API_KEY}"}`` reads the variable at load time, so
+    a config that is read, copied, or committed never carries the key itself. A
+    variable that is unset resolves to an empty string, which the provider then
+    treats as "no key" instead of sending the literal template.
+
+    Args:
+        value: The configured value; anything that is not a ``{env:NAME}``
+            template is returned unchanged.
+
+    Returns:
+        The resolved string, or ``""`` when the named variable is unset.
+    """
+    text = str(value or "")
+    match = _ENV_REFERENCE.match(text.strip())
+    if match is None:
+        return text
+    return os.getenv(match.group(1), "").strip()
+
+
+CREDENTIALS_NAME = "credentials.json"
+
+
+def _load_credentials(home: Path) -> dict[str, str]:
+    """Read provider API keys kept outside the config file.
+
+    Keys live here so a provider can be "connected" without the config gaining
+    an entry: the value belongs to the machine, not to the file people read,
+    diff, and commit.
+    """
+    try:
+        payload = json.loads((home / CREDENTIALS_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    raw = payload.get("providers") if isinstance(payload, dict) else None
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(provider): str(entry.get("api_key", "")).strip()
+        for provider, entry in raw.items()
+        if isinstance(entry, dict) and str(entry.get("api_key", "")).strip()
+    }
+
+
+def _write_credentials(home: Path, providers: dict[str, str]) -> None:
+    """Persist provider keys, dropping providers that no longer have one."""
+    payload = {
+        "providers": {
+            provider: {"api_key": api_key}
+            for provider, api_key in providers.items()
+            if api_key.strip()
+        }
+    }
+    _write_json(home / CREDENTIALS_NAME, payload)
+
+
+def _parse_provider_configs(
+    raw_providers: object,
+    credentials: dict[str, str] | None = None,
+    home: Path | None = None,
+) -> dict[str, ProviderConfig]:
     if raw_providers is None:
         raw_providers = {}
     if not isinstance(raw_providers, dict):
@@ -255,9 +321,17 @@ def _parse_provider_configs(raw_providers: object) -> dict[str, ProviderConfig]:
     for key, raw in raw_providers.items():
         if not isinstance(raw, dict):
             raise ValueError(f"Invalid Nova config: provider '{key}' must be an object")
+        # A config entry states its own transport. Presets fill the connect form
+        # and stand in for a key with no entry at all; they are never merged
+        # into an entry that exists, because then what this file means would
+        # depend on a cache that a fresh install may not have yet.
         provider_type = str(raw.get("type", "")).strip()
         if not provider_type:
-            raise ValueError(f"Invalid Nova config: provider '{key}' is missing 'type'")
+            raise ValueError(
+                f"Invalid Nova config: provider '{key}' is missing 'type'. "
+                "A config entry must declare it, for example "
+                f"\"type\": \"openai-compatible\"."
+            )
         name = str(raw.get("name", key)).strip() or key
         options = raw.get("options") or {}
         raw_models = raw.get("models") or {}
@@ -270,6 +344,18 @@ def _parse_provider_configs(raw_providers: object) -> dict[str, ProviderConfig]:
                 f"Invalid Nova config: provider '{key}' models must be an object"
             )
         normalized_options = dict(options)
+        if provider_type in {"openai-compatible", "openai-response"} and not str(
+            normalized_options.get("base_url", "")
+        ).strip():
+            raise ValueError(
+                f"Invalid Nova config: provider '{key}' is missing "
+                "'options.base_url'; an OpenAI-compatible entry needs the endpoint "
+                "it talks to."
+            )
+        if "api_key" in normalized_options:
+            normalized_options["api_key"] = resolve_secret(
+                normalized_options["api_key"]
+            )
         normalized_models: dict[str, dict[str, Any]] = {}
         for model_key, model_value in raw_models.items():
             if isinstance(model_value, dict):
@@ -281,6 +367,38 @@ def _parse_provider_configs(raw_providers: object) -> dict[str, ProviderConfig]:
             name=name,
             options=normalized_options,
             models=normalized_models,
+        )
+
+    # A key on its own is a provider: the preset supplies the transport facts,
+    # so connecting never has to write an entry into config.json. An explicit
+    # config entry always wins, which is how an override survives.
+    from nova.registry.presets import preset_for
+
+    for provider_key, api_key in (credentials or {}).items():
+        if provider_key in providers:
+            # An override describes shape, not necessarily auth: a config entry
+            # without its own key still gets the one stored for the machine.
+            existing = providers[provider_key]
+            if not str(existing.options.get("api_key", "") or "").strip():
+                existing.options["api_key"] = resolve_secret(api_key)
+            continue
+        preset = preset_for(provider_key, home)
+        if preset is None:
+            # A key with no transport is a provider Nova cannot build: it has
+            # no base URL and no wire type. Dropping it silently would look
+            # like the provider vanished, so say which one and what fixes it.
+            logging.getLogger(__name__).warning(
+                "Provider %r has a stored key but no known preset, so it cannot "
+                "be loaded. Connect it again from /connect (or give it a "
+                "config.json entry with type and base_url).",
+                provider_key,
+            )
+            continue
+        providers[provider_key] = ProviderConfig(
+            type=preset.type,
+            name=preset.label,
+            options={"base_url": preset.base_url, "api_key": resolve_secret(api_key)},
+            models={},
         )
     return providers
 
@@ -581,7 +699,9 @@ class Settings:
         home = Path(os.getenv("NOVA_HOME", Path.home() / ".nova")).expanduser()
         config_path = _ensure_config_file(home, ensure=ensure)
         config_payload = _load_config_payload(config_path)
-        providers = _parse_provider_configs(config_payload.get("providers"))
+        providers = _parse_provider_configs(
+            config_payload.get("providers"), _load_credentials(home), home
+        )
         raw_mcp = config_payload.get("mcp_servers")
         mcp_servers = dict(raw_mcp) if isinstance(raw_mcp, dict) else {}
         # Read strictly: a malformed value falls back to the default rather than

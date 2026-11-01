@@ -309,6 +309,15 @@ def resolve_context_window(model: str, provider: str) -> tuple[int, str]:
     if configured is not None:
         return configured, "config"
 
+    # What the provider itself said, before any table of ours: it is the same
+    # statement the config would carry, minus the typing.
+    # One snapshot holds both: what the provider stated when it was asked, and
+    # what models.dev says. The provider's answer wins inside the file, so a
+    # single lookup keeps the same precedence.
+    snapshot = _snapshot_context_window(model, provider)
+    if snapshot is not None:
+        return snapshot
+
     raw = (model or "").strip().lower()
     if raw in _EXACT_CONTEXT_WINDOWS:
         return _EXACT_CONTEXT_WINDOWS[raw], "exact"
@@ -326,6 +335,24 @@ def resolve_context_window(model: str, provider: str) -> tuple[int, str]:
             return window, f"family:{pattern}"
 
     return _default_context_window(), "default"
+
+
+def _snapshot_context_window(model: str, provider: str) -> tuple[int, str] | None:
+    """The window recorded for this model, with where it came from."""
+    try:
+        from nova.registry.catalogue import facts_for
+        from nova.settings import get_settings
+    except Exception:  # pragma: no cover - import cycle guard
+        return None
+    try:
+        facts = facts_for(get_settings(), provider, model)
+    except Exception:  # pragma: no cover - settings may be unavailable
+        return None
+    limit = facts.get("limit")
+    value = limit.get("context") if isinstance(limit, dict) else None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value, str(facts.get("_context_source") or "discovered")
 
 
 def _configured_context_window(model: str, provider: str) -> int | None:

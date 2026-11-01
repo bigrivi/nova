@@ -1,11 +1,11 @@
 """Reasoning effort: the levels a model offers, and how each wire format spells them.
 
-The level list is **only** what ``config.json`` declares. Nothing is inferred
-from the model id, deliberately: a gateway alias like ``mimo-v2.5`` or
-``big-pickle`` gives no clue about which ladder it serves, and a wrong guess is
-a 400 from the provider rather than a missing control. A model with no
-``reasoning_effort_levels`` therefore has no control in the UI, which is the
-honest answer.
+The level list comes from two sources, and never from the model id: what
+``config.json`` declares, else the ladder the catalogue states for that model.
+A gateway alias like ``mimo-v2.5`` or ``big-pickle`` gives no clue about which
+ladder it serves, and a wrong guess is a 400 from the provider rather than a
+missing control — but a catalogue row is evidence, so a model with no config
+entry still gets a control when models.dev knows the model.
 
 Two responsibilities stay apart on purpose:
 
@@ -50,6 +50,7 @@ def resolve_effort_levels(
     model: str,
     provider_type: str,
     model_config: dict | None = None,
+    facts: dict | None = None,
 ) -> list[str]:
     """Return the reasoning levels *model* declares, or ``[]`` when it declares none.
 
@@ -67,9 +68,17 @@ def resolve_effort_levels(
     if provider_type not in EFFORT_PROVIDER_TYPES:
         return []
     declared = _levels_from_config(model_config)
-    if declared is None:
-        return []
-    return list(dict.fromkeys(declared))
+    if declared is not None:
+        return list(dict.fromkeys(declared))
+    # Nothing in config: use the ladder the catalogue states for this model.
+    # Nothing is inferred from the name — a catalogue row is evidence, the id
+    # is not.
+    catalogued = (facts or {}).get(LEVELS_CONFIG_KEY)
+    if isinstance(catalogued, list):
+        levels = [str(level).strip() for level in catalogued if str(level).strip()]
+        if levels:
+            return list(dict.fromkeys(levels))
+    return []
 
 
 def fit_effort(levels: list[str], effort: str | None) -> str | None:

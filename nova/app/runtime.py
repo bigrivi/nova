@@ -62,6 +62,13 @@ def build_llm(
     provider_config = settings.get_provider_config(provider)
     if not model:
         model_keys = list(provider_config.models.keys())
+        if not model_keys:
+            # A provider can have nothing in config and still be usable: its
+            # models arrive through discovery, which deliberately does not
+            # write them down.
+            from nova.registry.catalogue import load as load_catalogue
+
+            model_keys = load_catalogue(settings).get(provider, [])
         model = model_keys[0] if model_keys else ""
 
     provider_type = provider_config.type or ""

@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from nova.db import DataSourceProtocol, get_default_data_source
-from nova.settings import Settings, _load_config_payload, _write_json
+from nova.settings import (
+    Settings,
+    _load_config_payload,
+    _load_credentials,
+    _write_credentials,
+    _write_json,
+)
 
 
 class ConfigValidationError(ValueError):
@@ -357,7 +363,7 @@ class ConfigService:
         provider_key = request.key.strip()
         if not provider_key:
             raise ConfigValidationError("Provider key is required.")
-        if provider_key in providers:
+        if provider_key in providers or provider_key in self._settings.providers:
             raise ConfigValidationError(f"Provider '{provider_key}' already exists.")
 
         provider_type = request.provider_type.strip()
@@ -386,6 +392,24 @@ class ConfigService:
         ):
             options["api_key"] = api_key
 
+        # Connecting a known provider stores the key and nothing else: the
+        # preset already says how to reach it, and config.json stays a record of
+        # what the user chose rather than a copy of what Nova knows.
+        from nova.registry.presets import preset_for
+
+        preset = preset_for(provider_key, self._settings.home)
+        if (
+            preset is not None
+            and api_key
+            and provider_type == preset.type
+            and base_url in {"", preset.base_url}
+        ):
+            credentials = _load_credentials(self._settings.home)
+            credentials[provider_key] = api_key
+            _write_credentials(self._settings.home, credentials)
+            self._remember_transport(provider_key, display_name, provider_type, base_url)
+            return payload
+
         providers[provider_key] = {
             "type": provider_type,
             "name": display_name,
@@ -393,7 +417,30 @@ class ConfigService:
             "models": {},
         }
         _write_json(self._config_path, payload)
+        self._remember_transport(provider_key, display_name, provider_type, base_url)
         return payload
+
+    def _remember_transport(
+        self, provider_key: str, name: str, provider_type: str, base_url: str
+    ) -> None:
+        """Keep the one row this connection needs, and nothing else.
+
+        The disk copy exists so a provider the user actually connected still
+        resolves after a restart with no network. Catalogues of vendors they
+        never touched stay in memory.
+        """
+        from nova.registry.presets import ProviderPreset, remember
+
+        remember(
+            self._settings.home,
+            ProviderPreset(
+                id=provider_key,
+                label=name,
+                type=provider_type,
+                base_url=base_url,
+                key_env=None,
+            ),
+        )
 
     def add_model(self, request: ModelCreateRequest) -> dict[str, Any]:
         payload = _load_config_payload(self._config_path)
@@ -447,7 +494,39 @@ class ConfigService:
         provider_key = (key or "").strip()
         provider_payload = providers.get(provider_key)
         if not isinstance(provider_payload, dict):
-            raise ConfigValidationError(f"Provider '{provider_key}' does not exist.")
+            # Credential-backed provider: it exists because a key does, and the
+            # preset supplies the rest. Only a real override earns a config
+            # entry; changing the key keeps config.json untouched.
+            credentials = _load_credentials(self._settings.home)
+            if provider_key not in credentials:
+                raise ConfigValidationError(
+                    f"Provider '{provider_key}' does not exist."
+                )
+            if api_key is not None:
+                if api_key.strip():
+                    credentials[provider_key] = api_key.strip()
+                else:
+                    credentials.pop(provider_key, None)
+                _write_credentials(self._settings.home, credentials)
+
+            if name is None and provider_type is None and base_url is None:
+                return payload
+
+            current = self._settings.providers[provider_key]
+            providers[provider_key] = {
+                "type": (provider_type or current.type).strip(),
+                "name": (name or current.name).strip() or provider_key,
+                "options": {
+                    "base_url": (
+                        base_url
+                        if base_url is not None
+                        else str(current.options.get("base_url", "") or "")
+                    ).strip()
+                },
+                "models": {},
+            }
+            _write_json(self._config_path, payload)
+            return payload
 
         if name is not None:
             stripped_name = name.strip()
@@ -500,11 +579,24 @@ class ConfigService:
             )
 
         provider_key = (key or "").strip()
-        if provider_key not in providers:
+        credentials = _load_credentials(self._settings.home)
+        if provider_key not in providers and provider_key not in credentials:
             raise ConfigValidationError(f"Provider '{provider_key}' does not exist.")
 
-        del providers[provider_key]
-        _write_json(self._config_path, payload)
+        if provider_key in providers:
+            del providers[provider_key]
+            _write_json(self._config_path, payload)
+        if provider_key in credentials:
+            # Deleting a provider means deleting the key with it. Leaving a key
+            # behind would quietly recreate the provider on the next load.
+            credentials.pop(provider_key)
+            _write_credentials(self._settings.home, credentials)
+
+        # ...and its discovered catalogue, or re-connecting the same key would
+        # briefly show the old model list.
+        from nova.registry.catalogue import forget
+
+        forget(self._settings, provider_key)
         return payload
 
     def update_model(

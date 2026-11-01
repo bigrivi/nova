@@ -1,0 +1,64 @@
+{
+  "_readme": "The bundled floor: local runtimes, which no public catalogue lists, plus the two hosted vendors whose base URL only their SDK knows (models.dev omits `api` for them). Every other hosted vendor is derived from models.dev at refresh time and cached in $NOVA_HOME/provider_presets.cache.json, so adding one needs neither a release nor a row here. A row here always wins over a derived one.",
+  "presets": [
+    {
+      "id": "ollama",
+      "label": "Ollama (local)",
+      "type": "ollama",
+      "base_url": "http://localhost:11434",
+      "note": "Runs on this machine. No API key."
+    },
+    {
+      "id": "lm-studio",
+      "label": "LM Studio (local)",
+      "type": "openai-compatible",
+      "base_url": "http://localhost:1234/v1",
+      "note": "Local OpenAI-compatible server. No API key unless yours requires one."
+    },
+    {
+      "id": "vllm",
+      "label": "vLLM (local)",
+      "type": "openai-compatible",
+      "base_url": "http://localhost:8000/v1",
+      "note": "Local OpenAI-compatible server."
+    },
+    {
+      "id": "sglang",
+      "label": "SGLang (local)",
+      "type": "openai-compatible",
+      "base_url": "http://localhost:30000/v1",
+      "note": "Local OpenAI-compatible server."
+    },
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "type": "openai-compatible",
+      "base_url": "https://api.openai.com/v1",
+      "key_env": "OPENAI_API_KEY",
+      "note": "models.dev states no base URL for this one; the adapter default is used."
+    },
+    {
+      "id": "anthropic",
+      "label": "Anthropic",
+      "type": "anthropic",
+      "base_url": "https://api.anthropic.com",
+      "key_env": "ANTHROPIC_API_KEY",
+      "note": "models.dev states no base URL for this one; the adapter default is used."
+    },
+    {
+      "id": "opencode-go",
+      "label": "OpenCode Go",
+      "type": "openai-compatible",
+      "base_url": "https://opencode.ai/zen/go/v1",
+      "key_env": "OPENCODE_GO_API_KEY",
+      "note": "models.dev points this at /inference/go/openai/v1, which answers 404; this is the checked one."
+    },
+    {
+      "id": "opencode-zen",
+      "label": "OpenCode Zen",
+      "type": "openai-compatible",
+      "base_url": "https://opencode.ai/zen/v1",
+      "key_env": "OPENCODE_ZEN_API_KEY"
+    }
+  ]
+}
