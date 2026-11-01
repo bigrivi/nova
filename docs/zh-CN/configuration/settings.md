@@ -12,6 +12,7 @@
 | 根目录 | `~/.nova/`（或 `$NOVA_HOME`） | 所有 Nova 状态的根 |
 | 配置 | `~/.nova/config.json` | 提供方、MCP 和压缩配置 |
 | 数据库 | `~/.nova/nova.db` | 存放会话、消息、Agent 和记忆的 SQLite 数据库 |
+| 凭据 | `~/.nova/credentials.json` | 提供方 API key，不放进 `config.json`（权限 `0600`） |
 | 日志 | `~/.nova/logs/nova.log` | 文件日志（见下） |
 | 技能 | `~/.nova/skills/` | 全局技能目录（`<name>/SKILL.md`） |
 | 工作区 | `~/.nova/workspace/` | 未设置会话或 Agent 工作区时的默认工作区 |

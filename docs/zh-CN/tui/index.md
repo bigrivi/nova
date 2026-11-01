@@ -56,6 +56,7 @@ cd tui && bun install && bun run build
 | `/new` | 开一个新会话 |
 | `/sessions` | 浏览并载入历史会话 |
 | `/clear` | 清屏 |
+| `/connect` | 连接提供方并发现它的模型 |
 | `/models` | 显示可用模型 |
 | `/variants` | 浏览并切换推理档位 |
 | `/themes` | 浏览并切换界面主题 |
@@ -74,6 +75,15 @@ cd tui && bun install && bun run build
 | `/install-global-skill <slug>` | 安装对所有 Agent 生效的技能 |
 | `/agents`、`/create-agent`、`/delete-agent` | 管理 Agent |
 | `/quit`、`/q`、`/exit` | 退出 |
+
+提供方从 `/connect` 来。选一个预设——或者粘一个自定义的 OpenAI 兼容端点——同一步里
+保存提供方并发现它的模型，所以只在终端里工作的会话不必去改 `config.json`。已经有的
+厂商前面有勾。选中它不是报"已存在"，而是打开它自己的面板：`⏎` 换 key，`ctrl+d`
+断开——断开会把 key 从 `credentials.json` 里删掉，连带清掉它贡献的模型。发现到的 id 缓存在
+`$NOVA_HOME/models.json`，已知厂商的 key 存进 `$NOVA_HOME/credentials.json`，
+config 始终只记录你选了什么。
+
+如果连不上提供方，提供方照样会被保存，toast 会说明模型目录为什么是空的。
 
 ## 输入区
 

@@ -64,6 +64,7 @@ The server port defaults to `8765` and can be set with `server.port` in `~/.nova
 | `/new` | Start a new session |
 | `/sessions` | Browse and load past sessions |
 | `/clear` | Clear the screen |
+| `/connect` | Connect a provider and discover its models |
 | `/models` | Show available models |
 | `/variants` | Browse and switch reasoning effort levels |
 | `/themes` | Browse and switch UI themes |
@@ -82,6 +83,18 @@ The server port defaults to `8765` and can be set with `server.port` in `~/.nova
 | `/install-global-skill <slug>` | Install a skill for every agent |
 | `/agents`, `/create-agent`, `/delete-agent` | Manage agents |
 | `/quit`, `/q`, `/exit` | Exit the app |
+
+`/connect` is where a provider comes from. Pick a preset — or paste a custom
+OpenAI-compatible endpoint — and the same step saves it and discovers its models,
+so a session that never leaves the terminal does not have to edit `config.json`.
+A check mark marks the vendors Nova holds a key for. Choosing one opens its panel
+instead of failing on a duplicate: `⏎` replaces the key, `ctrl+d` disconnects —
+which also drops the key from `credentials.json` and the models it contributed. Discovered ids are cached in
+`$NOVA_HOME/models.json` rather than written into config, and a known vendor's key
+goes to `$NOVA_HOME/credentials.json`: config stays the record of what you chose.
+
+If the provider cannot be reached, it is still saved and the toast says why the
+catalogue is missing.
 
 ## Composer
 

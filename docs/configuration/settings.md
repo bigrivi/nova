@@ -11,6 +11,7 @@ The home directory defaults to `~/.nova/`. Override it with the `NOVA_HOME` envi
 | Home | `~/.nova/` (or `$NOVA_HOME`) | Root for all Nova state |
 | Config | `~/.nova/config.json` | Provider, MCP, and compaction configuration |
 | Database | `~/.nova/nova.db` | SQLite database for sessions, messages, agents, and memories |
+| Credentials | `~/.nova/credentials.json` | Provider API keys, kept out of `config.json` (mode `0600`) |
 | Logs | `~/.nova/logs/nova.log` | File log (see below) |
 | Skills | `~/.nova/skills/` | Global skill catalog (`<name>/SKILL.md`) |
 | Workspace | `~/.nova/workspace/` | Default workspace when no session or agent workspace is set |

@@ -8,6 +8,180 @@ OpenAI 兼容服务，**openai-response** 用于 OpenAI Responses API。
 
 配置文件在 `~/.nova/config.json`。
 
+## 预设
+
+连接一个提供方不该需要你事先知道它的 base URL。表单里列了 216 个提供方，base URL、
+wire 类型、key 环境变量都已填好，只剩 API key 和模型名要你填。
+
+其中绝大多数是**从 [models.dev](https://models.dev) 派生的**，和模型事实走同一次每日
+拉取。这次拉取在**每次服务端启动**时跑一次（`nova serve`、`web`、`desktop` 都算），TUI 启动
+时再跑一次，所以一个开了几天的后端也能拿到新厂商。
+
+派生出来的行**只存在内存里**。`$NOVA_HOME/provider_presets.cache.json` 只记你**连接过**的
+provider——每连一个写一行——这样断网重启后你实际在用的那些仍然能解析，而几百个你从没碰过的
+厂商不会写进任何文件。只要目录给出了 base URL 就会收录；wire 由目录分配的 SDK 包决定
+（`@ai-sdk/anthropic` 是 Anthropic Messages，其余都是 OpenAI Chat Completions）。
+所以新增一个厂商既不用发版，也不用往这个仓库里加一行。
+
+只有八条留在 `nova/registry/presets.json` 里，因为别处拿不到：
+
+- 本地运行时——Ollama、LM Studio、vLLM、SGLang——公共目录里没有；
+- OpenAI 和 Anthropic，目录不给 base URL（由它们的 SDK 内置）；
+- OpenCode Go 和 OpenCode Zen，目录给的地址返回 404，能用的那个被固定下来。
+
+内置行永远压过派生行。这正是"地板"的意义：目录只是快照，而对着厂商验证过的 URL，
+比只是被公开出来的 URL 更可信。
+
+预设只是便利，不是限制。它填的每个字段都可以继续改，`GET /api/providers/presets`
+返回同一份列表，方便别的界面自己驱动表单。`POST /api/registry/refresh` 可以按需重新
+拉取 models.dev；TUI 每次启动会拉一次，最多每天一次。
+
+## 覆盖预设
+
+config 里的条目自带传输信息：`type`，以及 OpenAI 兼容条目必须有的 `base_url`。预设只用于
+填连接表单，以及"有 key 但没有条目"时的兜底——它不会被合并进已经存在的条目，因为文件的
+含义不该依赖一份全新安装还没有的缓存。
+
+所以覆盖项要把继承不到的三行写全：
+
+```json
+{
+  "providers": {
+    "opencode-go": {
+      "type": "openai-compatible",
+      "name": "OpenCode Go",
+      "options": {
+        "base_url": "https://opencode.ai/zen/go/v1",
+        "request_session_hook": "~/.nova/hooks/session_headers.py"
+      }
+    }
+  }
+}
+```
+
+key 本身留在 `credentials.json`。只要还有密钥，这个提供方在 `/connect` 和启动刷新里就仍是
+"已认证"，有没有这里的条目都一样。
+
+Anthropic 和 Ollama 可以省略 `base_url`：它们的适配器默认指向厂商端点。其余类型必须写出来——
+这是"读一份配置不需要知道当时缓存了哪些预设"的唯一办法。
+
+### 连接时会检查什么
+
+连接会先向提供方要一次模型列表，然后才写任何东西。**如果它拒绝这把 key，整个动作失败**：
+`credentials.json` 里不会留下任何东西，也不会出现新的 provider——这是唯一真正关于 key 本身的
+证据。
+
+其余情况都会保存，只是带一条警告：主机连不上（本地运行时可能只是没启动）、端点没有实现
+`/models`、或者返回空目录。这些都不说明 key 是错的，若因此拒绝保存，离线环境根本配不起来。
+
+### 提供方级的请求整形
+
+| 键（`options.*`） | 作用 |
+|---|---|
+| `headers` | 每个请求都带的静态请求头 |
+| `request_hook` | 每个请求前运行的脚本，输出合并为请求头 |
+| `request_session_hook` | 同上，但每会话只跑一次并缓存 |
+| `extra_body` | 深合并进每个请求体 |
+
+钩子从 stdin 收 `{"session_id": …}`，必须打印 `{"headers": {…}}` 并以 0 退出。钩子失败
+会让这次请求失败，而不是原样发出去。
+
+### 模型级
+
+```json
+"models": {
+  "beam-free": {
+    "name": "Beam Free",
+    "extra_body": { "reasoning": { "effort": "high" } },
+    "limit": { "context": 1048576 },
+    "reasoning_effort_levels": ["low", "high"]
+  }
+}
+```
+
+模型级 `extra_body` 会覆盖在提供方级之上逐层合并，所以"网关的怪癖"和"某个模型的特殊字段"
+可以叠加而不是互相覆盖。Nova 不认识的键会原样透传进请求体。
+
+## 模型是怎么变得可选的
+
+`config.json` 只放你选的东西：你连上的提供方，以及你亲手固定过 label、上下文窗口或
+关掉工具的模型。模型列表本身不在那里。
+
+连上一个提供方时会问它自己有哪些（Ollama 的 `/api/tags`、OpenAI 的 `/models`、
+Anthropic 的 `/v1/models`），把答案存进 `$NOVA_HOME/models.json`——一份数据库旁边的
+快照，不是配置。如果提供方给出了上下文窗口（`context_length`、`max_model_len`、
+`max_input_tokens`、`context_window`），快照会把它记下来；没给的，由
+[models.dev](https://models.dev) 补上——OpenCode 和 Codewhale 用的都是这份公开目录——
+每天后台同步一次。两者落在同一个模型对象里：
+
+```json
+"deepseek": {
+  "fetched_at": 1793537779,
+  "models": {
+    "deepseek-flash": {
+      "context": 1048576,
+      "context_source": "provider",
+      "efforts": ["low", "high", "max"]
+    }
+  }
+}
+```
+
+`context_source` 记录是谁说的。提供方自述的窗口不会被目录覆盖；目录只补缺，以及修正它
+自己上一次给的值。推理档位同理：config 声明优先，其次是目录给的 `efforts`，两者都不知道
+的模型就没有控件。**始终不从模型名推断。**
+
+`config.json` 是覆盖层，不是清单：只有当某个模型的显示名、工具开关、上下文窗口或
+推理档位与 Nova 已知的不同时，才需要在那里写一条。`GET /api/models` 把两者合起来：config 里的条目优先，只出现在快照里的
+id 也能直接选，先用 Nova 的默认值，等你把真实值固定进 config。删掉快照不会有任何损失；
+删掉提供方，它的模型会一起从列表里消失。
+
+每次启动 TUI 会在后台把**已认证**的提供方刷新一遍：首帧不等它，某个提供方挂了也只是
+在列表里表现为它自己，不会变成一个错误。没有任何定时轮询——Nova 在你启动它的时候刷新，
+因为那正是你为了看到新模型本来就要做的动作。
+
+key 写在 `config.json` 里的提供方是你手写的，启动时不会被轮询：它的模型列表属于你写的
+内容，需要时用 `POST /api/config/providers/{key}/sync-models` 手动刷新。`/connect`
+里的勾也区分这一点——它标记的是"Nova 为这台机器存了 key"，而不是"文件里存在这个
+provider"。
+
+`GET /api/providers/{key}/available-models` 把同一次查询暴露给需要下拉列表的表单，
+`POST /api/config/providers/{key}/sync-models` 用来刷新快照（比如 `ollama pull` 之后）。
+失败会如实报失败——连不上、key 被拒、返回体不是模型列表，三者分别说明要改什么；如果
+统一返回空列表，就会把人引到错误的方向去排查。API key 始终留在服务端。
+
+## 凭据与 `{env:...}`
+
+Nova 已经认识的提供方只需要一把 key。"认识"指内置地板，或者之前连接时记下的那一行——
+只有 key 是没有 base URL 和 wire 类型的，所以预设两头都找不到时会跳过它并打一条点名警告。
+重新在 `/connect` 里连一次就会把那一行补回来。key 存在 `$NOVA_HOME/credentials.json`
+（写入时权限 `0600`），不进 `config.json`，所以连上 OpenAI 或 Anthropic 不会改动你的
+配置文件，也就不可能有密钥落进你随时会读、会 diff、会提交的那个文件里。
+
+显式的 `config.json` 条目永远压过凭据。要指向代理、给某个模型固定上下文窗口、或者
+声明一个 Nova 从没听说过的端点，都是这么做的。
+
+key 也可以完全不写进文件：
+
+```json
+{
+  "providers": {
+    "gateway": {
+      "type": "openai-compatible",
+      "options": {
+        "base_url": "https://gateway.example/v1",
+        "api_key": "{env:GATEWAY_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+`{env:NAME}` 在读取配置时解析。变量未设置时解析成空 key，而不是那个字面模板——这样
+缺密钥会表现为"没有 key"，而不是把模板当成 bearer token 发出去。
+
+记得把 `credentials.json` 排除在版本控制之外，它和数据库一样是运行时状态。
+
 ## 提供方类型
 
 ### Ollama（本地）

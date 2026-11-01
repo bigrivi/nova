@@ -9,6 +9,217 @@ servers, and **openai-response** for the OpenAI Responses API.
 
 The config file lives at `~/.nova/config.json`.
 
+## Presets
+
+Connecting a provider should not mean knowing its base URL. The form offers 216
+vendors, each with its base URL, wire type, and key environment variable already
+filled in, so only the API key and the model name are left.
+
+Almost all of them are **derived from [models.dev](https://models.dev)** on the
+same daily fetch that supplies model facts. That fetch runs once per server start
+(any surface: `nova serve`, `web`, `desktop`) and again when a TUI launches, so a
+backend that has been up for days still picks up a new vendor.
+
+The derived rows live **in memory only**. `$NOVA_HOME/provider_presets.cache.json`
+holds exactly the providers you connected — one row each, written when the
+connection is saved — so a restart with no network still resolves what you use,
+and nothing is written for the hundreds of vendors you never touched. A provider is offered when the
+catalogue states a base URL; its wire comes from the SDK package the catalogue
+assigns (`@ai-sdk/anthropic` is Anthropic Messages, everything else is OpenAI
+Chat Completions). Adding a vendor therefore needs neither a release nor a row
+in this repository.
+
+Eight rows stay bundled, in `nova/registry/presets.json`, because nothing else
+can supply them:
+
+- the local runtimes — Ollama, LM Studio, vLLM, SGLang — which no public
+  catalogue lists;
+- OpenAI and Anthropic, whose base URL models.dev omits because their SDK
+  hardcodes it;
+- OpenCode Go and OpenCode Zen, where the catalogue's URL answers 404 and the
+  working one is pinned.
+
+A bundled row always wins over a derived one. That is the whole point of the
+floor: a catalogue is a snapshot, and a URL checked against the vendor outranks
+one that was merely published.
+
+A preset is a convenience, not a restriction. Every field it fills stays editable,
+and `GET /api/providers/presets` returns the same list for anything that wants to
+drive the form itself. `POST /api/registry/refresh` re-fetches models.dev on
+demand; the TUI does it once per launch, at most daily.
+
+## Overriding a preset
+
+A config entry states its own transport: `type`, and `base_url` for anything
+OpenAI-compatible. Presets fill the connect form and stand in for a key that has
+no entry at all — they are never merged into an entry that exists, because what a
+file means should not depend on a cache that a fresh install may not have yet.
+
+So an override carries the three lines it inherits nothing from:
+
+```json
+{
+  "providers": {
+    "opencode-go": {
+      "type": "openai-compatible",
+      "name": "OpenCode Go",
+      "options": {
+        "base_url": "https://opencode.ai/zen/go/v1",
+        "request_session_hook": "~/.nova/hooks/session_headers.py"
+      }
+    }
+  }
+}
+```
+
+The key itself stays in `credentials.json`. A provider that still has a stored key
+stays "authenticated" for `/connect` and the startup refresh, whether or not it
+also has an entry here.
+
+Anthropic and Ollama entries may omit `base_url`: their adapters default to the
+vendor's own endpoint. Everything else must name one — that is the only way a
+config is readable without knowing which presets happen to be cached.
+
+### What connecting checks
+
+Connecting asks the provider for its model list before anything is written, so a
+key it rejects fails the whole action: nothing lands in `credentials.json` and no
+provider appears. That is the one answer that is evidence about the key itself.
+
+Everything else still saves, with a warning instead: a host that cannot be
+reached (a local runtime may simply be off), an endpoint that does not implement
+`/models`, or a catalogue that comes back empty. None of those say the key is
+wrong, and refusing to save on them would make an offline setup impossible to
+configure.
+
+### Per-provider request shaping
+
+| Key (`options.*`) | Effect |
+|---|---|
+| `headers` | static headers on every request |
+| `request_hook` | script run before every request; its headers are merged in |
+| `request_session_hook` | same, run once per session and cached |
+| `extra_body` | fields deep-merged into every request body |
+
+A hook receives `{"session_id": …}` on stdin and must print `{"headers": {…}}`
+with exit 0. A failing hook fails the request rather than sending it unmodified.
+
+### Per-model
+
+```json
+"models": {
+  "beam-free": {
+    "name": "Beam Free",
+    "extra_body": { "reasoning": { "effort": "high" } },
+    "limit": { "context": 1048576 },
+    "reasoning_effort_levels": ["low", "high"]
+  }
+}
+```
+
+Model-level `extra_body` is merged over the provider's, one level deep at a time,
+so a provider-wide quirk and a model-specific one compose instead of clobbering.
+Any key Nova does not own passes through into the request body unchanged.
+
+## How a model becomes selectable
+
+`config.json` holds what you chose: the providers you connected, and any model you
+pinned with a label, a context window, or tools turned off. It is not where the
+model list lives.
+
+Connecting a provider asks it what it serves (Ollama's `/api/tags`, OpenAI's
+`/models`, Anthropic's `/v1/models`) and stores the answer in
+`$NOVA_HOME/models.json` — a snapshot beside the database, not configuration.
+Where the provider states a context window (`context_length`, `max_model_len`,
+`max_input_tokens`, `context_window`), the snapshot keeps it. Where it states
+nothing, the gap is filled from [models.dev](https://models.dev) — the same public
+catalogue OpenCode and Codewhale are built on — once a day, in the background.
+Both end up in the same per-model object:
+
+```json
+"deepseek": {
+  "fetched_at": 1793537779,
+  "models": {
+    "deepseek-flash": {
+      "context": 1048576,
+      "context_source": "provider",
+      "efforts": ["low", "high", "max"]
+    }
+  }
+}
+```
+
+`context_source` records who said it. A window the provider stated is never
+replaced by the catalogue; the catalogue only adds what was missing, and may
+correct its own earlier value. Reasoning ladders work the same way: a config
+declaration wins, otherwise the catalogue's `efforts` are offered, and a model
+neither of them knows simply has no control. Nothing is ever inferred from the
+model's name.
+
+`config.json` is the override, never the inventory: it only needs an entry for a
+model whose label, tools flag, context window or reasoning levels differ from
+what Nova already knows.
+`GET /api/models` merges the two: a configured entry wins, and an id known only
+from the snapshot is selectable with Nova's defaults until you pin its real
+values. Deleting the snapshot costs you nothing; deleting a provider removes its
+models from the list.
+
+Every TUI launch refreshes the **authenticated** providers once, in the
+background: the first frame does not wait for it, and a provider that is down
+only appears as itself in the list, not as an error. Nothing polls on a timer —
+Nova refreshes when you start it, because that is the moment you would otherwise
+restart to see a new model.
+
+A provider whose key lives in `config.json` is a hand-authored one. Nova does not
+poll it on startup: its model list is part of what you wrote, and
+`POST /api/config/providers/{key}/sync-models` refreshes it on demand. That is
+also what the check mark in `/connect` distinguishes — it marks a key Nova stores
+for this machine, not a provider that merely exists in the file.
+
+`GET /api/providers/{key}/available-models` exposes the same lookup for a form that
+wants a picklist, and `POST /api/config/providers/{key}/sync-models` refreshes the
+snapshot after, say, `ollama pull`. Failures are reported as failures — an
+unreachable host, a rejected key, and a response that is not a model list each name
+what has to change, because an empty list would send you looking in the wrong
+place. The API key never leaves the server.
+
+## Credentials and `{env:...}`
+
+A provider Nova already knows needs only a key. "Knows" means the bundled floor
+or a row remembered from an earlier connection — a key on its own carries no
+base URL and no wire type, so a provider whose preset is neither is skipped with
+a warning naming it. Reconnecting it from `/connect` is what restores the row. Keys live in
+`$NOVA_HOME/credentials.json` (written with mode `0600`), never in
+`config.json`, so connecting OpenAI or Anthropic leaves your config untouched and
+nothing secret ends up in a file you might read, diff, or commit.
+
+An explicit `config.json` entry always wins over a credential. That is how you
+point a known provider at a proxy, pin a context window for one model, or declare
+an endpoint Nova has never heard of.
+
+A key can stay out of the file entirely:
+
+```json
+{
+  "providers": {
+    "gateway": {
+      "type": "openai-compatible",
+      "options": {
+        "base_url": "https://gateway.example/v1",
+        "api_key": "{env:GATEWAY_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+`{env:NAME}` is resolved when the config is read. An unset variable resolves to an
+empty key rather than to the literal template, so a missing secret fails as "no
+key" instead of being sent as a bearer token.
+
+Keep `credentials.json` out of version control — it is runtime state, like the
+database.
+
 ## Provider Types
 
 ### Ollama (Local)
