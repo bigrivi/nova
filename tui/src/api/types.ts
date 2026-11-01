@@ -63,6 +63,9 @@ export type NovaModelRecord = {
     tools: boolean;
     /** Reasoning levels this model offers; empty means none. */
     efforts: string[];
+    /** Context window Nova plans against, resolved from config, the provider,
+     *  models.dev, then the family table. */
+    context?: number | null;
 };
 
 /** A tool the server advertised that the agent cannot call, and why. */
@@ -217,6 +220,8 @@ export type NovaProviderRecord = {
     key: string;
     name: string;
     type: string;
+    /** A key Nova stores for the machine; a config-only provider is not this. */
+    authenticated?: boolean;
 };
 
 export type NovaAgentRecord = {
@@ -247,6 +252,15 @@ export type NovaAgentCreateRequest = {
     /** Primary agents this record belongs to; supplying it makes the backend
      *  create a sub-agent (mode=subagent) instead of a primary one. */
     parent_ids?: string[];
+};
+
+export type NovaProviderPreset = {
+    id: string;
+    label: string;
+    type: string;
+    base_url: string;
+    key_env: string | null;
+    note: string;
 };
 
 export type NovaProviderCreateRequest = {

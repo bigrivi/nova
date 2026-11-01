@@ -53,6 +53,15 @@ describe("catalog", () => {
         expect(first.providers).toHaveLength(1);
     });
 
+    test("resetting the cache makes the next load refetch", async () => {
+        const first = await loadModels();
+        resetCatalog();
+        const second = await loadModels();
+
+        expect(second).not.toBe(first);
+        expect(calls).toBe(2);
+    });
+
     test("the model list is fetched once per process", async () => {
         const first = await loadModels();
         const second = await loadModels();

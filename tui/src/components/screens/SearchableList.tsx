@@ -38,6 +38,7 @@ export function SearchableList<T extends SearchableItem>({
     items,
     filter,
     renderLabel,
+    marker,
     onSelect,
     onClose,
     emptyText = "(empty)",
@@ -49,6 +50,10 @@ export function SearchableList<T extends SearchableItem>({
     filter?: (item: T, query: string) => boolean;
     /** Row text when `label` alone is not enough (e.g. a trailing timestamp). */
     renderLabel?: (item: T) => string;
+    /** One glyph for the cursor column, drawn on rows that are not the cursor.
+     *  The cursor keeps that column when it is on the row: losing the cursor to
+     *  show a state mark is the wrong trade. */
+    marker?: (item: T) => string | undefined;
     onSelect: (value: string) => void;
     onClose: () => void;
     emptyText?: string;
@@ -193,7 +198,7 @@ export function SearchableList<T extends SearchableItem>({
                     if (entry.kind === "header") {
                         return (
                             <text
-                                key={`h:${entry.label}`}
+                                key={`h:${rowIndex}`}
                                 height={1}
                                 fg={theme.primary.muted}
                                 content={`${" ".repeat(MARKER_WIDTH)}${entry.label}`}
@@ -229,8 +234,15 @@ export function SearchableList<T extends SearchableItem>({
                         >
                             <text
                                 width={MARKER_WIDTH}
-                                fg={dotFg}
-                                content={isCurrent ? " ● " : "   "}
+                                fg={isCurrent ? dotFg : theme.text.muted}
+                                content={
+                                    isCurrent
+                                        ? " ● "
+                                        : (() => {
+                                              const glyph = marker?.(entry.item);
+                                              return glyph ? ` ${glyph} ` : "   ";
+                                          })()
+                                }
                             />
                             <text
                                 fg={itemFg}

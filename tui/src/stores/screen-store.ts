@@ -4,6 +4,7 @@ import { create } from "zustand";
 export type Screen =
     | { kind: "sessions" }
     | { kind: "models" }
+    | { kind: "connect-provider" }
     | { kind: "theme" }
     | { kind: "variants" }
     | { kind: "agents" }

@@ -68,7 +68,7 @@ export function ModelsScreen() {
             }}
             onSelect={(value) => void handleSelect(value)}
             onClose={() => useScreenStore.getState().close()}
-            emptyText={error || "no models configured"}
+            emptyText={error || "no models configured — /connect adds a provider"}
             defaultValue={defaultValue}
         />
     );

@@ -18,6 +18,7 @@ import type {
     NovaPermissionPolicy,
     NovaProjectRecord,
     NovaProviderCreateRequest,
+    NovaProviderPreset,
     NovaProviderRecord,
     NovaRestoreReport,
     NovaSessionRoute,
@@ -93,14 +94,67 @@ export async function restoreCheckpoint(
     );
 }
 
-export async function createProvider(
-    payload: NovaProviderCreateRequest,
-): Promise<NovaModelRecord[]> {
-    const response = await request<JsonResponse<NovaModelRecord>>(
-        "/api/config/providers",
-        jsonInit("POST", payload),
+export async function syncProviderModels(): Promise<{
+    synced: string[];
+    failed: Record<string, string>;
+}> {
+    return request("/api/providers/sync-models", { method: "POST" });
+}
+
+export async function refreshRegistry(): Promise<number> {
+    // One call refreshes both derived surfaces: model facts and presets.
+    const payload = await request<{ facts: number }>("/api/registry/refresh", {
+        method: "POST",
+    });
+    return payload.facts;
+}
+
+export async function refreshProviderPresets(): Promise<number> {
+    const payload = await request<{ added: number }>(
+        "/api/providers/presets/refresh",
+        { method: "POST" },
+    );
+    return payload.added;
+}
+
+export async function listProviderPresets(): Promise<NovaProviderPreset[]> {
+    const response = await request<JsonResponse<NovaProviderPreset>>(
+        "/api/providers/presets",
     );
     return response.items;
+}
+
+export async function deleteProvider(
+    key: string,
+): Promise<NovaModelRecord[]> {
+    const response = await request<JsonResponse<NovaModelRecord>>(
+        "/api/config/providers/delete",
+        jsonInit("POST", { key }),
+    );
+    return response.items;
+}
+
+export async function updateProvider(
+    key: string,
+    changes: { name?: string; type?: string; base_url?: string; api_key?: string },
+): Promise<NovaModelRecord[]> {
+    const response = await request<JsonResponse<NovaModelRecord>>(
+        "/api/config/providers/update",
+        jsonInit("POST", { key, ...changes }),
+    );
+    return response.items;
+}
+
+export async function createProvider(
+    payload: NovaProviderCreateRequest,
+): Promise<{ models: NovaModelRecord[]; warning: string | null }> {
+    // The provider arrives with every model it advertises, so connecting is the
+    // whole action. `warning` means the provider is saved but its catalogue
+    // could not be read.
+    const response = await request<
+        JsonResponse<NovaModelRecord> & { warning?: string | null }
+    >("/api/config/providers", jsonInit("POST", payload));
+    return { models: response.items, warning: response.warning ?? null };
 }
 
 export async function createModel(

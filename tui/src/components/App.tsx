@@ -30,6 +30,7 @@ import { useMenuStore } from "../stores/menu-store.ts";
 import { DiffScreen } from "./screens/DiffScreen.tsx";
 import { McpScreen } from "./screens/McpScreen.tsx";
 import { MemoryScreen } from "./screens/MemoryScreen.tsx";
+import { ConnectProviderScreen } from "./screens/ConnectProviderScreen.tsx";
 import { ModelsScreen } from "./screens/ModelsScreen.tsx";
 import { PermissionsScreen } from "./screens/PermissionsScreen.tsx";
 import { ReviewScreen } from "./screens/ReviewScreen.tsx";
@@ -214,6 +215,9 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             case "sessions":
                 screens.open({ kind: "sessions" });
                 return;
+            case "connect":
+                screens.open({ kind: "connect-provider" });
+                return;
             case "models":
                 screens.open({ kind: "models" });
                 return;
@@ -376,6 +380,9 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             {screen?.kind === "theme" ? <ThemeScreen /> : null}
             {screen?.kind === "variants" ? <VariantsScreen /> : null}
             {screen?.kind === "models" ? <ModelsScreen /> : null}
+            {screen?.kind === "connect-provider" ? (
+                <ConnectProviderScreen />
+            ) : null}
             {screen?.kind === "agents" || screen?.kind === "delete-agent" ? (
                 <AgentsScreen deletable={screen.kind === "delete-agent"} />
             ) : null}

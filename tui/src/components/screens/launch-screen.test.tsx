@@ -8,6 +8,10 @@ mock.module("../../api/nova-api.ts", () => ({
     ...api,
     getAgent: async () => null,
     listSessions: async () => [],
+    // The app refreshes provider catalogues on launch; a render test must not
+    // reach for a backend that is not there.
+    syncProviderModels: async () => ({ synced: [], failed: {} }),
+    refreshProviderPresets: async () => 0,
 }));
 
 const { testRender } = await import("@opentui/react/test-utils");

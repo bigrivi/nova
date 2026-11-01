@@ -30,6 +30,13 @@ export const COMMANDS: CommandSpec[] = [
         aliases: [],
     },
     {
+        id: "connect",
+        label: "Connect Provider",
+        description: "Connect a provider and discover its models",
+        usage: "/connect",
+        aliases: ["provider"],
+    },
+    {
         id: "models",
         label: "Models",
         description: "Show available models",
