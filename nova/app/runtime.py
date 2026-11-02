@@ -83,9 +83,7 @@ def build_llm(
     )
     spec = spec_for(settings, provider, model)
     provider_type = (
-        str(
-            model_config_values.get("type") or spec.get("type") or provider_config.type
-        )
+        str(model_config_values.get("type") or spec.get("type") or provider_config.type)
         or ""
     )
     base_url = str(
@@ -251,6 +249,7 @@ def _resolve_effort(
     dropped instead of sent.
     """
     from nova.llm.reasoning import fit_effort, resolve_effort_levels
+    from nova.registry.catalogue import spec_for
 
     try:
         provider_config = settings.providers.get(provider)
@@ -265,6 +264,10 @@ def _resolve_effort(
         provider_config.models.get(model)
         if isinstance(provider_config.models, dict)
         else None,
+        # The catalogue knows ladders config.json never states, and the picker
+        # offers them. Reading only config here would let a user pick a level
+        # the run then silently drops.
+        spec_for(settings, provider, model),
     )
     if not levels:
         return None

@@ -9,6 +9,7 @@ back a level the model would reject.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -431,6 +432,9 @@ class TestEffortPrecedence:
         from nova.app.runtime import _resolve_effort
 
         settings = SimpleNamespace(
+            # _resolve_effort reads the catalogue for a ladder config may not
+            # state, so the stand-in needs the home that lookup uses.
+            home=Path("/nonexistent"),
             providers={
                 "gw": SimpleNamespace(
                     type="openai-compatible",
@@ -441,7 +445,7 @@ class TestEffortPrecedence:
                         }
                     },
                 )
-            }
+            },
         )
         return _resolve_effort(
             settings=settings,
@@ -477,9 +481,10 @@ class TestEffortPrecedence:
         from nova.app.runtime import _resolve_effort
 
         settings = SimpleNamespace(
+            home=Path("/nonexistent"),
             providers={
                 "gw": SimpleNamespace(type="openai-compatible", models={"m": {}})
-            }
+            },
         )
         assert (
             _resolve_effort(
@@ -491,4 +496,40 @@ class TestEffortPrecedence:
                 agent_effort="high",
             )
             is None
+        )
+
+    def test_a_catalogue_ladder_is_usable_without_a_config_entry(self, monkeypatch):
+        """The picker offers levels from models.dev; a run must be able to use them.
+
+        Only config.json declared ladders used to reach the run, so a model
+        connected from a preset showed a control whose value was silently
+        dropped before the request body.
+        """
+        from types import SimpleNamespace
+
+        from nova.app.runtime import _resolve_effort
+        from nova.registry import catalogue as catalogue_module
+
+        monkeypatch.setattr(
+            catalogue_module,
+            "load",
+            lambda _settings: {
+                "gw": {"m": {"reasoning_effort_levels": ["low", "high"]}}
+            },
+        )
+        settings = SimpleNamespace(
+            home=Path("/nonexistent"),
+            providers={"gw": SimpleNamespace(type="openai-compatible", models={})},
+        )
+
+        assert (
+            _resolve_effort(
+                settings=settings,
+                provider="gw",
+                model="m",
+                requested="high",
+                session_effort=None,
+                agent_effort=None,
+            )
+            == "high"
         )

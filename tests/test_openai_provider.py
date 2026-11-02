@@ -269,3 +269,29 @@ def test_message_without_images_is_untouched():
         {"role": "user", "content": "hi"},
         {"role": "assistant", "content": "yo", "reasoning_content": ""},
     ]
+
+
+def test_a_streaming_request_carries_the_per_turn_level():
+    """The level picked in the UI reaches the stream, not only the batch call.
+
+    Both paths build the same body; withholding the value on one of them was a
+    leftover from when they were separate code, and it dropped every per-turn
+    choice made against a Chat Completions model.
+    """
+    provider = OpenAIProvider(api_key="sk", base_url="https://example.com/v1")
+
+    _, _, body = provider._prepare_request([], "m", True, None, None, "high")
+
+    assert body["reasoning_effort"] == "high"
+
+
+def test_a_streaming_request_falls_back_to_the_configured_default():
+    provider = OpenAIProvider(
+        api_key="sk",
+        base_url="https://example.com/v1",
+        default_reasoning_effort="low",
+    )
+
+    _, _, body = provider._prepare_request([], "m", True, None, None, None)
+
+    assert body["reasoning_effort"] == "low"

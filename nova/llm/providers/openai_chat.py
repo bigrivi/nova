@@ -402,15 +402,17 @@ class OpenAIProvider(HttpProvider):
     ) -> tuple[str, dict[str, str], dict]:
         formatted_messages = self._format_messages(messages)
         headers = self._build_headers(session_id=session_id)
-        # D1 (status quo): the streaming request does not forward reasoning
-        # effort to the body, so a per-turn pick is dropped on the stream path.
+        # Same body on both paths. The streaming request used to withhold this
+        # value, an accident carried over from before the two paths shared
+        # `_build_body`; a configured default has always ridden the stream, so
+        # nothing about `stream: true` keeps the field out.
         body = self._build_body(
             messages=formatted_messages,
             model=model,
             stream=stream,
             tools=tools,
             session_id=session_id,
-            reasoning_effort=None if stream else reasoning_effort,
+            reasoning_effort=reasoning_effort,
         )
         url = f"{self.base_url}/chat/completions"
         return url, headers, body
