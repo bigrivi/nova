@@ -9,10 +9,12 @@ The shape is the one the CLI agents converged on: ``<product>/<version> (<os>;
 <arch>)``. It is a stable token a log line or a WAF rule can match, and it
 carries no per-install identifier, so it cannot be used to track a machine.
 
-The value is code-owned: it is written last, so neither ``options.headers`` nor
-a request hook can replace it with another client's name. A provider that needs
-a gateway's own token still gets it through ``headers``/``request_hook``; only
-the identity header is not negotiable.
+The default is code-owned and written last, so neither ``options.headers`` nor a
+request hook can replace it by accident. A gateway that fingerprints its clients
+is the one real exception, and it is opt-in per provider:
+``options.user_agent`` changes the identity Nova presents to that provider only.
+Discovery honours the same value, so the connect probe and every later request
+arrive as the same client.
 """
 
 from __future__ import annotations

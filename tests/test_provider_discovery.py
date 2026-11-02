@@ -119,7 +119,7 @@ async def test_rejected_key_is_not_reported_as_an_empty_list(monkeypatch) -> Non
         )
 
     assert caught.value.status == 401
-    assert "rejected the API key" in str(caught.value)
+    assert "refused the credentials" in str(caught.value)
 
 
 @pytest.mark.asyncio
@@ -162,3 +162,22 @@ def test_empty_base_url_falls_back_to_the_adapter_default(monkeypatch) -> None:
     assert resolve_base_url("openai-compatible", "") == "https://api.openai.com/v1"
     # An explicit value wins and loses its trailing slash.
     assert resolve_base_url("ollama", "http://host:1/") == "http://host:1"
+
+
+@pytest.mark.asyncio
+async def test_a_client_identity_is_sent_when_configured(monkeypatch) -> None:
+    """Some gateways answer 401 to anyone but their own client."""
+    client = _patch_client(
+        monkeypatch,
+        _FakeClient(response=httpx.Response(200, json={"data": [{"id": "m"}]})),
+    )
+
+    await discover_models(
+        provider_type="openai-compatible",
+        base_url="https://gw.example/v1",
+        api_key="sk",
+        user_agent="claude-cli/2.0.0 (external, cli)",
+    )
+
+    assert client.requested_headers["User-Agent"] == "claude-cli/2.0.0 (external, cli)"
+    assert client.requested_headers["Authorization"] == "Bearer sk"

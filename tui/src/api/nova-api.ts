@@ -102,19 +102,11 @@ export async function syncProviderModels(): Promise<{
 }
 
 export async function refreshRegistry(): Promise<number> {
-    // One call refreshes both derived surfaces: model facts and presets.
-    const payload = await request<{ facts: number }>("/api/registry/refresh", {
+    // One call refreshes both derived surfaces: model specs and presets.
+    const payload = await request<{ rows: number }>("/api/registry/refresh", {
         method: "POST",
     });
-    return payload.facts;
-}
-
-export async function refreshProviderPresets(): Promise<number> {
-    const payload = await request<{ added: number }>(
-        "/api/providers/presets/refresh",
-        { method: "POST" },
-    );
-    return payload.added;
+    return payload.rows;
 }
 
 export async function listProviderPresets(): Promise<NovaProviderPreset[]> {

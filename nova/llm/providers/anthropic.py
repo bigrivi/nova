@@ -521,13 +521,16 @@ class AnthropicProvider(HttpProvider):
         extra_headers: dict | None = None,
         request_hook: str | None = None,
         request_session_hook: str | None = None,
+        user_agent: str | None = None,
     ) -> None:
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
         self.timeout_seconds = timeout_seconds
         # A bare SDK request names nobody; this one always says Nova.
-        self._user_agent = default_user_agent()
+        # A gateway that fingerprints its clients may need a specific
+        # identity; Nova's own token is still the default.
+        self._user_agent = (user_agent or "").strip() or default_user_agent()
         self._anthropic_version = anthropic_version
         self._betas = list(betas) if betas else None
         self._max_output_tokens_override = max_output_tokens

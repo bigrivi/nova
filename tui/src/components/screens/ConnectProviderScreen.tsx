@@ -118,7 +118,7 @@ export function ConnectProviderScreen() {
                         type: preset.type,
                         base_url: preset.base_url,
                         key_env: preset.key_env,
-                        custom: false,
+                        custom: preset.custom === true,
                     })),
                     CUSTOM,
                 ]);
@@ -191,6 +191,7 @@ export function ConnectProviderScreen() {
                           ? filled.baseUrl.trim()
                           : target.base_url,
                       api_key: filled.apiKey.trim(),
+                      custom: target.custom,
                   });
             const found = models.filter(
                 (model) => model.provider === providerKey,
@@ -234,8 +235,9 @@ export function ConnectProviderScreen() {
 
     function fieldsForChoice(target: Choice): FieldName[] {
         // Reconnecting an existing provider can only mean a new key; its
-        // transport facts are already settled.
-        if (connected.has(target.id) && !target.custom) {
+        // transport is already settled, custom or not.
+        if (connected.has(target.id)) {
+            if (target.custom) return ["apiKey"];
             return target.key_env ? ["apiKey"] : [];
         }
         return fieldsFor(target);
@@ -265,7 +267,7 @@ export function ConnectProviderScreen() {
 
     if (detail) {
         return (
-            <ScreenPanel width="60%">
+            <ScreenPanel width="50%">
                 <box flexDirection="column" gap={1}>
                     <box flexDirection="row" justifyContent="space-between">
                         <text fg={theme.primary.muted} content={detail.label} />
@@ -362,7 +364,7 @@ export function ConnectProviderScreen() {
     const last = step === fields.length - 1;
 
     return (
-        <ScreenPanel width="60%">
+        <ScreenPanel width="50%">
             <box flexDirection="column" gap={1}>
                 <text fg={theme.primary.muted} content={choice.label} />
                 {choice.custom ? null : (

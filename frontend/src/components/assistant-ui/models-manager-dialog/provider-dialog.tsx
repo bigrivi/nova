@@ -130,6 +130,9 @@ export function ProviderDialog({
                 name: form.name,
                 base_url: form.baseUrl,
                 api_key: form.apiKey,
+                // A key the preset list does not know is the user's own
+                // endpoint: its model list is a declaration, not a catalogue.
+                custom: !presets.some((item) => item.id === form.key),
             });
             await onMutated(models);
             // The provider is saved either way; a failed catalogue read is a

@@ -16,7 +16,6 @@ import {
 import { loadCatalog, resetCatalog, type Catalog } from "../lib/catalog.ts";
 import {
     refreshRegistry,
-    refreshProviderPresets,
     syncProviderModels,
 } from "../api/nova-api.ts";
 import { readGitBranch } from "../lib/git-branch.ts";
@@ -77,10 +76,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // the user's problem until they look at the list.
     useEffect(() => {
         let cancelled = false;
-        // A new vendor should not need a release; this is the once-a-day fetch
-        // that keeps the preset table current without a timer.
-        void refreshProviderPresets().catch(() => {});
-        // One fetch from models.dev feeds the model facts and the vendor list.
+        // One fetch from models.dev feeds both the model specs and the vendor
+        // list; the daily cache makes a restart cheap.
         void refreshRegistry().catch(() => {});
         void syncProviderModels()
             .then((result) => {

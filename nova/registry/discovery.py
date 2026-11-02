@@ -47,12 +47,18 @@ def _endpoint(provider_type: str, base_url: str) -> str:
     return f"{base_url}/models"
 
 
-def _headers(provider_type: str, api_key: str) -> dict[str, str]:
-    if not api_key:
-        return {}
-    if provider_type == "anthropic":
-        return {"x-api-key": api_key, "anthropic-version": ANTHROPIC_VERSION}
-    return {"Authorization": f"Bearer {api_key}"}
+def _headers(
+    provider_type: str, api_key: str, user_agent: str | None = None
+) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if api_key:
+        if provider_type == "anthropic":
+            headers = {"x-api-key": api_key, "anthropic-version": ANTHROPIC_VERSION}
+        else:
+            headers = {"Authorization": f"Bearer {api_key}"}
+    if user_agent:
+        headers["User-Agent"] = user_agent
+    return headers
 
 
 #: Field names providers use for "how much fits in this model". OpenRouter
@@ -89,13 +95,17 @@ def _context_of(entry: dict) -> int | None:
     nested = entry.get("top_provider")
     if isinstance(nested, dict):
         value = nested.get("context_length")
-        if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and value > 0
+        ):
             return int(value)
     return None
 
 
 def _models(provider_type: str, payload: object) -> list[DiscoveredModel]:
-    """Read the ids — and any stated facts — out of this provider's envelope."""
+    """Read the ids — and any stated context window — out of the envelope."""
     if not isinstance(payload, dict):
         raise DiscoveryError("the provider returned something that is not a model list")
 
@@ -128,8 +138,9 @@ async def discover_models(
     base_url: str,
     api_key: str,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    user_agent: str | None = None,
 ) -> list[DiscoveredModel]:
-    """Return the models this provider advertises, with the facts it states.
+    """Return the models this provider advertises, with the context it states.
 
     Raises:
         DiscoveryError: when the provider cannot be reached, refuses the key, or
@@ -139,13 +150,23 @@ async def discover_models(
     url = _endpoint(provider_type, base_url)
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(url, headers=_headers(provider_type, api_key))
+            response = await client.get(
+                url, headers=_headers(provider_type, api_key, user_agent)
+            )
     except httpx.HTTPError as exc:
-        raise DiscoveryError(f"could not reach {url} ({exc.__class__.__name__})") from exc
+        raise DiscoveryError(
+            f"could not reach {url} ({exc.__class__.__name__})"
+        ) from exc
 
     if response.status_code in (401, 403):
+        # Keep the body: a gateway that refuses the *client* says so there
+        # ("unauthorized client detected"), and that sentence is the only hint
+        # the reader gets about which knob to turn.
+        detail = response.text[:200].strip()
         raise DiscoveryError(
-            f"{url} rejected the API key ({response.status_code})", status=401
+            f"{url} refused the credentials ({response.status_code})"
+            + (f": {detail}" if detail else ""),
+            status=401,
         )
     if response.status_code >= 400:
         raise DiscoveryError(

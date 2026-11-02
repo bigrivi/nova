@@ -1,7 +1,7 @@
 """The preset table is data, so the failure mode is a typo nobody notices.
 
 A preset with an unknown `type` would be accepted by the API and then reject
-the provider at write time, with the form to blame. These pin the two facts the
+the provider at write time, with the form to blame. These pin the two rules
 form depends on: every row is creatable, and every row is distinct.
 """
 
@@ -182,7 +182,31 @@ def test_a_provider_without_a_base_url_is_not_offered() -> None:
     assert derived[0].key_env == "REACHABLE_KEY"
 
 
-def test_the_wire_comes_from_the_sdk_package() -> None:
+def test_every_sdk_package_maps_to_one_transport() -> None:
+    """The whole mapping, in one table.
+
+    `@ai-sdk/openai` is the one that is an inference rather than a fact: the SDK
+    supports both wire formats, and Nova picks Responses for it. Codewhale maps
+    the plain `openai` route to Chat Completions instead, so this is a decision,
+    not a derivation — which is exactly why it is written down here.
+    """
+    cases = {
+        "@ai-sdk/anthropic": "anthropic",
+        "@ai-sdk/google-vertex/anthropic": "anthropic",
+        "@ai-sdk/openai": "openai-response",
+        "@ai-sdk/openai-compatible": "openai-compatible",
+        "@ai-sdk/groq": "openai-compatible",
+        "@ai-sdk/azure": "openai-compatible",
+        "@openrouter/ai-sdk-provider": "openai-compatible",
+        "": "openai-compatible",
+        None: "openai-compatible",
+    }
+
+    for npm, expected in cases.items():
+        assert presets_module.type_for_npm(npm) == expected, npm
+
+
+def test_the_derived_provider_preset_uses_that_mapping() -> None:
     derived = presets_module.derive_from_catalog(
         {
             "an": {
@@ -197,12 +221,19 @@ def test_the_wire_comes_from_the_sdk_package() -> None:
                 "env": ["OA_KEY"],
                 "npm": "@ai-sdk/openai-compatible",
             },
+            "resp": {
+                "name": "Responses-ish",
+                "api": "https://resp.example/v1",
+                "env": ["RESP_KEY"],
+                "npm": "@ai-sdk/openai",
+            },
         }
     )
 
     by_id = {preset.id: preset for preset in derived}
     assert by_id["an"].type == "anthropic"
     assert by_id["oa"].type == "openai-compatible"
+    assert by_id["resp"].type == "openai-response"
 
 
 def test_a_bundled_row_beats_a_derived_one(tmp_path: Path) -> None:

@@ -103,7 +103,9 @@ def test_discovered_models_are_selectable_but_stay_out_of_config(
     on_disk = json.loads((home / "config.json").read_text(encoding="utf-8"))
     assert on_disk["providers"]["gateway"]["models"] == {}
 
-    catalogue = json.loads((home / model_catalogue.CACHE_NAME).read_text(encoding="utf-8"))
+    catalogue = json.loads(
+        (home / model_catalogue.CACHE_NAME).read_text(encoding="utf-8")
+    )
     assert list(catalogue["gateway"]["models"]) == ["gpt-pinned", "model-a"]
 
     listed = _models(client)
@@ -151,9 +153,10 @@ def test_a_provider_that_cannot_be_asked_still_exists(home: Path, monkeypatch) -
 
     assert response.status_code == 200
     assert "could not reach" in (response.json()["warning"] or "")
-    assert "gateway" in json.loads(
-        (home / "config.json").read_text(encoding="utf-8")
-    )["providers"]
+    assert (
+        "gateway"
+        in json.loads((home / "config.json").read_text(encoding="utf-8"))["providers"]
+    )
     assert not (home / model_catalogue.CACHE_NAME).exists()
 
 
@@ -228,8 +231,8 @@ def test_each_provider_is_one_contiguous_block(home: Path, monkeypatch) -> None:
     discovered ones in a second pass, so a provider with both got two blocks and
     the UI showed its name twice.
     """
-    from nova.server.routers.config import build_model_list_response
     from nova.registry import catalogue as catalogue_module
+    from nova.server.routers.config import build_model_list_response
 
     (home / "config.json").write_text(
         json.dumps(
@@ -392,12 +395,12 @@ def test_models_dev_fills_gaps_without_overwriting_the_provider(home: Path) -> N
     assert stored["m1"]["_context_source"] == "provider"
     # The catalogue supplies what the provider was silent about.
     assert stored["m1"]["reasoning_effort_levels"] == ["low", "high"]
-    # And a model the provider never listed only gets catalogue facts if Nova
+    # And a model the provider never listed only gets cobbled-in specs if Nova
     # already knows the id.
     assert "m2" not in stored
 
 
-def test_re_asking_a_provider_keeps_the_catalogue_facts(home: Path) -> None:
+def test_re_asking_a_provider_keeps_what_the_catalogue_added(home: Path) -> None:
     from nova.registry.catalogue import load, merge_models_dev, record
     from nova.registry.discovery import DiscoveredModel
 
@@ -405,22 +408,31 @@ def test_re_asking_a_provider_keeps_the_catalogue_facts(home: Path) -> None:
     record(settings, "openai", [DiscoveredModel(id="m1")])
     merge_models_dev(
         settings,
-        {"openai": {"models": {"m1": {"reasoning": True,
-                                      "reasoning_options": [{"type": "effort",
-                                                             "values": ["low"]}]}}}},
+        {
+            "openai": {
+                "models": {
+                    "m1": {
+                        "reasoning": True,
+                        "reasoning_options": [{"type": "effort", "values": ["low"]}],
+                    }
+                }
+            }
+        },
     )
     record(_settings(home), "openai", [DiscoveredModel(id="m1")])
 
-    assert load(Settings.load_config())["openai"]["m1"][
-        "reasoning_effort_levels"
-    ] == ["low"]
+    assert load(Settings.load_config())["openai"]["m1"]["reasoning_effort_levels"] == [
+        "low"
+    ]
 
 
-def test_a_model_the_catalogue_calls_unusable_is_hidden(home: Path, monkeypatch) -> None:
+def test_a_model_the_catalogue_calls_unusable_is_hidden(
+    home: Path, monkeypatch
+) -> None:
     """A deprecated or non-text model is not offered, but a pinned one survives."""
+    from nova.registry import catalogue as catalogue_module
     from nova.registry.catalogue import merge_models_dev
     from nova.server.routers.config import build_model_list_response
-    from nova.registry import catalogue as catalogue_module
 
     (home / "config.json").write_text(
         json.dumps(
@@ -542,10 +554,13 @@ def test_config_wins_on_every_layer_it_can_reach(home: Path, monkeypatch) -> Non
         if item.model == "shared"
     )
 
-    assert row.label == "Pinned Label"          # not "shared"
-    assert row.tools is False                    # not the catalogue default
+    assert row.label == "Pinned Label"  # not "shared"
+    assert row.tools is False  # not the catalogue default
     assert resolve_context_window("shared", "openai") == (4096, "config")
-    assert resolve_effort_levels("shared", provider.type, model_config) == ["low", "high"]
+    assert resolve_effort_levels("shared", provider.type, model_config) == [
+        "low",
+        "high",
+    ]
 
 
 def test_a_rejected_key_does_not_create_a_provider(home: Path, monkeypatch) -> None:
@@ -554,8 +569,11 @@ def test_a_rejected_key_does_not_create_a_provider(home: Path, monkeypatch) -> N
     Saving it first would leave a broken provider behind, which the user then
     has to find and delete — the connect action has to fail as a whole.
     """
+
     async def reject(**_kwargs: object) -> list[str]:
-        raise DiscoveryError("https://gateway.example/v1/models rejected the key", status=401)
+        raise DiscoveryError(
+            "https://gateway.example/v1/models rejected the key", status=401
+        )
 
     monkeypatch.setattr(routers.config, "discover_models", reject)
     client = TestClient(create_app(settings=Settings.load_config()))
@@ -580,6 +598,7 @@ def test_a_rejected_key_does_not_create_a_provider(home: Path, monkeypatch) -> N
 
 def test_an_unreachable_provider_still_saves(home: Path, monkeypatch) -> None:
     """No answer is not a rejection: a local runtime may simply be off."""
+
     async def unreachable(**_kwargs: object) -> list[str]:
         raise DiscoveryError("could not reach http://localhost:11434/api/tags")
 
@@ -601,3 +620,322 @@ def test_an_unreachable_provider_still_saves(home: Path, monkeypatch) -> None:
     assert "could not reach" in (response.json()["warning"] or "")
     on_disk = json.loads((home / "config.json").read_text(encoding="utf-8"))
     assert "ollama" in on_disk["providers"]
+
+
+def test_a_model_can_speak_a_different_transport_than_its_provider(
+    home: Path, monkeypatch
+) -> None:
+    """opencode-go serves most models over Chat Completions and some over
+    Responses; the model's own row decides, not the provider's."""
+    from nova.app import runtime as runtime_module
+    from nova.registry import catalogue as catalogue_module
+    from nova.registry.catalogue import merge_models_dev, record
+
+    (home / "config.json").write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "gateway": {
+                        "type": "openai-compatible",
+                        "name": "Gateway",
+                        "options": {
+                            "base_url": "https://gw.example/v1",
+                            "api_key": "sk",
+                        },
+                        "models": {},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = _settings(home)
+    record(settings, "gateway", ["plain", "luna"])
+    merge_models_dev(
+        settings,
+        {
+            "gateway": {
+                "npm": "@ai-sdk/openai-compatible",
+                "api": "https://gw.example/v1",
+                "models": {
+                    "plain": {"limit": {"context": 1000}},
+                    "luna": {
+                        "limit": {"context": 2000},
+                        "provider": {
+                            "npm": "@ai-sdk/openai",
+                            "api": "https://gw.example/responses",
+                        },
+                    },
+                },
+            }
+        },
+    )
+
+    stored = catalogue_module.load(_settings(home))["gateway"]
+    assert stored["luna"]["type"] == "openai-response"
+    assert stored["luna"]["base_url"] == "https://gw.example/responses"
+    # The common case stays quiet: no per-model route recorded.
+    assert "type" not in stored["plain"]
+
+    monkeypatch.setattr(runtime_module, "get_settings", lambda: _settings(home))
+    runtime_module._llm_cache.clear()
+
+    plain = runtime_module.build_llm(provider="gateway", model="plain")
+    luna = runtime_module.build_llm(provider="gateway", model="luna")
+
+    assert type(plain).__name__ == "OpenAIProvider"
+    assert plain.base_url == "https://gw.example/v1"
+    assert type(luna).__name__ == "OpenAIResponsesProvider"
+    assert luna.base_url == "https://gw.example/responses"
+
+
+def test_connect_options_are_saved_and_used_by_the_probe(
+    home: Path, monkeypatch
+) -> None:
+    """A gateway that fingerprints clients needs its identity on every request."""
+    seen: dict[str, object] = {}
+
+    async def probe(**kwargs: object) -> list[str]:
+        seen.update(kwargs)
+        return ["m1"]
+
+    monkeypatch.setattr(routers.config, "discover_models", probe)
+    client = TestClient(create_app(settings=Settings.load_config()))
+
+    response = client.post(
+        "/api/config/providers",
+        json={
+            "key": "gateway",
+            "type": "openai-compatible",
+            "name": "Gateway",
+            "base_url": "https://gw.example/v1",
+            "api_key": "sk",
+            "options": {"user_agent": "claude-cli/2.0.0 (external, cli)"},
+        },
+    )
+
+    assert response.status_code == 200
+    assert seen["user_agent"] == "claude-cli/2.0.0 (external, cli)"
+    # Explicit options make this a config entry, not a key with preset transport.
+    entry = json.loads((home / "config.json").read_text(encoding="utf-8"))["providers"][
+        "gateway"
+    ]
+    assert entry["options"]["user_agent"] == "claude-cli/2.0.0 (external, cli)"
+    assert entry["options"]["base_url"] == "https://gw.example/v1"
+
+
+def test_a_recorded_provider_is_enriched_without_another_download(
+    home: Path, monkeypatch
+) -> None:
+    """The download and the row it describes happen at different times.
+
+    A process fetches models.dev at startup; the provider is connected minutes
+    later. The merge can only fill rows that exist, so recording has to fold in
+    the catalogue already in hand — and it must do so without fetching again,
+    since a second 6 MB parse leaves memory the allocator never takes back.
+    """
+    import asyncio
+
+    import httpx
+
+    from nova.registry import presets as presets_module
+    from nova.registry.catalogue import load, record, refresh_models_dev
+
+    catalog = {
+        "gateway": {
+            "name": "Gateway",
+            "api": "https://gw.example/v1",
+            "npm": "@ai-sdk/openai-compatible",
+            "models": {
+                "luna": {
+                    "limit": {"context": 2000},
+                    "provider": {"npm": "@ai-sdk/openai"},
+                }
+            },
+        }
+    }
+    downloads = {"n": 0}
+
+    class _Client:
+        async def get(self, *_args: object, **_kwargs: object) -> httpx.Response:
+            downloads["n"] += 1
+            return httpx.Response(200, json=catalog)
+
+        async def __aenter__(self) -> _Client:
+            return self
+
+        async def __aexit__(self, *_exc: object) -> None:
+            return None
+
+    monkeypatch.setattr("httpx.AsyncClient", lambda **_kwargs: _Client())
+    presets_module.set_candidates(())
+    (home / "config.json").write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "gateway": {
+                        "type": "openai-compatible",
+                        "name": "Gateway",
+                        "options": {"base_url": "https://gw.example/v1"},
+                        "models": {},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = Settings.load_config()
+
+    # The startup download has nothing to fill yet.
+    assert asyncio.run(refresh_models_dev(settings)) == 0
+    assert load(settings) == {}
+
+    record(settings, "gateway", ["luna"])
+
+    facts = load(settings)["gateway"]["luna"]
+    assert facts["limit"]["context"] == 2000
+    assert facts["type"] == "openai-response"
+
+    # One fetch for the whole session: the TTL applies again now that a merge
+    # has happened, and the next provider needs no download either.
+    assert asyncio.run(refresh_models_dev(settings)) == 0
+    assert downloads["n"] == 1
+    presets_module.set_candidates(())
+
+
+def test_an_unchanged_catalogue_is_never_parsed_twice(home: Path, monkeypatch) -> None:
+    """Parsing 6 MB of catalogue costs memory the allocator never returns.
+
+    A refresh whose payload is byte-identical to the copy in hand has nothing to
+    re-parse, so it must not: the merge runs, the parse does not.
+    """
+    import asyncio
+
+    import httpx
+
+    from nova.registry import catalogue as catalogue_module
+    from nova.registry import presets as presets_module
+
+    catalog = {
+        "gateway": {
+            "name": "Gateway",
+            "api": "https://gw.example/v1",
+            "npm": "@ai-sdk/openai-compatible",
+            "models": {"luna": {"limit": {"context": 2000}}},
+        }
+    }
+
+    class _Client:
+        async def get(self, *_args: object, **_kwargs: object) -> httpx.Response:
+            return httpx.Response(200, json=catalog)
+
+        async def __aenter__(self) -> _Client:
+            return self
+
+        async def __aexit__(self, *_exc: object) -> None:
+            return None
+
+    monkeypatch.setattr("httpx.AsyncClient", lambda **_kwargs: _Client())
+    presets_module.set_candidates(())
+    settings = Settings.load_config()
+
+    assert asyncio.run(catalogue_module.refresh_models_dev(settings)) == 0
+    kept = catalogue_module._download
+    assert kept is not None
+
+    assert asyncio.run(catalogue_module.refresh_models_dev(settings, force=True)) == 0
+    assert catalogue_module._download is kept
+    presets_module.set_candidates(())
+
+
+def test_a_custom_endpoint_is_declared_not_polled(home: Path, monkeypatch) -> None:
+    """Custom means the user's own endpoint: no probe, no sync, no preset row.
+
+    The key is a machine secret, so it goes where secrets go, and the model list
+    is the declaration rather than something Nova reads off the endpoint.
+    """
+    probed: list[dict[str, object]] = []
+
+    async def probe(**kwargs: object) -> list[str]:
+        probed.append(kwargs)
+        return ["invented"]
+
+    monkeypatch.setattr(routers.config, "discover_models", probe)
+    client = TestClient(create_app(settings=Settings.load_config()))
+
+    response = client.post(
+        "/api/config/providers",
+        json={
+            "key": "my-gw",
+            "type": "openai-compatible",
+            "name": "my-gw",
+            "base_url": "https://gw.example/v1",
+            "api_key": "sk-custom",
+            "custom": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert probed == []
+
+    entry = json.loads((home / "config.json").read_text(encoding="utf-8"))["providers"][
+        "my-gw"
+    ]
+    assert entry["custom"] is True
+    assert "api_key" not in entry["options"]
+    credentials = json.loads((home / "credentials.json").read_text(encoding="utf-8"))
+    assert credentials["providers"]["my-gw"]["api_key"] == "sk-custom"
+    # Loaded like any other provider: the key comes back from the store.
+    assert Settings.load_config().providers["my-gw"].options["api_key"] == "sk-custom"
+
+    # Neither sync path touches it.
+    assert client.post("/api/providers/sync-models").json()["synced"] == []
+    assert probed == []
+    assert client.post("/api/config/providers/my-gw/sync-models").status_code == 400
+    assert probed == []
+
+    # The connect form still lists it, marked as what it is.
+    rows = client.get("/api/providers/presets").json()["items"]
+    row = next(item for item in rows if item["id"] == "my-gw")
+    assert row["custom"] is True
+    assert row["base_url"] == "https://gw.example/v1"
+    assert row["key_env"] is None
+
+    # And it is not remembered as a vendor: the cache may not exist at all,
+    # which is the strongest form of the same statement.
+    cache = home / "provider_presets.cache.json"
+    remembered = (
+        json.loads(cache.read_text(encoding="utf-8"))["presets"]
+        if cache.exists()
+        else []
+    )
+    assert "my-gw" not in {item["id"] for item in remembered}
+
+
+def test_rotating_a_key_keeps_it_out_of_config(home: Path) -> None:
+    """A key typed into the connect screen must never land in config.json."""
+    client = TestClient(create_app(settings=Settings.load_config()))
+    client.post(
+        "/api/config/providers",
+        json={
+            "key": "my-gw",
+            "type": "openai-compatible",
+            "name": "my-gw",
+            "base_url": "https://gw.example/v1",
+            "api_key": "sk-first",
+            "custom": True,
+        },
+    )
+
+    response = client.post(
+        "/api/config/providers/update",
+        json={"key": "my-gw", "api_key": "sk-second"},
+    )
+
+    assert response.status_code == 200
+    entry = json.loads((home / "config.json").read_text(encoding="utf-8"))["providers"][
+        "my-gw"
+    ]
+    assert "api_key" not in entry["options"]
+    credentials = json.loads((home / "credentials.json").read_text(encoding="utf-8"))
+    assert credentials["providers"]["my-gw"]["api_key"] == "sk-second"

@@ -51,6 +51,18 @@ class ProviderConfig:
     name: str
     options: dict[str, Any]
     models: dict[str, dict[str, Any]]
+    #: True for an endpoint the user declared themselves. Nova does not poll
+    #: such a provider for a model list: the declaration is the truth.
+    custom: bool = False
+
+    @property
+    def pollable(self) -> bool:
+        """Whether Nova may read this provider's model list from the endpoint.
+
+        One rule, read by every caller: a custom endpoint is a declaration, and
+        asking it again would replace that with whatever it happens to serve.
+        """
+        return not self.custom
 
 
 @dataclass(frozen=True)
@@ -367,9 +379,10 @@ def _parse_provider_configs(
             name=name,
             options=normalized_options,
             models=normalized_models,
+            custom=raw.get("custom") is True,
         )
 
-    # A key on its own is a provider: the preset supplies the transport facts,
+    # A key on its own is a provider: the preset supplies the transport,
     # so connecting never has to write an entry into config.json. An explicit
     # config entry always wins, which is how an override survives.
     from nova.registry.presets import preset_for
@@ -421,6 +434,11 @@ _INTERNAL_MODEL_KEYS = {
     # passthrough sent an unknown parameter that the provider rejected with a
     # 400. It is applied by `apply_effort` instead, which knows the spelling.
     "reasoning_effort",
+    # A model's own route: which adapter to build, and where to point it. Both
+    # are Nova's, not the provider's, so neither may ride the passthrough into
+    # the request body.
+    "type",
+    "base_url",
 }
 
 

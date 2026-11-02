@@ -266,6 +266,9 @@ class ProviderPresetRecord(BaseModel):
     base_url: str = ""
     key_env: str | None = None
     note: str = ""
+    #: True for an endpoint the user declared themselves: the form must ask for
+    #: the base URL, and nothing polls it for a model list.
+    custom: bool = False
 
 
 class ProviderPresetListResponse(BaseModel):
@@ -292,6 +295,12 @@ class ProviderCreateRequest(BaseModel):
     name: str = ""
     base_url: str = ""
     api_key: str = ""
+    #: Extra provider options — headers, a request hook, a client identity for a
+    #: gateway that fingerprints them. Anything here makes the connection an
+    #: explicit config entry rather than a key with preset-supplied transport.
+    options: dict[str, Any] = {}
+    #: The endpoint is the caller's own, not a vendor Nova knows how to poll.
+    custom: bool = False
 
 
 class AgentCreateRequest(BaseModel):

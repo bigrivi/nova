@@ -71,8 +71,32 @@ def build_llm(
             model_keys = load_catalogue(settings).get(provider, [])
         model = model_keys[0] if model_keys else ""
 
-    provider_type = provider_config.type or ""
-    cache_key = f"{provider_type}:{provider}:{model}"
+    # A model may speak a different transport than its provider, on a different
+    # endpoint: models.dev states both per row, and a config entry may override
+    # either. Everything below this line uses the model's route, not the
+    # provider's blanket one.
+    from nova.registry.catalogue import spec_for
+
+    model_config_values = provider_config.models.get(model)
+    model_config_values = (
+        model_config_values if isinstance(model_config_values, dict) else {}
+    )
+    spec = spec_for(settings, provider, model)
+    provider_type = (
+        str(
+            model_config_values.get("type") or spec.get("type") or provider_config.type
+        )
+        or ""
+    )
+    base_url = str(
+        model_config_values.get("base_url")
+        or spec.get("base_url")
+        or provider_config.options.get("base_url", "")
+    ).strip()
+
+    # The route is part of the key: two models under one provider can reach
+    # different adapters, and a cached instance must not answer for both.
+    cache_key = f"{provider_type}:{base_url}:{provider}:{model}"
     cached = _llm_cache.get(cache_key)
     if cached is not None:
         return cached
@@ -101,15 +125,13 @@ def build_llm(
             stream_delay=float(options.get("stream_delay", 0.02)),
         )
     elif provider_type == "ollama":
-        base_url = str(provider_config.options.get("base_url", "")).strip()
         llm = OllamaProvider(
             base_url=base_url,
             request_options=request_options,
         )
     elif provider_type == "openai-compatible":
-        base_url = str(provider_config.options.get("base_url", "")).strip()
         api_key = str(provider_config.options.get("api_key", "")).strip()
-        model_config = provider_config.models.get(model, {})
+        model_config = model_config_values
         reasoning_field = model_config.get("reasoning_field")
         kwargs = {}
         if reasoning_field:
@@ -120,10 +142,10 @@ def build_llm(
             request_options=request_options,
             default_reasoning_effort=default_effort,
             **_header_options(provider_config.options),
+            **_user_agent_option(provider_config.options),
             **kwargs,
         )
     elif provider_type == "openai-response":
-        base_url = str(provider_config.options.get("base_url", "")).strip()
         api_key = str(provider_config.options.get("api_key", "")).strip()
         llm = OpenAIResponsesProvider(
             api_key=api_key,
@@ -131,9 +153,9 @@ def build_llm(
             request_options=request_options,
             default_reasoning_effort=default_effort,
             **_header_options(provider_config.options),
+            **_user_agent_option(provider_config.options),
         )
     elif provider_type == "anthropic":
-        base_url = str(provider_config.options.get("base_url", "")).strip()
         api_key = str(provider_config.options.get("api_key", "")).strip()
         anthropic_version = (
             str(provider_config.options.get("anthropic_version", "")).strip()
@@ -152,6 +174,7 @@ def build_llm(
             anthropic_version=anthropic_version,
             betas=betas,
             **_header_options(provider_config.options),
+            **_user_agent_option(provider_config.options),
         )
     else:
         raise ValueError(f"Unsupported provider type: {provider_type}")
@@ -162,6 +185,13 @@ def build_llm(
 
 def _optional_int(value: str | int | float | None) -> int | None:
     return int(value) if value is not None else None
+
+
+def _user_agent_option(options: dict) -> dict:
+    """A provider may name itself differently; Nova's token is the default."""
+    raw = options.get("user_agent")
+    value = str(raw).strip() if raw else ""
+    return {"user_agent": value} if value else {}
 
 
 def _header_options(options: dict) -> dict:
@@ -437,8 +467,7 @@ async def build_agent(
     posture_marker = (
         ""
         if allowed_tools is None and not shell_read_only
-        else f"{int(shell_read_only)}:"
-        + ",".join(sorted(allowed_tools or ()))
+        else f"{int(shell_read_only)}:" + ",".join(sorted(allowed_tools or ()))
     )
     reg_key = registry_cache_key(
         agent_key,

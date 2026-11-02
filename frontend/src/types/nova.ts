@@ -144,6 +144,8 @@ export type NovaProviderPreset = {
     base_url: string;
     key_env: string | null;
     note: string;
+    /** An endpoint the user declared themselves; nothing polls it for models. */
+    custom?: boolean;
 };
 
 export type NovaProviderCreateRequest = {
@@ -152,6 +154,8 @@ export type NovaProviderCreateRequest = {
     name: string;
     base_url: string;
     api_key: string;
+    /** The endpoint is the user's own, so no model list is read from it. */
+    custom?: boolean;
 };
 
 export type NovaModelCreateRequest = {

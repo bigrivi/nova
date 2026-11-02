@@ -27,7 +27,6 @@ mock.module("../../api/nova-api.ts", () => ({
     // The app refreshes provider catalogues on launch; a render test must not
     // reach for a backend that is not there.
     syncProviderModels: async () => ({ synced: [], failed: {} }),
-    refreshProviderPresets: async () => 0,
     deleteProvider: async (key: string) => {
         deleted.push(key);
         return [];

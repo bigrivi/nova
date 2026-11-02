@@ -50,7 +50,7 @@ def resolve_effort_levels(
     model: str,
     provider_type: str,
     model_config: dict | None = None,
-    facts: dict | None = None,
+    spec: dict | None = None,
 ) -> list[str]:
     """Return the reasoning levels *model* declares, or ``[]`` when it declares none.
 
@@ -73,7 +73,7 @@ def resolve_effort_levels(
     # Nothing in config: use the ladder the catalogue states for this model.
     # Nothing is inferred from the name — a catalogue row is evidence, the id
     # is not.
-    catalogued = (facts or {}).get(LEVELS_CONFIG_KEY)
+    catalogued = (spec or {}).get(LEVELS_CONFIG_KEY)
     if isinstance(catalogued, list):
         levels = [str(level).strip() for level in catalogued if str(level).strip()]
         if levels:

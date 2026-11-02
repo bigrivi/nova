@@ -257,13 +257,16 @@ class OpenAIResponsesProvider(HttpProvider):
         request_hook: str | None = None,
         request_session_hook: str | None = None,
         default_reasoning_effort: str | None = None,
+        user_agent: str | None = None,
     ) -> None:
         self.api_key = api_key or ""
         self.base_url = (base_url or "").rstrip("/")
         self.request_options = dict(request_options or {})
         self.timeout_seconds = timeout_seconds
         # A bare SDK request names nobody; this one always says Nova.
-        self._user_agent = default_user_agent()
+        # A gateway that fingerprints its clients may need a specific
+        # identity; Nova's own token is still the default.
+        self._user_agent = (user_agent or "").strip() or default_user_agent()
         self._extra_headers = dict(extra_headers or {})
         self._request_hook = request_hook
         self._request_session_hook = request_session_hook

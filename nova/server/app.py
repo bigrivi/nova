@@ -185,7 +185,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # A broken scheduler must not take the whole API down; routes
             # keep serving and runs keep working through manual triggers.
             log.exception("Scheduler failed to start; continuing without ticks")
-        # Derived registry data — provider presets and model facts from
+        # Derived registry data — provider presets and model specs from
         # models.dev — is global rather than per client, so it is refreshed here
         # as well as from the TUI. Without this, `nova web` and the desktop app
         # only ever see the bundled floor, because neither launches the TUI.

@@ -149,6 +149,29 @@ class AgentCreateRequest:
     mode: str = "primary"
 
 
+class ConfigNotFound(ConfigValidationError):
+    """The provider, model or MCP server named does not exist.
+
+    A subclass, so a caller that only knows "the config is unhappy" keeps
+    working; the distinction exists so the wire layer can answer 404 without
+    matching on the message text.
+    """
+
+
+def _providers(payload: dict[str, Any]) -> dict[str, Any]:
+    """The ``providers`` map, refusing a file where it is not a map.
+
+    Mirrors what ``_mcp_servers`` already does for its own block: one guard,
+    read by every mutator, instead of six identical copies of the same message.
+    """
+    providers = payload.setdefault("providers", {})
+    if not isinstance(providers, dict):
+        raise ConfigValidationError(
+            "Invalid Nova config: 'providers' must be an object."
+        )
+    return providers
+
+
 @dataclass(frozen=True)
 class ProviderCreateRequest:
     key: str
@@ -156,6 +179,7 @@ class ProviderCreateRequest:
     name: str
     base_url: str
     api_key: str
+    custom: bool = False
 
 
 @dataclass(frozen=True)
@@ -352,13 +376,13 @@ class ConfigService:
     def config_path(self) -> Path:
         return self._config_path
 
-    def add_provider(self, request: ProviderCreateRequest) -> dict[str, Any]:
+    def add_provider(
+        self,
+        request: ProviderCreateRequest,
+        extra_options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         payload = _load_config_payload(self._config_path)
-        providers = payload.setdefault("providers", {})
-        if not isinstance(providers, dict):
-            raise ConfigValidationError(
-                "Invalid Nova config: 'providers' must be an object."
-            )
+        providers = _providers(payload)
 
         provider_key = request.key.strip()
         if not provider_key:
@@ -386,52 +410,78 @@ class ConfigService:
                 base_url = default_url
 
         options: dict[str, Any] = {"base_url": base_url}
-        if (
-            provider_type in {"openai-compatible", "openai-response", "anthropic"}
-            and api_key
-        ):
-            options["api_key"] = api_key
 
         # Connecting a known provider stores the key and nothing else: the
         # preset already says how to reach it, and config.json stays a record of
         # what the user chose rather than a copy of what Nova knows.
         from nova.registry.presets import preset_for
 
+        extras = {str(k): v for k, v in (extra_options or {}).items()}
         preset = preset_for(provider_key, self._settings.home)
         if (
             preset is not None
             and api_key
+            and not extras
             and provider_type == preset.type
             and base_url in {"", preset.base_url}
         ):
             credentials = _load_credentials(self._settings.home)
             credentials[provider_key] = api_key
             _write_credentials(self._settings.home, credentials)
-            self._remember_transport(provider_key, display_name, provider_type, base_url)
+            self._remember_transport(
+                provider_key, display_name, provider_type, base_url
+            )
             return payload
 
-        providers[provider_key] = {
+        # Anything the caller passed explicitly is an override, so it belongs in
+        # the file. The key does not: a secret is stored once, in the file Nova
+        # keeps for secrets, whichever shape the provider has.
+        options.update(extras)
+        options["base_url"] = base_url
+        entry: dict[str, Any] = {
             "type": provider_type,
             "name": display_name,
             "options": options,
             "models": {},
         }
+        if request.custom:
+            # Says what nothing else can: this endpoint is the user's own, so
+            # its model list is a declaration rather than something to poll.
+            entry["custom"] = True
+        providers[provider_key] = entry
         _write_json(self._config_path, payload)
-        self._remember_transport(provider_key, display_name, provider_type, base_url)
+        self._remember_transport(
+            provider_key, display_name, provider_type, base_url, remember=False
+        )
+        if api_key:
+            credentials = _load_credentials(self._settings.home)
+            credentials[provider_key] = api_key
+            _write_credentials(self._settings.home, credentials)
         return payload
 
     def _remember_transport(
-        self, provider_key: str, name: str, provider_type: str, base_url: str
+        self,
+        provider_key: str,
+        name: str,
+        provider_type: str,
+        base_url: str,
+        *,
+        remember: bool = True,
     ) -> None:
-        """Keep the one row this connection needs, and nothing else.
+        """Keep the row this connection needs, and nothing else.
 
         The disk copy exists so a provider the user actually connected still
         resolves after a restart with no network. Catalogues of vendors they
-        never touched stay in memory.
+        never touched stay in memory. A custom endpoint is described entirely
+        by its own config entry, so it is not stored here — which keeps "this
+        key has a preset" a truthful way to tell the two apart.
         """
-        from nova.registry.presets import ProviderPreset, remember
+        if not remember:
+            return
+        from nova.registry.presets import ProviderPreset
+        from nova.registry.presets import remember as store
 
-        remember(
+        store(
             self._settings.home,
             ProviderPreset(
                 id=provider_key,
@@ -444,16 +494,12 @@ class ConfigService:
 
     def add_model(self, request: ModelCreateRequest) -> dict[str, Any]:
         payload = _load_config_payload(self._config_path)
-        providers = payload.setdefault("providers", {})
-        if not isinstance(providers, dict):
-            raise ConfigValidationError(
-                "Invalid Nova config: 'providers' must be an object."
-            )
+        providers = _providers(payload)
 
         provider_key = request.provider.strip()
         provider_payload = providers.get(provider_key)
         if not isinstance(provider_payload, dict):
-            raise ConfigValidationError(f"Provider '{provider_key}' does not exist.")
+            raise ConfigNotFound(f"Provider '{provider_key}' does not exist.")
 
         models = provider_payload.setdefault("models", {})
         if not isinstance(models, dict):
@@ -485,11 +531,7 @@ class ConfigService:
         api_key: str | None = None,
     ) -> dict[str, Any]:
         payload = _load_config_payload(self._config_path)
-        providers = payload.setdefault("providers", {})
-        if not isinstance(providers, dict):
-            raise ConfigValidationError(
-                "Invalid Nova config: 'providers' must be an object."
-            )
+        providers = _providers(payload)
 
         provider_key = (key or "").strip()
         provider_payload = providers.get(provider_key)
@@ -499,9 +541,7 @@ class ConfigService:
             # entry; changing the key keeps config.json untouched.
             credentials = _load_credentials(self._settings.home)
             if provider_key not in credentials:
-                raise ConfigValidationError(
-                    f"Provider '{provider_key}' does not exist."
-                )
+                raise ConfigNotFound(f"Provider '{provider_key}' does not exist.")
             if api_key is not None:
                 if api_key.strip():
                     credentials[provider_key] = api_key.strip()
@@ -552,12 +592,17 @@ class ConfigService:
             options["base_url"] = base_url.strip()
 
         if api_key is not None:
-            if api_key == "":
-                options.pop("api_key", None)
+            # The secret lives in credentials.json; an entry that carried one
+            # (written before that was true) gives it up here rather than
+            # keeping two copies of the same key.
+            options.pop("api_key", None)
+            credentials = _load_credentials(self._settings.home)
+            stripped_key = api_key.strip()
+            if stripped_key:
+                credentials[provider_key] = stripped_key
             else:
-                stripped_key = api_key.strip()
-                if stripped_key:
-                    options["api_key"] = stripped_key
+                credentials.pop(provider_key, None)
+            _write_credentials(self._settings.home, credentials)
 
         if (
             effective_type in {"openai-compatible", "openai-response"}
@@ -572,16 +617,12 @@ class ConfigService:
 
     def delete_provider(self, key: str) -> dict[str, Any]:
         payload = _load_config_payload(self._config_path)
-        providers = payload.setdefault("providers", {})
-        if not isinstance(providers, dict):
-            raise ConfigValidationError(
-                "Invalid Nova config: 'providers' must be an object."
-            )
+        providers = _providers(payload)
 
         provider_key = (key or "").strip()
         credentials = _load_credentials(self._settings.home)
         if provider_key not in providers and provider_key not in credentials:
-            raise ConfigValidationError(f"Provider '{provider_key}' does not exist.")
+            raise ConfigNotFound(f"Provider '{provider_key}' does not exist.")
 
         if provider_key in providers:
             del providers[provider_key]
@@ -607,16 +648,12 @@ class ConfigService:
         tools: bool | None = None,
     ) -> dict[str, Any]:
         payload = _load_config_payload(self._config_path)
-        providers = payload.setdefault("providers", {})
-        if not isinstance(providers, dict):
-            raise ConfigValidationError(
-                "Invalid Nova config: 'providers' must be an object."
-            )
+        providers = _providers(payload)
 
         provider_key = (provider or "").strip()
         provider_payload = providers.get(provider_key)
         if not isinstance(provider_payload, dict):
-            raise ConfigValidationError(f"Provider '{provider_key}' does not exist.")
+            raise ConfigNotFound(f"Provider '{provider_key}' does not exist.")
 
         models = provider_payload.setdefault("models", {})
         if not isinstance(models, dict):
@@ -627,7 +664,7 @@ class ConfigService:
         model_key = (model or "").strip()
         model_payload = models.get(model_key)
         if not isinstance(model_payload, dict):
-            raise ConfigValidationError(
+            raise ConfigNotFound(
                 f"Model '{model_key}' does not exist under provider '{provider_key}'."
             )
 
@@ -645,16 +682,12 @@ class ConfigService:
 
     def delete_model(self, provider: str, model: str) -> dict[str, Any]:
         payload = _load_config_payload(self._config_path)
-        providers = payload.setdefault("providers", {})
-        if not isinstance(providers, dict):
-            raise ConfigValidationError(
-                "Invalid Nova config: 'providers' must be an object."
-            )
+        providers = _providers(payload)
 
         provider_key = (provider or "").strip()
         provider_payload = providers.get(provider_key)
         if not isinstance(provider_payload, dict):
-            raise ConfigValidationError(f"Provider '{provider_key}' does not exist.")
+            raise ConfigNotFound(f"Provider '{provider_key}' does not exist.")
 
         models = provider_payload.setdefault("models", {})
         if not isinstance(models, dict):
@@ -664,7 +697,7 @@ class ConfigService:
 
         model_key = (model or "").strip()
         if model_key not in models:
-            raise ConfigValidationError(
+            raise ConfigNotFound(
                 f"Model '{model_key}' does not exist under provider '{provider_key}'."
             )
 
@@ -712,7 +745,7 @@ class ConfigService:
         servers = self._mcp_servers(payload)
         existing = normalize_mcp_name(name)
         if existing not in servers:
-            raise ConfigValidationError(f"MCP server '{existing}' does not exist.")
+            raise ConfigNotFound(f"MCP server '{existing}' does not exist.")
         stored = servers[existing]
         if not isinstance(stored, dict):
             raise ConfigValidationError(f"MCP server '{existing}' is not an object.")
@@ -740,7 +773,7 @@ class ConfigService:
         servers = self._mcp_servers(payload)
         existing = normalize_mcp_name(name)
         if existing not in servers:
-            raise ConfigValidationError(f"MCP server '{existing}' does not exist.")
+            raise ConfigNotFound(f"MCP server '{existing}' does not exist.")
         del servers[existing]
         _write_json(self._config_path, payload)
         return payload

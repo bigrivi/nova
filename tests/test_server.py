@@ -286,7 +286,7 @@ def test_add_provider_endpoint_updates_config_and_models(monkeypatch, tmp_path):
     assert "openai" in provider_keys
 
     # `openai` is on the bundled floor, so connecting it stores the key and
-    # leaves config.json alone: the transport facts come from that row.
+    # leaves config.json alone: the transport comes from that row.
     config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
     assert "openai" not in config_payload["providers"]
     credentials = json.loads(
@@ -320,12 +320,13 @@ def test_add_provider_endpoint_writes_an_unknown_provider_to_config(monkeypatch,
 
     assert response.status_code == 200
     config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
-    assert config_payload["providers"]["my-gateway"]["options"]["base_url"] == (
-        "https://gateway.example/v1"
-    )
-    # No preset means no place else to keep it, so the key stays where the
-    # provider is: an explicitly declared provider carries its own config.
-    assert not (home / "credentials.json").exists()
+    entry = config_payload["providers"]["my-gateway"]
+    assert entry["options"]["base_url"] == "https://gateway.example/v1"
+    # The shape of the endpoint is config; the secret is not. A key typed into
+    # the connect screen goes where secrets go, whichever provider it belongs to.
+    assert "api_key" not in entry["options"]
+    credentials = json.loads((home / "credentials.json").read_text(encoding="utf-8"))
+    assert credentials["providers"]["my-gateway"]["api_key"] == "sk-test"
 
 
 @pytest.mark.asyncio

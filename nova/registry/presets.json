@@ -59,6 +59,14 @@
       "type": "openai-compatible",
       "base_url": "https://opencode.ai/zen/v1",
       "key_env": "OPENCODE_ZEN_API_KEY"
+    },
+    {
+      "id": "agentrouter",
+      "label": "AgentRouter",
+      "type": "openai-response",
+      "base_url": "https://agentrouter.org/v1",
+      "key_env": "AGENTROUTER_API_KEY",
+      "note": "Serves only the OpenAI Responses API and refuses clients it does not vouch for; connect with an identity it accepts in options.user_agent."
     }
   ]
 }

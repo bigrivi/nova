@@ -340,19 +340,19 @@ def resolve_context_window(model: str, provider: str) -> tuple[int, str]:
 def _snapshot_context_window(model: str, provider: str) -> tuple[int, str] | None:
     """The window recorded for this model, with where it came from."""
     try:
-        from nova.registry.catalogue import facts_for
+        from nova.registry.catalogue import spec_for
         from nova.settings import get_settings
     except Exception:  # pragma: no cover - import cycle guard
         return None
     try:
-        facts = facts_for(get_settings(), provider, model)
+        spec = spec_for(get_settings(), provider, model)
     except Exception:  # pragma: no cover - settings may be unavailable
         return None
-    limit = facts.get("limit")
+    limit = spec.get("limit")
     value = limit.get("context") if isinstance(limit, dict) else None
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         return None
-    return value, str(facts.get("_context_source") or "discovered")
+    return value, str(spec.get("_context_source") or "discovered")
 
 
 def _configured_context_window(model: str, provider: str) -> int | None:

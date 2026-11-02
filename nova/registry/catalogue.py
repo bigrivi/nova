@@ -5,19 +5,28 @@ they connected, a model they pinned with limits or with tools turned off. This
 file is a snapshot of someone else's catalogue: it can be refreshed, deleted, or
 go stale without changing a single decision the user made.
 
-The snapshot only carries ids. Per-model facts (context window, tool support)
-still come from ``providers.<key>.models``; a model known only from here runs on
-Nova's defaults until someone pins the real values in config.
+The snapshot only carries ids. Per-model specs (context window, transport,
+reasoning levels) still come from ``providers.<key>.models``; a model known only
+from here runs on Nova's defaults until someone pins the real values in config.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from nova.registry.discovery import DiscoveredModel
+from nova.registry.presets import (
+    derive_from_catalog,
+    has_candidates,
+    set_candidates,
+    type_for_npm,
+)
 from nova.settings import Settings, _write_json
 
 CACHE_NAME = "models.json"
@@ -28,19 +37,27 @@ def cache_path(settings: Settings):
     return settings.home / CACHE_NAME
 
 
-def load(settings: Settings) -> dict[str, dict[str, dict]]:
-    """Every provider's last known models, id -> the facts it stated.
+def _read(settings: Settings) -> dict[str, Any]:
+    """The snapshot as stored, or ``{}`` when it is missing or unreadable.
 
-    An entry with no facts is ``{}``, not a missing row: the model still exists,
-    it just arrived without a context window. The list form is what older caches
-    hold and is read as "ids with no facts".
+    One place decides what a corrupt file means, so every operation above agrees
+    instead of each deciding for itself that it is empty.
     """
     try:
         payload = json.loads(cache_path(settings).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
-    if not isinstance(payload, dict):
-        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def load(settings: Settings) -> dict[str, dict[str, dict]]:
+    """Every provider's last known models, id -> the spec it stated.
+
+    An entry with no spec is ``{}``, not a missing row: the model still exists,
+    it just arrived without a context window. The list form is what older caches
+    hold and is read as "ids with no spec".
+    """
+    payload = _read(settings)
 
     known: dict[str, dict[str, dict]] = {}
     for provider, entry in payload.items():
@@ -51,22 +68,21 @@ def load(settings: Settings) -> dict[str, dict[str, dict]]:
             }
         elif isinstance(models, dict):
             known[str(provider)] = {
-                str(model_id): _normalise(facts)
-                for model_id, facts in models.items()
+                str(model_id): _normalise(entry) for model_id, entry in models.items()
             }
     return known
 
 
-def _normalise(facts: object) -> dict[str, Any]:
+def _normalise(stored: object) -> dict[str, Any]:
     """Read an entry in the shape config.json uses, upgrading older ones.
 
     The snapshot speaks the same vocabulary as the config on purpose: what a
     provider said can be copied into an override without translating field
     names.
     """
-    if not isinstance(facts, dict):
+    if not isinstance(stored, dict):
         return {}
-    entry = dict(facts)
+    entry = dict(stored)
 
     # Older snapshots used flat keys; keep them readable.
     legacy_context = entry.pop("context", None)
@@ -91,14 +107,10 @@ def record(
 
     Facts the provider stated are kept so planning does not depend on the user
     writing a context window into ``config.json`` for every model they use.
+    Whatever this process already downloaded from models.dev is folded in
+    before returning: these rows are the first moment it can apply.
     """
-    payload: dict[str, Any] = {}
-    try:
-        existing = json.loads(cache_path(settings).read_text(encoding="utf-8"))
-        if isinstance(existing, dict):
-            payload = existing
-    except (OSError, ValueError):
-        payload = {}
+    payload = _read(settings)
 
     previous = payload.get(provider, {}).get("models")
     previous = previous if isinstance(previous, dict) else {}
@@ -113,17 +125,19 @@ def record(
             continue
         # Re-asking a provider must not erase what the catalogue already filled
         # in for a model that is still there.
-        facts = _normalise(previous.get(model_id, {}))
+        entry = _normalise(previous.get(model_id, {}))
         if stated:
-            facts[LIMIT_KEY] = {"context": stated}
-            facts[SOURCE_KEY] = "provider"
-        stored[model_id] = facts
+            entry[LIMIT_KEY] = {"context": stated}
+            entry[SOURCE_KEY] = "provider"
+        stored[model_id] = entry
 
     payload[provider] = {
         "fetched_at": int(time.time()),
         "models": dict(sorted(stored.items())),
     }
     _write_json(cache_path(settings), payload)
+
+    _merge_downloaded(settings)
 
 
 def forget(settings: Settings, provider: str) -> bool:
@@ -133,11 +147,8 @@ def forget(settings: Settings, provider: str) -> bool:
     would resurrect the old model list the moment the same key is connected
     again, before any refresh has a chance to correct it.
     """
-    try:
-        payload = json.loads(cache_path(settings).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
-    if not isinstance(payload, dict) or provider not in payload:
+    payload = _read(settings)
+    if provider not in payload:
         return False
     payload.pop(provider)
     _write_json(cache_path(settings), payload)
@@ -159,17 +170,37 @@ MODELS_DEV_TTL_SECONDS = 24 * 60 * 60
 MODELS_DEV_TIMEOUT_SECONDS = 20.0
 
 
-def _models_dev_facts(entry: object) -> dict[str, Any]:
-    """Project one models.dev row down to what Nova plans with."""
+@dataclass(frozen=True)
+class _Download:
+    """The catalogue this process fetched, and what it was fetched for.
+
+    One value instead of three globals: the home it belongs to, the fingerprint
+    that makes a second identical download free, and the parsed rows. A provider
+    connected later in the session still needs them, because the merge can only
+    fill rows that exist — and they exist only after discovery wrote them.
+    """
+
+    home: Path
+    digest: str
+    catalog: dict[str, Any]
+
+
+_download: _Download | None = None
+
+
+def _catalogue_spec(
+    entry: object, provider_npm: object = None, provider_api: object = None
+) -> dict[str, Any]:
+    """Project one models.dev row down to the spec Nova plans with."""
     if not isinstance(entry, dict):
         return {}
-    facts: dict[str, Any] = {}
+    spec: dict[str, Any] = {}
 
     limit = entry.get("limit")
     context = limit.get("context") if isinstance(limit, dict) else None
     if isinstance(context, int) and not isinstance(context, bool) and context > 0:
-        facts[LIMIT_KEY] = {"context": context}
-        facts[SOURCE_KEY] = "models.dev"
+        spec[LIMIT_KEY] = {"context": context}
+        spec[SOURCE_KEY] = "models.dev"
 
     if entry.get("reasoning") is True:
         options = entry.get("reasoning_options")
@@ -186,8 +217,20 @@ def _models_dev_facts(entry: object) -> dict[str, Any]:
                         if str(value).strip() and str(value).strip() != "default"
                     ]
         if levels:
-            facts[LEVELS_KEY] = levels
-    return facts
+            spec[LEVELS_KEY] = levels
+
+    # A model may speak a different transport than its provider: models.dev
+    # says so per row, and the base URL usually moves with it. Recorded only
+    # when it differs, so the snapshot stays quiet for the common case.
+    sub = entry.get("provider")
+    if isinstance(sub, dict):
+        npm = str(sub.get("npm") or "").strip()
+        if npm and npm != str(provider_npm or "").strip():
+            spec["type"] = type_for_npm(npm)
+        api = str(sub.get("api") or "").strip().rstrip("/")
+        if api and api != str(provider_api or "").strip().rstrip("/"):
+            spec["base_url"] = api
+    return spec
 
 
 def is_chat_capable(entry: object) -> bool:
@@ -222,12 +265,7 @@ def merge_models_dev(settings: Settings, catalog: object) -> int:
     inner = catalog.get("providers")
     providers = inner if isinstance(inner, dict) else catalog
 
-    try:
-        payload = json.loads(cache_path(settings).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        payload = {}
-    if not isinstance(payload, dict):
-        payload = {}
+    payload = _read(settings)
 
     stored: dict[str, dict[str, Any]] = {}
     for provider, entry in payload.items():
@@ -248,28 +286,30 @@ def merge_models_dev(settings: Settings, catalog: object) -> int:
         models = provider.get("models") if isinstance(provider, dict) else None
         if not isinstance(models, dict):
             continue
+        provider_npm = provider.get("npm") if isinstance(provider, dict) else None
+        provider_api = provider.get("api") if isinstance(provider, dict) else None
         for model_id, entry in models.items():
             if str(model_id) not in wanted:
                 continue
-            facts = _models_dev_facts(entry)
+            spec = _catalogue_spec(entry, provider_npm, provider_api)
             hidden = not is_chat_capable(entry)
-            if not facts and not hidden:
+            if not spec and not hidden:
                 continue
             target = stored.get(str(provider_id), {}).get(str(model_id))
             if target is not None:
-                if facts:
-                    _fill(target, facts)
+                if spec:
+                    _fill(target, spec)
                 if hidden:
                     target[HIDDEN_KEY] = True
                 else:
                     target.pop(HIDDEN_KEY, None)
-            if facts:
-                by_id.setdefault(str(model_id), []).append(facts)
+            if spec:
+                by_id.setdefault(str(model_id), []).append(spec)
 
     for model_id, candidates in by_id.items():
         if not candidates or any(item != candidates[0] for item in candidates):
             continue
-        for provider, models in stored.items():
+        for models in stored.values():
             if model_id in models:
                 _fill(models[model_id], candidates[0])
 
@@ -289,17 +329,17 @@ def merge_models_dev(settings: Settings, catalog: object) -> int:
         },
     }
     _write_json(cache_path(settings), merged)
-    return sum(1 for models in stored.values() for facts in models.values() if facts)
+    return sum(1 for models in stored.values() for spec in models.values() if spec)
 
 
-def _fill(target: dict[str, Any], facts: dict[str, Any]) -> bool:
+def _fill(target: dict[str, Any], spec: dict[str, Any]) -> bool:
     """Add what is missing; never replace a fact the provider stated.
 
     models.dev may overwrite its own earlier value — the catalogue moves — but a
     window the provider stated is the provider's to change.
     """
     changed = False
-    for key, value in facts.items():
+    for key, value in spec.items():
         if key == SOURCE_KEY:
             if not isinstance(target.get(LIMIT_KEY), dict):
                 continue
@@ -327,10 +367,22 @@ def _fill(target: dict[str, Any], facts: dict[str, Any]) -> bool:
     return changed
 
 
+def _merge_downloaded(settings: Settings) -> int:
+    """Fill the snapshot as it stands from the catalogue this process fetched.
+
+    Fetching again would cost the same memory a second time — parsing a
+    catalogue this size leaves roughly 11 MB resident that the allocator does
+    not take back — so the parsed copy is kept and reused instead.
+    """
+    if _download is None or _download.home != settings.home:
+        return 0
+    return merge_models_dev(settings, _download.catalog)
+
+
 async def refresh_models_dev(settings: Settings, *, force: bool = False) -> int:
     """Fetch models.dev once and refresh both derived surfaces.
 
-    Merges the model facts into the snapshot and rewrites the derived provider
+    Merges the model specs into the snapshot and rewrites the derived provider
     presets. Never raises: both are fallbacks, and a failed fetch leaves the
     previous copies in place.
     """
@@ -338,7 +390,7 @@ async def refresh_models_dev(settings: Settings, *, force: bool = False) -> int:
 
     import httpx
 
-    from nova.registry.presets import has_candidates
+    global _download
 
     # The TTL exists to keep restarts from hammering models.dev. It must not
     # skip a process that has no candidates yet: those live in memory only, so
@@ -349,36 +401,46 @@ async def refresh_models_dev(settings: Settings, *, force: bool = False) -> int:
         and int(time.time()) - cached_at(settings) < MODELS_DEV_TTL_SECONDS
     ):
         return 0
+
     url = os.getenv(MODELS_DEV_ENV, "").strip() or MODELS_DEV_URL
     try:
         async with httpx.AsyncClient(timeout=MODELS_DEV_TIMEOUT_SECONDS) as client:
             response = await client.get(url)
         if response.status_code >= 400:
             return 0
+        digest = hashlib.blake2b(response.content).hexdigest()
+        if _download is not None and digest == _download.digest:
+            if _download.home == settings.home:
+                # Same bytes as the copy in hand: reuse it rather than paying
+                # for another parse. The merge still runs, because the snapshot
+                # may have moved on since (a provider connected, a row recorded).
+                return merge_models_dev(settings, _download.catalog)
+            return 0
         catalog = response.json()
     except (httpx.HTTPError, ValueError):
         return 0
+    if not isinstance(catalog, dict):
+        return 0
 
-    # One download, two uses: the facts Nova plans with, and the vendors the
+    # One download, two uses: the specs Nova plans with, and the vendors the
     # connect form offers. The second stays in memory — persisting every vendor
     # in the catalogue would write a file of providers this person never
     # connects; only what they connect is worth keeping on disk.
-    from nova.registry.presets import derive_from_catalog, set_candidates
-
+    _download = _Download(settings.home, digest, catalog)
     set_candidates(derive_from_catalog(catalog))
     return merge_models_dev(settings, catalog)
 
 
-def facts_for(
+def spec_for(
     settings: Settings, provider: str, model: str, payload: dict | None = None
 ) -> dict[str, Any]:
-    """Facts for one model: the provider's own row first, then an agreed id."""
+    """The spec for one model: the provider's own row first, then an agreed id."""
     data = payload if payload is not None else load(settings)
     entry = data.get(provider)
     if isinstance(entry, dict):
-        facts = entry.get(model)
-        if isinstance(facts, dict):
-            return facts
+        spec = entry.get(model)
+        if isinstance(spec, dict):
+            return spec
 
     matches = [
         models[model]
@@ -393,10 +455,6 @@ def facts_for(
 
 def cached_at(settings: Settings) -> int:
     """When models.dev was last merged, ``0`` when it never was."""
-    try:
-        payload = json.loads(cache_path(settings).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return 0
-    meta = payload.get("_meta") if isinstance(payload, dict) else None
+    meta = _read(settings).get("_meta")
     stamp = meta.get("models_dev_at") if isinstance(meta, dict) else None
     return int(stamp) if isinstance(stamp, int) else 0

@@ -55,6 +55,25 @@ def _reset_background_task_manager():
     task_manager_module._manager = previous
 
 
+@pytest.fixture(autouse=True)
+def _reset_registry_state():
+    """Drop the process-global catalogue between tests.
+
+    ``refresh_models_dev`` keeps the parsed models.dev download and the derived
+    presets in memory so a provider connected later in the same process can be
+    enriched without a second download. Both are process state; a test that
+    inherits them sees another test's home and skips its own fetch.
+    """
+    from nova.registry import catalogue as catalogue_module
+    from nova.registry import presets as presets_module
+
+    catalogue_module._download = None
+    presets_module.set_candidates(())
+    yield
+    catalogue_module._download = None
+    presets_module.set_candidates(())
+
+
 @pytest.fixture
 def make_executor():
     """Return a factory that wraps a coroutine function as a TaskExecutor.

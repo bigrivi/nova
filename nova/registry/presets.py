@@ -18,12 +18,8 @@ guessing one puts a wrong value in front of the user; discovery fills them in.
 from __future__ import annotations
 
 import json
-import os
-import time
 from dataclasses import dataclass
 from pathlib import Path
-
-import httpx
 
 BUNDLED_NAME = "presets.json"
 # The bundled table is the floor: the local runtimes, which no public catalogue
@@ -36,7 +32,7 @@ _SUPPORTED_TYPES = {"ollama", "openai-compatible", "openai-response", "anthropic
 
 @dataclass(frozen=True)
 class ProviderPreset:
-    """One vendor's transport facts, as offered by the connect form."""
+    """One vendor's transport, as offered by the connect form."""
 
     id: str
     """Stable config key; also the default provider key in the form."""
@@ -55,6 +51,21 @@ class ProviderPreset:
 
     note: str = ""
     """One line of orientation: local, subscription, or plain API key."""
+
+
+#: Which Nova transport a models.dev SDK package means. Everything that is not
+#: an explicit dialect speaks OpenAI Chat Completions: a vendor-specific SDK is
+#: still that wire underneath.
+_TYPE_BY_NPM = {
+    "@ai-sdk/anthropic": "anthropic",
+    "@ai-sdk/google-vertex/anthropic": "anthropic",
+    "@ai-sdk/openai": "openai-response",
+}
+
+
+def type_for_npm(npm: object) -> str:
+    """The Nova transport an AI SDK package name implies."""
+    return _TYPE_BY_NPM.get(str(npm or "").strip(), "openai-compatible")
 
 
 def _is_local(base_url: str) -> bool:
@@ -108,10 +119,7 @@ def bundled_payload() -> dict:
 
 
 def _rows(payload: object) -> list:
-    if isinstance(payload, dict):
-        rows = payload.get("presets")
-    else:
-        rows = payload
+    rows = payload.get("presets") if isinstance(payload, dict) else payload
     return rows if isinstance(rows, list) else []
 
 
@@ -149,6 +157,14 @@ def set_candidates(derived: tuple[ProviderPreset, ...]) -> None:
     _candidates = derived
 
 
+def _read_cache(home: Path) -> object:
+    """The remembered rows as stored, or ``None`` when the file is unusable."""
+    try:
+        return json.loads(cache_path(home).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 def load(home: Path | None = None) -> tuple[ProviderPreset, ...]:
     """What the connect form offers: the floor, then what is known.
 
@@ -161,11 +177,7 @@ def load(home: Path | None = None) -> tuple[ProviderPreset, ...]:
     ordered: list[ProviderPreset] = list(BUNDLED)
 
     if home is not None:
-        try:
-            payload = json.loads(cache_path(home).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            payload = None
-        for preset in _parse_rows(payload):
+        for preset in _parse_rows(_read_cache(home)):
             if preset.id not in known:
                 known.add(preset.id)
                 ordered.append(preset)
@@ -185,11 +197,7 @@ def remember(home: Path, preset: ProviderPreset) -> None:
     """
     from nova.settings import _write_json
 
-    try:
-        payload = json.loads(cache_path(home).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        payload = None
-    rows = _rows(payload)
+    rows = _rows(_read_cache(home))
     kept = [
         row
         for row in rows
@@ -205,16 +213,6 @@ def remember(home: Path, preset: ProviderPreset) -> None:
         }
     )
     _write_json(cache_path(home), {"presets": kept})
-
-
-def cached_at(home: Path) -> int:
-    """Unix time of the last successful fetch, ``0`` when there is no cache."""
-    try:
-        payload = json.loads(cache_path(home).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return 0
-    fetched = payload.get("fetched_at") if isinstance(payload, dict) else None
-    return int(fetched) if isinstance(fetched, int) else 0
 
 
 def derive_from_catalog(catalog: object) -> tuple[ProviderPreset, ...]:
@@ -240,11 +238,7 @@ def derive_from_catalog(catalog: object) -> tuple[ProviderPreset, ...]:
             continue
         env = entry.get("env")
         key_env = str(env[0]).strip() if isinstance(env, list) and env else None
-        provider_type = (
-            "anthropic"
-            if str(entry.get("npm") or "") == "@ai-sdk/anthropic"
-            else "openai-compatible"
-        )
+        provider_type = type_for_npm(entry.get("npm"))
         preset = preset_from_json(
             {
                 "id": str(provider_id).lower(),

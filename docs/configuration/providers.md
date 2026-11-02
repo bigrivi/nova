@@ -16,7 +16,7 @@ vendors, each with its base URL, wire type, and key environment variable already
 filled in, so only the API key and the model name are left.
 
 Almost all of them are **derived from [models.dev](https://models.dev)** on the
-same daily fetch that supplies model facts. That fetch runs once per server start
+same daily fetch that supplies each model's spec. That fetch runs once per server start
 (any surface: `nova serve`, `web`, `desktop`) and again when a TUI launches, so a
 backend that has been up for days still picks up a new vendor.
 
@@ -92,6 +92,26 @@ reached (a local runtime may simply be off), an endpoint that does not implement
 wrong, and refusing to save on them would make an offline setup impossible to
 configure.
 
+### Custom endpoints
+
+An endpoint you declare yourself is not a vendor as far as Nova is concerned, so
+it is treated differently in three ways:
+
+- **No probe on connect, and no model list to read.** Nothing promised that
+  endpoint serves `/models`, so connecting it does not depend on one. Its key is
+  stored in `credentials.json` like any other, but the list of models is
+  something you write under `providers.<key>.models` — the same way you would
+  declare a model the vendor's catalogue does not know about.
+- **No refresh.** The startup sync and the per-provider refresh both skip it;
+  asking again would replace a declaration with whatever the endpoint happens to
+  advertise today. `/api/config/providers/<key>/sync-models` answers `400` with
+  that reason.
+- **It shows up in `/connect` with `custom: true`**, so the form asks for a base
+  URL rather than filling one in, and re-keying it only asks for the key.
+
+The marker is `"custom": true` in the entry, written when you connect from the
+form. A hand-written entry without it is treated as an ordinary provider.
+
 ### Per-provider request shaping
 
 | Key (`options.*`) | Effect |
@@ -100,6 +120,7 @@ configure.
 | `request_hook` | script run before every request; its headers are merged in |
 | `request_session_hook` | same, run once per session and cached |
 | `extra_body` | fields deep-merged into every request body |
+| `user_agent` | the identity sent to this provider, when Nova's own is refused |
 
 A hook receives `{"session_id": …}` on stdin and must print `{"headers": {…}}`
 with exit 0. A failing hook fails the request rather than sending it unmodified.
@@ -120,6 +141,32 @@ with exit 0. A failing hook fails the request rather than sending it unmodified.
 Model-level `extra_body` is merged over the provider's, one level deep at a time,
 so a provider-wide quirk and a model-specific one compose instead of clobbering.
 Any key Nova does not own passes through into the request body unchanged.
+
+A model may also speak a **different transport** than its provider, on a
+different endpoint. `type` and `base_url` on the model entry override the
+provider's for that model alone:
+
+```json
+"models": {
+  "gpt-5.6-luna": {
+    "type": "openai-response",
+    "base_url": "https://gateway.example/v1"
+  }
+}
+```
+
+Some gateways only serve clients they recognise and answer `401 unauthorized
+client detected` to everything else. Nova always identifies itself as Nova, and
+such a provider simply fails to connect — that refusal is reported as it came
+from upstream rather than worked around. `options.user_agent` exists for the
+case where you know which identity the gateway accepts and choose to send it
+yourself; it applies to that provider alone, on discovery and on chat alike.
+
+This is not a corner case: models.dev says 640 catalogue models use a transport
+their provider does not, and 531 of those also need a different base URL. Nova
+reads both from the catalogue when it discovers a model, so the mixed case works
+without anyone writing it down — the entry above is only needed to override what
+the catalogue says.
 
 ## How a model becomes selectable
 
