@@ -92,6 +92,19 @@ include = ["nova*"]
 nova = ["*.json"]
 "nova.registry" = ["*.json"]
 
+[tool.mypy]
+# Batch type check for the package. Python 3.12 matches CI, not the local
+# interpreter; missing third-party stubs are ignored rather than silenced file
+# by file.
+python_version = "3.12"
+files = ["nova"]
+exclude = ["^build/", "^dist/", "^site/"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+show_error_codes = true
+pretty = true
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "strict"
