@@ -473,7 +473,7 @@ class SessionService:
                 from nova.config.service import ConfigService
 
                 try:
-                    service = ConfigService(self._settings)
+                    service = ConfigService(self._settings, data_source)
                     agent = await service.get_agent(agent_key)
                 except Exception:
                     agent = None
@@ -514,12 +514,14 @@ class SessionService:
         # a miss would invent a hit rate for a gateway that never mentioned
         # caching. A reported zero still counts, because it is a real miss.
         billed = [
-            message
+            (message.tokens_input, message.cache_read_tokens)
             for message in raw_messages
-            if message.tokens_input and message.cache_read_tokens is not None
+            if message.tokens_input is not None
+            and message.tokens_input != 0
+            and message.cache_read_tokens is not None
         ]
-        prompt_tokens = sum(message.tokens_input for message in billed)
-        cached_tokens = sum(message.cache_read_tokens for message in billed)
+        prompt_tokens = sum(tokens for tokens, _ in billed)
+        cached_tokens = sum(cached for _, cached in billed)
         return {
             "used": used,
             "limit": limit,
