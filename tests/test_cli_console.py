@@ -15,21 +15,15 @@ import nova.__main__ as nova_main
 from nova.app import console
 
 
-class _StubEvent:
-    def __init__(self, type_, data):
-        self.type = type_
-        self.data = data
-
-
 class _StubStream:
-    def __init__(self, events):
-        self._events = events
+    def __init__(self, frames):
+        self._frames = frames
         self.closed = False
 
     def __aiter__(self):
         async def walk():
-            for event in self._events:
-                yield event
+            for part in self._frames:
+                yield f"data: {json.dumps(part)}\n\n".encode()
 
         return walk()
 
@@ -40,8 +34,8 @@ class _StubStream:
 class _StubService:
     """Stands in for ChatService; records the request it was handed."""
 
-    def __init__(self, events=(), sessions=(), deleted=False):
-        self._events = list(events)
+    def __init__(self, frames=(), sessions=(), deleted=False):
+        self._frames = list(frames)
         self._sessions = list(sessions)
         self._deleted = deleted
         self.request = None
@@ -49,9 +43,9 @@ class _StubService:
         self.listed_workspace = None
         self.deleted_session_id = None
 
-    def chat_stream(self, request):
+    def chat_stream_ai_sdk(self, request):
         self.request = request
-        self.stream = _StubStream(self._events)
+        self.stream = _StubStream(self._frames)
         return self.stream
 
     async def list_sessions(self, workspace_dir=None):
@@ -65,18 +59,16 @@ class _StubService:
 
 def _install(monkeypatch, service):
     monkeypatch.setattr(console, "ChatService", lambda **_kw: service)
-    # The stub payloads are already plain dicts.
-    monkeypatch.setattr(console, "stream_event_data_to_dict", lambda data: data)
 
 
 @pytest.mark.asyncio
 async def test_run_prompt_streams_deltas(monkeypatch):
     service = _StubService(
         [
-            _StubEvent("session.started", {"session_id": "s1"}),
-            _StubEvent("message.delta", {"delta": "he"}),
-            _StubEvent("message.delta", {"delta": "llo"}),
-            _StubEvent("response.completed", {"content": "hello"}),
+            {"type": "data-nova-session", "data": {"sessionId": "s1"}},
+            {"type": "text-delta", "delta": "he"},
+            {"type": "text-delta", "delta": "llo"},
+            {"type": "finish"},
         ]
     )
     _install(monkeypatch, service)
@@ -95,9 +87,10 @@ async def test_run_prompt_streams_deltas(monkeypatch):
 async def test_run_prompt_json_emits_one_object(monkeypatch):
     service = _StubService(
         [
-            _StubEvent("session.started", {"session_id": "s1"}),
-            _StubEvent("message.delta", {"delta": "partial"}),
-            _StubEvent("response.completed", {"content": "final"}),
+            {"type": "data-nova-session", "data": {"sessionId": "s1"}},
+            {"type": "text-delta", "delta": "fin"},
+            {"type": "text-delta", "delta": "al"},
+            {"type": "finish"},
         ]
     )
     _install(monkeypatch, service)
@@ -114,7 +107,7 @@ async def test_run_prompt_json_emits_one_object(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_prompt_error_exits_one(monkeypatch):
-    service = _StubService([_StubEvent("response.error", {"message": "boom"})])
+    service = _StubService([{"type": "error", "errorText": "boom"}])
     _install(monkeypatch, service)
     err = io.StringIO()
 
@@ -126,7 +119,9 @@ async def test_run_prompt_error_exits_one(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_prompt_input_required_exits_two_and_closes_stream(monkeypatch):
-    service = _StubService([_StubEvent("input.required", {"message": "which?"})])
+    service = _StubService(
+        [{"type": "data-nova-input-required", "data": {"message": "which?"}}]
+    )
     _install(monkeypatch, service)
 
     code = await console.run_prompt(
@@ -135,6 +130,37 @@ async def test_run_prompt_input_required_exits_two_and_closes_stream(monkeypatch
 
     assert code == console.EXIT_NEEDS_INPUT
     assert service.stream.closed
+
+
+@pytest.mark.asyncio
+async def test_run_prompt_abort_exits_one(monkeypatch):
+    service = _StubService([{"type": "text-delta", "delta": "half"}, {"type": "abort"}])
+    _install(monkeypatch, service)
+    out = io.StringIO()
+
+    code = await console.run_prompt("hi", settings=object(), out=out, err=io.StringIO())
+
+    assert code == console.EXIT_ERROR
+    assert out.getvalue().strip() == "half"
+
+
+@pytest.mark.asyncio
+async def test_run_prompt_approval_required_exits_two(monkeypatch):
+    service = _StubService(
+        [
+            {
+                "type": "data-nova-approval-required",
+                "data": {"description": "delete a directory"},
+            }
+        ]
+    )
+    _install(monkeypatch, service)
+    err = io.StringIO()
+
+    code = await console.run_prompt("hi", settings=object(), out=io.StringIO(), err=err)
+
+    assert code == console.EXIT_NEEDS_INPUT
+    assert "delete a directory" in err.getvalue()
 
 
 @pytest.mark.asyncio
@@ -166,9 +192,7 @@ async def test_empty_workspace_names_the_folder(monkeypatch):
     _install(monkeypatch, service)
     out = io.StringIO()
 
-    await console.list_sessions(
-        settings=object(), workspace_dir="/tmp/none", out=out
-    )
+    await console.list_sessions(settings=object(), workspace_dir="/tmp/none", out=out)
 
     assert "No sessions in /tmp/none" in out.getvalue()
     assert "--all" in out.getvalue()
@@ -216,9 +240,7 @@ async def test_list_sessions_empty(monkeypatch):
     out = io.StringIO()
 
     assert (
-        await console.list_sessions(
-            settings=object(), all_workspaces=True, out=out
-        )
+        await console.list_sessions(settings=object(), all_workspaces=True, out=out)
         == console.EXIT_OK
     )
     assert out.getvalue() == "No sessions\n"
@@ -274,7 +296,9 @@ def test_run_without_a_provider_flag_leaves_it_to_the_agent(monkeypatch):
         return noop()
 
     monkeypatch.setattr(console, "run_prompt", fake_run_prompt)
-    monkeypatch.setattr(nova_main.os, "_exit", lambda code: (_ for _ in ()).throw(SystemExit(code)))
+    monkeypatch.setattr(
+        nova_main.os, "_exit", lambda code: (_ for _ in ()).throw(SystemExit(code))
+    )
     monkeypatch.setattr(nova_main.sys, "argv", ["nova", "run", "hi"])
 
     with pytest.raises(SystemExit):
@@ -282,4 +306,3 @@ def test_run_without_a_provider_flag_leaves_it_to_the_agent(monkeypatch):
 
     assert captured["provider"] is None
     assert captured["model"] is None
-

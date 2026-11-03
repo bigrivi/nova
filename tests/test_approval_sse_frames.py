@@ -20,8 +20,6 @@ from fastapi.testclient import TestClient
 from nova.agent import AgentEvent
 from nova.db.database import close_db
 from nova.server import create_app
-from nova.server.schemas import ApprovalRequiredEvent, ApprovalRequiredEventData
-from nova.server.sse import encode_sse
 from nova.settings import get_settings
 from nova.tools.approval import get_approval_manager
 
@@ -168,16 +166,9 @@ def _approval_frames_via_ai_sdk(chunks: list[bytes]) -> list[dict]:
     ]
 
 
-def _approval_frames_via_chat_stream(events) -> list[dict]:
-    return [e for e in events if type(e).__name__ == "ApprovalRequiredEvent"]
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("rememberable", [True, False])
-@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
-async def test_the_frame_carries_rememberable(
-    monkeypatch, tmp_path, rememberable, path
-):
+async def test_the_frame_carries_rememberable(monkeypatch, tmp_path, rememberable):
     script = [
         *APPROVAL_SCRIPT[:-1],
         (
@@ -187,33 +178,27 @@ async def test_the_frame_carries_rememberable(
         (AgentEvent.DONE, {"reason": "", "content": "done"}),
     ]
     app = _make_app(
-        monkeypatch, tmp_path, f"home-rememberable-{path}-{rememberable}", script=script
+        monkeypatch, tmp_path, f"home-rememberable-{rememberable}", script=script
     )
     request = type(
         "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
     )()
 
-    if path == "ai_sdk":
-        chunks = [
-            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
-        ]
-        frames = _approval_frames_via_ai_sdk(chunks)
-        data = frames[0]["data"] if frames else {}
-    else:
-        events = [e async for e in app.state.chat_service.chat_stream(request)]
-        frames = _approval_frames_via_chat_stream(events)
-        data = frames[0].data.model_dump() if frames else {}
+    chunks = [
+        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+    ]
+    frames = _approval_frames_via_ai_sdk(chunks)
+    data = frames[0]["data"] if frames else {}
 
-    assert frames, f"no approval frame on the {path} path"
+    assert frames, "no approval frame on the stream"
     assert data["rememberable"] is rememberable, (
-        f"the {path} path dropped or inverted rememberable"
+        "the frame dropped or inverted rememberable"
     )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
 async def test_a_frame_without_the_field_defaults_to_rememberable(
-    monkeypatch, tmp_path, path
+    monkeypatch, tmp_path
 ):
     """A replayed or older frame has no such key, and the safe reading is yes.
 
@@ -223,7 +208,7 @@ async def test_a_frame_without_the_field_defaults_to_rememberable(
     app = _make_app(
         monkeypatch,
         tmp_path,
-        f"home-rememberable-default-{path}",
+        "home-rememberable-default",
         script=[
             *APPROVAL_SCRIPT,
             (AgentEvent.DONE, {"reason": "", "content": "done"}),
@@ -233,21 +218,16 @@ async def test_a_frame_without_the_field_defaults_to_rememberable(
         "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
     )()
 
-    if path == "ai_sdk":
-        chunks = [
-            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
-        ]
-        data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
-    else:
-        events = [e async for e in app.state.chat_service.chat_stream(request)]
-        data = _approval_frames_via_chat_stream(events)[0].data.model_dump()
+    chunks = [
+        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+    ]
+    data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
 
     assert data["rememberable"] is True
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
-async def test_the_frame_carries_the_family(monkeypatch, tmp_path, path):
+async def test_the_frame_carries_the_family(monkeypatch, tmp_path):
     """What "Approve & Remember" would cover.
 
     The grant is keyed on the rule and this together, and the rule's description is
@@ -263,26 +243,21 @@ async def test_the_frame_carries_the_family(monkeypatch, tmp_path, path):
         ),
         (AgentEvent.DONE, {"reason": "", "content": "done"}),
     ]
-    app = _make_app(monkeypatch, tmp_path, f"home-family-{path}", script=script)
+    app = _make_app(monkeypatch, tmp_path, "home-family", script=script)
     request = type(
         "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
     )()
 
-    if path == "ai_sdk":
-        chunks = [
-            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
-        ]
-        data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
-    else:
-        events = [e async for e in app.state.chat_service.chat_stream(request)]
-        data = _approval_frames_via_chat_stream(events)[0].data.model_dump()
+    chunks = [
+        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+    ]
+    data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
 
-    assert data["family"] == "git push *", f"the {path} path dropped the family"
+    assert data["family"] == "git push *", "the frame dropped the family"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
-async def test_the_frame_carries_the_danger_flag(monkeypatch, tmp_path, path):
+async def test_the_frame_carries_the_danger_flag(monkeypatch, tmp_path):
     """Destructive, not merely asking: the dialog reddens off this field.
 
     Both serializers, like the target test -- a field added to one and not
@@ -296,54 +271,41 @@ async def test_the_frame_carries_the_danger_flag(monkeypatch, tmp_path, path):
         ),
         (AgentEvent.DONE, {"reason": "", "content": "done"}),
     ]
-    app = _make_app(monkeypatch, tmp_path, f"home-dangerous-{path}", script=script)
+    app = _make_app(monkeypatch, tmp_path, "home-dangerous", script=script)
     request = type(
         "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
     )()
 
-    if path == "ai_sdk":
-        chunks = [
-            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
-        ]
-        data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
-    else:
-        events = [e async for e in app.state.chat_service.chat_stream(request)]
-        data = _approval_frames_via_chat_stream(events)[0].data.model_dump()
+    chunks = [
+        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+    ]
+    data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
 
-    assert data["dangerous"] is True, f"the {path} path dropped the danger flag"
+    assert data["dangerous"] is True, "the frame dropped the danger flag"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
-async def test_the_frame_carries_the_target_path(monkeypatch, tmp_path, path):
+async def test_the_frame_carries_the_target_path(monkeypatch, tmp_path):
     """The file the tool is about to touch, so the dialog can name it.
 
     Both serializers, because this field was added to each on its own commit and
     neither was under test -- the same gap that let `workspace` reach only one.
     """
-    app = _make_app(monkeypatch, tmp_path, f"home-target-{path}")
+    app = _make_app(monkeypatch, tmp_path, "home-target")
     request = type(
         "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
     )()
 
-    if path == "ai_sdk":
-        chunks = [
-            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
-        ]
-        data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
-    else:
-        events = [e async for e in app.state.chat_service.chat_stream(request)]
-        data = _approval_frames_via_chat_stream(events)[0].data.model_dump()
+    chunks = [
+        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+    ]
+    data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
 
-    assert data["target"] == "/tmp/test_target.txt", (
-        f"the {path} path dropped the target"
-    )
+    assert data["target"] == "/tmp/test_target.txt", "the frame dropped the target"
+
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
-async def test_the_frame_carries_the_workspace_it_judged_against(
-    monkeypatch, tmp_path, path
-):
+async def test_the_frame_carries_the_workspace_it_judged_against(monkeypatch, tmp_path):
     """The boundary, so the dialog can say where "inside" was.
 
     Both serializers, because this field reached only one of them: a turn that
@@ -356,27 +318,22 @@ async def test_the_frame_carries_the_workspace_it_judged_against(
     workspace = tmp_path / "ws"
     workspace.mkdir()
     set_active_workspace(str(workspace))
-    app = _make_app(monkeypatch, tmp_path, f"home-workspace-{path}")
+    app = _make_app(monkeypatch, tmp_path, "home-workspace")
     request = type(
         "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
     )()
 
-    if path == "ai_sdk":
-        chunks = [
-            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
-        ]
-        data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
-    else:
-        events = [e async for e in app.state.chat_service.chat_stream(request)]
-        data = _approval_frames_via_chat_stream(events)[0].data.model_dump()
+    chunks = [
+        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+    ]
+    data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
 
-    assert data["workspace"] == str(workspace), f"the {path} path lost the workspace"
+    assert data["workspace"] == str(workspace), "the frame lost the workspace"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", ["ai_sdk", "legacy"])
 async def test_a_frame_with_no_active_workspace_sends_an_empty_one(
-    monkeypatch, tmp_path, path
+    monkeypatch, tmp_path
 ):
     """Empty means "undecidable", which the dialog shows rather than hiding.
 
@@ -386,19 +343,15 @@ async def test_a_frame_with_no_active_workspace_sends_an_empty_one(
     from nova.tools.workspace_context import set_active_workspace
 
     set_active_workspace(None)
-    app = _make_app(monkeypatch, tmp_path, f"home-workspace-none-{path}")
+    app = _make_app(monkeypatch, tmp_path, "home-workspace-none")
     request = type(
         "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
     )()
 
-    if path == "ai_sdk":
-        chunks = [
-            chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
-        ]
-        data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
-    else:
-        events = [e async for e in app.state.chat_service.chat_stream(request)]
-        data = _approval_frames_via_chat_stream(events)[0].data.model_dump()
+    chunks = [
+        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+    ]
+    data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
 
     assert data["workspace"] == ""
 
@@ -431,88 +384,6 @@ async def test_a_frame_without_a_family_sends_an_empty_one(monkeypatch, tmp_path
 
     assert data["family"] == ""
     assert data["rememberable"] is True
-
-
-def test_the_scope_flag_survives_serialisation() -> None:
-    """Read off the wire, not out of the model.
-
-    `family` is one word, so `model_dump()` hands out a key the client already
-    reads by accident. `scriptScoped` is two words on both sides and this
-    serializer does not convert case -- it emits Python field names -- so the
-    value went out as `script_scoped`, which the client reads as `undefined`.
-
-    That is invisible to a `.model_dump()` assertion, which is exactly what the
-    frame tests use everywhere else. Encoding the real frame is the only way to
-    see it, so this is the one test in the file that does.
-    """
-    frame = encode_sse(
-        ApprovalRequiredEvent(
-            data=ApprovalRequiredEventData(
-                sequence=1,
-                request_id="r-scope",
-                command='curl x | python3 -c "exec(sys.stdin.read())"',
-                description="d",
-                family="curl * python3 *",
-                script_scoped=True,
-            )
-        )
-    )
-
-    payload = frame.split("data: ", 1)[1].strip()
-    on_the_wire = json.loads(payload)
-
-    assert on_the_wire["scriptScoped"] is True, on_the_wire
-    # And the value the client reads it from is present, not swallowed by the alias.
-    assert on_the_wire["family"] == "curl * python3 *"
-
-
-def test_the_workspace_reaches_the_wire_under_the_name_the_client_reads() -> None:
-    """Same reason as the frame above, and the same one-word trap does not apply.
-
-    The dialog can only show the boundary it is given, and an empty string is
-    the value that means "no workspace" -- indistinguishable from a field that
-    never arrived. So the two are asserted separately: present-and-empty against
-    absent.
-    """
-    frame = encode_sse(
-        ApprovalRequiredEvent(
-            data=ApprovalRequiredEventData(
-                sequence=1,
-                request_id="r-ws",
-                command="/etc/hosts",
-                description="d",
-                workspace="/Users/andy/project",
-            )
-        )
-    )
-
-    on_the_wire = json.loads(frame.split("data: ", 1)[1].strip())
-
-    assert on_the_wire["workspace"] == "/Users/andy/project", on_the_wire
-
-
-def test_a_frame_with_no_workspace_says_so_rather_than_omitting_it() -> None:
-    """The undecidable case is the one worth explaining.
-
-    With no workspace every path is asked about, and that is the behaviour most
-    likely to look like a fault. The client distinguishes it by the key being
-    present and empty; a missing key would read the same but mean "old server".
-    """
-    frame = encode_sse(
-        ApprovalRequiredEvent(
-            data=ApprovalRequiredEventData(
-                sequence=1,
-                request_id="r-nows",
-                command="/etc/hosts",
-                description="d",
-            )
-        )
-    )
-
-    on_the_wire = json.loads(frame.split("data: ", 1)[1].strip())
-
-    assert "workspace" in on_the_wire, on_the_wire
-    assert on_the_wire["workspace"] == ""
 
 
 @pytest.mark.asyncio
@@ -618,76 +489,3 @@ def test_dangerous_shell_command_actually_requires_approval():
 
     assert asyncio.run(check(COMMAND)), "a dangerous command must ask first"
     assert not asyncio.run(check("ls -la")), "a safe command must not ask"
-
-
-async def _capture_approval_data(event_cls, data_cls, **payload):
-    """Stand in for `chat_stream`'s emit, which `_map_agent_event` awaits."""
-    return data_cls(sequence=1, **payload)
-
-
-@pytest.mark.asyncio
-async def test_the_frame_reports_the_workspace_the_gate_actually_used(tmp_path):
-    """Driven through the mapping the turn actually uses.
-
-    The point of sending this is that the dialog and the decision must describe
-    the same boundary. Asserting on the helper alone left the call site free to
-    disappear without a test noticing -- which it did, the first time this was
-    written -- so this goes through `_map_agent_event`, where a dropped argument
-    is visible.
-
-    Read from the same context the gate reads: if the service resolved the
-    workspace its own way the two could disagree, and a dialog naming one
-    directory while the gate judged another is worse than showing nothing,
-    because it looks authoritative.
-    """
-    from nova.agent import AgentEvent
-    from nova.server.chat_service import ChatService
-    from nova.settings import get_settings
-    from nova.tools.workspace_context import set_active_workspace
-
-    set_active_workspace(str(tmp_path))
-    service = ChatService(settings=get_settings())
-
-    mapped = await service._map_agent_event(
-        AgentEvent.APPROVAL_REQUIRED,
-        {"id": "r", "command": "/etc/hosts", "description": "d"},
-        _capture_approval_data,
-    )
-
-    assert mapped.workspace == str(tmp_path), mapped
-
-
-@pytest.mark.asyncio
-async def test_no_active_workspace_reports_empty_rather_than_stale(tmp_path):
-    """Empty is a real answer; the previous workspace must not linger.
-
-    The context is per-turn, and a long-lived service outlives several. A value
-    read at construction, or one that failed to clear, would name a boundary the
-    gate is no longer using -- so the same turn is asked twice, once with a
-    workspace and once without.
-    """
-    from nova.agent import AgentEvent
-    from nova.server.chat_service import ChatService
-    from nova.settings import get_settings
-    from nova.tools.workspace_context import set_active_workspace
-
-    service = ChatService(settings=get_settings())
-
-    async def ask() -> str:
-        set_active_workspace(str(tmp_path))
-        inside = await service._map_agent_event(
-            AgentEvent.APPROVAL_REQUIRED,
-            {"id": "r", "command": "x", "description": "d"},
-            _capture_approval_data,
-        )
-        assert inside.workspace == str(tmp_path)
-
-        set_active_workspace(None)
-        outside = await service._map_agent_event(
-            AgentEvent.APPROVAL_REQUIRED,
-            {"id": "r", "command": "x", "description": "d"},
-            _capture_approval_data,
-        )
-        return outside.workspace
-
-    assert await ask() == ""

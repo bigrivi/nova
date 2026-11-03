@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import TextIO
 
 from nova.constants import DEFAULT_AGENT_KEY
+from nova.server.ai_sdk_frames import iter_parts
 from nova.server.chat_service import ChatService
-from nova.server.schemas import ChatRequest, stream_event_data_to_dict
+from nova.server.schemas import ChatRequest
 from nova.settings import Settings
 
 EXIT_OK = 0
@@ -23,16 +24,29 @@ EXIT_ERROR = 1
 EXIT_NEEDS_INPUT = 2
 EXIT_INTERRUPTED = 130
 
-#: Event type -> (exit code, field carrying the message, status name).
-#: ``approval.required`` is in the table because a turn that stops to ask cannot
-#: be answered from a console: leaving it out would park the process forever.
+#: Frame type -> (exit code, dotted field with the message, status name).
+#: ``data-nova-approval-required`` is in the table because a turn that stops to
+#: ask cannot be answered from a console: leaving it out would park the process.
 _TERMINAL: dict[str, tuple[int, str, str]] = {
-    "response.completed": (EXIT_OK, "content", "completed"),
-    "response.cancelled": (EXIT_ERROR, "message", "cancelled"),
-    "response.error": (EXIT_ERROR, "message", "error"),
-    "input.required": (EXIT_NEEDS_INPUT, "message", "input_required"),
-    "approval.required": (EXIT_NEEDS_INPUT, "description", "approval_required"),
+    "finish": (EXIT_OK, "", "completed"),
+    "abort": (EXIT_ERROR, "", "cancelled"),
+    "error": (EXIT_ERROR, "errorText", "error"),
+    "data-nova-input-required": (EXIT_NEEDS_INPUT, "data.message", "input_required"),
+    "data-nova-approval-required": (
+        EXIT_NEEDS_INPUT,
+        "data.description",
+        "approval_required",
+    ),
 }
+
+
+def _field(part: dict[str, object], path: str) -> str:
+    """Read a dotted field such as ``data.message`` from a frame part."""
+    value: object = part
+    for key in path.split(".") if path else ():
+        value = value.get(key) if isinstance(value, dict) else None
+    return str(value or "")
+
 
 _TITLE_WIDTH = 60
 
@@ -83,28 +97,32 @@ async def run_prompt(
         permission_mode="dontAsk",
     )
 
-    stream = service.chat_stream(request)
+    stream = service.chat_stream_ai_sdk(request)
     resolved_session = session_id
     exit_code = EXIT_ERROR
     status = "error"
     final = ""
     streamed: list[str] = []
     try:
-        async for event in stream:
-            payload = stream_event_data_to_dict(event.data)
-            resolved_session = payload.get("session_id") or resolved_session
-            if event.type == "message.delta":
-                delta = str(payload.get("delta") or "")
+        async for part in iter_parts(stream):
+            kind = part.get("type")
+            if kind == "data-nova-session":
+                data = part.get("data")
+                if isinstance(data, dict):
+                    resolved_session = data.get("sessionId") or resolved_session
+                continue
+            if kind == "text-delta":
+                delta = str(part.get("delta") or "")
                 streamed.append(delta)
                 if not as_json:
                     out.write(delta)
                     out.flush()
                 continue
-            terminal = _TERMINAL.get(event.type)
+            terminal = _TERMINAL.get(kind)
             if terminal is None:
                 continue
             exit_code, field, status = terminal
-            final = str(payload.get(field) or "")
+            final = _field(part, field) if field else "".join(streamed)
             break
     finally:
         # A turn parked on a human is abandoned here; closing the generator is
