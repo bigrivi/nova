@@ -274,6 +274,7 @@ class ToolInvoker:
             try:
                 await pending_task
             except (asyncio.CancelledError, Exception):
+                # Every pending tool task was cancelled above.
                 pass
 
         if abort_task in done:

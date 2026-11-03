@@ -6,6 +6,7 @@ Launch command: python -m nova
 
 import argparse
 import asyncio
+import logging
 import os
 import shutil
 import subprocess
@@ -23,6 +24,8 @@ from nova.mcp.manager import MCPManager
 from nova.server import run_server
 from nova.settings import Settings, configure_logging, get_settings
 from nova.tools.dependency_manager import init_site_packages
+
+log = logging.getLogger(__name__)
 
 
 def _build_frontend(project_root: Path) -> Path:
@@ -441,7 +444,7 @@ def main() -> None:
             loop.run_until_complete(MCPManager.get_shared().shutdown())
             loop.close()
         except Exception:
-            pass
+            log.debug("MCP shutdown failed during exit", exc_info=True)
 
 
 if __name__ == "__main__":

@@ -166,7 +166,7 @@ class AgentMessaging:
                 if not ctx.learning_loop._started:
                     await ctx.learning_loop.start()
             except Exception:
-                pass
+                log.debug("learning loop did not start", exc_info=True)
             try:
                 _sess = ctx.session.get_current_session()
                 user_model_text = await ctx.learning_loop.get_user_model_text(
@@ -175,7 +175,7 @@ class AgentMessaging:
                 if user_model_text:
                     notes.append("## User Model\n\n" + user_model_text)
             except Exception:
-                pass
+                log.debug("user model could not be rendered", exc_info=True)
             # Derived, not latched: the reminder belongs to *this* conversation,
             # so the turn count comes from its own history. A counter on the
             # agent-wide loop was shared by every session using that agent, which

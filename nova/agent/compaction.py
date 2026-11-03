@@ -929,6 +929,7 @@ class CompactionController:
             await emit(AgentEvent.CONTEXT_UPDATE, ctx_payload)
             yield AgentEvent.CONTEXT_UPDATE, ctx_payload
         except Exception:
+            # The context pill is informational; never abort a turn for it.
             pass
 
         plan = await self.plan(messages, session, db, force=force)
@@ -1003,4 +1004,5 @@ class CompactionController:
                 await emit(AgentEvent.CONTEXT_UPDATE, ctx_after)
                 yield AgentEvent.CONTEXT_UPDATE, ctx_after
             except Exception:
+                # Informational frame; the compaction already succeeded.
                 pass

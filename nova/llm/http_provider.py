@@ -301,6 +301,7 @@ class HttpProvider(LLMProvider):
                 try:
                     await post_task
                 except Exception:
+                    # The task was cancelled; its result is irrelevant.
                     pass
                 yield None
                 return
@@ -310,6 +311,7 @@ class HttpProvider(LLMProvider):
                 try:
                     await abort_task
                 except (asyncio.CancelledError, Exception):
+                    # Cancelling the watcher is the normal path.
                     pass
 
             try:

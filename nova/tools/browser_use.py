@@ -112,7 +112,7 @@ def _seed_profile(target: str) -> None:
                 else:
                     shutil.copy2(src, os.path.join(dst_default, name))
             except Exception:
-                pass
+                log.debug("profile seeding skipped: %s", src, exc_info=True)
 
 
 async def _ensure_browser() -> "Page":
@@ -435,6 +435,7 @@ async def browser_use(
                         "main, article, #content, [role=main]"
                     ).first.evaluate("el => el.outerHTML", timeout=3000)
                 except Exception:
+                    # Narrowing is optional; the full page is the fallback.
                     pass
             raw_html = (
                 f"<html><body>{narrowed}</body></html>" if narrowed else full_html
@@ -587,6 +588,7 @@ async def _get_state(include_screenshot: bool = False) -> dict[str, Any]:
     try:
         await page.wait_for_load_state("load", timeout=10000)
     except Exception:
+        # A page that never reaches "load" can still be read.
         pass
     await asyncio.sleep(0.2)
     url = page.url

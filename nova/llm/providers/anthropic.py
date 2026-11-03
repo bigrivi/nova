@@ -241,7 +241,9 @@ class _AnthropicStreamParser(StreamParser):
                     try:
                         acc.tokens_output = int(usage["output_tokens"])
                     except Exception:
-                        pass
+                        log.debug(
+                            "ignoring an unparsable output token count", exc_info=True
+                        )
             return
 
         if event_type == "content_block_start":
@@ -289,7 +291,7 @@ class _AnthropicStreamParser(StreamParser):
                                 initial_input_json
                             )
                     except Exception:
-                        pass
+                        log.debug("ignoring an unparsable tool input", exc_info=True)
             return
 
         if event_type == "content_block_delta":
@@ -390,7 +392,9 @@ class _AnthropicStreamParser(StreamParser):
                 try:
                     acc.tokens_output = int(usage["output_tokens"])
                 except Exception:
-                    pass
+                    log.debug(
+                        "ignoring an unparsable output token count", exc_info=True
+                    )
             return
 
         if event_type == "message_stop":

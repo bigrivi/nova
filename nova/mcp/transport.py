@@ -154,6 +154,7 @@ class StdioTransport(McpTransport):
             try:
                 await task
             except (asyncio.CancelledError, Exception):
+                # The reader tasks were just cancelled.
                 pass
         self._reader_task = None
         self._stderr_task = None

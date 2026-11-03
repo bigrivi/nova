@@ -53,7 +53,7 @@ async def run(config: GatewayConfig | None = None) -> None:
             try:
                 await adapter.stop()
             except Exception:
-                pass
+                log.warning("adapter %s failed to stop", adapter.name, exc_info=True)
 
 
 def main() -> None:

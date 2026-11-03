@@ -4,6 +4,7 @@ Shared runtime assembly helpers.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
@@ -24,6 +25,8 @@ from nova.settings import Settings, get_settings
 from nova.skills.tools import SkillTools
 from nova.tools.permissions import load_permission_mode, permissions_path
 from nova.tools.registry import ToolRegistry
+
+log = logging.getLogger(__name__)
 
 _llm_cache: dict[str, LLMProvider] = {}
 _identity_cache: dict[str, PromptConfig] = {}
@@ -229,7 +232,9 @@ async def _agent_dir(agent_key: str) -> Path:
         if agent and agent.get("workspace_dir"):
             return Path(agent["workspace_dir"]).expanduser().resolve()
     except Exception:
-        pass
+        log.debug(
+            "could not resolve the agent workspace; using the default", exc_info=True
+        )
     return settings.home / "agents" / agent_key
 
 
@@ -363,7 +368,7 @@ async def build_agent(
 
         record = await ConfigService(settings).get_agent(agent_key)
     except Exception:
-        pass
+        log.debug("could not load the agent record", exc_info=True)
 
     # Read once: the session tier feeds both the route and the effort fallback.
     session_route: dict = {}
