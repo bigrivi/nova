@@ -7,7 +7,8 @@ the things that cost time to infer.
 
 ```bash
 .venv/bin/pytest -q                  # full Python suite from the repo root; no PYTHONPATH needed
-.venv/bin/ruff check nova tests      # ruff is local convention, NOT a CI gate
+.venv/bin/ruff check nova tests      # CI gate
+.venv/bin/mypy                       # CI gate; config in pyproject.toml
 .venv/bin/ruff format nova tests
 cd frontend && npm run typecheck     # = tsc -b. This is the real type gate.
 cd frontend && npx vitest run        # there is no `npm test` script
@@ -16,8 +17,8 @@ zensical build --strict              # docs gate; needs `pip install zensical`
 ./build_desktop.sh                   # PyInstaller bundle -> dist/Nova.app
 ```
 
-CI runs exactly three jobs: `pytest -q`, frontend `npm run build`, TUI typecheck+build.
-Lint and mypy are not gates — a change can go green with both broken.
+CI runs four jobs: `pytest -q`, `ruff check nova tests` + `mypy`, frontend
+`npm run build`, and TUI typecheck+build.
 
 ## Frontend traps
 
@@ -42,8 +43,8 @@ Lint and mypy are not gates — a change can go green with both broken.
   `Agent()` depends on that isolation; a manager leaked from an earlier test points at a
   closed connection.
 - Live Ollama e2e is opt-in: `RUN_LIVE_OLLAMA_SERVER_E2E=1 pytest tests/e2e -q`.
-- mypy has ~200 pre-existing errors and no config. Judge only new errors in files you
-  touched.
+- `mypy` is configured in `pyproject.toml` (`files = ["nova"]`, Python 3.12) and the
+  baseline is zero. Run it from the repo root; a new error fails CI.
 
 ## Stream protocol
 
