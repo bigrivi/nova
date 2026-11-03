@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 from nova.gateway.platform import InboundMessage, MessageHandler, PlatformAdapter
 
@@ -47,7 +48,7 @@ class WeChatAdapter(PlatformAdapter):
 
         @bot.on_message
         async def _on_message(
-            message: object,
+            message: Any,
         ) -> None:  # pragma: no cover - SDK callback
             if self._handler is not None:
                 await self._handler(

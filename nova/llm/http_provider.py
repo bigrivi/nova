@@ -77,6 +77,8 @@ async def sleep_unless_aborted(
 
 
 class HttpProvider(LLMProvider):
+    #: Default request budget; subclasses override it in __init__.
+    timeout_seconds: int = 120
     """Base class for the aiohttp-backed providers.
 
     Subclasses set the class attributes and implement the hooks below. The

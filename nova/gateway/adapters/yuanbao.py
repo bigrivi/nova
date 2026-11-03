@@ -12,7 +12,9 @@ from nova.gateway.platform import MessageHandler, PlatformAdapter
 class YuanbaoAdapter(PlatformAdapter):
     name = "yuanbao"
 
-    def __init__(self, token: str = "", agent_key: str = "main", **options: str) -> None:
+    def __init__(
+        self, token: str = "", agent_key: str = "main", **options: str
+    ) -> None:
         self.token = token
         self.agent_key = agent_key
         self.options = options

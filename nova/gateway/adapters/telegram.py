@@ -16,7 +16,9 @@ class TelegramAdapter(PlatformAdapter):
     name = "telegram"
     max_message_chars = 4096
 
-    def __init__(self, token: str, *, agent_key: str = "main", poll_timeout: int = 30) -> None:
+    def __init__(
+        self, token: str, *, agent_key: str = "main", poll_timeout: int = 30
+    ) -> None:
         self.token = token
         self.agent_key = agent_key
         self.poll_timeout = poll_timeout
@@ -73,9 +75,7 @@ class TelegramAdapter(PlatformAdapter):
         chat_id = message.get("chat", {}).get("id")
         if not text or sender is None or chat_id is None or self._handler is None:
             return
-        await self._handler(
-            InboundMessage(sender=str(chat_id), text=str(text))
-        )
+        await self._handler(InboundMessage(sender=str(chat_id), text=str(text)))
 
     async def send_text(self, sender: str, text: str) -> None:
         import httpx

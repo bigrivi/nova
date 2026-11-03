@@ -457,12 +457,12 @@ class TestMemoryReviewScheduling:
 
         provider = ScriptedProvider([[TextDelta(content="done")]])
         async with isolated_agent(provider, memory_review_interval=1) as (agent, _db):
-            agent.run_memory_review = AsyncMock()  # type: ignore[assignment]
+            agent.background.run_memory_review = AsyncMock()  # type: ignore[method-assign]
             async for _ in agent.chat_stream("hello"):
                 pass
             # Give the scheduled task a chance to be created
             await asyncio.sleep(0)
-            agent.run_memory_review.assert_called_once()
+            agent.background.run_memory_review.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_does_not_schedule_review_when_interval_zero(self):
@@ -470,11 +470,11 @@ class TestMemoryReviewScheduling:
 
         provider = ScriptedProvider([[TextDelta(content="done")]])
         async with isolated_agent(provider, memory_review_interval=0) as (agent, _db):
-            agent.run_memory_review = AsyncMock()  # type: ignore[assignment]
+            agent.background.run_memory_review = AsyncMock()  # type: ignore[method-assign]
             async for _ in agent.chat_stream("hello"):
                 pass
             await asyncio.sleep(0)
-            agent.run_memory_review.assert_not_called()
+            agent.background.run_memory_review.assert_not_called()
 
 
 class TestProviderMetaRoundTrip:

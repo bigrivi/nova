@@ -64,7 +64,7 @@ def run_request_hook(
             **(
                 {"start_new_session": True}
                 if sys.platform != "win32"
-                else {"creationflags": subprocess.CREATE_NO_WINDOW}
+                else {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
             ),
         )
     except FileNotFoundError as e:

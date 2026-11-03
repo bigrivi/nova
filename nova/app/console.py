@@ -303,8 +303,11 @@ async def rewind(
         f"deleted {len(result['deleted'])}, "
         f"dropped {result['dropped_messages']} message(s)\n"
     )
-    for item in result["skipped"]:
-        out.write(f"  skipped {item['path']}: {item['reason']}\n")
+    skipped = result["skipped"]
+    if isinstance(skipped, list):
+        for item in skipped:
+            if isinstance(item, dict):
+                out.write(f"  skipped {item.get('path')}: {item.get('reason')}\n")
     if not result["chat_truncated"]:
         out.write("  conversation kept (checkpoint message no longer in history)\n")
     return EXIT_OK

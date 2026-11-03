@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nova.gateway.platform import InboundMessage, MessageHandler, PlatformAdapter
 
@@ -26,17 +26,19 @@ class QQAdapter(PlatformAdapter):
     name = "qq"
     max_message_chars = 2000
 
-    def __init__(self, app_id: str, token: str, agent_key: str = "main", **options: str) -> None:
+    def __init__(
+        self, app_id: str, token: str, agent_key: str = "main", **options: str
+    ) -> None:
         self.app_id = app_id
         self.token = token
         self.agent_key = agent_key
         self.options = options
         self._handler: MessageHandler | None = None
         self._task: asyncio.Task | None = None
-        self._client = None
+        self._client: Any = None
         # The message a sender last wrote, kept so a reply goes back through the
         # endpoint that message came from (group, C2C, guild channel or DM).
-        self._last_message: dict[str, object] = {}
+        self._last_message: dict[str, Any] = {}
 
     def on_message(self, handler: MessageHandler) -> None:
         self._handler = handler
@@ -109,9 +111,7 @@ class QQAdapter(PlatformAdapter):
 
             async def on_group_at_message_create(self, message: GroupMessage) -> None:
                 # Group chat, @-mentions.
-                await self._dispatch(
-                    message, str(message.author.member_openid or "")
-                )
+                await self._dispatch(message, str(message.author.member_openid or ""))
 
             async def on_c2c_message_create(self, message: C2CMessage) -> None:
                 # One-to-one chat from the QQ platform.

@@ -32,9 +32,7 @@ _BUILDERS = {
     "wecom": lambda o: WeComAdapter(
         corp_id=o.get("corp_id", ""), secret=o.get("secret", "")
     ),
-    "qq": lambda o: QQAdapter(
-        app_id=o.get("app_id", ""), token=o.get("token", "")
-    ),
+    "qq": lambda o: QQAdapter(app_id=o.get("app_id", ""), token=o.get("token", "")),
     "yuanbao": lambda o: YuanbaoAdapter(token=o.get("token", "")),
     "wechat": lambda o: WeChatAdapter(token=o.get("token", "")),
 }

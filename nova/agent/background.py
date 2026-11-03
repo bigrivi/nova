@@ -30,16 +30,22 @@ class AgentBackground:
         self.ctx.background_tasks.add(task)
         task.add_done_callback(self.ctx.background_tasks.discard)
 
-    def _maybe_schedule_title_generation(self, session: SessionContext, first_message: str) -> None:
+    def _maybe_schedule_title_generation(
+        self, session: SessionContext, first_message: str
+    ) -> None:
         if self.ctx.is_sub_agent or self.ctx.on_title_updated is None:
             return
         self._spawn(self.generate_title_in_background(session, first_message))
 
-    async def generate_title_in_background(self, session: SessionContext, first_message: str) -> None:
+    async def generate_title_in_background(
+        self, session: SessionContext, first_message: str
+    ) -> None:
         session_id = session.id
         try:
             tool_schemas = (
-                self.ctx.tool_registry.get_schema() if self.ctx.tool_registry.tools else None
+                self.ctx.tool_registry.get_schema()
+                if self.ctx.tool_registry.tools
+                else None
             )
             title = await generate_session_title(
                 self.ctx.llm,
@@ -74,7 +80,7 @@ class AgentBackground:
         if self.agent._turns_since_review < self.ctx.config.memory_review_interval:
             return
         self.agent._turns_since_review = 0
-        self._spawn(self.agent.run_memory_review())
+        self._spawn(self.run_memory_review())
 
     async def run_memory_review(self) -> None:
         from nova.agent.memory_review import MemoryReviewer
@@ -85,7 +91,9 @@ class AgentBackground:
             model=self.ctx.config.model,
             data_source=self.ctx.data_source,
             tools=(
-                self.ctx.tool_registry.get_schema() if self.ctx.tool_registry.tools else None
+                self.ctx.tool_registry.get_schema()
+                if self.ctx.tool_registry.tools
+                else None
             ),
         ).run()
 
