@@ -66,8 +66,9 @@ async def _install(packages: list[str]) -> None:
         ]
         cmd = None
         for candidate in pip_candidates:
-            if candidate[0]:
-                cmd = [*candidate, *pip_args]
+            executable = candidate[0]
+            if executable:
+                cmd = [executable, *[part for part in candidate[1:] if part], *pip_args]
                 break
         if not cmd:
             raise RuntimeError(

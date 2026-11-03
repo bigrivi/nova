@@ -44,7 +44,7 @@ class FeishuAdapter(PlatformAdapter):
             except Exception:
                 content = message.content
             if self._handler is not None:
-                task = asyncio.create_task(
+                task = asyncio.ensure_future(
                     self._handler(InboundMessage(sender=sender, text=content))
                 )
                 self._tasks.add(task)

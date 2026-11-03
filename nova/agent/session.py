@@ -151,6 +151,8 @@ class AgentSession:
             project_id=project_id,
         )
         current = self.ctx.session.get_current_session()
-        log.info("[Session %s] Created", current.id if current else "?")
+        if current is None:
+            raise RuntimeError("session was not created")
+        log.info("[Session %s] Created", current.id)
         self.agent.background._maybe_schedule_title_generation(current, user_input)
         return current

@@ -576,10 +576,9 @@ def _parse_compaction_config(raw: object) -> CompactionSettings:
             raw.get("snip_tool_output_token_budget", 50000)
         ),
         snip_preserve_last_n_messages=int(
-            raw.get(
-                "snip_preserve_last_n_messages",
-                raw.get("snip_preserve_last_n_turns", 12),
-            )
+            raw.get("snip_preserve_last_n_messages")
+            or raw.get("snip_preserve_last_n_turns")
+            or 12
         ),
         summary_keep_tokens=_parse_summary_keep_tokens(raw, default_window),
         max_consecutive_failures=int(raw.get("max_consecutive_failures", 3)),

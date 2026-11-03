@@ -106,7 +106,7 @@ async def run_prompt(
     streamed: list[str] = []
     try:
         async for part in iter_parts(stream):
-            kind = part.get("type")
+            kind = str(part.get("type") or "")
             if kind == "data-nova-session":
                 data = part.get("data")
                 if isinstance(data, dict):
@@ -298,9 +298,11 @@ async def rewind(
         err.write(f"{error}\n")
         return EXIT_ERROR
 
+    restored = result["restored"]
+    deleted = result["deleted"]
     out.write(
-        f"Restored {len(result['restored'])} file(s), "
-        f"deleted {len(result['deleted'])}, "
+        f"Restored {len(restored) if isinstance(restored, list) else 0} file(s), "
+        f"deleted {len(deleted) if isinstance(deleted, list) else 0}, "
         f"dropped {result['dropped_messages']} message(s)\n"
     )
     skipped = result["skipped"]

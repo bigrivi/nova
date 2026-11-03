@@ -100,9 +100,7 @@ async def plan_commit(sessions: SessionService, session_id: str) -> dict[str, An
     }
 
 
-async def _commit_message(
-    sessions: SessionService, session_id: str, patch: str
-) -> str:
+async def _commit_message(sessions: SessionService, session_id: str, patch: str) -> str:
     if not patch.strip():
         return "chore: update files"
     provider, model = await sessions.route_of(session_id)

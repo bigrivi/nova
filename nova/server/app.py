@@ -59,7 +59,7 @@ def build_uvicorn_config(app: FastAPI, settings: Settings) -> uvicorn.Config:
         host=server_settings.host,
         port=server_settings.port,
         log_level=settings.log_level.lower(),
-        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
+        timeout_graceful_shutdown=int(GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS),
     )
 
 

@@ -48,5 +48,8 @@ class ShellExecutor(TaskExecutor):
         backend = get_backend(backend_name, settings=settings)
         prepared = backend.prepare(command, cwd)
         return await run_process(
-            prepared.argv, cwd=prepared.cwd, context=context, environment=prepared.environment
+            prepared.argv,
+            cwd=prepared.cwd,
+            context=context,
+            environment=prepared.environment,
         )

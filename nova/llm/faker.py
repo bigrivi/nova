@@ -706,7 +706,7 @@ class FakerLLMProvider(LLMProvider):
                     q("q1", "出行日期", "请输入出行日期（YYYY-MM-DD）", "text"),
                 ],
             ]
-            pool = [p for p in pool if p]
+            pool = [p for p in pool if p is not None]
             return rng.choice(pool)
         if any(k in hay for k in ("主题", "颜色", "深色", "浅色", "theme", "color")):
             return [

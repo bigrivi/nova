@@ -211,9 +211,7 @@ async def delete_session(
     sessions: SessionService = Depends(get_session_service),
     delete_memories: bool = False,
 ) -> SessionActionResponse:
-    deleted = await sessions.delete_session(
-        session_id, delete_memories=delete_memories
-    )
+    deleted = await sessions.delete_session(session_id, delete_memories=delete_memories)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return SessionActionResponse(status="deleted", session_id=session_id)

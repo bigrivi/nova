@@ -36,14 +36,29 @@ class DockerBackend:
         if self.container:
             # Exec into a running container.
             argv = [
-                "docker", "exec", "-w", target_cwd, self.container,
-                "sh", "-c", command,
+                "docker",
+                "exec",
+                "-w",
+                target_cwd,
+                self.container,
+                "sh",
+                "-c",
+                command,
             ]
         else:
             if not self.image:
-                raise ValueError("Docker backend requires NOVA_DOCKER_IMAGE or NOVA_DOCKER_CONTAINER")
+                raise ValueError(
+                    "Docker backend requires NOVA_DOCKER_IMAGE or NOVA_DOCKER_CONTAINER"
+                )
             argv = [
-                "docker", "run", "--rm", "-w", target_cwd,
-                self.image, "sh", "-c", command,
+                "docker",
+                "run",
+                "--rm",
+                "-w",
+                target_cwd,
+                self.image,
+                "sh",
+                "-c",
+                command,
             ]
         return PreparedCommand(argv=argv, cwd=cwd)

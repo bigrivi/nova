@@ -472,12 +472,15 @@ class Agent:
             # request: a single request can run many tool turns and each tool
             # result can be arbitrarily large, so a request that started well
             # inside the window can overrun it halfway through.
+            llm = self.llm
+            if llm is None:
+                raise RuntimeError("Agent has no LLM provider")
             try:
                 async for event, data in self._compaction.maybe_compact(
                     session_messages,
                     current_session,
                     data_source,
-                    self.llm,
+                    llm,
                     self._emit,
                     tools=tool_schemas,
                 ):
@@ -690,12 +693,15 @@ class Agent:
         group_id: str | None,
         turn_count: int,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
+        llm = self.llm
+        if llm is None:
+            raise RuntimeError("Agent has no LLM provider")
         invoker = ToolInvoker(
             registry=self.tool_registry,
             session=self.session,
             approval=self._approval,
             guardrails=self._guardrails,
-            llm=self.llm,
+            llm=llm,
             model=self.config.model,
             provider=self.config.provider,
             abort_event=self._abort_event,

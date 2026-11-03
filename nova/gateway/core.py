@@ -116,15 +116,15 @@ class NovaClient:
         ):
             response.raise_for_status()
             async for line in response.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    body = line[5:].strip()
-                    if body == "[DONE]":
-                        return
-                    try:
-                        yield json.loads(body)
-                    except json.JSONDecodeError:
-                        continue
+                if not line.startswith("data:"):
+                    continue
+                body = line[5:].strip()
+                if body == "[DONE]":
+                    return
+                try:
+                    yield json.loads(body)
+                except json.JSONDecodeError:
+                    continue
 
     async def approve(
         self,
@@ -193,7 +193,9 @@ class GatewayCore:
                 msg = InboundMessage(
                     sender=msg.sender, text=transcribed, attachments=msg.attachments
                 )
-                log.info("gateway: transcribed voice on %s: %s", platform, msg.text[:120])
+                log.info(
+                    "gateway: transcribed voice on %s: %s", platform, msg.text[:120]
+                )
 
         if self.allowed_senders and msg.sender not in self.allowed_senders:
             log.warning("gateway: rejected sender on %s", platform)
@@ -208,7 +210,8 @@ class GatewayCore:
             # One turn per conversation: a turn waiting on an approval still
             # holds the session, and a second one would interleave with it.
             await adapter.send_text(
-                msg.sender, "当前还有一个任务在跑，本次请求没有执行。等它结束后再发一次。"
+                msg.sender,
+                "当前还有一个任务在跑，本次请求没有执行。等它结束后再发一次。",
             )
             return
 
@@ -362,12 +365,12 @@ class GatewayCore:
 
         text = "".join(buffer).strip()
         if text:
-            log.info("gateway: reply on %s to %s (%d chars)", platform, msg.sender, len(text))
+            log.info(
+                "gateway: reply on %s to %s (%d chars)", platform, msg.sender, len(text)
+            )
             await self._deliver(adapter, msg.sender, text)
 
-    async def _deliver(
-        self, adapter: PlatformAdapter, sender: str, text: str
-    ) -> None:
+    async def _deliver(self, adapter: PlatformAdapter, sender: str, text: str) -> None:
         """Send long replies in segments so a platform's cap is not hit."""
         limit = int(getattr(adapter, "max_message_chars", self.segment_chars))
         for start in range(0, len(text), limit):

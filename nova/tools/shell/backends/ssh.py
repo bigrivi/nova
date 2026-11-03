@@ -52,7 +52,12 @@ class SSHBackend:
         if self.key:
             argv += ["-i", self.key]
         if not self.strict_host_key_checking:
-            argv += ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
+            argv += [
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "UserKnownHostsFile=/dev/null",
+            ]
         argv += ["-o", "BatchMode=yes", target]
         # Run in the requested cwd on the remote side.
         remote = f"cd {shlex.quote(cwd)} && {command}" if cwd else command

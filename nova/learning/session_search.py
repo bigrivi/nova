@@ -77,7 +77,14 @@ class SessionSearch:
             for r in rows
         ]
 
-    async def summarize(self, hits: list[SearchHit], query: str, llm: LLMProvider, model: str = "", session_id: str = "") -> str:
+    async def summarize(
+        self,
+        hits: list[SearchHit],
+        query: str,
+        llm: LLMProvider,
+        model: str = "",
+        session_id: str = "",
+    ) -> str:
         if not hits:
             return "No matching sessions found."
         context = "\n\n".join(f"[{h.session_id}] {h.snippet}" for h in hits)
@@ -89,7 +96,10 @@ class SessionSearch:
             chunks = []
             final = ""
             async for ev in llm.chat_stream(
-                [{"role": "user", "content": prompt}], model=model or "gpt-4o", session_id=session_id, reasoning_effort="high"
+                [{"role": "user", "content": prompt}],
+                model=model or "gpt-4o",
+                session_id=session_id,
+                reasoning_effort="high",
             ):
                 if isinstance(ev, TextDelta):
                     chunks.append(ev.content)

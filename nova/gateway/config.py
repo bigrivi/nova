@@ -50,7 +50,9 @@ def load_config(path: Path | str | None = None) -> GatewayConfig:
     if not isinstance(raw, dict):
         raw = {}
 
-    nova_url = str(raw.get("nova_url") or os.getenv("NOVA_URL") or "http://127.0.0.1:8765")
+    nova_url = str(
+        raw.get("nova_url") or os.getenv("NOVA_URL") or "http://127.0.0.1:8765"
+    )
     allowed = raw.get("allowed_senders")
     allowed_senders = {str(s) for s in allowed} if isinstance(allowed, list) else set()
 
@@ -72,9 +74,7 @@ def load_config(path: Path | str | None = None) -> GatewayConfig:
                         options=options,
                     )
             elif isinstance(value, dict):
-                options = {
-                    str(k): str(v) for k, v in value.items() if k != "enabled"
-                }
+                options = {str(k): str(v) for k, v in value.items() if k != "enabled"}
                 platforms[str(name)] = PlatformConfig(
                     enabled=bool(value.get("enabled", True)),
                     options=options,
@@ -84,7 +84,10 @@ def load_config(path: Path | str | None = None) -> GatewayConfig:
     env_fallbacks = {
         "telegram": {"token": "TELEGRAM_BOT_TOKEN"},
         "feishu": {"app_id": "FEISHU_APP_ID", "app_secret": "FEISHU_APP_SECRET"},
-        "dingtalk": {"app_key": "DINGTALK_APP_KEY", "app_secret": "DINGTALK_APP_SECRET"},
+        "dingtalk": {
+            "app_key": "DINGTALK_APP_KEY",
+            "app_secret": "DINGTALK_APP_SECRET",
+        },
         "wecom": {"corp_id": "WECOM_CORP_ID", "secret": "WECOM_SECRET"},
         "qq": {"app_id": "QQ_APP_ID", "token": "QQ_TOKEN"},
         "yuanbao": {"token": "YUANBAO_TOKEN"},

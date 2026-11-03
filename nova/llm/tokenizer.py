@@ -77,7 +77,9 @@ def estimate_tokens_by_type(text: str, is_tool_result: bool = False) -> int:
     return max(1, estimated)
 
 
-def estimate_message_tokens(message: Message | dict[str, Any], model: str = "unknown") -> int:
+def estimate_message_tokens(
+    message: Message | dict[str, Any], model: str = "unknown"
+) -> int:
     """Estimate tokens for a single message.
 
     Uses type-aware character estimation, or tiktoken for OpenAI models when
@@ -146,7 +148,9 @@ def estimate_messages_tokens(messages: list, model: str = "unknown") -> int:
     return total
 
 
-def _estimate_with_tiktoken(message: Message | dict[str, Any], model: str) -> int | None:
+def _estimate_with_tiktoken(
+    message: Message | dict[str, Any], model: str
+) -> int | None:
     """Use tiktoken for OpenAI models if available."""
     try:
         import tiktoken

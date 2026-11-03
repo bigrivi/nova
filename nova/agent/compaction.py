@@ -852,7 +852,7 @@ class CompactionController:
         is gated.
         """
         plan = await prepare_compaction(
-            session_id=_get_session_id(session),
+            session_id=_get_session_id(session) or "",
             messages=messages,
             last_compacted_at=_get_session_compacted_at(session),
             db=db,
@@ -985,7 +985,7 @@ class CompactionController:
         self.compacted = compacted
         if compacted and session is not None:
             try:
-                fresh = await db.get_messages(_get_session_id(session))
+                fresh = await db.get_messages(_get_session_id(session) or "")
                 used_after = estimate_context_tokens(
                     fresh, self.model, _get_session_compacted_at(session)
                 )

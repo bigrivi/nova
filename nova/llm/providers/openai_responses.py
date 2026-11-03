@@ -494,7 +494,7 @@ class OpenAIResponsesProvider(HttpProvider):
             elif item_type == "function_call":
                 tool_calls.append(
                     ToolCall(
-                        id=item.get("call_id", item.get("id", "")),
+                        id=str(item.get("call_id") or item.get("id") or ""),
                         name=item.get("name", ""),
                         arguments=item.get("arguments", "{}")
                         if isinstance(item.get("arguments"), str)

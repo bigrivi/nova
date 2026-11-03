@@ -93,7 +93,13 @@ Conversation:
 
 
 class SkillExtractor:
-    def __init__(self, skills_dir: Path | str, min_tool_calls: int = 4, llm: LLMProvider | None = None, model: str = "") -> None:
+    def __init__(
+        self,
+        skills_dir: Path | str,
+        min_tool_calls: int = 4,
+        llm: LLMProvider | None = None,
+        model: str = "",
+    ) -> None:
         self.skills_dir = Path(skills_dir)
         self.min_tool_calls = min_tool_calls
         self.llm = llm
@@ -140,18 +146,28 @@ class SkillExtractor:
         skill_dir.mkdir(parents=True, exist_ok=True)
         skill_path = skill_dir / "SKILL.md"
         if action == "update" or skill_path.exists():
-            existing = skill_path.read_text(encoding="utf-8") if skill_path.exists() else ""
-            if existing and _jaccard(
-                _tokens(_strip_version(content)[:400]),
-                _tokens(_strip_version(existing)[:400]),
-            ) >= 0.85:
+            existing = (
+                skill_path.read_text(encoding="utf-8") if skill_path.exists() else ""
+            )
+            if (
+                existing
+                and _jaccard(
+                    _tokens(_strip_version(content)[:400]),
+                    _tokens(_strip_version(existing)[:400]),
+                )
+                >= 0.85
+            ):
                 return None  # nothing new to record
             if existing:
                 self._write_revision(skill_path, content)
             else:
-                skill_path.write_text(f"version: 1\n\n{content.strip()}\n", encoding="utf-8")
+                skill_path.write_text(
+                    f"version: 1\n\n{content.strip()}\n", encoding="utf-8"
+                )
         else:
-            skill_path.write_text(f"version: 1\n\n{content.strip()}\n", encoding="utf-8")
+            skill_path.write_text(
+                f"version: 1\n\n{content.strip()}\n", encoding="utf-8"
+            )
 
         references = proposal.get("references")
         if isinstance(references, dict):
@@ -199,7 +215,11 @@ class SkillExtractor:
             except OSError:
                 continue
             description = next(
-                (line.strip("# ").strip() for line in _strip_version(body).splitlines() if line.strip()),
+                (
+                    line.strip("# ").strip()
+                    for line in _strip_version(body).splitlines()
+                    if line.strip()
+                ),
                 "",
             )
             lines.append(f"- {path.name}: {description[:120]}")
@@ -246,7 +266,9 @@ class SkillExtractor:
         previous = skill_path.read_text(encoding="utf-8")
         skill_path.write_text(self._with_version(content, previous), encoding="utf-8")
 
-    async def improve(self, skill_name: str, correction: str, session_id: str = "") -> None:
+    async def improve(
+        self, skill_name: str, correction: str, session_id: str = ""
+    ) -> None:
         skill_path = self.skills_dir / skill_name / "SKILL.md"
         if not skill_path.exists():
             return
@@ -259,7 +281,9 @@ class SkillExtractor:
                 session_id or skill_name,
             )
             if revised.strip():
-                skill_path.write_text(self._with_version(revised, current), encoding="utf-8")
+                skill_path.write_text(
+                    self._with_version(revised, current), encoding="utf-8"
+                )
         except Exception as e:
             log.warning("skill improvement failed: %s", e)
 

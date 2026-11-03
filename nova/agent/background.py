@@ -26,7 +26,7 @@ class AgentBackground:
 
     def _spawn(self, coro: Awaitable[None]) -> None:
         """Run *coro* in the background, holding it until it finishes."""
-        task = asyncio.create_task(coro)
+        task = asyncio.ensure_future(coro)
         self.ctx.background_tasks.add(task)
         task.add_done_callback(self.ctx.background_tasks.discard)
 
@@ -40,6 +40,8 @@ class AgentBackground:
     async def generate_title_in_background(
         self, session: SessionContext, first_message: str
     ) -> None:
+        if self.ctx.llm is None:
+            return
         session_id = session.id
         try:
             tool_schemas = (
@@ -83,6 +85,8 @@ class AgentBackground:
         self._spawn(self.run_memory_review())
 
     async def run_memory_review(self) -> None:
+        if self.ctx.llm is None:
+            return
         from nova.agent.memory_review import MemoryReviewer
 
         await MemoryReviewer(
