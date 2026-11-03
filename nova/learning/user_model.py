@@ -38,15 +38,20 @@ class UserModel:
         )
         await self._conn.commit()
 
+    async def _connection(self):
+        if self._conn is None:
+            await self.connect()
+        assert self._conn is not None
+        return self._conn
+
     async def close(self) -> None:
         if self._conn is not None:
             await self._conn.close()
             self._conn = None
 
     async def load(self, user_id: str) -> UserProfile:
-        if self._conn is None:
-            await self.connect()
-        cursor = await self._conn.execute(
+        connection = await self._connection()
+        cursor = await connection.execute(
             "SELECT profile_json FROM user_profiles WHERE user_id = ?", (user_id,)
         )
         row = await cursor.fetchone()
@@ -61,8 +66,7 @@ class UserModel:
         )
 
     async def update(self, user_id: str, turn: TurnContext) -> None:
-        if self._conn is None:
-            await self.connect()
+        connection = await self._connection()
         import datetime
 
         profile = await self.load(user_id)
@@ -70,7 +74,7 @@ class UserModel:
         tool_count = getattr(turn, "tool_call_count", 0)
         if tool_count >= 4 and "complex tasks" not in profile.preferences:
             profile.preferences.append("complex tasks")
-        await self._conn.execute(
+        await connection.execute(
             "INSERT INTO user_profiles(user_id, profile_json, updated_at) "
             "VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET "
             "profile_json=excluded.profile_json, updated_at=excluded.updated_at",
@@ -86,7 +90,7 @@ class UserModel:
                 datetime.datetime.now(datetime.UTC).isoformat(),
             ),
         )
-        await self._conn.commit()
+        await connection.commit()
 
     def render(self, profile: UserProfile) -> str:
         lines = ["[User model]"]

@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nova.llm.provider import Done, Error, TextDelta
+
 if TYPE_CHECKING:
     from nova.llm.provider import LLMProvider
 
@@ -163,21 +165,24 @@ class SkillExtractor:
         )
 
     async def _complete(self, prompt: str, session_id: str) -> str:
+        llm = self.llm
+        if llm is None:
+            return ""
         chunks: list[str] = []
         final = ""
-        async for ev in self.llm.chat_stream(
+        async for ev in llm.chat_stream(
             [{"role": "user", "content": prompt}],
             model=self.model or "gpt-4o",
             session_id=session_id,
             reasoning_effort="high",
         ):
-            if type(ev).__name__ == "TextDelta" and getattr(ev, "content", None):
+            if isinstance(ev, TextDelta):
                 chunks.append(ev.content)
-            if type(ev).__name__ == "Done":
-                final = getattr(ev, "content", "") or ""
+            elif isinstance(ev, Done):
+                final = ev.content or ""
                 break
-            if type(ev).__name__ == "Error":
-                raise RuntimeError(getattr(ev, "message", "stream error"))
+            elif isinstance(ev, Error):
+                raise RuntimeError(ev.message)
         return "".join(chunks) or final
 
     def _existing_summary(self) -> str:
