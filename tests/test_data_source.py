@@ -11,7 +11,7 @@ from nova.db import (
     register_data_source_provider,
     set_data_source_config,
 )
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.session.models import Message as SharedMessage
 from nova.session.models import MessageFilter as SharedMessageFilter
 from nova.session.models import Session

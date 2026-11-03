@@ -42,7 +42,7 @@ class TestDecodeDisplayText:
 class TestStorage:
     @pytest.mark.asyncio
     async def test_the_display_text_survives_a_round_trip(self):
-        from nova.db.in_memory_repository import InMemoryRepository
+        from nova.db.in_memory.repository import InMemoryRepository
         from nova.session.models import Session, encode_display_text
 
         repository = InMemoryRepository()

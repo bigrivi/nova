@@ -12,7 +12,7 @@ from nova.db.data_source import (
     set_data_source_config,
 )
 from nova.db.database import close_db, ensure_db, init_db
-from nova.db.in_memory_repository import InMemoryRepository
+from nova.db.in_memory.repository import InMemoryRepository
 from nova.db.repository import (
     AgentStore,
     MemoryStore,
@@ -22,7 +22,7 @@ from nova.db.repository import (
     ScheduleStore,
     SessionStore,
 )
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 
 __all__ = [
     "AgentStore",

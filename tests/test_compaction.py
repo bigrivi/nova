@@ -420,7 +420,7 @@ async def test_compact_orphaned_tool_response_is_also_compacted():
     tool response is also compacted to avoid tool message without preceding tool_calls."""
     from nova.agent.compaction import compact
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
     from nova.session.manager import SessionContext
     from nova.session.models import MessageFilter
 
@@ -545,7 +545,7 @@ async def test_summary_failure_never_poisons_the_context():
     """
     from nova.agent.compaction import compact
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
 
     class ErroringProvider(StubSummaryProvider):
         async def chat_stream(self, messages, model="m", tools=None, **kwargs):
@@ -582,7 +582,7 @@ async def test_summary_streams_to_the_caller():
     """The summary is streamed so the UI can show it while it is written."""
     from nova.agent.compaction import compact
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -618,7 +618,7 @@ async def test_summary_is_placed_at_the_compaction_boundary():
     """
     from nova.agent.compaction import compact
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -651,7 +651,7 @@ async def test_second_compaction_folds_the_previous_summary():
     """Exactly one summary survives, because the next split includes it."""
     from nova.agent.compaction import compact
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -698,7 +698,7 @@ async def test_second_compaction_folds_the_previous_summary():
 async def test_compact_writes_summary_and_marks_old_messages():
     from nova.agent.compaction import compact
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -733,7 +733,7 @@ async def test_context_frames_drop_across_a_compaction(monkeypatch):
     from nova.agent.compaction import CompactionController
     from nova.agent.events import AgentEvent
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
     from nova.session.manager import SessionContext
 
     monkeypatch.setattr(
@@ -803,7 +803,7 @@ async def test_context_limit_is_the_compaction_threshold(monkeypatch):
     from nova.agent.compaction import CompactionController, compaction_threshold
     from nova.agent.events import AgentEvent
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
     from nova.session.manager import SessionContext
 
     window = 128_000
@@ -861,7 +861,7 @@ async def test_the_shrink_comes_from_the_history_not_from_the_estimator(monkeypa
     """
     from nova.agent.compaction import CompactionController, estimate_context_tokens
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
     from nova.session.manager import SessionContext
 
     monkeypatch.setattr(
@@ -925,7 +925,7 @@ async def test_the_shrink_comes_from_the_history_not_from_the_estimator(monkeypa
 async def test_compact_aborts_without_writing_when_summary_fails():
     from nova.agent.compaction import compact
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -956,7 +956,7 @@ async def test_a_transient_summary_failure_is_retried_once():
     """One retry absorbs a transient failure; the second attempt lands."""
     from nova.agent.compaction import compact
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
 
     class FailOnceProvider(StubSummaryProvider):
         def __init__(self):
@@ -996,7 +996,7 @@ async def test_a_transient_summary_failure_is_retried_once():
 async def test_prepare_and_run_compaction_with_real_llm():
     from nova.agent.compaction import prepare_compaction, run_compaction_plan
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
     from nova.llm import OllamaProvider
     from nova.session.manager import SessionContext
 
@@ -1134,7 +1134,7 @@ class TestNoRepeatedCompaction:
         """
         from nova.agent.compaction import CompactionController
         from nova.db.config import DatabaseConfig
-        from nova.db.sqlite_repository import SqliteRepository
+        from nova.db.sqlite.repository import SqliteRepository
         from nova.session.manager import SessionContext
 
         monkeypatch.setattr(
@@ -1396,7 +1396,7 @@ async def test_chat_stream_loads_messages_once_per_request():
     from nova.agent.core import AgentEvent
     from nova.db import database as db_module
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
     from nova.llm import ToolResult
     from nova.llm.provider import Done, LLMProvider, TextDelta, ToolCall
 
@@ -1609,7 +1609,7 @@ class TestCompactionSummaryContract:
     async def test_summary_message_carries_a_continuation_instruction(self):
         from nova.agent.compaction import CONTINUATION_INSTRUCTION, compact
         from nova.db.config import DatabaseConfig
-        from nova.db.sqlite_repository import SqliteRepository
+        from nova.db.sqlite.repository import SqliteRepository
 
         db = SqliteRepository(DatabaseConfig(path=":memory:"))
         await db.connect()
@@ -1633,7 +1633,7 @@ class TestCompactionSummaryContract:
     async def test_prompt_asks_to_fold_in_a_previous_summary(self):
         from nova.agent.compaction import PREVIOUS_SUMMARY_ANCHOR, compact
         from nova.db.config import DatabaseConfig
-        from nova.db.sqlite_repository import SqliteRepository
+        from nova.db.sqlite.repository import SqliteRepository
 
         class PromptCapturingProvider(StubSummaryProvider):
             def __init__(self):
@@ -1733,7 +1733,7 @@ class TestSummaryLifecycle:
     async def test_a_compacted_summary_leaves_the_active_history(self):
         """Summaries must not accumulate forever: once compacted they drop out."""
         from nova.db.config import DatabaseConfig
-        from nova.db.sqlite_repository import SqliteRepository
+        from nova.db.sqlite.repository import SqliteRepository
 
         db = SqliteRepository(DatabaseConfig(path=":memory:"))
         await db.connect()
@@ -1758,7 +1758,7 @@ class TestSummaryLifecycle:
     async def test_repeated_compaction_does_not_grow_the_summary_chain(self):
         from nova.agent.compaction import compact
         from nova.db.config import DatabaseConfig
-        from nova.db.sqlite_repository import SqliteRepository
+        from nova.db.sqlite.repository import SqliteRepository
 
         db = SqliteRepository(DatabaseConfig(path=":memory:"))
         await db.connect()
@@ -1856,7 +1856,7 @@ class TestInLoopCompaction:
         """
         from nova.db import database as db_module
         from nova.db.config import DatabaseConfig
-        from nova.db.sqlite_repository import SqliteRepository
+        from nova.db.sqlite.repository import SqliteRepository
         from nova.session import manager as session_manager
 
         database = SqliteRepository(DatabaseConfig(path=":memory:"))
@@ -2241,7 +2241,7 @@ async def test_compact_does_not_touch_reasoning_content_with_provider_meta():
     """
     from nova.agent.compaction import compact
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
     from nova.session.manager import SessionContext
     from nova.session.models import MessageFilter
 
@@ -2307,7 +2307,7 @@ async def test_compaction_pipeline_never_rewrites_reasoning_content_when_provide
 
     from nova.agent.compaction import SNIP_MARKER, compact, snip_old_tool_results
     from nova.db.config import DatabaseConfig
-    from nova.db.sqlite_repository import SqliteRepository
+    from nova.db.sqlite.repository import SqliteRepository
     from nova.session.manager import SessionContext
     from nova.session.models import MessageFilter
 

@@ -23,7 +23,7 @@ import pytest
 from nova import Agent, AgentConfig
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.llm import Message
 from nova.llm.provider import Done, LLMProvider, TextDelta
 from nova.llm.providers.anthropic import AnthropicProvider

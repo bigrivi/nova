@@ -9,7 +9,7 @@ import pytest
 import pytest_asyncio
 
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.server import git_actions
 from nova.server.chat_service import ChatService
 from nova.settings import get_settings

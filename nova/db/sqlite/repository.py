@@ -18,9 +18,9 @@ import aiosqlite
 
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db.config import DatabaseConfig
-from nova.db.memory_store import SqliteMemoryMixin
 from nova.db.repository import NovaRepository
-from nova.db.schedule_store import SqliteScheduleMixin
+from nova.db.sqlite.memory import SqliteMemoryMixin
+from nova.db.sqlite.schedule import SqliteScheduleMixin
 from nova.project.models import Project
 from nova.project.paths import normalize_project_path, project_label_from_path
 from nova.session.models import Message, MessageFilter, decode_display_text

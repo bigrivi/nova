@@ -17,7 +17,7 @@ from nova import Agent, AgentConfig
 from nova.agent.core import AgentEvent, build_user_message
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.llm import ToolResult
 from nova.llm.faker import FakerLLMProvider
 from nova.llm.provider import Done, Error, LLMProvider, TextDelta, ToolCall

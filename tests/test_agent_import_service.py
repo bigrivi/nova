@@ -17,7 +17,7 @@ from nova.config.agent_import_service import (
 from nova.config.service import ConfigService
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.settings import get_settings
 
 DEFINITION = """\

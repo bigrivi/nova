@@ -13,7 +13,7 @@ import pytest
 
 from nova import Agent, AgentConfig
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.llm.faker import FakerLLMProvider
 from nova.session.manager import SessionManager
 

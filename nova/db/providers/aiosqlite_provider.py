@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from nova.db.data_source import DataSourceConfig, DataSourceProtocol
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 
 
 class AioSqliteDatabaseProvider:

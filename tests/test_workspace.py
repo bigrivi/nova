@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from nova.db.config import DatabaseConfig
-from nova.db.in_memory_repository import InMemoryRepository
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.in_memory.repository import InMemoryRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.prompt.builder import PromptBuilder, PromptConfig
 from nova.server.fs_browse import list_directory
 from nova.session.models import Session

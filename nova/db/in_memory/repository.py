@@ -6,9 +6,9 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from nova.db.memory_store import InMemoryMemoryMixin
+from nova.db.in_memory.memory import InMemoryMemoryMixin
+from nova.db.in_memory.schedule import InMemoryScheduleMixin
 from nova.db.repository import NovaRepository
-from nova.db.schedule_store import InMemoryScheduleMixin
 from nova.project.models import Project
 from nova.scheduler.models import ScheduledJob
 from nova.session.models import Message, MessageFilter

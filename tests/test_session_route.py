@@ -272,7 +272,7 @@ class TestRouteStorage:
 
     async def test_route_survives_a_reopen(self, client, session_id):
         """Written through one connection, read back through the next."""
-        from nova.db.sqlite_repository import SqliteRepository
+        from nova.db.sqlite.repository import SqliteRepository
 
         await put_route(
             client, session_id, provider="gw", model="gpt-5.5", reasoning_effort="high"

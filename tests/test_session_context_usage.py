@@ -15,7 +15,7 @@ import pytest
 
 from nova.agent.compaction import compaction_threshold
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.server.chat_service import ChatService
 from nova.session.models import Session
 from nova.settings import get_settings

@@ -12,11 +12,13 @@ import inspect
 
 import pytest
 
-from nova.db.in_memory_repository import InMemoryRepository
-from nova.db.memory_store import InMemoryMemoryMixin, SqliteMemoryMixin
+from nova.db.in_memory.memory import InMemoryMemoryMixin
+from nova.db.in_memory.repository import InMemoryRepository
+from nova.db.in_memory.schedule import InMemoryScheduleMixin
 from nova.db.repository import MemoryStore, ScheduleStore
-from nova.db.schedule_store import InMemoryScheduleMixin, SqliteScheduleMixin
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.memory import SqliteMemoryMixin
+from nova.db.sqlite.repository import SqliteRepository
+from nova.db.sqlite.schedule import SqliteScheduleMixin
 
 
 def _store_methods(protocol: type) -> list[str]:
