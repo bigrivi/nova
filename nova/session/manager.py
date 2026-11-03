@@ -244,9 +244,8 @@ class SessionManager(SessionProtocol):
         message_ids: list[str],
         session_id: str | None = None,
     ) -> int:
-        sid = session_id or (
-            self.get_current_session().id if self.get_current_session() else None
-        )
+        current = self.get_current_session()
+        sid = session_id or (current.id if current else None)
         if not sid or not message_ids:
             return 0
 
@@ -264,9 +263,8 @@ class SessionManager(SessionProtocol):
         session_id: str | None = None,
         limit: int | None = None,
     ) -> list[Message]:
-        sid = session_id or (
-            self.get_current_session().id if self.get_current_session() else None
-        )
+        current = self.get_current_session()
+        sid = session_id or (current.id if current else None)
         if not sid:
             return []
         async with self._lock:

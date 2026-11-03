@@ -96,7 +96,9 @@ async def delegate_to_agent(
         # The roster in the system prompt is the offer; this is the enforcement.
         # A model that recalled another agent's child key from history must not
         # be able to call it, or the parent/child table only describes intent.
-        parent_key = current_session.agent_key or DEFAULT_AGENT_KEY
+        parent_key = (
+            current_session.agent_key if current_session else None
+        ) or DEFAULT_AGENT_KEY
         children = {
             child.get("key") for child in await data_source.get_child_agents(parent_key)
         }
