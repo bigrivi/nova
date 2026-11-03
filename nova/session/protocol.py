@@ -48,4 +48,9 @@ class SessionProtocol(Protocol):
         tokens_input: int | None = None,
         tokens_output: int | None = None,
         cache_read_tokens: int | None = None,
+        provider_meta: dict | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        variant: str | None = None,
+        data: str | None = None,
     ) -> Message: ...
