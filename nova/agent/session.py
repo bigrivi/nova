@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 from nova.agent.context import AgentContext
 from nova.agent.llm_stream import TurnOutcome, TurnStreamReader
 from nova.agent.overflow import is_context_overflow
-from nova.db import DataSourceProtocol
+from nova.db import SessionStore
 from nova.session.manager import SessionContext
 
 log = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ class AgentSession:
         self.agent = agent
         self.ctx: AgentContext = agent.ctx
 
-    async def _record_session_route(self, data_source: DataSourceProtocol) -> None:
+    async def _record_session_route(self, data_source: SessionStore) -> None:
         """Stamp the route this session is running with onto the session row.
 
         Written once per request, not per model call: the route was resolved
@@ -154,4 +154,3 @@ class AgentSession:
         log.info("[Session %s] Created", current.id if current else "?")
         self.agent.background._maybe_schedule_title_generation(current, user_input)
         return current
-

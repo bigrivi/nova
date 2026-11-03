@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from nova.db import DataSourceProtocol, get_default_data_source
+from nova.db import AgentStore, get_default_data_source
 from nova.settings import (
     Settings,
     _load_config_payload,
@@ -228,7 +228,7 @@ class McpServerConfig:
 
 class ConfigService:
     def __init__(
-        self, settings: Settings, data_source: DataSourceProtocol | None = None
+        self, settings: Settings, data_source: AgentStore | None = None
     ) -> None:
         if settings.config_path is None:
             raise ConfigValidationError("Nova config path is not available.")
@@ -236,7 +236,7 @@ class ConfigService:
         self._config_path = settings.config_path
         self._data_source = data_source
 
-    async def _get_data_source(self) -> DataSourceProtocol:
+    async def _get_data_source(self) -> AgentStore:
         if self._data_source is None:
             self._data_source = await get_default_data_source()
         return self._data_source

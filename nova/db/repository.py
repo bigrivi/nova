@@ -10,10 +10,7 @@ if TYPE_CHECKING:
     from nova.session.models import Message, MessageFilter
 
 
-@runtime_checkable
-class NovaRepository(Protocol):
-    async def connect(self) -> None: ...
-    async def close(self) -> None: ...
+class SessionStore(Protocol):
     async def save_session(self, session: SessionContext) -> None: ...
     async def get_session(self, session_id: str) -> dict[str, Any] | None: ...
     async def update_session_title(self, session_id: str, title: str) -> bool: ...
@@ -34,11 +31,26 @@ class NovaRepository(Protocol):
     async def get_sessions_by_parent_id(
         self, parent_id: str, limit: int = 50
     ) -> list[dict[str, Any]]: ...
-    async def save_project(self, project: Project) -> None: ...
-    async def get_project(self, project_id: str) -> dict[str, Any] | None: ...
-    async def list_projects(self) -> list[dict[str, Any]]: ...
-    async def find_projects_by_path(self, path: str) -> list[dict[str, Any]]: ...
-    async def delete_project(self, project_id: str) -> bool: ...
+    async def set_session_route(
+        self,
+        session_id: str,
+        provider: str | None,
+        model: str | None,
+        reasoning_effort: str | None,
+    ) -> bool: ...
+    async def update_session_route_if_changed(
+        self,
+        session_id: str,
+        provider: str | None,
+        model: str | None,
+        reasoning_effort: str | None,
+    ) -> bool: ...
+    async def update_session_compacted_at(
+        self, session_id: str, timestamp: int
+    ) -> None: ...
+
+
+class MessageStore(Protocol):
     async def add_message(
         self,
         session_id: str,
@@ -72,25 +84,19 @@ class NovaRepository(Protocol):
     async def mark_messages_compacted_by_ids(
         self, session_id: str, message_ids: list[str]
     ) -> None: ...
-    async def update_session_compacted_at(
-        self, session_id: str, timestamp: int
-    ) -> None: ...
-    async def set_session_route(
-        self,
-        session_id: str,
-        provider: str | None,
-        model: str | None,
-        reasoning_effort: str | None,
-    ) -> bool: ...
-    async def update_session_route_if_changed(
-        self,
-        session_id: str,
-        provider: str | None,
-        model: str | None,
-        reasoning_effort: str | None,
-    ) -> bool: ...
     async def update_message_content(self, message_id: str, content: str) -> None: ...
     async def delete_messages(self, session_id: str, message_ids: list[str]) -> int: ...
+
+
+class ProjectStore(Protocol):
+    async def save_project(self, project: Project) -> None: ...
+    async def get_project(self, project_id: str) -> dict[str, Any] | None: ...
+    async def list_projects(self) -> list[dict[str, Any]]: ...
+    async def find_projects_by_path(self, path: str) -> list[dict[str, Any]]: ...
+    async def delete_project(self, project_id: str) -> bool: ...
+
+
+class AgentStore(Protocol):
     async def list_agents(self) -> list[dict[str, Any]]: ...
     async def get_agent(self, key: str) -> dict[str, Any] | None: ...
     async def save_agent(self, agent: dict[str, Any]) -> None: ...
@@ -103,6 +109,9 @@ class NovaRepository(Protocol):
     async def add_agent_parent(self, child_key: str, parent_key: str) -> None: ...
     async def remove_agent_parent(self, child_key: str, parent_key: str) -> None: ...
     async def delete_agent(self, key: str) -> bool: ...
+
+
+class MemoryStore(Protocol):
     async def save_memory(self, record: MemoryRecord) -> None: ...
     async def get_memory_by_key(
         self,
@@ -126,6 +135,9 @@ class NovaRepository(Protocol):
         session_id: str | None = None,
         owner_agent_key: str | None = None,
     ) -> int: ...
+
+
+class ScheduleStore(Protocol):
     async def create_schedule(
         self, job: ScheduledJob | dict[str, Any]
     ) -> ScheduledJob: ...
@@ -149,6 +161,29 @@ class NovaRepository(Protocol):
     ) -> bool: ...
 
 
+@runtime_checkable
+class NovaRepository(
+    SessionStore,
+    MessageStore,
+    ProjectStore,
+    AgentStore,
+    MemoryStore,
+    ScheduleStore,
+    Protocol,
+):
+    async def connect(self) -> None: ...
+    async def close(self) -> None: ...
+
+
 DataSourceProtocol = NovaRepository
 
-__all__ = ["DataSourceProtocol", "NovaRepository"]
+__all__ = [
+    "AgentStore",
+    "DataSourceProtocol",
+    "MemoryStore",
+    "MessageStore",
+    "NovaRepository",
+    "ProjectStore",
+    "ScheduleStore",
+    "SessionStore",
+]

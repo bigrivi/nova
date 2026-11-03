@@ -10,7 +10,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 
-from nova.db.repository import NovaRepository
+from nova.db.repository import MemoryStore
 from nova.llm import Message as LLMMessage
 from nova.llm.oneshot import stream_text_once
 from nova.memory.models import (
@@ -34,7 +34,7 @@ class MemoryService:
     def __init__(
         self,
         repository: MemoryRepository | None = None,
-        data_source: NovaRepository | None = None,
+        data_source: MemoryStore | None = None,
     ) -> None:
         self.repository = repository or MemoryRepository(data_source=data_source)
 
