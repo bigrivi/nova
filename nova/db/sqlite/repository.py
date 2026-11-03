@@ -322,7 +322,7 @@ class SqliteRepository(
         }
         for table, columns_map in required_columns.items():
             try:
-                cursor = await self._conn.execute(f"PRAGMA table_info({table})")
+                cursor = await self._db.execute(f"PRAGMA table_info({table})")
                 existing = {row[1] for row in await cursor.fetchall()}
             except Exception as exception:
                 log.error(
@@ -346,7 +346,7 @@ class SqliteRepository(
                 if column in existing:
                     continue
                 try:
-                    await self._conn.execute(
+                    await self._db.execute(
                         f"ALTER TABLE {table} ADD COLUMN {column} {column_type}"
                     )
                 except Exception as exception:
@@ -372,14 +372,14 @@ class SqliteRepository(
         a different shape, so the old one is dropped explicitly on existing dbs.
         """
         try:
-            await self._conn.execute(
+            await self._db.execute(
                 "DROP INDEX IF EXISTS idx_memories_key_scope_session"
             )
-            await self._conn.execute(
+            await self._db.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_key_scope_owner_session "
                 "ON memories(key, scope, COALESCE(owner_agent_key, ''), COALESCE(session_id, ''))"
             )
-            await self._conn.commit()
+            await self._db.commit()
         except Exception as exception:
             log.error("Could not migrate memory owner index: %s", exception)
 
@@ -392,12 +392,12 @@ class SqliteRepository(
         """
         marker = "projects_backfill"
         try:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "SELECT 1 FROM schema_migrations WHERE name = ?", (marker,)
             )
             if await cursor.fetchone():
                 return
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "SELECT DISTINCT workspace_dir FROM sessions "
                 "WHERE workspace_dir IS NOT NULL AND TRIM(workspace_dir) != ''"
             )
@@ -413,7 +413,7 @@ class SqliteRepository(
                 if project_id is None:
                     project_id = str(uuid.uuid4())
                     project_id_by_path[project_path] = project_id
-                    await self._conn.execute(
+                    await self._db.execute(
                         """INSERT INTO projects (id, name, path, created_at, updated_at)
                         VALUES (?, ?, ?, ?, ?)""",
                         (
@@ -424,11 +424,11 @@ class SqliteRepository(
                             now,
                         ),
                     )
-                await self._conn.execute(
+                await self._db.execute(
                     "UPDATE sessions SET project_id = ? WHERE workspace_dir = ?",
                     (project_id, raw_path),
                 )
-            await self._conn.execute(
+            await self._db.execute(
                 "INSERT OR REPLACE INTO schema_migrations (name, applied_at) VALUES (?, ?)",
                 (marker, now),
             )
@@ -447,12 +447,12 @@ class SqliteRepository(
         """
         marker = "workspace_dir_normalize"
         try:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "SELECT 1 FROM schema_migrations WHERE name = ?", (marker,)
             )
             if await cursor.fetchone():
                 return
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "SELECT id, workspace_dir FROM sessions "
                 "WHERE workspace_dir IS NOT NULL AND TRIM(workspace_dir) != ''"
             )
@@ -462,11 +462,11 @@ class SqliteRepository(
                 session_id, raw_path = row[0], row[1]
                 normalized = normalize_project_path(raw_path)
                 if normalized and normalized != raw_path:
-                    await self._conn.execute(
+                    await self._db.execute(
                         "UPDATE sessions SET workspace_dir = ? WHERE id = ?",
                         (normalized, session_id),
                     )
-            await self._conn.execute(
+            await self._db.execute(
                 "INSERT OR REPLACE INTO schema_migrations (name, applied_at) VALUES (?, ?)",
                 (marker, now),
             )
@@ -484,30 +484,30 @@ class SqliteRepository(
         """
         marker = "agent_mode_backfill"
         try:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "SELECT 1 FROM schema_migrations WHERE name = ?", (marker,)
             )
             if await cursor.fetchone():
                 return
-            cursor = await self._conn.execute("PRAGMA table_info(agents)")
+            cursor = await self._db.execute("PRAGMA table_info(agents)")
             columns = {row[1] for row in await cursor.fetchall()}
             now = int(time.time() * 1000)
             if "parent_id" in columns:
-                cursor = await self._conn.execute(
+                cursor = await self._db.execute(
                     "SELECT key, parent_id FROM agents "
                     "WHERE parent_id IS NOT NULL AND TRIM(parent_id) != ''"
                 )
                 for child_key, parent_key in await cursor.fetchall():
-                    await self._conn.execute(
+                    await self._db.execute(
                         "INSERT OR IGNORE INTO agent_parents (child_key, parent_key, created_at) "
                         "VALUES (?, ?, ?)",
                         (child_key, parent_key, now),
                     )
-            await self._conn.execute(
+            await self._db.execute(
                 "UPDATE agents SET mode = 'subagent' "
                 "WHERE key IN (SELECT DISTINCT child_key FROM agent_parents)"
             )
-            await self._conn.execute(
+            await self._db.execute(
                 "INSERT OR REPLACE INTO schema_migrations (name, applied_at) VALUES (?, ?)",
                 (marker, now),
             )
@@ -527,12 +527,12 @@ class SqliteRepository(
         """
         marker = "summary_position_backfill"
         try:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "SELECT 1 FROM schema_migrations WHERE name = ?", (marker,)
             )
             if await cursor.fetchone():
                 return
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 """SELECT session_id, id, time_created FROM messages
                    WHERE COALESCE(summary, 0) = 1 AND COALESCE(compacted, 0) = 0
                    ORDER BY time_created"""
@@ -548,7 +548,7 @@ class SqliteRepository(
                 # which they were written.
                 trailing = len(summaries)
                 for message_id, time_created in summaries:
-                    cursor = await self._conn.execute(
+                    cursor = await self._db.execute(
                         """SELECT MIN(time_created) FROM messages
                            WHERE session_id = ? AND COALESCE(summary, 0) = 0
                              AND COALESCE(compacted, 0) = 0 AND time_created < ?""",
@@ -562,11 +562,11 @@ class SqliteRepository(
                     stamp = oldest_kept - 1 - trailing
                     if stamp >= time_created:
                         continue
-                    await self._conn.execute(
+                    await self._db.execute(
                         "UPDATE messages SET time_created = ? WHERE id = ?",
                         (stamp, message_id),
                     )
-            await self._conn.execute(
+            await self._db.execute(
                 "INSERT OR REPLACE INTO schema_migrations (name, applied_at) VALUES (?, ?)",
                 (marker, int(time.time() * 1000)),
             )
@@ -581,3 +581,8 @@ class SqliteRepository(
     async def _ensure_connected(self) -> None:
         if self._conn is None:
             await self.connect()
+
+    @property
+    def _db(self) -> aiosqlite.Connection:  # type: ignore[override]
+        assert self._conn is not None
+        return self._conn

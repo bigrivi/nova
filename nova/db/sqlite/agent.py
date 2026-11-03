@@ -6,13 +6,15 @@ import asyncio
 import time
 from typing import Any
 
+import aiosqlite
+
 from nova.db.repository import AgentStore
 
 
 class SqliteAgentMixin(AgentStore):
     """Agent access for ``SqliteRepository``."""
 
-    _conn: Any
+    _db: aiosqlite.Connection
     _lock: asyncio.Lock
 
     async def _ensure_connected(self) -> None:
@@ -22,14 +24,14 @@ class SqliteAgentMixin(AgentStore):
 
     async def list_agents(self) -> list[dict[str, Any]]:
         await self._ensure_connected()
-        cursor = await self._conn.execute(
+        cursor = await self._db.execute(
             "SELECT * FROM agents ORDER BY name ASC",
         )
         return [dict(row) for row in await cursor.fetchall()]
 
     async def get_agent(self, key: str) -> dict[str, Any] | None:
         await self._ensure_connected()
-        cursor = await self._conn.execute(
+        cursor = await self._db.execute(
             "SELECT * FROM agents WHERE key = ?",
             (key,),
         )
@@ -39,7 +41,7 @@ class SqliteAgentMixin(AgentStore):
     async def save_agent(self, agent: dict[str, Any]) -> None:
         await self._ensure_connected()
         async with self._lock:
-            await self._conn.execute(
+            await self._db.execute(
                 """INSERT INTO agents
                 (key, name, description, model, provider, reasoning_effort, tools, workspace_dir, mode, posture, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -65,12 +67,12 @@ class SqliteAgentMixin(AgentStore):
                     agent.get("updated_at", int(time.time() * 1000)),
                 ),
             )
-            await self._conn.commit()
+            await self._db.commit()
 
     async def get_child_agents(self, parent_key: str) -> list[dict[str, Any]]:
         """Get all child agents of a parent agent (via the agent_parents M2M table)."""
         await self._ensure_connected()
-        cursor = await self._conn.execute(
+        cursor = await self._db.execute(
             "SELECT a.* FROM agents a "
             "JOIN agent_parents ap ON ap.child_key = a.key "
             "WHERE ap.parent_key = ? ORDER BY a.name ASC",
@@ -88,7 +90,7 @@ class SqliteAgentMixin(AgentStore):
         """
         now = int(time.time() * 1000)
         for key in keys:
-            await self._conn.execute(
+            await self._db.execute(
                 """INSERT OR IGNORE INTO agents
                 (key, name, model, provider, created_at, updated_at)
                 VALUES (?, ?, '', '', ?, ?)""",
@@ -101,27 +103,27 @@ class SqliteAgentMixin(AgentStore):
         now = int(time.time() * 1000)
         async with self._lock:
             await self._ensure_agent_rows([child_key, parent_key])
-            await self._conn.execute(
+            await self._db.execute(
                 """INSERT OR IGNORE INTO agent_parents (child_key, parent_key, created_at)
                 VALUES (?, ?, ?)""",
                 (child_key, parent_key, now),
             )
-            await self._conn.commit()
+            await self._db.commit()
 
     async def remove_agent_parent(self, child_key: str, parent_key: str) -> None:
         """Remove a parent-child relationship."""
         await self._ensure_connected()
         async with self._lock:
-            await self._conn.execute(
+            await self._db.execute(
                 "DELETE FROM agent_parents WHERE child_key = ? AND parent_key = ?",
                 (child_key, parent_key),
             )
-            await self._conn.commit()
+            await self._db.commit()
 
     async def get_agent_parents(self, child_key: str) -> list[str]:
         """Get all parent keys of an agent."""
         await self._ensure_connected()
-        cursor = await self._conn.execute(
+        cursor = await self._db.execute(
             "SELECT parent_key FROM agent_parents WHERE child_key = ?",
             (child_key,),
         )
@@ -130,7 +132,7 @@ class SqliteAgentMixin(AgentStore):
     async def get_agent_children(self, parent_key: str) -> list[str]:
         """Get all child keys of an agent."""
         await self._ensure_connected()
-        cursor = await self._conn.execute(
+        cursor = await self._db.execute(
             "SELECT child_key FROM agent_parents WHERE parent_key = ?",
             (parent_key,),
         )
@@ -140,35 +142,33 @@ class SqliteAgentMixin(AgentStore):
         """Set all parents of an agent (replace existing)."""
         await self._ensure_connected()
         async with self._lock:
-            await self._conn.execute(
+            await self._db.execute(
                 "DELETE FROM agent_parents WHERE child_key = ?",
                 (child_key,),
             )
             now = int(time.time() * 1000)
             await self._ensure_agent_rows([child_key, *parent_keys])
             for parent_key in parent_keys:
-                await self._conn.execute(
+                await self._db.execute(
                     "INSERT INTO agent_parents (child_key, parent_key, created_at) VALUES (?, ?, ?)",
                     (child_key, parent_key, now),
                 )
-            await self._conn.commit()
+            await self._db.commit()
 
     async def delete_agent(self, key: str) -> bool:
         await self._ensure_connected()
         async with self._lock:
-            await self._conn.execute(
+            await self._db.execute(
                 "DELETE FROM agent_parents WHERE child_key = ? OR parent_key = ?",
                 (key, key),
             )
-            await self._conn.execute(
+            await self._db.execute(
                 "DELETE FROM messages WHERE session_id IN (SELECT id FROM sessions WHERE agent_key = ?)",
                 (key,),
             )
-            await self._conn.execute("DELETE FROM sessions WHERE agent_key = ?", (key,))
-            cursor = await self._conn.execute(
-                "DELETE FROM agents WHERE key = ?", (key,)
-            )
-            await self._conn.commit()
+            await self._db.execute("DELETE FROM sessions WHERE agent_key = ?", (key,))
+            cursor = await self._db.execute("DELETE FROM agents WHERE key = ?", (key,))
+            await self._db.commit()
             return cursor.rowcount > 0
 
     # ── Scheduled jobs ─────────────────────────────────────────────

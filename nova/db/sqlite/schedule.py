@@ -7,6 +7,8 @@ import time
 import uuid
 from typing import Any
 
+import aiosqlite
+
 from nova.db.repository import ScheduleStore
 from nova.scheduler.models import ScheduledJob
 
@@ -14,7 +16,7 @@ from nova.scheduler.models import ScheduledJob
 class SqliteScheduleMixin(ScheduleStore):
     """Schedule access for ``SqliteRepository``."""
 
-    _conn: Any
+    _db: aiosqlite.Connection
     _lock: asyncio.Lock
 
     async def _ensure_connected(self) -> None:
@@ -43,7 +45,7 @@ class SqliteScheduleMixin(ScheduleStore):
                 record.next_run_at = None
         await self._ensure_connected()
         async with self._lock:
-            await self._conn.execute(
+            await self._db.execute(
                 """INSERT INTO scheduled_jobs
                 (id, name, prompt, kind, cron_expr, interval_minutes, run_at,
                  enabled, session_id, agent_key, next_run_at, last_run_at,
@@ -68,12 +70,12 @@ class SqliteScheduleMixin(ScheduleStore):
                     record.updated_at,
                 ),
             )
-            await self._conn.commit()
+            await self._db.commit()
         return record
 
     async def get_schedule(self, job_id: str) -> ScheduledJob | None:
         await self._ensure_connected()
-        cursor = await self._conn.execute(
+        cursor = await self._db.execute(
             "SELECT * FROM scheduled_jobs WHERE id = ?",
             (job_id,),
         )
@@ -86,14 +88,14 @@ class SqliteScheduleMixin(ScheduleStore):
         if enabled_only:
             sql += " WHERE enabled = 1"
         sql += " ORDER BY updated_at DESC"
-        cursor = await self._conn.execute(sql)
+        cursor = await self._db.execute(sql)
         return [ScheduledJob.from_dict(dict(row)) for row in await cursor.fetchall()]
 
     async def update_schedule(self, job: ScheduledJob | dict[str, Any]) -> bool:
         record = self._coerce_job(job)
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 """UPDATE scheduled_jobs SET
                 name = ?, prompt = ?, kind = ?, cron_expr = ?,
                 interval_minutes = ?, run_at = ?, enabled = ?,
@@ -119,22 +121,22 @@ class SqliteScheduleMixin(ScheduleStore):
                     record.id,
                 ),
             )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount > 0
 
     async def delete_schedule(self, job_id: str) -> bool:
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "DELETE FROM scheduled_jobs WHERE id = ?",
                 (job_id,),
             )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount > 0
 
     async def due_schedules(self, now_ms: int, limit: int = 100) -> list[ScheduledJob]:
         await self._ensure_connected()
-        cursor = await self._conn.execute(
+        cursor = await self._db.execute(
             """SELECT * FROM scheduled_jobs
             WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?
             ORDER BY next_run_at ASC LIMIT ?""",
@@ -164,18 +166,18 @@ class SqliteScheduleMixin(ScheduleStore):
         """
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "UPDATE scheduler_leases SET expires_at = ? WHERE id = ? AND owner = ?",
                 (now_ms, lease_id, owner),
             )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount > 0
 
     async def get_scheduler_lease(
         self, lease_id: str = "primary"
     ) -> dict[str, Any] | None:
         await self._ensure_connected()
-        cursor = await self._conn.execute(
+        cursor = await self._db.execute(
             "SELECT * FROM scheduler_leases WHERE id = ?",
             (lease_id,),
         )
@@ -188,25 +190,25 @@ class SqliteScheduleMixin(ScheduleStore):
         """Take or renew the lease when free, expired, or already ours."""
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "SELECT owner, expires_at FROM scheduler_leases WHERE id = ?",
                 (lease_id,),
             )
             row = await cursor.fetchone()
             if row is None:
-                await self._conn.execute(
+                await self._db.execute(
                     "INSERT INTO scheduler_leases (id, owner, expires_at)"
                     " VALUES (?, ?, ?)",
                     (lease_id, owner, expires_at_ms),
                 )
-                await self._conn.commit()
+                await self._db.commit()
                 return True
             current_owner, current_expires = row[0], row[1]
             if current_owner != owner and current_expires > now_ms:
                 return False
-            await self._conn.execute(
+            await self._db.execute(
                 "UPDATE scheduler_leases SET owner = ?, expires_at = ? WHERE id = ?",
                 (owner, expires_at_ms, lease_id),
             )
-            await self._conn.commit()
+            await self._db.commit()
             return True

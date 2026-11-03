@@ -23,7 +23,7 @@ def _row_to_session(row: aiosqlite.Row) -> dict[str, Any]:
 class SqliteSessionMixin(SessionStore):
     """Session access for ``SqliteRepository``."""
 
-    _conn: Any
+    _db: aiosqlite.Connection
     _lock: asyncio.Lock
 
     async def _ensure_connected(self) -> None:
@@ -33,7 +33,7 @@ class SqliteSessionMixin(SessionStore):
         await self._ensure_connected()
         agent_key = getattr(session, "agent_key", DEFAULT_AGENT_KEY)
         async with self._lock:
-            await self._conn.execute(
+            await self._db.execute(
                 """INSERT INTO sessions
                 (id, agent_key, title, parent_id, forked_from, fork_point_message_id,
                 summary_goal, summary_accomplished, summary_remaining,
@@ -78,11 +78,11 @@ class SqliteSessionMixin(SessionStore):
                     getattr(session, "reasoning_effort", None),
                 ),
             )
-            await self._conn.commit()
+            await self._db.commit()
 
     async def get_session(self, session_id: str) -> dict[str, Any] | None:
         await self._ensure_connected()
-        cursor = await self._conn.execute(
+        cursor = await self._db.execute(
             "SELECT * FROM sessions WHERE id = ?",
             (session_id,),
         )
@@ -93,11 +93,11 @@ class SqliteSessionMixin(SessionStore):
         """Update a session title. Returns True if the session exists."""
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "UPDATE sessions SET title = ? WHERE id = ?",
                 (title, session_id),
             )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount > 0
 
     async def update_session_title_if_matches(
@@ -110,11 +110,11 @@ class SqliteSessionMixin(SessionStore):
         """
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "UPDATE sessions SET title = ? WHERE id = ? AND title = ?",
                 (title, session_id, expected_title),
             )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount > 0
 
     async def set_session_workspace(
@@ -123,21 +123,21 @@ class SqliteSessionMixin(SessionStore):
         """Set or clear a session's workspace directory. Returns True if the session exists."""
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "UPDATE sessions SET workspace_dir = ? WHERE id = ?",
                 (workspace_dir, session_id),
             )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount > 0
 
     async def set_session_pinned(self, session_id: str, pinned: bool) -> bool:
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "UPDATE sessions SET pinned = ? WHERE id = ?",
                 (1 if pinned else 0, session_id),
             )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount > 0
 
     async def set_session_route(
@@ -155,13 +155,13 @@ class SqliteSessionMixin(SessionStore):
         """
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 """UPDATE sessions
                 SET provider = ?, model = ?, reasoning_effort = ?
                 WHERE id = ?""",
                 (provider, model, reasoning_effort, session_id),
             )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount > 0
 
     async def update_session_route_if_changed(
@@ -189,7 +189,7 @@ class SqliteSessionMixin(SessionStore):
         """
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 """UPDATE sessions
                 SET provider = ?, model = ?, reasoning_effort = ?
                 WHERE id = ?
@@ -205,7 +205,7 @@ class SqliteSessionMixin(SessionStore):
                     reasoning_effort,
                 ),
             )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount > 0
 
     async def set_session_project(
@@ -213,26 +213,26 @@ class SqliteSessionMixin(SessionStore):
     ) -> bool:
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "UPDATE sessions SET project_id = ? WHERE id = ?",
                 (project_id, session_id),
             )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount > 0
 
     async def delete_session(self, session_id: str) -> bool:
         """Delete a session and all of its messages. Returns True if deleted."""
         await self._ensure_connected()
         async with self._lock:
-            await self._conn.execute(
+            await self._db.execute(
                 "DELETE FROM messages WHERE session_id = ?",
                 (session_id,),
             )
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "DELETE FROM sessions WHERE id = ?",
                 (session_id,),
             )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount > 0
 
     async def get_all_sessions(
@@ -248,7 +248,7 @@ class SqliteSessionMixin(SessionStore):
         if limit is not None:
             query += " LIMIT ?"
             params.append(limit)
-        cursor = await self._conn.execute(query, tuple(params))
+        cursor = await self._db.execute(query, tuple(params))
         rows = await cursor.fetchall()
         return [_row_to_session(row) for row in rows]
 
@@ -257,7 +257,7 @@ class SqliteSessionMixin(SessionStore):
     ) -> list[dict[str, Any]]:
         """Get all child sessions of a parent session."""
         await self._ensure_connected()
-        cursor = await self._conn.execute(
+        cursor = await self._db.execute(
             "SELECT * FROM sessions WHERE parent_id = ? ORDER BY created_at DESC LIMIT ?",
             (parent_id, limit),
         )
@@ -269,8 +269,8 @@ class SqliteSessionMixin(SessionStore):
     ) -> None:
         await self._ensure_connected()
         async with self._lock:
-            await self._conn.execute(
+            await self._db.execute(
                 "UPDATE sessions SET compacted_at = ? WHERE id = ?",
                 (timestamp, session_id),
             )
-            await self._conn.commit()
+            await self._db.commit()

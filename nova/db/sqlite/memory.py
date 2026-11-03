@@ -6,6 +6,8 @@ import asyncio
 import json
 from typing import Any
 
+import aiosqlite
+
 from nova.db.repository import MemoryStore
 from nova.memory.models import MemoryRecord, MemorySearchFilters
 
@@ -13,7 +15,7 @@ from nova.memory.models import MemoryRecord, MemorySearchFilters
 class SqliteMemoryMixin(MemoryStore):
     """Memory access for ``SqliteRepository``."""
 
-    _conn: Any
+    _db: aiosqlite.Connection
     _lock: asyncio.Lock
 
     async def _ensure_connected(self) -> None:
@@ -22,7 +24,7 @@ class SqliteMemoryMixin(MemoryStore):
     async def save_memory(self, record: MemoryRecord) -> None:
         await self._ensure_connected()
         async with self._lock:
-            await self._conn.execute(
+            await self._db.execute(
                 """
                 INSERT OR REPLACE INTO memories
                 (id, key, scope, session_id, owner_agent_key, memory_type, content, summary, tags, created_at, updated_at)
@@ -42,7 +44,7 @@ class SqliteMemoryMixin(MemoryStore):
                     record.updated_at,
                 ),
             )
-            await self._conn.commit()
+            await self._db.commit()
 
     async def get_memory_by_key(
         self,
@@ -55,13 +57,13 @@ class SqliteMemoryMixin(MemoryStore):
         # owner_agent_key is matched exactly (including NULL) so one agent's
         # upsert never resolves to a different owner's row of the same key.
         if scope == "session":
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "SELECT * FROM memories WHERE key = ? AND scope = ? AND session_id = ? "
                 "AND owner_agent_key IS ?",
                 (key, scope, session_id, owner_agent_key),
             )
         else:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "SELECT * FROM memories WHERE key = ? AND scope = ? AND owner_agent_key IS ?",
                 (key, scope, owner_agent_key),
             )
@@ -94,30 +96,30 @@ class SqliteMemoryMixin(MemoryStore):
             sql += " AND owner_agent_key IS NULL"
         sql += " ORDER BY updated_at DESC LIMIT ?"
         params.append(filters.limit)
-        cursor = await self._conn.execute(sql, tuple(params))
+        cursor = await self._db.execute(sql, tuple(params))
         return [dict(row) for row in await cursor.fetchall()]
 
     async def delete_memory_by_id(self, memory_id: str) -> int:
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "DELETE FROM memories WHERE id = ?", (memory_id,)
             )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount or 0
 
     async def delete_memories_by_session(self, session_id: str) -> int:
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "DELETE FROM memories WHERE session_id = ?", (session_id,)
             )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount or 0
 
     async def list_memories_by_session(self, session_id: str) -> list[dict[str, Any]]:
         await self._ensure_connected()
-        cursor = await self._conn.execute(
+        cursor = await self._db.execute(
             "SELECT * FROM memories WHERE session_id = ? ORDER BY updated_at DESC",
             (session_id,),
         )
@@ -133,15 +135,15 @@ class SqliteMemoryMixin(MemoryStore):
         await self._ensure_connected()
         async with self._lock:
             if scope == "session":
-                cursor = await self._conn.execute(
+                cursor = await self._db.execute(
                     "DELETE FROM memories WHERE key = ? AND scope = ? AND session_id = ? "
                     "AND owner_agent_key IS ?",
                     (key, scope, session_id, owner_agent_key),
                 )
             else:
-                cursor = await self._conn.execute(
+                cursor = await self._db.execute(
                     "DELETE FROM memories WHERE key = ? AND scope = ? AND owner_agent_key IS ?",
                     (key, scope, owner_agent_key),
                 )
-            await self._conn.commit()
+            await self._db.commit()
             return cursor.rowcount or 0

@@ -8,6 +8,8 @@ import time
 import uuid
 from typing import Any
 
+import aiosqlite
+
 from nova.db.repository import MessageStore
 from nova.session.models import Message, MessageFilter, decode_display_text
 
@@ -91,7 +93,7 @@ def _row_to_message(row_dict: dict[str, Any]) -> Message:
 class SqliteMessageMixin(MessageStore):
     """Message access for ``SqliteRepository``."""
 
-    _conn: Any
+    _db: aiosqlite.Connection
     _lock: asyncio.Lock
 
     async def _ensure_connected(self) -> None:
@@ -100,7 +102,7 @@ class SqliteMessageMixin(MessageStore):
     async def _fetch_messages(
         self, sql: str, params: tuple[object, ...]
     ) -> list[Message]:
-        cursor = await self._conn.execute(sql, params)
+        cursor = await self._db.execute(sql, params)
         rows = await cursor.fetchall()
         return [_row_to_message(dict(row)) for row in rows]
 
@@ -144,7 +146,7 @@ class SqliteMessageMixin(MessageStore):
         )
 
         async with self._lock:
-            await self._conn.execute(
+            await self._db.execute(
                 """INSERT INTO messages
                 (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output, cache_read_tokens, provider_meta, model, error, variant, reasoning_effort)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -172,11 +174,11 @@ class SqliteMessageMixin(MessageStore):
                     reasoning_effort,
                 ),
             )
-            await self._conn.execute(
+            await self._db.execute(
                 "UPDATE sessions SET updated_at = ?, message_count = message_count + 1 WHERE id = ?",
                 (now, session_id),
             )
-            await self._conn.commit()
+            await self._db.commit()
 
         return Message(
             id=msg_id,
@@ -231,7 +233,7 @@ class SqliteMessageMixin(MessageStore):
     async def compress_messages(self, session_id: str, target_count: int = 50) -> None:
         await self._ensure_connected()
         async with self._lock:
-            cursor = await self._conn.execute(
+            cursor = await self._db.execute(
                 "SELECT COUNT(*) FROM messages WHERE session_id = ?",
                 (session_id,),
             )
@@ -241,7 +243,7 @@ class SqliteMessageMixin(MessageStore):
                 return
 
             delete_count = count - target_count
-            await self._conn.execute(
+            await self._db.execute(
                 """UPDATE messages SET summary = 1
                 WHERE id IN (
                     SELECT id FROM messages
@@ -251,20 +253,20 @@ class SqliteMessageMixin(MessageStore):
                 )""",
                 (session_id, delete_count),
             )
-            await self._conn.execute(
+            await self._db.execute(
                 "UPDATE sessions SET compacted_at = ? WHERE id = ?",
                 (int(time.time() * 1000), session_id),
             )
-            await self._conn.commit()
+            await self._db.commit()
 
     async def mark_messages_compacted(self, session_id: str) -> None:
         await self._ensure_connected()
         async with self._lock:
-            await self._conn.execute(
+            await self._db.execute(
                 "UPDATE messages SET compacted = 1 WHERE session_id = ? AND compacted = 0 AND summary = 0",
                 (session_id,),
             )
-            await self._conn.commit()
+            await self._db.commit()
 
     async def mark_messages_compacted_by_ids(
         self, session_id: str, message_ids: list[str]
@@ -274,20 +276,20 @@ class SqliteMessageMixin(MessageStore):
             return
         placeholders = ",".join("?" * len(message_ids))
         async with self._lock:
-            await self._conn.execute(
+            await self._db.execute(
                 f"UPDATE messages SET compacted = 1 WHERE session_id = ? AND id IN ({placeholders})",
                 (session_id, *message_ids),
             )
-            await self._conn.commit()
+            await self._db.commit()
 
     async def update_message_content(self, message_id: str, content: str) -> None:
         await self._ensure_connected()
         async with self._lock:
-            await self._conn.execute(
+            await self._db.execute(
                 "UPDATE messages SET content = ?, data = ? WHERE id = ?",
                 (content, content, message_id),
             )
-            await self._conn.commit()
+            await self._db.commit()
 
     async def delete_messages(self, session_id: str, message_ids: list[str]) -> int:
         await self._ensure_connected()
@@ -296,7 +298,7 @@ class SqliteMessageMixin(MessageStore):
 
         placeholders = ",".join("?" * len(message_ids))
         async with self._lock:
-            count_cursor = await self._conn.execute(
+            count_cursor = await self._db.execute(
                 f"SELECT COUNT(*) FROM messages WHERE session_id = ? AND id IN ({placeholders})",
                 (session_id, *message_ids),
             )
@@ -305,11 +307,11 @@ class SqliteMessageMixin(MessageStore):
             if deleted_count == 0:
                 return 0
 
-            await self._conn.execute(
+            await self._db.execute(
                 f"DELETE FROM messages WHERE session_id = ? AND id IN ({placeholders})",
                 (session_id, *message_ids),
             )
-            await self._conn.execute(
+            await self._db.execute(
                 """UPDATE sessions
                 SET updated_at = ?,
                     message_count = CASE
@@ -319,5 +321,5 @@ class SqliteMessageMixin(MessageStore):
                 WHERE id = ?""",
                 (int(time.time() * 1000), deleted_count, deleted_count, session_id),
             )
-            await self._conn.commit()
+            await self._db.commit()
             return deleted_count
