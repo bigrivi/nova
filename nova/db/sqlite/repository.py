@@ -10,7 +10,6 @@ import logging
 import re
 import time
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -20,8 +19,9 @@ from nova.constants import DEFAULT_AGENT_KEY
 from nova.db.config import DatabaseConfig
 from nova.db.repository import NovaRepository
 from nova.db.sqlite.memory import SqliteMemoryMixin
+from nova.db.sqlite.project import SqliteProjectMixin
 from nova.db.sqlite.schedule import SqliteScheduleMixin
-from nova.project.models import Project
+from nova.db.timestamps import to_milliseconds
 from nova.project.paths import normalize_project_path, project_label_from_path
 from nova.session.models import Message, MessageFilter, decode_display_text
 
@@ -268,12 +268,6 @@ def _row_to_session(row: aiosqlite.Row) -> dict[str, Any]:
     return dict(row)
 
 
-def _to_ms_timestamp(value: datetime | int | float) -> int:
-    if hasattr(value, "timestamp"):
-        return int(value.timestamp() * 1000)
-    return int(value)
-
-
 def _ddl_columns(ddl: str, table: str) -> set[str]:
     """Column names a CREATE TABLE block in *ddl* declares for *table*.
 
@@ -299,7 +293,9 @@ def _ddl_columns(ddl: str, table: str) -> set[str]:
     return names
 
 
-class SqliteRepository(SqliteMemoryMixin, SqliteScheduleMixin, NovaRepository):
+class SqliteRepository(
+    SqliteMemoryMixin, SqliteScheduleMixin, SqliteProjectMixin, NovaRepository
+):
     def __init__(self, config: DatabaseConfig | None = None) -> None:
         self.config = config or DatabaseConfig()
         self._conn: aiosqlite.Connection | None = None
@@ -703,8 +699,8 @@ class SqliteRepository(SqliteMemoryMixin, SqliteScheduleMixin, NovaRepository):
                     session.summary_goal,
                     session.summary_accomplished,
                     session.summary_remaining,
-                    _to_ms_timestamp(session.created_at),
-                    _to_ms_timestamp(session.updated_at),
+                    to_milliseconds(session.created_at),
+                    to_milliseconds(session.updated_at),
                     session.compacted_at,
                     session.message_count,
                     session.turn_count,
@@ -855,62 +851,6 @@ class SqliteRepository(SqliteMemoryMixin, SqliteScheduleMixin, NovaRepository):
             cursor = await self._conn.execute(
                 "UPDATE sessions SET project_id = ? WHERE id = ?",
                 (project_id, session_id),
-            )
-            await self._conn.commit()
-            return cursor.rowcount > 0
-
-    async def save_project(self, project: Project) -> None:
-        await self._ensure_connected()
-        async with self._lock:
-            await self._conn.execute(
-                """INSERT OR REPLACE INTO projects
-                (id, name, path, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?)""",
-                (
-                    project.id,
-                    project.name,
-                    getattr(project, "path", None),
-                    _to_ms_timestamp(project.created_at),
-                    _to_ms_timestamp(project.updated_at),
-                ),
-            )
-            await self._conn.commit()
-
-    async def get_project(self, project_id: str) -> dict[str, Any] | None:
-        await self._ensure_connected()
-        cursor = await self._conn.execute(
-            "SELECT * FROM projects WHERE id = ?",
-            (project_id,),
-        )
-        row = await cursor.fetchone()
-        return dict(row) if row else None
-
-    async def list_projects(self) -> list[dict[str, Any]]:
-        await self._ensure_connected()
-        cursor = await self._conn.execute(
-            "SELECT * FROM projects ORDER BY updated_at DESC"
-        )
-        return [dict(row) for row in await cursor.fetchall()]
-
-    async def find_projects_by_path(self, path: str) -> list[dict[str, Any]]:
-        await self._ensure_connected()
-        cursor = await self._conn.execute(
-            "SELECT * FROM projects WHERE path = ? ORDER BY updated_at DESC",
-            (path,),
-        )
-        return [dict(row) for row in await cursor.fetchall()]
-
-    async def delete_project(self, project_id: str) -> bool:
-        """Delete a project and detach its sessions. Sessions are kept."""
-        await self._ensure_connected()
-        async with self._lock:
-            await self._conn.execute(
-                "UPDATE sessions SET project_id = NULL WHERE project_id = ?",
-                (project_id,),
-            )
-            cursor = await self._conn.execute(
-                "DELETE FROM projects WHERE id = ?",
-                (project_id,),
             )
             await self._conn.commit()
             return cursor.rowcount > 0

@@ -13,10 +13,12 @@ import inspect
 import pytest
 
 from nova.db.in_memory.memory import InMemoryMemoryMixin
+from nova.db.in_memory.project import InMemoryProjectMixin
 from nova.db.in_memory.repository import InMemoryRepository
 from nova.db.in_memory.schedule import InMemoryScheduleMixin
-from nova.db.repository import MemoryStore, ScheduleStore
+from nova.db.repository import MemoryStore, ProjectStore, ScheduleStore
 from nova.db.sqlite.memory import SqliteMemoryMixin
+from nova.db.sqlite.project import SqliteProjectMixin
 from nova.db.sqlite.repository import SqliteRepository
 from nova.db.sqlite.schedule import SqliteScheduleMixin
 
@@ -34,8 +36,10 @@ def _store_methods(protocol: type) -> list[str]:
     [
         (SqliteRepository, SqliteMemoryMixin, MemoryStore),
         (SqliteRepository, SqliteScheduleMixin, ScheduleStore),
+        (SqliteRepository, SqliteProjectMixin, ProjectStore),
         (InMemoryRepository, InMemoryMemoryMixin, MemoryStore),
         (InMemoryRepository, InMemoryScheduleMixin, ScheduleStore),
+        (InMemoryRepository, InMemoryProjectMixin, ProjectStore),
     ],
 )
 def test_store_methods_resolve_to_the_mixin(

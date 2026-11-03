@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from nova.db.in_memory.memory import InMemoryMemoryMixin
+from nova.db.in_memory.project import InMemoryProjectMixin
 from nova.db.in_memory.schedule import InMemoryScheduleMixin
 from nova.db.repository import NovaRepository
-from nova.project.models import Project
+from nova.db.timestamps import to_milliseconds
 from nova.scheduler.models import ScheduledJob
 from nova.session.models import Message, MessageFilter
 
@@ -17,7 +17,9 @@ if TYPE_CHECKING:
     from nova.session.manager import SessionContext
 
 
-class InMemoryRepository(InMemoryMemoryMixin, InMemoryScheduleMixin, NovaRepository):
+class InMemoryRepository(
+    InMemoryMemoryMixin, InMemoryScheduleMixin, InMemoryProjectMixin, NovaRepository
+):
     def __init__(self) -> None:
         self._sessions: dict[str, dict[str, Any]] = {}
         self._projects: dict[str, dict[str, Any]] = {}
@@ -63,8 +65,8 @@ class InMemoryRepository(InMemoryMemoryMixin, InMemoryScheduleMixin, NovaReposit
             "summary_goal": getattr(session, "summary_goal", None),
             "summary_accomplished": getattr(session, "summary_accomplished", None),
             "summary_remaining": getattr(session, "summary_remaining", None),
-            "created_at": self._milliseconds(getattr(session, "created_at", now)),
-            "updated_at": self._milliseconds(getattr(session, "updated_at", now)),
+            "created_at": to_milliseconds(getattr(session, "created_at", now)),
+            "updated_at": to_milliseconds(getattr(session, "updated_at", now)),
             "compacted_at": getattr(session, "compacted_at", None),
             "message_count": getattr(session, "message_count", 0),
             "turn_count": getattr(session, "turn_count", 0),
@@ -157,45 +159,6 @@ class InMemoryRepository(InMemoryMemoryMixin, InMemoryScheduleMixin, NovaReposit
         if session is None:
             return False
         session["project_id"] = project_id
-        return True
-
-    async def save_project(self, project: Project) -> None:
-        now = int(time.time() * 1000)
-        self._projects[project.id] = {
-            "id": project.id,
-            "name": project.name,
-            "path": getattr(project, "path", None),
-            "created_at": self._milliseconds(getattr(project, "created_at", now)),
-            "updated_at": self._milliseconds(getattr(project, "updated_at", now)),
-        }
-
-    async def get_project(self, project_id: str) -> dict[str, Any] | None:
-        project = self._projects.get(project_id)
-        return dict(project) if project else None
-
-    async def list_projects(self) -> list[dict[str, Any]]:
-        projects = sorted(
-            self._projects.values(),
-            key=lambda item: item["updated_at"],
-            reverse=True,
-        )
-        return [dict(project) for project in projects]
-
-    async def find_projects_by_path(self, path: str) -> list[dict[str, Any]]:
-        projects = [
-            project for project in self._projects.values() if project["path"] == path
-        ]
-        projects.sort(key=lambda item: item["updated_at"], reverse=True)
-        return [dict(project) for project in projects]
-
-    async def delete_project(self, project_id: str) -> bool:
-        """Delete a project and detach its sessions. Sessions are kept."""
-        if project_id not in self._projects:
-            return False
-        del self._projects[project_id]
-        for session in self._sessions.values():
-            if session.get("project_id") == project_id:
-                session["project_id"] = None
         return True
 
     async def delete_session(self, session_id: str) -> bool:
@@ -410,9 +373,3 @@ class InMemoryRepository(InMemoryMemoryMixin, InMemoryScheduleMixin, NovaReposit
         ]:
             await self.delete_session(session_id)
         return True
-
-    @staticmethod
-    def _milliseconds(value: datetime | int | float) -> int:
-        return (
-            int(value.timestamp() * 1000) if hasattr(value, "timestamp") else int(value)
-        )
