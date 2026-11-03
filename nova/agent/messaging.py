@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from nova.agent.core import Agent
 
 from nova.agent.context import AgentContext
+from nova.agent.state import TurnState
 from nova.learning.nudges import build_nudge_reminder, should_nudge
 from nova.llm import Message as LLMMessage
 from nova.prompt import session_cache
@@ -36,31 +33,29 @@ def _count_user_turns(messages: list) -> int:
 class AgentMessaging:
     """Composed service: system prompt construction and LLM message conversion.
 
-    Holds a reference to the agent rather than inheriting from it, so the
-    service can be replaced or mocked independently of the agent.
+    Receives the context and the turn state it operates on, never the agent
+    that created it, so it can be built with a mock context in tests.
     """
 
-    def __init__(self, agent: Agent) -> None:
-        self.agent = agent
-        self.ctx: AgentContext = agent.ctx
-
-    @property
-    def _self(self) -> Agent:
-        return self.agent
+    def __init__(self, ctx: AgentContext, state: TurnState) -> None:
+        if ctx.prompt_builder is None:
+            raise ValueError("AgentMessaging requires ctx.prompt_builder")
+        self.ctx = ctx
+        self.state = state
+        self.builder = ctx.prompt_builder
 
     def build_system_prompt(self, session_ctx: SessionContext | None = None) -> str:
         ctx = self.ctx
-        workspace = self.agent._active_workspace or str(ctx.agent_dir)
-        return ctx.prompt_builder.build(
+        workspace = self.state.workspace or str(ctx.agent_dir)
+        return self.builder.build(
             available_skills=ctx.skill_service.list_skills(),
-            workspace_override=self.agent._active_workspace,
+            workspace_override=self.state.workspace,
             project_instructions=discover_project_instructions(workspace),
         )
 
     def apply_active_workspace(self, session_ctx: SessionContext | None = None) -> None:
         from nova.tools.workspace_context import set_active_workspace
 
-        agent = self.agent
         override = getattr(session_ctx, "workspace_dir", None) if session_ctx else None
         if override:
             resolved = Path(override).expanduser()
@@ -76,9 +71,9 @@ class AgentMessaging:
         else:
             effective = str(self.ctx.agent_dir)
 
-        if effective != agent._active_workspace:
-            agent._active_workspace = effective
-            agent._base_system_prompt = None
+        if effective != self.state.workspace:
+            self.state.workspace = effective
+            self.state.base_system_prompt = None
         set_active_workspace(effective)
 
     def convert_to_llm_messages(self, loaded_messages: list) -> list:
@@ -132,10 +127,9 @@ class AgentMessaging:
 
     async def build_messages(self, loaded_messages: list | None = None) -> list:
         ctx = self.ctx
-        agent = self.agent
         session = ctx.session.get_current_session()
 
-        if agent._base_system_prompt is None:
+        if self.state.base_system_prompt is None:
             # Frozen per session: this text is the cached prefix every provider
             # matches, so rebuilding it per request (a new Agent is built for
             # each one) meant a memory write or a new sub-agent invalidated the
@@ -143,20 +137,19 @@ class AgentMessaging:
             key = session_cache.prompt_key(
                 session.id if session else "",
                 ctx.agent_key,
-                agent._active_workspace or "",
+                self.state.workspace or "",
             )
             cached_prompt = session_cache.get_session_prompt(key)
             if cached_prompt is None:
-                await agent._refresh_memory_index()
-                await agent._refresh_subagent_roster()
+                await self.builder.refresh_indexes()
                 cached_prompt = self.build_system_prompt(session)
                 session_cache.remember_session_prompt(key, cached_prompt)
-            agent._base_system_prompt = cached_prompt
+            self.state.base_system_prompt = cached_prompt
 
         if loaded_messages is None:
             loaded_messages = await ctx.session.get_messages()
 
-        system_content = agent._base_system_prompt or ""
+        system_content = self.state.base_system_prompt or ""
         # Standing learning context rides at the END of the request, never in the
         # system prompt: that prompt is the cached prefix, so anything present on
         # only some turns would invalidate every token behind it -- the nudge

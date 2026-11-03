@@ -203,7 +203,7 @@ async def test_the_system_prompt_itself_is_unchanged() -> None:
 
         messages = await agent.messaging.build_messages()
 
-        assert (messages[0].content or "") == agent._base_system_prompt
+        assert (messages[0].content or "") == agent.state.base_system_prompt
 
 
 @pytest.mark.asyncio

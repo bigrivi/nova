@@ -23,6 +23,7 @@ from nova.agent.hierarchy import AgentHierarchy
 from nova.agent.llm_stream import TurnOutcome, TurnStreamReader
 from nova.agent.messaging import AgentMessaging
 from nova.agent.session import AgentSession
+from nova.agent.state import TurnState
 from nova.agent.tool_guardrails import ToolGuardrails
 from nova.agent.tool_invoker import ToolInvoker, has_parsable_arguments
 from nova.agent.toolset import ToolsetBuilder
@@ -178,11 +179,14 @@ class Agent:
         self._skill_service = self._build_skill_service(agent_key, agent_dir)
         self._skill_service.scan_skills()
         self._prompt_builder = PromptBuilder(
-            prompt_config or PromptConfig.from_agent_dir(agent_dir)
+            prompt_config or PromptConfig.from_agent_dir(agent_dir),
+            agent_key=agent_key,
+            is_sub_agent=is_sub_agent,
+            data_source=data_source,
+            child_agent_records=self._hierarchy.child_agent_records,
         )
         self._abort_event = asyncio.Event()
-        self._base_system_prompt: str | None = None
-        self._active_workspace: str | None = None
+        self.state = TurnState()
         self._last_user_input: str = ""
         self._skill_tools: Any = None
         self._compaction = CompactionController(
@@ -255,7 +259,7 @@ class Agent:
             guardrails=self._guardrails,
         )
         # Composed services. Created after the context so they can read it.
-        self.messaging = AgentMessaging(self)
+        self.messaging = AgentMessaging(self.ctx, self.state)
         self.background = AgentBackground(self)
         self.session_service = AgentSession(self)
 
@@ -419,7 +423,7 @@ class Agent:
             self.agent_key,
             self.config.provider,
             self.config.model,
-            self._active_workspace or "",
+            self.state.workspace or "",
             len(message_text),
             len(attachments or []),
         )
@@ -436,7 +440,7 @@ class Agent:
             session_id=session_id,
             checkpoint_id=user_message.id,
             label=display or message_text,
-            workspace=self._active_workspace,
+            workspace=self.state.workspace,
         )
 
         tool_schemas = (
@@ -601,59 +605,6 @@ class Agent:
         ):
             pass
         return {"compacted": self._compaction.compacted}
-
-    async def _refresh_memory_index(self) -> None:
-        """Build the memory index from DB for system prompt inclusion.
-
-        Queries the memories visible to this agent and stores a compact
-        listing in PromptConfig.memory_index. Built once per session (when
-        _base_system_prompt is None) and then frozen: memory written mid-session
-        lands in the store but is not re-injected until the next session, so the
-        cached system prefix stays byte-stable for prompt caching.
-        """
-        if self.is_sub_agent:
-            self._prompt_builder.config.memory_index = ""
-            return
-        try:
-            from nova.memory.context import build_memory_index_for_system
-            from nova.memory.service import MemoryService
-
-            self._prompt_builder.config.memory_index = (
-                await build_memory_index_for_system(
-                    service=MemoryService(data_source=self._data_source),
-                    agent_key=self.agent_key,
-                )
-            )
-        except Exception as error:
-            log.warning("Failed to refresh memory index: %s", error)
-
-    async def _refresh_subagent_roster(self) -> None:
-        """List this agent's delegatable sub-agents for the system prompt.
-
-        Only a primary agent can delegate, so sub-agents get an empty roster.
-        The roster is the current agent's children (agent_parents M2M), each
-        rendered with its key, access level, and description so the model knows
-        exactly which `target` values `delegate_to_agent` accepts.
-        """
-        if self.is_sub_agent:
-            self._prompt_builder.config.subagent_roster = ""
-            return
-        try:
-            children = await self._hierarchy.child_agent_records()
-        except Exception as error:
-            log.warning("Failed to refresh sub-agent roster: %s", error)
-            children = []
-        lines = []
-        for child in children:
-            key = child.get("key")
-            if not key:
-                continue
-            access = (
-                "read-only" if child.get("posture") == "read_only" else "full access"
-            )
-            description = (child.get("description") or "").strip() or "(no description)"
-            lines.append(f"- `{key}` ({access}): {description}")
-        self._prompt_builder.config.subagent_roster = "\n".join(lines)
 
     def add_sub_agent(self, sub_agent: "Agent") -> None:
         """Add a sub-agent to this agent's list of sub-agents."""

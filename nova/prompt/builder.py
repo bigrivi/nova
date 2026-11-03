@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +15,10 @@ from nova.settings import get_settings
 from nova.tools.shell_utils import get_shell_label
 
 if TYPE_CHECKING:
+    from nova.db.repository import DataSourceProtocol
     from nova.skills.models import SkillSummary
+
+log = logging.getLogger(__name__)
 
 DEFAULT_AGENT_IDENTITY = (
     "You are Nova, a general-purpose personal AI assistant and autonomous agent.\n"
@@ -119,8 +124,66 @@ class PromptBuilder:
 - Shell: {shell}
 """
 
-    def __init__(self, config: PromptConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: PromptConfig | None = None,
+        *,
+        agent_key: str = "main",
+        is_sub_agent: bool = False,
+        data_source: DataSourceProtocol | None = None,
+        child_agent_records: Callable[[], Awaitable[list[dict]]] | None = None,
+    ) -> None:
         self.config = config or PromptConfig()
+        self.agent_key = agent_key
+        self.is_sub_agent = is_sub_agent
+        self.data_source = data_source
+        self._child_agent_records = child_agent_records
+
+    async def refresh_indexes(self) -> None:
+        """Rebuild the memory index and sub-agent roster in this config.
+
+        Called once per session, before the system prompt is frozen: memory
+        written mid-session stays in the store without invalidating the cached
+        prefix.
+        """
+        await self._refresh_memory_index()
+        await self._refresh_subagent_roster()
+
+    async def _refresh_memory_index(self) -> None:
+        if self.is_sub_agent:
+            self.config.memory_index = ""
+            return
+        try:
+            from nova.memory.context import build_memory_index_for_system
+            from nova.memory.service import MemoryService
+
+            self.config.memory_index = await build_memory_index_for_system(
+                service=MemoryService(data_source=self.data_source),
+                agent_key=self.agent_key,
+            )
+        except Exception as error:
+            log.warning("Failed to refresh memory index: %s", error)
+
+    async def _refresh_subagent_roster(self) -> None:
+        if self.is_sub_agent or self._child_agent_records is None:
+            self.config.subagent_roster = ""
+            return
+        try:
+            children = await self._child_agent_records()
+        except Exception as error:
+            log.warning("Failed to refresh sub-agent roster: %s", error)
+            children = []
+        lines = []
+        for child in children:
+            key = child.get("key")
+            if not key:
+                continue
+            access = (
+                "read-only" if child.get("posture") == "read_only" else "full access"
+            )
+            description = (child.get("description") or "").strip() or "(no description)"
+            lines.append(f"- `{key}` ({access}): {description}")
+        self.config.subagent_roster = "\n".join(lines)
 
     def build(
         self,
@@ -240,7 +303,9 @@ class PromptBuilder:
     @staticmethod
     def _build_terminal_backend_section(settings: object) -> str:
         terminal = getattr(settings, "terminal", None)
-        backend = getattr(terminal, "backend", "local") if terminal is not None else "local"
+        backend = (
+            getattr(terminal, "backend", "local") if terminal is not None else "local"
+        )
         backend = (backend or "local").strip().lower()
         if backend == "local":
             return ""
@@ -257,8 +322,14 @@ class PromptBuilder:
                 "(cwd, env) does not persist between separate calls."
             )
         if backend == "docker":
-            image = getattr(terminal, "docker_image", "") if terminal is not None else ""
-            container = getattr(terminal, "docker_container", "") if terminal is not None else ""
+            image = (
+                getattr(terminal, "docker_image", "") if terminal is not None else ""
+            )
+            container = (
+                getattr(terminal, "docker_container", "")
+                if terminal is not None
+                else ""
+            )
             target = container or image or "container"
             return (
                 "## Terminal Backend\n\n"
