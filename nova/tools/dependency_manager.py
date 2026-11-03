@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ async def _install(packages: list[str]) -> None:
     else:
         cmd = [sys.executable, "-m", "pip", *pip_args]
 
-    spawn_kwargs = {}
+    spawn_kwargs: dict[str, Any] = {}
     if sys.platform == "win32":
         spawn_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     result = await asyncio.to_thread(

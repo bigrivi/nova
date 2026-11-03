@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 from nova.db.repository import AgentStore
@@ -14,8 +13,6 @@ class InMemoryAgentMixin(AgentStore):
     _agents: dict[str, dict[str, Any]]
     _agent_parents: set[tuple[str, str]]
     _sessions: dict[str, dict[str, Any]]
-    # Provided by the session store; annotated so delete_agent stays typed.
-    delete_session: Callable[[str], Awaitable[bool]]
 
     async def list_agents(self) -> list[dict[str, Any]]:
         return sorted(
@@ -70,5 +67,5 @@ class InMemoryAgentMixin(AgentStore):
         for session_id in [
             s["id"] for s in self._sessions.values() if s["agent_key"] == key
         ]:
-            await self.delete_session(session_id)
+            await self.delete_session(session_id)  # type: ignore[attr-defined]
         return True

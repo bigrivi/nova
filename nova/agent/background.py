@@ -40,7 +40,7 @@ class AgentBackground:
     async def generate_title_in_background(
         self, session: SessionContext, first_message: str
     ) -> None:
-        if self.ctx.llm is None:
+        if self.ctx.llm is None or self.ctx.on_title_updated is None:
             return
         session_id = session.id
         try:

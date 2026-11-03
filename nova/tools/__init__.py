@@ -1,3 +1,5 @@
+from typing import Any
+
 from nova.tools.ask_user import TOOL as ask_user
 from nova.tools.background_task_tools import (
     background_task_cancel,
@@ -20,6 +22,7 @@ from nova.tools.web_fetch import TOOL as web_fetch
 from nova.tools.web_search import TOOL as web_search
 from nova.tools.write import TOOL as write
 
+browser_use: Any
 try:
     from nova.tools.browser_use import TOOL as browser_use
 except ImportError:

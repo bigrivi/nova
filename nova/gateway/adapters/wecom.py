@@ -13,6 +13,7 @@ from nova.gateway.platform import MessageHandler, PlatformAdapter
 
 class WeComAdapter(PlatformAdapter):
     name = "wecom"
+    max_message_chars = 4000
 
     def __init__(
         self,

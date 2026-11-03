@@ -22,6 +22,8 @@ def create_window(
         resizable=True,
     )
     wire_hidden_titlebar()
+    if window is None:
+        raise RuntimeError("could not create the desktop window")
     return window
 
 

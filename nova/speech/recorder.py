@@ -292,7 +292,7 @@ def _typed_dll(
     use_last_error: bool = False,
 ) -> ctypes.CDLL:
     """Load a Windows DLL and pin each listed function's signature."""
-    dll = ctypes.WinDLL(name, use_last_error=use_last_error)
+    dll = ctypes.WinDLL(name, use_last_error=use_last_error)  # type: ignore[attr-defined]
     for func_name, (argtypes, restype) in signatures.items():
         func = getattr(dll, func_name)
         func.argtypes = argtypes

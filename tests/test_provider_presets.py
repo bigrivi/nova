@@ -12,15 +12,14 @@ import json
 from pathlib import Path
 
 import httpx
-import pytest
 
-from nova.registry import presets as presets_module
 from nova.config.service import _SUPPORTED_PROVIDER_TYPES
+from nova.registry import presets as presets_module
 from nova.registry.presets import (
     BUNDLED,
+    preset_for,
     preset_from_json,
     preset_ids,
-    preset_for,
 )
 from nova.server.routers.config import provider_presets
 
@@ -63,7 +62,7 @@ class _FakeClient:
         self._response = response
         self._error = error
 
-    async def __aenter__(self) -> "_FakeClient":
+    async def __aenter__(self) -> _FakeClient:
         return self
 
     async def __aexit__(self, *_exc: object) -> bool:

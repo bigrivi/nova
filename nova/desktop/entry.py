@@ -16,7 +16,7 @@ from nova.settings import Settings
 
 def _resolve_frontend_dist() -> str | None:
     if getattr(sys, "frozen", False):
-        meipass = Path(sys._MEIPASS)
+        meipass = Path(sys._MEIPASS)  # type: ignore[attr-defined]
         dist_path = meipass / "frontend" / "dist"
         if dist_path.exists():
             return str(dist_path)

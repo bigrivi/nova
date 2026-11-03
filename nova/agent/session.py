@@ -141,6 +141,8 @@ class AgentSession:
         """Load the requested session, creating one when it is absent."""
         if session_id and await self.ctx.session.load_session(session_id):
             current = self.ctx.session.get_current_session()
+            if current is None:
+                raise RuntimeError("session vanished while loading")
             log.info("[Session %s] Reused", session_id)
             return current
         await self.ctx.session.create_session(

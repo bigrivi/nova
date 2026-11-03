@@ -182,7 +182,7 @@ async def test_two_sessions_keep_independent_models(monkeypatch) -> None:
             ),
         )
 
-    async with _catalog() as database:
+    async with _catalog():
         first = Agent(
             config=AgentConfig(model="model-a", provider="provider-a"),
             llm_provider=_ScriptedProvider(),

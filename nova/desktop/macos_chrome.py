@@ -376,7 +376,7 @@ def _install_first_show_hook(browser_view_cls: Any | None = None) -> bool:
         return original(browser_view)
 
     setattr(first_show, _HOOK_FLAG, True)
-    browser_view_cls.first_show = first_show
+    browser_view_cls.first_show = first_show  # type: ignore[method-assign]
     return True
 
 

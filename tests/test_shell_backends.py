@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from nova.tools.shell.backends import get_backend
@@ -40,7 +38,7 @@ def test_ssh_backend_prepare() -> None:
     prepared = backend.prepare("ls -la", "/app")
     assert prepared.argv[0] == "ssh"
     assert "root@example.com" in prepared.argv
-    assert any("cd /app && ls -la" == a for a in prepared.argv)
+    assert any(a == "cd /app && ls -la" for a in prepared.argv)
 
 
 def test_docker_backend_requires_image_or_container() -> None:

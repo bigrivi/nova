@@ -175,7 +175,7 @@ class ToolCall(ChatEvent):
 class Done(ChatEvent):
     type: str = "done"
     content: str = ""
-    tool_calls: list = None
+    tool_calls: list | None = None
     aborted: bool = False
     tokens_input: int | None = None
     tokens_output: int | None = None

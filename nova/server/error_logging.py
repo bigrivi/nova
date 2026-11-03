@@ -19,7 +19,7 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import http_exception_handler
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 log = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ def install_error_logging(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     async def _log_http_exception(
         request: Request, exc: StarletteHTTPException
-    ) -> JSONResponse:
+    ) -> Response:
         log.warning(
             "API %s %s -> %s: %s",
             request.method,

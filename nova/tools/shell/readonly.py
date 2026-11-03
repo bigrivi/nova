@@ -122,7 +122,7 @@ def _git_is_read_only(argv: tuple[str, ...]) -> bool:
 
 def _is_program_read_only(command: object) -> bool:
     program = getattr(command, "program", "")
-    programs = getattr(command, "programs", frozenset())
+    programs: frozenset[str] = getattr(command, "programs", frozenset())
     argv = getattr(command, "argv", ())
 
     # A wrapper (sudo/env/…) or a substituted name puts a program we did not

@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from nova.tasks.executors.process import run_process
-from nova.tasks.models import TaskExecutionContext
 from nova.tools.shell.backends.docker import DockerBackend
 
 
@@ -85,7 +84,7 @@ async def test_docker_cancellation_kills_tree():
     stream = MagicMock()
     stream.read = AsyncMock(side_effect=asyncio.CancelledError())
     proc.stdout = stream
-    proc.wait = AsyncMock(side_effect=asyncio.TimeoutError())
+    proc.wait = AsyncMock(side_effect=TimeoutError())
     proc.kill = MagicMock()
 
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)), \

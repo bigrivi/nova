@@ -23,7 +23,7 @@ class _FakeClient:
         self.requested_url = ""
         self.requested_headers: dict[str, str] = {}
 
-    async def __aenter__(self) -> "_FakeClient":
+    async def __aenter__(self) -> _FakeClient:
         return self
 
     async def __aexit__(self, *_exc: object) -> bool:

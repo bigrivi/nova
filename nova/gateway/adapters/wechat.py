@@ -19,6 +19,7 @@ log = logging.getLogger(__name__)
 
 class WeChatAdapter(PlatformAdapter):
     name = "wechat"
+    max_message_chars = 4000
 
     def __init__(
         self, token: str = "", agent_key: str = "main", **options: str

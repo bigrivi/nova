@@ -262,6 +262,7 @@ class SessionManager(SessionProtocol):
         self,
         session_id: str | None = None,
         limit: int | None = None,
+        last_n: int | None = None,
     ) -> list[Message]:
         current = self.get_current_session()
         sid = session_id or (current.id if current else None)
@@ -269,7 +270,10 @@ class SessionManager(SessionProtocol):
             return []
         async with self._lock:
             data_source = await self._get_data_source()
-            return await data_source.get_messages(sid, MessageFilter(limit=limit))
+            messages = await data_source.get_messages(
+                sid, MessageFilter(limit=None if last_n else limit)
+            )
+            return messages[-last_n:] if last_n else messages
 
     async def get_child_sessions(
         self,

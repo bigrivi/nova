@@ -56,13 +56,16 @@ class Tool:
 class ToolRegistry:
     """Tool registry."""
 
+    tools: dict[str, Tool]
+    _behaviors: dict[str, Any]
+
     def __init__(self, source: "ToolRegistry | None" = None) -> None:
         if source is not None:
             self.tools = dict(source.tools)
             self._behaviors = dict(getattr(source, "_behaviors", {}))
         else:
-            self.tools: dict[str, Tool] = {}
-            self._behaviors: dict[str, Any] = {}
+            self.tools = {}
+            self._behaviors = {}
 
     def register(self, func: Callable, name: str | None = None) -> None:
         """Register a tool function using decorator metadata."""

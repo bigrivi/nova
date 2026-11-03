@@ -25,7 +25,6 @@ import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
 
-from nova.agent import AgentEvent
 from nova.db.database import close_db
 from nova.server import create_app
 from nova.server.request_registry import (

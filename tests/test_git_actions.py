@@ -66,7 +66,7 @@ def fake_model(monkeypatch):
     seen: list[str] = []
 
     async def fake_stream(llm, *, messages, model, **kwargs):
-        seen.append(messages[0]["content"])
+        seen.append(messages[0].content)
         return "feat(git): add commit planning\n"
 
     monkeypatch.setattr(git_actions, "stream_text_once", fake_stream)

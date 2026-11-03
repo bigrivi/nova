@@ -68,7 +68,8 @@ def build_llm(
             # write them down.
             from nova.registry.catalogue import load as load_catalogue
 
-            model_keys = load_catalogue(settings).get(provider, [])
+            catalogue_rows = load_catalogue(settings).get(provider) or {}
+            model_keys = list(catalogue_rows)
         model = model_keys[0] if model_keys else ""
 
     # A model may speak a different transport than its provider, on a different
@@ -108,6 +109,7 @@ def build_llm(
     # spelling its wire format uses.
     default_effort = settings.get_default_reasoning_effort(model, provider)
 
+    llm: LLMProvider
     if provider_type == "faker":
         options = provider_config.options
         llm = FakerLLMProvider(

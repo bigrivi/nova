@@ -78,7 +78,7 @@ def list_checkpoints(session_id: str) -> list[CheckpointSummary]:
                     session_id=session_id,
                     checkpoint_id=str(meta.get("checkpoint_id") or child.name),
                     label=str(meta.get("label") or ""),
-                    created_at=int(meta.get("created_at") or 0),
+                    created_at=int(str(meta.get("created_at") or 0)),
                     files=len(entries),
                     skipped=sum(1 for entry in entries if entry.get("skipped")),
                 ),

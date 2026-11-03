@@ -8,7 +8,7 @@ overwrite an existing file.
 
 from __future__ import annotations
 
-import nova.tools.edit  # noqa: F401  (registers the tool metadata)
+import nova.tools.edit
 import nova.tools.write  # noqa: F401
 from nova.prompt.builder import PromptBuilder, PromptConfig
 from nova.tools.registry import _tool_metadata

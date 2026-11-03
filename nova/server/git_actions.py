@@ -16,6 +16,7 @@ from nova import checkpoints
 from nova.git import diff as git_diff
 from nova.git import status as git_status
 from nova.llm.oneshot import stream_text_once
+from nova.llm.provider import Message
 from nova.server.session_service import SessionService
 
 log = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ async def _commit_message(sessions: SessionService, session_id: str, patch: str)
     llm = build_llm(provider, model)
     raw = await stream_text_once(
         llm,
-        messages=[{"role": "user", "content": f"{COMMIT_PROMPT}\n{patch}"}],
+        messages=[Message(role="user", content=f"{COMMIT_PROMPT}\n{patch}")],
         model=model or "",
         session_id=session_id,
         label="commit message",
@@ -159,10 +160,10 @@ async def review_changes(sessions: SessionService, session_id: str) -> dict[str,
     text = await stream_text_once(
         llm,
         messages=[
-            {
-                "role": "user",
-                "content": f"{REVIEW_PROMPT}\n{patch['diff'][:MAX_PROMPT_DIFF_BYTES]}",
-            }
+            Message(
+                role="user",
+                content=f"{REVIEW_PROMPT}\n{patch['diff'][:MAX_PROMPT_DIFF_BYTES]}",
+            )
         ],
         model=model or "",
         session_id=session_id,

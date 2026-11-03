@@ -34,10 +34,15 @@ async def run(config: GatewayConfig | None = None) -> None:
         adapters=adapters,
         allowed_senders=config.allowed_senders,
     )
+
+    def handler_for(platform: str):
+        async def handler(message) -> None:
+            await core.handle_inbound(platform, message)
+
+        return handler
+
     for adapter in adapters.values():
-        adapter.on_message(
-            lambda msg, platform=adapter.name: core.handle_inbound(platform, msg)
-        )
+        adapter.on_message(handler_for(adapter.name))
     tasks = [asyncio.create_task(safe_start(adapter)) for adapter in adapters.values()]
     try:
         await asyncio.gather(*tasks, return_exceptions=True)

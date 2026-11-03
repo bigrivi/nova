@@ -11,6 +11,7 @@ from nova.gateway.platform import MessageHandler, PlatformAdapter
 
 class YuanbaoAdapter(PlatformAdapter):
     name = "yuanbao"
+    max_message_chars = 4000
 
     def __init__(
         self, token: str = "", agent_key: str = "main", **options: str

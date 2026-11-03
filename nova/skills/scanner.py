@@ -109,7 +109,14 @@ def load_skill_document(skill_md_path: Path, skills_dir: Path) -> SkillDocument:
         path=str(skill_path.parent),
         skill_md_path=str(skill_path),
         compatibility=str(parsed["compatibility"]),
-        allowed_tools=tuple(str(item) for item in parsed["allowed_tools"]),
+        allowed_tools=tuple(
+            str(item)
+            for item in (
+                parsed["allowed_tools"]
+                if isinstance(parsed["allowed_tools"], (list, tuple, set, frozenset))
+                else ()
+            )
+        ),
         raw_content=raw_content,
         body_content=body_content,
         frontmatter=parsed,

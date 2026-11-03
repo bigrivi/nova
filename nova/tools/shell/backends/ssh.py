@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import shlex
-from typing import ClassVar
 
 from nova.tools.shell.backends.base import PreparedCommand
 
@@ -12,7 +11,7 @@ from nova.tools.shell.backends.base import PreparedCommand
 class SSHBackend:
     """Run commands over SSH on a configured remote host."""
 
-    name: ClassVar[str] = "ssh"
+    name: str = "ssh"
 
     def __init__(
         self,

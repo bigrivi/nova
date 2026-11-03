@@ -224,7 +224,7 @@ class OllamaProvider(HttpProvider):
         message = data.get("message", {})
         content = message.get("content", "")
 
-        tool_calls = []
+        tool_calls: list[ToolCall] = []
         if message.get("tool_calls"):
             for tc in message["tool_calls"]:
                 func = tc.get("function", {})

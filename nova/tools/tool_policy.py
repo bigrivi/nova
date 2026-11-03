@@ -24,7 +24,7 @@ import os
 from collections.abc import Mapping
 from itertools import pairwise
 from pathlib import Path
-from typing import Final, Literal, NamedTuple
+from typing import Final, Literal, NamedTuple, cast
 
 from nova.tools import permissions
 
@@ -293,7 +293,9 @@ class ToolPolicy:
         self, rules: dict[str, str] | None = None, *, block_reads: bool = False
     ) -> None:
         self._rules: dict[str, Effect] = {
-            name: effect for name, effect in (rules or {}).items() if effect in _EFFECTS
+            name: cast("Effect", effect)
+            for name, effect in (rules or {}).items()
+            if effect in _EFFECTS
         }
         # Whether a read that leaves the workspace is put to the user. Off by
         # default, matching where Codex and Claude Code both land; see
