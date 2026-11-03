@@ -147,7 +147,7 @@ def _run_tui() -> None:
 
 def _console_exit_code(args: argparse.Namespace, settings: Settings) -> int:
     """Run ``run`` / ``sessions`` / ``delete`` and return the process exit code."""
-    from nova.app import console
+    from nova.cli import console
 
     if args.mode == "sessions":
         coro = console.list_sessions(

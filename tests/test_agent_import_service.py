@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from nova.app import console
+from nova.cli import console
 from nova.config.agent_import_service import (
     AgentExistsError,
     AgentKeyError,

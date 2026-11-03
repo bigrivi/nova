@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import nova.__main__ as nova_main
-from nova.app import console
+from nova.cli import console
 
 
 class _StubStream:
