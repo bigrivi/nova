@@ -8,15 +8,15 @@ import json
 from typing import Any
 
 from nova.db import get_default_data_source
-from nova.db.repository import NovaRepository
+from nova.db.repository import MemoryStore
 from nova.memory.models import MemoryRecord, MemorySearchFilters
 
 
 class MemoryRepository:
-    def __init__(self, data_source: NovaRepository | None = None) -> None:
+    def __init__(self, data_source: MemoryStore | None = None) -> None:
         self._data_source = data_source
 
-    async def _get_data_source(self) -> NovaRepository:
+    async def _get_data_source(self) -> MemoryStore:
         if self._data_source is None:
             self._data_source = await get_default_data_source()
         return self._data_source

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from nova.db.in_memory_repository import InMemoryRepository
 from nova.db.sqlite_repository import SqliteRepository
 from nova.memory.models import MemoryRecord, MemorySearchFilters
 from nova.project.models import Project
+from nova.scheduler.models import ScheduledJob
 from nova.session.models import MessageFilter, Session
 
 
@@ -320,3 +322,119 @@ async def test_provider_meta_non_ascii_round_trips(repository):
     stored = messages[0]
     assert stored.provider_meta == {"thinking_signature": "签名"}
     assert created.provider_meta == {"thinking_signature": "签名"}
+
+
+def _job(job_id: str, **overrides) -> ScheduledJob:
+    base = {
+        "id": job_id,
+        "name": job_id,
+        "prompt": "do the thing",
+        "kind": "interval",
+        "session_id": "session-schedule",
+        "interval_minutes": 5,
+        "agent_key": "main",
+    }
+    return ScheduledJob(**{**base, **overrides})
+
+
+@pytest.mark.asyncio
+async def test_schedule_round_trips_every_column(repository):
+    created = await repository.create_schedule(_job("job-1", next_run_at=2_000))
+
+    assert created.id == "job-1"
+    assert created.next_run_at == 2_000
+    assert created.created_at > 0
+    assert created.updated_at > 0
+    assert await repository.get_schedule("job-1") == created
+
+
+@pytest.mark.asyncio
+async def test_create_schedule_fills_id_and_timestamps_from_dict(repository):
+    # `ScheduledJob.from_dict` indexes row["id"], so the key must exist even when empty.
+    created = await repository.create_schedule(
+        {
+            "id": "",
+            "name": "one shot",
+            "prompt": "run once",
+            "kind": "once",
+            "session_id": "session-schedule",
+            "run_at": 9_999,
+        }
+    )
+
+    assert created.id
+    assert created.created_at > 0
+    assert created.updated_at > 0
+    assert created.session_id == "session-schedule"
+    assert created.run_at == 9_999
+
+
+@pytest.mark.asyncio
+async def test_list_schedules_orders_by_updated_at_and_filters_disabled(repository):
+    for job_id, enabled, updated_at in (
+        ("job-a", True, 100),
+        ("job-b", False, 300),
+        ("job-c", True, 200),
+    ):
+        created = await repository.create_schedule(_job(job_id, enabled=enabled))
+        assert await repository.update_schedule(replace(created, updated_at=updated_at))
+
+    everything = await repository.list_schedules()
+    enabled_only = await repository.list_schedules(enabled_only=True)
+
+    assert [job.id for job in everything] == ["job-b", "job-c", "job-a"]
+    assert [job.id for job in enabled_only] == ["job-c", "job-a"]
+
+
+@pytest.mark.asyncio
+async def test_update_and_delete_schedule_report_missing_rows(repository):
+    assert await repository.update_schedule(_job("missing")) is False
+
+    await repository.create_schedule(_job("job-del"))
+    assert await repository.delete_schedule("job-del") is True
+    assert await repository.delete_schedule("job-del") is False
+    assert await repository.get_schedule("job-del") is None
+
+
+@pytest.mark.asyncio
+async def test_due_schedules_filters_orders_and_limits(repository):
+    for job_id, next_run_at, enabled in (
+        ("job-late", 900, True),
+        ("job-early", 800, True),
+        ("job-future", 1_100, True),
+        ("job-off", 700, False),
+    ):
+        await repository.create_schedule(
+            _job(job_id, next_run_at=next_run_at, enabled=enabled)
+        )
+
+    due = await repository.due_schedules(1_000)
+    limited = await repository.due_schedules(1_000, limit=1)
+
+    assert [job.id for job in due] == ["job-early", "job-late"]
+    assert [job.id for job in limited] == ["job-early"]
+
+
+@pytest.mark.asyncio
+async def test_scheduler_lease_takes_renews_expires_and_releases(repository):
+    assert await repository.get_scheduler_lease() is None
+
+    assert await repository.acquire_scheduler_lease("primary", "owner-a", 1_000, 0)
+    held = await repository.get_scheduler_lease()
+    assert held is not None
+    assert held["owner"] == "owner-a"
+    assert held["expires_at"] == 1_000
+
+    assert await repository.acquire_scheduler_lease("primary", "owner-a", 1_500, 1_000)
+    assert not await repository.acquire_scheduler_lease(
+        "primary", "owner-b", 2_000, 1_000
+    )
+    assert await repository.acquire_scheduler_lease("primary", "owner-b", 2_000, 2_000)
+
+    assert not await repository.release_scheduler_lease("primary", "owner-a", 2_100)
+    assert await repository.release_scheduler_lease("primary", "owner-b", 2_100)
+    released = await repository.get_scheduler_lease()
+    assert released is not None
+    assert released["expires_at"] == 2_100
+
+    assert await repository.acquire_scheduler_lease("primary", "owner-a", 3_000, 2_100)
