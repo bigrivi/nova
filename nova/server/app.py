@@ -209,9 +209,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(BasicAuthMiddleware)
 
     @app.middleware("http")
-    async def _reload_config_when_changed(
-        request, call_next
-    ):  # type: ignore[no-untyped-def]
+    async def _reload_config_when_changed(request, call_next):
         # Before routing, so a request that only touches the chat stream also
         # runs on the config that is on disk now (the config routes reload on
         # their own, but they are not on every client's path).

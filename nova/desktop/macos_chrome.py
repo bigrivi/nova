@@ -270,16 +270,16 @@ def _apply_on_main_thread(native: Any) -> bool:
     """
     global _APPLIER_CLS, _APPLIER_NATIVE
     try:
-        from Foundation import NSObject  # type: ignore[import-not-found]
+        from Foundation import NSObject
     except ImportError:
         logger.debug("Foundation unavailable; skipping post-show fixup")
         return False
     if _APPLIER_CLS is None:
 
-        class _Applier(NSObject):  # type: ignore[no-redef]
+        class _Applier(NSObject):
             def apply_(self, _sender: object) -> None:
                 try:
-                    import AppKit  # type: ignore[import-not-found]
+                    import AppKit
 
                     _apply_hidden_titlebar(_APPLIER_NATIVE, AppKit)
                 except Exception:
@@ -294,7 +294,7 @@ def _apply_on_main_thread(native: Any) -> bool:
 
             def reapply_(self, _sender: object) -> None:
                 try:
-                    import AppKit  # type: ignore[import-not-found]
+                    import AppKit
 
                     _apply_hidden_titlebar(_APPLIER_NATIVE, AppKit)
                 except Exception:
@@ -362,7 +362,7 @@ def _install_first_show_hook(browser_view_cls: Any | None = None) -> bool:
 
     def first_show(browser_view: Any) -> Any:
         try:
-            import AppKit  # type: ignore[import-not-found]
+            import AppKit
 
             _apply_hidden_titlebar(browser_view.window, AppKit)
         except Exception:

@@ -342,7 +342,7 @@ def _parse_provider_configs(
             raise ValueError(
                 f"Invalid Nova config: provider '{key}' is missing 'type'. "
                 "A config entry must declare it, for example "
-                f"\"type\": \"openai-compatible\"."
+                f'"type": "openai-compatible".'
             )
         name = str(raw.get("name", key)).strip() or key
         options = raw.get("options") or {}
@@ -356,9 +356,10 @@ def _parse_provider_configs(
                 f"Invalid Nova config: provider '{key}' models must be an object"
             )
         normalized_options = dict(options)
-        if provider_type in {"openai-compatible", "openai-response"} and not str(
-            normalized_options.get("base_url", "")
-        ).strip():
+        if (
+            provider_type in {"openai-compatible", "openai-response"}
+            and not str(normalized_options.get("base_url", "")).strip()
+        ):
             raise ValueError(
                 f"Invalid Nova config: provider '{key}' is missing "
                 "'options.base_url'; an OpenAI-compatible entry needs the endpoint "
@@ -524,7 +525,11 @@ def _parse_learning_config(raw: object) -> LearningSettings:
     nudge = raw.get("nudge_interval_turns", 5)
     min_tools = raw.get("skill_extraction_min_tool_calls", 4)
     nudge_val = int(nudge) if nudge is not None and isinstance(nudge, (int, str)) else 5
-    min_tools_val = int(min_tools) if min_tools is not None and isinstance(min_tools, (int, str)) else 4
+    min_tools_val = (
+        int(min_tools)
+        if min_tools is not None and isinstance(min_tools, (int, str))
+        else 4
+    )
     return LearningSettings(
         enabled=bool(raw.get("enabled", False)),
         nudge_interval_turns=nudge_val,
@@ -541,7 +546,7 @@ def _parse_terminal_config(raw: object) -> TerminalSettings:
         raise ValueError("Invalid Nova config: 'terminal' must be an object")
     port_raw = raw.get("ssh_port", 22)
     try:
-        port = int(port_raw)  # type: ignore[arg-type]
+        port = int(port_raw)
     except (TypeError, ValueError):
         port = 22
     return TerminalSettings(
@@ -552,7 +557,8 @@ def _parse_terminal_config(raw: object) -> TerminalSettings:
         ssh_key=str(raw.get("ssh_key", "")).strip(),
         docker_image=str(raw.get("docker_image", "")).strip(),
         docker_container=str(raw.get("docker_container", "")).strip(),
-        docker_workdir=str(raw.get("docker_workdir", "/workspace")).strip() or "/workspace",
+        docker_workdir=str(raw.get("docker_workdir", "/workspace")).strip()
+        or "/workspace",
     )
 
 
