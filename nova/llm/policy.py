@@ -70,3 +70,110 @@ class TransportPolicy:
 
 
 __all__ = ["StreamPolicy", "TransportPolicy"]
+
+
+@dataclass(frozen=True)
+class RetryDecision:
+    """One accepted retry: how long to wait and which budget paid for it."""
+
+    wait_seconds: float
+    attempt: int
+    total: int
+
+
+class RetryBudget:
+    """The counters and backoff schedule behind one request's retry loop.
+
+    Kept free of HTTP and asyncio so the decision can be tested directly. The
+    caller owns the response, the sleep and the abort race; this owns only
+    "would another attempt be allowed, and how long should it wait".
+    """
+
+    def __init__(
+        self,
+        *,
+        use_retry: bool,
+        retry_429: bool,
+        honor_retry_after: bool,
+        statuses: frozenset[int],
+        max_retries: int = 3,
+        retry_429_attempts: int = 6,
+        base_delay: float = 1.0,
+        rate_total_budget: float = 90.0,
+    ) -> None:
+        self._statuses = statuses
+        self._honor_retry_after = honor_retry_after
+        self._general_limit = max_retries if use_retry else 1
+        self._rate_limit = retry_429_attempts if use_retry and retry_429 else 1
+        self._rate_total_budget = rate_total_budget
+        self._delay = base_delay
+        self._rate_delay = base_delay
+        self._rate_waited = 0.0
+        self._general_used = 0
+        self._rate_used = 0
+
+    @property
+    def total_attempts(self) -> int:
+        """Loop length: long enough for whichever budget is being spent."""
+        return max(self._general_limit, self._rate_limit)
+
+    @property
+    def general_attempts(self) -> int:
+        """The budget a connection failure or 5xx is charged to."""
+        return self._general_limit
+
+    def connection_failure(self) -> RetryDecision | None:
+        """Charge a timeout or connection error to the general budget."""
+        if self._general_used >= self._general_limit - 1:
+            return None
+        self._general_used += 1
+        decision = RetryDecision(self._delay, self._general_used, self._general_limit)
+        self._delay *= 2
+        return decision
+
+    def response_failure(
+        self,
+        status: int,
+        *,
+        retry_after: float | None,
+        terminal_429: bool,
+    ) -> RetryDecision | None:
+        """Charge one error response, or return None to hand it to the caller.
+
+        Args:
+            status: The HTTP status.
+            retry_after: Parsed ``Retry-After`` header in seconds, or None.
+            terminal_429: True when a 429 body names a spent quota.
+
+        Returns:
+            The retry to perform, or None when this response must be returned.
+        """
+        if status in self._statuses and self._general_used < self._general_limit - 1:
+            self._general_used += 1
+            wait = (
+                retry_after
+                if self._honor_retry_after and retry_after is not None
+                else self._delay
+            )
+            decision = RetryDecision(wait, self._general_used, self._general_limit)
+            self._delay *= 2
+            return decision
+
+        if (
+            status == 429
+            and not terminal_429
+            and self._rate_used < self._rate_limit - 1
+        ):
+            wait = retry_after if retry_after is not None else self._rate_delay
+            if self._rate_waited + wait > self._rate_total_budget:
+                return None
+            self._rate_used += 1
+            self._rate_waited += wait
+            decision = RetryDecision(wait, self._rate_used, self._rate_limit)
+            self._rate_delay *= 2
+            return decision
+
+        return None
+
+
+__all__ = ["RetryBudget", "RetryDecision", "StreamPolicy", "TransportPolicy"]
