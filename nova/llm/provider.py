@@ -259,9 +259,17 @@ class LLMProvider(ABC):
         model: str = "gpt-4o",
         stream: bool = False,
         tools: list[dict] | None = None,
+        *,
+        abort_event: asyncio.Event | None = None,
+        session_id: str | None = None,
+        reasoning_effort: str | None = None,
         **kwargs: object,
-    ) -> Done:
-        """Run a non-streaming chat request and return the full response."""
+    ) -> Done | Error:
+        """Run a non-streaming chat request and return the full response.
+
+        ``Error`` is part of the contract: a provider that cannot answer reports
+        it as a result rather than raising, so every caller handles one shape.
+        """
         pass
 
     @abstractmethod
@@ -271,7 +279,9 @@ class LLMProvider(ABC):
         model: str = "gpt-4o",
         tools: list[dict] | None = None,
         abort_event: asyncio.Event | None = None,
-        timeout: int | None = None,
+        total_timeout_seconds: int | None = None,
+        session_id: str | None = None,
+        reasoning_effort: str | None = None,
         **kwargs: object,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         """Stream one completion.

@@ -442,14 +442,15 @@ class HttpProvider(LLMProvider):
     async def chat(
         self,
         messages: list,
-        model: str,
+        model: str = "gpt-4o",
         stream: bool = False,
         tools: list[dict] | None = None,
+        *,
         abort_event: asyncio.Event | None = None,
         session_id: str | None = None,
         reasoning_effort: str | None = None,
         **kwargs: object,
-    ) -> Done:
+    ) -> Done | Error:
         url, headers, body = self._prepare_request(
             messages, model, stream, tools, session_id, reasoning_effort
         )
@@ -500,7 +501,7 @@ class HttpProvider(LLMProvider):
     async def chat_stream(
         self,
         messages: list,
-        model: str,
+        model: str = "gpt-4o",
         tools: list[dict] | None = None,
         abort_event: asyncio.Event | None = None,
         total_timeout_seconds: int | None = None,

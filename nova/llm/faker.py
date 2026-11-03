@@ -339,6 +339,10 @@ class FakerLLMProvider(LLMProvider):
         model: str = "gpt-4o",
         stream: bool = False,
         tools: list[dict] | None = None,
+        *,
+        abort_event: asyncio.Event | None = None,
+        session_id: str | None = None,
+        reasoning_effort: str | None = None,
         **kwargs: object,
     ) -> Done | Error:
         rng = self._rng(messages, model)
@@ -356,7 +360,9 @@ class FakerLLMProvider(LLMProvider):
         model: str = "gpt-4o",
         tools: list[dict] | None = None,
         abort_event: asyncio.Event | None = None,
-        timeout: int | None = None,
+        total_timeout_seconds: int | None = None,
+        session_id: str | None = None,
+        reasoning_effort: str | None = None,
         **kwargs: object,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         rng = self._rng(messages, model)
