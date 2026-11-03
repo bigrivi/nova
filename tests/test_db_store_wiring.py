@@ -18,12 +18,14 @@ from nova.db.in_memory.message import InMemoryMessageMixin
 from nova.db.in_memory.project import InMemoryProjectMixin
 from nova.db.in_memory.repository import InMemoryRepository
 from nova.db.in_memory.schedule import InMemoryScheduleMixin
+from nova.db.in_memory.session import InMemorySessionMixin
 from nova.db.repository import (
     AgentStore,
     MemoryStore,
     MessageStore,
     ProjectStore,
     ScheduleStore,
+    SessionStore,
 )
 from nova.db.sqlite.agent import SqliteAgentMixin
 from nova.db.sqlite.memory import SqliteMemoryMixin
@@ -31,6 +33,7 @@ from nova.db.sqlite.message import SqliteMessageMixin
 from nova.db.sqlite.project import SqliteProjectMixin
 from nova.db.sqlite.repository import SqliteRepository
 from nova.db.sqlite.schedule import SqliteScheduleMixin
+from nova.db.sqlite.session import SqliteSessionMixin
 
 
 def _store_methods(protocol: type) -> list[str]:
@@ -49,11 +52,13 @@ def _store_methods(protocol: type) -> list[str]:
         (SqliteRepository, SqliteMemoryMixin, MemoryStore),
         (SqliteRepository, SqliteScheduleMixin, ScheduleStore),
         (SqliteRepository, SqliteProjectMixin, ProjectStore),
+        (SqliteRepository, SqliteSessionMixin, SessionStore),
         (InMemoryRepository, InMemoryAgentMixin, AgentStore),
         (InMemoryRepository, InMemoryMessageMixin, MessageStore),
         (InMemoryRepository, InMemoryMemoryMixin, MemoryStore),
         (InMemoryRepository, InMemoryScheduleMixin, ScheduleStore),
         (InMemoryRepository, InMemoryProjectMixin, ProjectStore),
+        (InMemoryRepository, InMemorySessionMixin, SessionStore),
     ],
 )
 def test_store_methods_resolve_to_the_mixin(
