@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from nova import checkpoints
-from nova.server.deps import get_chat_service
+from nova.server.deps import get_session_service
 from nova.server.routers.sessions import router
 from nova.session.errors import SessionBusy
 from nova.tools import checkpoints as capture
@@ -36,7 +36,7 @@ class _StubService:
 def _client(service: _StubService) -> TestClient:
     app = FastAPI()
     app.include_router(router)
-    app.dependency_overrides[get_chat_service] = lambda: service
+    app.dependency_overrides[get_session_service] = lambda: service
     return TestClient(app)
 
 
@@ -87,13 +87,13 @@ def test_an_unknown_checkpoint_is_not_found() -> None:
 @pytest.mark.asyncio
 async def test_rewind_refuses_while_a_turn_is_running(tmp_path: Path) -> None:
     """The guard that keeps a restore from racing a streaming turn."""
-    from nova.server.chat_service import ChatService
     from nova.server.request_registry import RequestRegistry
+    from nova.server.session_service import SessionService
     from nova.settings import get_settings
 
     registry = RequestRegistry()
     await registry.register("s1", object())
-    service = ChatService(settings=get_settings(), request_registry=registry)
+    service = SessionService(settings=get_settings(), request_registry=registry)
 
     with pytest.raises(SessionBusy):
         await service.rewind("s1", "msg-1")

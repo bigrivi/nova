@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from nova.server import git_actions
-from nova.server.deps import get_chat_service
+from nova.server.deps import get_session_service
 from nova.server.routers.git import router
 
 
@@ -28,7 +28,7 @@ class _StubService:
 def _client(service: _StubService) -> TestClient:
     app = FastAPI()
     app.include_router(router)
-    app.dependency_overrides[get_chat_service] = lambda: service
+    app.dependency_overrides[get_session_service] = lambda: service
     return TestClient(app)
 
 

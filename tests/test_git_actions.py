@@ -11,7 +11,7 @@ import pytest_asyncio
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
 from nova.server import git_actions
-from nova.server.chat_service import ChatService
+from nova.server.session_service import SessionService
 from nova.settings import get_settings
 from nova.tools import checkpoints as capture
 
@@ -54,7 +54,7 @@ async def service(repository: Path):
     session.workspace_dir = str(repository)
     await database.save_session(session)
     try:
-        yield ChatService(settings=get_settings(), data_source=database), session.id
+        yield SessionService(settings=get_settings(), data_source=database), session.id
     finally:
         await database.close()
 

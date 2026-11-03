@@ -18,8 +18,6 @@ from nova.server.request_registry import RequestRegistry
 from nova.server.schemas import (
     ChatRequest,
     ChatResponse,
-    MessageListResponse,
-    SessionListResponse,
 )
 from nova.server.session_service import SessionService, normalize_workspace_dir
 from nova.server.stream_buffer import StreamBuffer
@@ -115,107 +113,6 @@ class ChatService:
                 log.exception("interrupt buffer append failed for %s", session_id)
             self._stream_buffer.mark_done(session_id)
         return interrupted
-
-    async def list_sessions(
-        self,
-        agent_key: str | None = None,
-        workspace_dir: str | None = None,
-    ) -> SessionListResponse:
-        return await self.session_service.list_sessions(agent_key, workspace_dir)
-
-    async def rename_session(self, session_id: str, title: str) -> bool:
-        return await self.session_service.rename_session(session_id, title)
-
-    async def set_session_workspace(
-        self, session_id: str, workspace_dir: str | None
-    ) -> bool:
-        return await self.session_service.set_session_workspace(
-            session_id, workspace_dir
-        )
-
-    async def set_session_pinned(self, session_id: str, pinned: bool) -> bool:
-        return await self.session_service.set_session_pinned(session_id, pinned)
-
-    async def set_session_project(
-        self, session_id: str, project_id: str | None
-    ) -> bool:
-        return await self.session_service.set_session_project(session_id, project_id)
-
-    async def list_projects(self) -> list[dict]:
-        return await self.session_service.list_projects()
-
-    async def create_project(self, name: str | None, path: str | None) -> dict:
-        return await self.session_service.create_project(name, path)
-
-    async def update_project(self, project_id: str, **fields: object) -> dict | None:
-        return await self.session_service.update_project(project_id, **fields)
-
-    async def delete_project(self, project_id: str) -> bool:
-        return await self.session_service.delete_project(project_id)
-
-    async def resolve_project_for_path(
-        self, path: str, name: str | None = None
-    ) -> dict:
-        return await self.session_service.resolve_project_for_path(path, name)
-
-    async def delete_session(
-        self, session_id: str, delete_memories: bool = False
-    ) -> bool:
-        return await self.session_service.delete_session(session_id, delete_memories)
-
-    async def rewind(
-        self,
-        session_id: str,
-        checkpoint_id: str,
-        *,
-        force: bool = False,
-        keep_chat: bool = False,
-    ) -> dict[str, object]:
-        return await self.session_service.rewind(
-            session_id, checkpoint_id, force=force, keep_chat=keep_chat
-        )
-
-    async def compact(self, session_id: str) -> dict[str, object]:
-        return await self.session_service.compact(session_id)
-
-    async def workspace_of(self, session_id: str) -> str | None:
-        return await self.session_service.workspace_of(session_id)
-
-    async def route_of(self, session_id: str) -> tuple[str | None, str | None]:
-        return await self.session_service.route_of(session_id)
-
-    async def fork_session(
-        self,
-        session_id: str,
-        *,
-        message_id: str | None = None,
-        title: str | None = None,
-    ) -> dict[str, object]:
-        return await self.session_service.fork_session(
-            session_id, message_id=message_id, title=title
-        )
-
-    async def list_messages(self, session_id: str) -> MessageListResponse:
-        return await self.session_service.list_messages(session_id)
-
-    async def get_session_route(self, session_id: str) -> dict | None:
-        return await self.session_service.get_session_route(session_id)
-
-    async def set_session_route(
-        self,
-        session_id: str,
-        provider: str | None,
-        model: str | None,
-        reasoning_effort: str | None,
-    ) -> bool:
-        return await self.session_service.set_session_route(
-            session_id, provider, model, reasoning_effort
-        )
-
-    async def get_context(
-        self, session_id: str, provider: str | None = None, model: str | None = None
-    ) -> dict:
-        return await self.session_service.get_context(session_id, provider, model)
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
         session_id = request.session_id

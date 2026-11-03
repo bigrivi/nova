@@ -14,6 +14,7 @@ from fastapi import Request
 from nova.server.chat_service import ChatService
 from nova.server.request_registry import RequestRegistry
 from nova.server.session_event_bus import SessionEventBus
+from nova.server.session_service import SessionService
 from nova.server.stream_buffer import StreamBuffer
 from nova.settings import Settings, reload_settings
 from nova.speech.service import SpeechService
@@ -23,6 +24,16 @@ log = logging.getLogger(__name__)
 
 def get_chat_service(request: Request) -> ChatService:
     return request.app.state.chat_service
+
+
+def get_session_service(request: Request) -> SessionService:
+    """The session/project service.
+
+    Falls back to the chat service itself: tests replace ``app.state.chat_service``
+    with a small object implementing the session methods they exercise.
+    """
+    service = request.app.state.chat_service
+    return getattr(service, "session_service", service)
 
 
 def get_speech_service(request: Request) -> SpeechService:

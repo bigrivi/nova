@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from nova.server.chat_service import ChatService
-from nova.server.deps import get_chat_service
+from nova.server.deps import get_session_service
 from nova.server.schemas import (
     ForkSessionRequest,
     MessageListResponse,
@@ -23,17 +22,18 @@ from nova.server.schemas import (
     UpdateSessionRouteRequest,
     UpdateSessionWorkspaceRequest,
 )
+from nova.server.session_service import SessionService
 
 router = APIRouter()
 
 
 @router.get("/api/sessions", response_model=SessionListResponse)
 async def sessions(
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
     agent_key: str | None = None,
     workspace_dir: str | None = None,
 ) -> SessionListResponse:
-    return await chat_service.list_sessions(
+    return await sessions.list_sessions(
         agent_key=agent_key,
         workspace_dir=workspace_dir,
     )
@@ -41,16 +41,16 @@ async def sessions(
 
 @router.get("/api/sessions/{session_id}/messages", response_model=MessageListResponse)
 async def session_messages(
-    session_id: str, chat_service: ChatService = Depends(get_chat_service)
+    session_id: str, sessions: SessionService = Depends(get_session_service)
 ) -> MessageListResponse:
-    return await chat_service.list_messages(session_id)
+    return await sessions.list_messages(session_id)
 
 
 @router.post("/api/sessions/{session_id}/fork")
 async def fork_session(
     session_id: str,
     body: ForkSessionRequest | None = None,
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
 ) -> dict[str, object]:
     """Copy the conversation into a new session and return its id."""
     from nova.session.errors import SessionBusy
@@ -58,7 +58,7 @@ async def fork_session(
 
     request = body or ForkSessionRequest()
     try:
-        return await chat_service.fork_session(
+        return await sessions.fork_session(
             session_id,
             message_id=request.message_id,
             title=request.title,
@@ -73,7 +73,7 @@ async def fork_session(
 
 @router.get("/api/sessions/{session_id}/checkpoints")
 async def session_checkpoints(
-    session_id: str, chat_service: ChatService = Depends(get_chat_service)
+    session_id: str, sessions: SessionService = Depends(get_session_service)
 ) -> dict[str, object]:
     """Rewind points of a session: the turns that changed files on disk."""
     from nova import checkpoints as checkpoint_store
@@ -97,7 +97,7 @@ async def session_checkpoints(
 async def restore_checkpoint(
     session_id: str,
     checkpoint_id: str,
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
     force: bool = False,
     keep_chat: bool = False,
 ) -> dict[str, object]:
@@ -105,7 +105,7 @@ async def restore_checkpoint(
     from nova.session.errors import SessionBusy
 
     try:
-        return await chat_service.rewind(
+        return await sessions.rewind(
             session_id,
             checkpoint_id,
             force=force,
@@ -120,20 +120,20 @@ async def restore_checkpoint(
 @router.get("/api/sessions/{session_id}/context")
 async def session_context(
     session_id: str,
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
     provider: str | None = None,
     model: str | None = None,
 ) -> dict[str, object]:
-    return await chat_service.get_context(session_id, provider=provider, model=model)
+    return await sessions.get_context(session_id, provider=provider, model=model)
 
 
 @router.patch("/api/sessions/{session_id}", response_model=SessionActionResponse)
 async def rename_session(
     session_id: str,
     body: RenameSessionRequest,
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
 ) -> SessionActionResponse:
-    renamed = await chat_service.rename_session(session_id, body.title)
+    renamed = await sessions.rename_session(session_id, body.title)
     if not renamed:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return SessionActionResponse(status="renamed", session_id=session_id)
@@ -145,9 +145,9 @@ async def rename_session(
 async def set_session_workspace(
     session_id: str,
     body: UpdateSessionWorkspaceRequest,
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
 ) -> SessionActionResponse:
-    updated = await chat_service.set_session_workspace(session_id, body.workspace_dir)
+    updated = await sessions.set_session_workspace(session_id, body.workspace_dir)
     if not updated:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return SessionActionResponse(status="workspace_updated", session_id=session_id)
@@ -156,9 +156,9 @@ async def set_session_workspace(
 @router.get("/api/sessions/{session_id}/route", response_model=SessionRouteResponse)
 async def get_session_route(
     session_id: str,
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
 ) -> SessionRouteResponse:
-    route = await chat_service.get_session_route(session_id)
+    route = await sessions.get_session_route(session_id)
     if route is None:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return SessionRouteResponse(**route)
@@ -168,9 +168,9 @@ async def get_session_route(
 async def set_session_route(
     session_id: str,
     body: UpdateSessionRouteRequest,
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
 ) -> SessionActionResponse:
-    updated = await chat_service.set_session_route(
+    updated = await sessions.set_session_route(
         session_id, body.provider, body.model, body.reasoning_effort
     )
     if not updated:
@@ -182,9 +182,9 @@ async def set_session_route(
 async def set_session_pinned(
     session_id: str,
     body: UpdateSessionPinnedRequest,
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
 ) -> SessionActionResponse:
-    updated = await chat_service.set_session_pinned(session_id, body.pinned)
+    updated = await sessions.set_session_pinned(session_id, body.pinned)
     if not updated:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return SessionActionResponse(status="pinned_updated", session_id=session_id)
@@ -194,10 +194,10 @@ async def set_session_pinned(
 async def set_session_project(
     session_id: str,
     body: UpdateSessionProjectRequest,
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
 ) -> SessionActionResponse:
     try:
-        updated = await chat_service.set_session_project(session_id, body.project_id)
+        updated = await sessions.set_session_project(session_id, body.project_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if not updated:
@@ -208,10 +208,10 @@ async def set_session_project(
 @router.delete("/api/sessions/{session_id}", response_model=SessionActionResponse)
 async def delete_session(
     session_id: str,
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
     delete_memories: bool = False,
 ) -> SessionActionResponse:
-    deleted = await chat_service.delete_session(
+    deleted = await sessions.delete_session(
         session_id, delete_memories=delete_memories
     )
     if not deleted:

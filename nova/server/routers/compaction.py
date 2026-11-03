@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from nova.server.chat_service import ChatService
-from nova.server.deps import get_chat_service
+from nova.server.deps import get_session_service
+from nova.server.session_service import SessionService
 from nova.session.errors import SessionBusy
 
 router = APIRouter()
@@ -19,11 +19,11 @@ router = APIRouter()
 @router.post("/api/sessions/{session_id}/compact")
 async def compact_session(
     session_id: str,
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
 ) -> dict[str, object]:
     """Compact the session now, or report that there is nothing to compact."""
     try:
-        return await chat_service.compact(session_id)
+        return await sessions.compact(session_id)
     except SessionBusy as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     except FileNotFoundError as error:

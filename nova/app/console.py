@@ -17,6 +17,7 @@ from nova.constants import DEFAULT_AGENT_KEY
 from nova.server.ai_sdk_frames import iter_parts
 from nova.server.chat_service import ChatService
 from nova.server.schemas import ChatRequest
+from nova.server.session_service import SessionService
 from nova.settings import Settings
 
 EXIT_OK = 0
@@ -177,7 +178,7 @@ async def list_sessions(
     """
     out = out or sys.stdout
     workspace = None if all_workspaces else (workspace_dir or str(Path.cwd()))
-    response = await ChatService(settings=settings).list_sessions(
+    response = await SessionService(settings=settings).list_sessions(
         workspace_dir=workspace
     )
     items = response.items
@@ -229,7 +230,7 @@ async def delete_session(
     """
     out = out or sys.stdout
     err = err or sys.stderr
-    if await ChatService(settings=settings).delete_session(session_id):
+    if await SessionService(settings=settings).delete_session(session_id):
         out.write(f"Deleted session {session_id}\n")
         return EXIT_OK
     err.write(f"No session {session_id}\n")
@@ -284,7 +285,7 @@ async def rewind(
         return EXIT_OK
 
     try:
-        result = await ChatService(settings=settings).rewind(
+        result = await SessionService(settings=settings).rewind(
             session_id,
             checkpoint_id,
             force=force,
@@ -339,7 +340,7 @@ async def fork(
     err = err or sys.stderr
 
     try:
-        result = await ChatService(settings=settings).fork_session(
+        result = await SessionService(settings=settings).fork_session(
             session_id, message_id=message_id, title=title
         )
     except SessionBusy as error:

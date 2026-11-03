@@ -16,7 +16,7 @@ from nova import checkpoints
 from nova.git import diff as git_diff
 from nova.git import status as git_status
 from nova.llm.oneshot import stream_text_once
-from nova.server.chat_service import ChatService
+from nova.server.session_service import SessionService
 
 log = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class NothingToCommit(RuntimeError):
         super().__init__(f"Session {session_id} has no changed files to commit")
 
 
-async def plan_commit(chat_service: ChatService, session_id: str) -> dict[str, Any]:
+async def plan_commit(sessions: SessionService, session_id: str) -> dict[str, Any]:
     """Work out what to commit and propose a message for it.
 
     Only paths this session recorded in a checkpoint *and* that are still
@@ -62,7 +62,7 @@ async def plan_commit(chat_service: ChatService, session_id: str) -> dict[str, A
     work the user did by hand.
 
     Args:
-        chat_service: Service owning the session.
+        sessions: Service owning the session.
         session_id: Session to commit.
 
     Returns:
@@ -74,7 +74,7 @@ async def plan_commit(chat_service: ChatService, session_id: str) -> dict[str, A
         NothingToCommit: when there is nothing to stage.
         ValueError: when the session has no workspace.
     """
-    workspace = await chat_service.workspace_of(session_id)
+    workspace = await sessions.workspace_of(session_id)
     if workspace is None:
         raise ValueError(f"Session {session_id} has no workspace directory")
 
@@ -92,7 +92,7 @@ async def plan_commit(chat_service: ChatService, session_id: str) -> dict[str, A
 
     paths = [entry["path"] for entry in selected]
     patch = await git_diff(workspace, paths=paths)
-    message = await _commit_message(chat_service, session_id, patch["diff"])
+    message = await _commit_message(sessions, session_id, patch["diff"])
     return {
         "files": selected,
         "message": message,
@@ -101,11 +101,11 @@ async def plan_commit(chat_service: ChatService, session_id: str) -> dict[str, A
 
 
 async def _commit_message(
-    chat_service: ChatService, session_id: str, patch: str
+    sessions: SessionService, session_id: str, patch: str
 ) -> str:
     if not patch.strip():
         return "chore: update files"
-    provider, model = await chat_service.route_of(session_id)
+    provider, model = await sessions.route_of(session_id)
     from nova.app.runtime import build_llm
 
     llm = build_llm(provider, model)
@@ -131,11 +131,11 @@ def _clean_message(raw: str) -> str:
     return text.strip().strip('"').strip()
 
 
-async def review_changes(chat_service: ChatService, session_id: str) -> dict[str, Any]:
+async def review_changes(sessions: SessionService, session_id: str) -> dict[str, Any]:
     """Ask the model to review the workspace's uncommitted diff.
 
     Args:
-        chat_service: Service owning the session.
+        sessions: Service owning the session.
         session_id: Session whose workspace to review.
 
     Returns:
@@ -146,7 +146,7 @@ async def review_changes(chat_service: ChatService, session_id: str) -> dict[str
         FileNotFoundError: when the session does not exist.
         ValueError: when the session has no workspace.
     """
-    workspace = await chat_service.workspace_of(session_id)
+    workspace = await sessions.workspace_of(session_id)
     if workspace is None:
         raise ValueError(f"Session {session_id} has no workspace directory")
 
@@ -154,7 +154,7 @@ async def review_changes(chat_service: ChatService, session_id: str) -> dict[str
     if not patch["diff"].strip():
         return {"review": "No changes to review.", "truncated": False}
 
-    provider, model = await chat_service.route_of(session_id)
+    provider, model = await sessions.route_of(session_id)
     from nova.app.runtime import build_llm
 
     llm = build_llm(provider, model)

@@ -16,13 +16,13 @@ import pytest
 from nova.agent.compaction import compaction_threshold
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
-from nova.server.chat_service import ChatService
+from nova.server.session_service import SessionService
 from nova.session.models import Session
 from nova.settings import get_settings
 
 
-async def _service_with(repository: SqliteRepository) -> ChatService:
-    return ChatService(settings=get_settings(), data_source=repository)
+async def _service_with(repository: SqliteRepository) -> SessionService:
+    return SessionService(settings=get_settings(), data_source=repository)
 
 
 @pytest.mark.asyncio

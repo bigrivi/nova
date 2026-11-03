@@ -59,6 +59,7 @@ class _StubService:
 
 def _install(monkeypatch, service):
     monkeypatch.setattr(console, "ChatService", lambda **_kw: service)
+    monkeypatch.setattr(console, "SessionService", lambda **_kw: service)
 
 
 @pytest.mark.asyncio
