@@ -6,11 +6,12 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from nova.agent.core import Agent
+    from nova.agent.background import AgentBackground
 
 from nova.agent.context import AgentContext
 from nova.agent.llm_stream import TurnOutcome, TurnStreamReader
 from nova.agent.overflow import is_context_overflow
+from nova.agent.state import TurnState
 from nova.db import SessionStore
 from nova.session.manager import SessionContext
 
@@ -20,9 +21,15 @@ log = logging.getLogger(__name__)
 class AgentSession:
     """Composed service: session resolution and turn persistence."""
 
-    def __init__(self, agent: Agent) -> None:
-        self.agent = agent
-        self.ctx: AgentContext = agent.ctx
+    def __init__(
+        self,
+        ctx: AgentContext,
+        state: TurnState,
+        background: AgentBackground,
+    ) -> None:
+        self.ctx = ctx
+        self.state = state
+        self.background = background
 
     async def _record_session_route(self, data_source: SessionStore) -> None:
         """Stamp the route this session is running with onto the session row.
@@ -61,12 +68,13 @@ class AgentSession:
         overflow means the fixed prompt alone does not fit, and retrying cannot
         change that.
         """
-        if self.agent._overflow_recovered:
+        if self.state.overflow_recovered:
             return False
         if not is_context_overflow(error_message):
             return False
-        self.agent._overflow_recovered = True
-        self.agent._compaction.force_next = True
+        self.state.overflow_recovered = True
+        if self.ctx.compaction is not None:
+            self.ctx.compaction.force_next = True
         log.warning(
             "Provider rejected the request as too large; compacting and retrying once"
         )
@@ -156,5 +164,5 @@ class AgentSession:
         if current is None:
             raise RuntimeError("session was not created")
         log.info("[Session %s] Created", current.id)
-        self.agent.background._maybe_schedule_title_generation(current, user_input)
+        self.background._maybe_schedule_title_generation(current, user_input)
         return current

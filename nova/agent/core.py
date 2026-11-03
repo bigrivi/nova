@@ -187,21 +187,16 @@ class Agent:
         )
         self._abort_event = asyncio.Event()
         self.state = TurnState()
-        self._last_user_input: str = ""
         self._skill_tools: Any = None
         self._compaction = CompactionController(
             model=self.config.model, provider=self.config.provider
         )
 
-        self._turns_since_review = 0
         # Fire-and-forget work (title generation, memory review) is reachable
         # from a turn, so these tasks need a strong reference for as long as
         # they run: asyncio only holds a weak one, and a collected task is
         # silently dropped mid-flight.
         self._background_tasks: set[asyncio.Task] = set()
-        # One compact-and-retry per user request. A second overflow means the
-        # fixed prompt alone does not fit, which retrying cannot fix.
-        self._overflow_recovered = False
         self._guardrails = ToolGuardrails()
         self._approval = get_approval_manager()
 
@@ -260,8 +255,8 @@ class Agent:
         )
         # Composed services. Created after the context so they can read it.
         self.messaging = AgentMessaging(self.ctx, self.state)
-        self.background = AgentBackground(self)
-        self.session_service = AgentSession(self)
+        self.background = AgentBackground(self.ctx, self.state)
+        self.session_service = AgentSession(self.ctx, self.state, self.background)
 
     @staticmethod
     def _build_skill_service(agent_key: str, agent_dir: Path) -> SkillService:
@@ -403,7 +398,7 @@ class Agent:
         self._abort_event.clear()
         # Per-request latch: one compact-and-retry per user request. Reset here,
         # not only in __init__, so a reused Agent still recovers on later requests.
-        self._overflow_recovered = False
+        self.state.overflow_recovered = False
 
         current_session = await self.session_service.resolve_session(
             session_id, user_input, workspace_dir, project_id
@@ -418,7 +413,6 @@ class Agent:
         message_text, image_data, display = build_user_message(
             user_input, attachments, display_text
         )
-        self._last_user_input = message_text
         log.info(
             "[Session %s] Chat start agent=%s provider=%s model=%s workspace=%s "
             "input_chars=%d attachments=%d",

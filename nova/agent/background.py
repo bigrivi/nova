@@ -5,12 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from nova.agent.core import Agent
 
 from nova.agent.context import AgentContext
+from nova.agent.state import TurnState
 from nova.agent.title_generator import generate_session_title
 from nova.session.manager import SessionContext, default_session_title
 
@@ -20,9 +17,9 @@ log = logging.getLogger(__name__)
 class AgentBackground:
     """Composed service: fire-and-forget work reachable from a turn."""
 
-    def __init__(self, agent: Agent) -> None:
-        self.agent = agent
-        self.ctx: AgentContext = agent.ctx
+    def __init__(self, ctx: AgentContext, state: TurnState) -> None:
+        self.ctx = ctx
+        self.state = state
 
     def _spawn(self, coro: Awaitable[None]) -> None:
         """Run *coro* in the background, holding it until it finishes."""
@@ -78,10 +75,10 @@ class AgentBackground:
     def _maybe_schedule_memory_review(self) -> None:
         if self.ctx.config.memory_review_interval <= 0:
             return
-        self.agent._turns_since_review += 1
-        if self.agent._turns_since_review < self.ctx.config.memory_review_interval:
+        self.state.turns_since_review += 1
+        if self.state.turns_since_review < self.ctx.config.memory_review_interval:
             return
-        self.agent._turns_since_review = 0
+        self.state.turns_since_review = 0
         self._spawn(self.run_memory_review())
 
     async def run_memory_review(self) -> None:

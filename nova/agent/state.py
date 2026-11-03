@@ -16,3 +16,5 @@ class TurnState:
 
     workspace: str | None = None
     base_system_prompt: str | None = None
+    turns_since_review: int = 0
+    overflow_recovered: bool = False

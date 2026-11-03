@@ -866,7 +866,7 @@ class CompactionController:
         # only the token estimate triggered. A forced run is not speculative. It
         # follows a provider rejection that only compaction can clear, and the
         # caller latches it to at most one attempt per user request (see
-        # Agent._overflow_recovered), so it cannot loop. Gating it here would
+        # TurnState.overflow_recovered), so it cannot loop. Gating it here would
         # block the one action that can make the pending request succeed, leaving
         # the session to re-fail every request until a human intervenes.
         if not force and not self.summarising_allowed():
