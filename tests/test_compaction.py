@@ -11,21 +11,22 @@ import pytest
 from nova.agent.compaction import (
     SUMMARY_MESSAGE_MAX_CHARS,
     CompactionError,
-    _format_for_summary,
-    _get_content,
-    _get_msg_id,
-    _get_role,
-    _get_tool_call_id,
-    _get_tool_call_ids,
-    _get_tool_calls,
+    content_of,
     estimate_context_tokens,
     estimate_tokens,
     evaluate_compaction,
     find_split_point,
+    format_for_summary,
     get_context_limit,
+    id_of,
+    role_of,
     should_compact,
     snip_old_tool_results,
+    tool_call_id_of,
+    tool_call_ids_of,
+    tool_calls_of,
 )
+from nova.session.models import NewMessage
 
 
 class MockMessage:
@@ -307,53 +308,53 @@ class TestGetContextLimit:
 
 
 class TestHelperFunctions:
-    def test_get_content_with_object(self):
+    def testcontent_of_with_object(self):
         msg = MockMessage("1", "user", "Hello")
-        assert _get_content(msg) == "Hello"
+        assert content_of(msg) == "Hello"
 
-    def test_get_content_with_dict(self):
+    def testcontent_of_with_dict(self):
         msg = {"content": "Hello"}
-        assert _get_content(msg) == "Hello"
+        assert content_of(msg) == "Hello"
 
-    def test_get_content_empty(self):
+    def testcontent_of_empty(self):
         msg = MockMessage("1", "user", "")
-        assert _get_content(msg) == ""
+        assert content_of(msg) == ""
 
-    def test_get_role_with_object(self):
+    def testrole_of_with_object(self):
         msg = MockMessage("1", "user", "Hello")
-        assert _get_role(msg) == "user"
+        assert role_of(msg) == "user"
 
-    def test_get_role_with_dict(self):
+    def testrole_of_with_dict(self):
         msg = {"role": "assistant"}
-        assert _get_role(msg) == "assistant"
+        assert role_of(msg) == "assistant"
 
-    def test_get_msg_id_with_object(self):
+    def testid_of_with_object(self):
         msg = MockMessage("123", "user", "Hello")
-        assert _get_msg_id(msg) == "123"
+        assert id_of(msg) == "123"
 
-    def test_get_msg_id_with_dict(self):
+    def testid_of_with_dict(self):
         msg = {"id": "456"}
-        assert _get_msg_id(msg) == "456"
+        assert id_of(msg) == "456"
 
-    def test_get_tool_calls(self):
+    def testtool_calls_of(self):
         msg = MockMessage("1", "assistant", "Hi", tool_calls=[{"name": "read"}])
-        assert len(_get_tool_calls(msg)) == 1
+        assert len(tool_calls_of(msg)) == 1
 
-    def test_get_tool_call_ids_from_list(self):
+    def testtool_call_ids_of_from_list(self):
         msg = MockMessage(
             "1", "assistant", "", tool_calls=[{"id": "call_123"}, {"id": "call_456"}]
         )
-        ids = _get_tool_call_ids(msg)
+        ids = tool_call_ids_of(msg)
         assert ids == ["call_123", "call_456"]
 
-    def test_get_tool_call_ids_from_json_string(self):
+    def testtool_call_ids_of_from_json_string(self):
         msg = MockMessage("1", "assistant", "", tool_calls='[{"id": "call_abc"}]')
-        ids = _get_tool_call_ids(msg)
+        ids = tool_call_ids_of(msg)
         assert ids == ["call_abc"]
 
-    def test_get_tool_call_ids_empty(self):
+    def testtool_call_ids_of_empty(self):
         msg = MockMessage("1", "user", "hello")
-        assert _get_tool_call_ids(msg) == []
+        assert tool_call_ids_of(msg) == []
 
 
 class TestForcedCompaction:
@@ -400,18 +401,18 @@ class TestForcedCompaction:
         assert plan.over_threshold is True
         assert plan.needs_compaction is False
 
-    def test_get_tool_call_id_from_object(self):
+    def testtool_call_id_of_from_object(self):
         msg = MockMessage("2", "tool", "result")
         msg.tool_call_id = "call_xyz"
-        assert _get_tool_call_id(msg) == "call_xyz"
+        assert tool_call_id_of(msg) == "call_xyz"
 
-    def test_get_tool_call_id_from_dict(self):
+    def testtool_call_id_of_from_dict(self):
         msg = {"role": "tool", "tool_call_id": "call_xyz"}
-        assert _get_tool_call_id(msg) == "call_xyz"
+        assert tool_call_id_of(msg) == "call_xyz"
 
-    def test_get_tool_call_id_empty(self):
+    def testtool_call_id_of_empty(self):
         msg = MockMessage("2", "tool", "result")
-        assert _get_tool_call_id(msg) == ""
+        assert tool_call_id_of(msg) == ""
 
 
 @pytest.mark.asyncio
@@ -434,30 +435,36 @@ async def test_compact_orphaned_tool_response_is_also_compacted():
         await db.save_session(session)
 
         # 4 messages: [0] user, [1] assistant with tool_calls, [2] tool response, [3] user
-        await db.add_message(session_id, "user", "search for something")
+        await db.add_message(NewMessage(session_id, "user", "search for something"))
         await db.add_message(
-            session_id,
-            "assistant",
-            "",
-            tool_calls=[
-                {
-                    "id": "call_orphan",
-                    "type": "function",
-                    "function": {"name": "web_search", "arguments": '{"q":"test"}'},
-                }
-            ],
+            NewMessage(
+                session_id,
+                "assistant",
+                "",
+                tool_calls=[
+                    {
+                        "id": "call_orphan",
+                        "type": "function",
+                        "function": {"name": "web_search", "arguments": '{"q":"test"}'},
+                    }
+                ],
+            )
         )
         await db.add_message(
-            session_id,
-            "tool",
-            "search results here",
-            tool_call_id="call_orphan",
+            NewMessage(
+                session_id,
+                "tool",
+                "search results here",
+                tool_call_id="call_orphan",
+            )
         )
-        await db.add_message(session_id, "user", "tell me more")
+        await db.add_message(NewMessage(session_id, "user", "tell me more"))
 
         # Force split at 2: compact [0,1], keep [2,3]
         # [1] = assistant with call_orphan is compacted → [2] should also be compacted
-        with patch("nova.agent.compaction.find_split_point", return_value=2):
+        with patch(
+            "nova.agent.compaction.orchestrator.find_split_point", return_value=2
+        ):
 
             async def fake_chat_stream(**_kwargs):
                 from nova.llm.provider import Done
@@ -529,10 +536,12 @@ async def _seed_compactable_session(db, session_id: str):
     session = SessionContext.create()
     session.id = session_id
     await db.save_session(session)
-    await db.add_message(session_id, "user", "first question " + "x" * 4000)
-    await db.add_message(session_id, "assistant", "first answer " + "y" * 4000)
-    await db.add_message(session_id, "user", "second question")
-    await db.add_message(session_id, "assistant", "second answer")
+    await db.add_message(NewMessage(session_id, "user", "first question " + "x" * 4000))
+    await db.add_message(
+        NewMessage(session_id, "assistant", "first answer " + "y" * 4000)
+    )
+    await db.add_message(NewMessage(session_id, "user", "second question"))
+    await db.add_message(NewMessage(session_id, "assistant", "second answer"))
 
 
 @pytest.mark.asyncio
@@ -665,8 +674,12 @@ async def test_second_compaction_folds_the_previous_summary():
             is True
         )
 
-        await db.add_message(session_id, "user", "next question " + "z" * 4000)
-        await db.add_message(session_id, "assistant", "next answer " + "w" * 4000)
+        await db.add_message(
+            NewMessage(session_id, "user", "next question " + "z" * 4000)
+        )
+        await db.add_message(
+            NewMessage(session_id, "assistant", "next answer " + "w" * 4000)
+        )
 
         live = await db.get_messages(session_id)
         split = find_split_point(live, keep_tokens=1000)
@@ -737,7 +750,12 @@ async def test_context_frames_drop_across_a_compaction(monkeypatch):
     from nova.session.manager import SessionContext
 
     monkeypatch.setattr(
-        "nova.agent.compaction.get_context_limit", lambda model, provider: 4_000
+        "nova.agent.compaction.orchestrator.get_context_limit",
+        lambda model, provider: 4_000,
+    )
+    monkeypatch.setattr(
+        "nova.agent.compaction.policy.get_context_limit",
+        lambda model, provider: 4_000,
     )
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
@@ -752,13 +770,17 @@ async def test_context_frames_drop_across_a_compaction(monkeypatch):
         # tokens_input, i.e. a usage figure that counts messages that are about
         # to be removed.
         for turn in range(4):
-            await db.add_message(session_id, "user", f"q{turn} " + "x" * 8_000)
             await db.add_message(
-                session_id,
-                "assistant",
-                f"a{turn} " + "y" * 8_000,
-                tokens_input=200_000,
-                tokens_output=50,
+                NewMessage(session_id, "user", f"q{turn} " + "x" * 8_000)
+            )
+            await db.add_message(
+                NewMessage(
+                    session_id,
+                    "assistant",
+                    f"a{turn} " + "y" * 8_000,
+                    tokens_input=200_000,
+                    tokens_output=50,
+                )
             )
 
         live_session = await db.get_session(session_id)
@@ -808,7 +830,12 @@ async def test_context_limit_is_the_compaction_threshold(monkeypatch):
 
     window = 128_000
     monkeypatch.setattr(
-        "nova.agent.compaction.get_context_limit", lambda model, provider: window
+        "nova.agent.compaction.orchestrator.get_context_limit",
+        lambda model, provider: window,
+    )
+    monkeypatch.setattr(
+        "nova.agent.compaction.policy.get_context_limit",
+        lambda model, provider: window,
     )
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
@@ -818,7 +845,7 @@ async def test_context_limit_is_the_compaction_threshold(monkeypatch):
         session = SessionContext.create()
         session.id = session_id
         await db.save_session(session)
-        await db.add_message(session_id, "user", "hi")
+        await db.add_message(NewMessage(session_id, "user", "hi"))
 
         live_session = await db.get_session(session_id)
         messages = await db.get_messages(session_id)
@@ -865,7 +892,12 @@ async def test_the_shrink_comes_from_the_history_not_from_the_estimator(monkeypa
     from nova.session.manager import SessionContext
 
     monkeypatch.setattr(
-        "nova.agent.compaction.get_context_limit", lambda model, provider: 4_000
+        "nova.agent.compaction.orchestrator.get_context_limit",
+        lambda model, provider: 4_000,
+    )
+    monkeypatch.setattr(
+        "nova.agent.compaction.policy.get_context_limit",
+        lambda model, provider: 4_000,
     )
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
@@ -877,8 +909,12 @@ async def test_the_shrink_comes_from_the_history_not_from_the_estimator(monkeypa
         await db.save_session(session)
 
         for turn in range(6):
-            await db.add_message(session_id, "user", f"q{turn} " + "x" * 8_000)
-            await db.add_message(session_id, "assistant", f"a{turn} " + "y" * 8_000)
+            await db.add_message(
+                NewMessage(session_id, "user", f"q{turn} " + "x" * 8_000)
+            )
+            await db.add_message(
+                NewMessage(session_id, "assistant", f"a{turn} " + "y" * 8_000)
+            )
 
         live_session = await db.get_session(session_id)
         messages = await db.get_messages(session_id)
@@ -1012,7 +1048,7 @@ async def test_prepare_and_run_compaction_with_real_llm():
         for i in range(5):
             role = "user" if i % 2 == 0 else "assistant"
             content = f"Message {i} with some content"
-            await db.add_message(session_id, role, content)
+            await db.add_message(NewMessage(session_id, role, content))
 
         llm = OllamaProvider()
         messages = await db.get_messages(session_id)
@@ -1138,7 +1174,12 @@ class TestNoRepeatedCompaction:
         from nova.session.manager import SessionContext
 
         monkeypatch.setattr(
-            "nova.agent.compaction.get_context_limit", lambda model, provider: 8_000
+            "nova.agent.compaction.orchestrator.get_context_limit",
+            lambda model, provider: 8_000,
+        )
+        monkeypatch.setattr(
+            "nova.agent.compaction.policy.get_context_limit",
+            lambda model, provider: 8_000,
         )
 
         db = SqliteRepository(DatabaseConfig(path=":memory:"))
@@ -1149,8 +1190,12 @@ class TestNoRepeatedCompaction:
             session.id = session_id
             await db.save_session(session)
             for turn in range(4):
-                await db.add_message(session_id, "user", f"q{turn} " + "x" * 4_000)
-                await db.add_message(session_id, "assistant", f"a{turn} " + "y" * 4_000)
+                await db.add_message(
+                    NewMessage(session_id, "user", f"q{turn} " + "x" * 4_000)
+                )
+                await db.add_message(
+                    NewMessage(session_id, "assistant", f"a{turn} " + "y" * 4_000)
+                )
 
             controller = CompactionController(model="gpt-4o", provider="openai")
 
@@ -1169,7 +1214,7 @@ class TestNoRepeatedCompaction:
                 pass
             assert controller.compacted is True, "the oversized history should compact"
 
-            await db.add_message(session_id, "user", "next")
+            await db.add_message(NewMessage(session_id, "user", "next"))
             live_session = await db.get_session(session_id)
             messages = await db.get_messages(session_id)
             assert await controller.plan(messages, live_session, db) is None, (
@@ -1216,18 +1261,18 @@ class TestSafeBoundary:
         ]
 
     def test_boundary_steps_forward_past_a_tool_response(self):
-        from nova.agent.compaction import _first_safe_boundary
+        from nova.agent.compaction import first_safe_boundary
 
         history = self._paired_history()
-        assert _first_safe_boundary(history, 4) == 5
-        assert _first_safe_boundary(history, 5) == 5
+        assert first_safe_boundary(history, 4) == 5
+        assert first_safe_boundary(history, 5) == 5
 
     def test_no_target_ever_lands_on_a_tool_response(self):
-        from nova.agent.compaction import _first_safe_boundary
+        from nova.agent.compaction import first_safe_boundary
 
         history = self._paired_history()
         for target in range(len(history) + 2):
-            split = _first_safe_boundary(history, target)
+            split = first_safe_boundary(history, target)
             assert split == 0 or history[split].role != "tool", target
 
     def test_an_all_tool_tail_falls_back_to_the_earliest_boundary(self):
@@ -1236,7 +1281,7 @@ class TestSafeBoundary:
         Landing on the last message instead would leave the recent portion
         starting with a tool response, which the provider rejects.
         """
-        from nova.agent.compaction import _first_safe_boundary
+        from nova.agent.compaction import first_safe_boundary
 
         history = [
             MockTimedMessage("1", "user", "q"),
@@ -1244,18 +1289,18 @@ class TestSafeBoundary:
             MockTimedMessage("3", "tool", "r1", tool_call_id="a"),
             MockTimedMessage("4", "tool", "r2", tool_call_id="a"),
         ]
-        split = _first_safe_boundary(history, 2)
+        split = first_safe_boundary(history, 2)
         assert split == 1
         assert history[split].role != "tool"
 
     def test_a_history_of_only_tool_responses_has_no_boundary(self):
-        from nova.agent.compaction import _first_safe_boundary
+        from nova.agent.compaction import first_safe_boundary
 
         history = [
             MockTimedMessage("1", "tool", "r1", tool_call_id="a"),
             MockTimedMessage("2", "tool", "r2", tool_call_id="a"),
         ]
-        assert _first_safe_boundary(history, 1) == 0
+        assert first_safe_boundary(history, 1) == 0
 
     def test_retained_portion_keeps_assistant_tool_pairing(self):
         history = self._paired_history()
@@ -1656,13 +1701,15 @@ class TestCompactionSummaryContract:
             session_id = "second-compaction"
             await _seed_compactable_session(db, session_id)
             await db.add_message(
-                session_id,
-                "assistant",
-                "[Previous conversation summary]\nolder state",
-                summary=True,
+                NewMessage(
+                    session_id,
+                    "assistant",
+                    "[Previous conversation summary]\nolder state",
+                    summary=True,
+                )
             )
-            await db.add_message(session_id, "user", "third question")
-            await db.add_message(session_id, "assistant", "third answer")
+            await db.add_message(NewMessage(session_id, "user", "third question"))
+            await db.add_message(NewMessage(session_id, "assistant", "third answer"))
             messages = await db.get_messages(session_id)
             summary_index = next(
                 index for index, message in enumerate(messages) if message.summary == 1
@@ -1741,7 +1788,7 @@ class TestSummaryLifecycle:
             session_id = "summary-lifecycle"
             await _seed_compactable_session(db, session_id)
             summary = await db.add_message(
-                session_id, "assistant", "old summary", summary=True
+                NewMessage(session_id, "assistant", "old summary", summary=True)
             )
 
             active_before = await db.get_messages(session_id)
@@ -1768,8 +1815,8 @@ class TestSummaryLifecycle:
             llm = StubSummaryProvider("generation-1")
             await compact(session_id, db, llm, "gemma4:26b", split_index=2)
 
-            await db.add_message(session_id, "user", "next question")
-            await db.add_message(session_id, "assistant", "next answer")
+            await db.add_message(NewMessage(session_id, "user", "next question"))
+            await db.add_message(NewMessage(session_id, "assistant", "next answer"))
             messages = await db.get_messages(session_id)
             next_user_index = next(
                 index
@@ -2253,20 +2300,26 @@ async def test_compact_does_not_touch_reasoning_content_with_provider_meta():
         session.id = session_id
         await db.save_session(session)
 
-        await db.add_message(session_id, "user", "first question " + "x" * 4000)
-        await db.add_message(session_id, "assistant", "first answer " + "y" * 4000)
-        await db.add_message(session_id, "user", "second question")
+        await db.add_message(
+            NewMessage(session_id, "user", "first question " + "x" * 4000)
+        )
+        await db.add_message(
+            NewMessage(session_id, "assistant", "first answer " + "y" * 4000)
+        )
+        await db.add_message(NewMessage(session_id, "user", "second question"))
         thinking_text = "R" * 10000
         signature = "SIG123"
         thinking_message = await db.add_message(
-            session_id,
-            "assistant",
-            "second answer",
-            reasoning_content=thinking_text,
-            provider_meta={"thinking_signature": signature},
+            NewMessage(
+                session_id,
+                "assistant",
+                "second answer",
+                reasoning_content=thinking_text,
+                provider_meta={"thinking_signature": signature},
+            )
         )
-        await db.add_message(session_id, "user", "third question")
-        await db.add_message(session_id, "assistant", "third answer")
+        await db.add_message(NewMessage(session_id, "user", "third question"))
+        await db.add_message(NewMessage(session_id, "assistant", "third answer"))
 
         original_reasoning = thinking_message.reasoning_content
         original_meta = dict(thinking_message.provider_meta)
@@ -2322,30 +2375,36 @@ async def test_compaction_pipeline_never_rewrites_reasoning_content_when_provide
         # Build a history with two thinking messages (one that will fall into
         # the compacted prefix and one that stays recent) plus bulky tool
         # outputs that guarantee Layer 1 has something to trim.
-        await db.add_message(session_id, "user", "start " + "x" * 4000)
+        await db.add_message(NewMessage(session_id, "user", "start " + "x" * 4000))
         thinking_old_text = "R" * 10000
         await db.add_message(
-            session_id,
-            "assistant",
-            "old thinking answer",
-            reasoning_content=thinking_old_text,
-            provider_meta={"thinking_signature": "SIG_OLD"},
+            NewMessage(
+                session_id,
+                "assistant",
+                "old thinking answer",
+                reasoning_content=thinking_old_text,
+                provider_meta={"thinking_signature": "SIG_OLD"},
+            )
         )
-        await db.add_message(session_id, "tool", "A" * 30000, tool_call_id="call-old")
-        await db.add_message(session_id, "user", "middle question")
+        await db.add_message(
+            NewMessage(session_id, "tool", "A" * 30000, tool_call_id="call-old")
+        )
+        await db.add_message(NewMessage(session_id, "user", "middle question"))
         thinking_recent_text = "S" * 12000
         await db.add_message(
-            session_id,
-            "assistant",
-            "recent thinking answer",
-            reasoning_content=thinking_recent_text,
-            provider_meta={"thinking_signature": "SIG_RECENT"},
+            NewMessage(
+                session_id,
+                "assistant",
+                "recent thinking answer",
+                reasoning_content=thinking_recent_text,
+                provider_meta={"thinking_signature": "SIG_RECENT"},
+            )
         )
         await db.add_message(
-            session_id, "tool", "B" * 30000, tool_call_id="call-recent"
+            NewMessage(session_id, "tool", "B" * 30000, tool_call_id="call-recent")
         )
-        await db.add_message(session_id, "user", "final question")
-        await db.add_message(session_id, "assistant", "final answer")
+        await db.add_message(NewMessage(session_id, "user", "final question"))
+        await db.add_message(NewMessage(session_id, "assistant", "final answer"))
 
         # Snapshot every message that carries a truthy provider_meta before.
         before_all = await db.get_messages(
@@ -2430,14 +2489,14 @@ class TestSummaryFoldingIsLossless:
             MockTimedMessage("2", "user", "ordinary follow-up", time_created=200),
         ]
 
-        rendered = _format_for_summary(messages)
+        rendered = format_for_summary(messages)
 
         assert summary_text in rendered, "the previous summary must survive whole"
 
     def test_an_ordinary_message_is_still_capped(self):
         """Ordinary messages keep a cap so one huge paste cannot dominate."""
         huge = "z" * (SUMMARY_MESSAGE_MAX_CHARS + 500)
-        rendered = _format_for_summary(
+        rendered = format_for_summary(
             [MockTimedMessage("1", "tool", huge, time_created=1)]
         )
 
@@ -2454,8 +2513,8 @@ class TestForcedCompactionBypassesBreaker:
         forced run is the only way the rejected request can succeed, so it
         bypasses the gate.
         """
-        from nova.agent import compaction as compaction_module
         from nova.agent.compaction import CompactionController, CompactionPlan
+        from nova.agent.compaction import orchestrator as compaction_module
 
         async def fake_prepare_compaction(
             session_id,

@@ -13,6 +13,7 @@ import pytest
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
 from nova.session.manager import SessionContext
+from nova.session.models import NewMessage
 
 
 async def _db() -> SqliteRepository:
@@ -64,9 +65,11 @@ async def test_resaving_session_keeps_messages() -> None:
     try:
         session = SessionContext.create(agent_key="main")
         await database.save_session(session)
-        await database.add_message(session_id=session.id, role="user", content="hi")
         await database.add_message(
-            session_id=session.id, role="assistant", content="hello"
+            NewMessage(session_id=session.id, role="user", content="hi")
+        )
+        await database.add_message(
+            NewMessage(session_id=session.id, role="assistant", content="hello")
         )
 
         # Re-saving the session (e.g. title update) must not wipe messages.

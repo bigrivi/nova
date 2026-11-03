@@ -22,6 +22,7 @@ from nova.llm import ToolResult
 from nova.llm.faker import FakerLLMProvider
 from nova.llm.provider import Done, Error, LLMProvider, TextDelta, ToolCall
 from nova.session import manager as session_manager_module
+from nova.session.models import NewMessage
 
 
 class ScriptedProvider(LLMProvider):
@@ -318,7 +319,10 @@ class TestApprovalFlow:
                 ],
                 # After the rejection the turn continues: the model sees the
                 # synthesized tool result and responds instead of stopping.
-                [TextDelta(content="Understood."), Done(content="Understood.", tool_calls=[])],
+                [
+                    TextDelta(content="Understood."),
+                    Done(content="Understood.", tool_calls=[]),
+                ],
             ]
         )
 
@@ -610,22 +614,26 @@ async def test_e2e_full_chain_multi_turn_with_tools_and_compaction():
 
         # Turn 3: inject many large tool messages to exceed compaction threshold
         for i in range(30):
-            await database.add_message(session_id, "user", f"补充信息 {i}")
+            await database.add_message(NewMessage(session_id, "user", f"补充信息 {i}"))
             await database.add_message(
-                session_id,
-                "assistant",
-                "",
-                tool_calls=[
-                    {
-                        "type": "tool_call",
-                        "id": f"call_bulk_{i}",
-                        "name": "echo_tool",
-                        "arguments": '{"text":"hi"}',
-                    }
-                ],
+                NewMessage(
+                    session_id,
+                    "assistant",
+                    "",
+                    tool_calls=[
+                        {
+                            "type": "tool_call",
+                            "id": f"call_bulk_{i}",
+                            "name": "echo_tool",
+                            "arguments": '{"text":"hi"}',
+                        }
+                    ],
+                )
             )
             await database.add_message(
-                session_id, "tool", "X" * 8000, tool_call_id=f"call_bulk_{i}"
+                NewMessage(
+                    session_id, "tool", "X" * 8000, tool_call_id=f"call_bulk_{i}"
+                )
             )
 
         # Turn 4: trigger compaction check and continue
@@ -732,10 +740,10 @@ async def _session_with_history(provider, turns: int = 4):
             session_id = data
     for index in range(turns):
         await database.add_message(
-            session_id, "user", f"question {index} " + "x" * 4000
+            NewMessage(session_id, "user", f"question {index} " + "x" * 4000)
         )
         await database.add_message(
-            session_id, "assistant", f"answer {index} " + "y" * 4000
+            NewMessage(session_id, "assistant", f"answer {index} " + "y" * 4000)
         )
     provider.rejections = 0
     provider.summary_calls = 0
@@ -868,10 +876,10 @@ class TestOverflowRecovery:
             first = await _collect(agent, f"first {PROBE}", session_id)
             for index in range(4):
                 await database.add_message(
-                    session_id, "user", f"more {index} " + "x" * 4000
+                    NewMessage(session_id, "user", f"more {index} " + "x" * 4000)
                 )
                 await database.add_message(
-                    session_id, "assistant", f"reply {index} " + "y" * 4000
+                    NewMessage(session_id, "assistant", f"reply {index} " + "y" * 4000)
                 )
             provider.rejections = 0
             second = await _collect(agent, f"second {PROBE}", session_id)

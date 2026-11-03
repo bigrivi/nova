@@ -11,6 +11,7 @@ import pytest
 
 from nova.llm.provider import Done
 from nova.server.session_service import SessionService
+from nova.session.models import NewMessage
 from nova.settings import get_settings
 from tests.test_agent_chat_stream import ScriptedProvider, isolated_agent
 
@@ -28,9 +29,11 @@ class _Summariser(ScriptedProvider):
 async def _seed(database, session_id: str, count: int) -> None:
     for index in range(count):
         await database.add_message(
-            session_id=session_id,
-            role="user" if index % 2 == 0 else "assistant",
-            content=f"message {index} " + ("filler " * 200),
+            NewMessage(
+                session_id=session_id,
+                role="user" if index % 2 == 0 else "assistant",
+                content=f"message {index} " + ("filler " * 200),
+            )
         )
 
 

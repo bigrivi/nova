@@ -7,7 +7,7 @@ import uuid
 from typing import Any
 
 from nova.db.repository import MessageStore
-from nova.session.models import Message, MessageFilter
+from nova.session.models import Message, MessageFilter, NewMessage
 
 
 class InMemoryMessageMixin(MessageStore):
@@ -16,62 +16,40 @@ class InMemoryMessageMixin(MessageStore):
     _messages: dict[str, Message]
     _sessions: dict[str, dict[str, Any]]
 
-    async def add_message(
-        self,
-        session_id: str,
-        role: str,
-        content: str,
-        tool_calls: list[dict[str, Any]] | None = None,
-        tool_call_id: str | None = None,
-        summary: bool = False,
-        images: list[str] | None = None,
-        reasoning_content: str | None = None,
-        group_id: str | None = None,
-        reasoning_elapsed_ms: int | None = None,
-        tokens_input: int | None = None,
-        tokens_output: int | None = None,
-        cache_read_tokens: int | None = None,
-        provider_meta: dict[str, Any] | None = None,
-        model: str | None = None,
-        reasoning_effort: str | None = None,
-        error: str | None = None,
-        variant: str | None = None,
-        time_created: int | None = None,
-        data: str | None = None,
-    ) -> Message:
+    async def add_message(self, message: NewMessage) -> Message:
         now = int(time.time() * 1000)
-        message = Message(
+        record = Message(
             id=str(uuid.uuid4()),
-            session_id=session_id,
-            role=role,
-            content=content,
-            tool_calls=tool_calls,
-            tool_call_id=tool_call_id,
-            summary=1 if summary else 0,
-            images=images,
-            reasoning_content=reasoning_content,
-            group_id=group_id,
-            reasoning_elapsed_ms=reasoning_elapsed_ms,
-            error=error,
-            provider_meta=provider_meta,
-            model=model,
-            reasoning_effort=reasoning_effort,
-            tokens_input=tokens_input,
-            tokens_output=tokens_output,
-            cache_read_tokens=cache_read_tokens,
-            variant=variant,
-            data=data,
+            session_id=message.session_id,
+            role=message.role,
+            content=message.content,
+            tool_calls=message.tool_calls,
+            tool_call_id=message.tool_call_id,
+            summary=1 if message.summary else 0,
+            images=message.images,
+            reasoning_content=message.reasoning_content,
+            group_id=message.group_id,
+            reasoning_elapsed_ms=message.reasoning_elapsed_ms,
+            error=message.error,
+            provider_meta=message.provider_meta,
+            model=message.model,
+            reasoning_effort=message.reasoning_effort,
+            tokens_input=message.tokens_input,
+            tokens_output=message.tokens_output,
+            cache_read_tokens=message.cache_read_tokens,
+            variant=message.variant,
+            data=message.data,
             # A caller may place a row at an earlier point in time (compaction
             # summaries do); updated_at below still tracks insertion order so
             # sidebar ordering is unaffected.
-            time_created=now if time_created is None else time_created,
+            time_created=now if message.time_created is None else message.time_created,
         )
-        self._messages[message.id] = message
-        session = self._sessions.get(session_id)
+        self._messages[record.id] = record
+        session = self._sessions.get(message.session_id)
         if session:
             session["updated_at"] = now
             session["message_count"] += 1
-        return message
+        return record
 
     async def get_messages(
         self, session_id: str, msg_filter: MessageFilter | None = None

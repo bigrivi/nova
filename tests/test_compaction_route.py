@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from nova.server.deps import get_session_service
-from nova.server.routers.compaction import router
+from nova.server.routers.system import router
 from nova.session.errors import SessionBusy
 
 

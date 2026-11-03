@@ -11,7 +11,7 @@ from typing import Any
 import aiosqlite
 
 from nova.db.repository import MessageStore
-from nova.session.models import Message, MessageFilter, decode_display_text
+from nova.session.models import Message, MessageFilter, NewMessage, decode_display_text
 
 
 def _legacy_content(data: str | None) -> str:
@@ -106,29 +106,7 @@ class SqliteMessageMixin(MessageStore):
         rows = await cursor.fetchall()
         return [_row_to_message(dict(row)) for row in rows]
 
-    async def add_message(
-        self,
-        session_id: str,
-        role: str,
-        content: str,
-        tool_calls: list[Any] | None = None,
-        tool_call_id: str | None = None,
-        summary: bool = False,
-        images: list[str] | None = None,
-        reasoning_content: str | None = None,
-        group_id: str | None = None,
-        reasoning_elapsed_ms: int | None = None,
-        tokens_input: int | None = None,
-        tokens_output: int | None = None,
-        cache_read_tokens: int | None = None,
-        provider_meta: dict[str, Any] | None = None,
-        model: str | None = None,
-        reasoning_effort: str | None = None,
-        error: str | None = None,
-        variant: str | None = None,
-        time_created: int | None = None,
-        data: str | None = None,
-    ) -> Message:
+    async def add_message(self, message: NewMessage) -> Message:
         await self._ensure_connected()
         msg_id = str(uuid.uuid4())
         now = int(time.time() * 1000)
@@ -138,11 +116,13 @@ class SqliteMessageMixin(MessageStore):
         # rather than keeping it alongside a freshly written one. The session's
         # updated_at deliberately stays at `now`, so sidebar ordering does not
         # move backwards.
-        stamp = now if time_created is None else time_created
+        stamp = now if message.time_created is None else message.time_created
 
-        images_json = json.dumps(images) if images else None
+        images_json = json.dumps(message.images) if message.images else None
         provider_meta_json = (
-            json.dumps(provider_meta, ensure_ascii=False) if provider_meta else None
+            json.dumps(message.provider_meta, ensure_ascii=False)
+            if message.provider_meta
+            else None
         )
 
         async with self._lock:
@@ -152,55 +132,55 @@ class SqliteMessageMixin(MessageStore):
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     msg_id,
-                    session_id,
-                    role,
-                    content,
-                    data,
-                    _serialize_tool_calls(tool_calls),
-                    tool_call_id,
+                    message.session_id,
+                    message.role,
+                    message.content,
+                    message.data,
+                    _serialize_tool_calls(message.tool_calls),
+                    message.tool_call_id,
                     stamp,
-                    1 if summary else 0,
+                    1 if message.summary else 0,
                     images_json,
-                    reasoning_content,
-                    group_id,
-                    reasoning_elapsed_ms,
-                    tokens_input,
-                    tokens_output,
-                    cache_read_tokens,
+                    message.reasoning_content,
+                    message.group_id,
+                    message.reasoning_elapsed_ms,
+                    message.tokens_input,
+                    message.tokens_output,
+                    message.cache_read_tokens,
                     provider_meta_json,
-                    model,
-                    error,
-                    variant,
-                    reasoning_effort,
+                    message.model,
+                    message.error,
+                    message.variant,
+                    message.reasoning_effort,
                 ),
             )
             await self._db.execute(
                 "UPDATE sessions SET updated_at = ?, message_count = message_count + 1 WHERE id = ?",
-                (now, session_id),
+                (now, message.session_id),
             )
             await self._db.commit()
 
         return Message(
             id=msg_id,
-            session_id=session_id,
-            role=role,
-            content=content,
-            tool_calls=tool_calls,
-            tool_call_id=tool_call_id,
+            session_id=message.session_id,
+            role=message.role,
+            content=message.content,
+            tool_calls=message.tool_calls,
+            tool_call_id=message.tool_call_id,
             time_created=stamp,
-            summary=1 if summary else 0,
-            reasoning_content=reasoning_content,
-            group_id=group_id,
-            reasoning_elapsed_ms=reasoning_elapsed_ms,
-            error=error,
-            provider_meta=provider_meta,
-            model=model,
-            reasoning_effort=reasoning_effort,
-            data=data,
-            tokens_input=tokens_input,
-            tokens_output=tokens_output,
-            cache_read_tokens=cache_read_tokens,
-            variant=variant,
+            summary=1 if message.summary else 0,
+            reasoning_content=message.reasoning_content,
+            group_id=message.group_id,
+            reasoning_elapsed_ms=message.reasoning_elapsed_ms,
+            error=message.error,
+            provider_meta=message.provider_meta,
+            model=message.model,
+            reasoning_effort=message.reasoning_effort,
+            data=message.data,
+            tokens_input=message.tokens_input,
+            tokens_output=message.tokens_output,
+            cache_read_tokens=message.cache_read_tokens,
+            variant=message.variant,
         )
 
     async def get_messages(

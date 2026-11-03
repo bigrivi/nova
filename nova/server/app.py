@@ -21,18 +21,16 @@ from nova.server.request_registry import RequestRegistry
 from nova.server.routers import (
     agents,
     chat,
-    compaction,
     config,
     events,
-    fs,
     git,
-    health,
     memory,
     permissions,
     projects,
     schedules,
     sessions,
     speech,
+    system,
     tasks,
 )
 from nova.server.session_event_bus import SessionEventBus
@@ -268,10 +266,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     _wire_task_autowake(app)
 
     for module in (
-        health,
+        system,
         sessions,
         projects,
-        fs,
         config,
         chat,
         agents,
@@ -281,7 +278,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         schedules,
         speech,
         permissions,
-        compaction,
         git,
     ):
         app.include_router(module.router)

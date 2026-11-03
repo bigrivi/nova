@@ -259,6 +259,7 @@ def test_add_provider_endpoint_updates_config_and_models(monkeypatch, tmp_path):
         encoding="utf-8",
     )
     monkeypatch.setenv("NOVA_HOME", str(home))
+
     # Connecting now asks the provider first, and a fake key would be rejected
     # for real; the subject here is where the entry lands, not the probe.
     async def fake_discovery(**_kwargs: object) -> list[str]:
@@ -289,9 +290,7 @@ def test_add_provider_endpoint_updates_config_and_models(monkeypatch, tmp_path):
     # leaves config.json alone: the transport comes from that row.
     config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
     assert "openai" not in config_payload["providers"]
-    credentials = json.loads(
-        (home / "credentials.json").read_text(encoding="utf-8")
-    )
+    credentials = json.loads((home / "credentials.json").read_text(encoding="utf-8"))
     assert credentials["providers"]["openai"]["api_key"] == "sk-test"
     effective = app.state.settings.providers["openai"]
     assert effective.type == "openai-compatible"
@@ -299,7 +298,9 @@ def test_add_provider_endpoint_updates_config_and_models(monkeypatch, tmp_path):
     assert effective.options["api_key"] == "sk-test"
 
 
-def test_add_provider_endpoint_writes_an_unknown_provider_to_config(monkeypatch, tmp_path):
+def test_add_provider_endpoint_writes_an_unknown_provider_to_config(
+    monkeypatch, tmp_path
+):
     home = tmp_path / "nova-server-add-custom-provider"
     home.mkdir(parents=True, exist_ok=True)
     (home / "config.json").write_text('{"providers": {}}', encoding="utf-8")
@@ -1916,7 +1917,7 @@ def test_fs_list_returns_403_on_permission_error(monkeypatch, tmp_path):
     def _deny(_path):
         raise PermissionError("denied")
 
-    monkeypatch.setattr("nova.server.routers.fs.list_directory", _deny)
+    monkeypatch.setattr("nova.server.routers.system.list_directory", _deny)
 
     response = client.get("/api/fs/list", params={"path": str(tmp_path)})
 

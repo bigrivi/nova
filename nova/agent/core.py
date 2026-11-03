@@ -29,7 +29,7 @@ from nova.agent.tool_invoker import ToolInvoker, has_parsable_arguments
 from nova.agent.toolset import ToolsetBuilder
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
-from nova.llm import ChatStreamEvent, LLMProvider, ToolCall
+from nova.llm import ChatStreamEvent, LLMProvider
 from nova.llm.images import (
     MAX_IMAGE_BYTES,
     MAX_IMAGES_BYTES,
@@ -282,7 +282,7 @@ class Agent:
         """Return a done payload when execution should stop."""
         if self._abort_event.is_set():
             payload = _done_payload("stopped", "Stopped by user")
-            await self._emit(AgentEvent.DONE, payload)
+            await self._events.emit(AgentEvent.DONE, payload)
             return payload
         return None
 
@@ -292,13 +292,8 @@ class Agent:
     def off(self, event: AgentEvent, handler: Callable) -> None:
         self._events.off(event, handler)
 
-    async def _emit(
-        self, event: AgentEvent, data: dict[str, Any] | str | ToolCall | None = None
-    ) -> None:
-        await self._events.emit(event, data)
-
     async def _emit_approval(self, data: dict) -> None:
-        await self._emit(AgentEvent.APPROVAL_REQUIRED, data)
+        await self._events.emit(AgentEvent.APPROVAL_REQUIRED, data)
 
     async def _run_turn(
         self,
@@ -313,7 +308,7 @@ class Agent:
             return
 
         reader = TurnStreamReader(
-            emit=self._emit,
+            emit=self._events.emit,
             stop_if_aborted=self._stop_if_aborted,
             turn_count=turn_count,
         )
@@ -354,7 +349,7 @@ class Agent:
 
         if not tool_calls:
             payload = _done_payload("completed", reader.final_content)
-            await self._emit(AgentEvent.DONE, payload)
+            await self._events.emit(AgentEvent.DONE, payload)
             yield AgentEvent.DONE, payload
             return
 
@@ -407,7 +402,7 @@ class Agent:
         self.messaging.apply_active_workspace(current_session)
 
         yield AgentEvent.SESSION, session_id
-        await self._emit(AgentEvent.START, user_input)
+        await self._events.emit(AgentEvent.START, user_input)
         yield AgentEvent.START, user_input
 
         message_text, image_data, display = build_user_message(
@@ -475,7 +470,7 @@ class Agent:
                     current_session,
                     data_source,
                     llm,
-                    self._emit,
+                    self._events.emit,
                     tools=tool_schemas,
                 ):
                     yield event, data
@@ -491,7 +486,7 @@ class Agent:
                 session_messages = await self.session.get_messages()
 
             log.info("[Turn %d] Start", turn_count)
-            await self._emit(AgentEvent.TURN_START, {"turn": turn_count})
+            await self._events.emit(AgentEvent.TURN_START, {"turn": turn_count})
             yield AgentEvent.TURN_START, {"turn": turn_count}
 
             done_payload = None
@@ -535,12 +530,12 @@ class Agent:
                     "[Turn %d] End (rejected as too large; retrying after compaction)",
                     turn_count,
                 )
-                await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
+                await self._events.emit(AgentEvent.TURN_END, {"turn": turn_count})
                 yield AgentEvent.TURN_END, {"turn": turn_count}
                 continue
 
             log.info("[Turn %d] End", turn_count)
-            await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
+            await self._events.emit(AgentEvent.TURN_END, {"turn": turn_count})
             yield AgentEvent.TURN_END, {"turn": turn_count}
 
             request_tool_calls += turn_tool_calls
@@ -557,12 +552,12 @@ class Agent:
                 await self.background.schedule_request_learning(
                     request_tool_calls, request_messages_before
                 )
-                await self._emit(AgentEvent.DONE, done_payload)
+                await self._events.emit(AgentEvent.DONE, done_payload)
                 yield AgentEvent.DONE, done_payload
                 return
 
         error_payload = _error_payload("max_iterations", "Maximum iterations reached")
-        await self._emit(AgentEvent.ERROR, error_payload)
+        await self._events.emit(AgentEvent.ERROR, error_payload)
         log.warning(f"[Turn {turn_count}] Maximum iterations reached")
         yield AgentEvent.ERROR, error_payload
 
@@ -600,7 +595,7 @@ class Agent:
             current,
             data_source,
             self.llm,
-            self._emit,
+            self._events.emit,
             tools=self.tool_registry.get_schema() if self.tool_registry.tools else None,
         ):
             pass
@@ -699,7 +694,7 @@ class Agent:
             model=self.config.model,
             provider=self.config.provider,
             abort_event=self._abort_event,
-            emit=self._emit,
+            emit=self._events.emit,
             emit_approval=self._emit_approval,
             stop_if_aborted=self._stop_if_aborted,
             turn_count=turn_count,

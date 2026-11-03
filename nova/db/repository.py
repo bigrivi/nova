@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from nova.project.models import Project
     from nova.scheduler.models import ScheduledJob
     from nova.session.manager import SessionContext
-    from nova.session.models import Message, MessageFilter
+    from nova.session.models import Message, MessageFilter, NewMessage
 
 
 class SessionStore(Protocol):
@@ -51,29 +51,8 @@ class SessionStore(Protocol):
 
 
 class MessageStore(Protocol):
-    async def add_message(
-        self,
-        session_id: str,
-        role: str,
-        content: str,
-        tool_calls: list[dict[str, Any]] | None = None,
-        tool_call_id: str | None = None,
-        summary: bool = False,
-        images: list[str] | None = None,
-        reasoning_content: str | None = None,
-        group_id: str | None = None,
-        reasoning_elapsed_ms: int | None = None,
-        tokens_input: int | None = None,
-        tokens_output: int | None = None,
-        cache_read_tokens: int | None = None,
-        provider_meta: dict[str, Any] | None = None,
-        model: str | None = None,
-        reasoning_effort: str | None = None,
-        error: str | None = None,
-        variant: str | None = None,
-        time_created: int | None = None,
-        data: str | None = None,
-    ) -> Message: ...
+    async def add_message(self, message: NewMessage) -> Message: ...
+
     async def get_messages(
         self, session_id: str, msg_filter: MessageFilter | None = None
     ) -> list[Message]: ...

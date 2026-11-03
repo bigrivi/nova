@@ -13,6 +13,7 @@ import pytest_asyncio
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
 from nova.session.fork import ForkPointNotFound, fork_session
+from nova.session.models import NewMessage
 
 
 @pytest_asyncio.fixture
@@ -36,9 +37,11 @@ async def _seed(db, count: int = 4) -> tuple[str, list[str]]:
     ids: list[str] = []
     for index in range(count):
         message = await db.add_message(
-            session_id=session.id,
-            role="user" if index % 2 == 0 else "assistant",
-            content=f"message {index}",
+            NewMessage(
+                session_id=session.id,
+                role="user" if index % 2 == 0 else "assistant",
+                content=f"message {index}",
+            )
         )
         ids.append(message.id)
     return session.id, ids
