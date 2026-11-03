@@ -265,7 +265,7 @@ class LLMProvider(ABC):
         pass
 
     @abstractmethod
-    async def chat_stream(
+    def chat_stream(
         self,
         messages: list,
         model: str = "gpt-4o",
@@ -274,6 +274,12 @@ class LLMProvider(ABC):
         timeout: int | None = None,
         **kwargs: object,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
+        """Stream one completion.
+
+        Declared as a plain function, not ``async def``: every implementation
+        is an async generator, whose call already returns an async iterator.
+        An ``async def`` here would describe a coroutine that resolves to one.
+        """
         pass
 
     @abstractmethod

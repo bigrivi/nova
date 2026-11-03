@@ -378,7 +378,10 @@ class Agent:
         log.info(
             f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}, timeout={getattr(self.llm, 'timeout_seconds', None)}"
         )
-        return self.llm.chat_stream(
+        llm = self.llm
+        if llm is None:
+            raise RuntimeError("Agent has no LLM provider")
+        return llm.chat_stream(
             messages=messages,
             model=self.config.model,
             tools=tool_schemas,
