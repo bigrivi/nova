@@ -6,6 +6,7 @@ Each class is mixed into its repository so the store shares the connection
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -17,7 +18,7 @@ class SqliteMemoryMixin(MemoryStore):
     """Memory access for ``SqliteRepository``."""
 
     _conn: Any
-    _lock: Any
+    _lock: asyncio.Lock
 
     async def _ensure_connected(self) -> None:
         raise NotImplementedError
