@@ -12,11 +12,13 @@ import inspect
 
 import pytest
 
+from nova.db.in_memory.agent import InMemoryAgentMixin
 from nova.db.in_memory.memory import InMemoryMemoryMixin
 from nova.db.in_memory.project import InMemoryProjectMixin
 from nova.db.in_memory.repository import InMemoryRepository
 from nova.db.in_memory.schedule import InMemoryScheduleMixin
-from nova.db.repository import MemoryStore, ProjectStore, ScheduleStore
+from nova.db.repository import AgentStore, MemoryStore, ProjectStore, ScheduleStore
+from nova.db.sqlite.agent import SqliteAgentMixin
 from nova.db.sqlite.memory import SqliteMemoryMixin
 from nova.db.sqlite.project import SqliteProjectMixin
 from nova.db.sqlite.repository import SqliteRepository
@@ -34,9 +36,11 @@ def _store_methods(protocol: type) -> list[str]:
 @pytest.mark.parametrize(
     ("repository", "mixin", "protocol"),
     [
+        (SqliteRepository, SqliteAgentMixin, AgentStore),
         (SqliteRepository, SqliteMemoryMixin, MemoryStore),
         (SqliteRepository, SqliteScheduleMixin, ScheduleStore),
         (SqliteRepository, SqliteProjectMixin, ProjectStore),
+        (InMemoryRepository, InMemoryAgentMixin, AgentStore),
         (InMemoryRepository, InMemoryMemoryMixin, MemoryStore),
         (InMemoryRepository, InMemoryScheduleMixin, ScheduleStore),
         (InMemoryRepository, InMemoryProjectMixin, ProjectStore),
