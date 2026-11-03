@@ -9,10 +9,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from nova.db.repository import MemoryStore
 from nova.memory.models import MemoryRecord, MemorySearchFilters
 
 
-class SqliteMemoryMixin:
+class SqliteMemoryMixin(MemoryStore):
     """Memory access for ``SqliteRepository``."""
 
     _conn: Any
@@ -149,7 +150,7 @@ class SqliteMemoryMixin:
             return cursor.rowcount or 0
 
 
-class InMemoryMemoryMixin:
+class InMemoryMemoryMixin(MemoryStore):
     """Memory access for ``InMemoryRepository``."""
 
     _memories: dict[str, dict[str, Any]]
