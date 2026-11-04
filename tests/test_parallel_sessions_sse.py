@@ -104,7 +104,7 @@ def test_a_two_different_sessions_stream_concurrently_both_200(monkeypatch, tmp_
     """RED: both streams 200 AND each body echoes its own session id."""
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     app = create_app(settings=get_settings())
-    app.state.chat_service = StaticStreamService()
+    app.state.context.chat_service = StaticStreamService()
 
     results: dict = {}
     threads = [
@@ -133,7 +133,7 @@ async def test_b_same_session_second_post_returns_409(monkeypatch, tmp_path):
     """GREEN (keep green): overlapping turn on one session -> 409 Session is busy."""
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     app = create_app(settings=get_settings())
-    await app.state.chat_service._request_registry.register("sess-busy", object())
+    await app.state.context.chat_service._request_registry.register("sess-busy", object())
     client = TestClient(app)
 
     response = client.post(
@@ -150,7 +150,7 @@ async def test_c_interrupt_cancels_only_targeted_session(monkeypatch, tmp_path):
     """RED: interrupt sess-A releases only sess-A's slot; sess-B untouched."""
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     app = create_app(settings=get_settings())
-    registry = app.state.chat_service._request_registry
+    registry = app.state.context.chat_service._request_registry
     agent_a, agent_b = StubAgent(), StubAgent()
     await registry.register("sess-A", agent_a)
     await registry.register("sess-B", agent_b)
@@ -204,8 +204,8 @@ def test_d_approve_resolves_only_targeted_session_else_404(monkeypatch, tmp_path
 async def test_f_detached_stream_holds_slot_and_interrupt_aborts(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     app = create_app(settings=get_settings())
-    registry = app.state.chat_service._request_registry
-    buffer = app.state.chat_service._stream_buffer
+    registry = app.state.context.chat_service._request_registry
+    buffer = app.state.context.chat_service._stream_buffer
     agent = StubAgent()
     await registry.register("sess-F", agent)
     assert await registry.detach("sess-F") is True
@@ -236,8 +236,8 @@ async def test_g_delete_detached_session_cleans_slot_and_buffer(monkeypatch, tmp
     await db.save_session(Session(id="sess-G", title="Delete while detached"))
 
     app = create_app(settings=settings)
-    registry = app.state.chat_service._request_registry
-    buffer = app.state.chat_service._stream_buffer
+    registry = app.state.context.chat_service._request_registry
+    buffer = app.state.context.chat_service._stream_buffer
     agent = StubAgent()
     await registry.register("sess-G", agent)
     assert await registry.detach("sess-G") is True
@@ -265,7 +265,7 @@ async def test_e_delete_session_during_stream_terminates_and_unregisters(
     await db.save_session(Session(id="sess-D", title="Delete during stream"))
 
     app = create_app(settings=settings)
-    registry = app.state.chat_service._request_registry
+    registry = app.state.context.chat_service._request_registry
     agent = StubAgent()
     await registry.register("sess-D", agent)
     client = TestClient(app)

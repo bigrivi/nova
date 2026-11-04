@@ -19,6 +19,9 @@ class SessionProtocol(Protocol):
         first_message: str | None = None,
         agent_key: str = ...,
         metadata: dict | None = None,
+        parent_id: str | None = None,
+        workspace_dir: str | None = None,
+        project_id: str | None = None,
     ) -> SessionContext: ...
 
     async def load_session(self, session_id: str) -> SessionContext | None: ...
@@ -31,6 +34,7 @@ class SessionProtocol(Protocol):
         self,
         session_id: str | None = None,
         limit: int | None = None,
+        last_n: int | None = None,
     ) -> list[Message]: ...
 
     async def add_message(
@@ -48,4 +52,9 @@ class SessionProtocol(Protocol):
         tokens_input: int | None = None,
         tokens_output: int | None = None,
         cache_read_tokens: int | None = None,
+        provider_meta: dict | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        variant: str | None = None,
+        data: str | None = None,
     ) -> Message: ...

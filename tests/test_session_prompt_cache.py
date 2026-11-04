@@ -20,9 +20,10 @@ import pytest
 from nova import Agent, AgentConfig
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.llm.provider import Done, LLMProvider, TextDelta
 from nova.prompt import session_cache
+from nova.prompt.builder import PromptBuilder
 from nova.session import manager as session_manager_module
 
 
@@ -88,18 +89,18 @@ async def test_one_build_per_session() -> None:
 
         first = await _prompt_for(first_agent, session_id)
         builds = 0
-        original = Agent.__dict__["_refresh_memory_index"]
+        original = PromptBuilder.refresh_indexes
 
         async def counting_refresh(self) -> None:
             nonlocal builds
             builds += 1
             await original(self)
 
-        Agent._refresh_memory_index = counting_refresh  # type: ignore[method-assign]
+        PromptBuilder.refresh_indexes = counting_refresh  # type: ignore[method-assign]
         try:
             second = await _prompt_for(second_agent, session_id)
         finally:
-            Agent._refresh_memory_index = original  # type: ignore[method-assign]
+            PromptBuilder.refresh_indexes = original  # type: ignore[method-assign]
 
         assert second == first, "the second request must reuse the same text"
         assert builds == 0, "the second request must not re-render the prompt"
@@ -120,7 +121,7 @@ async def test_a_new_session_builds_its_own_prompt() -> None:
                 session_cache.prompt_key(
                     first_session,
                     first_agent.agent_key,
-                    first_agent._active_workspace or "",
+                    first_agent.state.workspace or "",
                 )
             )
             is not None
@@ -142,8 +143,7 @@ async def test_the_cached_prompt_matches_a_fresh_build() -> None:
         fresh_agent.messaging.apply_active_workspace(
             fresh_agent.session.get_current_session()
         )
-        await fresh_agent._refresh_memory_index()
-        await fresh_agent._refresh_subagent_roster()
+        await fresh_agent._prompt_builder.refresh_indexes()
         fresh = fresh_agent.messaging.build_system_prompt(
             fresh_agent.session.get_current_session()
         )
@@ -179,7 +179,7 @@ async def test_a_deleted_session_forgets_its_prompt() -> None:
         session_cache.forget_session(session_id)
 
         key = session_cache.prompt_key(
-            session_id, agent.agent_key, agent._active_workspace or ""
+            session_id, agent.agent_key, agent.state.workspace or ""
         )
         assert session_cache.get_session_prompt(key) is None
 

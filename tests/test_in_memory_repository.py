@@ -14,7 +14,7 @@ from nova.db import (
 from nova.memory.models import MemoryRecord, MemorySearchFilters
 from nova.memory.repository import MemoryRepository
 from nova.session.manager import SessionManager
-from nova.session.models import Session
+from nova.session.models import NewMessage, Session
 
 
 @pytest.mark.asyncio
@@ -32,9 +32,11 @@ async def test_in_memory_repository_preserves_message_filters_and_counts():
     repository = InMemoryRepository()
     await repository.connect()
     await repository.save_session(Session(id="session-1"))
-    first = await repository.add_message("session-1", "user", "first")
-    await repository.add_message("session-1", "tool", "tool")
-    await repository.add_message("session-1", "assistant", "summary", summary=True)
+    first = await repository.add_message(NewMessage("session-1", "user", "first"))
+    await repository.add_message(NewMessage("session-1", "tool", "tool"))
+    await repository.add_message(
+        NewMessage("session-1", "assistant", "summary", summary=True)
+    )
 
     await repository.mark_messages_compacted_by_ids("session-1", [first.id])
     messages = await repository.get_messages("session-1")

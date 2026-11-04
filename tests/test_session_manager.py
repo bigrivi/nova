@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from nova.db.in_memory_repository import InMemoryRepository
+from nova.db.in_memory.repository import InMemoryRepository
 from nova.session.manager import (
     SessionContext,
     SessionManager,

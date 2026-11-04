@@ -2,7 +2,10 @@
 
 Long sessions eventually exceed the model's context window. Nova handles this with two layers that run inside the agent loop, before every model call. Layer 1 is cheap and local. Layer 2 calls the model to summarise. Both are driven by the same token estimates the `GET /api/sessions/{id}/context` endpoint reports, so the numbers you see in the TUI and frontend match the decision the agent makes.
 
-Source files: `nova/settings.py:_parse_compaction_config`, `nova/agent/compaction.py`.
+Source files: `nova/settings.py:_parse_compaction_config`, and the
+`nova/agent/compaction/` package: `policy.py` (estimates, split point, Layer 1),
+`summary.py` (the summarisation prompt and model call) and `orchestrator.py`
+(`compact`, `prepare_compaction`, and the circuit breaker).
 
 ## When Compaction Runs
 
@@ -18,7 +21,7 @@ The estimate can still run low. When the provider rejects a request as too large
 
 Old tool results are the first thing to go. They are often the largest part of the prompt and the least useful in full once the task has moved on.
 
-How it works (`snip_old_tool_results` in `nova/agent/compaction.py`):
+How it works (`snip_old_tool_results` in `nova/agent/compaction/policy.py`):
 
 1. Walk the history from newest to oldest, keeping a running token budget (`snip_tool_output_token_budget`).
 2. The most recent `snip_preserve_last_n_messages` messages are always kept verbatim, and any tool output that still fits in the budget is kept verbatim too.
@@ -42,7 +45,7 @@ full text on disk at ~/.nova/sessions/<id>/tool-output/<message_id>.txt
 
 When snipping is not enough, the agent asks the model to summarise the older part of the history.
 
-How it works (`compact` and helpers in `nova/agent/compaction.py`):
+How it works (`compact` and helpers in `nova/agent/compaction/orchestrator.py`):
 
 1. The history is split with `find_split_point`, which keeps roughly `summary_keep_tokens` of recent history — an absolute token budget, capped at half the compaction threshold (so the kept portion plus the summary always leaves room below the threshold and compaction cannot re-fire on the next turn). The split is moved forward from that target to a safe boundary: it never starts on a `tool` message (that would orphan it from its declaring assistant turn). If the history already fits the budget, or the only foldable portion is an earlier summary, compaction is skipped. An overflow-driven forced compaction skips the budget check, since the provider has already proven the history does not fit.
 2. The older portion is formatted as `[role]: content` lines and sent to the model with a prompt that asks for seven sections: request and intent, technical context, files and code, errors and fixes, current state, pending work, and next step. If a previous summary exists in the older portion, the prompt tells the model to fold every still-relevant fact into the new summary.

@@ -242,7 +242,7 @@ def test_cancel_without_a_recorder_is_a_conflict_not_a_crash(
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "nova-voice-unsupported"))
     monkeypatch.setattr(service_module, "create_recorder", _boom)
     app = create_app(settings=Settings.load_config())
-    assert app.state.speech_service._recorder is None
+    assert app.state.context.speech_service._recorder is None
 
     client = TestClient(app, raise_server_exceptions=False)
 

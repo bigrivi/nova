@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from nova.server.chat_service import ChatService
-from nova.server.deps import get_chat_service
+from nova.server.deps import get_session_service
 from nova.server.schemas import (
     ProjectActionResponse,
     ProjectCreateRequest,
@@ -14,24 +13,25 @@ from nova.server.schemas import (
     ProjectUpdateRequest,
     ResolveProjectRequest,
 )
+from nova.server.session_service import SessionService
 
 router = APIRouter()
 
 
 @router.get("/api/projects", response_model=ProjectListResponse)
 async def projects(
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
 ) -> ProjectListResponse:
-    items = await chat_service.list_projects()
+    items = await sessions.list_projects()
     return ProjectListResponse(items=[ProjectRecord(**item) for item in items])
 
 
 @router.post("/api/projects", response_model=ProjectRecord)
 async def create_project(
-    body: ProjectCreateRequest, chat_service: ChatService = Depends(get_chat_service)
+    body: ProjectCreateRequest, sessions: SessionService = Depends(get_session_service)
 ) -> ProjectRecord:
     try:
-        project = await chat_service.create_project(body.name, body.path)
+        project = await sessions.create_project(body.name, body.path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ProjectRecord(**project)
@@ -39,10 +39,10 @@ async def create_project(
 
 @router.post("/api/projects/resolve", response_model=ProjectRecord)
 async def resolve_project(
-    body: ResolveProjectRequest, chat_service: ChatService = Depends(get_chat_service)
+    body: ResolveProjectRequest, sessions: SessionService = Depends(get_session_service)
 ) -> ProjectRecord:
     try:
-        project = await chat_service.resolve_project_for_path(body.path, body.name)
+        project = await sessions.resolve_project_for_path(body.path, body.name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ProjectRecord(**project)
@@ -52,7 +52,7 @@ async def resolve_project(
 async def update_project(
     project_id: str,
     body: ProjectUpdateRequest,
-    chat_service: ChatService = Depends(get_chat_service),
+    sessions: SessionService = Depends(get_session_service),
 ) -> ProjectRecord:
     fields: dict[str, object] = {}
     if "name" in body.model_fields_set:
@@ -60,7 +60,7 @@ async def update_project(
     if "path" in body.model_fields_set:
         fields["path"] = body.path
     try:
-        project = await chat_service.update_project(project_id, **fields)
+        project = await sessions.update_project(project_id, **fields)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if project is None:
@@ -70,9 +70,9 @@ async def update_project(
 
 @router.delete("/api/projects/{project_id}", response_model=ProjectActionResponse)
 async def delete_project(
-    project_id: str, chat_service: ChatService = Depends(get_chat_service)
+    project_id: str, sessions: SessionService = Depends(get_session_service)
 ) -> ProjectActionResponse:
-    deleted = await chat_service.delete_project(project_id)
+    deleted = await sessions.delete_project(project_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Project '{project_id}' not found")
     return ProjectActionResponse(status="deleted", project_id=project_id)

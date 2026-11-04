@@ -191,13 +191,13 @@ class _ResponsesStreamParser(StreamParser):
             return
         if event_type == "response.function_call_arguments.done":
             output_index = event.get("output_index", 0)
-            call_state = self._tool_calls.get(output_index)
-            if call_state and call_state.get("name") and not call_state.get("emitted"):
-                call_state["emitted"] = True
+            pending = self._tool_calls.get(output_index)
+            if pending and pending.get("name") and not pending.get("emitted"):
+                pending["emitted"] = True
                 yield ToolCall(
-                    id=str(call_state["id"]),
-                    name=str(call_state["name"]),
-                    arguments=str(call_state.get("arguments") or "{}"),
+                    id=str(pending["id"]),
+                    name=str(pending["name"]),
+                    arguments=str(pending.get("arguments") or "{}"),
                 )
             return
 
@@ -494,7 +494,7 @@ class OpenAIResponsesProvider(HttpProvider):
             elif item_type == "function_call":
                 tool_calls.append(
                     ToolCall(
-                        id=item.get("call_id", item.get("id", "")),
+                        id=str(item.get("call_id") or item.get("id") or ""),
                         name=item.get("name", ""),
                         arguments=item.get("arguments", "{}")
                         if isinstance(item.get("arguments"), str)

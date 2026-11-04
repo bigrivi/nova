@@ -4,69 +4,26 @@ Chat service that maps internal agent events to stable backend events.
 
 from __future__ import annotations
 
-import inspect
 import logging
 from collections.abc import AsyncGenerator, Callable
-from typing import Any
+from typing import Any, Literal
 
 from nova.agent import AgentEvent
 from nova.app import build_agent
-from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.project.service import ProjectService
+from nova.server.ai_sdk_frames import iter_parts
 from nova.server.ai_sdk_stream import AISDKStreamAdapter
-from nova.server.request_registry import _RESERVED, RequestRegistry
+from nova.server.request_registry import RequestRegistry
 from nova.server.schemas import (
-    ApprovalRequiredEvent,
-    ApprovalRequiredEventData,
-    BaseStreamEventData,
     ChatRequest,
     ChatResponse,
-    InputRequiredEvent,
-    InputRequiredEventData,
-    MessageDeltaEvent,
-    MessageDeltaEventData,
-    MessageListResponse,
-    MessageRecord,
-    ResponseCancelledEvent,
-    ResponseCancelledEventData,
-    ResponseCompletedEvent,
-    ResponseCompletedEventData,
-    ResponseErrorEvent,
-    ResponseErrorEventData,
-    ResponseStartedEvent,
-    ResponseStartedEventData,
-    RetryEvent,
-    RetryEventData,
-    ServerStreamEvent,
-    SessionListResponse,
-    SessionStartedEvent,
-    SessionStartedEventData,
-    SessionSummary,
-    ToolCallEvent,
-    ToolCallEventData,
-    ToolResultEvent,
-    ToolResultEventData,
-    stream_event_data_to_dict,
 )
+from nova.server.session_service import SessionService, normalize_workspace_dir
 from nova.server.stream_buffer import StreamBuffer
-from nova.session.history_projection import get_user_visible_history
-from nova.session.models import decode_display_text
 from nova.settings import Settings
 
 log = logging.getLogger(__name__)
-
-
-def _normalize_workspace_dir(workspace_dir: str | None) -> str | None:
-    """Trim, expand ~, and resolve a workspace path; blank/None clears it."""
-    if not workspace_dir or not workspace_dir.strip():
-        return None
-    from pathlib import Path
-
-    try:
-        return str(Path(workspace_dir.strip()).expanduser().resolve())
-    except OSError:
-        return workspace_dir.strip()
 
 
 def _injected_message_variant(request: ChatRequest) -> str | None:
@@ -95,6 +52,12 @@ class ChatService:
         self._request_registry.attach_buffer(self._stream_buffer)
         self._data_source = data_source
         self._on_title_updated = on_title_updated
+        self.session_service = SessionService(
+            settings=settings,
+            data_source=data_source,
+            request_registry=self._request_registry,
+            stream_buffer=self._stream_buffer,
+        )
 
     @property
     def settings(self) -> Settings:
@@ -126,6 +89,7 @@ class ChatService:
         settings in place keeps that runtime state intact.
         """
         self._settings = settings
+        self.session_service.update_settings(settings)
 
     @property
     def request_registry(self) -> RequestRegistry:
@@ -140,479 +104,6 @@ class ChatService:
             self._data_source = await get_default_data_source()
         return self._data_source
 
-    async def list_sessions(
-        self,
-        agent_key: str | None = None,
-        workspace_dir: str | None = None,
-    ) -> SessionListResponse:
-        data_source = await self._get_data_source()
-        sessions = await data_source.get_all_sessions(agent_key=agent_key)
-        # Sub-agents run internal child sessions; those are not user-facing
-        # conversations, so only primary-agent sessions belong in the list.
-        subagent_keys = await self._subagent_agent_keys(data_source)
-        if subagent_keys:
-            sessions = [
-                session
-                for session in sessions
-                if session.get("agent_key", DEFAULT_AGENT_KEY) not in subagent_keys
-            ]
-        normalized_workspace = _normalize_workspace_dir(workspace_dir)
-        if normalized_workspace is not None:
-            # Normalize rows too: /tmp vs /private/tmp and trailing separators
-            # would otherwise silently drop sessions of the same directory.
-            sessions = [
-                session
-                for session in sessions
-                if _normalize_workspace_dir(session.get("workspace_dir"))
-                == normalized_workspace
-            ]
-        items = [
-            SessionSummary(
-                id=session["id"],
-                title=session.get("title"),
-                updated_at=session.get("updated_at", 0),
-                agent_key=session.get("agent_key", DEFAULT_AGENT_KEY),
-                workspace_dir=session.get("workspace_dir"),
-                pinned=bool(session.get("pinned", 0)),
-                project_id=session.get("project_id"),
-                forked_from=session.get("forked_from"),
-                fork_point_message_id=session.get("fork_point_message_id"),
-            )
-            for session in sessions
-        ]
-        return SessionListResponse(items=items)
-
-    async def _subagent_agent_keys(self, data_source: DataSourceProtocol) -> set[str]:
-        """Keys of agents whose mode is ``subagent``.
-
-        Sub-agent sessions are internal delegation children, not user-facing
-        conversations, so they are excluded from the session list. Returns an
-        empty set when the catalog cannot be loaded, so a transient failure
-        never hides legitimate sessions.
-        """
-        try:
-            agents = await data_source.list_agents()
-        except Exception:
-            log.exception("Failed to load agents while filtering sessions")
-            return set()
-        return {
-            agent["key"]
-            for agent in agents
-            if (agent.get("mode") or "primary") == "subagent"
-        }
-
-    async def rename_session(self, session_id: str, title: str) -> bool:
-        data_source = await self._get_data_source()
-        return await data_source.update_session_title(session_id, title)
-
-    async def set_session_workspace(
-        self, session_id: str, workspace_dir: str | None
-    ) -> bool:
-        data_source = await self._get_data_source()
-        normalized = _normalize_workspace_dir(workspace_dir)
-        return await data_source.set_session_workspace(session_id, normalized)
-
-    async def set_session_pinned(self, session_id: str, pinned: bool) -> bool:
-        data_source = await self._get_data_source()
-        return await data_source.set_session_pinned(session_id, pinned)
-
-    async def set_session_project(
-        self, session_id: str, project_id: str | None
-    ) -> bool:
-        return await ProjectService(self._data_source).set_session_project(
-            session_id, project_id
-        )
-
-    async def list_projects(self) -> list[dict]:
-        return await ProjectService(self._data_source).list_projects()
-
-    async def create_project(self, name: str | None, path: str | None) -> dict:
-        return await ProjectService(self._data_source).create_project(name, path)
-
-    async def update_project(self, project_id: str, **fields: object) -> dict | None:
-        return await ProjectService(self._data_source).update_project(
-            project_id, **fields
-        )
-
-    async def delete_project(self, project_id: str) -> bool:
-        return await ProjectService(self._data_source).delete_project(project_id)
-
-    async def resolve_project_for_path(
-        self, path: str, name: str | None = None
-    ) -> dict:
-        return await ProjectService(self._data_source).resolve_for_path(path, name)
-
-    async def delete_session(
-        self, session_id: str, delete_memories: bool = False
-    ) -> bool:
-        data_source = await self._get_data_source()
-        owner = await self._request_registry.get(session_id)
-        if owner is not None:
-            if owner is not _RESERVED:
-                terminate_fn = getattr(owner, "terminate", None)
-                if callable(terminate_fn):
-                    try:
-                        result = terminate_fn()
-                        if inspect.isawaitable(result):
-                            await result
-                    except Exception:
-                        log.exception(
-                            "delete_session terminate failed for %s", session_id
-                        )
-                await self._request_registry.unregister(session_id)
-            else:
-                await self._request_registry.unregister(session_id)
-        try:
-            self._stream_buffer.discard(session_id)
-        except Exception:
-            log.exception("delete_session buffer discard failed for %s", session_id)
-        from nova.prompt.session_cache import forget_session
-
-        forget_session(session_id)
-        deleted = await data_source.delete_session(session_id)
-        if deleted:
-            from nova.tools.checkpoints import remove_session
-
-            remove_session(session_id)
-            from nova.tasks.manager import get_background_task_manager
-
-            await get_background_task_manager().cancel_for_session(session_id)
-        if deleted and delete_memories:
-            from nova.memory.service import MemoryService
-
-            await MemoryService().delete_by_session(session_id)
-        return deleted
-
-    async def rewind(
-        self,
-        session_id: str,
-        checkpoint_id: str,
-        *,
-        force: bool = False,
-        keep_chat: bool = False,
-    ) -> dict[str, object]:
-        """Undo the files a turn changed and drop the turns after it.
-
-        The chat is only truncated when the checkpoint's user message is still in
-        the visible history; a compaction that rewrote it away would otherwise
-        make "delete everything after index -1" delete the whole session.
-
-        Args:
-            session_id: Session the checkpoint belongs to.
-            checkpoint_id: The turn's user message id.
-            force: Restore files that changed after the agent wrote them.
-            keep_chat: Restore files only, leaving the conversation intact.
-
-        Returns:
-            The restore report plus how many messages were dropped.
-
-        Raises:
-            SessionBusy: when a turn is still streaming in this session.
-            FileNotFoundError: when the checkpoint does not exist.
-        """
-        from nova import checkpoints as checkpoint_store
-        from nova.session.errors import SessionBusy
-
-        owner = await self._request_registry.get(session_id)
-        if owner is not None:
-            raise SessionBusy(session_id, "rewind")
-
-        report = checkpoint_store.restore_files(session_id, checkpoint_id, force=force)
-        dropped = 0
-        chat_truncated = False
-        if not keep_chat:
-            response = await self.list_messages(session_id)
-            ids = [message.id for message in response.items]
-            if checkpoint_id in ids:
-                stale = ids[ids.index(checkpoint_id) :]
-                data_source = await self._get_data_source()
-                dropped = await data_source.delete_messages(session_id, stale)
-                checkpoint_store.discard_checkpoints_from(session_id, checkpoint_id)
-                chat_truncated = True
-
-        return {
-            "restored": report.restored,
-            "deleted": report.deleted,
-            "skipped": report.skipped,
-            "dropped_messages": dropped,
-            "chat_truncated": chat_truncated,
-        }
-
-    async def compact(self, session_id: str) -> dict[str, object]:
-        """Force one compaction pass so the user can free context on demand.
-
-        Args:
-            session_id: Session to compact.
-
-        Returns:
-            ``{"compacted": bool}``: False when the history is not splittable yet.
-
-        Raises:
-            SessionBusy: when a turn is streaming in this session.
-            FileNotFoundError: when the session does not exist.
-        """
-        from nova.app import build_agent
-        from nova.constants import DEFAULT_AGENT_KEY
-        from nova.session.errors import SessionBusy
-
-        owner = await self._request_registry.get(session_id)
-        if owner is not None:
-            raise SessionBusy(session_id, "compact")
-
-        data_source = await self._get_data_source()
-        record = await data_source.get_session(session_id)
-        if record is None:
-            raise FileNotFoundError(f"Session {session_id} not found")
-
-        agent = await build_agent(
-            agent_key=record.get("agent_key") or DEFAULT_AGENT_KEY,
-            session_id=session_id,
-            data_source=data_source,
-        )
-        return await agent.compact_now(session_id)
-
-    async def workspace_of(self, session_id: str) -> str | None:
-        """The workspace directory a session runs in, or None.
-
-        Routers that shell out (git) need the session's tree, not the server
-        process's cwd: the two are different as soon as one client changes
-        directory.
-
-        Args:
-            session_id: Session to look up.
-
-        Returns:
-            The stored absolute path, or None when the session has no workspace.
-
-        Raises:
-            FileNotFoundError: when the session does not exist, so a caller can
-                answer 404 rather than blaming the workspace.
-        """
-        data_source = await self._get_data_source()
-        record = await data_source.get_session(session_id)
-        if record is None:
-            raise FileNotFoundError(f"Session {session_id} not found")
-        workspace = record.get("workspace_dir")
-        return str(workspace) if workspace else None
-
-    async def route_of(self, session_id: str) -> tuple[str | None, str | None]:
-        """The provider and model a session was last run with.
-
-        Args:
-            session_id: Session to look up.
-
-        Returns:
-            ``(provider, model)``; either may be None for a session that never
-            recorded a route.
-
-        Raises:
-            FileNotFoundError: when the session does not exist.
-        """
-        data_source = await self._get_data_source()
-        record = await data_source.get_session(session_id)
-        if record is None:
-            raise FileNotFoundError(f"Session {session_id} not found")
-        return record.get("provider"), record.get("model")
-
-    async def fork_session(
-        self,
-        session_id: str,
-        *,
-        message_id: str | None = None,
-        title: str | None = None,
-    ) -> dict[str, object]:
-        """Copy a conversation into a new session, leaving the original alone.
-
-        Args:
-            session_id: Session to copy.
-            message_id: Last message to include; omitted copies everything.
-            title: Title for the copy.
-
-        Returns:
-            The new session's id, title and message count.
-
-        Raises:
-            SessionBusy: when a turn is streaming in the source session.
-            FileNotFoundError: when the source session does not exist.
-            ForkPointNotFound: when *message_id* is not in the source session.
-        """
-        from nova.session.errors import SessionBusy
-        from nova.session.fork import fork_session
-
-        owner = await self._request_registry.get(session_id)
-        if owner is not None:
-            raise SessionBusy(session_id, "fork")
-
-        data_source = await self._get_data_source()
-        return await fork_session(
-            data_source, session_id, message_id=message_id, title=title
-        )
-
-    async def list_messages(self, session_id: str) -> MessageListResponse:
-        data_source = await self._get_data_source()
-        messages = await get_user_visible_history(data_source, session_id)
-        items = [
-            MessageRecord(
-                id=message.id,
-                session_id=message.session_id,
-                role=message.role,
-                content=message.content,
-                tool_call_id=message.tool_call_id,
-                tool_calls=message.tool_calls or [],
-                time_created=message.time_created,
-                images=message.images,
-                reasoning_content=message.reasoning_content,
-                reasoning_elapsed_ms=message.reasoning_elapsed_ms,
-                tokens_input=message.tokens_input,
-                cache_read_tokens=message.cache_read_tokens,
-                group_id=message.group_id,
-                error=message.error,
-                variant=message.variant,
-                display_text=decode_display_text(message.data),
-            )
-            for message in messages
-        ]
-        return MessageListResponse(items=items)
-
-    async def get_session_route(self, session_id: str) -> dict | None:
-        """The route a session runs with, for restoring it when reopened.
-
-        Separate from the message history on purpose: opening a conversation has
-        to know the model and effort before any message is loaded, and a history
-        scan would have to guess which of the last few turns still applies.
-        """
-        data_source = await self._get_data_source()
-        session = await data_source.get_session(session_id)
-        if session is None:
-            return None
-        return {
-            "provider": session.get("provider"),
-            "model": session.get("model"),
-            "reasoning_effort": session.get("reasoning_effort"),
-        }
-
-    async def set_session_route(
-        self,
-        session_id: str,
-        provider: str | None,
-        model: str | None,
-        reasoning_effort: str | None,
-    ) -> bool:
-        """Record a session's route, dropping a level its model cannot take.
-
-        Validated on the way in rather than only at agent build time, so what a
-        later GET hands back is always a level the model actually accepts.
-        """
-        if provider and model and reasoning_effort:
-            from nova.llm.reasoning import fit_effort, resolve_effort_levels
-
-            provider_config = self._settings.providers.get(provider)
-            if provider_config is not None:
-                levels = resolve_effort_levels(
-                    model,
-                    provider_config.type,
-                    provider_config.models.get(model)
-                    if isinstance(provider_config.models, dict)
-                    else None,
-                )
-                reasoning_effort = fit_effort(levels, reasoning_effort)
-        data_source = await self._get_data_source()
-        return await data_source.set_session_route(
-            session_id, provider, model, reasoning_effort
-        )
-
-    async def get_context(
-        self, session_id: str, provider: str | None = None, model: str | None = None
-    ) -> dict:
-        from nova.agent.compaction import (
-            compaction_threshold,
-            estimate_context_tokens,
-            get_context_limit,
-        )
-
-        data_source = await self._get_data_source()
-        # Use raw messages for accurate compaction-aligned estimation
-        try:
-            raw_messages = await data_source.get_messages(session_id)
-        except Exception:
-            raw_messages = []
-        try:
-            session = await data_source.get_session(session_id)
-        except Exception:
-            session = None
-        # Resolve provider/model: explicit query wins, then the route the session
-        # actually ran with, then its agent's default. The session comes before
-        # the agent because the agent holds only the route a *new* conversation
-        # starts from -- once a session switched model, reading the agent divided
-        # its prompt by the window of a model it never ran on.
-        if (not provider or not model) and session:
-            provider = provider or session.get("provider")
-            model = model or session.get("model")
-        if not provider or not model:
-            agent_key = session.get("agent_key") if session else None
-            if agent_key:
-                from nova.config.service import ConfigService
-
-                try:
-                    service = ConfigService(self._settings)
-                    agent = await service.get_agent(agent_key)
-                except Exception:
-                    agent = None
-                if agent:
-                    provider = provider or agent.get("provider")
-                    model = model or agent.get("model")
-        if not provider or not model:
-            # Fallback to first configured provider/model
-            first_provider = next(iter(self._settings.providers.keys()), None)
-            if first_provider:
-                provider = provider or first_provider
-                model = model or next(
-                    iter(self._settings.providers[first_provider].models.keys()),
-                    "gpt-4o",
-                )
-            else:
-                provider = provider or "ollama"
-                model = model or "gpt-4o"
-        used = estimate_context_tokens(
-            raw_messages,
-            model or "unknown",
-            session.get("compacted_at") if session else None,
-        )
-        # Against the compaction threshold, not the raw window: that is what the
-        # streaming CONTEXT_UPDATE frame reports, and both feed the same pill.
-        # Dividing one by the window and the other by the threshold made the
-        # percentage jump the moment a turn started -- 62% on open, 76% in the
-        # stream, for the same history -- and changed what `limit` meant too.
-        limit = compaction_threshold(
-            get_context_limit(model or "unknown", provider or "ollama")
-        )
-        percent = int(used / limit * 100) if limit else 0
-        # Cache accounting comes from what the provider charged, never from
-        # `used`: that one is anchored on a real prompt size but its tail is a
-        # character estimate, and a ratio mixing the two is a ratio of nothing.
-        # Both sides are summed over the turns that reported a cache figure, so a
-        # turn whose provider stayed silent drops out entirely -- counting it as
-        # a miss would invent a hit rate for a gateway that never mentioned
-        # caching. A reported zero still counts, because it is a real miss.
-        billed = [
-            message
-            for message in raw_messages
-            if message.tokens_input and message.cache_read_tokens is not None
-        ]
-        prompt_tokens = sum(message.tokens_input for message in billed)
-        cached_tokens = sum(message.cache_read_tokens for message in billed)
-        return {
-            "used": used,
-            "limit": limit,
-            "percent": percent,
-            "message_count": len(raw_messages),
-            "prompt_tokens": prompt_tokens,
-            "cached_tokens": cached_tokens,
-            "hit_rate": (
-                round(cached_tokens / prompt_tokens * 100, 1) if prompt_tokens else None
-            ),
-        }
-
     async def interrupt(self, session_id: str) -> bool:
         interrupted = await self._request_registry.interrupt(session_id)
         if interrupted:
@@ -624,93 +115,51 @@ class ChatService:
         return interrupted
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
-        response: ChatResponse | None = None
-        async for event in self.chat_stream(request):
-            payload = stream_event_data_to_dict(event.data)
-            if event.type == "response.completed":
-                response = ChatResponse(
-                    session_id=payload.get("session_id"),
-                    status="completed",
-                    message=payload.get("content", ""),
-                )
-            elif event.type == "response.cancelled":
-                response = ChatResponse(
-                    session_id=payload.get("session_id"),
-                    status="cancelled",
-                    message=payload.get("message", ""),
-                )
-            elif event.type == "input.required":
-                response = ChatResponse(
-                    session_id=payload.get("session_id"),
-                    status="input_required",
-                    message=payload.get("message", ""),
-                )
-            elif event.type == "response.error":
-                response = ChatResponse(
-                    session_id=payload.get("session_id"),
-                    status="error",
-                    message=payload.get("message", ""),
-                )
-        if response is None:
-            raise RuntimeError("Chat finished without a terminal event.")
-        return response
-
-    async def chat_stream(
-        self, request: ChatRequest
-    ) -> AsyncGenerator[ServerStreamEvent, None]:
-        """Yield ServerStreamEvents via _map_agent_event.
-
-        Independent mapping path from chat_stream_ai_sdk (which uses
-        AISDKStreamAdapter): when adding a new AgentEvent type, update both
-        paths to avoid drift.
-        """
         session_id = request.session_id
-        sequence = 0
-
-        async def emit(
-            event_cls: type,
-            data_cls: type[BaseStreamEventData],
-            **payload: object,
-        ) -> ServerStreamEvent:
-            nonlocal sequence, session_id
-            sequence += 1
-            raw_session_id = payload.get("session_id") or session_id
-            if isinstance(raw_session_id, str) and raw_session_id:
-                session_id = raw_session_id
-            data_payload: dict[str, Any] = {
-                **payload,
-                "session_id": session_id,
-                "sequence": sequence,
-            }
-            return event_cls(
-                data=data_cls(
-                    **data_payload,
-                )
-            )
-
-        try:
-            async for event, data in self._agent_event_stream(request):
-                mapped = await self._map_agent_event(
-                    agent_event=event,
-                    data=data,
-                    emit=emit,
-                )
-                if mapped is None:
-                    continue
-                yield mapped
-        except Exception as exc:
-            yield await emit(
-                ResponseErrorEvent, ResponseErrorEventData, message=str(exc)
-            )
+        streamed: list[str] = []
+        status: Literal["completed", "cancelled", "input_required", "error"] | None = (
+            None
+        )
+        message = ""
+        async for part in iter_parts(self.chat_stream_ai_sdk(request)):
+            kind = part.get("type")
+            if kind == "data-nova-session":
+                data = part.get("data")
+                if isinstance(data, dict):
+                    session_id = data.get("sessionId") or session_id
+                continue
+            if kind == "text-delta":
+                streamed.append(str(part.get("delta") or ""))
+                continue
+            if kind == "finish":
+                status = "completed"
+            elif kind == "abort":
+                status = "cancelled"
+            elif kind == "error":
+                status = "error"
+                message = str(part.get("errorText") or "")
+            elif kind == "data-nova-input-required":
+                status = "input_required"
+                data = part.get("data")
+                if isinstance(data, dict):
+                    message = str(data.get("message") or "")
+            if status is not None:
+                break
+        if status is None:
+            raise RuntimeError("Chat finished without a terminal event.")
+        return ChatResponse(
+            session_id=session_id,
+            status=status,
+            message=message or "".join(streamed),
+        )
 
     async def chat_stream_ai_sdk(
         self, request: ChatRequest
     ) -> AsyncGenerator[bytes, None]:
         """Yield framed AI-SDK byte chunks via AISDKStreamAdapter.
 
-        Independent mapping path from chat_stream (which uses
-        _map_agent_event): when adding a new AgentEvent type, update both
-        paths to avoid drift.
+        The single mapping path: every surface consumes these frames, so a new
+        AgentEvent type is taught here once.
         """
         adapter = AISDKStreamAdapter(
             wake_variant=_injected_message_variant(request),
@@ -779,7 +228,7 @@ class ChatService:
         if register_key:
             await self._request_registry.register(register_key, agent)
         attachment_dicts = [att.model_dump() for att in request.attachments]
-        workspace_dir = _normalize_workspace_dir(request.workspace_dir)
+        workspace_dir = normalize_workspace_dir(request.workspace_dir)
         project_id = request.project_id
         if project_id and not workspace_dir:
             project = await ProjectService(self._data_source).get_project(project_id)
@@ -818,121 +267,3 @@ class ChatService:
         finally:
             if register_key:
                 await self._request_registry.mark_done(register_key)
-
-    async def _map_agent_event(
-        self,
-        agent_event: AgentEvent,
-        data: object,
-        emit: Callable[..., Any],
-    ) -> ServerStreamEvent | None:
-        done_reason = ""
-        done_content = ""
-        error_message = ""
-        if isinstance(data, dict):
-            done_reason = data.get("reason", "") or ""
-            done_content = data.get("content", "") or ""
-            error_message = data.get("message", "") or ""
-        elif isinstance(data, str):
-            done_content = data
-            error_message = data
-
-        if agent_event == AgentEvent.SESSION:
-            return await emit(
-                SessionStartedEvent, SessionStartedEventData, session_id=data
-            )
-        if agent_event in (AgentEvent.START, AgentEvent.TURN_END):
-            return None
-        if agent_event == AgentEvent.TURN_START:
-            return await emit(ResponseStartedEvent, ResponseStartedEventData)
-        if agent_event in (
-            AgentEvent.TEXT_START,
-            AgentEvent.TEXT_END,
-            AgentEvent.REASONING_START,
-            AgentEvent.REASONING_END,
-            AgentEvent.COMPACTION_START,
-            AgentEvent.COMPACTION_DELTA,
-            AgentEvent.COMPACTION_END,
-        ):
-            return None
-        if agent_event == AgentEvent.TEXT_DELTA:
-            return await emit(MessageDeltaEvent, MessageDeltaEventData, delta=data)
-        if agent_event == AgentEvent.TOOL_CALL:
-            arguments = getattr(data, "arguments", "")
-            return await emit(
-                ToolCallEvent,
-                ToolCallEventData,
-                tool_name=getattr(data, "name", str(data)),
-                tool_call_id=getattr(data, "id", ""),
-                arguments=arguments,
-            )
-        if agent_event == AgentEvent.TOOL_RESULT:
-            # The invoker always yields a payload dict for this event.
-            assert isinstance(data, dict)
-            result = data["result"]
-            return await emit(
-                ToolResultEvent,
-                ToolResultEventData,
-                tool_name=data["tool"],
-                tool_call_id=data.get("tool_call_id", ""),
-                success=result.success,
-                content=result.content,
-                error=result.error or "",
-                requires_input=result.requires_input,
-            )
-        if agent_event == AgentEvent.DONE:
-            if done_reason == "stopped" or done_content == "Stopped by user":
-                return await emit(
-                    ResponseCancelledEvent,
-                    ResponseCancelledEventData,
-                    message=done_content,
-                )
-            if done_reason == "requires_input" or done_content == "User input required":
-                return await emit(
-                    InputRequiredEvent,
-                    InputRequiredEventData,
-                    message=done_content,
-                )
-            if done_reason == "tool_failed":
-                return await emit(
-                    ResponseErrorEvent,
-                    ResponseErrorEventData,
-                    message=done_content,
-                )
-            return await emit(
-                ResponseCompletedEvent,
-                ResponseCompletedEventData,
-                content=done_content,
-            )
-        if agent_event == AgentEvent.APPROVAL_REQUIRED:
-            # The tool axis always yields the approval request dict.
-            assert isinstance(data, dict)
-            return await emit(
-                ApprovalRequiredEvent,
-                ApprovalRequiredEventData,
-                request_id=data.get("id", ""),
-                command=data.get("command", ""),
-                description=data.get("description", ""),
-                rememberable=data.get("rememberable", True),
-                family=data.get("family", ""),
-                target=data.get("target", ""),
-                script_scoped=bool(data.get("digest", "")),
-                dangerous=data.get("dangerous", False),
-                workspace=await self._active_workspace(),
-            )
-        if agent_event == AgentEvent.RETRY:
-            payload = data if isinstance(data, dict) else {}
-            return await emit(
-                RetryEvent,
-                RetryEventData,
-                attempt=int(payload.get("attempt", 0)),
-                total=int(payload.get("total", 0)),
-                wait_seconds=float(payload.get("wait_seconds", 0.0)),
-                reason=str(payload.get("reason", "")),
-            )
-        if agent_event == AgentEvent.ERROR:
-            return await emit(
-                ResponseErrorEvent,
-                ResponseErrorEventData,
-                message=error_message or str(data),
-            )
-        return None

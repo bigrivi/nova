@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nova.llm.provider import Done, Error, TextDelta
+
 if TYPE_CHECKING:
     from nova.llm.provider import LLMProvider
 
@@ -91,7 +93,13 @@ Conversation:
 
 
 class SkillExtractor:
-    def __init__(self, skills_dir: Path | str, min_tool_calls: int = 4, llm: LLMProvider | None = None, model: str = "") -> None:
+    def __init__(
+        self,
+        skills_dir: Path | str,
+        min_tool_calls: int = 4,
+        llm: LLMProvider | None = None,
+        model: str = "",
+    ) -> None:
         self.skills_dir = Path(skills_dir)
         self.min_tool_calls = min_tool_calls
         self.llm = llm
@@ -138,18 +146,28 @@ class SkillExtractor:
         skill_dir.mkdir(parents=True, exist_ok=True)
         skill_path = skill_dir / "SKILL.md"
         if action == "update" or skill_path.exists():
-            existing = skill_path.read_text(encoding="utf-8") if skill_path.exists() else ""
-            if existing and _jaccard(
-                _tokens(_strip_version(content)[:400]),
-                _tokens(_strip_version(existing)[:400]),
-            ) >= 0.85:
+            existing = (
+                skill_path.read_text(encoding="utf-8") if skill_path.exists() else ""
+            )
+            if (
+                existing
+                and _jaccard(
+                    _tokens(_strip_version(content)[:400]),
+                    _tokens(_strip_version(existing)[:400]),
+                )
+                >= 0.85
+            ):
                 return None  # nothing new to record
             if existing:
                 self._write_revision(skill_path, content)
             else:
-                skill_path.write_text(f"version: 1\n\n{content.strip()}\n", encoding="utf-8")
+                skill_path.write_text(
+                    f"version: 1\n\n{content.strip()}\n", encoding="utf-8"
+                )
         else:
-            skill_path.write_text(f"version: 1\n\n{content.strip()}\n", encoding="utf-8")
+            skill_path.write_text(
+                f"version: 1\n\n{content.strip()}\n", encoding="utf-8"
+            )
 
         references = proposal.get("references")
         if isinstance(references, dict):
@@ -163,21 +181,24 @@ class SkillExtractor:
         )
 
     async def _complete(self, prompt: str, session_id: str) -> str:
+        llm = self.llm
+        if llm is None:
+            return ""
         chunks: list[str] = []
         final = ""
-        async for ev in self.llm.chat_stream(
+        async for ev in llm.chat_stream(
             [{"role": "user", "content": prompt}],
             model=self.model or "gpt-4o",
             session_id=session_id,
             reasoning_effort="high",
         ):
-            if type(ev).__name__ == "TextDelta" and getattr(ev, "content", None):
+            if isinstance(ev, TextDelta):
                 chunks.append(ev.content)
-            if type(ev).__name__ == "Done":
-                final = getattr(ev, "content", "") or ""
+            elif isinstance(ev, Done):
+                final = ev.content or ""
                 break
-            if type(ev).__name__ == "Error":
-                raise RuntimeError(getattr(ev, "message", "stream error"))
+            elif isinstance(ev, Error):
+                raise RuntimeError(ev.message)
         return "".join(chunks) or final
 
     def _existing_summary(self) -> str:
@@ -194,7 +215,11 @@ class SkillExtractor:
             except OSError:
                 continue
             description = next(
-                (line.strip("# ").strip() for line in _strip_version(body).splitlines() if line.strip()),
+                (
+                    line.strip("# ").strip()
+                    for line in _strip_version(body).splitlines()
+                    if line.strip()
+                ),
                 "",
             )
             lines.append(f"- {path.name}: {description[:120]}")
@@ -241,7 +266,9 @@ class SkillExtractor:
         previous = skill_path.read_text(encoding="utf-8")
         skill_path.write_text(self._with_version(content, previous), encoding="utf-8")
 
-    async def improve(self, skill_name: str, correction: str, session_id: str = "") -> None:
+    async def improve(
+        self, skill_name: str, correction: str, session_id: str = ""
+    ) -> None:
         skill_path = self.skills_dir / skill_name / "SKILL.md"
         if not skill_path.exists():
             return
@@ -254,7 +281,9 @@ class SkillExtractor:
                 session_id or skill_name,
             )
             if revised.strip():
-                skill_path.write_text(self._with_version(revised, current), encoding="utf-8")
+                skill_path.write_text(
+                    self._with_version(revised, current), encoding="utf-8"
+                )
         except Exception as e:
             log.warning("skill improvement failed: %s", e)
 

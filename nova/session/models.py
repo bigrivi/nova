@@ -3,8 +3,39 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from nova.constants import DEFAULT_AGENT_KEY
+
+
+@dataclass
+class NewMessage:
+    """A message about to be persisted.
+
+    One object at the store boundary instead of twenty positional parameters:
+    adding a field changes this class and the two inserts, not every caller.
+    """
+
+    session_id: str
+    role: str
+    content: str
+    tool_calls: list[dict[str, Any]] | None = None
+    tool_call_id: str | None = None
+    summary: bool = False
+    images: list[str] | None = None
+    reasoning_content: str | None = None
+    group_id: str | None = None
+    reasoning_elapsed_ms: int | None = None
+    tokens_input: int | None = None
+    tokens_output: int | None = None
+    cache_read_tokens: int | None = None
+    provider_meta: dict[str, Any] | None = None
+    model: str | None = None
+    reasoning_effort: str | None = None
+    error: str | None = None
+    variant: str | None = None
+    time_created: int | None = None
+    data: str | None = None
 
 
 @dataclass

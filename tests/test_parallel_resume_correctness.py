@@ -135,7 +135,7 @@ def test_1_3_sparse_output_long_connection_not_parked(monkeypatch, tmp_path) -> 
 
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-idle"))
     app = create_app(settings=get_settings())
-    app.state.chat_service._agent_event_stream = slow_stream
+    app.state.context.chat_service._agent_event_stream = slow_stream
     client = TestClient(app)
 
     response = client.post(
@@ -150,7 +150,7 @@ def test_1_3_sparse_output_long_connection_not_parked(monkeypatch, tmp_path) -> 
 def test_2_1_public_registry_buffer_accessors(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-accessors"))
     app = create_app(settings=get_settings())
-    service = app.state.chat_service
+    service = app.state.context.chat_service
     assert service.request_registry is service._request_registry
     assert service.stream_buffer is service._stream_buffer
 
@@ -160,7 +160,7 @@ async def test_active_endpoint_lists_inflight_only(monkeypatch, tmp_path) -> Non
     """GET /api/chat/stream/active reports active/detached, never done."""
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-active"))
     app = create_app(settings=get_settings())
-    registry = app.state.chat_service.request_registry
+    registry = app.state.context.chat_service.request_registry
     await registry.register("s-run", object())
     await registry.register("s-park", object())
     assert await registry.detach("s-park") is True

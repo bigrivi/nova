@@ -12,18 +12,32 @@ from nova.db.data_source import (
     set_data_source_config,
 )
 from nova.db.database import close_db, ensure_db, init_db
-from nova.db.in_memory_repository import InMemoryRepository
-from nova.db.repository import NovaRepository
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.in_memory.repository import InMemoryRepository
+from nova.db.repository import (
+    AgentStore,
+    MemoryStore,
+    MessageStore,
+    NovaRepository,
+    ProjectStore,
+    ScheduleStore,
+    SessionStore,
+)
+from nova.db.sqlite.repository import SqliteRepository
 
 __all__ = [
+    "AgentStore",
     "DataSourceConfig",
     "DataSourceProtocol",
     "DataSourceProvider",
     "DataSourceType",
     "DatabaseConfig",
     "InMemoryRepository",
+    "MemoryStore",
+    "MessageStore",
     "NovaRepository",
+    "ProjectStore",
+    "ScheduleStore",
+    "SessionStore",
     "SqliteRepository",
     "close_db",
     "ensure_db",

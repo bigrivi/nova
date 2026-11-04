@@ -5,12 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from nova.agent.core import Agent
 
 from nova.agent.context import AgentContext
+from nova.agent.state import TurnState
 from nova.agent.title_generator import generate_session_title
 from nova.session.manager import SessionContext, default_session_title
 
@@ -20,26 +17,34 @@ log = logging.getLogger(__name__)
 class AgentBackground:
     """Composed service: fire-and-forget work reachable from a turn."""
 
-    def __init__(self, agent: Agent) -> None:
-        self.agent = agent
-        self.ctx: AgentContext = agent.ctx
+    def __init__(self, ctx: AgentContext, state: TurnState) -> None:
+        self.ctx = ctx
+        self.state = state
 
     def _spawn(self, coro: Awaitable[None]) -> None:
         """Run *coro* in the background, holding it until it finishes."""
-        task = asyncio.create_task(coro)
+        task = asyncio.ensure_future(coro)
         self.ctx.background_tasks.add(task)
         task.add_done_callback(self.ctx.background_tasks.discard)
 
-    def _maybe_schedule_title_generation(self, session: SessionContext, first_message: str) -> None:
+    def _maybe_schedule_title_generation(
+        self, session: SessionContext, first_message: str
+    ) -> None:
         if self.ctx.is_sub_agent or self.ctx.on_title_updated is None:
             return
         self._spawn(self.generate_title_in_background(session, first_message))
 
-    async def generate_title_in_background(self, session: SessionContext, first_message: str) -> None:
+    async def generate_title_in_background(
+        self, session: SessionContext, first_message: str
+    ) -> None:
+        if self.ctx.llm is None or self.ctx.on_title_updated is None:
+            return
         session_id = session.id
         try:
             tool_schemas = (
-                self.ctx.tool_registry.get_schema() if self.ctx.tool_registry.tools else None
+                self.ctx.tool_registry.get_schema()
+                if self.ctx.tool_registry.tools
+                else None
             )
             title = await generate_session_title(
                 self.ctx.llm,
@@ -67,16 +72,23 @@ class AgentBackground:
                 "[Session %s] Title generation task failed: %s", session_id, exception
             )
 
-    def _maybe_schedule_memory_review(self) -> None:
-        if self.ctx.config.memory_review_interval <= 0:
+    def _maybe_schedule_memory_review(self, turn_count: int) -> None:
+        """Review memory every ``memory_review_interval`` user turns.
+
+        The turn count is passed in from the conversation's own history rather
+        than latched on the agent: an Agent is rebuilt for every request, so a
+        counter kept in its state would reset before the interval was ever
+        reached. Compaction folds old turns out of that history, so the count
+        restarts there -- review then fires sooner than the interval, never later.
+        """
+        interval = self.ctx.config.memory_review_interval
+        if interval <= 0 or turn_count % interval:
             return
-        self.agent._turns_since_review += 1
-        if self.agent._turns_since_review < self.ctx.config.memory_review_interval:
-            return
-        self.agent._turns_since_review = 0
-        self._spawn(self.agent.run_memory_review())
+        self._spawn(self.run_memory_review())
 
     async def run_memory_review(self) -> None:
+        if self.ctx.llm is None:
+            return
         from nova.agent.memory_review import MemoryReviewer
 
         await MemoryReviewer(
@@ -85,7 +97,9 @@ class AgentBackground:
             model=self.ctx.config.model,
             data_source=self.ctx.data_source,
             tools=(
-                self.ctx.tool_registry.get_schema() if self.ctx.tool_registry.tools else None
+                self.ctx.tool_registry.get_schema()
+                if self.ctx.tool_registry.tools
+                else None
             ),
         ).run()
 

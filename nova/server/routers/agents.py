@@ -18,12 +18,10 @@ from nova.settings import Settings
 router = APIRouter()
 
 
-
 class AgentImportRequest(BaseModel):
     content: str
     key: str | None = None
     parent_ids: list[str] | None = None
-
 
 
 def _display_names(settings: Settings, agent: dict) -> dict:
@@ -62,7 +60,9 @@ async def list_agents(
     service = ConfigService(settings)
     agents = await service.list_agents()
     items = [
-        _display_names(settings, _annotate(agent, await service.get_agent_parents(agent["key"])))
+        _display_names(
+            settings, _annotate(agent, await service.get_agent_parents(agent["key"]))
+        )
         for agent in agents
     ]
     return {"items": items}
@@ -76,7 +76,9 @@ async def get_agent(
     agent = await service.get_agent(key)
     if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent '{key}' not found")
-    return _display_names(settings, _annotate(agent, await service.get_agent_parents(key)))
+    return _display_names(
+        settings, _annotate(agent, await service.get_agent_parents(key))
+    )
 
 
 @router.post("/api/agents")

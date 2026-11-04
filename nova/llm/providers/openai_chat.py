@@ -245,7 +245,7 @@ class OpenAIProvider(HttpProvider):
         session_id: str | None = None,
         reasoning_effort: str | None = None,
     ) -> dict:
-        body = {"messages": messages}
+        body: dict[str, Any] = {"messages": messages}
         if model:
             body["model"] = model
         if stream:

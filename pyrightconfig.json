@@ -1,0 +1,14 @@
+{
+  "include": ["nova", "tests"],
+  "exclude": [
+    "build",
+    "dist",
+    "site",
+    "node_modules",
+    "tui",
+    "frontend",
+    "**/__pycache__"
+  ],
+  "extraPaths": ["."],
+  "pythonVersion": "3.12"
+}

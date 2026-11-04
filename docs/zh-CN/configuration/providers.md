@@ -347,7 +347,7 @@ Nova 在会被拒绝时会跳过重放该 block，并优雅降级：
 
 ### OpenAI Response
 
-通过 `nova/llm/openai_response.py` 使用 OpenAI Responses API。提供方选项是 `base_url`、
+通过 `nova/llm/providers/openai_responses.py` 使用 OpenAI Responses API。提供方选项是 `base_url`、
 `api_key` 和 `user_agent`。
 
 ```json

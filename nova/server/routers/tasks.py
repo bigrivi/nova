@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
+from nova.server.deps import context_of
 from nova.server.schemas import BackgroundTaskCancelRequest
 from nova.tasks.manager import BackgroundTaskManager
 from nova.tasks.models import TaskRecord
@@ -12,7 +13,7 @@ router = APIRouter()
 
 
 def _manager(request: Request) -> BackgroundTaskManager:
-    return request.app.state.background_task_manager
+    return context_of(request).background_task_manager
 
 
 def _task_payload(task: TaskRecord, include_output: bool = False) -> dict[str, object]:

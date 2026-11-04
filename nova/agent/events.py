@@ -95,4 +95,4 @@ class EventBus:
                 else:
                     handler(event, data)
             except Exception:
-                pass
+                log.warning("event handler failed for %s", event, exc_info=True)

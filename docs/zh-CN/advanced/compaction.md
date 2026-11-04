@@ -4,7 +4,9 @@
 第一层廉价且本地，第二层调用模型做总结。两层都由 `GET /api/sessions/{id}/context`
 端点报告的同一套 token 估算驱动，所以你在 TUI 和前端看到的数字，和 Agent 的决策一致。
 
-源码文件：`nova/settings.py:_parse_compaction_config`、`nova/agent/compaction.py`。
+源码文件：`nova/settings.py:_parse_compaction_config`，以及 `nova/agent/compaction/`
+包：`policy.py`（估算、切分点、第一层）、`summary.py`（总结提示词与模型调用）、
+`orchestrator.py`（`compact`、`prepare_compaction` 与熔断器）。
 
 ## 压缩何时触发
 
@@ -33,7 +35,7 @@
 旧的工具结果是最先被裁掉的。它们往往是提示词里占比最大的部分，而任务一旦推进，完整保留
 它们的价值也最低。
 
-工作方式（`nova/agent/compaction.py` 里的 `snip_old_tool_results`）：
+工作方式（`nova/agent/compaction/policy.py` 里的 `snip_old_tool_results`）：
 
 1. 从最新到最旧遍历历史，维护一个 token 预算（`snip_tool_output_token_budget`）。
 2. 最近的 `snip_preserve_last_n_messages` 条消息始终原样保留，任何仍在预算内的工具输出
@@ -60,7 +62,7 @@
 
 裁剪不够时，Agent 让模型总结历史中较早的部分。
 
-工作方式（`nova/agent/compaction.py` 里的 `compact` 及其辅助函数）：
+工作方式（`nova/agent/compaction/orchestrator.py` 里的 `compact` 及其辅助函数）：
 
 1. 用 `find_split_point` 切分历史，大致保留 `summary_keep_tokens` 的近期历史 —— 这是
    一个绝对 token 预算，上限为压缩阈值的一半（这样保留部分加总结之后，总量始终低于阈值，

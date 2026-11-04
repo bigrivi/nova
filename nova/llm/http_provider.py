@@ -25,7 +25,7 @@ import aiohttp
 
 from nova.llm.accumulator import StreamAccumulator
 from nova.llm.framing import NDJSONFramer, SSEFramer
-from nova.llm.policy import StreamPolicy, TransportPolicy
+from nova.llm.policy import RetryBudget, StreamPolicy, TransportPolicy
 from nova.llm.provider import (
     MAX_RETRIES,
     RETRY_429_MAX_ATTEMPTS,
@@ -77,6 +77,8 @@ async def sleep_unless_aborted(
 
 
 class HttpProvider(LLMProvider):
+    #: Default request budget; subclasses override it in __init__.
+    timeout_seconds: int = 120
     """Base class for the aiohttp-backed providers.
 
     Subclasses set the class attributes and implement the hooks below. The
@@ -148,8 +150,8 @@ class HttpProvider(LLMProvider):
         return kwargs
 
     @staticmethod
-    def _retry_after_seconds(resp: aiohttp.ClientResponse, fallback: float) -> float:
-        """The ``Retry-After`` header as seconds, capped, or *fallback*.
+    def _retry_after_header(resp: aiohttp.ClientResponse) -> float | None:
+        """The ``Retry-After`` header as seconds, capped, or None.
 
         RFC 7231 section 7.1.3 allows the header in two forms and servers use
         both: a count of seconds (``Retry-After: 120``) and an absolute date
@@ -167,15 +169,13 @@ class HttpProvider(LLMProvider):
             resp: The response carrying the header. ``headers`` is a
                 ``CIMultiDict``, so the lookup is case-insensitive and one
                 spelling is enough.
-            fallback: Seconds to use when the header is absent or unusable.
-
         Returns:
             Seconds to wait, never negative and never above
-            ``RETRY_429_MAX_WAIT``.
+            ``RETRY_429_MAX_WAIT``; None when the header is absent or unusable.
         """
         raw = resp.headers.get("retry-after")
         if raw is None:
-            return fallback
+            return None
         raw = raw.strip()
 
         try:
@@ -186,7 +186,7 @@ class HttpProvider(LLMProvider):
         try:
             when = parsedate_to_datetime(raw)
         except (TypeError, ValueError):
-            return fallback
+            return None
         # A date without a zone is read as UTC rather than local time: the spec
         # requires GMT, and treating a malformed date as local would shift the
         # wait by the machine's offset.
@@ -258,25 +258,22 @@ class HttpProvider(LLMProvider):
         Raises:
             RuntimeError: All retry attempts were exhausted without a response.
         """
-        use_retry = self.transport_policy.use_retry
         # Two budgets, because a 429 and a 5xx are different questions: the
         # first is the endpoint asking to be come back to, the second a request
-        # that could not be served. The loop runs long enough for whichever one
-        # is being spent and each branch checks its own counter, so a 429 can
-        # outlast the general budget without a 503 inheriting it.
-        general_attempts = MAX_RETRIES if use_retry else 1
-        rate_attempts = (
-            RETRY_429_MAX_ATTEMPTS
-            if use_retry and self.transport_policy.retry_429
-            else 1
+        # that could not be served. RetryBudget checks each branch against its
+        # own counter, so a 429 can outlast the general budget without a 503
+        # inheriting it.
+        budget = RetryBudget(
+            use_retry=self.transport_policy.use_retry,
+            retry_429=self.transport_policy.retry_429,
+            honor_retry_after=self.transport_policy.honor_retry_after,
+            statuses=RETRY_STATUS_CODES,
+            max_retries=MAX_RETRIES,
+            retry_429_attempts=RETRY_429_MAX_ATTEMPTS,
+            base_delay=RETRY_BASE_DELAY,
+            rate_total_budget=RETRY_429_TOTAL_BUDGET,
         )
-        total_attempts = max(general_attempts, rate_attempts)
-
-        delay = RETRY_BASE_DELAY
-        rate_delay = RETRY_BASE_DELAY
-        rate_waited = 0.0
-        general_used = 0
-        rate_used = 0
+        total_attempts = budget.total_attempts
 
         for attempt in range(total_attempts):
             post_task = asyncio.create_task(
@@ -304,6 +301,7 @@ class HttpProvider(LLMProvider):
                 try:
                     await post_task
                 except Exception:
+                    # The task was cancelled; its result is irrelevant.
                     pass
                 yield None
                 return
@@ -313,110 +311,90 @@ class HttpProvider(LLMProvider):
                 try:
                     await abort_task
                 except (asyncio.CancelledError, Exception):
+                    # Cancelling the watcher is the normal path.
                     pass
 
             try:
                 resp = post_task.result()
             except (TimeoutError, aiohttp.ClientConnectionError) as e:
-                if general_used < general_attempts - 1:
-                    general_used += 1
-                    reason = str(e) or type(e).__name__
+                decision = budget.connection_failure()
+                if decision is not None:
                     log.warning(
                         "Connection error (attempt %d/%d): %s, retrying in %.1fs",
-                        general_used,
-                        general_attempts,
+                        decision.attempt,
+                        decision.total,
                         e,
-                        delay,
+                        decision.wait_seconds,
                     )
                     yield RetryNotice(
-                        attempt=general_used,
-                        total=general_attempts,
-                        wait_seconds=delay,
-                        reason=reason,
+                        attempt=decision.attempt,
+                        total=decision.total,
+                        wait_seconds=decision.wait_seconds,
+                        reason=str(e) or type(e).__name__,
                     )
-                    if await sleep_unless_aborted(delay, abort_event):
+                    if await sleep_unless_aborted(decision.wait_seconds, abort_event):
                         yield None
                         return
-                    delay *= 2
                     continue
-                log.error("Connection error after %d attempts: %s", general_attempts, e)
+                log.error(
+                    "Connection error after %d attempts: %s",
+                    budget.general_attempts,
+                    e,
+                )
                 raise
             except Exception as e:
                 log.error("Unexpected error in post_task: %s", e)
                 raise
 
-            if (
-                resp.status in RETRY_STATUS_CODES
-                and general_used < general_attempts - 1
-            ):
-                general_used += 1
-                wait = (
-                    self._retry_after_seconds(resp, delay)
-                    if self.transport_policy.honor_retry_after
-                    else delay
-                )
-                reason = self._retry_reason(await resp.text())
-                await resp.release()
-                log.warning(
-                    "Got %d (attempt %d/%d), retrying in %.1fs",
-                    resp.status,
-                    general_used,
-                    general_attempts,
-                    wait,
-                )
-                yield RetryNotice(
-                    attempt=general_used,
-                    total=general_attempts,
-                    wait_seconds=wait,
-                    reason=reason or f"HTTP {resp.status}",
-                )
-                if await sleep_unless_aborted(wait, abort_event):
-                    yield None
-                    return
-                delay *= 2
-                continue
-
-            if resp.status == 429 and rate_used < rate_attempts - 1:
-                # The text is read here and only here, and only for this
-                # branch. aiohttp caches what ``text()`` returns, so the
-                # caller's own ``await resp.text()`` on the non-retry path
-                # produces exactly the error message it produced before this
-                # existed -- which matters, because that message is the only
-                # upstream detail the user ever sees.
+            retry_after = (
+                self._retry_after_header(resp)
+                if resp.status in RETRY_STATUS_CODES or resp.status == 429
+                else None
+            )
+            if resp.status == 429:
+                # Read here and only here, for the terminal check. aiohttp
+                # caches the text, so the caller's own ``await resp.text()`` on
+                # the non-retry path still produces the message it produced
+                # before this branch existed.
                 response_text = await resp.text()
-                # 429 is "Too Many Requests". Only a body that names a spent
-                # quota is worth refusing to wait out; every other 429 is a rate
-                # limit or an endpoint asking to be come back to, and retrying
-                # those is what the status code means.
-                if not is_terminal_429(resp.status, response_text):
-                    wait = self._retry_after_seconds(resp, rate_delay)
-                    if rate_waited + wait > RETRY_429_TOTAL_BUDGET:
-                        # The wall-clock budget is spent. Hand the response back
-                        # rather than sleep past the ceiling that budget exists
-                        # to set; the body is already cached, so the caller still
-                        # builds its message from it.
-                        yield resp
-                        return
-                    rate_used += 1
-                    rate_waited += wait
-                    await resp.release()
-                    log.warning(
-                        "Got 429 (attempt %d/%d), retrying in %.1fs",
-                        rate_used,
-                        rate_attempts,
-                        wait,
-                    )
-                    yield RetryNotice(
-                        attempt=rate_used,
-                        total=rate_attempts,
-                        wait_seconds=wait,
-                        reason=self._retry_reason(response_text) or "HTTP 429",
-                    )
-                    if await sleep_unless_aborted(wait, abort_event):
-                        yield None
-                        return
-                    rate_delay *= 2
-                    continue
+                decision = budget.response_failure(
+                    resp.status,
+                    retry_after=retry_after,
+                    terminal_429=is_terminal_429(resp.status, response_text),
+                )
+            else:
+                response_text = ""
+                decision = budget.response_failure(
+                    resp.status, retry_after=retry_after, terminal_429=False
+                )
+
+            if decision is None:
+                yield resp
+                return
+
+            reason = (
+                self._retry_reason(response_text) or "HTTP 429"
+                if resp.status == 429
+                else self._retry_reason(await resp.text()) or f"HTTP {resp.status}"
+            )
+            await resp.release()
+            log.warning(
+                "Got %d (attempt %d/%d), retrying in %.1fs",
+                resp.status,
+                decision.attempt,
+                decision.total,
+                decision.wait_seconds,
+            )
+            yield RetryNotice(
+                attempt=decision.attempt,
+                total=decision.total,
+                wait_seconds=decision.wait_seconds,
+                reason=reason,
+            )
+            if await sleep_unless_aborted(decision.wait_seconds, abort_event):
+                yield None
+                return
+            continue
 
             yield resp
             return
@@ -468,14 +446,15 @@ class HttpProvider(LLMProvider):
     async def chat(
         self,
         messages: list,
-        model: str,
+        model: str = "gpt-4o",
         stream: bool = False,
         tools: list[dict] | None = None,
+        *,
         abort_event: asyncio.Event | None = None,
         session_id: str | None = None,
         reasoning_effort: str | None = None,
         **kwargs: object,
-    ) -> Done:
+    ) -> Done | Error:
         url, headers, body = self._prepare_request(
             messages, model, stream, tools, session_id, reasoning_effort
         )
@@ -526,7 +505,7 @@ class HttpProvider(LLMProvider):
     async def chat_stream(
         self,
         messages: list,
-        model: str,
+        model: str = "gpt-4o",
         tools: list[dict] | None = None,
         abort_event: asyncio.Event | None = None,
         total_timeout_seconds: int | None = None,

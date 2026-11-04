@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 import time
 
@@ -9,6 +10,8 @@ from uvicorn import Server
 
 from nova.server.app import build_uvicorn_config, create_app
 from nova.settings import Settings
+
+log = logging.getLogger(__name__)
 
 
 class ServerThread:
@@ -24,7 +27,7 @@ class ServerThread:
         asyncio.set_event_loop(loop)
         app = create_app(settings=self.settings)
         self.server = Server(build_uvicorn_config(app, self.settings))
-        app.state.uvicorn_server = self.server
+        app.state.context.uvicorn_server = self.server
         loop.run_until_complete(self.server.serve())
 
     def start(self) -> None:
@@ -46,6 +49,7 @@ class ServerThread:
                 if resp.status_code == 200:
                     return True
             except Exception:
+                # The server is still starting; keep polling until the deadline.
                 pass
             time.sleep(0.3)
         return False

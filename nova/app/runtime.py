@@ -4,6 +4,7 @@ Shared runtime assembly helpers.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
@@ -24,6 +25,8 @@ from nova.settings import Settings, get_settings
 from nova.skills.tools import SkillTools
 from nova.tools.permissions import load_permission_mode, permissions_path
 from nova.tools.registry import ToolRegistry
+
+log = logging.getLogger(__name__)
 
 _llm_cache: dict[str, LLMProvider] = {}
 _identity_cache: dict[str, PromptConfig] = {}
@@ -68,7 +71,8 @@ def build_llm(
             # write them down.
             from nova.registry.catalogue import load as load_catalogue
 
-            model_keys = load_catalogue(settings).get(provider, [])
+            catalogue_rows = load_catalogue(settings).get(provider) or {}
+            model_keys = list(catalogue_rows)
         model = model_keys[0] if model_keys else ""
 
     # A model may speak a different transport than its provider, on a different
@@ -108,6 +112,7 @@ def build_llm(
     # spelling its wire format uses.
     default_effort = settings.get_default_reasoning_effort(model, provider)
 
+    llm: LLMProvider
     if provider_type == "faker":
         options = provider_config.options
         llm = FakerLLMProvider(
@@ -227,7 +232,9 @@ async def _agent_dir(agent_key: str) -> Path:
         if agent and agent.get("workspace_dir"):
             return Path(agent["workspace_dir"]).expanduser().resolve()
     except Exception:
-        pass
+        log.debug(
+            "could not resolve the agent workspace; using the default", exc_info=True
+        )
     return settings.home / "agents" / agent_key
 
 
@@ -302,6 +309,7 @@ def registry_cache_key(
     is_sub_agent: bool,
     posture_marker: str,
     permission_mode: str,
+    learning_enabled: bool = False,
 ) -> str:
     """The identity of a cached tool registry.
 
@@ -311,8 +319,16 @@ def registry_cache_key(
     config change look ignored -- or, the other way round, prompts in a run
     nobody is watching. The posture marker has been here for the same reason
     since the read-only sub-agent work.
+
+    Learning is in the key for the same class of reason: enabling it adds
+    ``session_search`` to the registry, and a registry cached while it was off
+    would keep that tool missing for the life of the process -- including after
+    a config reload turns the loop on.
     """
-    return f"{agent_key}:{model}:{is_sub_agent}:{posture_marker}:{permission_mode}"
+    return (
+        f"{agent_key}:{model}:{is_sub_agent}:{posture_marker}:"
+        f"{permission_mode}:{int(learning_enabled)}"
+    )
 
 
 async def build_agent(
@@ -361,7 +377,7 @@ async def build_agent(
 
         record = await ConfigService(settings).get_agent(agent_key)
     except Exception:
-        pass
+        log.debug("could not load the agent record", exc_info=True)
 
     # Read once: the session tier feeds both the route and the effort fallback.
     session_route: dict = {}
@@ -478,6 +494,7 @@ async def build_agent(
         agent.is_sub_agent,
         posture_marker,
         permission_mode,
+        learning_enabled=bool(agent.ctx.learning_loop),
     )
     cached_registry = _registry_cache.get(reg_key)
     if cached_registry is not None:

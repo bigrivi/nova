@@ -1,0 +1,1630 @@
+{
+  "DELETE /api/agents/{key}": {
+    "parameters": [
+      [
+        "key",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "DELETE /api/memories/{memory_id}": {
+    "parameters": [
+      [
+        "memory_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/MemoryActionResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "DELETE /api/projects/{project_id}": {
+    "parameters": [
+      [
+        "project_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ProjectActionResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "DELETE /api/schedules/{job_id}": {
+    "parameters": [
+      [
+        "job_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "DELETE /api/sessions/{session_id}": {
+    "parameters": [
+      [
+        "delete_memories",
+        "query",
+        false
+      ],
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/SessionActionResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ]
+    }
+  },
+  "GET /api/agents": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ]
+    }
+  },
+  "GET /api/agents/{key}": {
+    "parameters": [
+      [
+        "key",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/chat/stream/active": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ]
+    }
+  },
+  "GET /api/chat/stream/status": {
+    "parameters": [
+      [
+        "session_id",
+        "query",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/events": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          null
+        ]
+      ]
+    }
+  },
+  "GET /api/fs/list": {
+    "parameters": [
+      [
+        "path",
+        "query",
+        false
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/DirectoryListing"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/git/commit-plan": {
+    "parameters": [
+      [
+        "session_id",
+        "query",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/git/diff": {
+    "parameters": [
+      [
+        "path",
+        "query",
+        false
+      ],
+      [
+        "session_id",
+        "query",
+        true
+      ],
+      [
+        "staged",
+        "query",
+        false
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/git/status": {
+    "parameters": [
+      [
+        "session_id",
+        "query",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/mcp-servers": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/McpServerListResponse"
+        ]
+      ]
+    }
+  },
+  "GET /api/memories": {
+    "parameters": [
+      [
+        "q",
+        "query",
+        false
+      ],
+      [
+        "session_id",
+        "query",
+        false
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/MemoryListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/models": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ModelListResponse"
+        ]
+      ]
+    }
+  },
+  "GET /api/permissions": {
+    "parameters": [
+      [
+        "workspace",
+        "query",
+        false
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/PermissionPolicy"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/projects": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ProjectListResponse"
+        ]
+      ]
+    }
+  },
+  "GET /api/providers": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ProviderListResponse"
+        ]
+      ]
+    }
+  },
+  "GET /api/providers/presets": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ProviderPresetListResponse"
+        ]
+      ]
+    }
+  },
+  "GET /api/providers/{key}/available-models": {
+    "parameters": [
+      [
+        "key",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/AvailableModelListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/schedules": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ]
+    }
+  },
+  "GET /api/sessions": {
+    "parameters": [
+      [
+        "agent_key",
+        "query",
+        false
+      ],
+      [
+        "workspace_dir",
+        "query",
+        false
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/SessionListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/sessions/{session_id}/checkpoints": {
+    "parameters": [
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/sessions/{session_id}/context": {
+    "parameters": [
+      [
+        "model",
+        "query",
+        false
+      ],
+      [
+        "provider",
+        "query",
+        false
+      ],
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/sessions/{session_id}/messages": {
+    "parameters": [
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/MessageListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/sessions/{session_id}/route": {
+    "parameters": [
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/SessionRouteResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/speech/status": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ]
+    }
+  },
+  "GET /api/tasks": {
+    "parameters": [
+      [
+        "session_id",
+        "query",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/tasks/{task_id}": {
+    "parameters": [
+      [
+        "session_id",
+        "query",
+        true
+      ],
+      [
+        "task_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/tasks/{task_id}/logs": {
+    "parameters": [
+      [
+        "session_id",
+        "query",
+        true
+      ],
+      [
+        "task_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /health": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ]
+    }
+  },
+  "PATCH /api/agents/{key}": {
+    "parameters": [
+      [
+        "key",
+        "path",
+        true
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "PATCH /api/projects/{project_id}": {
+    "parameters": [
+      [
+        "project_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ProjectRecord"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "PATCH /api/schedules/{job_id}": {
+    "parameters": [
+      [
+        "job_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "PATCH /api/sessions/{session_id}": {
+    "parameters": [
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/SessionActionResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/agents": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/agents/import": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/chat": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ChatResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/chat/approve": {
+    "parameters": [
+      [
+        "session_id",
+        "query",
+        false
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/chat/interrupt": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/InterruptResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/chat/stream": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          null
+        ],
+        [
+          "text/event-stream",
+          null
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/config/mcp/add": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/McpServerListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/config/mcp/delete": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/McpServerListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/config/mcp/test": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/McpTestResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/config/mcp/update": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/McpServerListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/config/models": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ModelListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/config/models/delete": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ModelListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/config/models/update": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ModelListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/config/providers": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ModelListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/config/providers/delete": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ModelListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/config/providers/update": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ModelListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/config/providers/{key}/sync-models": {
+    "parameters": [
+      [
+        "key",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ModelListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/git/commit": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/git/review": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/projects": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ProjectRecord"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/projects/resolve": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ProjectRecord"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/providers/sync-models": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/ProviderSyncResponse"
+        ]
+      ]
+    }
+  },
+  "POST /api/registry/refresh": {
+    "parameters": [
+      [
+        "force",
+        "query",
+        false
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/schedules": {
+    "parameters": [],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/schedules/{job_id}/run": {
+    "parameters": [
+      [
+        "job_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/sessions/{session_id}/checkpoints/{checkpoint_id}/restore": {
+    "parameters": [
+      [
+        "checkpoint_id",
+        "path",
+        true
+      ],
+      [
+        "force",
+        "query",
+        false
+      ],
+      [
+        "keep_chat",
+        "query",
+        false
+      ],
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/sessions/{session_id}/compact": {
+    "parameters": [
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/sessions/{session_id}/fork": {
+    "parameters": [
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/speech/cancel": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ]
+    }
+  },
+  "POST /api/speech/start": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ]
+    }
+  },
+  "POST /api/speech/stop": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ]
+    }
+  },
+  "POST /api/speech/transcribe": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ]
+    }
+  },
+  "POST /api/tasks/{task_id}/cancel": {
+    "parameters": [
+      [
+        "task_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "PUT /api/agents/{key}/parents": {
+    "parameters": [
+      [
+        "key",
+        "path",
+        true
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "PUT /api/sessions/{session_id}/pinned": {
+    "parameters": [
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/SessionActionResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "PUT /api/sessions/{session_id}/project": {
+    "parameters": [
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/SessionActionResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "PUT /api/sessions/{session_id}/route": {
+    "parameters": [
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/SessionActionResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "PUT /api/sessions/{session_id}/workspace": {
+    "parameters": [
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "#/components/schemas/SessionActionResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  }
+}

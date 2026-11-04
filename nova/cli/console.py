@@ -14,8 +14,10 @@ from pathlib import Path
 from typing import TextIO
 
 from nova.constants import DEFAULT_AGENT_KEY
+from nova.server.ai_sdk_frames import iter_parts
 from nova.server.chat_service import ChatService
-from nova.server.schemas import ChatRequest, stream_event_data_to_dict
+from nova.server.schemas import ChatRequest
+from nova.server.session_service import SessionService
 from nova.settings import Settings
 
 EXIT_OK = 0
@@ -23,16 +25,29 @@ EXIT_ERROR = 1
 EXIT_NEEDS_INPUT = 2
 EXIT_INTERRUPTED = 130
 
-#: Event type -> (exit code, field carrying the message, status name).
-#: ``approval.required`` is in the table because a turn that stops to ask cannot
-#: be answered from a console: leaving it out would park the process forever.
+#: Frame type -> (exit code, dotted field with the message, status name).
+#: ``data-nova-approval-required`` is in the table because a turn that stops to
+#: ask cannot be answered from a console: leaving it out would park the process.
 _TERMINAL: dict[str, tuple[int, str, str]] = {
-    "response.completed": (EXIT_OK, "content", "completed"),
-    "response.cancelled": (EXIT_ERROR, "message", "cancelled"),
-    "response.error": (EXIT_ERROR, "message", "error"),
-    "input.required": (EXIT_NEEDS_INPUT, "message", "input_required"),
-    "approval.required": (EXIT_NEEDS_INPUT, "description", "approval_required"),
+    "finish": (EXIT_OK, "", "completed"),
+    "abort": (EXIT_ERROR, "", "cancelled"),
+    "error": (EXIT_ERROR, "errorText", "error"),
+    "data-nova-input-required": (EXIT_NEEDS_INPUT, "data.message", "input_required"),
+    "data-nova-approval-required": (
+        EXIT_NEEDS_INPUT,
+        "data.description",
+        "approval_required",
+    ),
 }
+
+
+def _field(part: dict[str, object], path: str) -> str:
+    """Read a dotted field such as ``data.message`` from a frame part."""
+    value: object = part
+    for key in path.split(".") if path else ():
+        value = value.get(key) if isinstance(value, dict) else None
+    return str(value or "")
+
 
 _TITLE_WIDTH = 60
 
@@ -83,28 +98,32 @@ async def run_prompt(
         permission_mode="dontAsk",
     )
 
-    stream = service.chat_stream(request)
+    stream = service.chat_stream_ai_sdk(request)
     resolved_session = session_id
     exit_code = EXIT_ERROR
     status = "error"
     final = ""
     streamed: list[str] = []
     try:
-        async for event in stream:
-            payload = stream_event_data_to_dict(event.data)
-            resolved_session = payload.get("session_id") or resolved_session
-            if event.type == "message.delta":
-                delta = str(payload.get("delta") or "")
+        async for part in iter_parts(stream):
+            kind = str(part.get("type") or "")
+            if kind == "data-nova-session":
+                data = part.get("data")
+                if isinstance(data, dict):
+                    resolved_session = data.get("sessionId") or resolved_session
+                continue
+            if kind == "text-delta":
+                delta = str(part.get("delta") or "")
                 streamed.append(delta)
                 if not as_json:
                     out.write(delta)
                     out.flush()
                 continue
-            terminal = _TERMINAL.get(event.type)
+            terminal = _TERMINAL.get(kind)
             if terminal is None:
                 continue
             exit_code, field, status = terminal
-            final = str(payload.get(field) or "")
+            final = _field(part, field) if field else "".join(streamed)
             break
     finally:
         # A turn parked on a human is abandoned here; closing the generator is
@@ -159,7 +178,7 @@ async def list_sessions(
     """
     out = out or sys.stdout
     workspace = None if all_workspaces else (workspace_dir or str(Path.cwd()))
-    response = await ChatService(settings=settings).list_sessions(
+    response = await SessionService(settings=settings).list_sessions(
         workspace_dir=workspace
     )
     items = response.items
@@ -211,7 +230,7 @@ async def delete_session(
     """
     out = out or sys.stdout
     err = err or sys.stderr
-    if await ChatService(settings=settings).delete_session(session_id):
+    if await SessionService(settings=settings).delete_session(session_id):
         out.write(f"Deleted session {session_id}\n")
         return EXIT_OK
     err.write(f"No session {session_id}\n")
@@ -266,7 +285,7 @@ async def rewind(
         return EXIT_OK
 
     try:
-        result = await ChatService(settings=settings).rewind(
+        result = await SessionService(settings=settings).rewind(
             session_id,
             checkpoint_id,
             force=force,
@@ -279,13 +298,18 @@ async def rewind(
         err.write(f"{error}\n")
         return EXIT_ERROR
 
+    restored = result["restored"]
+    deleted = result["deleted"]
     out.write(
-        f"Restored {len(result['restored'])} file(s), "
-        f"deleted {len(result['deleted'])}, "
+        f"Restored {len(restored) if isinstance(restored, list) else 0} file(s), "
+        f"deleted {len(deleted) if isinstance(deleted, list) else 0}, "
         f"dropped {result['dropped_messages']} message(s)\n"
     )
-    for item in result["skipped"]:
-        out.write(f"  skipped {item['path']}: {item['reason']}\n")
+    skipped = result["skipped"]
+    if isinstance(skipped, list):
+        for item in skipped:
+            if isinstance(item, dict):
+                out.write(f"  skipped {item.get('path')}: {item.get('reason')}\n")
     if not result["chat_truncated"]:
         out.write("  conversation kept (checkpoint message no longer in history)\n")
     return EXIT_OK
@@ -321,7 +345,7 @@ async def fork(
     err = err or sys.stderr
 
     try:
-        result = await ChatService(settings=settings).fork_session(
+        result = await SessionService(settings=settings).fork_session(
             session_id, message_id=message_id, title=title
         )
     except SessionBusy as error:

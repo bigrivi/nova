@@ -18,8 +18,8 @@ import pytest
 import pytest_asyncio
 
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
-from nova.session.models import MessageFilter, Session
+from nova.db.sqlite.repository import SqliteRepository
+from nova.session.models import MessageFilter, NewMessage, Session
 
 N_SESSIONS = 8
 N_WRITES = 20
@@ -58,9 +58,11 @@ async def test_parallel_writes_across_sessions_no_busy(repository: SqliteReposit
     async def _writer(session_id: str, writer_index: int) -> None:
         for message_index in range(N_WRITES):
             await repository.add_message(
-                session_id,
-                "user",
-                f"{session_id}-{writer_index}-{message_index}",
+                NewMessage(
+                    session_id,
+                    "user",
+                    f"{session_id}-{writer_index}-{message_index}",
+                )
             )
 
     # Two concurrent writers per session -> 16 tasks x 20 writes = 320 rows.
@@ -93,7 +95,7 @@ async def test_parallel_session_updates_and_reads_stay_consistent(
         await repository.save_session(Session(id=session_id))
 
     async def _mixed(session_id: str, index: int) -> None:
-        await repository.add_message(session_id, "user", f"msg-{index}")
+        await repository.add_message(NewMessage(session_id, "user", f"msg-{index}"))
         await repository.update_session_title(session_id, f"title-{index}")
         # Lock-free read interleaved with writes.
         await repository.get_session(session_id)

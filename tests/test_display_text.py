@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from nova.session.models import decode_display_text, encode_display_text
+from nova.session.models import NewMessage, decode_display_text, encode_display_text
 
 
 class TestEncodeDisplayText:
@@ -42,7 +42,7 @@ class TestDecodeDisplayText:
 class TestStorage:
     @pytest.mark.asyncio
     async def test_the_display_text_survives_a_round_trip(self):
-        from nova.db.in_memory_repository import InMemoryRepository
+        from nova.db.in_memory.repository import InMemoryRepository
         from nova.session.models import Session, encode_display_text
 
         repository = InMemoryRepository()
@@ -50,10 +50,12 @@ class TestStorage:
         await repository.save_session(Session(id="s1"))
         content = "look\nAttached file: `a.ts`"
         await repository.add_message(
-            "s1",
-            "user",
-            content,
-            data=encode_display_text("look", content),
+            NewMessage(
+                "s1",
+                "user",
+                content,
+                data=encode_display_text("look", content),
+            )
         )
         [message] = await repository.get_messages("s1")
         assert message.content == content

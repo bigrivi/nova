@@ -13,8 +13,15 @@ from nova.gateway.platform import MessageHandler, PlatformAdapter
 
 class WeComAdapter(PlatformAdapter):
     name = "wecom"
+    max_message_chars = 4000
 
-    def __init__(self, corp_id: str = "", secret: str = "", agent_key: str = "main", **options: str) -> None:
+    def __init__(
+        self,
+        corp_id: str = "",
+        secret: str = "",
+        agent_key: str = "main",
+        **options: str,
+    ) -> None:
         self.corp_id = corp_id
         self.secret = secret
         self.agent_key = agent_key

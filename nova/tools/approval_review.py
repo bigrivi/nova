@@ -157,18 +157,19 @@ def build_reviewer(
             return "escalate"
         try:
             from nova.llm.oneshot import stream_text_once
+            from nova.llm.provider import Message
 
             text = await stream_text_once(
                 llm,  # type: ignore[arg-type]
                 messages=[
-                    {"role": "system", "content": SYSTEM},
-                    {
-                        "role": "user",
-                        "content": PROMPT.format(
+                    Message(role="system", content=SYSTEM),
+                    Message(
+                        role="user",
+                        content=PROMPT.format(
                             reason=reason,
                             subject=_strip_shell_comments(subject),
                         ),
-                    },
+                    ),
                 ],
                 model=model,
                 timeout=timeout,

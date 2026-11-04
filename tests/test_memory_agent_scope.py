@@ -9,7 +9,7 @@ import pytest
 import pytest_asyncio
 
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.memory.models import MemoryWriteRequest
 from nova.memory.service import MemoryService
 

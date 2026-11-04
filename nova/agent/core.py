@@ -21,14 +21,15 @@ from nova.agent.events import (
 )
 from nova.agent.hierarchy import AgentHierarchy
 from nova.agent.llm_stream import TurnOutcome, TurnStreamReader
-from nova.agent.messaging import AgentMessaging
+from nova.agent.messaging import AgentMessaging, count_user_turns
 from nova.agent.session import AgentSession
+from nova.agent.state import TurnState
 from nova.agent.tool_guardrails import ToolGuardrails
 from nova.agent.tool_invoker import ToolInvoker, has_parsable_arguments
 from nova.agent.toolset import ToolsetBuilder
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
-from nova.llm import ChatStreamEvent, LLMProvider, ToolCall
+from nova.llm import ChatStreamEvent, LLMProvider
 from nova.llm.images import (
     MAX_IMAGE_BYTES,
     MAX_IMAGES_BYTES,
@@ -178,26 +179,24 @@ class Agent:
         self._skill_service = self._build_skill_service(agent_key, agent_dir)
         self._skill_service.scan_skills()
         self._prompt_builder = PromptBuilder(
-            prompt_config or PromptConfig.from_agent_dir(agent_dir)
+            prompt_config or PromptConfig.from_agent_dir(agent_dir),
+            agent_key=agent_key,
+            is_sub_agent=is_sub_agent,
+            data_source=data_source,
+            child_agent_records=self._hierarchy.child_agent_records,
         )
         self._abort_event = asyncio.Event()
-        self._base_system_prompt: str | None = None
-        self._active_workspace: str | None = None
-        self._last_user_input: str = ""
+        self.state = TurnState()
         self._skill_tools: Any = None
         self._compaction = CompactionController(
             model=self.config.model, provider=self.config.provider
         )
 
-        self._turns_since_review = 0
         # Fire-and-forget work (title generation, memory review) is reachable
         # from a turn, so these tasks need a strong reference for as long as
         # they run: asyncio only holds a weak one, and a collected task is
         # silently dropped mid-flight.
         self._background_tasks: set[asyncio.Task] = set()
-        # One compact-and-retry per user request. A second overflow means the
-        # fixed prompt alone does not fit, which retrying cannot fix.
-        self._overflow_recovered = False
         self._guardrails = ToolGuardrails()
         self._approval = get_approval_manager()
 
@@ -255,9 +254,9 @@ class Agent:
             guardrails=self._guardrails,
         )
         # Composed services. Created after the context so they can read it.
-        self.messaging = AgentMessaging(self)
-        self.background = AgentBackground(self)
-        self.session_service = AgentSession(self)
+        self.messaging = AgentMessaging(self.ctx, self.state)
+        self.background = AgentBackground(self.ctx, self.state)
+        self.session_service = AgentSession(self.ctx, self.state, self.background)
 
     @staticmethod
     def _build_skill_service(agent_key: str, agent_dir: Path) -> SkillService:
@@ -283,7 +282,7 @@ class Agent:
         """Return a done payload when execution should stop."""
         if self._abort_event.is_set():
             payload = _done_payload("stopped", "Stopped by user")
-            await self._emit(AgentEvent.DONE, payload)
+            await self._events.emit(AgentEvent.DONE, payload)
             return payload
         return None
 
@@ -293,13 +292,8 @@ class Agent:
     def off(self, event: AgentEvent, handler: Callable) -> None:
         self._events.off(event, handler)
 
-    async def _emit(
-        self, event: AgentEvent, data: dict[str, Any] | str | ToolCall | None = None
-    ) -> None:
-        await self._events.emit(event, data)
-
     async def _emit_approval(self, data: dict) -> None:
-        await self._emit(AgentEvent.APPROVAL_REQUIRED, data)
+        await self._events.emit(AgentEvent.APPROVAL_REQUIRED, data)
 
     async def _run_turn(
         self,
@@ -314,7 +308,7 @@ class Agent:
             return
 
         reader = TurnStreamReader(
-            emit=self._emit,
+            emit=self._events.emit,
             stop_if_aborted=self._stop_if_aborted,
             turn_count=turn_count,
         )
@@ -355,7 +349,7 @@ class Agent:
 
         if not tool_calls:
             payload = _done_payload("completed", reader.final_content)
-            await self._emit(AgentEvent.DONE, payload)
+            await self._events.emit(AgentEvent.DONE, payload)
             yield AgentEvent.DONE, payload
             return
 
@@ -374,7 +368,10 @@ class Agent:
         log.info(
             f"[Turn {turn_count}] Calling model={self.config.model}, tools={len(tool_schemas) if tool_schemas else 0}, timeout={getattr(self.llm, 'timeout_seconds', None)}"
         )
-        return self.llm.chat_stream(
+        llm = self.llm
+        if llm is None:
+            raise RuntimeError("Agent has no LLM provider")
+        return llm.chat_stream(
             messages=messages,
             model=self.config.model,
             tools=tool_schemas,
@@ -396,7 +393,7 @@ class Agent:
         self._abort_event.clear()
         # Per-request latch: one compact-and-retry per user request. Reset here,
         # not only in __init__, so a reused Agent still recovers on later requests.
-        self._overflow_recovered = False
+        self.state.overflow_recovered = False
 
         current_session = await self.session_service.resolve_session(
             session_id, user_input, workspace_dir, project_id
@@ -405,13 +402,12 @@ class Agent:
         self.messaging.apply_active_workspace(current_session)
 
         yield AgentEvent.SESSION, session_id
-        await self._emit(AgentEvent.START, user_input)
+        await self._events.emit(AgentEvent.START, user_input)
         yield AgentEvent.START, user_input
 
         message_text, image_data, display = build_user_message(
             user_input, attachments, display_text
         )
-        self._last_user_input = message_text
         log.info(
             "[Session %s] Chat start agent=%s provider=%s model=%s workspace=%s "
             "input_chars=%d attachments=%d",
@@ -419,7 +415,7 @@ class Agent:
             self.agent_key,
             self.config.provider,
             self.config.model,
-            self._active_workspace or "",
+            self.state.workspace or "",
             len(message_text),
             len(attachments or []),
         )
@@ -436,7 +432,7 @@ class Agent:
             session_id=session_id,
             checkpoint_id=user_message.id,
             label=display or message_text,
-            workspace=self._active_workspace,
+            workspace=self.state.workspace,
         )
 
         tool_schemas = (
@@ -465,13 +461,16 @@ class Agent:
             # request: a single request can run many tool turns and each tool
             # result can be arbitrarily large, so a request that started well
             # inside the window can overrun it halfway through.
+            llm = self.llm
+            if llm is None:
+                raise RuntimeError("Agent has no LLM provider")
             try:
                 async for event, data in self._compaction.maybe_compact(
                     session_messages,
                     current_session,
                     data_source,
-                    self.llm,
-                    self._emit,
+                    llm,
+                    self._events.emit,
                     tools=tool_schemas,
                 ):
                     yield event, data
@@ -487,7 +486,7 @@ class Agent:
                 session_messages = await self.session.get_messages()
 
             log.info("[Turn %d] Start", turn_count)
-            await self._emit(AgentEvent.TURN_START, {"turn": turn_count})
+            await self._events.emit(AgentEvent.TURN_START, {"turn": turn_count})
             yield AgentEvent.TURN_START, {"turn": turn_count}
 
             done_payload = None
@@ -531,12 +530,12 @@ class Agent:
                     "[Turn %d] End (rejected as too large; retrying after compaction)",
                     turn_count,
                 )
-                await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
+                await self._events.emit(AgentEvent.TURN_END, {"turn": turn_count})
                 yield AgentEvent.TURN_END, {"turn": turn_count}
                 continue
 
             log.info("[Turn %d] End", turn_count)
-            await self._emit(AgentEvent.TURN_END, {"turn": turn_count})
+            await self._events.emit(AgentEvent.TURN_END, {"turn": turn_count})
             yield AgentEvent.TURN_END, {"turn": turn_count}
 
             request_tool_calls += turn_tool_calls
@@ -549,16 +548,18 @@ class Agent:
                 )
                 log.info("[Session %s] Done reason=%s", session_id, reason)
                 if reason in ("completed", "requires_input"):
-                    self.background._maybe_schedule_memory_review()
+                    self.background._maybe_schedule_memory_review(
+                        count_user_turns(session_messages)
+                    )
                 await self.background.schedule_request_learning(
                     request_tool_calls, request_messages_before
                 )
-                await self._emit(AgentEvent.DONE, done_payload)
+                await self._events.emit(AgentEvent.DONE, done_payload)
                 yield AgentEvent.DONE, done_payload
                 return
 
         error_payload = _error_payload("max_iterations", "Maximum iterations reached")
-        await self._emit(AgentEvent.ERROR, error_payload)
+        await self._events.emit(AgentEvent.ERROR, error_payload)
         log.warning(f"[Turn {turn_count}] Maximum iterations reached")
         yield AgentEvent.ERROR, error_payload
 
@@ -596,64 +597,11 @@ class Agent:
             current,
             data_source,
             self.llm,
-            self._emit,
+            self._events.emit,
             tools=self.tool_registry.get_schema() if self.tool_registry.tools else None,
         ):
             pass
         return {"compacted": self._compaction.compacted}
-
-    async def _refresh_memory_index(self) -> None:
-        """Build the memory index from DB for system prompt inclusion.
-
-        Queries the memories visible to this agent and stores a compact
-        listing in PromptConfig.memory_index. Built once per session (when
-        _base_system_prompt is None) and then frozen: memory written mid-session
-        lands in the store but is not re-injected until the next session, so the
-        cached system prefix stays byte-stable for prompt caching.
-        """
-        if self.is_sub_agent:
-            self._prompt_builder.config.memory_index = ""
-            return
-        try:
-            from nova.memory.context import build_memory_index_for_system
-            from nova.memory.service import MemoryService
-
-            self._prompt_builder.config.memory_index = (
-                await build_memory_index_for_system(
-                    service=MemoryService(data_source=self._data_source),
-                    agent_key=self.agent_key,
-                )
-            )
-        except Exception as error:
-            log.warning("Failed to refresh memory index: %s", error)
-
-    async def _refresh_subagent_roster(self) -> None:
-        """List this agent's delegatable sub-agents for the system prompt.
-
-        Only a primary agent can delegate, so sub-agents get an empty roster.
-        The roster is the current agent's children (agent_parents M2M), each
-        rendered with its key, access level, and description so the model knows
-        exactly which `target` values `delegate_to_agent` accepts.
-        """
-        if self.is_sub_agent:
-            self._prompt_builder.config.subagent_roster = ""
-            return
-        try:
-            children = await self._hierarchy.child_agent_records()
-        except Exception as error:
-            log.warning("Failed to refresh sub-agent roster: %s", error)
-            children = []
-        lines = []
-        for child in children:
-            key = child.get("key")
-            if not key:
-                continue
-            access = (
-                "read-only" if child.get("posture") == "read_only" else "full access"
-            )
-            description = (child.get("description") or "").strip() or "(no description)"
-            lines.append(f"- `{key}` ({access}): {description}")
-        self._prompt_builder.config.subagent_roster = "\n".join(lines)
 
     def add_sub_agent(self, sub_agent: "Agent") -> None:
         """Add a sub-agent to this agent's list of sub-agents."""
@@ -736,16 +684,19 @@ class Agent:
         group_id: str | None,
         turn_count: int,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
+        llm = self.llm
+        if llm is None:
+            raise RuntimeError("Agent has no LLM provider")
         invoker = ToolInvoker(
             registry=self.tool_registry,
             session=self.session,
             approval=self._approval,
             guardrails=self._guardrails,
-            llm=self.llm,
+            llm=llm,
             model=self.config.model,
             provider=self.config.provider,
             abort_event=self._abort_event,
-            emit=self._emit,
+            emit=self._events.emit,
             emit_approval=self._emit_approval,
             stop_if_aborted=self._stop_if_aborted,
             turn_count=turn_count,
@@ -784,6 +735,9 @@ class Agent:
             tool_policy=load_tool_policy(permissions_path()),
             permission_mode=self.config.permission_mode,
             shell_read_only=self.config.shell_read_only,
+            # Without this the loop exists but its tool is never registered, so
+            # an enabled learning loop offers the agent nothing to search with.
+            learning_loop=self.ctx.learning_loop,
         )
         await builder.build()
         self._skill_tools = builder.skill_tools

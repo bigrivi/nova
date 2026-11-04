@@ -39,7 +39,7 @@ class SubagentExecutor(TaskExecutor):
 
         target = str(arguments.get("target", ""))
         task_message = str(arguments.get("task_message", ""))
-        depth = int(arguments.get("depth", 1))
+        depth = int(str(arguments.get("depth", 1)))
         workspace = arguments.get("workspace")
         workspace = str(workspace) if workspace else None
         parent_session_id = arguments.get("parent_session_id")

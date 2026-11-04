@@ -6,6 +6,7 @@ Launch command: python -m nova
 
 import argparse
 import asyncio
+import logging
 import os
 import shutil
 import subprocess
@@ -23,6 +24,8 @@ from nova.mcp.manager import MCPManager
 from nova.server import run_server
 from nova.settings import Settings, configure_logging, get_settings
 from nova.tools.dependency_manager import init_site_packages
+
+log = logging.getLogger(__name__)
 
 
 def _build_frontend(project_root: Path) -> Path:
@@ -147,7 +150,7 @@ def _run_tui() -> None:
 
 def _console_exit_code(args: argparse.Namespace, settings: Settings) -> int:
     """Run ``run`` / ``sessions`` / ``delete`` and return the process exit code."""
-    from nova.app import console
+    from nova.cli import console
 
     if args.mode == "sessions":
         coro = console.list_sessions(
@@ -226,9 +229,9 @@ def main() -> None:
         sys.argv = [script_path, *script_args]
         sys.path.insert(0, str(Path(script_path).parent))
         with open(script_path) as f:
-            code = f.read()
+            source = f.read()
         exec(
-            compile(code, script_path, "exec"),
+            compile(source, script_path, "exec"),
             {"__name__": "__main__", "__file__": script_path},
         )
         sys.exit(0)
@@ -441,7 +444,7 @@ def main() -> None:
             loop.run_until_complete(MCPManager.get_shared().shutdown())
             loop.close()
         except Exception:
-            pass
+            log.debug("MCP shutdown failed during exit", exc_info=True)
 
 
 if __name__ == "__main__":

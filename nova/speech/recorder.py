@@ -91,9 +91,9 @@ def _runner_cls() -> Any:
     """
     global _RUNNER_CLS
     if _RUNNER_CLS is None:
-        from Foundation import NSObject  # type: ignore[import-not-found]
+        from Foundation import NSObject
 
-        class _Runner(NSObject):  # type: ignore[no-redef]
+        class _Runner(NSObject):
             def run_(self, _sender: object) -> None:
                 func, args, box = self._call
                 try:
@@ -127,14 +127,14 @@ def _call_on_main_thread[T](func: Callable[..., T], *args: object) -> T:
 
 
 def _mac_file_url(path: str) -> object:
-    from Foundation import NSURL  # type: ignore[import-not-found]
+    from Foundation import NSURL
 
     return NSURL.fileURLWithPath_(path)
 
 
 def _make_mac_recorder(path: str) -> Any:
     """Create (not start) an AVAudioRecorder writing AAC/m4a to ``path``."""
-    import AVFoundation  # type: ignore[import-not-found]
+    import AVFoundation
 
     url = _mac_file_url(path)
     settings = {
@@ -292,7 +292,7 @@ def _typed_dll(
     use_last_error: bool = False,
 ) -> ctypes.CDLL:
     """Load a Windows DLL and pin each listed function's signature."""
-    dll = ctypes.WinDLL(name, use_last_error=use_last_error)
+    dll = ctypes.WinDLL(name, use_last_error=use_last_error)  # type: ignore[attr-defined]
     for func_name, (argtypes, restype) in signatures.items():
         func = getattr(dll, func_name)
         func.argtypes = argtypes

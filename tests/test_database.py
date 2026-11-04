@@ -9,8 +9,8 @@ import pytest_asyncio
 
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
-from nova.session.models import MessageFilter, Session
+from nova.db.sqlite.repository import SqliteRepository
+from nova.session.models import MessageFilter, NewMessage, Session
 from nova.settings import get_settings
 
 
@@ -170,11 +170,15 @@ async def test_get_messages_applies_message_filter_flags(db: SqliteRepository):
     session = Session(id="session-2")
     await db.save_session(session)
 
-    first = await db.add_message("session-2", "user", "first")
-    second = await db.add_message("session-2", "tool", "tool output")
-    third = await db.add_message("session-2", "assistant", "summary", summary=True)
+    first = await db.add_message(NewMessage("session-2", "user", "first"))
+    second = await db.add_message(NewMessage("session-2", "tool", "tool output"))
+    third = await db.add_message(
+        NewMessage("session-2", "assistant", "summary", summary=True)
+    )
     fourth = await db.add_message(
-        "session-2", "assistant", "tool call", tool_calls=[_ToolCall("read")]
+        NewMessage(
+            "session-2", "assistant", "tool call", tool_calls=[_ToolCall("read")]
+        )
     )
 
     for index, message in enumerate([first, second, third, fourth], start=1):
@@ -218,8 +222,8 @@ async def test_update_and_delete_messages_keep_session_count_in_sync(
     session = Session(id="session-3")
     await db.save_session(session)
 
-    first = await db.add_message("session-3", "user", "before")
-    await db.add_message("session-3", "assistant", "keep")
+    first = await db.add_message(NewMessage("session-3", "user", "before"))
+    await db.add_message(NewMessage("session-3", "assistant", "keep"))
 
     await db.update_message_content(first.id, "after")
     updated_messages = await db.get_messages(
@@ -272,10 +276,12 @@ async def test_cache_read_tokens_round_trips_and_defaults_to_unknown(tmp_path):
     await repository.save_session(Session(id="cache-session"))
 
     reported = await repository.add_message(
-        "cache-session", "assistant", "a", tokens_input=2000, cache_read_tokens=1800
+        NewMessage(
+            "cache-session", "assistant", "a", tokens_input=2000, cache_read_tokens=1800
+        )
     )
     silent = await repository.add_message(
-        "cache-session", "assistant", "b", tokens_input=2000
+        NewMessage("cache-session", "assistant", "b", tokens_input=2000)
     )
 
     stored = {
@@ -367,12 +373,14 @@ async def test_migrate_adds_provider_meta_column_to_legacy_db(tmp_path):
 
     await repository.save_session(Session(id="legacy-session"))
     created = await repository.add_message(
-        "legacy-session",
-        "assistant",
-        "hello",
-        provider_meta={"thinking_signature": "SIG123"},
-        model="claude-sonnet-4-5",
-        cache_read_tokens=1024,
+        NewMessage(
+            "legacy-session",
+            "assistant",
+            "hello",
+            provider_meta={"thinking_signature": "SIG123"},
+            model="claude-sonnet-4-5",
+            cache_read_tokens=1024,
+        )
     )
     messages = await repository.get_messages(
         "legacy-session", MessageFilter(include_compacted=True)

@@ -194,7 +194,7 @@ def test_an_openai_compatible_entry_needs_a_base_url(home: Path) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="options.base_url"):
+    with pytest.raises(ValueError, match=r"options\.base_url"):
         _settings(home)
 
 

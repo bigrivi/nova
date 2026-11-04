@@ -13,7 +13,9 @@ import os
 from nova.tools.shell.backends.base import ShellBackend
 
 
-def get_backend(name: str | None = None, settings: object | None = None) -> ShellBackend:
+def get_backend(
+    name: str | None = None, settings: object | None = None
+) -> ShellBackend:
     """Return the backend selected by *name*, settings, env var, or default (local)."""
     if not name and settings is not None:
         terminal = getattr(settings, "terminal", None)
@@ -44,17 +46,17 @@ def get_backend(name: str | None = None, settings: object | None = None) -> Shel
     if resolved == "docker":
         from nova.tools.shell.backends.docker import DockerBackend
 
-        backend = DockerBackend.from_env()
+        docker_backend = DockerBackend.from_env()
         if settings is not None:
             t = getattr(settings, "terminal", None)
             if t is not None:
                 if getattr(t, "docker_image", ""):
-                    backend.image = t.docker_image
+                    docker_backend.image = t.docker_image
                 if getattr(t, "docker_container", ""):
-                    backend.container = t.docker_container
+                    docker_backend.container = t.docker_container
                 if getattr(t, "docker_workdir", ""):
-                    backend.workdir = t.docker_workdir
-        return backend
+                    docker_backend.workdir = t.docker_workdir
+        return docker_backend
     raise ValueError(f"Unknown terminal backend: {resolved!r}")
 
 

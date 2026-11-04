@@ -18,7 +18,7 @@ from typing import Any
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db.repository import NovaRepository
 from nova.session.manager import SessionContext
-from nova.session.models import Message
+from nova.session.models import Message, NewMessage
 
 log = logging.getLogger(__name__)
 
@@ -87,26 +87,28 @@ async def fork_session(
 
     for message in copied:
         await data_source.add_message(
-            session_id=forked.id,
-            role=message.role,
-            content=message.content,
-            tool_calls=message.tool_calls,
-            tool_call_id=message.tool_call_id,
-            summary=bool(message.summary),
-            images=message.images,
-            reasoning_content=message.reasoning_content,
-            group_id=message.group_id,
-            reasoning_elapsed_ms=message.reasoning_elapsed_ms,
-            tokens_input=message.tokens_input,
-            tokens_output=message.tokens_output,
-            cache_read_tokens=message.cache_read_tokens,
-            provider_meta=message.provider_meta,
-            model=message.model,
-            reasoning_effort=message.reasoning_effort,
-            error=message.error,
-            variant=message.variant,
-            time_created=message.time_created,
-            data=message.data,
+            NewMessage(
+                session_id=forked.id,
+                role=message.role,
+                content=message.content,
+                tool_calls=message.tool_calls,
+                tool_call_id=message.tool_call_id,
+                summary=bool(message.summary),
+                images=message.images,
+                reasoning_content=message.reasoning_content,
+                group_id=message.group_id,
+                reasoning_elapsed_ms=message.reasoning_elapsed_ms,
+                tokens_input=message.tokens_input,
+                tokens_output=message.tokens_output,
+                cache_read_tokens=message.cache_read_tokens,
+                provider_meta=message.provider_meta,
+                model=message.model,
+                reasoning_effort=message.reasoning_effort,
+                error=message.error,
+                variant=message.variant,
+                time_created=message.time_created,
+                data=message.data,
+            )
         )
 
     log.info(

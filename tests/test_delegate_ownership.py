@@ -15,7 +15,7 @@ import pytest
 
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.session import manager as session_manager_module
 from nova.session.manager import SessionContext, get_session_manager
 from nova.tools.delegate import delegate_to_agent

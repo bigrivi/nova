@@ -14,7 +14,7 @@ from nova.scheduler.models import ScheduledJob
 from nova.scheduler.schedule import next_fire_time
 
 if TYPE_CHECKING:
-    from nova.db.repository import NovaRepository
+    from nova.db.repository import ScheduleStore
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class SchedulerService:
 
     def __init__(
         self,
-        repository: NovaRepository,
+        repository: ScheduleStore,
         *,
         tick_interval: float = 60.0,
         runner: Runner | None = None,

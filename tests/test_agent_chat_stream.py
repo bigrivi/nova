@@ -17,11 +17,12 @@ from nova import Agent, AgentConfig
 from nova.agent.core import AgentEvent, build_user_message
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.llm import ToolResult
 from nova.llm.faker import FakerLLMProvider
 from nova.llm.provider import Done, Error, LLMProvider, TextDelta, ToolCall
 from nova.session import manager as session_manager_module
+from nova.session.models import NewMessage
 
 
 class ScriptedProvider(LLMProvider):
@@ -318,7 +319,10 @@ class TestApprovalFlow:
                 ],
                 # After the rejection the turn continues: the model sees the
                 # synthesized tool result and responds instead of stopping.
-                [TextDelta(content="Understood."), Done(content="Understood.", tool_calls=[])],
+                [
+                    TextDelta(content="Understood."),
+                    Done(content="Understood.", tool_calls=[]),
+                ],
             ]
         )
 
@@ -451,18 +455,33 @@ class TestPolicyRejectFlow:
 
 
 class TestMemoryReviewScheduling:
+    @staticmethod
+    async def _session_with_user_turns(database, count: int) -> str:
+        """A session that already holds *count* finished user turns."""
+        session = session_manager_module.SessionContext.create()
+        await database.save_session(session)
+        for index in range(count):
+            await database.add_message(
+                NewMessage(
+                    session_id=session.id,
+                    role="user",
+                    content=f"earlier turn {index}",
+                )
+            )
+        return session.id
+
     @pytest.mark.asyncio
     async def test_schedules_review_after_completed_turn(self):
         from unittest.mock import AsyncMock
 
         provider = ScriptedProvider([[TextDelta(content="done")]])
         async with isolated_agent(provider, memory_review_interval=1) as (agent, _db):
-            agent.run_memory_review = AsyncMock()  # type: ignore[assignment]
+            agent.background.run_memory_review = AsyncMock()  # type: ignore[method-assign]
             async for _ in agent.chat_stream("hello"):
                 pass
             # Give the scheduled task a chance to be created
             await asyncio.sleep(0)
-            agent.run_memory_review.assert_called_once()
+            agent.background.run_memory_review.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_does_not_schedule_review_when_interval_zero(self):
@@ -470,11 +489,42 @@ class TestMemoryReviewScheduling:
 
         provider = ScriptedProvider([[TextDelta(content="done")]])
         async with isolated_agent(provider, memory_review_interval=0) as (agent, _db):
-            agent.run_memory_review = AsyncMock()  # type: ignore[assignment]
+            agent.background.run_memory_review = AsyncMock()  # type: ignore[method-assign]
             async for _ in agent.chat_stream("hello"):
                 pass
             await asyncio.sleep(0)
-            agent.run_memory_review.assert_not_called()
+            agent.background.run_memory_review.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_waits_for_the_interval_using_the_conversation_turn_count(self):
+        """The count survives the per-request Agent: nine turns is not ten.
+
+        A counter on the agent itself always reads 1 here, because the agent is
+        rebuilt for every request -- that is the bug this pins.
+        """
+        from unittest.mock import AsyncMock
+
+        provider = ScriptedProvider([[TextDelta(content="done")]])
+        async with isolated_agent(provider, memory_review_interval=10) as (agent, db):
+            session_id = await self._session_with_user_turns(db, 8)
+            agent.background.run_memory_review = AsyncMock()  # type: ignore[method-assign]
+            async for _ in agent.chat_stream("hello", session_id=session_id):
+                pass
+            await asyncio.sleep(0)
+            agent.background.run_memory_review.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reviews_on_the_turn_that_reaches_the_interval(self):
+        from unittest.mock import AsyncMock
+
+        provider = ScriptedProvider([[TextDelta(content="done")]])
+        async with isolated_agent(provider, memory_review_interval=10) as (agent, db):
+            session_id = await self._session_with_user_turns(db, 9)
+            agent.background.run_memory_review = AsyncMock()  # type: ignore[method-assign]
+            async for _ in agent.chat_stream("hello", session_id=session_id):
+                pass
+            await asyncio.sleep(0)
+            agent.background.run_memory_review.assert_called_once()
 
 
 class TestProviderMetaRoundTrip:
@@ -610,22 +660,26 @@ async def test_e2e_full_chain_multi_turn_with_tools_and_compaction():
 
         # Turn 3: inject many large tool messages to exceed compaction threshold
         for i in range(30):
-            await database.add_message(session_id, "user", f"补充信息 {i}")
+            await database.add_message(NewMessage(session_id, "user", f"补充信息 {i}"))
             await database.add_message(
-                session_id,
-                "assistant",
-                "",
-                tool_calls=[
-                    {
-                        "type": "tool_call",
-                        "id": f"call_bulk_{i}",
-                        "name": "echo_tool",
-                        "arguments": '{"text":"hi"}',
-                    }
-                ],
+                NewMessage(
+                    session_id,
+                    "assistant",
+                    "",
+                    tool_calls=[
+                        {
+                            "type": "tool_call",
+                            "id": f"call_bulk_{i}",
+                            "name": "echo_tool",
+                            "arguments": '{"text":"hi"}',
+                        }
+                    ],
+                )
             )
             await database.add_message(
-                session_id, "tool", "X" * 8000, tool_call_id=f"call_bulk_{i}"
+                NewMessage(
+                    session_id, "tool", "X" * 8000, tool_call_id=f"call_bulk_{i}"
+                )
             )
 
         # Turn 4: trigger compaction check and continue
@@ -732,10 +786,10 @@ async def _session_with_history(provider, turns: int = 4):
             session_id = data
     for index in range(turns):
         await database.add_message(
-            session_id, "user", f"question {index} " + "x" * 4000
+            NewMessage(session_id, "user", f"question {index} " + "x" * 4000)
         )
         await database.add_message(
-            session_id, "assistant", f"answer {index} " + "y" * 4000
+            NewMessage(session_id, "assistant", f"answer {index} " + "y" * 4000)
         )
     provider.rejections = 0
     provider.summary_calls = 0
@@ -868,10 +922,10 @@ class TestOverflowRecovery:
             first = await _collect(agent, f"first {PROBE}", session_id)
             for index in range(4):
                 await database.add_message(
-                    session_id, "user", f"more {index} " + "x" * 4000
+                    NewMessage(session_id, "user", f"more {index} " + "x" * 4000)
                 )
                 await database.add_message(
-                    session_id, "assistant", f"reply {index} " + "y" * 4000
+                    NewMessage(session_id, "assistant", f"reply {index} " + "y" * 4000)
                 )
             provider.rejections = 0
             second = await _collect(agent, f"second {PROBE}", session_id)

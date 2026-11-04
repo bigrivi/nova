@@ -16,7 +16,7 @@ import pytest
 from nova import Agent, AgentConfig
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.llm.provider import Done, LLMProvider, TextDelta
 from nova.session import manager as session_manager_module
 
@@ -182,7 +182,7 @@ async def test_two_sessions_keep_independent_models(monkeypatch) -> None:
             ),
         )
 
-    async with _catalog() as database:
+    async with _catalog():
         first = Agent(
             config=AgentConfig(model="model-a", provider="provider-a"),
             llm_provider=_ScriptedProvider(),

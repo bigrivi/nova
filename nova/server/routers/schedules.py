@@ -19,11 +19,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from nova.db import DataSourceProtocol
+from nova.db import ScheduleStore
 from nova.scheduler.models import ScheduledJob
 from nova.scheduler.schedule import next_fire_time
 from nova.server.chat_service import ChatService
-from nova.server.deps import get_chat_service
+from nova.server.deps import context_of, get_chat_service
 
 log = logging.getLogger(__name__)
 
@@ -127,9 +127,7 @@ def _validate_job_fields(
             raise HTTPException(status_code=400, detail="once jobs need a run_at")
 
 
-async def _repository(
-    request: Request, chat_service: ChatService
-) -> DataSourceProtocol:
+async def _repository(request: Request, chat_service: ChatService) -> ScheduleStore:
     return await chat_service._get_data_source()
 
 
@@ -270,7 +268,7 @@ async def run_schedule_now(
     job = await repository.get_schedule(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Schedule not found")
-    manager = request.app.state.background_task_manager
+    manager = context_of(request).background_task_manager
     try:
         record = manager.submit(
             "scheduled_run",

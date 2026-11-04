@@ -15,14 +15,14 @@ import pytest
 
 from nova.agent.compaction import compaction_threshold
 from nova.db.config import DatabaseConfig
-from nova.db.sqlite_repository import SqliteRepository
-from nova.server.chat_service import ChatService
-from nova.session.models import Session
+from nova.db.sqlite.repository import SqliteRepository
+from nova.server.session_service import SessionService
+from nova.session.models import NewMessage, Session
 from nova.settings import get_settings
 
 
-async def _service_with(repository: SqliteRepository) -> ChatService:
-    return ChatService(settings=get_settings(), data_source=repository)
+async def _service_with(repository: SqliteRepository) -> SessionService:
+    return SessionService(settings=get_settings(), data_source=repository)
 
 
 @pytest.mark.asyncio
@@ -71,16 +71,22 @@ async def test_the_hit_rate_sums_reported_usage_and_drops_silent_turns():
     try:
         await repository.save_session(Session(id="measured"))
         await repository.add_message(
-            "measured", "assistant", "a", tokens_input=1000, cache_read_tokens=900
+            NewMessage(
+                "measured", "assistant", "a", tokens_input=1000, cache_read_tokens=900
+            )
         )
         await repository.add_message(
-            "measured", "assistant", "b", tokens_input=2000, cache_read_tokens=1800
+            NewMessage(
+                "measured", "assistant", "b", tokens_input=2000, cache_read_tokens=1800
+            )
         )
         # Reported a prompt size but no cache figure: unknown, so it must not
         # drag the ratio down as if it had been a total miss.
-        await repository.add_message("measured", "assistant", "c", tokens_input=500)
+        await repository.add_message(
+            NewMessage("measured", "assistant", "c", tokens_input=500)
+        )
         # Nothing reported at all (older data, or a provider without usage).
-        await repository.add_message("measured", "assistant", "d")
+        await repository.add_message(NewMessage("measured", "assistant", "d"))
 
         service = await _service_with(repository)
         payload = await service.get_context("measured")
@@ -99,7 +105,7 @@ async def test_a_reported_zero_counts_as_a_miss():
     try:
         await repository.save_session(Session(id="cold"))
         await repository.add_message(
-            "cold", "assistant", "a", tokens_input=1000, cache_read_tokens=0
+            NewMessage("cold", "assistant", "a", tokens_input=1000, cache_read_tokens=0)
         )
 
         service = await _service_with(repository)

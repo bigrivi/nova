@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from nova.db import database as db_module
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.settings import Settings, configure_logging, get_settings, reload_settings
 
 

@@ -67,18 +67,25 @@ class SpeechService:
             ),
         }
 
+    def _require_recorder(self) -> Recorder:
+        if self._recorder is None:
+            raise RuntimeError(
+                self._unavailable_reason or "no audio recorder for this platform"
+            )
+        return self._recorder
+
     def start(self) -> dict[str, object]:
         """Begin recording. Raises RuntimeError when unavailable or busy."""
         gate = self.status()
         if not gate["enabled"]:
             raise RuntimeError(str(gate.get("reason", "unavailable")))
-        self._recorder.start()
+        self._require_recorder().start()
         self._started_at = time.time()
         return {"recording": True}
 
     async def stop_and_transcribe(self) -> dict[str, object]:
         """Stop recording, transcribe the audio, delete the temp file."""
-        audio_path = self._recorder.stop()
+        audio_path = self._require_recorder().stop()
         self._started_at = None
         try:
             return await self.transcribe_file(audio_path)

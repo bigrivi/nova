@@ -268,16 +268,16 @@ def merge_models_dev(settings: Settings, catalog: object) -> int:
     payload = _read(settings)
 
     stored: dict[str, dict[str, Any]] = {}
-    for provider, entry in payload.items():
+    for provider_key, entry in payload.items():
         models = entry.get("models") if isinstance(entry, dict) else None
         if isinstance(models, dict):
-            stored[str(provider)] = {
+            stored[str(provider_key)] = {
                 str(k): (v if isinstance(v, dict) else {}) for k, v in models.items()
             }
 
     wanted = {model for models in stored.values() for model in models}
-    for provider in settings.providers.values():
-        wanted.update(provider.models)
+    for config in settings.providers.values():
+        wanted.update(config.models)
 
     # models.dev may know a model under a different provider key, so an id that
     # every catalogue provider agrees on can still fill a gap.

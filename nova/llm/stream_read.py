@@ -138,7 +138,7 @@ class StreamPoller:
                     raise StreamAborted
                 if self._read_task is None:
                     self._read_task = asyncio.ensure_future(self._read_line_factory())
-                waiters = {self._read_task}
+                waiters: set[asyncio.Future] = {self._read_task}
                 if abort_waiter is not None:
                     waiters.add(abort_waiter)
                 try:

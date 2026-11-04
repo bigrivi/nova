@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 
 from nova.db.config import DatabaseConfig
-from nova.db.in_memory_repository import InMemoryRepository
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.in_memory.repository import InMemoryRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.memory.models import MemoryRecord, MemorySearchFilters
 from nova.project.models import Project
-from nova.session.models import MessageFilter, Session
+from nova.scheduler.models import ScheduledJob
+from nova.session.models import MessageFilter, NewMessage, Session
 
 
 @pytest_asyncio.fixture(params=["sqlite", "memory"])
@@ -31,7 +33,7 @@ async def test_session_delete_cascades_messages_and_preserves_missing_result(
     repository,
 ):
     await repository.save_session(Session(id="session-1"))
-    await repository.add_message("session-1", "user", "hello")
+    await repository.add_message(NewMessage("session-1", "user", "hello"))
 
     deleted = await repository.delete_session("session-1")
     missing = await repository.delete_session("session-1")
@@ -141,17 +143,21 @@ async def test_set_session_project_moves_and_clears(repository):
 async def test_tool_message_error_flag_round_trips(repository):
     await repository.save_session(Session(id="session-error"))
     await repository.add_message(
-        "session-error",
-        "tool",
-        "Tool call cancelled by user.",
-        tool_call_id="call-1",
-        error="Tool call cancelled by user.",
+        NewMessage(
+            "session-error",
+            "tool",
+            "Tool call cancelled by user.",
+            tool_call_id="call-1",
+            error="Tool call cancelled by user.",
+        )
     )
     await repository.add_message(
-        "session-error",
-        "tool",
-        "ok",
-        tool_call_id="call-2",
+        NewMessage(
+            "session-error",
+            "tool",
+            "ok",
+            tool_call_id="call-2",
+        )
     )
 
     messages = await repository.get_messages("session-error")
@@ -164,9 +170,11 @@ async def test_tool_message_error_flag_round_trips(repository):
 @pytest.mark.asyncio
 async def test_message_mutation_and_compaction_match_contract(repository):
     await repository.save_session(Session(id="session-2"))
-    first = await repository.add_message("session-2", "user", "before")
-    second = await repository.add_message("session-2", "assistant", "middle")
-    await repository.add_message("session-2", "assistant", "last")
+    first = await repository.add_message(NewMessage("session-2", "user", "before"))
+    second = await repository.add_message(
+        NewMessage("session-2", "assistant", "middle")
+    )
+    await repository.add_message(NewMessage("session-2", "assistant", "last"))
 
     await repository.update_message_content(first.id, "after")
     await repository.mark_messages_compacted("session-2")
@@ -185,8 +193,10 @@ async def test_message_mutation_and_compaction_match_contract(repository):
 @pytest.mark.asyncio
 async def test_delete_messages_returns_count_and_updates_session(repository):
     await repository.save_session(Session(id="session-3"))
-    first = await repository.add_message("session-3", "user", "first")
-    second = await repository.add_message("session-3", "assistant", "second")
+    first = await repository.add_message(NewMessage("session-3", "user", "first"))
+    second = await repository.add_message(
+        NewMessage("session-3", "assistant", "second")
+    )
 
     deleted = await repository.delete_messages(
         "session-3", [first.id, "missing", second.id]
@@ -221,7 +231,7 @@ async def test_agent_delete_cascades_owned_sessions_and_parent_edges(repository)
     )
     await repository.add_agent_parent("child", "main")
     await repository.save_session(Session(id="agent-session", agent_key="child"))
-    await repository.add_message("agent-session", "user", "owned")
+    await repository.add_message(NewMessage("agent-session", "user", "owned"))
 
     deleted = await repository.delete_agent("child")
 
@@ -272,11 +282,13 @@ async def test_memory_filters_and_deletes_match_contract(repository):
 async def test_provider_meta_and_model_round_trip(repository):
     await repository.save_session(Session(id="session-meta"))
     created = await repository.add_message(
-        "session-meta",
-        "assistant",
-        "thinking hello",
-        provider_meta={"thinking_signature": "SIG123"},
-        model="claude-sonnet-4-5",
+        NewMessage(
+            "session-meta",
+            "assistant",
+            "thinking hello",
+            provider_meta={"thinking_signature": "SIG123"},
+            model="claude-sonnet-4-5",
+        )
     )
     assert created.provider_meta == {"thinking_signature": "SIG123"}
     assert created.model == "claude-sonnet-4-5"
@@ -294,7 +306,9 @@ async def test_provider_meta_and_model_round_trip(repository):
 @pytest.mark.asyncio
 async def test_provider_meta_none_round_trips_as_none(repository):
     await repository.save_session(Session(id="session-meta-none"))
-    created = await repository.add_message("session-meta-none", "assistant", "no meta")
+    created = await repository.add_message(
+        NewMessage("session-meta-none", "assistant", "no meta")
+    )
     assert created.provider_meta is None
 
     messages = await repository.get_messages(
@@ -308,11 +322,13 @@ async def test_provider_meta_none_round_trips_as_none(repository):
 async def test_provider_meta_non_ascii_round_trips(repository):
     await repository.save_session(Session(id="session-meta-unicode"))
     created = await repository.add_message(
-        "session-meta-unicode",
-        "assistant",
-        "unicode",
-        provider_meta={"thinking_signature": "签名"},
-        model="claude-sonnet-4-5",
+        NewMessage(
+            "session-meta-unicode",
+            "assistant",
+            "unicode",
+            provider_meta={"thinking_signature": "签名"},
+            model="claude-sonnet-4-5",
+        )
     )
     messages = await repository.get_messages(
         "session-meta-unicode", MessageFilter(include_compacted=True)
@@ -320,3 +336,138 @@ async def test_provider_meta_non_ascii_round_trips(repository):
     stored = messages[0]
     assert stored.provider_meta == {"thinking_signature": "签名"}
     assert created.provider_meta == {"thinking_signature": "签名"}
+
+
+def _job(job_id: str, **overrides) -> ScheduledJob:
+    base = {
+        "id": job_id,
+        "name": job_id,
+        "prompt": "do the thing",
+        "kind": "interval",
+        "session_id": "session-schedule",
+        "interval_minutes": 5,
+        "agent_key": "main",
+    }
+    return ScheduledJob(**{**base, **overrides})
+
+
+@pytest.mark.asyncio
+async def test_schedule_round_trips_every_column(repository):
+    created = await repository.create_schedule(_job("job-1", next_run_at=2_000))
+
+    assert created.id == "job-1"
+    assert created.next_run_at == 2_000
+    assert created.created_at > 0
+    assert created.updated_at > 0
+    assert await repository.get_schedule("job-1") == created
+
+
+@pytest.mark.asyncio
+async def test_create_schedule_fills_id_and_timestamps_from_dict(repository):
+    # `ScheduledJob.from_dict` indexes row["id"], so the key must exist even when empty.
+    created = await repository.create_schedule(
+        {
+            "id": "",
+            "name": "one shot",
+            "prompt": "run once",
+            "kind": "once",
+            "session_id": "session-schedule",
+            "run_at": 9_999,
+        }
+    )
+
+    assert created.id
+    assert created.created_at > 0
+    assert created.updated_at > 0
+    assert created.session_id == "session-schedule"
+    assert created.run_at == 9_999
+
+
+@pytest.mark.asyncio
+async def test_list_schedules_orders_by_updated_at_and_filters_disabled(repository):
+    for job_id, enabled, updated_at in (
+        ("job-a", True, 100),
+        ("job-b", False, 300),
+        ("job-c", True, 200),
+    ):
+        created = await repository.create_schedule(_job(job_id, enabled=enabled))
+        assert await repository.update_schedule(replace(created, updated_at=updated_at))
+
+    everything = await repository.list_schedules()
+    enabled_only = await repository.list_schedules(enabled_only=True)
+
+    assert [job.id for job in everything] == ["job-b", "job-c", "job-a"]
+    assert [job.id for job in enabled_only] == ["job-c", "job-a"]
+
+
+@pytest.mark.asyncio
+async def test_update_and_delete_schedule_report_missing_rows(repository):
+    assert await repository.update_schedule(_job("missing")) is False
+
+    await repository.create_schedule(_job("job-del"))
+    assert await repository.delete_schedule("job-del") is True
+    assert await repository.delete_schedule("job-del") is False
+    assert await repository.get_schedule("job-del") is None
+
+
+@pytest.mark.asyncio
+async def test_due_schedules_filters_orders_and_limits(repository):
+    for job_id, next_run_at, enabled in (
+        ("job-late", 900, True),
+        ("job-early", 800, True),
+        ("job-future", 1_100, True),
+        ("job-off", 700, False),
+    ):
+        await repository.create_schedule(
+            _job(job_id, next_run_at=next_run_at, enabled=enabled)
+        )
+
+    due = await repository.due_schedules(1_000)
+    limited = await repository.due_schedules(1_000, limit=1)
+
+    assert [job.id for job in due] == ["job-early", "job-late"]
+    assert [job.id for job in limited] == ["job-early"]
+
+
+@pytest.mark.asyncio
+async def test_scheduler_lease_takes_renews_expires_and_releases(repository):
+    assert await repository.get_scheduler_lease() is None
+
+    assert await repository.acquire_scheduler_lease("primary", "owner-a", 1_000, 0)
+    held = await repository.get_scheduler_lease()
+    assert held is not None
+    assert held["owner"] == "owner-a"
+    assert held["expires_at"] == 1_000
+
+    assert await repository.acquire_scheduler_lease("primary", "owner-a", 1_500, 1_000)
+    assert not await repository.acquire_scheduler_lease(
+        "primary", "owner-b", 2_000, 1_000
+    )
+    assert await repository.acquire_scheduler_lease("primary", "owner-b", 2_000, 2_000)
+
+    assert not await repository.release_scheduler_lease("primary", "owner-a", 2_100)
+    assert await repository.release_scheduler_lease("primary", "owner-b", 2_100)
+    released = await repository.get_scheduler_lease()
+    assert released is not None
+    assert released["expires_at"] == 2_100
+
+    assert await repository.acquire_scheduler_lease("primary", "owner-a", 3_000, 2_100)
+
+
+@pytest.mark.asyncio
+async def test_saving_a_session_again_does_not_reset_the_message_count(repository):
+    """Counters belong to the store, not to whichever copy saves last.
+
+    ``save_session`` is called by rename, pin and route changes with a session
+    object read earlier. Writing that object's counts back would silently undo
+    every message added in between.
+    """
+    await repository.save_session(Session(id="session-counters"))
+    await repository.add_message(NewMessage("session-counters", "user", "one"))
+    await repository.add_message(NewMessage("session-counters", "assistant", "two"))
+
+    stale = Session(id="session-counters")  # counts as they were before the messages
+    await repository.save_session(stale)
+
+    stored = await repository.get_session("session-counters")
+    assert stored["message_count"] == 2

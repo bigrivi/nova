@@ -9,7 +9,7 @@ from typing import Any
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import get_default_data_source
 from nova.db.repository import NovaRepository
-from nova.session.models import Message, MessageFilter
+from nova.session.models import Message, MessageFilter, NewMessage
 from nova.session.protocol import SessionProtocol
 
 
@@ -216,24 +216,26 @@ class SessionManager(SessionProtocol):
         async with self._lock:
             data_source = await self._get_data_source()
             msg = await data_source.add_message(
-                session_id=session.id,
-                role=role,
-                content=content,
-                tool_calls=tool_calls,
-                tool_call_id=tool_call_id,
-                images=images,
-                reasoning_content=reasoning_content,
-                group_id=group_id,
-                reasoning_elapsed_ms=reasoning_elapsed_ms,
-                error=error,
-                tokens_input=tokens_input,
-                tokens_output=tokens_output,
-                cache_read_tokens=cache_read_tokens,
-                provider_meta=provider_meta,
-                model=model,
-                reasoning_effort=reasoning_effort,
-                variant=variant,
-                data=data,
+                NewMessage(
+                    session_id=session.id,
+                    role=role,
+                    content=content,
+                    tool_calls=tool_calls,
+                    tool_call_id=tool_call_id,
+                    images=images,
+                    reasoning_content=reasoning_content,
+                    group_id=group_id,
+                    reasoning_elapsed_ms=reasoning_elapsed_ms,
+                    error=error,
+                    tokens_input=tokens_input,
+                    tokens_output=tokens_output,
+                    cache_read_tokens=cache_read_tokens,
+                    provider_meta=provider_meta,
+                    model=model,
+                    reasoning_effort=reasoning_effort,
+                    variant=variant,
+                    data=data,
+                )
             )
             session.updated_at = int(time.time() * 1000)
             session.turn_count += 1
@@ -244,9 +246,8 @@ class SessionManager(SessionProtocol):
         message_ids: list[str],
         session_id: str | None = None,
     ) -> int:
-        sid = session_id or (
-            self.get_current_session().id if self.get_current_session() else None
-        )
+        current = self.get_current_session()
+        sid = session_id or (current.id if current else None)
         if not sid or not message_ids:
             return 0
 
@@ -263,15 +264,18 @@ class SessionManager(SessionProtocol):
         self,
         session_id: str | None = None,
         limit: int | None = None,
+        last_n: int | None = None,
     ) -> list[Message]:
-        sid = session_id or (
-            self.get_current_session().id if self.get_current_session() else None
-        )
+        current = self.get_current_session()
+        sid = session_id or (current.id if current else None)
         if not sid:
             return []
         async with self._lock:
             data_source = await self._get_data_source()
-            return await data_source.get_messages(sid, MessageFilter(limit=limit))
+            messages = await data_source.get_messages(
+                sid, MessageFilter(limit=None if last_n else limit)
+            )
+            return messages[-last_n:] if last_n else messages
 
     async def get_child_sessions(
         self,

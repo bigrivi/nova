@@ -215,7 +215,7 @@ async def available_models(
         )
     except DiscoveryError as exc:
         raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
-    return AvailableModelListResponse(provider=key, items=items)
+    return AvailableModelListResponse(provider=key, items=[model.id for model in items])
 
 
 @router.get("/api/providers/presets", response_model=ProviderPresetListResponse)

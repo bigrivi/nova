@@ -59,6 +59,16 @@ class StdioTransport(McpTransport):
         self._request_id += 1
         return str(self._request_id)
 
+    def _stdin(self) -> asyncio.StreamWriter:
+        if self._process is None or self._process.stdin is None:
+            raise RuntimeError("MCP stdio transport is not connected")
+        return self._process.stdin
+
+    def _stdout(self) -> asyncio.StreamReader:
+        if self._process is None or self._process.stdout is None:
+            raise RuntimeError("MCP stdio transport is not connected")
+        return self._process.stdout
+
     async def connect(self) -> None:
         merged_env = {**os.environ, **self._env}
         self._process = await asyncio.create_subprocess_exec(
@@ -99,8 +109,9 @@ class StdioTransport(McpTransport):
         }
         future: asyncio.Future = asyncio.get_event_loop().create_future()
         self._pending[req_id] = future
-        self._process.stdin.write((json.dumps(payload) + "\n").encode())
-        await self._process.stdin.drain()
+        stdin = self._stdin()
+        stdin.write((json.dumps(payload) + "\n").encode())
+        await stdin.drain()
         result = await asyncio.wait_for(future, timeout=120)
         if "error" in result:
             err = result["error"]
@@ -113,12 +124,14 @@ class StdioTransport(McpTransport):
             "method": method,
             "params": params or {},
         }
-        self._process.stdin.write((json.dumps(payload) + "\n").encode())
-        await self._process.stdin.drain()
+        stdin = self._stdin()
+        stdin.write((json.dumps(payload) + "\n").encode())
+        await stdin.drain()
 
     async def _read_stdout(self) -> None:
+        stdout = self._stdout()
         while True:
-            line = await self._process.stdout.readline()
+            line = await stdout.readline()
             if not line:
                 break
             try:
@@ -141,6 +154,7 @@ class StdioTransport(McpTransport):
             try:
                 await task
             except (asyncio.CancelledError, Exception):
+                # The reader tasks were just cancelled.
                 pass
         self._reader_task = None
         self._stderr_task = None
@@ -167,6 +181,11 @@ class HttpTransport(McpTransport):
         self._request_id += 1
         return str(self._request_id)
 
+    def _client(self) -> aiohttp.ClientSession:
+        if self._session is None:
+            raise RuntimeError("MCP http transport is not connected")
+        return self._session
+
     async def connect(self) -> None:
         import aiohttp
 
@@ -183,7 +202,7 @@ class HttpTransport(McpTransport):
             "method": method,
             "params": params or {},
         }
-        async with self._session.post(self._url, json=payload) as resp:
+        async with self._client().post(self._url, json=payload) as resp:
             result = await resp.json()
         if "error" in result:
             err = result["error"]
@@ -196,7 +215,7 @@ class HttpTransport(McpTransport):
             "method": method,
             "params": params or {},
         }
-        async with self._session.post(self._url, json=payload) as resp:
+        async with self._client().post(self._url, json=payload) as resp:
             await resp.read()
 
     async def close(self) -> None:

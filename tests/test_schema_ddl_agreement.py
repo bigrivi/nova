@@ -15,7 +15,7 @@ import pytest
 
 from nova.db.config import DatabaseConfig
 from nova.db.database import close_db, init_db
-from nova.db.sqlite_repository import _DDL, _ddl_columns
+from nova.db.sqlite.repository import _DDL, _ddl_columns
 from nova.settings import Settings
 
 GATEWAY = {
@@ -84,7 +84,7 @@ class TestDdlAgreesWithMigrations:
     async def test_a_fresh_database_needs_no_alter(self, home, caplog):
         """The migration should find nothing to do on a new install."""
         settings = Settings.load_config()
-        with caplog.at_level(logging.ERROR, logger="nova.db.sqlite_repository"):
+        with caplog.at_level(logging.ERROR, logger="nova.db.sqlite.repository"):
             await init_db(DatabaseConfig(path=settings.database_path))
         try:
             assert "missing from _DDL" not in caplog.text
@@ -96,7 +96,7 @@ class TestDdlAgreesWithMigrations:
         self, home, monkeypatch, caplog
     ):
         """Drop a column from the DDL and the startup log has to say so."""
-        from nova.db import sqlite_repository as module
+        from nova.db.sqlite import repository as module
 
         drifted = module._DDL.replace(
             "    provider TEXT,\n    model TEXT,\n    reasoning_effort TEXT,\n"
@@ -107,7 +107,7 @@ class TestDdlAgreesWithMigrations:
         monkeypatch.setattr(module, "_DDL", drifted)
 
         settings = Settings.load_config()
-        with caplog.at_level(logging.ERROR, logger="nova.db.sqlite_repository"):
+        with caplog.at_level(logging.ERROR, logger="nova.db.sqlite.repository"):
             await init_db(DatabaseConfig(path=settings.database_path))
         try:
             assert "missing from _DDL" in caplog.text

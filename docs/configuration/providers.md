@@ -410,7 +410,7 @@ gracefully:
 
 ### OpenAI Response
 
-Uses the OpenAI Responses API via `nova/llm/openai_response.py`. Provider
+Uses the OpenAI Responses API via `nova/llm/providers/openai_responses.py`. Provider
 options are `base_url`, `api_key`, and `user_agent`.
 
 ```json

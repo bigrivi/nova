@@ -175,7 +175,7 @@ class ToolCall(ChatEvent):
 class Done(ChatEvent):
     type: str = "done"
     content: str = ""
-    tool_calls: list = None
+    tool_calls: list | None = None
     aborted: bool = False
     tokens_input: int | None = None
     tokens_output: int | None = None
@@ -259,21 +259,37 @@ class LLMProvider(ABC):
         model: str = "gpt-4o",
         stream: bool = False,
         tools: list[dict] | None = None,
+        *,
+        abort_event: asyncio.Event | None = None,
+        session_id: str | None = None,
+        reasoning_effort: str | None = None,
         **kwargs: object,
-    ) -> Done:
-        """Run a non-streaming chat request and return the full response."""
+    ) -> Done | Error:
+        """Run a non-streaming chat request and return the full response.
+
+        ``Error`` is part of the contract: a provider that cannot answer reports
+        it as a result rather than raising, so every caller handles one shape.
+        """
         pass
 
     @abstractmethod
-    async def chat_stream(
+    def chat_stream(
         self,
         messages: list,
         model: str = "gpt-4o",
         tools: list[dict] | None = None,
         abort_event: asyncio.Event | None = None,
-        timeout: int | None = None,
+        total_timeout_seconds: int | None = None,
+        session_id: str | None = None,
+        reasoning_effort: str | None = None,
         **kwargs: object,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
+        """Stream one completion.
+
+        Declared as a plain function, not ``async def``: every implementation
+        is an async generator, whose call already returns an async iterator.
+        An ``async def`` here would describe a coroutine that resolves to one.
+        """
         pass
 
     @abstractmethod

@@ -47,5 +47,7 @@ Nova 可以可选地从经验中学习。启用时（`config.json` 里 `learning
 
 ## 配置
 
-记忆回顾频率由设置里的 `memory_review_interval` 控制。学习循环通过 `config.json` 的
+记忆回顾每 `memory_review_interval` 轮运行一次（默认 10，定义在 `AgentConfig` 上）。
+轮数来自会话自身的历史，所以 agent 每回合重建也不会丢。该间隔目前未暴露到
+`config.json`。学习循环通过 `config.json` 的
 `learning` 块配置（见 [设置](../configuration/settings.md)）。

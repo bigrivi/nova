@@ -7,7 +7,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional
 
 from nova.llm import Message, ToolResult
 from nova.llm.oneshot import stream_text_once
@@ -15,7 +15,7 @@ from nova.tools.registry import tool
 from nova.tools.web_search import TOOL as web_search_tool
 
 if TYPE_CHECKING:
-    from playwright.async_api import Page
+    from playwright.async_api import BrowserContext, Page
 
     from nova.tools.context import ToolContext
 
@@ -39,6 +39,18 @@ _browser = None
 _context = None
 _page = None
 _element_cache: dict[str, list[dict[str, Any]]] = {}
+
+
+def _require_page() -> "Page":
+    if _page is None:
+        raise RuntimeError("browser page is not open")
+    return _page
+
+
+def _require_context() -> "BrowserContext":
+    if _context is None:
+        raise RuntimeError("browser context is not open")
+    return _context
 
 
 def _detect_system_browser() -> str | None:
@@ -100,7 +112,7 @@ def _seed_profile(target: str) -> None:
                 else:
                     shutil.copy2(src, os.path.join(dst_default, name))
             except Exception:
-                pass
+                log.debug("profile seeding skipped: %s", src, exc_info=True)
 
 
 async def _ensure_browser() -> "Page":
@@ -277,7 +289,7 @@ async def browser_use(
             _invalidate_cache()
             include_screenshot = screenshot if screenshot is not None else False
             state = await _get_state(include_screenshot=include_screenshot)
-            payload = {"text": _format_state_text(state)}
+            payload: dict[str, Any] = {"text": _format_state_text(state)}
             if include_screenshot:
                 payload["images"] = [state["screenshot"]]
             return ToolResult(content=json.dumps(payload, ensure_ascii=False))
@@ -423,6 +435,7 @@ async def browser_use(
                         "main, article, #content, [role=main]"
                     ).first.evaluate("el => el.outerHTML", timeout=3000)
                 except Exception:
+                    # Narrowing is optional; the full page is the fallback.
                     pass
             raw_html = (
                 f"<html><body>{narrowed}</body></html>" if narrowed else full_html
@@ -475,27 +488,29 @@ async def browser_use(
         elif action == "switch_tab":
             if tab_id is None:
                 return ToolResult(error="Tab ID required for switch_tab")
-            pages = _context.pages
+            pages = _require_context().pages
             if tab_id < 0 or tab_id >= len(pages):
                 return ToolResult(
                     error=f"Invalid tab ID {tab_id}, open tabs: {len(pages)}"
                 )
-            _page = pages[tab_id]
-            await _page.bring_to_front()
+            page = pages[tab_id]
+            _page = page
+            await page.bring_to_front()
 
         elif action == "open_tab":
             if not url:
                 return ToolResult(error="URL required for open_tab")
-            _page = await _context.new_page()
-            await _page.goto(url, wait_until="load")
+            page = await _require_context().new_page()
+            _page = page
+            await page.goto(url, wait_until="load")
             _invalidate_cache()
 
         elif action == "close_tab":
-            pages = _context.pages
+            pages = _require_context().pages
             if len(pages) <= 1:
                 return ToolResult(error="Cannot close the last tab")
-            await _page.close()
-            pages = _context.pages
+            await _require_page().close()
+            pages = _require_context().pages
             _page = pages[-1]
 
         else:
@@ -569,16 +584,18 @@ async def _get_clickable_elements(page: "Page") -> list[dict[str, Any]]:
 
 
 async def _get_state(include_screenshot: bool = False) -> dict[str, Any]:
+    page = _require_page()
     try:
-        await _page.wait_for_load_state("load", timeout=10000)
+        await page.wait_for_load_state("load", timeout=10000)
     except Exception:
+        # A page that never reaches "load" can still be read.
         pass
     await asyncio.sleep(0.2)
-    url = _page.url
-    title = await _page.title()
+    url = page.url
+    title = await page.title()
 
-    elements = await _get_clickable_elements(cast("Page", _page))
-    scroll = await _page.evaluate("""() => ({
+    elements = await _get_clickable_elements(page)
+    scroll = await page.evaluate("""() => ({
         pixels_above: window.scrollY,
         pixels_below: Math.max(0, document.documentElement.scrollHeight - window.scrollY - window.innerHeight),
         total_height: document.documentElement.scrollHeight,
@@ -588,7 +605,7 @@ async def _get_state(include_screenshot: bool = False) -> dict[str, Any]:
     state = {
         "url": url,
         "title": title,
-        "tabs": len(_context.pages) if _context else 1,
+        "tabs": len(_require_context().pages),
         "scroll_info": scroll,
         "interactive_elements": "\n".join(
             f"[{e['index']}] <{e['tag']}>{' ' + e['text'][:60] if e['text'] else ''}"
@@ -597,7 +614,7 @@ async def _get_state(include_screenshot: bool = False) -> dict[str, Any]:
     }
 
     if include_screenshot:
-        screenshot = await _page.screenshot(full_page=False, type="jpeg", quality=85)
+        screenshot = await page.screenshot(full_page=False, type="jpeg", quality=85)
         state["screenshot"] = base64.b64encode(screenshot).decode("utf-8")
         state["screenshot_mime"] = "image/jpeg"
 

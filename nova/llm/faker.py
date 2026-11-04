@@ -339,6 +339,10 @@ class FakerLLMProvider(LLMProvider):
         model: str = "gpt-4o",
         stream: bool = False,
         tools: list[dict] | None = None,
+        *,
+        abort_event: asyncio.Event | None = None,
+        session_id: str | None = None,
+        reasoning_effort: str | None = None,
         **kwargs: object,
     ) -> Done | Error:
         rng = self._rng(messages, model)
@@ -356,7 +360,9 @@ class FakerLLMProvider(LLMProvider):
         model: str = "gpt-4o",
         tools: list[dict] | None = None,
         abort_event: asyncio.Event | None = None,
-        timeout: int | None = None,
+        total_timeout_seconds: int | None = None,
+        session_id: str | None = None,
+        reasoning_effort: str | None = None,
         **kwargs: object,
     ) -> AsyncGenerator[ChatStreamEvent, None]:
         rng = self._rng(messages, model)
@@ -700,8 +706,8 @@ class FakerLLMProvider(LLMProvider):
                     q("q1", "出行日期", "请输入出行日期（YYYY-MM-DD）", "text"),
                 ],
             ]
-            pool = [p for p in pool if p]
-            return rng.choice(pool)
+            choices: list[list[dict[str, Any]]] = [p for p in pool if p is not None]
+            return rng.choice(choices)
         if any(k in hay for k in ("主题", "颜色", "深色", "浅色", "theme", "color")):
             return [
                 q(

@@ -213,7 +213,7 @@ def test_run_now_returns_task_visible_in_session_list(
         seen.append(dict(arguments))
         return TaskExecutionResult(success=True, result="ok")
 
-    app.state.background_task_manager.register_executor(
+    app.state.context.background_task_manager.register_executor(
         make_executor("scheduled_run", _stub, unlimited=True)
     )
 
@@ -744,7 +744,7 @@ async def test_lifespan_runs_scheduler_and_tick_fires_due_job(
     monkeypatch.setenv("NOVA_HOME", str(home))
     get_settings.cache_clear()
     app = create_app(settings=Settings.load_config())
-    assert app.state.scheduler is None
+    assert app.state.context.scheduler is None
 
     past = int(time.time() * 1000) - 60_000
     await repository.create_schedule(
@@ -761,7 +761,7 @@ async def test_lifespan_runs_scheduler_and_tick_fires_due_job(
 
     try:
         async with app.router.lifespan_context(app):
-            scheduler = app.state.scheduler
+            scheduler = app.state.context.scheduler
             assert isinstance(scheduler, SchedulerService)
             # Either the loop-task's first tick or the manual one fires it;
             # both funnel through the same runner -> executor path.

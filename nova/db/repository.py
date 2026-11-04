@@ -7,13 +7,10 @@ if TYPE_CHECKING:
     from nova.project.models import Project
     from nova.scheduler.models import ScheduledJob
     from nova.session.manager import SessionContext
-    from nova.session.models import Message, MessageFilter
+    from nova.session.models import Message, MessageFilter, NewMessage
 
 
-@runtime_checkable
-class NovaRepository(Protocol):
-    async def connect(self) -> None: ...
-    async def close(self) -> None: ...
+class SessionStore(Protocol):
     async def save_session(self, session: SessionContext) -> None: ...
     async def get_session(self, session_id: str) -> dict[str, Any] | None: ...
     async def update_session_title(self, session_id: str, title: str) -> bool: ...
@@ -34,47 +31,6 @@ class NovaRepository(Protocol):
     async def get_sessions_by_parent_id(
         self, parent_id: str, limit: int = 50
     ) -> list[dict[str, Any]]: ...
-    async def save_project(self, project: Project) -> None: ...
-    async def get_project(self, project_id: str) -> dict[str, Any] | None: ...
-    async def list_projects(self) -> list[dict[str, Any]]: ...
-    async def find_projects_by_path(self, path: str) -> list[dict[str, Any]]: ...
-    async def delete_project(self, project_id: str) -> bool: ...
-    async def add_message(
-        self,
-        session_id: str,
-        role: str,
-        content: str,
-        tool_calls: list[dict[str, Any]] | None = None,
-        tool_call_id: str | None = None,
-        summary: bool = False,
-        images: list[str] | None = None,
-        reasoning_content: str | None = None,
-        group_id: str | None = None,
-        reasoning_elapsed_ms: int | None = None,
-        tokens_input: int | None = None,
-        tokens_output: int | None = None,
-        cache_read_tokens: int | None = None,
-        provider_meta: dict[str, Any] | None = None,
-        model: str | None = None,
-        reasoning_effort: str | None = None,
-        error: str | None = None,
-        variant: str | None = None,
-        time_created: int | None = None,
-        data: str | None = None,
-    ) -> Message: ...
-    async def get_messages(
-        self, session_id: str, msg_filter: MessageFilter | None = None
-    ) -> list[Message]: ...
-    async def compress_messages(
-        self, session_id: str, target_count: int = 50
-    ) -> None: ...
-    async def mark_messages_compacted(self, session_id: str) -> None: ...
-    async def mark_messages_compacted_by_ids(
-        self, session_id: str, message_ids: list[str]
-    ) -> None: ...
-    async def update_session_compacted_at(
-        self, session_id: str, timestamp: int
-    ) -> None: ...
     async def set_session_route(
         self,
         session_id: str,
@@ -89,8 +45,37 @@ class NovaRepository(Protocol):
         model: str | None,
         reasoning_effort: str | None,
     ) -> bool: ...
+    async def update_session_compacted_at(
+        self, session_id: str, timestamp: int
+    ) -> None: ...
+
+
+class MessageStore(Protocol):
+    async def add_message(self, message: NewMessage) -> Message: ...
+
+    async def get_messages(
+        self, session_id: str, msg_filter: MessageFilter | None = None
+    ) -> list[Message]: ...
+    async def compress_messages(
+        self, session_id: str, target_count: int = 50
+    ) -> None: ...
+    async def mark_messages_compacted(self, session_id: str) -> None: ...
+    async def mark_messages_compacted_by_ids(
+        self, session_id: str, message_ids: list[str]
+    ) -> None: ...
     async def update_message_content(self, message_id: str, content: str) -> None: ...
     async def delete_messages(self, session_id: str, message_ids: list[str]) -> int: ...
+
+
+class ProjectStore(Protocol):
+    async def save_project(self, project: Project) -> None: ...
+    async def get_project(self, project_id: str) -> dict[str, Any] | None: ...
+    async def list_projects(self) -> list[dict[str, Any]]: ...
+    async def find_projects_by_path(self, path: str) -> list[dict[str, Any]]: ...
+    async def delete_project(self, project_id: str) -> bool: ...
+
+
+class AgentStore(Protocol):
     async def list_agents(self) -> list[dict[str, Any]]: ...
     async def get_agent(self, key: str) -> dict[str, Any] | None: ...
     async def save_agent(self, agent: dict[str, Any]) -> None: ...
@@ -103,6 +88,9 @@ class NovaRepository(Protocol):
     async def add_agent_parent(self, child_key: str, parent_key: str) -> None: ...
     async def remove_agent_parent(self, child_key: str, parent_key: str) -> None: ...
     async def delete_agent(self, key: str) -> bool: ...
+
+
+class MemoryStore(Protocol):
     async def save_memory(self, record: MemoryRecord) -> None: ...
     async def get_memory_by_key(
         self,
@@ -126,6 +114,9 @@ class NovaRepository(Protocol):
         session_id: str | None = None,
         owner_agent_key: str | None = None,
     ) -> int: ...
+
+
+class ScheduleStore(Protocol):
     async def create_schedule(
         self, job: ScheduledJob | dict[str, Any]
     ) -> ScheduledJob: ...
@@ -149,6 +140,29 @@ class NovaRepository(Protocol):
     ) -> bool: ...
 
 
+@runtime_checkable
+class NovaRepository(
+    SessionStore,
+    MessageStore,
+    ProjectStore,
+    AgentStore,
+    MemoryStore,
+    ScheduleStore,
+    Protocol,
+):
+    async def connect(self) -> None: ...
+    async def close(self) -> None: ...
+
+
 DataSourceProtocol = NovaRepository
 
-__all__ = ["DataSourceProtocol", "NovaRepository"]
+__all__ = [
+    "AgentStore",
+    "DataSourceProtocol",
+    "MemoryStore",
+    "MessageStore",
+    "NovaRepository",
+    "ProjectStore",
+    "ScheduleStore",
+    "SessionStore",
+]

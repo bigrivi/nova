@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nova.db import DataSourceProtocol, get_default_data_source
+from nova.db import AgentStore, get_default_data_source
 
 if TYPE_CHECKING:
     from nova.agent.core import Agent
@@ -21,7 +21,7 @@ class AgentHierarchy:
     def __init__(
         self,
         agent_key: str,
-        data_source: DataSourceProtocol | None = None,
+        data_source: AgentStore | None = None,
         parent_agent: Agent | None = None,
     ) -> None:
         self.agent_key = agent_key
@@ -29,7 +29,7 @@ class AgentHierarchy:
         self._data_source = data_source
         self._sub_agents: list[Agent] = []
 
-    async def _store(self) -> DataSourceProtocol:
+    async def _store(self) -> AgentStore:
         return self._data_source or await get_default_data_source()
 
     def add_sub_agent(self, owner: Agent, sub_agent: Agent) -> None:
@@ -58,7 +58,7 @@ class AgentHierarchy:
         return None
 
     @staticmethod
-    async def _records(store: DataSourceProtocol, keys: list[str]) -> list[dict]:
+    async def _records(store: AgentStore, keys: list[str]) -> list[dict]:
         records = []
         for key in keys:
             record = await store.get_agent(key)

@@ -25,7 +25,6 @@ import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
 
-from nova.agent import AgentEvent
 from nova.db.database import close_db
 from nova.server import create_app
 from nova.server.request_registry import (
@@ -162,7 +161,7 @@ class PerSessionSlowStreamService:
 def test_five_parallel_sessions_complete_in_single_session_time(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-gate-parallel"))
     app = create_app(settings=get_settings())
-    app.state.chat_service = PerSessionSlowStreamService()
+    app.state.context.chat_service = PerSessionSlowStreamService()
 
     session_identifiers = [f"gate-parallel-{index}" for index in range(5)]
     stream_results: dict = {}

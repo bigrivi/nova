@@ -15,7 +15,7 @@ import pytest
 from nova import checkpoints
 from nova.agent.core import AgentEvent
 from nova.llm.provider import Done, ToolCall
-from nova.server.chat_service import ChatService
+from nova.server.session_service import SessionService
 from nova.settings import get_settings
 from tests.test_agent_chat_stream import ScriptedProvider, isolated_agent
 
@@ -64,7 +64,7 @@ async def test_a_turn_that_writes_is_rewindable(tmp_path):
         assert summaries[0].files == 1
         checkpoint_id = summaries[0].checkpoint_id
 
-        service = ChatService(settings=get_settings())
+        service = SessionService(settings=get_settings())
         result = await service.rewind(session_id, checkpoint_id)
 
         assert result["restored"] == [str(target)]

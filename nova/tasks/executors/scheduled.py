@@ -36,7 +36,7 @@ from nova.tasks.models import (
 log = logging.getLogger(__name__)
 
 #: How the executor reaches the ChatService. Bound once in app assembly
-#: (``lambda: app.state.chat_service``); a test binds its own fake.
+#: (``lambda: context.chat_service``); a test binds its own fake.
 _chat_service_provider: Callable[[], Any] | None = None
 
 

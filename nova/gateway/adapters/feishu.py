@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 from nova.gateway.platform import InboundMessage, MessageHandler, PlatformAdapter
 
@@ -21,7 +22,7 @@ class FeishuAdapter(PlatformAdapter):
         self._handler: MessageHandler | None = None
         self._task: asyncio.Task | None = None
         self._tasks: set = set()
-        self._client = None
+        self._client: Any = None
 
     def on_message(self, handler: MessageHandler) -> None:
         self._handler = handler
@@ -43,20 +44,18 @@ class FeishuAdapter(PlatformAdapter):
             except Exception:
                 content = message.content
             if self._handler is not None:
-                task = asyncio.create_task(
+                task = asyncio.ensure_future(
                     self._handler(InboundMessage(sender=sender, text=content))
                 )
                 self._tasks.add(task)
                 task.add_done_callback(self._tasks.discard)
 
-        self._client = (
-            lark.ws.Client(
-                self.app_id,
-                self.app_secret,
-                event_handler=lark.EventDispatcherHandler.builder("", "")
-                .register_p2_im_message_receive_v1(_on_message)
-                .build(),
-            )
+        self._client = lark.ws.Client(
+            self.app_id,
+            self.app_secret,
+            event_handler=lark.EventDispatcherHandler.builder("", "")
+            .register_p2_im_message_receive_v1(_on_message)
+            .build(),
         )
         self._task = asyncio.create_task(asyncio.to_thread(self._client.start))
 

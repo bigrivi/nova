@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 from nova.gateway.platform import InboundMessage, MessageHandler, PlatformAdapter
 
@@ -20,7 +21,7 @@ class DingTalkAdapter(PlatformAdapter):
         self.agent_key = agent_key
         self._handler: MessageHandler | None = None
         self._task: asyncio.Task | None = None
-        self._client = None
+        self._client: Any = None
 
     def on_message(self, handler: MessageHandler) -> None:
         self._handler = handler
@@ -29,18 +30,23 @@ class DingTalkAdapter(PlatformAdapter):
         try:
             import dingtalk_stream
         except ImportError as exc:  # pragma: no cover - optional dependency
-            raise RuntimeError("dingtalk-stream is required for the DingTalk adapter") from exc
+            raise RuntimeError(
+                "dingtalk-stream is required for the DingTalk adapter"
+            ) from exc
 
         class _Handler(dingtalk_stream.ChatbotHandler):
             def __init__(self, adapter: DingTalkAdapter) -> None:
                 super().__init__()
                 self.adapter = adapter
 
-            async def process(self, callback: object) -> tuple[object, str]:
+            async def process(self, callback: Any) -> tuple[object, str]:
                 data = dingtalk_stream.ChatbotMessage.from_dict(callback.data)
                 if self.adapter._handler is not None:
                     await self.adapter._handler(
-                        InboundMessage(sender=data.sender_staff_id or "", text=data.text.content or "")
+                        InboundMessage(
+                            sender=data.sender_staff_id or "",
+                            text=data.text.content or "",
+                        )
                     )
                 return dingtalk_stream.AckMessage.STATUS_OK, "OK"
 

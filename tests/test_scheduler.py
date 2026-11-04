@@ -10,8 +10,8 @@ import pytest
 import pytest_asyncio
 
 from nova.db.config import DatabaseConfig
-from nova.db.in_memory_repository import InMemoryRepository
-from nova.db.sqlite_repository import SqliteRepository
+from nova.db.in_memory.repository import InMemoryRepository
+from nova.db.sqlite.repository import SqliteRepository
 from nova.scheduler.models import ScheduledJob
 from nova.scheduler.schedule import next_fire_time
 from nova.scheduler.service import SchedulerService
