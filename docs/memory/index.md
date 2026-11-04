@@ -57,6 +57,9 @@ turn: all work runs in the background and failures are isolated.
 
 ## Configuration
 
-Memory review frequency is configurable via `memory_review_interval` in settings.
+Memory review runs every `memory_review_interval` turns (default 10, on
+`AgentConfig`). The count comes from the conversation itself, so it survives the
+agent being rebuilt for each request. The interval is not exposed in
+`config.json`.
 The learning loop is configured via the `learning` block in `config.json`
 (see [Settings](../configuration/settings.md)).

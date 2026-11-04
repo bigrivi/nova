@@ -16,7 +16,7 @@ from nova.session.manager import SessionContext
 log = logging.getLogger(__name__)
 
 
-def _count_user_turns(messages: list) -> int:
+def count_user_turns(messages: list) -> int:
     """How many user turns this conversation has, including the current one."""
     return sum(
         1
@@ -182,7 +182,7 @@ class AgentMessaging:
             # delivered one conversation's reminder into another (and reset on
             # every restart).
             if should_nudge(
-                _count_user_turns(loaded_messages),
+                count_user_turns(loaded_messages),
                 ctx.learning_loop.settings.nudge_interval_turns,
             ):
                 notes.append(build_nudge_reminder())

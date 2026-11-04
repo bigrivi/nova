@@ -72,13 +72,18 @@ class AgentBackground:
                 "[Session %s] Title generation task failed: %s", session_id, exception
             )
 
-    def _maybe_schedule_memory_review(self) -> None:
-        if self.ctx.config.memory_review_interval <= 0:
+    def _maybe_schedule_memory_review(self, turn_count: int) -> None:
+        """Review memory every ``memory_review_interval`` user turns.
+
+        The turn count is passed in from the conversation's own history rather
+        than latched on the agent: an Agent is rebuilt for every request, so a
+        counter kept in its state would reset before the interval was ever
+        reached. Compaction folds old turns out of that history, so the count
+        restarts there -- review then fires sooner than the interval, never later.
+        """
+        interval = self.ctx.config.memory_review_interval
+        if interval <= 0 or turn_count % interval:
             return
-        self.state.turns_since_review += 1
-        if self.state.turns_since_review < self.ctx.config.memory_review_interval:
-            return
-        self.state.turns_since_review = 0
         self._spawn(self.run_memory_review())
 
     async def run_memory_review(self) -> None:

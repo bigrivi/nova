@@ -21,7 +21,7 @@ from nova.agent.events import (
 )
 from nova.agent.hierarchy import AgentHierarchy
 from nova.agent.llm_stream import TurnOutcome, TurnStreamReader
-from nova.agent.messaging import AgentMessaging
+from nova.agent.messaging import AgentMessaging, count_user_turns
 from nova.agent.session import AgentSession
 from nova.agent.state import TurnState
 from nova.agent.tool_guardrails import ToolGuardrails
@@ -548,7 +548,9 @@ class Agent:
                 )
                 log.info("[Session %s] Done reason=%s", session_id, reason)
                 if reason in ("completed", "requires_input"):
-                    self.background._maybe_schedule_memory_review()
+                    self.background._maybe_schedule_memory_review(
+                        count_user_turns(session_messages)
+                    )
                 await self.background.schedule_request_learning(
                     request_tool_calls, request_messages_before
                 )

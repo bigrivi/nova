@@ -455,6 +455,21 @@ class TestPolicyRejectFlow:
 
 
 class TestMemoryReviewScheduling:
+    @staticmethod
+    async def _session_with_user_turns(database, count: int) -> str:
+        """A session that already holds *count* finished user turns."""
+        session = session_manager_module.SessionContext.create()
+        await database.save_session(session)
+        for index in range(count):
+            await database.add_message(
+                NewMessage(
+                    session_id=session.id,
+                    role="user",
+                    content=f"earlier turn {index}",
+                )
+            )
+        return session.id
+
     @pytest.mark.asyncio
     async def test_schedules_review_after_completed_turn(self):
         from unittest.mock import AsyncMock
@@ -479,6 +494,37 @@ class TestMemoryReviewScheduling:
                 pass
             await asyncio.sleep(0)
             agent.background.run_memory_review.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_waits_for_the_interval_using_the_conversation_turn_count(self):
+        """The count survives the per-request Agent: nine turns is not ten.
+
+        A counter on the agent itself always reads 1 here, because the agent is
+        rebuilt for every request -- that is the bug this pins.
+        """
+        from unittest.mock import AsyncMock
+
+        provider = ScriptedProvider([[TextDelta(content="done")]])
+        async with isolated_agent(provider, memory_review_interval=10) as (agent, db):
+            session_id = await self._session_with_user_turns(db, 8)
+            agent.background.run_memory_review = AsyncMock()  # type: ignore[method-assign]
+            async for _ in agent.chat_stream("hello", session_id=session_id):
+                pass
+            await asyncio.sleep(0)
+            agent.background.run_memory_review.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reviews_on_the_turn_that_reaches_the_interval(self):
+        from unittest.mock import AsyncMock
+
+        provider = ScriptedProvider([[TextDelta(content="done")]])
+        async with isolated_agent(provider, memory_review_interval=10) as (agent, db):
+            session_id = await self._session_with_user_turns(db, 9)
+            agent.background.run_memory_review = AsyncMock()  # type: ignore[method-assign]
+            async for _ in agent.chat_stream("hello", session_id=session_id):
+                pass
+            await asyncio.sleep(0)
+            agent.background.run_memory_review.assert_called_once()
 
 
 class TestProviderMetaRoundTrip:
