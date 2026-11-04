@@ -61,7 +61,7 @@ async def make_session(client, title: str) -> str:
 
     from nova.session.models import Session
 
-    service = client._transport.app.state.chat_service
+    service = client._transport.app.state.context.chat_service
     data_source = await service._get_data_source()
     session = Session(id=str(uuid.uuid4()), title=title)
     await data_source.save_session(session)
@@ -279,7 +279,7 @@ class TestRouteStorage:
         )
 
         source = SqliteRepository(
-            DatabaseConfig(path=client._transport.app.state.settings.database_path)
+            DatabaseConfig(path=client._transport.app.state.context.settings.database_path)
         )
         session = await source.get_session(session_id)
         assert session["provider"] == "gw"

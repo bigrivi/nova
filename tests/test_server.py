@@ -113,8 +113,8 @@ def test_create_app_returns_fastapi_app(monkeypatch, tmp_path):
     app = create_app(settings=settings)
 
     assert isinstance(app, FastAPI)
-    assert app.state.settings.host == "0.0.0.0"
-    assert app.state.settings.port == 9000
+    assert app.state.context.settings.host == "0.0.0.0"
+    assert app.state.context.settings.port == 9000
 
 
 def test_health_endpoint(monkeypatch):
@@ -139,12 +139,15 @@ def test_session_pinned_endpoint_and_summary(monkeypatch):
     client = TestClient(app)
 
     class PinnedService:
+        def __init__(self) -> None:
+            self.session_service = self
+
         async def set_session_pinned(self, session_id, pinned):
             assert session_id == "session-1"
             assert pinned is True
             return True
 
-    app.state.chat_service = PinnedService()
+    app.state.context.chat_service = PinnedService()
     response = client.put("/api/sessions/session-1/pinned", json={"pinned": True})
 
     assert response.status_code == 200
@@ -292,7 +295,7 @@ def test_add_provider_endpoint_updates_config_and_models(monkeypatch, tmp_path):
     assert "openai" not in config_payload["providers"]
     credentials = json.loads((home / "credentials.json").read_text(encoding="utf-8"))
     assert credentials["providers"]["openai"]["api_key"] == "sk-test"
-    effective = app.state.settings.providers["openai"]
+    effective = app.state.context.settings.providers["openai"]
     assert effective.type == "openai-compatible"
     assert effective.options["base_url"] == "https://api.openai.com/v1"
     assert effective.options["api_key"] == "sk-test"
@@ -362,12 +365,12 @@ async def test_config_refresh_preserves_inflight_session_state(monkeypatch, tmp_
     monkeypatch.setenv("NOVA_HOME", str(home))
     app = create_app(settings=Settings.load_config())
 
-    chat_service_before = app.state.chat_service
+    chat_service_before = app.state.context.chat_service
     registry_before = chat_service_before.request_registry
     buffer_before = chat_service_before.stream_buffer
 
-    assert app.state.request_registry is registry_before
-    assert app.state.stream_buffer is buffer_before
+    assert app.state.context.request_registry is registry_before
+    assert app.state.context.stream_buffer is buffer_before
 
     await registry_before.try_register("session-inflight", object())
     buffer_before.append("session-inflight", b"data: {}\n\n")
@@ -385,13 +388,13 @@ async def test_config_refresh_preserves_inflight_session_state(monkeypatch, tmp_
     )
     assert response.status_code == 200
 
-    assert app.state.chat_service is chat_service_before
-    assert app.state.chat_service.request_registry is registry_before
-    assert app.state.chat_service.stream_buffer is buffer_before
+    assert app.state.context.chat_service is chat_service_before
+    assert app.state.context.chat_service.request_registry is registry_before
+    assert app.state.context.chat_service.stream_buffer is buffer_before
     assert await registry_before.slot_state("session-inflight") == "active"
     assert buffer_before.last_sequence("session-inflight") == 1
-    assert app.state.settings.providers["openrouter"].name == "OpenRouter"
-    assert app.state.chat_service.settings.providers["openrouter"].name == "OpenRouter"
+    assert app.state.context.settings.providers["openrouter"].name == "OpenRouter"
+    assert app.state.context.chat_service.settings.providers["openrouter"].name == "OpenRouter"
 
 
 def test_add_provider_endpoint_rejects_duplicate_key(monkeypatch, tmp_path):
@@ -496,7 +499,7 @@ def test_add_model_endpoint_updates_config_and_models(monkeypatch, tmp_path):
         == "gpt-5.4-mini"
     )
     assert (
-        app.state.settings.providers["openai"].models["gpt-5.4-mini"]["name"]
+        app.state.context.settings.providers["openai"].models["gpt-5.4-mini"]["name"]
         == "gpt-5.4-mini"
     )
 
@@ -972,7 +975,7 @@ async def test_delete_memory_endpoint_returns_404_for_missing(monkeypatch, tmp_p
 def test_chat_stream_endpoint_returns_sse_events(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-stream")
     app = create_app(settings=Settings.load_config())
-    app.state.chat_service = FakeChatService(
+    app.state.context.chat_service = FakeChatService(
         stream_chunks=[
             b'data: {"type":"data-nova-session","data":{"sessionId":"sess-stream"}}\n\n',
             b'data: {"type":"start","messageId":"msg_fake"}\n\n',
@@ -1010,7 +1013,7 @@ def test_chat_stream_endpoint_returns_sse_events(monkeypatch):
 def test_chat_stream_endpoint_includes_tool_event_fields(monkeypatch):
     monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-tool-stream")
     app = create_app(settings=Settings.load_config())
-    app.state.chat_service = FakeChatService(
+    app.state.context.chat_service = FakeChatService(
         stream_chunks=[
             b'data: {"type":"tool-input-start","toolCallId":"call_1","toolName":"bash"}\n\n',
             b'data: {"type":"tool-input-available","toolCallId":"call_1","toolName":"bash","input":{"command":"pwd"}}\n\n',
@@ -1188,7 +1191,7 @@ def test_remember_allowlist_is_scoped_per_session():
 async def test_stream_rejects_concurrent_request_with_409(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     app = create_app(settings=Settings.load_config())
-    await app.state.chat_service._request_registry.register("sess-busy", object())
+    await app.state.context.chat_service._request_registry.register("sess-busy", object())
     client = TestClient(app)
 
     response = client.post(
@@ -1268,7 +1271,7 @@ def test_update_provider_name_and_base_url_persists(monkeypatch, tmp_path):
         == "https://example.com/v1"
     )
     assert config_payload["providers"]["openai"]["options"]["api_key"] == "sk-test"
-    assert app.state.settings.providers["openai"].name == "OpenAI Renamed"
+    assert app.state.context.settings.providers["openai"].name == "OpenAI Renamed"
     providers_response = client.get("/api/providers")
     item = next(i for i in providers_response.json()["items"] if i["key"] == "openai")
     assert item["base_url"] == "https://example.com/v1"
@@ -1335,7 +1338,7 @@ def test_delete_provider_removes_it_and_its_models(monkeypatch, tmp_path):
     config_payload = json.loads((home / "config.json").read_text(encoding="utf-8"))
     assert "openai" not in config_payload["providers"]
     assert "ollama" in config_payload["providers"]
-    assert "openai" not in app.state.settings.providers
+    assert "openai" not in app.state.context.settings.providers
 
 
 def test_update_model_label_and_tools(monkeypatch, tmp_path):

@@ -216,13 +216,13 @@ async def test_create_app_pushes_task_updates_onto_the_event_bus(
 
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     app = create_app(settings=get_settings())
-    manager = app.state.background_task_manager
+    manager = app.state.context.background_task_manager
     # This test asserts that task frames reach the bus, not that they wake a
     # turn. Left wired, the completed background task starts a real headless
     # turn whose data-source worker thread outlives this test's event loop and
     # hangs whatever runs next.
     manager.set_completion_listener(None)
-    queue = app.state.session_event_bus.subscribe()
+    queue = app.state.context.session_event_bus.subscribe()
 
     async def executor(
         arguments: Mapping[str, object], context: TaskExecutionContext
@@ -284,7 +284,7 @@ def test_events_stream_exits_promptly_when_server_stopping(
     class _StoppingServer:
         should_exit = True
 
-    app.state.uvicorn_server = _StoppingServer()
+    app.state.context.uvicorn_server = _StoppingServer()
 
     results: dict = {}
 
@@ -325,13 +325,12 @@ def test_build_uvicorn_config_carries_shutdown_timeout(monkeypatch, tmp_path) ->
 
 
 def test_is_server_stopping_without_server_ref() -> None:
+    from types import SimpleNamespace
+
     from nova.server.deps import is_server_stopping
 
-    class _State:
-        pass
-
     class _App:
-        state = _State()
+        state = SimpleNamespace(context=SimpleNamespace(uvicorn_server=None))
 
     class _Request:
         app = _App()
@@ -366,13 +365,13 @@ def test_inflight_chat_stream_exits_promptly_when_server_stopping(
                 yield b'data: {"type":"text-delta","delta":"x"}\n\n'
                 await asyncio.sleep(0.05)
 
-    app.state.chat_service = _NeverEndingStreamService()
+    app.state.context.chat_service = _NeverEndingStreamService()
 
     class _StoppingServer:
         should_exit = False
 
     stopping = _StoppingServer()
-    app.state.uvicorn_server = stopping
+    app.state.context.uvicorn_server = stopping
 
     results: dict = {}
 

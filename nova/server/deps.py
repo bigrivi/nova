@@ -1,7 +1,7 @@
-"""Per-request accessors for app-level state.
+"""Per-request accessors, all resolved through the app's ``AppContext``.
 
-Each reader resolves ``request.app.state`` on every call and never caches, so
-tests that swap ``app.state.chat_service`` for a fake after ``create_app`` keep
+Each reader asks the context on every call and never caches, so a test that
+swaps ``app.state.context.chat_service`` for a fake after ``create_app`` keeps
 working. Do not bind these values at import or router-registration time.
 """
 
@@ -12,6 +12,7 @@ import logging
 from fastapi import Request
 
 from nova.server.chat_service import ChatService
+from nova.server.context import AppContext, config_mtime
 from nova.server.request_registry import RequestRegistry
 from nova.server.session_event_bus import SessionEventBus
 from nova.server.session_service import SessionService
@@ -22,34 +23,39 @@ from nova.speech.service import SpeechService
 log = logging.getLogger(__name__)
 
 
+def context_of(request: Request) -> AppContext:
+    """The handles this app was built with."""
+    return request.app.state.context
+
+
 def get_chat_service(request: Request) -> ChatService:
-    return request.app.state.chat_service
+    return context_of(request).chat_service
 
 
 def get_session_service(request: Request) -> SessionService:
-    """The session/project service.
+    """The session/project service owned by the chat service.
 
-    Falls back to the chat service itself: tests replace ``app.state.chat_service``
-    with a small object implementing the session methods they exercise.
+    Read through ``chat_service`` rather than kept as its own handle: a settings
+    reload can replace the chat service, and reaching through it means the
+    session routes follow instead of keeping a stale copy.
     """
-    service = request.app.state.chat_service
-    return getattr(service, "session_service", service)
+    return context_of(request).session_service
 
 
 def get_speech_service(request: Request) -> SpeechService:
-    return request.app.state.speech_service
+    return context_of(request).speech_service
 
 
 def get_settings(request: Request) -> Settings:
-    return request.app.state.settings
+    return context_of(request).settings
 
 
 def get_request_registry(request: Request) -> RequestRegistry:
-    return request.app.state.request_registry
+    return context_of(request).request_registry
 
 
 def get_stream_buffer(request: Request) -> StreamBuffer:
-    return request.app.state.stream_buffer
+    return context_of(request).stream_buffer
 
 
 def is_server_stopping(request: Request) -> bool:
@@ -60,23 +66,12 @@ def is_server_stopping(request: Request) -> bool:
     stay open, so handlers must also watch this flag or graceful shutdown
     stalls on connection drain until the force-close timeout.
     """
-    server = getattr(request.app.state, "uvicorn_server", None)
-    return bool(server is not None and server.should_exit)
+    server = context_of(request).uvicorn_server
+    return bool(server is not None and getattr(server, "should_exit", False))
 
 
 def get_session_event_bus(request: Request) -> SessionEventBus:
-    return request.app.state.session_event_bus
-
-
-def config_mtime(settings: Settings) -> int | None:
-    """The mtime of the file these settings were read from, or None."""
-    path = settings.config_path
-    if path is None:
-        return None
-    try:
-        return path.stat().st_mtime_ns
-    except OSError:
-        return None
+    return context_of(request).session_event_bus
 
 
 def apply_config_change(request: Request) -> None:
@@ -92,12 +87,9 @@ def apply_config_change(request: Request) -> None:
     settings in place; the bad mtime is remembered so a permanently broken file
     does not produce one warning per request.
     """
-    state = request.app.state
-    current = getattr(state, "settings", None)
-    if current is None:
-        return
-    mtime = config_mtime(current)
-    if mtime is None or mtime == getattr(state, "settings_mtime", None):
+    context = context_of(request)
+    mtime = config_mtime(context.settings)
+    if mtime is None or mtime == context.settings_mtime:
         return
     try:
         refresh_settings(request)
@@ -106,7 +98,7 @@ def apply_config_change(request: Request) -> None:
             "config.json changed but could not be reloaded; keeping the last good settings",
             exc_info=True,
         )
-        state.settings_mtime = mtime
+        context.settings_mtime = mtime
 
 
 def refresh_settings(request: Request) -> Settings:
@@ -119,19 +111,18 @@ def refresh_settings(request: Request) -> Settings:
     # Not ensuring: a config deleted while the server runs must not be
     # replaced by the empty defaults under the sessions already using it.
     refreshed_settings = reload_settings(ensure=False)
-    request.app.state.settings_mtime = config_mtime(refreshed_settings)
-    request.app.state.settings = refreshed_settings
-    speech_service = getattr(request.app.state, "speech_service", None)
-    if speech_service is not None:
-        speech_service.update_settings(refreshed_settings)
-    chat_service = request.app.state.chat_service
-    update_settings = getattr(chat_service, "update_settings", None)
+    context = context_of(request)
+    context.settings = refreshed_settings
+    context.settings_mtime = config_mtime(refreshed_settings)
+    context.speech_service.update_settings(refreshed_settings)
+    update_settings = getattr(context.chat_service, "update_settings", None)
     if callable(update_settings):
         update_settings(refreshed_settings)
     else:
-        request.app.state.chat_service = ChatService(
+        context.chat_service = ChatService(
             settings=refreshed_settings,
-            request_registry=request.app.state.request_registry,
-            stream_buffer=request.app.state.stream_buffer,
+            request_registry=context.request_registry,
+            stream_buffer=context.stream_buffer,
+            on_title_updated=context.session_event_bus.publish_title,
         )
     return refreshed_settings

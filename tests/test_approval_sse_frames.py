@@ -71,7 +71,7 @@ def _stub_event_stream(script, on_event=None):
 def _make_app(monkeypatch, tmp_path, name, script=APPROVAL_SCRIPT, on_event=None):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / name))
     app = create_app(settings=get_settings())
-    app.state.chat_service._agent_event_stream = _stub_event_stream(script, on_event)
+    app.state.context.chat_service._agent_event_stream = _stub_event_stream(script, on_event)
     return app
 
 
@@ -96,7 +96,7 @@ async def test_approval_required_renders_with_session_and_request_id(
     app = _make_app(monkeypatch, tmp_path, "home-approval-frame")
     chunks = [
         chunk
-        async for chunk in app.state.chat_service.chat_stream_ai_sdk(
+        async for chunk in app.state.context.chat_service.chat_stream_ai_sdk(
             type("R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}})()
         )
     ]
@@ -134,7 +134,7 @@ async def test_approval_resolved_retracts_a_replayed_prompt(monkeypatch, tmp_pat
     )
     chunks = [
         chunk
-        async for chunk in app.state.chat_service.chat_stream_ai_sdk(
+        async for chunk in app.state.context.chat_service.chat_stream_ai_sdk(
             type("R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}})()
         )
     ]
@@ -185,7 +185,7 @@ async def test_the_frame_carries_rememberable(monkeypatch, tmp_path, rememberabl
     )()
 
     chunks = [
-        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        chunk async for chunk in app.state.context.chat_service.chat_stream_ai_sdk(request)
     ]
     frames = _approval_frames_via_ai_sdk(chunks)
     data = frames[0]["data"] if frames else {}
@@ -219,7 +219,7 @@ async def test_a_frame_without_the_field_defaults_to_rememberable(
     )()
 
     chunks = [
-        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        chunk async for chunk in app.state.context.chat_service.chat_stream_ai_sdk(request)
     ]
     data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
 
@@ -249,7 +249,7 @@ async def test_the_frame_carries_the_family(monkeypatch, tmp_path):
     )()
 
     chunks = [
-        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        chunk async for chunk in app.state.context.chat_service.chat_stream_ai_sdk(request)
     ]
     data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
 
@@ -277,7 +277,7 @@ async def test_the_frame_carries_the_danger_flag(monkeypatch, tmp_path):
     )()
 
     chunks = [
-        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        chunk async for chunk in app.state.context.chat_service.chat_stream_ai_sdk(request)
     ]
     data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
 
@@ -297,7 +297,7 @@ async def test_the_frame_carries_the_target_path(monkeypatch, tmp_path):
     )()
 
     chunks = [
-        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        chunk async for chunk in app.state.context.chat_service.chat_stream_ai_sdk(request)
     ]
     data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
 
@@ -324,7 +324,7 @@ async def test_the_frame_carries_the_workspace_it_judged_against(monkeypatch, tm
     )()
 
     chunks = [
-        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        chunk async for chunk in app.state.context.chat_service.chat_stream_ai_sdk(request)
     ]
     data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
 
@@ -349,7 +349,7 @@ async def test_a_frame_with_no_active_workspace_sends_an_empty_one(
     )()
 
     chunks = [
-        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        chunk async for chunk in app.state.context.chat_service.chat_stream_ai_sdk(request)
     ]
     data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
 
@@ -377,7 +377,7 @@ async def test_a_frame_without_a_family_sends_an_empty_one(monkeypatch, tmp_path
         "R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}}
     )()
     chunks = [
-        chunk async for chunk in app.state.chat_service.chat_stream_ai_sdk(request)
+        chunk async for chunk in app.state.context.chat_service.chat_stream_ai_sdk(request)
     ]
 
     data = _approval_frames_via_ai_sdk(chunks)[0]["data"]
@@ -412,12 +412,12 @@ async def test_stream_stays_open_while_awaiting_approval(monkeypatch, tmp_path):
 
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-approval-open"))
     app = create_app(settings=get_settings())
-    app.state.chat_service._agent_event_stream = _blocking
+    app.state.context.chat_service._agent_event_stream = _blocking
 
     collected: list[bytes] = []
 
     async def consume():
-        async for chunk in app.state.chat_service.chat_stream_ai_sdk(
+        async for chunk in app.state.context.chat_service.chat_stream_ai_sdk(
             type("R", (), {"session_id": SESSION_ID, "message": "hi", "metadata": {}})()
         ):
             collected.append(chunk)

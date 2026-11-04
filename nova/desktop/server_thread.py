@@ -27,7 +27,7 @@ class ServerThread:
         asyncio.set_event_loop(loop)
         app = create_app(settings=self.settings)
         self.server = Server(build_uvicorn_config(app, self.settings))
-        app.state.uvicorn_server = self.server
+        app.state.context.uvicorn_server = self.server
         loop.run_until_complete(self.server.serve())
 
     def start(self) -> None:

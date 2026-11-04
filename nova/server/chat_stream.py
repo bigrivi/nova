@@ -20,7 +20,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from nova.server.chat_service import ChatService
-from nova.server.deps import is_server_stopping
+from nova.server.deps import context_of, is_server_stopping
 from nova.server.request_registry import _RESERVED, RequestRegistry
 from nova.server.schemas import ChatRequest
 from nova.server.stream_buffer import CONNECTION_QUEUE_MAXSIZE, StreamBuffer
@@ -136,7 +136,7 @@ async def park_detached_stream_session(
 def resolve_stream_dependencies(
     http_request: Request,
 ) -> tuple[ChatService, RequestRegistry | None, StreamBuffer | None]:
-    chat_service: ChatService = http_request.app.state.chat_service
+    chat_service: ChatService = context_of(http_request).chat_service
     # Prefer the public ChatService interface (2.1); fall back to the legacy
     # private attributes so lightweight test stubs without the properties
     # keep working.

@@ -70,7 +70,7 @@ def _parse(body: bytes) -> list[tuple[int, bytes]]:
 def _make_app(monkeypatch, tmp_path, name, script=SCRIPT):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / name))
     app = create_app(settings=get_settings())
-    app.state.chat_service._agent_event_stream = _stub_event_stream(script)
+    app.state.context.chat_service._agent_event_stream = _stub_event_stream(script)
     return app
 
 
@@ -134,7 +134,7 @@ def test_buffer_maxlen_500_enforced():
 @pytest.mark.asyncio
 async def test_chat_stream_ai_sdk_assigns_monotonic_sequence(monkeypatch, tmp_path):
     app = _make_app(monkeypatch, tmp_path, "home-sdk")
-    chat_service = app.state.chat_service
+    chat_service = app.state.context.chat_service
     chunks = [
         chunk
         async for chunk in chat_service.chat_stream_ai_sdk(
@@ -223,7 +223,7 @@ async def test_detach_continues_to_completion_gapless(monkeypatch, tmp_path):
 
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-detach"))
     app = create_app(settings=get_settings())
-    chat_service = app.state.chat_service
+    chat_service = app.state.context.chat_service
     chat_service._agent_event_stream = slow_stream
     await chat_service._request_registry.register("sess-D1", object())
 
@@ -292,7 +292,7 @@ def test_endpoint_idle_stream_emits_ping_heartbeat(monkeypatch, tmp_path):
 
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-hb"))
     app = create_app(settings=get_settings())
-    app.state.chat_service._agent_event_stream = slow_start
+    app.state.context.chat_service._agent_event_stream = slow_start
     client = TestClient(app)
 
     response = client.post(
@@ -328,7 +328,7 @@ def test_live_stream_holds_until_turn_end_despite_stall(monkeypatch, tmp_path):
 
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-stall"))
     app = create_app(settings=get_settings())
-    app.state.chat_service._agent_event_stream = stalling_stream
+    app.state.context.chat_service._agent_event_stream = stalling_stream
     client = TestClient(app)
 
     response = client.post(
@@ -360,7 +360,7 @@ async def test_resume_tail_follows_until_done_not_parked_on_idle(monkeypatch, tm
 
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-resume-hold"))
     app = create_app(settings=get_settings())
-    chat_service = app.state.chat_service
+    chat_service = app.state.context.chat_service
     buffer = chat_service.stream_buffer
     registry = chat_service.request_registry
 
@@ -470,7 +470,7 @@ def test_endpoint_resume_tails_live_stream(monkeypatch, tmp_path):
 
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-live"))
     app = create_app(settings=get_settings())
-    chat_service = app.state.chat_service
+    chat_service = app.state.context.chat_service
     chat_service._agent_event_stream = slow_stream
 
     results: dict = {}
@@ -678,7 +678,7 @@ def test_resume_after_completed_turn_returns_single_done(monkeypatch, tmp_path):
 
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home-twoturns"))
     app = create_app(settings=get_settings())
-    buf = app.state.stream_buffer
+    buf = app.state.context.stream_buffer
     sid = "sess-twoturns"
 
     def frame(text):

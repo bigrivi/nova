@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -7,7 +9,7 @@ from nova.tasks.manager import BackgroundTaskManager
 
 def _create_app(manager: BackgroundTaskManager) -> FastAPI:
     app = FastAPI()
-    app.state.background_task_manager = manager
+    app.state.context = SimpleNamespace(background_task_manager=manager)
     app.include_router(router)
     return app
 
