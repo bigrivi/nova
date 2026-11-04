@@ -9,6 +9,7 @@ version that cannot be installed, which no test catches today.
 
 from __future__ import annotations
 
+import ast
 import pathlib
 import re
 
@@ -42,7 +43,7 @@ def test_packaging_reads_the_version_instead_of_declaring_one():
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
     assert 'dynamic = ["version"]' in pyproject
-    assert 'version = { attr = "nova.__version__" }' in pyproject
+    assert 'version = { attr = "nova.version.__version__" }' in pyproject
     assert not re.search('^version\\s*=\\s*"', pyproject, re.MULTILINE), (
         "a literal version in pyproject would win over nova.__version__"
     )
@@ -68,3 +69,26 @@ def test_the_release_version_appears_only_once_in_the_source():
             offenders.append(f"{relative}: {match.group(1)}")
 
     assert not offenders, offenders
+
+
+def test_the_version_module_imports_nothing():
+    """Packaging reads it with a static parse; an import would break that.
+
+    ``attr = "nova.version.__version__"`` is resolved by importing the module when
+    setuptools cannot parse the literal, and a clean build environment has none of
+    the runtime dependencies. Keeping this module import-free keeps the parse
+    static -- the earlier ``nova.__version__`` target made ``pip install -e .``
+    fail on a missing aiohttp.
+    """
+    tree = ast.parse((ROOT / "nova/version.py").read_text(encoding="utf-8"))
+    imports = [
+        node
+        for node in tree.body
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+        and not (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "__future__"
+        )
+    ]
+
+    assert not imports, [ast.unparse(node) for node in imports]

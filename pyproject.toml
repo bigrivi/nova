@@ -82,7 +82,10 @@ Repository = "https://github.com/bigrivi/nova"
 Issues = "https://github.com/bigrivi/nova/issues"
 
 [tool.setuptools.dynamic]
-version = { attr = "nova.__version__" }
+# Read from the module that holds the literal, not from the package: setuptools
+# resolves `attr` by importing the target, and importing `nova` pulls in aiohttp
+# and the rest of the runtime, which a clean build environment does not have.
+version = { attr = "nova.version.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["nova*"]
