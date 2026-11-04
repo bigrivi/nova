@@ -21,13 +21,11 @@ from __future__ import annotations
 
 import platform
 
+from nova.version import __version__
+
 
 def default_user_agent() -> str:
     """The ``User-Agent`` Nova sends unless a provider config overrides it."""
-    # Imported here: nova/__init__ pulls in the agent, which pulls in the
-    # providers, so a module-level import of the version would cycle.
-    from nova import __version__
-
     system = platform.system().lower() or "unknown"
     machine = platform.machine().lower() or "unknown"
     return f"nova/{__version__} ({system}; {machine})"

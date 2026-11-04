@@ -7,8 +7,7 @@ from nova.llm import LLMProvider, Message
 from nova.session import SessionManager, get_session_manager
 from nova.settings import Settings, get_settings
 from nova.tools import ToolRegistry, tool
-
-__version__ = "1.0.2"
+from nova.version import __version__
 
 __all__ = [
     "Agent",
@@ -19,6 +18,7 @@ __all__ = [
     "SessionManager",
     "Settings",
     "ToolRegistry",
+    "__version__",
     "get_session_manager",
     "get_settings",
     "tool",

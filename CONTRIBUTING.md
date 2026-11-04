@@ -115,7 +115,7 @@ The rule was added after 62 commits acquired such trailers, so `git log` before 
 
 A release is cut from `main` with four steps, and only the last one publishes.
 
-1. Bump `nova/__init__.py`'s `__version__` and the four doc examples that quote the
+1. Bump `nova/version.py`'s `__version__` (re-exported as `nova.__version__`) and the four doc examples that quote the
    version. `tests/test_version_consistency.py` fails if they disagree, and refuses
    a literal version in `pyproject.toml` (it would win over the dynamic one).
 2. Write `release_notes/v<version>.md`, starting with `# Nova <version>`.
@@ -125,7 +125,7 @@ A release is cut from `main` with four steps, and only the last one publishes.
 4. `git tag -a v<version> -m "Nova <version>" && git push origin v<version>`.
 
 Pushing the tag runs `.github/workflows/release.yml`: it validates that the tag
-matches `nova.__version__`, builds the desktop bundle for Windows, macOS arm64 and
+matches `nova.version.__version__`, builds the desktop bundle for Windows, macOS arm64 and
 Linux plus the four TUI tarballs, and publishes one GitHub release whose body is
 `release_notes/<tag>.md`. The workflow is **not** triggered by creating a release
 in the web UI — a tag created that way never emits a `push` event, which is why the

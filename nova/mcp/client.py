@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from nova.mcp.transport import McpTransport
+from nova.version import __version__
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class McpClient:
             {
                 "protocolVersion": "2025-03-26",
                 "capabilities": {},
-                "clientInfo": {"name": "nova", "version": "0.1.0"},
+                "clientInfo": {"name": "nova", "version": __version__},
             },
         )
         self._capabilities = result.get("capabilities", {})

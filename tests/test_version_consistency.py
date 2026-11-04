@@ -1,6 +1,6 @@
 """One version string, checked in the places it is written down twice.
 
-``nova.__version__`` is the source: packaging reads it dynamically
+``nova/version.py`` is the source (re-exported as ``nova.__version__``): packaging reads it dynamically
 (``[tool.setuptools.dynamic]``), the CLI and ``/health`` report it, and the
 release workflow refuses a tag whose name disagrees with it. The only copies are
 four doc examples — and a bump that misses one leaves the docs telling users a
@@ -58,15 +58,11 @@ def test_each_doc_quotes_the_current_version(relative_path, pattern):
 
 
 def test_the_release_version_appears_only_once_in_the_source():
-    """A hardcoded copy beside ``__version__`` would drift without a failure."""
-    allowed = {
-        # The MCP handshake naming its client, not this project's release.
-        pathlib.Path("nova/mcp/client.py"),
-    }
+    """A hardcoded copy beside the constant would drift without a failure."""
     offenders = []
     for path in (ROOT / "nova").rglob("*.py"):
         relative = path.relative_to(ROOT)
-        if relative in allowed or relative == pathlib.Path("nova/__init__.py"):
+        if relative == pathlib.Path("nova/version.py"):
             continue
         for match in re.finditer(r'"(\d+\.\d+\.\d+)"', path.read_text(encoding="utf-8")):
             offenders.append(f"{relative}: {match.group(1)}")

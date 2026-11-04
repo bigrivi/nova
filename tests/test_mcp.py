@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from nova import __version__
 from nova.llm import ToolResult
 from nova.mcp.client import McpClient
 from nova.mcp.manager import _build_wrapper, init_mcp_servers, shutdown_clients
@@ -225,7 +226,7 @@ class TestMcpClient:
             {
                 "protocolVersion": "2025-03-26",
                 "capabilities": {},
-                "clientInfo": {"name": "nova", "version": "0.1.0"},
+                "clientInfo": {"name": "nova", "version": __version__},
             },
         )
         mock_transport.send_notification.assert_awaited_once_with(

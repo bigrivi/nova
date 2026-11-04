@@ -2,7 +2,7 @@ name: Release
 
 # Builds the desktop bundle for all three platforms and publishes them as one
 # GitHub release. Triggered by pushing a version tag; the tag is the version,
-# so a tag that disagrees with nova/__init__.py fails before anything is
+# so a tag that disagrees with nova/version.py fails before anything is
 # published. The release body comes from release_notes/<tag>.md -- a missing
 # file fails the job before an asset is uploaded, because a release that ships
 # with an auto-generated changelog instead of the written notes is one nobody
@@ -117,7 +117,7 @@ jobs:
           # A GitHub expression, not a shell variable: the heredoc is quoted,
           # so the shell would hand the literal ${...} through untouched.
           tag = "${{ github.ref_name }}".removeprefix("v")
-          source = pathlib.Path("nova/__init__.py").read_text(encoding="utf-8")
+          source = pathlib.Path("nova/version.py").read_text(encoding="utf-8")
           version = re.search(r'__version__\s*=\s*"([^"]+)"', source).group(1)
           if version != tag:
               sys.exit(f"tag {tag!r} does not match nova.__version__ {version!r}")
