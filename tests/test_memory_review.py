@@ -8,10 +8,12 @@ durable facts, and saves each one. Two paths matter: the minimum-history guard
 from __future__ import annotations
 
 import json
+import logging
 from types import SimpleNamespace
 
 import pytest
 
+from nova.agent import memory_review
 from nova.agent.memory_review import MIN_MESSAGES_TO_REVIEW, MemoryReviewer
 from nova.db.in_memory.repository import InMemoryRepository
 from nova.llm.provider import Done, LLMProvider, TextDelta
@@ -34,6 +36,15 @@ class RecordingProvider(LLMProvider):
 
     async def count_tokens(self, text: str, model: str | None = None) -> int:
         return len(text.split())
+
+
+class FailingProvider(RecordingProvider):
+    """A provider that is down: the one-shot helper turns this into ``None``."""
+
+    async def chat_stream(self, messages, model="m", tools=None, **kwargs):
+        self.calls.append({"model": model, "tools": tools})
+        raise RuntimeError("connection reset")
+        yield  # pragma: no cover - makes this an async generator
 
 
 class FakeSession:
@@ -118,3 +129,67 @@ async def test_a_reply_that_is_not_json_saves_nothing():
     await reviewer.run()
 
     assert await data_source.list_memories(MemorySearchFilters()) == []
+
+
+@pytest.fixture(autouse=True)
+def _reset_failure_counter():
+    memory_review._consecutive_failures = 0
+    yield
+    memory_review._consecutive_failures = 0
+
+
+@pytest.mark.asyncio
+async def test_repeated_failures_escalate_exactly_once(caplog):
+    """A dead provider must not stay a warning nobody reads.
+
+    The review runs in the background every N turns; one warning per attempt is
+    indistinguishable from silence. Crossing the threshold once says the
+    capability is off, and later failures go back to warnings.
+    """
+    reviewer = MemoryReviewer(
+        llm=FailingProvider(""),
+        session=FakeSession(_history(MIN_MESSAGES_TO_REVIEW)),  # type: ignore[arg-type]
+        model="review-model",
+        data_source=InMemoryRepository(),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="nova.agent.memory_review"):
+        for _ in range(5):
+            await reviewer.run()
+
+    levels = [
+        record.levelname
+        for record in caplog.records
+        if record.name == "nova.agent.memory_review"
+    ]
+    assert levels == ["WARNING", "WARNING", "ERROR", "WARNING", "WARNING"], levels
+    assert memory_review._consecutive_failures == 5
+
+
+@pytest.mark.asyncio
+async def test_one_success_resets_the_run_of_failures(caplog):
+    failing = MemoryReviewer(
+        llm=FailingProvider(""),
+        session=FakeSession(_history(MIN_MESSAGES_TO_REVIEW)),  # type: ignore[arg-type]
+        model="review-model",
+        data_source=InMemoryRepository(),
+    )
+    working = MemoryReviewer(
+        llm=RecordingProvider("[]"),
+        session=FakeSession(_history(MIN_MESSAGES_TO_REVIEW)),  # type: ignore[arg-type]
+        model="review-model",
+        data_source=InMemoryRepository(),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="nova.agent.memory_review"):
+        await failing.run()
+        await failing.run()
+        await working.run()
+        await failing.run()
+
+    levels = [
+        record.levelname
+        for record in caplog.records
+        if record.name == "nova.agent.memory_review"
+    ]
+    assert levels == ["WARNING", "WARNING", "WARNING"], levels

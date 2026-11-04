@@ -21,6 +21,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 MIN_MESSAGES_TO_REVIEW = 4
+FAILURES_BEFORE_ESCALATING = 3
+_consecutive_failures = 0
 MESSAGES_SAMPLED = 30
 TOOL_CONTENT_CHARS = 200
 
@@ -54,6 +56,27 @@ REVIEW_PROMPT_FOOTER = (
 )
 
 
+def _record_failure(reason: str) -> None:
+    """Count a failed review, escalating once so a dead provider is not silent.
+
+    Runs once every ``memory_review_interval`` turns in the background; a single
+    warning per failure is invisible in practice. Crossing the threshold once is
+    enough to say "this capability is off" without turning every later turn into
+    an error line.
+    """
+    global _consecutive_failures
+    _consecutive_failures += 1
+    if _consecutive_failures == FAILURES_BEFORE_ESCALATING:
+        log.error(
+            "Background memory review has failed %d times in a row (%s); "
+            "nothing will be remembered until the model call succeeds",
+            _consecutive_failures,
+            reason,
+        )
+    else:
+        log.warning("Background memory review failed: %s", reason)
+
+
 class MemoryReviewer:
     """Asks the model which facts from a conversation deserve to be remembered."""
 
@@ -72,6 +95,7 @@ class MemoryReviewer:
         self._tools = tools
 
     async def run(self) -> None:
+        global _consecutive_failures
         try:
             messages = await self._session.get_messages(last_n=40)
             if len(messages) < MIN_MESSAGES_TO_REVIEW:
@@ -89,7 +113,13 @@ class MemoryReviewer:
                 label="Background memory review",
             )
             if text is None:
+                # The one-shot helper returns None instead of raising, so a
+                # provider that is down looks exactly like "nothing to save".
+                _record_failure("the model returned no text")
                 return
+            # Any answer means the provider is reachable again, even when it
+            # reports that nothing was worth saving.
+            _consecutive_failures = 0
             facts = parse_review_facts(text)
             if not facts:
                 return
@@ -98,7 +128,7 @@ class MemoryReviewer:
             if saved:
                 log.info("Memory review saved %d new fact(s)", saved)
         except Exception as error:
-            log.warning("Background memory review failed: %s", error)
+            _record_failure(str(error))
 
     def _build_prompt(self, messages: list) -> str:
         lines = []
