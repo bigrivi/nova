@@ -9,7 +9,7 @@ from nova.app import build_agent
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.project.service import ProjectService
-from nova.server.request_registry import _RESERVED, RequestRegistry
+from nova.server.request_registry import _RESERVED, ACTIVE, DETACHED, RequestRegistry
 from nova.server.schemas import (
     MessageListResponse,
     MessageRecord,
@@ -22,6 +22,17 @@ from nova.session.models import decode_display_text
 from nova.settings import Settings
 
 log = logging.getLogger(__name__)
+
+
+async def _turn_is_running(registry: RequestRegistry, session_id: str) -> bool:
+    """True only while a stream holds the session.
+
+    A finished turn keeps its slot for resume/status until the reaper evicts it
+    (``TERMINAL_TTL``), so asking whether a slot *exists* reports a session as
+    busy for ten minutes after every reply. Fork, rewind and compact care about
+    a live writer, which is what ``active``/``detached`` mean.
+    """
+    return await registry.slot_state(session_id) in (ACTIVE, DETACHED)
 
 
 def normalize_workspace_dir(workspace_dir: str | None) -> str | None:
@@ -233,8 +244,7 @@ class SessionService:
         from nova import checkpoints as checkpoint_store
         from nova.session.errors import SessionBusy
 
-        owner = await self._request_registry.get(session_id)
-        if owner is not None:
+        if await _turn_is_running(self._request_registry, session_id):
             raise SessionBusy(session_id, "rewind")
 
         report = checkpoint_store.restore_files(session_id, checkpoint_id, force=force)
@@ -274,8 +284,7 @@ class SessionService:
         from nova.constants import DEFAULT_AGENT_KEY
         from nova.session.errors import SessionBusy
 
-        owner = await self._request_registry.get(session_id)
-        if owner is not None:
+        if await _turn_is_running(self._request_registry, session_id):
             raise SessionBusy(session_id, "compact")
 
         data_source = await self._get_data_source()
@@ -358,8 +367,7 @@ class SessionService:
         from nova.session.errors import SessionBusy
         from nova.session.fork import fork_session
 
-        owner = await self._request_registry.get(session_id)
-        if owner is not None:
+        if await _turn_is_running(self._request_registry, session_id):
             raise SessionBusy(session_id, "fork")
 
         data_source = await self._get_data_source()
