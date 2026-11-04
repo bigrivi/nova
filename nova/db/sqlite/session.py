@@ -49,7 +49,9 @@ class SqliteSessionMixin(SessionStore):
                 summary_accomplished=excluded.summary_accomplished,
                 summary_remaining=excluded.summary_remaining,
                 updated_at=excluded.updated_at, compacted_at=excluded.compacted_at,
-                message_count=excluded.message_count, turn_count=excluded.turn_count,
+                -- message_count and turn_count are maintained by add_message and
+                -- delete_messages. A caller holding an older copy of the session
+                -- would otherwise write its stale counts back over them.
                 metadata=excluded.metadata, workspace_dir=excluded.workspace_dir,
                 pinned=excluded.pinned, project_id=excluded.project_id,
                 provider=excluded.provider, model=excluded.model,

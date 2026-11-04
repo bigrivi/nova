@@ -38,8 +38,11 @@ class InMemorySessionMixin(SessionStore):
             "created_at": to_milliseconds(getattr(session, "created_at", now)),
             "updated_at": to_milliseconds(getattr(session, "updated_at", now)),
             "compacted_at": getattr(session, "compacted_at", None),
-            "message_count": getattr(session, "message_count", 0),
-            "turn_count": getattr(session, "turn_count", 0),
+            # Counters belong to the store while a session exists: they are
+            # changed by add_message and delete_messages, and an older copy of
+            # the session must not write its stale values back over them.
+            "message_count": self._counter("message_count", session),
+            "turn_count": self._counter("turn_count", session),
             "metadata": json.dumps(getattr(session, "metadata", None))
             if getattr(session, "metadata", None)
             else None,
@@ -47,6 +50,12 @@ class InMemorySessionMixin(SessionStore):
             "model": getattr(session, "model", None),
             "reasoning_effort": getattr(session, "reasoning_effort", None),
         }
+
+    def _counter(self, name: str, session: SessionContext) -> int:
+        existing = self._sessions.get(session.id)
+        if existing is not None:
+            return int(existing.get(name, 0))
+        return int(getattr(session, name, 0) or 0)
 
     async def get_session(self, session_id: str) -> dict[str, Any] | None:
         session = self._sessions.get(session_id)

@@ -452,3 +452,22 @@ async def test_scheduler_lease_takes_renews_expires_and_releases(repository):
     assert released["expires_at"] == 2_100
 
     assert await repository.acquire_scheduler_lease("primary", "owner-a", 3_000, 2_100)
+
+
+@pytest.mark.asyncio
+async def test_saving_a_session_again_does_not_reset_the_message_count(repository):
+    """Counters belong to the store, not to whichever copy saves last.
+
+    ``save_session`` is called by rename, pin and route changes with a session
+    object read earlier. Writing that object's counts back would silently undo
+    every message added in between.
+    """
+    await repository.save_session(Session(id="session-counters"))
+    await repository.add_message(NewMessage("session-counters", "user", "one"))
+    await repository.add_message(NewMessage("session-counters", "assistant", "two"))
+
+    stale = Session(id="session-counters")  # counts as they were before the messages
+    await repository.save_session(stale)
+
+    stored = await repository.get_session("session-counters")
+    assert stored["message_count"] == 2
