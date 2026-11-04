@@ -111,6 +111,30 @@ This applies to agents and assistants as much as to people. If a tool wants to s
 
 The rule was added after 62 commits acquired such trailers, so `git log` before this line still shows them. Leave the existing ones alone: rewriting 278 commits to strip them would change every SHA on `main` and force every clone to re-fetch, which is a worse outcome than two stale entries in a graph.
 
+## Releasing
+
+A release is cut from `main` with four steps, and only the last one publishes.
+
+1. Bump `nova/__init__.py`'s `__version__` and the four doc examples that quote the
+   version. `tests/test_version_consistency.py` fails if they disagree, and refuses
+   a literal version in `pyproject.toml` (it would win over the dynamic one).
+2. Write `release_notes/v<version>.md`, starting with `# Nova <version>`.
+   `tests/test_release_notes.py` requires it for the current version, and the
+   release workflow refuses to upload anything without it.
+3. Commit (`chore(release): <version>`) and push `main`; wait for CI.
+4. `git tag -a v<version> -m "Nova <version>" && git push origin v<version>`.
+
+Pushing the tag runs `.github/workflows/release.yml`: it validates that the tag
+matches `nova.__version__`, builds the desktop bundle for Windows, macOS arm64 and
+Linux plus the four TUI tarballs, and publishes one GitHub release whose body is
+`release_notes/<tag>.md`. The workflow is **not** triggered by creating a release
+in the web UI — a tag created that way never emits a `push` event, which is why the
+release path has to be a `git push`.
+
+If a release is published with the wrong body, edit the release text in place. Do
+not delete it or move the tag: download URLs and the installer's `SHA256SUMS`
+check are anchored to that tag.
+
 ## Project layout
 
 * `nova/` is the shared Python runtime. It holds the agent loop, tools, providers, persistence, and server. Keep agent logic, tools, providers, and persistence here so all four surfaces stay consistent. That rule is stated in the README.

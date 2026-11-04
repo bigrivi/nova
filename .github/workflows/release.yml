@@ -3,7 +3,10 @@ name: Release
 # Builds the desktop bundle for all three platforms and publishes them as one
 # GitHub release. Triggered by pushing a version tag; the tag is the version,
 # so a tag that disagrees with nova/__init__.py fails before anything is
-# published.
+# published. The release body comes from release_notes/<tag>.md -- a missing
+# file fails the job before an asset is uploaded, because a release that ships
+# with an auto-generated changelog instead of the written notes is one nobody
+# reviewed.
 #
 # This is the formal release path. build.yml is separate and untouched: it
 # publishes a Windows-only `nightly` prerelease on every push to main, which is
@@ -121,6 +124,15 @@ jobs:
           print(f"publishing {tag}")
           PY
 
+      - name: Require the written release notes
+        run: |
+          notes="release_notes/${{ github.ref_name }}.md"
+          if [ ! -s "$notes" ]; then
+            echo "::error::$notes is missing or empty. Write the release notes and commit them before tagging."
+            exit 1
+          fi
+          echo "notes: $notes ($(wc -l < "$notes") lines)"
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -128,7 +140,8 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
-          generate_release_notes: true
+          body_path: release_notes/${{ github.ref_name }}.md
+          generate_release_notes: false
 
   build-tui:
     name: Build TUI ${{ matrix.platform }}
@@ -186,13 +199,17 @@ jobs:
     needs: [build-tui, publish]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
-          generate_release_notes: true
+          # The same written body as `publish`: passing nothing here would let
+          # the action regenerate the notes and overwrite the curated text.
+          body_path: release_notes/${{ github.ref_name }}.md
+          generate_release_notes: false
 
   checksums:
     name: Publish checksums
