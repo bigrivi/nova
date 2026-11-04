@@ -5,8 +5,8 @@
   </picture>
 </p>
 <p align="center">
-  A personal AI agent that runs on your machine and remembers you.<br/>
-  Desktop, terminal, web, and API — one runtime, four surfaces.
+  One agent runtime. Four surfaces. Your machine.<br/>
+  Terminal, web, desktop and HTTP share one loop, one memory, one tool registry.
 </p>
 
 <p align="center">
@@ -28,7 +28,9 @@ API key and nothing leaves the machine, or connect any OpenAI-compatible, Respon
 or Anthropic endpoint and keep the same agent.
 
 One Python core drives a terminal TUI, an HTTP server, a web frontend, and a desktop
-app. They share the agent loop, the tool registry, and the SQLite store.
+app. They share the agent loop, the tool registry, and the SQLite store. Nothing sits
+behind an account: the model, the memory and the tool policy are files you own, and
+the whole install is one `curl` line or one signed release bundle.
 
 <p align="center">
   <img src="assets/nova-tui-demo.gif" width="900"
@@ -52,6 +54,10 @@ files and your shell.
 - Its memory outlives a conversation. A chat that forgets between sessions is only
   useful for the session it is in. Nova stores memories in SQLite with a scope and
   a type, so a preference you give on Monday still applies on Friday.
+
+Nova is not a hosted product, a coding-only agent, or a framework you build on. It
+is one runtime you install and point at a model, and the four surfaces are views onto
+the same conversation.
 
 ## Quick start
 
