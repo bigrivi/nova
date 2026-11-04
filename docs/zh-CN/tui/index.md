@@ -123,7 +123,7 @@ bash -c 'echo one; echo two'
 ## 版本
 
 ```bash
-nova -v          # nova 1.0.1
+nova -v          # nova 1.0.2
 nova --version   # 同上
 ```
 

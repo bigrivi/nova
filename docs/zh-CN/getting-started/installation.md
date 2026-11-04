@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/bigrivi/nova/main/install | bash
 提供清单条目，包**不会**被安装，`nova tui` 会在首次运行时从源码构建。
 
 ```bash
---version <v>        安装指定的发布 tag（例如 1.0.1）
+--version <v>        安装指定的发布 tag（例如 1.0.2）
 --no-modify-path     不改动 shell 的 rc 文件
 ```
 

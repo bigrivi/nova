@@ -141,7 +141,7 @@ static analysis is concerned. The rule set is in [Shell](../tools/shell.md).
 ## Version
 
 ```bash
-nova -v          # nova 1.0.1
+nova -v          # nova 1.0.2
 nova --version   # same
 ```
 

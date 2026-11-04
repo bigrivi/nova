@@ -23,7 +23,7 @@ extracted. If a release carries no manifest entry for your platform, the bundle 
 **not** installed and `nova tui` builds the client from source on first run instead.
 
 ```bash
---version <v>        install a specific release tag (e.g. 1.0.1)
+--version <v>        install a specific release tag (e.g. 1.0.2)
 --no-modify-path     leave your shell rc files alone
 ```
 
