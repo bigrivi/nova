@@ -308,51 +308,51 @@ class TestGetContextLimit:
 
 
 class TestHelperFunctions:
-    def testcontent_of_with_object(self):
+    def test_content_of_with_object(self):
         msg = MockMessage("1", "user", "Hello")
         assert content_of(msg) == "Hello"
 
-    def testcontent_of_with_dict(self):
+    def test_content_of_with_dict(self):
         msg = {"content": "Hello"}
         assert content_of(msg) == "Hello"
 
-    def testcontent_of_empty(self):
+    def test_content_of_empty(self):
         msg = MockMessage("1", "user", "")
         assert content_of(msg) == ""
 
-    def testrole_of_with_object(self):
+    def test_role_of_with_object(self):
         msg = MockMessage("1", "user", "Hello")
         assert role_of(msg) == "user"
 
-    def testrole_of_with_dict(self):
+    def test_role_of_with_dict(self):
         msg = {"role": "assistant"}
         assert role_of(msg) == "assistant"
 
-    def testid_of_with_object(self):
+    def test_id_of_with_object(self):
         msg = MockMessage("123", "user", "Hello")
         assert id_of(msg) == "123"
 
-    def testid_of_with_dict(self):
+    def test_id_of_with_dict(self):
         msg = {"id": "456"}
         assert id_of(msg) == "456"
 
-    def testtool_calls_of(self):
+    def test_tool_calls_of(self):
         msg = MockMessage("1", "assistant", "Hi", tool_calls=[{"name": "read"}])
         assert len(tool_calls_of(msg)) == 1
 
-    def testtool_call_ids_of_from_list(self):
+    def test_tool_call_ids_of_from_list(self):
         msg = MockMessage(
             "1", "assistant", "", tool_calls=[{"id": "call_123"}, {"id": "call_456"}]
         )
         ids = tool_call_ids_of(msg)
         assert ids == ["call_123", "call_456"]
 
-    def testtool_call_ids_of_from_json_string(self):
+    def test_tool_call_ids_of_from_json_string(self):
         msg = MockMessage("1", "assistant", "", tool_calls='[{"id": "call_abc"}]')
         ids = tool_call_ids_of(msg)
         assert ids == ["call_abc"]
 
-    def testtool_call_ids_of_empty(self):
+    def test_tool_call_ids_of_empty(self):
         msg = MockMessage("1", "user", "hello")
         assert tool_call_ids_of(msg) == []
 
@@ -401,16 +401,16 @@ class TestForcedCompaction:
         assert plan.over_threshold is True
         assert plan.needs_compaction is False
 
-    def testtool_call_id_of_from_object(self):
+    def test_tool_call_id_of_from_object(self):
         msg = MockMessage("2", "tool", "result")
         msg.tool_call_id = "call_xyz"
         assert tool_call_id_of(msg) == "call_xyz"
 
-    def testtool_call_id_of_from_dict(self):
+    def test_tool_call_id_of_from_dict(self):
         msg = {"role": "tool", "tool_call_id": "call_xyz"}
         assert tool_call_id_of(msg) == "call_xyz"
 
-    def testtool_call_id_of_empty(self):
+    def test_tool_call_id_of_empty(self):
         msg = MockMessage("2", "tool", "result")
         assert tool_call_id_of(msg) == ""
 
