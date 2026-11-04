@@ -735,6 +735,9 @@ class Agent:
             tool_policy=load_tool_policy(permissions_path()),
             permission_mode=self.config.permission_mode,
             shell_read_only=self.config.shell_read_only,
+            # Without this the loop exists but its tool is never registered, so
+            # an enabled learning loop offers the agent nothing to search with.
+            learning_loop=self.ctx.learning_loop,
         )
         await builder.build()
         self._skill_tools = builder.skill_tools

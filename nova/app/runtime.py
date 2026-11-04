@@ -309,6 +309,7 @@ def registry_cache_key(
     is_sub_agent: bool,
     posture_marker: str,
     permission_mode: str,
+    learning_enabled: bool = False,
 ) -> str:
     """The identity of a cached tool registry.
 
@@ -318,8 +319,16 @@ def registry_cache_key(
     config change look ignored -- or, the other way round, prompts in a run
     nobody is watching. The posture marker has been here for the same reason
     since the read-only sub-agent work.
+
+    Learning is in the key for the same class of reason: enabling it adds
+    ``session_search`` to the registry, and a registry cached while it was off
+    would keep that tool missing for the life of the process -- including after
+    a config reload turns the loop on.
     """
-    return f"{agent_key}:{model}:{is_sub_agent}:{posture_marker}:{permission_mode}"
+    return (
+        f"{agent_key}:{model}:{is_sub_agent}:{posture_marker}:"
+        f"{permission_mode}:{int(learning_enabled)}"
+    )
 
 
 async def build_agent(
@@ -485,6 +494,7 @@ async def build_agent(
         agent.is_sub_agent,
         posture_marker,
         permission_mode,
+        learning_enabled=bool(agent.ctx.learning_loop),
     )
     cached_registry = _registry_cache.get(reg_key)
     if cached_registry is not None:
