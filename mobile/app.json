@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Nova",
+    "slug": "nova-mobile",
+    "scheme": "nova",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.bigrivi.nova",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
+    "android": {
+      "package": "com.bigrivi.nova",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Nova attaches photos you choose.",
+          "cameraPermission": "Nova uses the camera for photos you attach."
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Nova records voice notes you choose to send."
+        }
+      ],
+      "expo-asset"
+    ]
+  }
+}

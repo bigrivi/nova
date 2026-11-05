@@ -67,3 +67,18 @@ jobs:
         working-directory: tui
       - run: bun run build
         working-directory: tui
+
+  mobile:
+    name: Mobile typecheck, test and bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: mobile
+      - run: bun run typecheck
+        working-directory: mobile
+      - run: bun run test
+        working-directory: mobile
+      - run: bun run export:android
+        working-directory: mobile
