@@ -45,7 +45,15 @@
           "microphonePermission": "Nova records voice notes you choose to send."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ]
   }
 }

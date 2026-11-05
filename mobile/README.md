@@ -156,9 +156,10 @@ What to expect:
   or download `android-ndk-r27b-darwin.zip`.
 - Missing `platforms;android-37` / `build-tools;37.0.0` are fetched by the
   Android Gradle plugin on the first run.
-- Release builds block cleartext HTTP. Connect over HTTPS (Tailscale or a
-  reverse proxy), or add `expo-build-properties` with
-  `android.usesCleartextTraffic` for a LAN-only test build.
+- `app.json` enables `usesCleartextTraffic` through `expo-build-properties`,
+  so the release build can reach `http://<lan-ip>:8765`. Basic auth over plain
+  HTTP is readable on the network: treat that as a trusted-LAN test setup and
+  use HTTPS (Tailscale or a reverse proxy) anywhere else.
 
 ## Hot reload
 
