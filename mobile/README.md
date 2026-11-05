@@ -133,6 +133,33 @@ adb -s <serial> shell am force-stop com.bigrivi.nova
 adb -s <serial> shell monkey -p com.bigrivi.nova 1
 ```
 
+## Release APK
+
+```bash
+cd mobile
+bunx expo prebuild --platform android
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export JAVA_HOME="/Library/Java/JavaVirtualMachines/openjdk.jdk/Contents/Home"
+cd android
+./gradlew :app:assembleRelease
+# app/build/outputs/apk/release/app-release.apk
+```
+
+What to expect:
+
+- The generated `android/` project signs release builds with Expo's debug
+  keystore. The APK installs for testing but cannot be published; production
+  signing needs a real keystore and `keystore.properties`, kept out of git.
+- Gradle needs the **macOS** NDK `27.1.12297006` (NDK r27b). A Linux NDK in
+  the same directory fails with `clang++ is not a full path to an existing
+  compiler tool`. Install the macOS NDK through Android Studio's SDK Manager,
+  or download `android-ndk-r27b-darwin.zip`.
+- Missing `platforms;android-37` / `build-tools;37.0.0` are fetched by the
+  Android Gradle plugin on the first run.
+- Release builds block cleartext HTTP. Connect over HTTPS (Tailscale or a
+  reverse proxy), or add `expo-build-properties` with
+  `android.usesCleartextTraffic` for a LAN-only test build.
+
 ## Hot reload
 
 Fast Refresh is built into Metro and React Native; there is no extra library or
