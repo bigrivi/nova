@@ -6,6 +6,7 @@ import {
     type ApprovalPending,
     useApprovalStore,
 } from "../stores/approval-store.ts";
+import { useTabStore } from "../stores/tab-store.ts";
 import { useToastStore } from "../stores/toast-store.ts";
 import { useTheme } from "../context/theme.tsx";
 
@@ -13,6 +14,24 @@ export function ApprovalDialog({ pending }: { pending: ApprovalPending }) {
     const theme = useTheme();
     const { title, block, scope } = approvalCopy(pending);
     const color = pending.dangerous ? theme.feedback.error : theme.feedback.running;
+
+    /** Clear the visible prompt, keeping the tab badge only if another request
+     *  for the same session was promoted behind it. */
+    function clearPrompt(): void {
+        useApprovalStore.getState().setPending(null);
+        const head = useApprovalStore.getState().pending;
+        const tab = useTabStore
+            .getState()
+            .tabs.find((item) => item.sessionId === pending.sessionId);
+        if (tab) {
+            useTabStore
+                .getState()
+                .setAttention(
+                    tab.id,
+                    head?.sessionId === pending.sessionId ? "approval" : null,
+                );
+        }
+    }
 
     useKeyboard((key) => {
         if (key.name === "y" || key.name === "return" || key.name === "enter") {
@@ -29,7 +48,7 @@ export function ApprovalDialog({ pending }: { pending: ApprovalPending }) {
     });
 
     async function resolve(remember: boolean): Promise<void> {
-        useApprovalStore.getState().setPending(null);
+        clearPrompt();
         try {
             await approveCommand({
                 sessionId: pending.sessionId,
@@ -51,7 +70,7 @@ export function ApprovalDialog({ pending }: { pending: ApprovalPending }) {
     }
 
     async function reject(): Promise<void> {
-        useApprovalStore.getState().setPending(null);
+        clearPrompt();
         try {
             await approveCommand({
                 sessionId: pending.sessionId,

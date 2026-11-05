@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import type { NovaSessionSummary } from "../../api/types.ts";
-import { arrangeSessions } from "./SessionsScreen.tsx";
+import {
+    arrangeSessions,
+    pendingMark,
+    type SessionListEntry,
+} from "./SessionsScreen.tsx";
 
 function session(
     id: string,
-    overrides: Partial<NovaSessionSummary> = {},
-): NovaSessionSummary {
+    overrides: Partial<SessionListEntry> = {},
+): SessionListEntry {
     return {
         id,
         title: id,
@@ -67,5 +70,25 @@ describe("arrangeSessions", () => {
             ["copy-b", "from origin"],
             ["other", null],
         ]);
+    });
+
+    test("a pending session sorts first, ties keep server order", () => {
+        const rows = arrangeSessions([
+            session("old", { updated_at: 2_000 }),
+            session("waiting", { updated_at: 1_000, pending: "approval" }),
+            session("question", { updated_at: 500, pending: "question" }),
+            session("newest", { updated_at: 3_000 }),
+        ]);
+
+        expect(rows.map((row) => row.id)).toEqual([
+            "waiting",
+            "question",
+            "newest",
+            "old",
+        ]);
+        expect(rows[0]?.pending).toBe("approval");
+        expect(pendingMark("approval")).toBe("! ");
+        expect(pendingMark("question")).toBe("? ");
+        expect(pendingMark(null)).toBe("");
     });
 });

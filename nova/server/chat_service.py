@@ -4,6 +4,7 @@ Chat service that maps internal agent events to stable backend events.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import AsyncGenerator, Callable
 from typing import Any, Literal
@@ -14,6 +15,7 @@ from nova.db import DataSourceProtocol, get_default_data_source
 from nova.project.service import ProjectService
 from nova.server.ai_sdk_frames import iter_parts
 from nova.server.ai_sdk_stream import AISDKStreamAdapter
+from nova.server.pending_prompts import get_pending_prompt_registry
 from nova.server.request_registry import RequestRegistry
 from nova.server.schemas import (
     ChatRequest,
@@ -24,6 +26,39 @@ from nova.server.stream_buffer import StreamBuffer
 from nova.settings import Settings
 
 log = logging.getLogger(__name__)
+
+
+def _pending_questions(chunk: bytes) -> list[dict] | None:
+    """The questions carried by a ``data-nova-input-required`` frame.
+
+    ``ask_user`` ends the turn with its questions in the tool result, so there
+    is no tool call left waiting to hold them. The registry is what lets a
+    client that closed its tab discover them again.
+    """
+    if b"data-nova-input-required" not in chunk:
+        return None
+    payload = ""
+    for line in chunk.decode("utf-8", "ignore").splitlines():
+        if line.startswith("data:"):
+            payload = line[5:].strip()
+    if not payload:
+        return None
+    try:
+        frame = json.loads(payload)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(frame, dict) or frame.get("type") != "data-nova-input-required":
+        return None
+    data = frame.get("data")
+    message = data.get("message") if isinstance(data, dict) else None
+    if not isinstance(message, str):
+        return None
+    try:
+        parsed = json.loads(message)
+    except json.JSONDecodeError:
+        return None
+    questions = parsed.get("questions") if isinstance(parsed, dict) else None
+    return questions if isinstance(questions, list) else None
 
 
 def _injected_message_variant(request: ChatRequest) -> str | None:
@@ -167,6 +202,9 @@ class ChatService:
         )
         resolved_session_id = request.session_id
         fallback_sequence = 0
+        # A new user turn answers (or abandons) the previous question batch.
+        if resolved_session_id:
+            get_pending_prompt_registry().clear_ask(resolved_session_id)
         # Arm this turn's boundary up front so a stale cursor-0 resume returns
         # only this turn even if the previous turn never marked done (e.g. it
         # errored or was cancelled, both of which skip mark_done below).
@@ -185,6 +223,11 @@ class ChatService:
                         turn_armed = True
                 for chunk in adapter.feed(event, data):
                     if resolved_session_id:
+                        questions = _pending_questions(chunk)
+                        if questions:
+                            get_pending_prompt_registry().set_ask(
+                                resolved_session_id, questions
+                            )
                         if fallback_sequence:
                             self._stream_buffer.ensure_next(
                                 resolved_session_id, fallback_sequence

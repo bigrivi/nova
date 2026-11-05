@@ -42,6 +42,7 @@ ROUTES = {
     "GET /api/chat/stream/active",
     "POST /api/chat/interrupt",
     "POST /api/chat/approve",
+    "GET /api/pending",
     # sessions
     "GET /api/sessions",
     "PATCH /api/sessions/{session_id}",
@@ -57,6 +58,7 @@ ROUTES = {
     "PUT /api/sessions/{session_id}/workspace",
     "GET /api/sessions/{session_id}/route",
     "PUT /api/sessions/{session_id}/route",
+    "GET /api/sessions/{session_id}/pending",
     # projects
     "GET /api/projects",
     "POST /api/projects",

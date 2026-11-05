@@ -42,6 +42,11 @@ class ApprovalRequest:
     # Where the approval was asked. A remembered one is saved against this
     # workspace, never against the session or the whole installation.
     workspace: str = ""
+    # Presentation fields carried by the live event but not needed by the
+    # manager until a client asks for the pending list.
+    tool_name: str = ""
+    target: str = ""
+    dangerous: bool = False
 
     # There were ``created_at``/``expires_at`` fields and a ``default_timeout=60``
     # here. Nothing ever read them: ``wait_with_heartbeat`` waits on an
@@ -105,6 +110,9 @@ class ApprovalManager:
         rule: str = "",
         family: str = "",
         digest: str = "",
+        tool_name: str = "",
+        target: str = "",
+        dangerous: bool = False,
     ) -> str:
         """Create a pending approval request and return its id (non-blocking).
 
@@ -146,6 +154,9 @@ class ApprovalManager:
             # Captured here, in the turn's task, because `resolve` runs on the
             # HTTP side where no workspace is in scope.
             workspace=_active_workspace() or "",
+            tool_name=tool_name,
+            target=target,
+            dangerous=dangerous,
         )
         self._events[req_id] = asyncio.Event()
         return req_id
@@ -349,6 +360,39 @@ class ApprovalManager:
 
     def get_pending(self) -> list[ApprovalRequest]:
         return [r for r in self._pending.values() if r.approved is None]
+
+    def pending_payload(self, session_id: str) -> list[dict[str, object]]:
+        """A pending request in the same shape as the live SSE frame.
+
+        The dialog renders both paths, so a request recovered after a restart
+        must carry the fields the live frame carries (family, script scope,
+        danger). ``rememberable`` is the rule's presence: the tool layer clears
+        the rule when a reviewer declined or a credential rule forbids it.
+        """
+        return [
+            {
+                "sessionId": request.session_id,
+                "requestId": request.id,
+                "command": request.command,
+                "description": request.description,
+                "toolName": request.tool_name,
+                "rememberable": bool(request.rule),
+                "family": request.family,
+                "target": request.target,
+                "scriptScoped": bool(request.digest),
+                "dangerous": request.dangerous,
+                "workspace": request.workspace,
+            }
+            for request in self.get_pending()
+            if request.session_id == session_id
+        ]
+
+    def pending_counts(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for request in self.get_pending():
+            if request.session_id:
+                counts[request.session_id] = counts.get(request.session_id, 0) + 1
+        return counts
 
 
 _manager: ApprovalManager | None = None

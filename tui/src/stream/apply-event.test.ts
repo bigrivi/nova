@@ -28,6 +28,12 @@ function makeEffects(overrides: Partial<StreamEffects> = {}) {
             approval = pending;
             calls.push(pending ? `approval:${pending.requestId}` : "approval:null");
         },
+        resolveApproval: (requestId) => {
+            if (approval?.requestId === requestId) {
+                approval = null;
+            }
+            calls.push(`resolve:${requestId}`);
+        },
         setAskActive: (questions) =>
             calls.push(`ask:${questions?.length ?? "null"}`),
         setCtx: (used, limit, percent) =>
@@ -277,7 +283,8 @@ describe("applyStreamEvent", () => {
         );
         expect(calls).toEqual([
             "approval:r1",
-            "approval:null",
+            "resolve:r0",
+            "resolve:r1",
         ]);
     });
 

@@ -1,7 +1,10 @@
 /** Root component: layout orchestration, modal layer, global keybindings, and command dispatch */
+import { CliRenderEvents } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { useEffect, useMemo, useState } from "react";
 import { getAgent, getPermissions, listSessions } from "../api/nova-api.ts";
+import { listPendingSessions } from "../api/nova-api.ts";
+import type { NovaPendingSummary } from "../api/types.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
@@ -9,6 +12,7 @@ import { useExpandStore } from "../stores/expand-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { cycleMode, normalizeMode, usePermissionStore } from "../stores/permission-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
+import { useTabStore } from "../stores/tab-store.ts";
 import { useToastStore } from "../stores/toast-store.ts";
 import { loadModels } from "../lib/catalog.ts";
 import { ThemeOverride, useTheme } from "../context/theme.tsx";
@@ -42,9 +46,20 @@ import { ThemeScreen } from "./screens/ThemeScreen.tsx";
 import { VariantsScreen } from "./screens/VariantsScreen.tsx";
 import { StatusBar } from "./StatusBar.tsx";
 import { Toast } from "./Toast.tsx";
+import { SessionTabBar } from "./SessionTabBar.tsx";
 import { WORKSPACE_DIR } from "../workspace.ts";
 import { compactOpenSession } from "../lib/compact-session.ts";
 import { forkOpenSession } from "../lib/fork-session.ts";
+import { pruneRestoredTabs, restoredActiveSessionId } from "../lib/tab-persistence.ts";
+import {
+    closeTab,
+    cycleTabs,
+    focusSession,
+    openDraftTab,
+    reopenLastClosed,
+    selectTab,
+    selectTabIndex,
+} from "../lib/tab-actions.ts";
 
 export type ExitHandler = () => void;
 
@@ -52,6 +67,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     const askQuestions = useAskUserStore((state) => state.active);
     const approval = useApprovalStore((state) => state.pending);
     const screen = useScreenStore((state) => state.current);
+    const askTabId = useAskUserStore((state) => state.activeTabId);
     const messages = useChatStore((state) => state.messages);
     const isStreaming = useChatStore((state) => state.isStreaming);
     const sessionId = useChatStore((state) => state.sessionId);
@@ -59,7 +75,8 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     const model = useChatStore((state) => state.model);
     // A null session means nothing has been loaded yet; `loadHistory` sets both
     // fields at once, so picking a session never flashes the launch screen.
-    const launching = messages.length === 0 && !isStreaming && sessionId === null;
+    const launching =
+        messages.length === 0 && !isStreaming && sessionId === null;
     const [hintIndex, setHintIndex] = useState(0);
     const [savedSessions, setSavedSessions] = useState(0);
     const menuAnchor = useMenuStore((state) => state.anchor);
@@ -79,18 +96,82 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     }, [launching, animate]);
 
     // Offering the resume hint needs the count, not the sessions themselves.
+    // The same fetch drops restored tabs whose session is gone and refreshes
+    // their titles from the backend.
     useEffect(() => {
-        if (!launching) return;
         let cancelled = false;
-        void listSessions({ workspaceDir: WORKSPACE_DIR })
-            .then((sessions) => {
-                if (!cancelled) setSavedSessions(sessions.length);
+        const startupTabs = new Set(
+            useTabStore.getState().tabs.map((tab) => tab.id),
+        );
+        void Promise.all([
+            listSessions({ workspaceDir: WORKSPACE_DIR }),
+            listPendingSessions().catch(
+                (): NovaPendingSummary => ({}),
+            ),
+        ])
+            .then(([sessions, pending]) => {
+                if (cancelled) return;
+                setSavedSessions(sessions.length);
+                pruneRestoredTabs(new Set(sessions.map((session) => session.id)));
+                const store = useTabStore.getState();
+                for (const session of sessions) {
+                    if (session.title) {
+                        store.setTitle(session.id, session.title);
+                    }
+                    const tab = store.tabs.find(
+                        (item) => item.sessionId === session.id,
+                    );
+                    if (tab && startupTabs.has(tab.id) && session.agent_key) {
+                        useChatStore
+                            .getState()
+                            .setAgent(
+                                session.agent_key,
+                                session.agent_key,
+                                tab.id,
+                            );
+                    }
+                }
+
+                // Restored tabs carry the prompt badge before they are opened;
+                // the dialog itself waits until the tab is selected.
+                for (const tab of useTabStore.getState().tabs) {
+                    if (!tab.sessionId) continue;
+                    const prompt = pending[tab.sessionId];
+                    if (!prompt) continue;
+                    useTabStore
+                        .getState()
+                        .setAttention(
+                            tab.id,
+                            prompt.ask
+                                ? "question"
+                                : prompt.approvals > 0
+                                  ? "approval"
+                                  : null,
+                        );
+                }
+
+                // Return to the session that was on screen last run, unless the
+                // prune removed it or the user already picked something.
+                const restored = restoredActiveSessionId();
+                if (
+                    restored &&
+                    useTabStore.getState().tabs.length > 0 &&
+                    useTabStore.getState().activeId === null &&
+                    useChatStore.getState().sessionId === null
+                ) {
+                    const tab = useTabStore
+                        .getState()
+                        .tabs.find((item) => item.sessionId === restored);
+                    if (tab) {
+                        selectTab(tab.id);
+                    }
+                }
             })
             .catch(() => {});
         return () => {
             cancelled = true;
         };
-    }, [launching]);
+    }, []);
 
     // A translucent scrim eats double-width glyphs, so the transcript is dimmed
     // by recolouring its palette instead of drawing over it.
@@ -105,6 +186,33 @@ export function App({ onExit }: { onExit: ExitHandler }) {
 
     // Tail server-initiated turns so a background-task wake appears in place.
     useEffect(() => startSessionEvents(), []);
+
+    // A blurred terminal does not count as viewing the active tab, so a turn
+    // that finishes while the window is in the background keeps its unread dot.
+    useEffect(() => {
+        const onFocus = (): void => useTabStore.getState().setFocused(true);
+        const onBlur = (): void => useTabStore.getState().setFocused(false);
+        renderer.on(CliRenderEvents.FOCUS, onFocus);
+        renderer.on(CliRenderEvents.BLUR, onBlur);
+        return () => {
+            renderer.off(CliRenderEvents.FOCUS, onFocus);
+            renderer.off(CliRenderEvents.BLUR, onBlur);
+        };
+    }, [renderer]);
+
+    // A background approval or question owns the modal: bring its tab forward so
+    // the dialog and the transcript it refers to cannot disagree.
+    useEffect(() => {
+        if (approval?.sessionId) {
+            focusSession(approval.sessionId);
+        }
+    }, [approval?.requestId, approval?.sessionId]);
+
+    useEffect(() => {
+        if (askQuestions && askTabId) {
+            selectTab(askTabId);
+        }
+    }, [askQuestions, askTabId]);
 
     // Read the initial provider/model from the agent table on startup to stay in sync with the model selected by the frontend/desktop
     useEffect(() => {
@@ -177,12 +285,40 @@ export function App({ onExit }: { onExit: ExitHandler }) {
         }
         // Before the screen guard: the mode belongs to the session, so it stays
         // switchable from any screen, not just an empty composer.
+        // Ctrl+Tab is checked first: ctrl+shift+tab must not fall through to the
+        // permission-mode cycle below.
+        if (key.ctrl && key.name === "tab") {
+            cycleTabs(key.shift ? -1 : 1);
+            return;
+        }
+        if ((key.meta || key.option) && (key.name === "down" || key.name === "up")) {
+            cycleTabs(key.name === "down" ? 1 : -1);
+            return;
+        }
         if (key.shift && key.name === "tab") {
             cycleMode();
             return;
         }
         if (useScreenStore.getState().current) {
             // Screen keyboard is handled by each screen's useKeyboard
+            return;
+        }
+        if (key.ctrl && key.name === "w") {
+            closeTab();
+            return;
+        }
+        if (key.ctrl && key.name === "t") {
+            // Ctrl+Shift+T only reaches us as distinct on terminals that encode
+            // the modifier; /reopen covers the rest.
+            if (key.shift) {
+                reopenLastClosed();
+            } else {
+                openDraftTab();
+            }
+            return;
+        }
+        if (key.ctrl && key.name >= "1" && key.name <= "9") {
+            selectTabIndex(Number(key.name) - 1);
             return;
         }
         if (key.ctrl && key.name === "o") {
@@ -201,11 +337,20 @@ export function App({ onExit }: { onExit: ExitHandler }) {
         const screens = useScreenStore.getState();
         switch (id) {
             case "new":
-                useChatStore.getState().reset();
-                useCtxStore.getState().clear();
+                openDraftTab();
+                return;
+            case "close":
+                closeTab();
+                return;
+            case "reopen":
+                if (!reopenLastClosed()) {
+                    useToastStore
+                        .getState()
+                        .show("No closed tab to reopen", 3000);
+                }
                 return;
             case "clear":
-                useChatStore.setState({ messages: [] });
+                useChatStore.getState().clearMessages();
                 useCtxStore.getState().clear();
                 return;
             case "quit":
@@ -329,6 +474,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
             backgroundColor={theme.background.base}
         >
             <ThemeOverride value={quiet}>
+                <SessionTabBar />
                 {launching ? null : <MessageList />}
                 {askQuestions ? (
                     <AskUserCard

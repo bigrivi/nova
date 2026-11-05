@@ -231,6 +231,7 @@ class ShellToolBehavior(DefaultToolBehavior):
                 rule=verdict.rule if rememberable else "",
                 family=verdict.family if rememberable else "",
                 digest=verdict.digest if rememberable else "",
+                dangerous=verdict.dangerous,
             )
             if req_id:
                 return PreExecutionCheck(
@@ -505,6 +506,8 @@ class PolicyToolBehavior(DefaultToolBehavior):
             session_id=ctx.session_id,
             rule=rule if rememberable else "",
             family=scope,
+            tool_name=self._tool,
+            target=str(path_target(self._tool, args) or ""),
         )
         if not req_id:
             return PreExecutionCheck()

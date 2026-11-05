@@ -71,6 +71,34 @@ export type NovaModelRecord = {
 /** A tool the server advertised that the agent cannot call, and why. */
 export type NovaMcpSkippedTool = { tool: string; reason: string };
 
+/** A pending approval in the shape the live SSE frame carries. */
+export type NovaPendingApproval = {
+    sessionId: string;
+    requestId: string;
+    command: string;
+    description: string;
+    toolName: string;
+    rememberable: boolean;
+    family: string;
+    target: string;
+    scriptScoped: boolean;
+    dangerous: boolean;
+    workspace: string;
+};
+
+/** Prompts a session is waiting on, fetched without the live stream. */
+export type NovaPendingPrompts = {
+    approvals: NovaPendingApproval[];
+    /** Native `ask_user` questions; the stream parser normalizes them. */
+    ask: unknown[] | null;
+};
+
+/** Per-session prompt counts for the session picker. */
+export type NovaPendingSummary = Record<
+    string,
+    { approvals: number; ask: boolean }
+>;
+
 /** Branch and changed files of a session workspace. */
 export type NovaGitStatus = {
     branch: string;

@@ -21,6 +21,7 @@ export type StreamEffects = {
     markOwnActive(sessionId: string): void;
     getApproval(): ApprovalPending | null;
     setApproval(pending: ApprovalPending | null): void;
+    resolveApproval(requestId: string): void;
     setAskActive(questions: AskQuestion[] | null): void;
     setCtx(used: number, limit: number, percent: number): void;
     setTodos(input: unknown): void;
@@ -256,9 +257,8 @@ export function applyStreamEvent(
             // A replayed retraction clears a prompt that was already answered,
             // so a resume never resurrects a ghost dialog.
             const requestId = String(event.data?.requestId ?? "");
-            const pending = ctx.getApproval();
-            if (pending && pending.requestId === requestId) {
-                ctx.setApproval(null);
+            if (requestId) {
+                ctx.resolveApproval(requestId);
             }
             return;
         }

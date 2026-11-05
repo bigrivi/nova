@@ -11,9 +11,23 @@ export const COMMANDS: CommandSpec[] = [
     {
         id: "new",
         label: "New Session",
-        description: "Start a new conversation",
+        description: "Start a new conversation in another tab",
         usage: "/new",
         aliases: ["n"],
+    },
+    {
+        id: "close",
+        label: "Close Tab",
+        description: "Close the current session tab",
+        usage: "/close",
+        aliases: ["wc"],
+    },
+    {
+        id: "reopen",
+        label: "Reopen Tab",
+        description: "Reopen the most recently closed session tab",
+        usage: "/reopen",
+        aliases: [],
     },
     {
         id: "sessions",

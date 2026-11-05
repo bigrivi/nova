@@ -1,5 +1,11 @@
-/** Chat global state: messages (parts structure), session ID, streaming state (zustand) */
+/** Chat state: messages (parts structure), session, streaming state, per-tab slices.
+ *
+ *  The top-level fields are always the *active* tab's slice, which keeps every
+ *  transcript reader unchanged. `byId` holds the inactive tabs so a background
+ *  stream can keep writing while another tab is on screen.
+ */
 import { create } from "zustand";
+import { useTabStore } from "./tab-store.ts";
 
 export type TextPart = {
     type: "text";
@@ -51,12 +57,8 @@ export type RetryState = {
     reason: string;
 };
 
-/** Model selection for this conversation (P3: taken over by the model selection screen) */
-export const DEFAULT_PROVIDER = "";
-export const DEFAULT_MODEL = "";
-export const DEFAULT_AGENT_KEY = "main";
-
-type ChatState = {
+/** The transcript state one tab owns. */
+export type ChatSlice = {
     messages: TuiMessage[];
     sessionId: string | null;
     isStreaming: boolean;
@@ -65,47 +67,109 @@ type ChatState = {
     reasoningEffort: string;
     agentKey: string;
     agentName: string;
-    /** Set while the provider is waiting to re-send a request; null otherwise. */
     retry: RetryState | null;
+};
 
-    setSessionId: (sessionId: string) => void;
-    setRetry: (retry: RetryState | null) => void;
-    setPending: (messageId: string, pending: boolean) => void;
-    addUserMessage: (text: string, images?: string[]) => void;
-    insertWakeMessage: (text: string, wakeFor: string, variant?: string) => void;
-    startAssistantMessage: () => string;
-    startTextPart: (messageId: string) => void;
-    appendTextDelta: (messageId: string, delta: string) => void;
-    startReasoningPart: (messageId: string) => void;
-    appendReasoningDelta: (messageId: string, delta: string) => void;
-    endReasoningPart: (messageId: string, elapsedMs: number | null) => void;
+export type RouteSelection = {
+    provider: string;
+    model: string;
+    reasoningEffort?: string;
+};
+
+/** Model selection for this conversation (P3: taken over by the model selection screen) */
+export const DEFAULT_PROVIDER = "";
+export const DEFAULT_MODEL = "";
+export const DEFAULT_AGENT_KEY = "main";
+
+type ChatState = ChatSlice & {
+    byId: Record<string, ChatSlice>;
+
+    setSessionId: (sessionId: string, tabId?: string | null) => void;
+    setRetry: (retry: RetryState | null, tabId?: string | null) => void;
+    setPending: (
+        messageId: string,
+        pending: boolean,
+        tabId?: string | null,
+    ) => void;
+    addUserMessage: (
+        text: string,
+        images?: string[],
+        tabId?: string | null,
+    ) => void;
+    insertWakeMessage: (
+        text: string,
+        wakeFor: string,
+        variant?: string,
+        tabId?: string | null,
+    ) => void;
+    startAssistantMessage: (tabId?: string | null) => string;
+    startTextPart: (messageId: string, tabId?: string | null) => void;
+    appendTextDelta: (
+        messageId: string,
+        delta: string,
+        tabId?: string | null,
+    ) => void;
+    startReasoningPart: (messageId: string, tabId?: string | null) => void;
+    appendReasoningDelta: (
+        messageId: string,
+        delta: string,
+        tabId?: string | null,
+    ) => void;
+    endReasoningPart: (
+        messageId: string,
+        elapsedMs: number | null,
+        tabId?: string | null,
+    ) => void;
     startToolCall: (
         messageId: string,
         tool: { toolCallId: string; toolName: string },
+        tabId?: string | null,
     ) => void;
     setToolInput: (
         messageId: string,
         toolCallId: string,
         input: unknown,
+        tabId?: string | null,
     ) => void;
     setToolOutput: (
         messageId: string,
         toolCallId: string,
         output: unknown,
+        tabId?: string | null,
     ) => void;
     setToolStatus: (
         messageId: string,
         toolCallId: string,
         status: ToolCallPart["status"],
+        tabId?: string | null,
     ) => void;
     failToolCall: (
         messageId: string,
         toolCallId: string,
         message: string,
+        tabId?: string | null,
     ) => void;
-    completeStream: () => void;
-    failStream: (error: string) => void;
-    loadHistory: (sessionId: string, messages: TuiMessage[]) => void;
+    completeStream: (tabId?: string | null) => void;
+    failStream: (error: string, tabId?: string | null) => void;
+    dropMessage: (messageId: string, tabId?: string | null) => void;
+    resetAssistantMessage: (
+        messageId: string,
+        tabId?: string | null,
+    ) => void;
+    loadHistory: (
+        sessionId: string,
+        messages: TuiMessage[],
+        tabId?: string | null,
+    ) => void;
+    setRoute: (route: RouteSelection, tabId?: string | null) => void;
+    setAgent: (
+        agentKey: string,
+        agentName: string,
+        tabId?: string | null,
+    ) => void;
+    clearMessages: (tabId?: string | null) => void;
+    activate: (nextId: string | null, previousId: string | null) => void;
+    remove: (tabId: string) => void;
     reset: () => void;
 };
 
@@ -132,7 +196,6 @@ function lastPartOfType<T extends MessagePart["type"]>(
     }
     return null;
 }
-
 
 /** Patch one tool-call part in a message, leaving every other part untouched. */
 function patchToolPart(
@@ -197,312 +260,516 @@ function settleParts(parts: MessagePart[]): MessagePart[] {
     });
 }
 
-export const useChatStore = create<ChatState>((set) => ({
-    messages: [],
-    sessionId: null,
-    isStreaming: false,
-    provider: DEFAULT_PROVIDER,
-    model: DEFAULT_MODEL,
-    reasoningEffort: "",
-    agentKey: DEFAULT_AGENT_KEY,
-    agentName: DEFAULT_AGENT_KEY,
-    retry: null,
+function topSlice(state: ChatSlice): ChatSlice {
+    return {
+        messages: state.messages,
+        sessionId: state.sessionId,
+        isStreaming: state.isStreaming,
+        provider: state.provider,
+        model: state.model,
+        reasoningEffort: state.reasoningEffort,
+        agentKey: state.agentKey,
+        agentName: state.agentName,
+        retry: state.retry,
+    };
+}
 
-    setSessionId: (sessionId) => set({ sessionId }),
+function emptySlice(state: ChatSlice): ChatSlice {
+    return {
+        messages: [],
+        sessionId: null,
+        isStreaming: false,
+        provider: state.provider,
+        model: state.model,
+        reasoningEffort: state.reasoningEffort,
+        agentKey: state.agentKey,
+        agentName: state.agentName,
+        retry: null,
+    };
+}
 
-    // Returning the same state keeps the clearing call from re-rendering on
-    // every heartbeat-sized event.
-    setRetry: (retry) =>
-        set((state) => (state.retry === null && retry === null ? state : { retry })),
+export const useChatStore = create<ChatState>((set) => {
+    /** Apply *patch* to one tab's slice, mirroring the active tab to the top level. */
+    function writeSlice(
+        tabId: string | null | undefined,
+        patch: (slice: ChatSlice) => Partial<ChatSlice>,
+    ): void {
+        if (
+            tabId &&
+            !useTabStore.getState().tabs.some((tab) => tab.id === tabId)
+        ) {
+            return;
+        }
+        set((state) => {
+            const active = useTabStore.getState().activeId;
+            const key = tabId ?? active;
+            if (key == null) {
+                return patch(topSlice(state));
+            }
+            const current =
+                key === active
+                    ? topSlice(state)
+                    : (state.byId[key] ?? emptySlice(state));
+            const next: ChatSlice = { ...current, ...patch(current) };
+            const byId = { ...state.byId, [key]: next };
+            return key === active ? { ...next, byId } : { byId };
+        });
+    }
 
-    setPending: (messageId, pending) =>
-        set((state) => ({
-            messages: patchMessage(state.messages, messageId, (msg) => {
-                const hasPending = msg.parts.some((p) => p.type === "pending");
-                if (pending && !hasPending) {
-                    return {
-                        ...msg,
-                        parts: [...msg.parts, { type: "pending" }],
-                    };
+    return {
+        messages: [],
+        sessionId: null,
+        isStreaming: false,
+        provider: DEFAULT_PROVIDER,
+        model: DEFAULT_MODEL,
+        reasoningEffort: "",
+        agentKey: DEFAULT_AGENT_KEY,
+        agentName: DEFAULT_AGENT_KEY,
+        retry: null,
+        byId: {},
+
+        setSessionId: (sessionId, tabId) =>
+            writeSlice(tabId, () => ({ sessionId })),
+
+        // Returning the same state keeps the clearing call from re-rendering on
+        // every heartbeat-sized event.
+        setRetry: (retry, tabId) =>
+            writeSlice(tabId, (slice) =>
+                slice.retry === null && retry === null ? {} : { retry },
+            ),
+
+        setPending: (messageId, pending, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: patchMessage(slice.messages, messageId, (msg) => {
+                    const hasPending = msg.parts.some(
+                        (part) => part.type === "pending",
+                    );
+                    if (pending && !hasPending) {
+                        return {
+                            ...msg,
+                            parts: [...msg.parts, { type: "pending" }],
+                        };
+                    }
+                    if (!pending && hasPending) {
+                        return {
+                            ...msg,
+                            parts: msg.parts.filter(
+                                (part) => part.type !== "pending",
+                            ),
+                        };
+                    }
+                    return msg;
+                }),
+            })),
+
+        addUserMessage: (text, images, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: [
+                    ...slice.messages,
+                    {
+                        id: makeId(),
+                        role: "user",
+                        parts: [
+                            {
+                                type: "text",
+                                text,
+                                ...(images && images.length > 0
+                                    ? { images }
+                                    : {}),
+                            },
+                        ],
+                        status: "done",
+                    },
+                ],
+            })),
+
+        insertWakeMessage: (text, wakeFor, variant, tabId) =>
+            writeSlice(tabId, (slice) => {
+                if (slice.messages.some((msg) => msg.wakeFor === wakeFor)) {
+                    return {};
                 }
-                if (!pending && hasPending) {
-                    return {
-                        ...msg,
-                        parts: msg.parts.filter((p) => p.type !== "pending"),
-                    };
-                }
-                return msg;
-            }),
-        })),
-
-    addUserMessage: (text, images) =>
-        set((state) => ({
-            messages: [
-                ...state.messages,
-                {
+                const message: TuiMessage = {
                     id: makeId(),
                     role: "user",
-                    parts: [
-                        {
-                            type: "text",
-                            text,
-                            ...(images && images.length > 0 ? { images } : {}),
-                        },
-                    ],
+                    parts: [{ type: "text", text }],
                     status: "done",
-                },
-            ],
-        })),
-
-    insertWakeMessage: (text, wakeFor, variant) =>
-        set((state) => {
-            if (state.messages.some((msg) => msg.wakeFor === wakeFor)) {
-                return state;
-            }
-            const message: TuiMessage = {
-                id: makeId(),
-                role: "user",
-                parts: [{ type: "text", text }],
-                status: "done",
-                wakeFor,
-                ...(variant ? { variant } : {}),
-            };
-            const last = state.messages[state.messages.length - 1];
-            // The resume stream seeds its assistant placeholder first; insert the
-            // wake message above it so the chip reads before its reply.
-            if (last?.role === "assistant" && last.status === "streaming") {
-                return {
-                    messages: [
-                        ...state.messages.slice(0, -1),
-                        message,
-                        last,
-                    ],
+                    wakeFor,
+                    ...(variant ? { variant } : {}),
                 };
-            }
-            return { messages: [...state.messages, message] };
-        }),
-
-    startAssistantMessage: () => {
-        const id = makeId();
-        set((state) => ({
-            isStreaming: true,
-            messages: [
-                ...state.messages,
-                {
-                    id,
-                    role: "assistant",
-                    parts: [{ type: "pending" }],
-                    status: "streaming",
-                },
-            ],
-        }));
-        return id;
-    },
-
-    startTextPart: (messageId) =>
-        set((state) => ({
-            messages: patchMessage(state.messages, messageId, (msg) => {
-                const filtered = msg.parts.filter((p) => p.type !== "pending");
-                const last = filtered[filtered.length - 1];
-                if (last?.type === "text") {
-                    return filtered === msg.parts
-                        ? msg
-                        : { ...msg, parts: filtered };
-                }
-                return {
-                    ...msg,
-                    parts: [...filtered, { type: "text", text: "" }],
-                };
-            }),
-        })),
-
-    appendTextDelta: (messageId, delta) =>
-        set((state) => ({
-            messages: patchMessage(state.messages, messageId, (msg) => {
-                const existing = lastPartOfType(msg.parts, "text");
-                if (existing) {
+                const last = slice.messages[slice.messages.length - 1];
+                // The resume stream seeds its assistant placeholder first; insert the
+                // wake message above it so the chip reads before its reply.
+                if (last?.role === "assistant" && last.status === "streaming") {
                     return {
-                        ...msg,
-                        parts: msg.parts.map((part) =>
-                            part === existing
-                                ? { ...part, text: part.text + delta }
-                                : part,
-                        ),
+                        messages: [
+                            ...slice.messages.slice(0, -1),
+                            message,
+                            last,
+                        ],
                     };
                 }
-                return {
-                    ...msg,
-                    parts: [...msg.parts, { type: "text", text: delta }],
-                };
+                return { messages: [...slice.messages, message] };
             }),
-        })),
 
-    startReasoningPart: (messageId) =>
-        set((state) => ({
-            messages: patchMessage(state.messages, messageId, (msg) => {
-                const filtered = msg.parts.filter((p) => p.type !== "pending");
-                const last = filtered[filtered.length - 1];
-                if (last?.type === "reasoning") {
-                    return filtered === msg.parts
-                        ? msg
-                        : { ...msg, parts: filtered };
-                }
-                return {
-                    ...msg,
-                    parts: [
-                        ...filtered,
-                        {
-                            type: "reasoning",
-                            text: "",
-                            elapsedMs: null,
-                            completed: false,
-                        },
-                    ],
-                };
-            }),
-        })),
+        startAssistantMessage: (tabId) => {
+            const id = makeId();
+            writeSlice(tabId, (slice) => ({
+                isStreaming: true,
+                messages: [
+                    ...slice.messages,
+                    {
+                        id,
+                        role: "assistant",
+                        parts: [{ type: "pending" }],
+                        status: "streaming",
+                    },
+                ],
+            }));
+            return id;
+        },
 
-    appendReasoningDelta: (messageId, delta) =>
-        set((state) => ({
-            messages: patchMessage(state.messages, messageId, (msg) => {
-                const reasoning = lastPartOfType(msg.parts, "reasoning");
-                if (!reasoning) {
+        startTextPart: (messageId, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: patchMessage(slice.messages, messageId, (msg) => {
+                    const filtered = msg.parts.filter(
+                        (part) => part.type !== "pending",
+                    );
+                    const last = filtered[filtered.length - 1];
+                    if (last?.type === "text") {
+                        return filtered === msg.parts
+                            ? msg
+                            : { ...msg, parts: filtered };
+                    }
+                    return {
+                        ...msg,
+                        parts: [...filtered, { type: "text", text: "" }],
+                    };
+                }),
+            })),
+
+        appendTextDelta: (messageId, delta, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: patchMessage(slice.messages, messageId, (msg) => {
+                    const existing = lastPartOfType(msg.parts, "text");
+                    if (existing) {
+                        return {
+                            ...msg,
+                            parts: msg.parts.map((part) =>
+                                part === existing
+                                    ? { ...part, text: part.text + delta }
+                                    : part,
+                            ),
+                        };
+                    }
+                    return {
+                        ...msg,
+                        parts: [...msg.parts, { type: "text", text: delta }],
+                    };
+                }),
+            })),
+
+        startReasoningPart: (messageId, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: patchMessage(slice.messages, messageId, (msg) => {
+                    const filtered = msg.parts.filter(
+                        (part) => part.type !== "pending",
+                    );
+                    const last = filtered[filtered.length - 1];
+                    if (last?.type === "reasoning") {
+                        return filtered === msg.parts
+                            ? msg
+                            : { ...msg, parts: filtered };
+                    }
                     return {
                         ...msg,
                         parts: [
-                            ...msg.parts,
+                            ...filtered,
                             {
                                 type: "reasoning",
-                                text: delta,
+                                text: "",
                                 elapsedMs: null,
                                 completed: false,
                             },
                         ],
                     };
-                }
-                return {
+                }),
+            })),
+
+        appendReasoningDelta: (messageId, delta, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: patchMessage(slice.messages, messageId, (msg) => {
+                    const reasoning = lastPartOfType(msg.parts, "reasoning");
+                    if (!reasoning) {
+                        return {
+                            ...msg,
+                            parts: [
+                                ...msg.parts,
+                                {
+                                    type: "reasoning",
+                                    text: delta,
+                                    elapsedMs: null,
+                                    completed: false,
+                                },
+                            ],
+                        };
+                    }
+                    return {
+                        ...msg,
+                        parts: msg.parts.map((part) =>
+                            part === reasoning
+                                ? { ...part, text: part.text + delta }
+                                : part,
+                        ),
+                    };
+                }),
+            })),
+
+        endReasoningPart: (messageId, elapsedMs, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: patchMessage(slice.messages, messageId, (msg) => {
+                    const reasoning = lastPartOfType(msg.parts, "reasoning");
+                    if (!reasoning) {
+                        return msg;
+                    }
+                    return {
+                        ...msg,
+                        parts: msg.parts.map((part) =>
+                            part === reasoning
+                                ? { ...part, completed: true, elapsedMs }
+                                : part,
+                        ),
+                    };
+                }),
+            })),
+
+        startToolCall: (messageId, tool, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: patchMessage(slice.messages, messageId, (msg) => ({
                     ...msg,
-                    parts: msg.parts.map((part) =>
-                        part === reasoning
-                            ? { ...part, text: part.text + delta }
-                            : part,
-                    ),
-                };
-            }),
-        })),
+                    parts: [
+                        ...msg.parts.filter(
+                            (part) =>
+                                part.type !== "pending" &&
+                                (part.type !== "text" ||
+                                    part.text.trim() !== ""),
+                        ),
+                        {
+                            type: "tool-call",
+                            toolCallId: tool.toolCallId,
+                            toolName: tool.toolName,
+                            argsText: "",
+                            args: null,
+                            outputText: "",
+                            status: "running",
+                        },
+                    ],
+                })),
+            })),
 
-    endReasoningPart: (messageId, elapsedMs) =>
-        set((state) => ({
-            messages: patchMessage(state.messages, messageId, (msg) => {
-                const reasoning = lastPartOfType(msg.parts, "reasoning");
-                if (!reasoning) {
-                    return msg;
-                }
-                return {
+        setToolInput: (messageId, toolCallId, input, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: patchToolPart(
+                    slice.messages,
+                    messageId,
+                    toolCallId,
+                    (part) => ({
+                        ...part,
+                        argsText: toDisplayText(input),
+                        args: toArgsObject(input),
+                    }),
+                ),
+            })),
+
+        setToolOutput: (messageId, toolCallId, output, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: patchToolPart(
+                    slice.messages,
+                    messageId,
+                    toolCallId,
+                    (part) => ({
+                        ...part,
+                        outputText: toDisplayText(output),
+                        status: "done",
+                    }),
+                ),
+            })),
+
+        setToolStatus: (messageId, toolCallId, status, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: patchToolPart(
+                    slice.messages,
+                    messageId,
+                    toolCallId,
+                    (part) => ({ ...part, status }),
+                ),
+            })),
+
+        failToolCall: (messageId, toolCallId, message, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: patchToolPart(
+                    slice.messages,
+                    messageId,
+                    toolCallId,
+                    (part) => ({
+                        ...part,
+                        status: "error",
+                        error: message,
+                    }),
+                ),
+            })),
+
+        completeStream: (tabId) =>
+            writeSlice(tabId, (slice) => ({
+                isStreaming: false,
+                retry: null,
+                messages: slice.messages.map((msg) =>
+                    msg.status === "streaming"
+                        ? {
+                              ...msg,
+                              status: "done",
+                              parts: settleParts(msg.parts),
+                          }
+                        : msg,
+                ),
+            })),
+
+        failStream: (error, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                isStreaming: false,
+                retry: null,
+                messages: slice.messages.map((msg) =>
+                    msg.status === "streaming"
+                        ? {
+                              ...msg,
+                              status: "error",
+                              error,
+                              parts: settleParts(msg.parts),
+                          }
+                        : msg,
+                ),
+            })),
+
+        resetAssistantMessage: (messageId, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: patchMessage(slice.messages, messageId, (msg) => ({
                     ...msg,
-                    parts: msg.parts.map((part) =>
-                        part === reasoning
-                            ? { ...part, completed: true, elapsedMs }
-                            : part,
-                    ),
-                };
+                    status: "streaming",
+                    error: undefined,
+                    parts: [{ type: "pending" }],
+                })),
+            })),
+
+        dropMessage: (messageId, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: slice.messages.filter((msg) => msg.id !== messageId),
+            })),
+
+        loadHistory: (sessionId, messages, tabId) =>
+            writeSlice(tabId, () => ({
+                sessionId,
+                messages,
+                isStreaming: false,
+                retry: null,
+            })),
+
+        setRoute: (route, tabId) =>
+            writeSlice(tabId, () => ({
+                provider: route.provider,
+                model: route.model,
+                ...(route.reasoningEffort === undefined
+                    ? {}
+                    : { reasoningEffort: route.reasoningEffort }),
+            })),
+
+        setAgent: (agentKey, agentName, tabId) =>
+            writeSlice(tabId, () => ({ agentKey, agentName })),
+
+        clearMessages: (tabId) =>
+            writeSlice(tabId, () => ({ messages: [], isStreaming: false })),
+
+        activate: (nextId, previousId) =>
+            set((state) => {
+                const byId = { ...state.byId };
+                if (previousId && previousId !== nextId) {
+                    byId[previousId] = topSlice(state);
+                }
+                const next =
+                    nextId != null
+                        ? (byId[nextId] ?? emptySlice(state))
+                        : emptySlice(state);
+                return { ...next, byId };
             }),
-        })),
 
-    startToolCall: (messageId, tool) =>
-        set((state) => ({
-            messages: patchMessage(state.messages, messageId, (msg) => ({
-                ...msg,
-                parts: [
-                    ...msg.parts.filter(
-                        (part) =>
-                            part.type !== "pending" &&
-                            (part.type !== "text" || part.text.trim() !== ""),
-                    ),
-                    {
-                        type: "tool-call",
-                        toolCallId: tool.toolCallId,
-                        toolName: tool.toolName,
-                        argsText: "",
-                        args: null,
-                        outputText: "",
-                        status: "running",
-                    },
-                ],
-            })),
-        })),
+        remove: (tabId) =>
+            set((state) => {
+                if (!(tabId in state.byId)) return state;
+                const byId = { ...state.byId };
+                delete byId[tabId];
+                return { byId };
+            }),
 
-    setToolInput: (messageId, toolCallId, input) =>
-        set((state) => ({
-            messages: patchToolPart(state.messages, messageId, toolCallId, (part) => ({
-                ...part,
-                argsText: toDisplayText(input),
-                args: toArgsObject(input),
-            })),
-        })),
-
-    setToolOutput: (messageId, toolCallId, output) =>
-        set((state) => ({
-            messages: patchToolPart(state.messages, messageId, toolCallId, (part) => ({
-                ...part,
-                outputText: toDisplayText(output),
-                status: "done",
-            })),
-        })),
-
-    setToolStatus: (messageId, toolCallId, status) =>
-        set((state) => ({
-            messages: patchToolPart(state.messages, messageId, toolCallId, (part) => ({
-                ...part,
-                status,
-            })),
-        })),
-
-    failToolCall: (messageId, toolCallId, message) =>
-        set((state) => ({
-            messages: patchToolPart(state.messages, messageId, toolCallId, (part) => ({
-                ...part,
-                status: "error",
-                error: message,
-            })),
-        })),
-
-    completeStream: () =>
-        set((state) => ({
-            isStreaming: false,
-            retry: null,
-            messages: state.messages.map((msg) =>
-                msg.status === "streaming"
-                    ? {
-                          ...msg,
-                          status: "done",
-                          parts: settleParts(msg.parts),
-                      }
-                    : msg,
-            ),
-        })),
-
-    failStream: (error) =>
-        set((state) => ({
-            isStreaming: false,
-            retry: null,
-            messages: state.messages.map((msg) =>
-                msg.status === "streaming"
-                    ? {
-                          ...msg,
-                          status: "error",
-                          error,
-                          parts: settleParts(msg.parts),
-                      }
-                    : msg,
-            ),
-        })),
-
-    loadHistory: (sessionId, messages) =>
-        set({ sessionId, messages, isStreaming: false, retry: null }),
-
-    reset: () => set({ messages: [], sessionId: null, isStreaming: false, retry: null }),
-}));
+        reset: () => {
+            const active = useTabStore.getState().activeId;
+            set((state) => {
+                const byId = { ...state.byId };
+                if (active) delete byId[active];
+                return {
+                    messages: [],
+                    sessionId: null,
+                    isStreaming: false,
+                    retry: null,
+                    byId,
+                };
+            });
+        },
+    };
+});
 
 /** Read the latest state for stream logic (avoid closures capturing stale values) */
 export const getChatState = () => useChatStore.getState();
+
+/** Snapshot of one tab's transcript; the active tab reads through the top level. */
+export function chatSlice(tabId: string | null): ChatSlice {
+    const state = useChatStore.getState();
+    const active = useTabStore.getState().activeId;
+    if (tabId == null || tabId === active) return topSlice(state);
+    return (
+        state.byId[tabId] ?? {
+            messages: [],
+            sessionId: null,
+            isStreaming: false,
+            provider: state.provider,
+            model: state.model,
+            reasoningEffort: state.reasoningEffort,
+            agentKey: state.agentKey,
+            agentName: state.agentName,
+            retry: null,
+        }
+    );
+}
+
+export function isTabStreaming(tabId: string | null): boolean {
+    return chatSlice(tabId).isStreaming;
+}
+
+const EMPTY_MESSAGES: TuiMessage[] = [];
+
+/** Reactive view of one tab's transcript, active or not. */
+export function useTabMessages(tabId: string): TuiMessage[] {
+    const active = useTabStore((state) => state.activeId);
+    return useChatStore((state) =>
+        tabId === active
+            ? state.messages
+            : (state.byId[tabId]?.messages ?? EMPTY_MESSAGES),
+    );
+}
+
+/** Reactive view of one tab's streaming flag, active or not. */
+export function useTabStreaming(tabId: string): boolean {
+    const active = useTabStore((state) => state.activeId);
+    return useChatStore((state) =>
+        tabId === active
+            ? state.isStreaming
+            : (state.byId[tabId]?.isStreaming ?? false),
+    );
+}

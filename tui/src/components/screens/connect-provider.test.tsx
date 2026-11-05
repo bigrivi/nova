@@ -9,6 +9,7 @@ mock.module("../../api/nova-api.ts", () => ({
     ...api,
     getAgent: async () => null,
     listSessions: async () => [],
+    listPendingSessions: async () => ({}),
     // OpenAI is already connected, so its row must carry the check mark.
     listProviders: async () => [
         {

@@ -24,6 +24,8 @@ import type {
     NovaSessionRoute,
     NovaSessionSummary,
     NovaStreamEvent,
+    NovaPendingPrompts,
+    NovaPendingSummary,
 } from "./types.ts";
 
 export type StreamChatOptions = {
@@ -42,6 +44,12 @@ export type StreamChatOptions = {
     attachments?: NovaAttachmentData[];
     /** Replay buffered frames after this sequence, then live-tail the turn. */
     resumeFromSequence?: number | null;
+    /** Abort the local reader; the server turn keeps running. */
+    signal?: AbortSignal;
+    /** Sequence carried by each `id:` line, for the next resume cursor. */
+    onSequence?: (sequence: number) => void;
+    /** Set when the server could not replay from the cursor and sent a full buffer. */
+    onResync?: () => void;
     onEvent: (event: NovaStreamEvent) => void;
 };
 
@@ -310,16 +318,58 @@ export async function getSessionContext(
     }>(`/api/sessions/${encodeURIComponent(sessionId)}/context`);
 }
 
+/** Server-side state of a session's current turn, for deciding whether to reattach. */
+export type NovaStreamStatus = {
+    status: "active" | "detached" | "done" | "idle" | string;
+    last_seq: number;
+};
+
+export async function getChatStreamStatus(
+    sessionId: string,
+): Promise<NovaStreamStatus> {
+    return request<NovaStreamStatus>(
+        `/api/chat/stream/status?session_id=${encodeURIComponent(sessionId)}`,
+    );
+}
+
+export async function getSessionPending(
+    sessionId: string,
+): Promise<NovaPendingPrompts> {
+    return request<NovaPendingPrompts>(
+        `/api/sessions/${encodeURIComponent(sessionId)}/pending`,
+    );
+}
+
+export async function listPendingSessions(): Promise<NovaPendingSummary> {
+    const payload = await request<{ sessions?: NovaPendingSummary }>(
+        "/api/pending",
+    );
+    return payload.sessions ?? {};
+}
+
 function emitFrame(
     frame: string,
     onEvent: (event: NovaStreamEvent) => void,
+    onSequence?: (sequence: number) => void,
 ): void {
-    const payload = frame
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n");
-
+    let sequence: number | null = null;
+    const dataLines: string[] = [];
+    for (const line of frame.split("\n")) {
+        if (line.startsWith("id:")) {
+            const parsed = Number.parseInt(line.slice(3).trim(), 10);
+            if (Number.isSafeInteger(parsed) && parsed > 0) {
+                sequence = parsed;
+            }
+            continue;
+        }
+        if (line.startsWith("data:")) {
+            dataLines.push(line.slice(5).trimStart());
+        }
+    }
+    if (sequence !== null) {
+        onSequence?.(sequence);
+    }
+    const payload = dataLines.join("\n");
     if (!payload || payload === "[DONE]") {
         return;
     }
@@ -344,10 +394,14 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
             attachments: options.attachments || [],
             resume_from_seq: options.resumeFromSequence ?? undefined,
         }),
+        signal: options.signal,
     });
 
     if (!response.ok) {
         throw new Error(await parseErrorMessage(response));
+    }
+    if (options.onResync && response.headers.get("x-nova-stream-resync") === "true") {
+        options.onResync();
     }
     if (!response.body) {
         throw new Error("Stream response did not include a body.");
@@ -366,7 +420,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
             const frame = buffer.slice(0, boundary).trim();
             buffer = buffer.slice(boundary + 2);
             if (frame) {
-                emitFrame(frame, options.onEvent);
+                emitFrame(frame, options.onEvent, options.onSequence);
             }
             boundary = buffer.indexOf("\n\n");
         }
@@ -374,7 +428,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
         if (done) {
             const finalFrame = buffer.trim();
             if (finalFrame) {
-                emitFrame(finalFrame, options.onEvent);
+                emitFrame(finalFrame, options.onEvent, options.onSequence);
             }
             return;
         }

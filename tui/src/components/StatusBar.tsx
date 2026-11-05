@@ -69,14 +69,13 @@ export function StatusBar() {
     const app = useApp();
     const branch = app.branch;
 
-    // Live turns are driven by SSE data-nova-context; only refresh from /context
-    // on history load / session switch, so the fetch never fights the live value.
+    // Live turns are driven by SSE data-nova-context; on a session switch fetch
+    // once so a tab that is already streaming shows its own meter immediately.
     useEffect(() => {
         if (!sessionId) {
             useCtxStore.getState().clear();
             return;
         }
-        if (isStreaming) return;
         let cancelled = false;
         void getSessionContext(sessionId)
             .then((ctx) => {
@@ -90,7 +89,7 @@ export function StatusBar() {
         return () => {
             cancelled = true;
         };
-    }, [sessionId, isStreaming]);
+    }, [sessionId]);
 
     const status = deriveAgentStatus({
         isStreaming,

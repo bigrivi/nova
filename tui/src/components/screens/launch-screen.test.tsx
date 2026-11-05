@@ -8,6 +8,7 @@ mock.module("../../api/nova-api.ts", () => ({
     ...api,
     getAgent: async () => null,
     listSessions: async () => [],
+    listPendingSessions: async () => ({}),
     // The app refreshes provider catalogues on launch; a render test must not
     // reach for a backend that is not there.
     syncProviderModels: async () => ({ synced: [], failed: {} }),
@@ -95,7 +96,7 @@ test("the composer keeps its draft when the session fills up", async () => {
     await settle(setup);
     const frame = setup.captureCharFrame();
     expect(frame).toContain("draft text");
-    expect(frame).toContain("╭");
+    expect(frame).toContain("Nova TUI");
 });
 
 test("a loaded session with no messages does not show the launch screen", async () => {

@@ -379,6 +379,18 @@
       ]
     }
   },
+  "GET /api/pending": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ]
+    }
+  },
   "GET /api/permissions": {
     "parameters": [
       [
@@ -576,6 +588,30 @@
         [
           "application/json",
           "#/components/schemas/MessageListResponse"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "GET /api/sessions/{session_id}/pending": {
+    "parameters": [
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
         ]
       ],
       "422": [

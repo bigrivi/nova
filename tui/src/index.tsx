@@ -7,6 +7,11 @@ import { startBackend } from "./backend.ts";
 import { App } from "./components/App.tsx";
 import { AppProvider } from "./context/app.tsx";
 import { registerExtraParsers } from "./tree-sitter.ts";
+import { WORKSPACE_DIR } from "./workspace.ts";
+import {
+    hydrateTabs,
+    installTabPersistence,
+} from "./lib/tab-persistence.ts";
 
 if (!process.env.OTUI_ASSET_ROOT) {
     process.env.OTUI_ASSET_ROOT = join(import.meta.dir, "..", "node_modules");
@@ -37,6 +42,11 @@ async function main(): Promise<void> {
     if (process.env.NOVA_TUI_BACKEND) {
         await startBackend();
     }
+
+    // Restore the tabs left open last time for this workspace before the first
+    // frame, then persist every later change. Drafts are not stored.
+    hydrateTabs(WORKSPACE_DIR);
+    installTabPersistence(WORKSPACE_DIR);
 
     // The Composer/Filter inputs own focus; clicking a scrollbox or a message
     // must not steal it, otherwise typing stops after a wheel/selection.

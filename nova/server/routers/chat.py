@@ -13,6 +13,7 @@ from nova.server.chat_stream import (
     ChatStreamOrchestrator,
 )
 from nova.server.deps import get_chat_service, get_request_registry
+from nova.server.pending_prompts import get_pending_prompt_registry
 from nova.server.request_registry import RequestRegistry
 from nova.server.schemas import (
     ApproveRequest,
@@ -55,6 +56,27 @@ async def chat_stream(chat_request: ChatRequest, request: Request) -> StreamingR
 @router.get("/api/chat/stream/status")
 async def chat_stream_status(session_id: str, request: Request) -> dict[str, object]:
     return await ChatStreamOrchestrator(request).handle_chat_stream_status(session_id)
+
+
+@router.get("/api/sessions/{session_id}/pending")
+async def session_pending(session_id: str) -> dict[str, object]:
+    """Prompts a session is waiting on, for a client that missed the stream."""
+    approvals = get_approval_manager().pending_payload(session_id)
+    ask = get_pending_prompt_registry().get_ask(session_id)
+    return {"approvals": approvals, "ask": ask}
+
+
+@router.get("/api/pending")
+async def all_pending() -> dict[str, object]:
+    """Session ids with pending approvals or questions, for the session list."""
+    sessions: dict[str, dict[str, object]] = {}
+    for session_id, count in get_approval_manager().pending_counts().items():
+        sessions.setdefault(session_id, {"approvals": 0, "ask": False})
+        sessions[session_id]["approvals"] = count
+    for session_id in get_pending_prompt_registry().sessions_with_asks():
+        sessions.setdefault(session_id, {"approvals": 0, "ask": False})
+        sessions[session_id]["ask"] = True
+    return {"sessions": sessions}
 
 
 @router.get("/api/chat/stream/active")

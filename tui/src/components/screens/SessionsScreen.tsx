@@ -1,6 +1,9 @@
 /** Sessions screen: browse/load persisted sessions, forks nested under their origin */
-import { listSessions } from "../../api/nova-api.ts";
-import type { NovaSessionSummary } from "../../api/types.ts";
+import { listPendingSessions, listSessions } from "../../api/nova-api.ts";
+import type {
+    NovaPendingSummary,
+    NovaSessionSummary,
+} from "../../api/types.ts";
 import { useChatStore } from "../../stores/chat-store.ts";
 import { useScreenStore } from "../../stores/screen-store.ts";
 import { openSession } from "../../lib/open-session.ts";
@@ -8,6 +11,12 @@ import { WORKSPACE_DIR } from "../../workspace.ts";
 import { ScreenLoading } from "./ScreenLoading.tsx";
 import { SearchableList } from "./SearchableList.tsx";
 import { useListScreen } from "./use-list-screen.ts";
+
+export type SessionPending = "approval" | "question" | null;
+
+export type SessionListEntry = NovaSessionSummary & {
+    pending?: SessionPending;
+};
 
 function formatTime(ms: number): string {
     const diff = Date.now() - ms;
@@ -29,6 +38,8 @@ export type SessionRow = {
     group?: string;
     /** True for a fork, so the label can carry the branch marker. */
     isFork: boolean;
+    /** A prompt this session is still waiting on. */
+    pending: SessionPending;
 };
 
 /**
@@ -38,10 +49,13 @@ export type SessionRow = {
  * array has to be contiguous per group. A fork whose origin is not in the
  * current folder (the list is filtered by workspace) still gets a row, just
  * without a header: hiding a conversation is worse than an unlabelled one.
+ *
+ * Sessions with a pending approval or question rank above the rest, then the
+ * newest origin first; equal keys keep the server's order.
  */
-export function arrangeSessions(sessions: NovaSessionSummary[]): SessionRow[] {
+export function arrangeSessions(sessions: SessionListEntry[]): SessionRow[] {
     const byId = new Map(sessions.map((session) => [session.id, session]));
-    const forksByOrigin = new Map<string, NovaSessionSummary[]>();
+    const forksByOrigin = new Map<string, SessionListEntry[]>();
     for (const session of sessions) {
         const origin = session.forked_from;
         if (!origin || !byId.has(origin)) continue;
@@ -50,27 +64,50 @@ export function arrangeSessions(sessions: NovaSessionSummary[]): SessionRow[] {
         forksByOrigin.set(origin, existing);
     }
 
+    const groups = sessions
+        .filter(
+            (session) =>
+                !(session.forked_from && byId.has(session.forked_from)),
+        )
+        .map((origin) => ({
+            origin,
+            forks: forksByOrigin.get(origin.id) ?? [],
+        }));
+    groups.sort((a, b) => {
+        const rank = (entry: SessionListEntry) =>
+            entry.pending ? 1 : 0;
+        const rankDelta = rank(b.origin) - rank(a.origin);
+        if (rankDelta !== 0) return rankDelta;
+        return b.origin.updated_at - a.origin.updated_at;
+    });
+
     const rows: SessionRow[] = [];
-    for (const session of sessions) {
-        // A fork is emitted by its origin, never on its own.
-        if (session.forked_from && byId.has(session.forked_from)) continue;
+    for (const { origin, forks } of groups) {
         rows.push({
-            id: session.id,
-            title: session.title ?? "(untitled)",
-            updatedAt: session.updated_at,
+            id: origin.id,
+            title: origin.title ?? "(untitled)",
+            updatedAt: origin.updated_at,
             isFork: false,
+            pending: origin.pending ?? null,
         });
-        for (const fork of forksByOrigin.get(session.id) ?? []) {
+        for (const fork of forks) {
             rows.push({
                 id: fork.id,
                 title: fork.title ?? "(untitled)",
                 updatedAt: fork.updated_at,
-                group: `from ${session.title ?? "(untitled)"}`,
+                group: `from ${origin.title ?? "(untitled)"}`,
                 isFork: true,
+                pending: fork.pending ?? null,
             });
         }
     }
     return rows;
+}
+
+export function pendingMark(pending: SessionPending): string {
+    if (pending === "approval") return "! ";
+    if (pending === "question") return "? ";
+    return "";
 }
 
 export function SessionsScreen() {
@@ -78,15 +115,39 @@ export function SessionsScreen() {
     const currentSessionId = useChatStore((state) => state.sessionId);
     const folder = workspaceDir.split("/").filter(Boolean).at(-1) ?? workspaceDir;
     const { items: sessions, ready, error, defaultValue } = useListScreen(
-        () => listSessions({ workspaceDir }),
+        async () => {
+            const [list, pending] = await Promise.all([
+                listSessions({ workspaceDir }),
+                listPendingSessions().catch(
+                    (): NovaPendingSummary => ({}),
+                ),
+            ]);
+            return list.map((session) => {
+                const state = pending[session.id];
+                return {
+                    ...session,
+                    pending: state?.ask
+                        ? ("question" as const)
+                        : state?.approvals
+                          ? ("approval" as const)
+                          : null,
+                };
+            });
+        },
         (items) => items.find((s) => s.id === currentSessionId)?.id,
     );
 
     async function handleSelect(value: string): Promise<void> {
         useScreenStore.getState().close();
-        const agentKey = sessions.find((session) => session.id === value)?.agent_key;
+        const selected = sessions.find((session) => session.id === value);
+        const agentKey = selected?.agent_key;
         try {
-            await openSession(value, agentKey);
+            await openSession(
+                value,
+                agentKey,
+                undefined,
+                selected?.title ?? undefined,
+            );
         } catch (err) {
             useChatStore
                 .getState()
@@ -102,7 +163,7 @@ export function SessionsScreen() {
         <SearchableList
             title={`Sessions · ${folder}`}
             items={arrangeSessions(sessions).map((row) => ({
-                label: row.isFork ? `└ ${row.title}` : row.title,
+                label: `${pendingMark(row.pending)}${row.isFork ? "└ " : ""}${row.title}`,
                 value: row.id,
                 group: row.group,
                 updatedAt: row.updatedAt,

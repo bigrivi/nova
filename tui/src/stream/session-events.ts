@@ -1,6 +1,8 @@
-/** Session-state SSE: tail server-initiated turns (background-task wakes). */
+/** Session-state SSE: tail server-initiated turns (background-task wakes)
+ *  for every open tab, and keep tab titles in sync. */
 import { sessionEventsUrl } from "../api/nova-api.ts";
-import { getChatState } from "../stores/chat-store.ts";
+import { chatSlice } from "../stores/chat-store.ts";
+import { tabForSession, useTabStore } from "../stores/tab-store.ts";
 import {
     consumeOwnActive,
     parkTail,
@@ -12,19 +14,20 @@ const RECONNECT_DELAY_MS = 2000;
 type SessionFrame = {
     type?: unknown;
     session_id?: unknown;
+    title?: unknown;
     state?: unknown;
     active?: unknown;
 };
 
 function tail(sessionId: string, parkWhenBusy: boolean): void {
-    const state = getChatState();
-    if (state.sessionId !== sessionId) {
+    const tab = tabForSession(sessionId);
+    if (!tab) {
         return;
     }
     if (consumeOwnActive(sessionId)) {
         return;
     }
-    if (state.isStreaming) {
+    if (chatSlice(tab.id).isStreaming) {
         if (parkWhenBusy) {
             parkTail(sessionId);
         }
@@ -39,18 +42,31 @@ function handleFrame(frame: SessionFrame): void {
         // while the event stream was down. Already-streaming turns are
         // ignored rather than parked (they are not a new wake).
         const active = Array.isArray(frame.active) ? frame.active : [];
-        const sessionId = getChatState().sessionId;
-        if (sessionId && active.includes(sessionId)) {
-            tail(sessionId, false);
+        for (const sessionId of active) {
+            if (typeof sessionId === "string") {
+                tail(sessionId, false);
+            }
         }
         return;
     }
-    if (frame.type !== "state" || frame.state !== "active") {
+    if (frame.type === "title") {
+        const sessionId =
+            typeof frame.session_id === "string" ? frame.session_id : "";
+        const title = typeof frame.title === "string" ? frame.title : "";
+        if (sessionId && title) {
+            useTabStore.getState().setTitle(sessionId, title);
+        }
+        return;
+    }
+    if (frame.type !== "state") {
         return;
     }
     const sessionId =
         typeof frame.session_id === "string" ? frame.session_id : "";
-    if (sessionId) {
+    if (!sessionId) {
+        return;
+    }
+    if (frame.state === "active") {
         tail(sessionId, true);
     }
 }

@@ -41,6 +41,10 @@ def test_the_request_carries_no_dead_timestamps() -> None:
         "digest",
         # Not a deadline: the workspace a remembered approval is scoped to.
         "workspace",
+        # The same request's presentation, for a client that recovers it later.
+        "tool_name",
+        "target",
+        "dangerous",
     }
 
 
