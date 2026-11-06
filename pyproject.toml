@@ -67,7 +67,9 @@ dev = [
     "mypy>=1.11",
     "pytest>=7.4",
     "pytest-asyncio>=0.21",
-    "ruff>=0.14",
+    # Bounded above: a ruff release can add a default rule and turn CI red
+    # on code nobody touched, as 0.17.4 did with SIM102.
+    "ruff>=0.17.4,<0.18",
 ]
 build = [
     "pyinstaller",

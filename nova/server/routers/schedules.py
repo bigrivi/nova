@@ -122,9 +122,8 @@ def _validate_job_fields(
                 status_code=400,
                 detail="interval jobs need a positive integer interval_minutes",
             )
-    elif kind == "once":
-        if run_at is None:
-            raise HTTPException(status_code=400, detail="once jobs need a run_at")
+    elif kind == "once" and run_at is None:
+        raise HTTPException(status_code=400, detail="once jobs need a run_at")
 
 
 async def _repository(request: Request, chat_service: ChatService) -> ScheduleStore:
