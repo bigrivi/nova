@@ -212,7 +212,10 @@ function CodeRunBody({
                     <ResultLabel />
                     <Text
                         selectable
-                        style={[styles.code, { color: theme.weakStrong }]}
+                        style={[
+                            styles.outputText,
+                            { color: theme.weakStrong },
+                        ]}
                     >
                         {view.output}
                     </Text>
@@ -331,6 +334,11 @@ const styles = StyleSheet.create({
         lineHeight: 19,
         color: "#E2E8F0",
         paddingHorizontal: 10,
+    },
+    outputText: {
+        fontFamily: mono,
+        fontSize: 12,
+        lineHeight: 19,
     },
     plainBlock: {
         borderRadius: chatMetrics.codeRadius,

@@ -10,6 +10,7 @@ import {
 } from "react-native";
 
 import { buildTimelineItems, parseSubagentMessage } from "../chat/presentation";
+import type { ApprovalRequest } from "../api/types";
 import type { ChatMessage, ChatPart } from "../state/chat";
 import { chatMetrics } from "../theme/tokens";
 import { useTheme } from "../theme/useTheme";
@@ -68,9 +69,13 @@ function AssistantText({
 function AssistantMessage({
     message,
     isLast,
+    onRegenerate,
+    approval,
 }: {
     message: ChatMessage;
     isLast: boolean;
+    onRegenerate?: () => void;
+    approval?: ApprovalRequest | null;
 }) {
     const { theme } = useTheme();
     const streaming = message.status === "streaming";
@@ -132,6 +137,7 @@ function AssistantMessage({
                             parts={message.parts}
                             item={item}
                             streaming={streaming}
+                            approval={approval}
                         />
                     );
                 }
@@ -143,6 +149,7 @@ function AssistantMessage({
                     <StandaloneToolCard
                         key={`tool-${part.toolCallId}`}
                         part={part}
+                        approval={approval}
                     />
                 );
             })}
@@ -167,18 +174,49 @@ function AssistantMessage({
                 </View>
             ) : null}
 
-            {!streaming && isLast && copyText ? (
-                <Pressable
-                    onPress={() => void Clipboard.setStringAsync(copyText)}
-                    style={styles.copyButton}
-                    accessibilityRole="button"
-                    accessibilityLabel="Copy answer"
-                >
-                    <Feather name="copy" size={13} color={theme.weak} />
-                    <Text style={[styles.copyText, { color: theme.weak }]}>
-                        Copy
-                    </Text>
-                </Pressable>
+            {!streaming && isLast && (copyText || onRegenerate) ? (
+                <View style={styles.actionsRow}>
+                    {copyText ? (
+                        <Pressable
+                            onPress={() =>
+                                void Clipboard.setStringAsync(copyText)
+                            }
+                            style={styles.copyButton}
+                            accessibilityRole="button"
+                            accessibilityLabel="Copy answer"
+                        >
+                            <Feather
+                                name="copy"
+                                size={13}
+                                color={theme.weak}
+                            />
+                            <Text
+                                style={[styles.copyText, { color: theme.weak }]}
+                            >
+                                Copy
+                            </Text>
+                        </Pressable>
+                    ) : null}
+                    {onRegenerate ? (
+                        <Pressable
+                            onPress={onRegenerate}
+                            style={styles.copyButton}
+                            accessibilityRole="button"
+                            accessibilityLabel="Regenerate answer"
+                        >
+                            <Feather
+                                name="refresh-cw"
+                                size={13}
+                                color={theme.weak}
+                            />
+                            <Text
+                                style={[styles.copyText, { color: theme.weak }]}
+                            >
+                                Regenerate
+                            </Text>
+                        </Pressable>
+                    ) : null}
+                </View>
             ) : null}
         </View>
     );
@@ -318,14 +356,23 @@ function UserMessage({ message }: { message: ChatMessage }) {
 export const MessageItem = memo(function MessageItem({
     message,
     isLast,
+    onRegenerate,
+    approval,
 }: {
     message: ChatMessage;
     isLast: boolean;
+    onRegenerate?: () => void;
+    approval?: ApprovalRequest | null;
 }) {
     return message.role === "user" ? (
         <UserMessage message={message} />
     ) : (
-        <AssistantMessage message={message} isLast={isLast} />
+        <AssistantMessage
+            message={message}
+            isLast={isLast}
+            onRegenerate={onRegenerate}
+            approval={approval}
+        />
     );
 });
 
@@ -436,6 +483,12 @@ const styles = StyleSheet.create({
         flex: 1,
         fontSize: 13,
         lineHeight: 19,
+    },
+    actionsRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 14,
+        alignSelf: "flex-start",
     },
     copyButton: {
         flexDirection: "row",

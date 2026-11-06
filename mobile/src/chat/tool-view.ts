@@ -92,6 +92,12 @@ export function readToolResult(outputText: string): {
     return { text: outputText, raw };
 }
 
+/** Any tool result that started a background task names its id here. */
+export function readBackgroundTaskId(outputText: string): string | null {
+    const { raw } = readToolResult(outputText);
+    return backgroundTaskId(raw);
+}
+
 function backgroundTaskId(
     raw: Record<string, unknown> | null,
 ): string | null {

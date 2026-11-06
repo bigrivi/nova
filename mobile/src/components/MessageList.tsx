@@ -9,6 +9,7 @@ import {
     type NativeSyntheticEvent,
 } from "react-native";
 
+import type { ApprovalRequest } from "../api/types";
 import type { ChatMessage } from "../state/chat";
 import { useTheme } from "../theme/useTheme";
 import { MessageItem } from "./MessageItem";
@@ -17,8 +18,12 @@ const NEAR_BOTTOM = 80;
 
 export const MessageList = memo(function MessageList({
     messages,
+    onRegenerate,
+    approval,
 }: {
     messages: ChatMessage[];
+    onRegenerate?: () => void;
+    approval?: ApprovalRequest | null;
 }) {
     const { theme } = useTheme();
     const listRef = useRef<FlatList<ChatMessage>>(null);
@@ -58,10 +63,22 @@ export const MessageList = memo(function MessageList({
     );
 
     const renderItem = useCallback(
-        ({ item, index }: { item: ChatMessage; index: number }) => (
-            <MessageItem message={item} isLast={index === messages.length - 1} />
-        ),
-        [messages.length],
+        ({ item, index }: { item: ChatMessage; index: number }) => {
+            const last = index === messages.length - 1;
+            return (
+                <MessageItem
+                    message={item}
+                    isLast={last}
+                    approval={approval}
+                    onRegenerate={
+                        last && item.role === "assistant"
+                            ? onRegenerate
+                            : undefined
+                    }
+                />
+            );
+        },
+        [messages.length, onRegenerate, approval],
     );
 
     return (

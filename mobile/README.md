@@ -270,12 +270,12 @@ several servers from the launcher.
 | Area | State |
 |------|-------|
 | Connect screen | URL + Basic credentials, `/health` and `/api/models` probe, SecureStore with AsyncStorage fallback |
-| Sessions | List, refresh, open in a tab, new draft, rename, delete, pin/unpin, move to project, date buckets |
+| Sessions | List, title search, refresh, open in a tab, new draft, rename, delete, pin/unpin, move to project, date buckets |
 | Projects | Group sessions, create/rename/delete, workspace path, new chat in a project, persisted expansion |
 | Tabs | Stable ids, per-tab transcripts, close/reopen, unread/attention markers, per-server persistence |
 | Chat stream | `POST /api/chat/stream` over `react-native-sse`, sequence cursor, `[DONE]`/finish/abort, one retry with `resume_from_seq` |
 | Transcript | User bubbles, assistant avatar/name, thinking chain, reasoning, tool cards with input/result, errors, sub-agent chip, copy; conversation menu shares or copies the whole transcript |
-| Tool cards | `edit`/`write` show the file path, `+N −M` and a colored unified diff; `code_run` shows the snippet, output and live background task status; `delegate_to_agent` shows the target, task preview and result |
+| Tool cards | `edit`/`write` show the file path, `+N −M` and a colored unified diff; `code_run` shows the snippet, output and live background task status; `delegate_to_agent` shows the target, task preview and result. Row state: spinner while running, `waiting for approval` while a tool awaits the sheet, live background task status, grey `cancelled`, red error |
 | Approvals | Inline sheet, approve/reject/remember, recovered with `GET /api/sessions/{id}/pending` |
 | Composer | Per-tab drafts, auto-growing input, image/text attachments, paste image, @subagent suggestions, voice notes, model/agent/project/effort chips, send/stop, context percentage, empty-state disclaimer |
 | Attachments | Photo library, camera, clipboard image, text documents up to 512 KB, full-screen image preview |
@@ -288,7 +288,7 @@ several servers from the launcher.
 | Theme | Light/dark from the system, tokens copied from `frontend/src/index.css` |
 | Markdown | `streamdown-rn` block-streaming renderer with a plain-text error boundary |
 
-Not implemented yet: session search, assistant regenerate/branch, Markdown
+Not implemented yet: assistant regenerate/branch, Markdown
 file export (the transcript is shared as plain text), provider/MCP management,
 schedules, memory, Git/checkpoints, push notifications and deep links. The
 web's configurable Enter-vs-modifier send shortcut is intentionally replaced
@@ -399,6 +399,12 @@ once from the saved cursor on a transport error.
 warns about the peer range, the Android bundle succeeds, and device behavior
 still needs a real test. `react-native-nitro-markdown` is the native fallback if
 JS-thread parsing is too slow on a low-end phone.
+
+Wide tables: the renderer gives every cell `flex: 1`, so many columns squeeze
+until each word wraps, and it exposes no override hook. `scripts/patch-streamdown.mjs`
+(postinstall) wraps the compiled table in a horizontal `ScrollView` with a
+132px minimum column width. Re-run it after changing the package version; it
+fails loudly when the upstream table function no longer matches.
 
 ## Visual contract
 

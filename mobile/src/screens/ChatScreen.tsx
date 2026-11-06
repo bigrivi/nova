@@ -46,6 +46,7 @@ import {
     approveTab,
     cancelAsk,
     interruptTab,
+    regenerateTurn,
     runTurn,
     submitAskAnswers,
 } from "../lib/stream-runner";
@@ -377,6 +378,12 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
                         <MessageList
                             key={activeId ?? "empty"}
                             messages={messages}
+                            approval={approval}
+                            onRegenerate={() => {
+                                if (activeId) {
+                                    regenerateTurn(activeId);
+                                }
+                            }}
                         />
                         <View
                             style={{

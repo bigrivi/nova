@@ -21,6 +21,7 @@ export type ChatStreamOptions = {
     projectId?: string | null;
     reasoningEffort?: string | null;
     attachments?: NovaAttachmentData[];
+    regenerate?: boolean;
     resumeFromSequence?: number | null;
     onEvent: (event: NovaStreamEvent) => void;
     onSequence?: (sequence: number) => void;
@@ -74,13 +75,26 @@ export function openChatStream(
         if (closed || completed) {
             return;
         }
+        const path =
+            options.regenerate && !resume
+                ? `/api/sessions/${encodeURIComponent(sessionId ?? "")}/regenerate`
+                : "/api/chat/stream";
         const body = resume
             ? {
                   session_id: sessionId ?? undefined,
                   message: "",
                   resume_from_seq: lastSequence ?? undefined,
               }
-            : {
+            : options.regenerate
+              ? {
+                    session_id: sessionId ?? undefined,
+                    message: "",
+                    regenerate: true,
+                    provider: options.provider || undefined,
+                    model: options.model || undefined,
+                    reasoning_effort: options.reasoningEffort || undefined,
+                }
+              : {
                   session_id: sessionId ?? undefined,
                   message: options.message,
                   display_text: options.displayText,
@@ -92,7 +106,7 @@ export function openChatStream(
                   attachments: options.attachments ?? [],
               };
 
-        const next = new EventSource(apiUrl("/api/chat/stream"), {
+        const next = new EventSource(apiUrl(path), {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",

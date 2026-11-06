@@ -85,6 +85,8 @@ type ChatStore = {
         }>,
     ) => void;
     startAssistant: (tabId: string) => string;
+    setStreaming: (tabId: string, streaming: boolean) => void;
+    dropLastAssistant: (tabId: string) => void;
     setRetry: (tabId: string, retry: RetryState | null) => void;
     appendText: (tabId: string, delta: string) => void;
     appendReasoning: (tabId: string, delta: string) => void;
@@ -380,6 +382,37 @@ export const useChat = create<ChatStore>((set) => ({
             };
         }),
 
+    setStreaming: (tabId, streaming) =>
+        set((state) => {
+            const current = state.byId[tabId] ?? emptySlice();
+            return {
+                byId: {
+                    ...state.byId,
+                    [tabId]: { ...current, streaming },
+                },
+            };
+        }),
+
+    dropLastAssistant: (tabId) =>
+        set((state) => {
+            const current = state.byId[tabId];
+            if (!current) {
+                return state;
+            }
+            const index = lastAssistantIndex(current.messages);
+            if (index === -1) {
+                return state;
+            }
+            const messages = current.messages.slice();
+            messages.splice(index, 1);
+            return {
+                byId: {
+                    ...state.byId,
+                    [tabId]: { ...current, messages },
+                },
+            };
+        }),
+
     finishTurn: (tabId, error) =>
         set((state) => {
             const current = state.byId[tabId] ?? emptySlice();
@@ -387,12 +420,27 @@ export const useChat = create<ChatStore>((set) => ({
                 byId: {
                     ...state.byId,
                     [tabId]: {
-                        ...patchLastAssistant(current, (message) => ({
-                            ...message,
-                            status: error ? "error" : "done",
-                            retry: null,
-                            ...(error ? { error } : {}),
-                        })),
+                        ...patchLastAssistant(current, (message) => {
+                            const parts = message.parts.map((part) =>
+                                part.type === "tool-call" &&
+                                part.status === "running"
+                                    ? {
+                                          ...part,
+                                          status: "error" as const,
+                                          error:
+                                              part.error ??
+                                              "The turn ended before this tool returned.",
+                                      }
+                                    : part,
+                            );
+                            return {
+                                ...message,
+                                parts,
+                                status: error ? "error" : "done",
+                                retry: null,
+                                ...(error ? { error } : {}),
+                            };
+                        }),
                         streaming: false,
                         error: error ?? null,
                         approval: null,

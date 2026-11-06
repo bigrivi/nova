@@ -9,6 +9,7 @@ import {
     RefreshControl,
     StyleSheet,
     Text,
+    TextInput,
     View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -23,6 +24,7 @@ import { ProjectDialog } from "../components/ProjectDialog";
 import { TextPromptDialog } from "../components/TextPromptDialog";
 import { closeTab } from "../lib/tab-actions";
 import { dateBucket, DATE_BUCKETS, DATE_BUCKET_LABELS } from "../lib/date-bucket";
+import { filterSessionsByTitle } from "../lib/session-search";
 import { readExpandedProjects, writeExpandedProjects } from "../lib/storage";
 import { useProjects } from "../state/projects";
 import { useSessions } from "../state/sessions";
@@ -109,6 +111,7 @@ export function SessionsScreen({
     const removeProject = useProjects((state) => state.remove);
     const moveSession = useProjects((state) => state.moveSession);
 
+    const [query, setQuery] = useState("");
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [dialog, setDialog] = useState<{
         mode: "create" | "rename";
@@ -247,6 +250,28 @@ export function SessionsScreen({
 
     const rows = useMemo<Row[]>(() => {
         const sorted = [...items].sort((a, b) => b.updated_at - a.updated_at);
+        const searching = query.trim().length > 0;
+        if (searching) {
+            const matches = filterSessionsByTitle(sorted, query);
+            if (matches.length === 0) {
+                return [
+                    {
+                        key: "empty-search",
+                        kind: "empty",
+                        title: "No matches",
+                        body: `No conversation title contains "${query.trim()}".`,
+                    },
+                ];
+            }
+            return [
+                {
+                    key: "header-results",
+                    kind: "header",
+                    title: `${matches.length} result${matches.length === 1 ? "" : "s"}`,
+                },
+                ...sessionRows(matches, "search", false),
+            ];
+        }
         const pinned = sorted.filter((session) => session.pinned);
         const unpinned = sorted.filter((session) => !session.pinned);
         const byProject = new Map<string, NovaSessionSummary[]>(
@@ -352,7 +377,7 @@ export function SessionsScreen({
             });
         }
         return next;
-    }, [items, projects, expanded]);
+    }, [items, projects, expanded, query]);
 
     const renderRow = ({ item }: { item: Row }) => {
         if (item.kind === "header") {
@@ -565,6 +590,39 @@ export function SessionsScreen({
                 </View>
             </View>
 
+            <View
+                style={[
+                    styles.search,
+                    {
+                        backgroundColor: theme.muted,
+                        borderColor: theme.border,
+                    },
+                ]}
+            >
+                <Feather name="search" size={15} color={theme.weak} />
+                <TextInput
+                    value={query}
+                    onChangeText={setQuery}
+                    placeholder="Search conversations"
+                    placeholderTextColor={theme.weak}
+                    style={[styles.searchInput, { color: theme.foreground }]}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                    accessibilityLabel="Search conversations"
+                />
+                {query ? (
+                    <Pressable
+                        onPress={() => setQuery("")}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Clear search"
+                    >
+                        <Feather name="x" size={14} color={theme.weak} />
+                    </Pressable>
+                ) : null}
+            </View>
+
             {shownError ? (
                 <View
                     style={[
@@ -723,6 +781,22 @@ export function SessionsScreen({
 
 const styles = StyleSheet.create({
     safe: { flex: 1 },
+    search: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        marginHorizontal: 16,
+        marginBottom: 8,
+        height: 38,
+        borderRadius: 10,
+        borderWidth: StyleSheet.hairlineWidth,
+        paddingHorizontal: 10,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 14,
+        padding: 0,
+    },
     header: {
         flexDirection: "row",
         alignItems: "center",

@@ -5,6 +5,7 @@ import {
     buildToolView,
     countDiffLines,
     parseToolInput,
+    readBackgroundTaskId,
     readToolResult,
     splitMutationOutput,
 } from "./tool-view";
@@ -126,6 +127,19 @@ describe("tool views", () => {
             task: "a b c",
             output: "Sub-agent 'research' started.",
         });
+    });
+
+    test("background task ids are readable from any tool result", () => {
+        expect(
+            readBackgroundTaskId(
+                JSON.stringify({
+                    background_task: { task_id: "task_9" },
+                    message: "Started.",
+                }),
+            ),
+        ).toBe("task_9");
+        expect(readBackgroundTaskId('{"content":"plain"}')).toBeNull();
+        expect(readBackgroundTaskId("")).toBeNull();
     });
 
     test("plain results and partial arguments are tolerated", () => {

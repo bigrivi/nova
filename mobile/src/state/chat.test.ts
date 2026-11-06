@@ -206,3 +206,54 @@ describe("session route state", () => {
         expect(slice.effort).toBe("high");
     });
 });
+
+describe("regenerate helpers", () => {
+    test("drops only the final assistant message", () => {
+        useChat.getState().appendUserMessage("tab_a", "hello");
+        useChat.getState().startAssistant("tab_a");
+        useChat.getState().appendText("tab_a", "answer");
+        useChat.getState().finishTurn("tab_a");
+        useChat.getState().appendUserMessage("tab_a", "next");
+        useChat.getState().startAssistant("tab_a");
+        useChat.getState().appendText("tab_a", "second answer");
+        useChat.getState().finishTurn("tab_a");
+
+        useChat.getState().dropLastAssistant("tab_a");
+
+        const messages = chatSlice("tab_a").messages;
+        expect(messages.map((m) => m.role)).toEqual([
+            "user",
+            "assistant",
+            "user",
+        ]);
+        expect(messages[1]!.parts).toEqual([
+            { type: "text", text: "answer" },
+        ]);
+    });
+
+    test("streaming can start before a placeholder exists", () => {
+        useChat.getState().setStreaming("tab_a", true);
+
+        expect(chatSlice("tab_a").streaming).toBe(true);
+        expect(chatSlice("tab_a").messages).toEqual([]);
+    });
+});
+
+describe("turn teardown", () => {
+    test("a tool still running when the turn ends becomes an error", () => {
+        useChat.getState().startAssistant("tab_a");
+        useChat.getState().upsertTool("tab_a", {
+            toolCallId: "call_1",
+            toolName: "shell",
+            status: "running",
+        });
+        useChat.getState().finishTurn("tab_a", "Connection lost");
+
+        const part = chatSlice("tab_a").messages[0]!.parts[0]!;
+        expect(part.type).toBe("tool-call");
+        if (part.type === "tool-call") {
+            expect(part.status).toBe("error");
+            expect(part.error).toContain("before this tool returned");
+        }
+    });
+});

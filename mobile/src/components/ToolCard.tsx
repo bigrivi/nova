@@ -1,12 +1,14 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useState } from "react";
 import {
+    ActivityIndicator,
     Pressable,
     StyleSheet,
     Text,
     View,
 } from "react-native";
 
+import type { ApprovalRequest } from "../api/types";
 import type { ChatPart, ToolPart } from "../state/chat";
 import {
     buildTimelineItems,
@@ -14,7 +16,8 @@ import {
     toolParamSummary,
     type TimelineItem,
 } from "../chat/presentation";
-import { buildToolView } from "../chat/tool-view";
+import { buildToolView, readBackgroundTaskId } from "../chat/tool-view";
+import { useTasks } from "../state/tasks";
 import { chatMetrics, toolStatusColors } from "../theme/tokens";
 import type { Theme } from "../theme/tokens";
 import { useTheme } from "../theme/useTheme";
@@ -24,26 +27,57 @@ import {
     ToolViewHeaderMeta,
 } from "./ToolViews";
 
-function outcome(
+type ToolState = "waiting" | "running" | "done" | "error" | "cancelled";
+
+function toolState(
     part: ToolPart,
-    theme: Theme,
-): {
-    background: string;
-    foreground: string;
-    label: string;
-} {
+    taskStatus: string | undefined,
+    waiting: boolean,
+): ToolState {
+    if (waiting) {
+        return "waiting";
+    }
+    if (taskStatus === "failed" || taskStatus === "timed_out") {
+        return "error";
+    }
+    if (taskStatus === "cancelled" || taskStatus === "interrupted") {
+        return "cancelled";
+    }
+    if (taskStatus === "queued" || taskStatus === "running") {
+        return "running";
+    }
+    if (part.status === "error") {
+        return "error";
+    }
     if (part.status === "running") {
+        return "running";
+    }
+    return "done";
+}
+
+function stateColors(
+    state: ToolState,
+    theme: Theme,
+): { background: string; foreground: string; label: string } {
+    if (state === "waiting" || state === "running") {
         return {
             background: toolStatusColors.running.background,
             foreground: toolStatusColors.running.foreground,
-            label: "running",
+            label: state === "waiting" ? "waiting for approval" : "running",
         };
     }
-    if (part.status === "error") {
+    if (state === "error") {
         return {
             background: theme.dangerSoft,
             foreground: theme.danger,
             label: "error",
+        };
+    }
+    if (state === "cancelled") {
+        return {
+            background: theme.muted,
+            foreground: theme.weak,
+            label: "cancelled",
         };
     }
     return {
@@ -56,16 +90,25 @@ function outcome(
 function ToolRow({
     part,
     inChain = false,
+    waiting = false,
 }: {
     part: ToolPart;
     inChain?: boolean;
+    waiting?: boolean;
 }) {
     const { theme } = useTheme();
     const [open, setOpen] = useState(false);
-    const status = outcome(part, theme);
+    const taskId = readBackgroundTaskId(part.outputText);
+    const task = useTasks((state) =>
+        taskId ? state.byId[taskId] : undefined,
+    );
+    const state = toolState(part, task?.status, waiting);
+    const status = stateColors(state, theme);
     const summary = toolParamSummary(part.inputText);
     const view = buildToolView(part);
     const label = view ? view.label : part.toolName;
+    const taskFailure =
+        state === "error" && task?.status ? task.status : null;
 
     return (
         <View>
@@ -84,12 +127,20 @@ function ToolRow({
                         { backgroundColor: status.background },
                     ]}
                 >
-                    <View
-                        style={[
-                            styles.statusDotInner,
-                            { backgroundColor: status.foreground },
-                        ]}
-                    />
+                    {state === "running" ? (
+                        <ActivityIndicator
+                            size="small"
+                            color={status.foreground}
+                            style={styles.spinner}
+                        />
+                    ) : (
+                        <View
+                            style={[
+                                styles.statusDotInner,
+                                { backgroundColor: status.foreground },
+                            ]}
+                        />
+                    )}
                 </View>
                 <Text
                     numberOfLines={1}
@@ -97,7 +148,34 @@ function ToolRow({
                 >
                     {label}
                 </Text>
-                {view ? (
+                {state === "waiting" ? (
+                    <Text
+                        numberOfLines={1}
+                        style={[
+                            styles.toolState,
+                            { color: status.foreground },
+                        ]}
+                    >
+                        waiting for approval
+                    </Text>
+                ) : taskFailure ? (
+                    <Text
+                        numberOfLines={1}
+                        style={[
+                            styles.toolState,
+                            { color: status.foreground },
+                        ]}
+                    >
+                        {taskFailure}
+                    </Text>
+                ) : state === "cancelled" ? (
+                    <Text
+                        numberOfLines={1}
+                        style={[styles.toolState, { color: theme.weak }]}
+                    >
+                        cancelled
+                    </Text>
+                ) : view ? (
                     <ToolViewHeaderMeta view={view} />
                 ) : summary ? (
                     <Text
@@ -195,19 +273,41 @@ export function ThinkingChain({
     parts,
     item,
     streaming,
+    approval = null,
 }: {
     parts: readonly ChatPart[];
     item: Extract<TimelineItem, { kind: "chain" }>;
     streaming: boolean;
+    approval?: ApprovalRequest | null;
 }) {
     const { theme } = useTheme();
     const [userOpen, setUserOpen] = useState<boolean | null>(null);
     const open = userOpen ?? streaming;
-    const label = streaming
-        ? "Thinking"
-        : item.elapsedMs !== null
-          ? `Worked for ${formatDuration(item.elapsedMs)}`
-          : "Thought";
+    const waitingIndex = (() => {
+        if (!approval) {
+            return -1;
+        }
+        for (let position = item.indices.length - 1; position >= 0; position -= 1) {
+            const index = item.indices[position]!;
+            const candidate = parts[index];
+            if (
+                candidate?.type === "tool-call" &&
+                candidate.status === "running" &&
+                candidate.toolName === approval.toolName
+            ) {
+                return index;
+            }
+        }
+        return -1;
+    })();
+    const waiting = waitingIndex !== -1;
+    const label = waiting
+        ? "Waiting for approval"
+        : streaming
+          ? "Thinking"
+          : item.elapsedMs !== null
+            ? `Worked for ${formatDuration(item.elapsedMs)}`
+            : "Thought";
 
     return (
         <View
@@ -221,11 +321,25 @@ export function ThinkingChain({
                 style={styles.cardHeader}
                 accessibilityRole="button"
             >
-                <Feather name="activity" size={15} color={theme.brand} />
+                <Feather
+                    name={waiting ? "clock" : "activity"}
+                    size={15}
+                    color={
+                        waiting
+                            ? toolStatusColors.running.foreground
+                            : theme.brand
+                    }
+                />
                 <Text
                     style={[
                         styles.cardTitle,
-                        { color: streaming ? theme.brand : theme.foreground },
+                        {
+                            color: waiting
+                                ? toolStatusColors.running.foreground
+                                : streaming
+                                  ? theme.brand
+                                  : theme.foreground,
+                        },
                     ]}
                 >
                     {label}
@@ -304,7 +418,11 @@ export function ThinkingChain({
                                         { borderTopColor: theme.border },
                                     ]}
                                 >
-                                    <ToolRow part={part} inChain />
+                                    <ToolRow
+                                        part={part}
+                                        inChain
+                                        waiting={index === waitingIndex}
+                                    />
                                 </View>
                             );
                         }
@@ -316,8 +434,19 @@ export function ThinkingChain({
     );
 }
 
-export function StandaloneToolCard({ part }: { part: ToolPart }) {
+export function StandaloneToolCard({
+    part,
+    approval = null,
+}: {
+    part: ToolPart;
+    approval?: ApprovalRequest | null;
+}) {
     const { theme } = useTheme();
+    const waiting = Boolean(
+        approval &&
+            part.status === "running" &&
+            part.toolName === approval.toolName,
+    );
     return (
         <View
             style={[
@@ -338,7 +467,7 @@ export function StandaloneToolCard({ part }: { part: ToolPart }) {
                 </Text>
                 <Text style={[styles.cardMeta, { color: theme.weak }]}>1</Text>
             </View>
-            <ToolRow part={part} />
+            <ToolRow part={part} waiting={waiting} />
         </View>
     );
 }
@@ -391,7 +520,7 @@ const styles = StyleSheet.create({
         height: 15,
         borderRadius: 8,
         borderWidth: 2,
-        marginTop: 3,
+        marginTop: 0,
     },
     reasoningBody: {
         flex: 1,
@@ -441,12 +570,20 @@ const styles = StyleSheet.create({
         flex: 1,
         fontSize: 12,
     },
+    toolState: {
+        flexShrink: 1,
+        fontSize: 11.5,
+        fontWeight: "600",
+    },
+    spinner: {
+        transform: [{ scale: 0.7 }],
+    },
     toolChevron: {
         marginLeft: 2,
     },
     toolBody: {
         borderTopWidth: StyleSheet.hairlineWidth,
-        paddingHorizontal: 14,
+        paddingHorizontal: 12,
         paddingVertical: 10,
     },
     bodyLabel: {

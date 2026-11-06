@@ -223,6 +223,7 @@ function startStream(options: {
     projectId?: string | null;
     reasoningEffort?: string | null;
     attachments?: NovaAttachmentData[];
+    regenerate?: boolean;
     resumeFromSequence?: number | null;
     resuming?: boolean;
 }): void {
@@ -238,6 +239,7 @@ function startStream(options: {
         projectId: options.projectId,
         reasoningEffort: options.reasoningEffort,
         attachments: options.attachments,
+        regenerate: options.regenerate,
         resumeFromSequence: options.resumeFromSequence ?? null,
         onSequence: (sequence) => setTabSequence(tabId, sequence),
         onSession: (sessionId) => {
@@ -245,11 +247,29 @@ function startStream(options: {
             useTabs.getState().adopt(tabId, sessionId);
         },
         onEvent: (event) => {
+            if (options.regenerate && !sawFrame) {
+                // The server has already dropped the old answer by the time the
+                // first frame arrives, so this is the earliest safe moment to
+                // mirror it locally.
+                useChat.getState().dropLastAssistant(tabId);
+                useChat.getState().startAssistant(tabId);
+            }
             sawFrame = true;
             applyEvent(tabId, event);
         },
         onDone: (reason, message) => {
             streams.delete(tabId);
+            if (reason === "error" && options.regenerate && !sawFrame) {
+                // Nothing was dropped locally and nothing streamed: keep the
+                // transcript as it was and surface the failure as a banner.
+                useChat.getState().setStreaming(tabId, false);
+                useChat
+                    .getState()
+                    .setError(tabId, message || "The turn failed");
+                useTabs.getState().markTurnEnded(tabId, false);
+                useTabs.getState().setAttention(tabId, null);
+                return;
+            }
             if (reason === "error") {
                 useChat.getState().finishTurn(tabId, message || "The turn failed");
                 useTabs.getState().markTurnEnded(tabId, false);
@@ -365,6 +385,30 @@ export function runTurn(
         // for another model must not silently override it.
         reasoningEffort: isDraft ? effort : undefined,
         attachments: payload,
+    });
+}
+
+/** Re-run the last answer without appending a user message. */
+export function regenerateTurn(tabId: string): void {
+    const slice = chatSlice(tabId);
+    if (slice.streaming) {
+        return;
+    }
+    const sessionId =
+        slice.sessionId ??
+        useTabs.getState().tabs.find((tab) => tab.id === tabId)?.sessionId ??
+        null;
+    if (!sessionId) {
+        return;
+    }
+    useChat.getState().setTodos(tabId, null);
+    useChat.getState().setError(tabId, null);
+    useChat.getState().setStreaming(tabId, true);
+    startStream({
+        tabId,
+        sessionId,
+        message: "",
+        regenerate: true,
     });
 }
 
