@@ -1,16 +1,12 @@
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
-import { cn } from "@/lib/utils";
 import {
     ActionBarMorePrimitive,
     ActionBarPrimitive,
     AuiIf,
-    BranchPickerPrimitive,
     useAuiState,
 } from "@assistant-ui/react";
 import {
     CheckIcon,
-    ChevronLeftIcon,
-    ChevronRightIcon,
     CopyIcon,
     DownloadIcon,
     MoreHorizontalIcon,
@@ -28,7 +24,7 @@ export const AssistantActionBar: FC = () => {
         <ActionBarPrimitive.Root
             hideWhenRunning
             autohide="not-last"
-            className="aui-assistant-action-bar-root absolute left-0 top-1.5 flex gap-1 text-muted-foreground"
+            className="aui-assistant-action-bar-root absolute left-0 top-1.5 flex items-center gap-1 text-muted-foreground"
         >
             <ActionBarPrimitive.Copy asChild>
                 <TooltipIconButton tooltip={t("common.copy")}>
@@ -70,37 +66,5 @@ export const AssistantActionBar: FC = () => {
                 </ActionBarMorePrimitive.Content>
             </ActionBarMorePrimitive.Root>
         </ActionBarPrimitive.Root>
-    );
-};
-
-export const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
-    className,
-    ...rest
-}) => {
-    const { t } = useTranslation();
-    return (
-        <BranchPickerPrimitive.Root
-            hideWhenSingleBranch
-            className={cn(
-                "aui-branch-picker-root -ms-2 me-2 inline-flex items-center text-muted-foreground text-xs",
-                className,
-            )}
-            {...rest}
-        >
-            <BranchPickerPrimitive.Previous asChild>
-                <TooltipIconButton tooltip={t("common.previous")}>
-                    <ChevronLeftIcon />
-                </TooltipIconButton>
-            </BranchPickerPrimitive.Previous>
-            <span className="aui-branch-picker-state font-medium">
-                <BranchPickerPrimitive.Number /> /{" "}
-                <BranchPickerPrimitive.Count />
-            </span>
-            <BranchPickerPrimitive.Next asChild>
-                <TooltipIconButton tooltip={t("common.next")}>
-                    <ChevronRightIcon />
-                </TooltipIconButton>
-            </BranchPickerPrimitive.Next>
-        </BranchPickerPrimitive.Root>
     );
 };

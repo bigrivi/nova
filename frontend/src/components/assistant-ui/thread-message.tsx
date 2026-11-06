@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/collapsible";
 
 import { AgentAvatar } from "./agent-avatar";
-import { AssistantActionBar, BranchPicker } from "./thread-assistant-actions";
+import { AssistantActionBar } from "./thread-assistant-actions";
 import { MessageError } from "./thread-message-error";
 
 function groupIndices(part: { type: string }): readonly number[] {
@@ -446,7 +446,6 @@ const AssistantMessage: FC<{ name: string; agentKey: string | null }> = ({
                 data-slot="aui_assistant-message-footer"
                 className="relative min-h-7 pt-1.5"
             >
-                <BranchPicker />
                 <AssistantActionBar />
             </div>
         </MessagePrimitive.Root>
