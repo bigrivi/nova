@@ -38,7 +38,7 @@ from nova.llm.images import (
 )
 from nova.prompt import PromptBuilder, PromptConfig
 from nova.session import get_session_manager
-from nova.session.models import encode_display_text
+from nova.session.models import decode_display_text, encode_display_text
 from nova.session.protocol import SessionProtocol
 from nova.skills.service import SkillService
 from nova.tools.approval import get_approval_manager
@@ -389,6 +389,7 @@ class Agent:
         project_id: str | None = None,
         message_variant: str | None = None,
         display_text: str | None = None,
+        regenerate: bool = False,
     ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
         self._abort_event.clear()
         # Per-request latch: one compact-and-retry per user request. Reset here,
@@ -396,21 +397,47 @@ class Agent:
         self.state.overflow_recovered = False
 
         current_session = await self.session_service.resolve_session(
-            session_id, user_input, workspace_dir, project_id
+            session_id,
+            "" if regenerate else user_input,
+            workspace_dir,
+            project_id,
         )
         session_id = current_session.id if current_session else ""
         self.messaging.apply_active_workspace(current_session)
+
+        stale_ids: list[str] = []
+        user_message = None
+        if regenerate:
+            history = await self.session.get_messages()
+            index = next(
+                (
+                    position
+                    for position in range(len(history) - 1, -1, -1)
+                    if history[position].role == "user"
+                    and not history[position].summary
+                ),
+                None,
+            )
+            if index is None:
+                raise ValueError("No user message to regenerate.")
+            user_message = history[index]
+            stale_ids = [message.id for message in history[index + 1 :]]
+            message_text = user_message.content
+            image_data = user_message.images or []
+            display = decode_display_text(user_message.data) or message_text
+            user_input = display
+        else:
+            message_text, image_data, display = build_user_message(
+                user_input, attachments, display_text
+            )
 
         yield AgentEvent.SESSION, session_id
         await self._events.emit(AgentEvent.START, user_input)
         yield AgentEvent.START, user_input
 
-        message_text, image_data, display = build_user_message(
-            user_input, attachments, display_text
-        )
         log.info(
             "[Session %s] Chat start agent=%s provider=%s model=%s workspace=%s "
-            "input_chars=%d attachments=%d",
+            "input_chars=%d attachments=%d regenerate=%s",
             session_id,
             self.agent_key,
             self.config.provider,
@@ -418,14 +445,23 @@ class Agent:
             self.state.workspace or "",
             len(message_text),
             len(attachments or []),
+            regenerate,
         )
-        user_message = await self.session.add_message(
-            role="user",
-            content=message_text,
-            images=image_data or None,
-            variant=message_variant,
-            data=encode_display_text(display, message_text),
-        )
+        if regenerate:
+            if stale_ids:
+                await self.session.rollback_messages(
+                    stale_ids, session_id=session_id
+                )
+        else:
+            user_message = await self.session.add_message(
+                role="user",
+                content=message_text,
+                images=image_data or None,
+                variant=message_variant,
+                data=encode_display_text(display, message_text),
+            )
+        if user_message is None:  # unreachable: every branch above sets it
+            raise RuntimeError("chat turn has no user message")
         # The turn's own user message is the rewind point: the client already
         # has its id, so `/rewind` can name the same moment the transcript does.
         begin_turn(

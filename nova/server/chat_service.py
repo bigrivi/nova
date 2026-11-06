@@ -9,6 +9,8 @@ import logging
 from collections.abc import AsyncGenerator, Callable
 from typing import Any, Literal
 
+from fastapi import HTTPException
+
 from nova.agent import AgentEvent
 from nova.app import build_agent
 from nova.db import DataSourceProtocol, get_default_data_source
@@ -97,6 +99,28 @@ class ChatService:
     @property
     def settings(self) -> Settings:
         return self._settings
+
+    async def validate_regenerate(self, session_id: str) -> None:
+        """Reject a regenerate request that cannot be served.
+
+        Args:
+            session_id: Session the client wants to re-run.
+
+        Raises:
+            HTTPException: 404 when the session is unknown, 400 when it has no
+                user message to answer again.
+        """
+        route = await self.session_service.get_session_route(session_id)
+        if route is None:
+            raise HTTPException(
+                status_code=404, detail=f"Session '{session_id}' not found"
+            )
+        messages = await self.session_service.list_messages(session_id)
+        if not any(message.role == "user" for message in messages.items):
+            raise HTTPException(
+                status_code=400,
+                detail="This session has no user message to regenerate.",
+            )
 
     async def _active_workspace(self) -> str:
         """The workspace the tool axis is currently judging paths against.
@@ -278,6 +302,8 @@ class ChatService:
             if project and project.get("path"):
                 workspace_dir = project["path"]
         message_variant = _injected_message_variant(request)
+        regenerate = bool(getattr(request, "regenerate", False))
+        extra: dict[str, Any] = {"regenerate": True} if regenerate else {}
         early_interrupt_checked = False
         try:
             async for event, data in agent.chat_stream(
@@ -288,6 +314,7 @@ class ChatService:
                 project_id=project_id,
                 message_variant=message_variant,
                 display_text=request.display_text,
+                **extra,
             ):
                 if event == AgentEvent.SESSION and data and not register_key:
                     register_key = data

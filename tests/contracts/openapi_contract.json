@@ -1459,6 +1459,32 @@
       ]
     }
   },
+  "POST /api/sessions/{session_id}/regenerate": {
+    "parameters": [
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          null
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
   "POST /api/speech/cancel": {
     "parameters": [],
     "request": [],

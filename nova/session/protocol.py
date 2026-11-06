@@ -37,6 +37,10 @@ class SessionProtocol(Protocol):
         last_n: int | None = None,
     ) -> list[Message]: ...
 
+    async def rollback_messages(
+        self, message_ids: list[str], session_id: str | None = None
+    ) -> int: ...
+
     async def add_message(
         self,
         role: str,

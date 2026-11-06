@@ -61,6 +61,19 @@ class ChatRequest(BaseModel):
     # Unknown cursors replay the full in-flight buffer with resync
     # (signalled via the x-nova-stream-resync header), never a skip.
     resume_from_seq: int | None = None
+    # Re-run the last assistant answer instead of appending `message` as a new
+    # user turn. Only the /regenerate route sets this; clients keep using the
+    # normal chat frames.
+    regenerate: bool = False
+
+
+class RegenerateRequest(BaseModel):
+    """Re-run the last assistant answer without appending a user message."""
+
+    provider: str | None = None
+    model: str | None = None
+    reasoning_effort: str | None = None
+    permission_mode: str | None = None
 
 
 class ChatResponse(BaseModel):

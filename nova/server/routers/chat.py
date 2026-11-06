@@ -21,6 +21,7 @@ from nova.server.schemas import (
     ChatResponse,
     InterruptRequest,
     InterruptResponse,
+    RegenerateRequest,
 )
 from nova.tools.approval import get_approval_manager
 
@@ -51,6 +52,32 @@ async def chat(
 )
 async def chat_stream(chat_request: ChatRequest, request: Request) -> StreamingResponse:
     return await ChatStreamOrchestrator(request).handle_chat_stream(chat_request)
+
+
+@router.post("/api/sessions/{session_id}/regenerate")
+async def regenerate_session(
+    session_id: str,
+    body: RegenerateRequest,
+    request: Request,
+) -> StreamingResponse:
+    """Re-run the last assistant answer for this session.
+
+    The user message stays untouched; the assistant and tool records that
+    followed it are dropped before the new turn starts.
+    """
+    chat_service = get_chat_service(request)
+    await chat_service.validate_regenerate(session_id)
+    return await ChatStreamOrchestrator(request).handle_chat_stream(
+        ChatRequest(
+            session_id=session_id,
+            message="",
+            regenerate=True,
+            provider=body.provider,
+            model=body.model,
+            reasoning_effort=body.reasoning_effort,
+            permission_mode=body.permission_mode,
+        )
+    )
 
 
 @router.get("/api/chat/stream/status")

@@ -42,6 +42,7 @@ ROUTES = {
     "GET /api/chat/stream/active",
     "POST /api/chat/interrupt",
     "POST /api/chat/approve",
+    "POST /api/sessions/{session_id}/regenerate",
     "GET /api/pending",
     # sessions
     "GET /api/sessions",
