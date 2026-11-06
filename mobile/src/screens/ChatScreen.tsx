@@ -5,7 +5,6 @@ import {
     Alert,
     BackHandler,
     KeyboardAvoidingView,
-    Platform,
     Pressable,
     Share,
     StyleSheet,
@@ -339,7 +338,7 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
 
             <KeyboardAvoidingView
                 style={styles.flex}
-                behavior={Platform.OS === "ios" ? "padding" : undefined}
+                behavior="padding"
             >
                 {messages.length === 0 ? (
                     <View style={styles.empty}>

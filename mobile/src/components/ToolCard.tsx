@@ -2,7 +2,6 @@ import Feather from "@expo/vector-icons/Feather";
 import { useState } from "react";
 import {
     Pressable,
-    ScrollView,
     StyleSheet,
     Text,
     View,
@@ -54,9 +53,15 @@ function outcome(
     };
 }
 
-function ToolRow({ part }: { part: ToolPart }) {
+function ToolRow({
+    part,
+    inChain = false,
+}: {
+    part: ToolPart;
+    inChain?: boolean;
+}) {
     const { theme } = useTheme();
-    const [open, setOpen] = useState(part.status === "running");
+    const [open, setOpen] = useState(false);
     const status = outcome(part, theme);
     const summary = toolParamSummary(part.inputText);
     const view = buildToolView(part);
@@ -66,7 +71,10 @@ function ToolRow({ part }: { part: ToolPart }) {
         <View>
             <Pressable
                 onPress={() => setOpen((value) => !value)}
-                style={styles.toolHeader}
+                style={[
+                    styles.toolHeader,
+                    inChain ? styles.toolHeaderInChain : null,
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel={`${label} ${status.label}`}
             >
@@ -131,20 +139,15 @@ function ToolRow({ part }: { part: ToolPart }) {
                                     >
                                         Input
                                     </Text>
-                                    <ScrollView
-                                        style={styles.codeScroll}
-                                        nestedScrollEnabled
+                                    <Text
+                                        selectable
+                                        style={[
+                                            styles.code,
+                                            { color: theme.weakStrong },
+                                        ]}
                                     >
-                                        <Text
-                                            selectable
-                                            style={[
-                                                styles.code,
-                                                { color: theme.weakStrong },
-                                            ]}
-                                        >
-                                            {part.inputText}
-                                        </Text>
-                                    </ScrollView>
+                                        {part.inputText}
+                                    </Text>
                                 </>
                             ) : null}
                             {part.error ? (
@@ -169,20 +172,15 @@ function ToolRow({ part }: { part: ToolPart }) {
                                     >
                                         Result
                                     </Text>
-                                    <ScrollView
-                                        style={styles.codeScroll}
-                                        nestedScrollEnabled
+                                    <Text
+                                        selectable
+                                        style={[
+                                            styles.code,
+                                            { color: theme.weakStrong },
+                                        ]}
                                     >
-                                        <Text
-                                            selectable
-                                            style={[
-                                                styles.code,
-                                                { color: theme.weakStrong },
-                                            ]}
-                                        >
-                                            {part.outputText}
-                                        </Text>
-                                    </ScrollView>
+                                        {part.outputText}
+                                    </Text>
                                 </>
                             ) : null}
                         </>
@@ -272,15 +270,28 @@ export function ThinkingChain({
                                             },
                                         ]}
                                     />
-                                    <Text
-                                        selectable
-                                        style={[
-                                            styles.reasoningText,
-                                            { color: theme.weakStrong },
-                                        ]}
-                                    >
-                                        {part.text || "Thinking…"}
-                                    </Text>
+                                    <View style={styles.reasoningBody}>
+                                        <Text
+                                            style={[
+                                                styles.reasoningLabel,
+                                                { color: theme.brand },
+                                            ]}
+                                        >
+                                            Thinking
+                                            {part.elapsedMs !== null
+                                                ? ` · ${formatDuration(part.elapsedMs)}`
+                                                : ""}
+                                        </Text>
+                                        <Text
+                                            selectable
+                                            style={[
+                                                styles.reasoningText,
+                                                { color: theme.weakStrong },
+                                            ]}
+                                        >
+                                            {part.text || "Thinking…"}
+                                        </Text>
+                                    </View>
                                 </View>
                             );
                         }
@@ -293,7 +304,7 @@ export function ThinkingChain({
                                         { borderTopColor: theme.border },
                                     ]}
                                 >
-                                    <ToolRow part={part} />
+                                    <ToolRow part={part} inChain />
                                 </View>
                             );
                         }
@@ -372,24 +383,34 @@ const styles = StyleSheet.create({
     },
     reasoningRow: {
         flexDirection: "row",
-        gap: 10,
+        gap: 8,
         marginBottom: 10,
     },
     reasoningDot: {
-        width: 9,
-        height: 9,
-        borderRadius: 5,
+        width: 15,
+        height: 15,
+        borderRadius: 8,
         borderWidth: 2,
-        marginTop: 6,
+        marginTop: 3,
+    },
+    reasoningBody: {
+        flex: 1,
+        gap: 2,
+    },
+    reasoningLabel: {
+        fontSize: 12,
+        fontWeight: "600",
     },
     reasoningText: {
-        flex: 1,
         fontSize: 13.5,
         lineHeight: 21,
     },
     toolInChain: {
         borderTopWidth: StyleSheet.hairlineWidth,
         paddingTop: 4,
+    },
+    toolHeaderInChain: {
+        paddingHorizontal: 0,
     },
     toolHeader: {
         flexDirection: "row",
@@ -435,9 +456,6 @@ const styles = StyleSheet.create({
     },
     resultLabel: {
         marginTop: 10,
-    },
-    codeScroll: {
-        maxHeight: 220,
     },
     code: {
         fontFamily: mono,

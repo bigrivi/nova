@@ -1,4 +1,4 @@
-import { Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 
 import {
     countDiffLines,
@@ -202,27 +202,20 @@ function CodeRunBody({
             {part.error ? <ErrorText error={part.error} /> : null}
             {view.code ? (
                 <View style={styles.darkBlock}>
-                    <ScrollView
-                        style={styles.codeScroll}
-                        nestedScrollEnabled
-                    >
-                        <Text selectable style={styles.code}>
-                            {view.code}
-                        </Text>
-                    </ScrollView>
+                    <Text selectable style={styles.code}>
+                        {view.code}
+                    </Text>
                 </View>
             ) : null}
             {view.output ? (
                 <>
                     <ResultLabel />
-                    <ScrollView style={styles.codeScroll} nestedScrollEnabled>
-                        <Text
-                            selectable
-                            style={[styles.code, { color: theme.weakStrong }]}
-                        >
-                            {view.output}
-                        </Text>
-                    </ScrollView>
+                    <Text
+                        selectable
+                        style={[styles.code, { color: theme.weakStrong }]}
+                    >
+                        {view.output}
+                    </Text>
                 </>
             ) : null}
         </View>
@@ -338,9 +331,6 @@ const styles = StyleSheet.create({
         lineHeight: 19,
         color: "#E2E8F0",
         paddingHorizontal: 10,
-    },
-    codeScroll: {
-        maxHeight: 220,
     },
     plainBlock: {
         borderRadius: chatMetrics.codeRadius,
