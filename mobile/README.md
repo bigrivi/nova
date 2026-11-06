@@ -161,6 +161,46 @@ What to expect:
   HTTP is readable on the network: treat that as a trusted-LAN test setup and
   use HTTPS (Tailscale or a reverse proxy) anywhere else.
 
+## Signing and GitHub releases
+
+Release signing reads credentials from the environment
+(`NOVA_KEYSTORE_FILE`, `NOVA_KEYSTORE_PASSWORD`, `NOVA_KEY_ALIAS`,
+`NOVA_KEY_PASSWORD`) or from `mobile/signing.properties` (gitignored). Without
+them, `expo prebuild` keeps Expo's debug signing so development still works.
+
+Local setup:
+
+```bash
+keytool -genkeypair -keystore ~/.config/nova/nova-release.keystore \
+  -alias nova -keyalg RSA -keysize 4096 -validity 10000
+ln -s ~/.config/nova/mobile-signing.properties mobile/signing.properties
+```
+
+Back the keystore and password up. Losing them means installed apps can never
+be updated again.
+
+CI builds and publishes a signed APK when a `mobile-v*` tag is pushed
+(`.github/workflows/release-mobile.yml`, also runnable manually). Add these
+repository secrets first:
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | `base64 -i ~/.config/nova/nova-release.keystore` |
+| `ANDROID_KEYSTORE_PASSWORD` | `storePassword` from `signing.properties` |
+| `ANDROID_KEY_ALIAS` | `nova` |
+| `ANDROID_KEY_PASSWORD` | `keyPassword` from `signing.properties` |
+
+Then cut a release:
+
+```bash
+# bump android.versionCode in app.json first
+git tag mobile-v0.1.0
+git push origin mobile-v0.1.0
+```
+
+The APK from earlier debug-signed builds has a different certificate: uninstall
+`com.bigrivi.nova` once before installing a release-signed build.
+
 ## Hot reload
 
 Fast Refresh is built into Metro and React Native; there is no extra library or

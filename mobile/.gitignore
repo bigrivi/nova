@@ -4,3 +4,6 @@ dist/
 android/
 ios/
 *.log
+signing.properties
+*.keystore
+*.jks

@@ -1,0 +1,14 @@
+# Copy next to this file as `signing.properties` (gitignored), or provide the
+# same values as environment variables in CI:
+#   NOVA_KEYSTORE_FILE, NOVA_KEYSTORE_PASSWORD, NOVA_KEY_ALIAS, NOVA_KEY_PASSWORD
+#
+# Generate a keystore once and back it up; losing it means no more updates to
+# an installed app.
+#
+#   keytool -genkeypair -keystore nova-release.keystore -alias nova \
+#     -keyalg RSA -keysize 4096 -validity 10000
+
+storeFile=/absolute/path/to/nova-release.keystore
+storePassword=change-me
+keyAlias=nova
+keyPassword=change-me
