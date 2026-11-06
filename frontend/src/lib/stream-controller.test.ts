@@ -153,6 +153,65 @@ function textOf(messages: ThreadMessageLike[] | undefined): string {
         .join("");
 }
 
+describe("stream-controller regenerate", () => {
+    const complete = { type: "complete", reason: "stop" } as const;
+
+    it("replaces the last answer and streams the regenerate turn", async () => {
+        const h = makeHarness({ currentThreadId: "s1", sessionId: "s1" });
+        h.messages.s1 = [
+            fromThreadMessageLike(
+                { role: "user", content: [{ type: "text", text: "hi" }] },
+                "u1",
+                complete,
+            ),
+            fromThreadMessageLike(
+                {
+                    role: "assistant",
+                    content: [{ type: "text", text: "old answer" }],
+                },
+                "a1",
+                complete,
+            ),
+        ];
+
+        const running = h.controller.regenerate();
+        const args = h.lastArgs()!;
+        expect(args.regenerate).toBe(true);
+        expect(args.sessionId).toBe("s1");
+        expect(args.message).toBe("");
+
+        const messages = h.messages.s1 ?? [];
+        expect(messages.map((message) => message.role)).toEqual([
+            "user",
+            "assistant",
+        ]);
+        expect(textOf([messages[1]!])).toBe("");
+        expect(h.deps.api.clearLastSequence).toHaveBeenCalledWith("s1");
+
+        h.finish();
+        await running;
+    });
+
+    it("ignores a draft thread", async () => {
+        const h = makeHarness({
+            currentThreadId: DRAFT_THREAD_ID,
+            sessionId: DRAFT_THREAD_ID,
+        });
+        await h.controller.regenerate();
+        expect(h.streamChat).not.toHaveBeenCalled();
+    });
+
+    it("ignores a thread that is already running", async () => {
+        const h = makeHarness({
+            currentThreadId: "s1",
+            sessionId: "s1",
+            running: { s1: true },
+        });
+        await h.controller.regenerate();
+        expect(h.streamChat).not.toHaveBeenCalled();
+    });
+});
+
 describe("stream-controller submit", () => {
     it("ignores an empty prompt", async () => {
         const h = makeHarness();

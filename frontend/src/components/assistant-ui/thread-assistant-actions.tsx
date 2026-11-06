@@ -5,6 +5,7 @@ import {
     ActionBarPrimitive,
     AuiIf,
     BranchPickerPrimitive,
+    useAuiState,
 } from "@assistant-ui/react";
 import {
     CheckIcon,
@@ -20,6 +21,9 @@ import { useTranslation } from "react-i18next";
 
 export const AssistantActionBar: FC = () => {
     const { t } = useTranslation();
+    // The bar itself still appears on hover for every message (copy/export are
+    // useful on history), but regenerate only exists for the newest answer.
+    const isLast = useAuiState((state) => state.message.isLast);
     return (
         <ActionBarPrimitive.Root
             hideWhenRunning
@@ -36,11 +40,13 @@ export const AssistantActionBar: FC = () => {
                     </AuiIf>
                 </TooltipIconButton>
             </ActionBarPrimitive.Copy>
-            <ActionBarPrimitive.Reload asChild>
-                <TooltipIconButton tooltip={t("common.refresh")}>
-                    <RefreshCwIcon />
-                </TooltipIconButton>
-            </ActionBarPrimitive.Reload>
+            {isLast ? (
+                <ActionBarPrimitive.Reload asChild>
+                    <TooltipIconButton tooltip={t("common.regenerate")}>
+                        <RefreshCwIcon />
+                    </TooltipIconButton>
+                </ActionBarPrimitive.Reload>
+            ) : null}
             <ActionBarMorePrimitive.Root>
                 <ActionBarMorePrimitive.Trigger asChild>
                     <TooltipIconButton

@@ -122,6 +122,8 @@ export interface StreamControllerDeps {
  */
 export interface StreamController {
     submit: (prompt: string, attachments?: NovaAttachmentData[]) => Promise<void>;
+    /** Re-run the last answer without appending a user turn. */
+    regenerate: () => Promise<void>;
     resume: (threadId: string, fromSequence: number | null) => Promise<void>;
     cancel: (threadId?: string) => Promise<void>;
     /** Abort and forget a local stream, e.g. when its thread is deleted. */
@@ -179,6 +181,7 @@ export function createStreamController(
         reasoningEffort?: string | null;
         attachments?: NovaAttachmentData[];
         resumeFromSequence: number | null;
+        regenerate?: boolean;
     }) {
         const env: StreamHandlerEnv = {
             originThreadId: args.originThreadId,
@@ -200,6 +203,7 @@ export function createStreamController(
         try {
             await deps.api.streamChat({
                 message: args.message,
+                regenerate: args.regenerate,
                 sessionId: args.sessionId,
                 provider: args.provider,
                 model: args.model,
@@ -301,6 +305,56 @@ export function createStreamController(
             model: null,
             agentKey: null,
             resumeFromSequence: fromSequence ?? 0,
+        });
+    }
+
+    function dropLastAssistant(
+        messages: ThreadMessageLike[],
+    ): ThreadMessageLike[] {
+        for (let index = messages.length - 1; index >= 0; index -= 1) {
+            if (messages[index]?.role === "assistant") {
+                return [
+                    ...messages.slice(0, index),
+                    ...messages.slice(index + 1),
+                ];
+            }
+        }
+        return messages;
+    }
+
+    async function regenerate() {
+        const threadId = deps.conversation.getCurrentThreadId();
+        if (
+            deps.conversation.isRunning(threadId) ||
+            abortControllers.has(threadId)
+        ) {
+            return;
+        }
+        const sessionId = deps.sessionIdRef.current;
+        if (!sessionId || sessionId === DRAFT_THREAD_ID) {
+            return;
+        }
+
+        const assistantMessageId = randomId();
+        deps.todo.clear();
+        deps.api.clearLastSequence(threadId);
+        deps.conversation.setThreadMessages(threadId, (previous) => [
+            ...dropLastAssistant(previous),
+            createAssistantMessage(assistantMessageId),
+        ]);
+
+        await streamThread({
+            originThreadId: threadId,
+            assistantMessageId,
+            prompt: "",
+            message: "",
+            sessionId,
+            projectId: null,
+            provider: null,
+            model: null,
+            agentKey: null,
+            resumeFromSequence: null,
+            regenerate: true,
         });
     }
 
@@ -407,6 +461,7 @@ export function createStreamController(
 
     return {
         submit,
+        regenerate,
         resume,
         cancel,
         abort: (threadId) => {

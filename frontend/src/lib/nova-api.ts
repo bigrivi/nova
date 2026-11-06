@@ -41,6 +41,8 @@ type StreamChatOptions = {
     workspaceDir?: string | null;
     projectId?: string | null;
     attachments?: NovaAttachmentData[];
+    /** Re-run the last answer instead of appending a user turn. */
+    regenerate?: boolean;
     onEvent: (event: NovaStreamEvent) => void;
     signal?: AbortSignal;
     resumeFromSequence?: number | null;
@@ -894,23 +896,39 @@ async function runStreamOnce(
     onEvent: (event: NovaStreamEvent) => void,
     sessionId: string | null,
 ): Promise<void> {
-    const response = await apiFetch("/api/chat/stream", {
+    // The first regenerate attempt targets the session route; a retry goes
+    // through the normal chat endpoint with the saved cursor, because the
+    // server keys the buffered frames by session either way.
+    const regenerate = options.regenerate === true && resumeFromSequence == null;
+    const path = regenerate
+        ? `/api/sessions/${encodeURIComponent(sessionId ?? "")}/regenerate`
+        : "/api/chat/stream";
+    const response = await apiFetch(path, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-            message: options.message,
-            session_id: sessionId || undefined,
-            provider: options.provider || undefined,
-            model: options.model || undefined,
-            agent_key: options.agentKey || undefined,
-            reasoning_effort: options.reasoningEffort || undefined,
-            workspace_dir: options.workspaceDir || undefined,
-            project_id: options.projectId || undefined,
-            attachments: options.attachments || [],
-            resume_from_seq: resumeFromSequence ?? undefined,
-        }),
+        body: JSON.stringify(
+            regenerate
+                ? {
+                      message: "",
+                      provider: options.provider || undefined,
+                      model: options.model || undefined,
+                      reasoning_effort: options.reasoningEffort || undefined,
+                  }
+                : {
+                      message: options.message,
+                      session_id: sessionId || undefined,
+                      provider: options.provider || undefined,
+                      model: options.model || undefined,
+                      agent_key: options.agentKey || undefined,
+                      reasoning_effort: options.reasoningEffort || undefined,
+                      workspace_dir: options.workspaceDir || undefined,
+                      project_id: options.projectId || undefined,
+                      attachments: options.attachments || [],
+                      resume_from_seq: resumeFromSequence ?? undefined,
+                  },
+        ),
         signal: options.signal,
     });
 

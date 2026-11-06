@@ -86,6 +86,7 @@ export function NovaAppShell() {
     const { runtime, config, handleComposerSubmit } = useNovaRuntime({
         setThreadMessages: conversations.setThreadMessages,
         submitPrompt: conversations.submitPrompt,
+        regenerate: conversations.regenerate,
         handleCancel: conversations.handleCancel,
         switchToDraftThread: conversations.switchToDraftThread,
         selectThread: conversations.selectThread,

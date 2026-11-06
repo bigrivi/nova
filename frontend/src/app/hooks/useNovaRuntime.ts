@@ -45,6 +45,7 @@ export interface NovaRuntimeDeps {
         prompt: string,
         attachments?: NovaAttachmentData[],
     ) => Promise<void>;
+    regenerate: () => Promise<void>;
     handleCancel: (threadId?: string) => Promise<void>;
     switchToDraftThread: (projectId?: string | null) => void;
     selectThread: (threadId: string) => void;
@@ -61,6 +62,7 @@ export function useNovaRuntime(deps: NovaRuntimeDeps) {
     const {
         setThreadMessages,
         submitPrompt,
+        regenerate,
         handleCancel: cancelThread,
         switchToDraftThread,
         selectThread,
@@ -103,6 +105,9 @@ export function useNovaRuntime(deps: NovaRuntimeDeps) {
         isRunning,
         onNew: async () => {},
         onCancel,
+        onReload: async () => {
+            await regenerate();
+        },
         convertMessage: passthroughMessage,
         setMessages,
         onResumeToolCall,

@@ -51,6 +51,7 @@ export interface Conversations {
         prompt: string,
         attachments?: NovaAttachmentData[],
     ) => Promise<void>;
+    regenerate: () => Promise<void>;
     handleCancel: (threadId?: string) => Promise<void>;
     setThreadMessages: (
         threadId: string,
@@ -340,6 +341,7 @@ export function useConversations(deps: ConversationDeps): Conversations {
         clearDraftProject: () => setDraftProjectId(null),
         composerRef,
         submitPrompt: controller.submit,
+        regenerate: controller.regenerate,
         handleCancel: controller.cancel,
         setThreadMessages,
         switchToDraftThread,
