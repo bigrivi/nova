@@ -615,6 +615,18 @@ def _parse_summary_keep_tokens(raw: dict[str, Any], default_window: int) -> int:
     return CompactionSettings.summary_keep_tokens
 
 
+def _parse_fs_roots(raw: object) -> tuple[str, ...]:
+    """``server.fs_roots``: directories remote clients may browse, if any."""
+    if not isinstance(raw, dict):
+        return ()
+    value = raw.get("fs_roots")
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError("Invalid Nova config: server.fs_roots must be a list of paths")
+    return tuple(item.strip() for item in value if item.strip())
+
+
 def _parse_server_config(raw: object) -> tuple[str, int, str, str, str]:
     if raw is None:
         raw = {}
@@ -707,6 +719,9 @@ class Settings:
     auth_user: str = ""
     auth_password: str = field(default="", repr=False)
 
+    # Directories a remote client may browse; empty means the user's home.
+    fs_roots: tuple[str, ...] = ()
+
     def __post_init__(self) -> None:
         self.ensure_directories()
 
@@ -748,6 +763,7 @@ class Settings:
         host, port, log_level, auth_user, auth_password = _parse_server_config(
             config_payload.get("server")
         )
+        fs_roots = _parse_fs_roots(config_payload.get("server"))
         raw_frontend_dist = os.getenv("NOVA_FRONTEND_DIST", "").strip()
         frontend_dist_path = Path(raw_frontend_dist) if raw_frontend_dist else None
         return cls(
@@ -772,6 +788,7 @@ class Settings:
             terminal=terminal,
             auth_user=auth_user,
             auth_password=auth_password,
+            fs_roots=fs_roots,
         )
 
     def ensure_directories(self) -> None:

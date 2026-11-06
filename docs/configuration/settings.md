@@ -107,7 +107,13 @@ The `server` block in `~/.nova/config.json` controls the bind address and LAN au
 }
 ```
 
-> Warning: setting `host` to `0.0.0.0` without both credentials leaves every `/api` route open to anyone who can reach the port.
+> Startup refuses to listen on any address other than `127.0.0.1`, `localhost` or `::1` unless both credentials are set. The process exits with status 2 and names the missing settings, so a wildcard bind is never silently exposed.
+
+Remote browsing is limited to `server.fs_roots`, a list of directories the file picker may open for remote clients. It defaults to your home directory. Local clients are not limited.
+
+```json
+"server": { "fs_roots": ["~/projects", "/srv/shared"] }
+```
 
 Auth is active only when both credentials are non-empty. `auth_user` is stripped of surrounding whitespace; `auth_password` is used verbatim, so leading/trailing spaces are significant. If only one of the two is set, `nova/server/auth.py:get_configured_credentials` returns `None`, auth stays disabled, and startup logs a warning. Enforcement lives in `nova/server/auth.py:BasicAuthMiddleware`, registered by `nova/server/app.py:create_app` via `app.add_middleware(BasicAuthMiddleware)`. The middleware reads credentials from the loaded settings on each request. A hand edit of the file needs a restart to take effect (a `/api/config/*` write also reloads settings via `refresh_settings()`). Credentials are never returned by any API.
 
@@ -120,9 +126,9 @@ What requires auth, and what does not:
 | `GET /` | No | Same reason as static assets |
 | `GET /health` | No | Liveness probe stays public |
 
-Loopback clients are exempt from auth: `127.0.0.1`, `::1`, and `::ffff:127.0.0.1`. This covers `nova desktop`, the local web UI (`nova web`, `nova serve`), and the TUI (`nova tui`, which talks to a backend on `127.0.0.1`), so local use never prompts for credentials. The desktop window itself always loads over loopback even when the server is bound to a wildcard address, because `0.0.0.0` is not a loadable URL for the embedded view.
+Loopback clients are exempt from auth. A request counts as local only when all three hold: the TCP peer is `127.0.0.1`, `::1` or `::ffff:127.0.0.1`; no `Forwarded` or `X-Real-IP` header is present; and the `Host` header names this machine (`127.0.0.1`, `localhost` or `[::1]`, with or without a port). This covers `nova desktop`, the local web UI (`nova web`, `nova serve`), and the TUI (`nova tui`, which talks to a backend on `127.0.0.1`), so local use never prompts for credentials. The desktop window itself always loads over loopback even when the server is bound to a wildcard address, because `0.0.0.0` is not a loadable URL for the embedded view.
 
-Proxy rule: if an `X-Forwarded-For` header is present, the request counts as loopback only when every entry in that header is a loopback address. A request arriving from loopback but carrying a non-loopback `X-Forwarded-For` entry requires credentials. The Vite dev server sets `xfwd: true` in `frontend/vite.config.ts` for exactly this reason, so a LAN browser hitting the dev server is still authenticated while `localhost` development stays exempt.
+Proxy rule: a reverse proxy on the same machine connects over loopback, so the peer address alone proves nothing. The `Host` check is what identifies it. A proxy that forwards the public host name (the usual default) makes its requests remote, so they need credentials. A proxy that rewrites `Host` to a local name and adds no forwarding header is not detected; configure it to pass the public `Host` through, or put it behind credentials. If an `X-Forwarded-For` header is present, every entry must also be loopback. The Vite dev server sets `xfwd: true` in `frontend/vite.config.ts`, so a LAN browser reaching the dev server is still authenticated while `localhost` development stays exempt.
 
 Unauthorized requests get HTTP `401` with body `{"detail": "Authentication required"}`. The middleware deliberately sends no `WWW-Authenticate` header, so browsers do not open their native credential prompt instead of Nova's own dialog.
 

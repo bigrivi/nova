@@ -7,14 +7,16 @@ new file and a new registration line.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from nova import __version__
-from nova.server.deps import get_session_service
-from nova.server.fs_browse import list_directory
+from nova.server.auth import is_loopback
+from nova.server.deps import get_session_service, get_settings
+from nova.server.fs_browse import list_directory, remote_fs_roots
 from nova.server.schemas import DirectoryListing
 from nova.server.session_service import SessionService
 from nova.session.errors import SessionBusy
+from nova.settings import Settings
 
 router = APIRouter()
 
@@ -30,9 +32,14 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/api/fs/list", response_model=DirectoryListing)
-async def fs_list(path: str | None = None) -> DirectoryListing:
+async def fs_list(
+    request: Request,
+    path: str | None = None,
+    settings: Settings = Depends(get_settings),
+) -> DirectoryListing:
+    roots = None if is_loopback(request.scope) else remote_fs_roots(settings.fs_roots)
     try:
-        return list_directory(path)
+        return list_directory(path, roots=roots)
     except (FileNotFoundError, NotADirectoryError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionError as exc:

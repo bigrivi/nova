@@ -13,7 +13,11 @@ from typing import TYPE_CHECKING
 import uvicorn
 from fastapi import FastAPI
 
-from nova.server.auth import BasicAuthMiddleware
+from nova.server.auth import (
+    BasicAuthMiddleware,
+    assert_safe_bind,
+    get_configured_credentials,
+)
 from nova.server.context import AppContext, build_context
 from nova.server.deps import apply_config_change
 from nova.server.error_logging import install_error_logging
@@ -44,6 +48,7 @@ GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 
 
 def build_uvicorn_config(app: FastAPI, settings: Settings) -> uvicorn.Config:
+    assert_safe_bind(settings.host, get_configured_credentials(settings))
     server_settings = settings.server
     return uvicorn.Config(
         app,

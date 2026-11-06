@@ -22,6 +22,7 @@ from nova import __version__
 from nova.desktop.main import run_desktop
 from nova.mcp.manager import MCPManager
 from nova.server import run_server
+from nova.server.auth import UnsafeBindError
 from nova.settings import Settings, configure_logging, get_settings
 from nova.tools.dependency_manager import init_site_packages
 
@@ -437,7 +438,11 @@ def main() -> None:
                 print(f"Nova web: opening {url}", file=sys.stderr)
                 _open_browser_when_ready(url)
 
-        asyncio.run(run_server(settings=settings))
+        try:
+            asyncio.run(run_server(settings=settings))
+        except UnsafeBindError as error:
+            print(f"nova: {error}", file=sys.stderr)
+            sys.exit(2)
     finally:
         try:
             loop = asyncio.new_event_loop()

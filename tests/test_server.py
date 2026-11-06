@@ -53,6 +53,9 @@ class FakeChatService:
         self._stream_chunks = stream_chunks or []
         self._interrupt_result = interrupt_result
 
+    async def validate_regenerate(self, session_id: str) -> None:
+        return None
+
     async def chat(self, request):
         return self._chat_payload
 
@@ -1535,7 +1538,9 @@ def test_auth_exempts_loopback_client(monkeypatch, tmp_path):
         )
     )
 
-    response = _auth_client(app, client=("127.0.0.1", 40000)).get("/api/models")
+    response = TestClient(
+        app, client=("127.0.0.1", 40000), headers={"host": "127.0.0.1:8765"}
+    ).get("/api/models")
 
     assert response.status_code == 200
 
@@ -1601,7 +1606,10 @@ def test_auth_loopback_exempt_requires_loopback_forwarded_for(monkeypatch, tmp_p
             monkeypatch, tmp_path, "nova-auth-xff", _AUTH_SERVER
         )
     )
-    client = _auth_client(app, client=("127.0.0.1", 40000))
+    # The forwarded-for rule only applies to a request that also names this machine.
+    client = TestClient(
+        app, client=("127.0.0.1", 40000), headers={"host": "127.0.0.1:8765"}
+    )
 
     assert (
         client.get("/api/models", headers={"X-Forwarded-For": "127.0.0.1"}).status_code
@@ -1619,6 +1627,13 @@ def test_auth_loopback_exempt_requires_loopback_forwarded_for(monkeypatch, tmp_p
             headers={"X-Forwarded-For": "192.168.1.50, 127.0.0.1"},
         ).status_code
         == 401
+    )
+
+
+def _local(client):
+    """The same client, presented as this machine (the desktop app or the TUI)."""
+    return TestClient(
+        client.app, client=("127.0.0.1", 40000), headers={"host": "127.0.0.1:8765"}
     )
 
 
@@ -1894,6 +1909,7 @@ async def test_agents_update_validates_and_404s(monkeypatch, tmp_path):
 def test_fs_list_returns_entries(monkeypatch, tmp_path):
     # list_directory only returns subdirectories (workspace picker semantics).
     _, client = _agents_client(monkeypatch, tmp_path, "home")
+    client = _local(client)
     target = tmp_path / "browse"
     (target / "project-a").mkdir(parents=True)
     (target / "hello.txt").write_text("hi", encoding="utf-8")
@@ -1908,6 +1924,7 @@ def test_fs_list_returns_entries(monkeypatch, tmp_path):
 
 def test_fs_list_returns_404_for_missing(monkeypatch, tmp_path):
     _, client = _agents_client(monkeypatch, tmp_path, "home")
+    client = _local(client)
 
     response = client.get("/api/fs/list", params={"path": str(tmp_path / "nope")})
 
@@ -1916,8 +1933,9 @@ def test_fs_list_returns_404_for_missing(monkeypatch, tmp_path):
 
 def test_fs_list_returns_403_on_permission_error(monkeypatch, tmp_path):
     _, client = _agents_client(monkeypatch, tmp_path, "home")
+    client = _local(client)
 
-    def _deny(_path):
+    def _deny(_path, roots=None):
         raise PermissionError("denied")
 
     monkeypatch.setattr("nova.server.routers.system.list_directory", _deny)

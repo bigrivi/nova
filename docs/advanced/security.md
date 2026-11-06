@@ -102,9 +102,10 @@ for the lifetime of the process.
 
 Nova binds to `127.0.0.1` by default, so nothing leaves your machine unless
 you ask it to. Widening the bind with `"host": "0.0.0.0"` in the config file
-`server` block exposes every `/api` route to the local network, so it
-requires `auth_user` and `auth_password` to be set together in the same
-block:
+`server` block exposes every `/api` route to the local network. Startup refuses
+that combination unless `auth_user` and `auth_password` are set together in the
+same block, and remote clients can browse only `server.fs_roots` (default: your
+home directory):
 
 - Auth is active only when both values are non-empty. Setting only one
   leaves auth disabled entirely (and startup logs a warning), so

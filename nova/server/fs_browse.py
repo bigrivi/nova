@@ -8,14 +8,36 @@ never file contents.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from nova.server.schemas import DirectoryEntry, DirectoryListing
 
 
-def list_directory(path: str | None = None) -> DirectoryListing:
+def remote_fs_roots(configured: Sequence[str]) -> list[Path]:
+    """Directories a remote client may browse: the configured roots, else home."""
+    raw = list(configured) or [str(Path.home())]
+    return [Path(item).expanduser().resolve() for item in raw]
+
+
+def list_directory(
+    path: str | None = None,
+    roots: Sequence[Path] | None = None,
+) -> DirectoryListing:
+    """List the subdirectories of *path*.
+
+    ``roots`` is ``None`` for local clients, who may browse anywhere they can read
+    -- they already run shell commands as the same user. For a remote client it is
+    the allowed roots, and the *resolved* path must sit inside one of them, so
+    ``..`` and symlinks cannot walk out of the tree.
+    """
     base = Path(path).expanduser() if path and path.strip() else Path.home()
     base = base.resolve()
+
+    if roots is not None and not any(base.is_relative_to(root) for root in roots):
+        raise PermissionError(
+            f"Outside the directories this server exposes to remote clients: {base}"
+        )
 
     if not base.exists():
         raise FileNotFoundError(f"Directory not found: {base}")
