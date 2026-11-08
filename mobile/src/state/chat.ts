@@ -1,13 +1,6 @@
 /** Per-tab chat transcripts. The tab id is the key; no active-tab mirror. */
 import { create } from "zustand";
 
-import type {
-    ApprovalRequest,
-    ContextUsage,
-} from "../api/types";
-import type { AskQuestion } from "../chat/ask";
-import type { TodoItem } from "../chat/todo";
-
 export type TextPart = { type: "text"; text: string };
 
 export type ReasoningPart = {
@@ -63,13 +56,6 @@ export type ChatSlice = {
     messages: ChatMessage[];
     streaming: boolean;
     error: string | null;
-    approval: ApprovalRequest | null;
-    context: ContextUsage | null;
-    requiresInput: string | null;
-    ask: AskQuestion[] | null;
-    todos: TodoItem[] | null;
-    compacting: boolean;
-    compactionSummary: string;
 };
 
 type ChatStore = {
@@ -114,13 +100,6 @@ type ChatStore = {
     setModel: (tabId: string, modelId: string | null) => void;
     setEffort: (tabId: string, effort: string | null) => void;
     setProjectId: (tabId: string, projectId: string | null) => void;
-    setApproval: (tabId: string, approval: ApprovalRequest | null) => void;
-    setContext: (tabId: string, context: ContextUsage) => void;
-    setRequiresInput: (tabId: string, message: string | null) => void;
-    setAsk: (tabId: string, questions: AskQuestion[] | null) => void;
-    setTodos: (tabId: string, todos: TodoItem[] | null) => void;
-    setCompacting: (tabId: string, compacting: boolean) => void;
-    appendCompaction: (tabId: string, delta: string) => void;
     setError: (tabId: string, error: string | null) => void;
     remove: (tabId: string) => void;
     reset: () => void;
@@ -136,13 +115,6 @@ export function emptySlice(): ChatSlice {
         messages: [],
         streaming: false,
         error: null,
-        approval: null,
-        context: null,
-        requiresInput: null,
-        ask: null,
-        todos: null,
-        compacting: false,
-        compactionSummary: "",
     };
 }
 
@@ -249,11 +221,6 @@ export const useChat = create<ChatStore>((set) => ({
                         messages: [...current.messages, message],
                         streaming: true,
                         error: null,
-                        approval: null,
-                        requiresInput: null,
-                        ask: null,
-                        compacting: false,
-                        compactionSummary: "",
                     },
                 },
             };
@@ -443,8 +410,6 @@ export const useChat = create<ChatStore>((set) => ({
                         }),
                         streaming: false,
                         error: error ?? null,
-                        approval: null,
-                        compacting: false,
                     },
                 },
             };
@@ -544,97 +509,6 @@ export const useChat = create<ChatStore>((set) => ({
                 byId: {
                     ...state.byId,
                     [tabId]: { ...current, projectId },
-                },
-            };
-        }),
-
-    setApproval: (tabId, approval) =>
-        set((state) => {
-            const current = state.byId[tabId] ?? emptySlice();
-            return {
-                byId: {
-                    ...state.byId,
-                    [tabId]: {
-                        ...current,
-                        approval,
-                        requiresInput: approval ? null : current.requiresInput,
-                    },
-                },
-            };
-        }),
-
-    setContext: (tabId, context) =>
-        set((state) => {
-            const current = state.byId[tabId] ?? emptySlice();
-            return {
-                byId: {
-                    ...state.byId,
-                    [tabId]: { ...current, context },
-                },
-            };
-        }),
-
-    setRequiresInput: (tabId, message) =>
-        set((state) => {
-            const current = state.byId[tabId] ?? emptySlice();
-            return {
-                byId: {
-                    ...state.byId,
-                    [tabId]: { ...current, requiresInput: message },
-                },
-            };
-        }),
-
-    setAsk: (tabId, questions) =>
-        set((state) => {
-            const current = state.byId[tabId] ?? emptySlice();
-            return {
-                byId: {
-                    ...state.byId,
-                    [tabId]: { ...current, ask: questions },
-                },
-            };
-        }),
-
-    setTodos: (tabId, todos) =>
-        set((state) => {
-            const current = state.byId[tabId] ?? emptySlice();
-            return {
-                byId: {
-                    ...state.byId,
-                    [tabId]: { ...current, todos },
-                },
-            };
-        }),
-
-    setCompacting: (tabId, compacting) =>
-        set((state) => {
-            const current = state.byId[tabId] ?? emptySlice();
-            return {
-                byId: {
-                    ...state.byId,
-                    [tabId]: compacting
-                        ? {
-                              ...current,
-                              compacting: true,
-                              compactionSummary: "",
-                          }
-                        : { ...current, compacting: false },
-                },
-            };
-        }),
-
-    appendCompaction: (tabId, delta) =>
-        set((state) => {
-            const current = state.byId[tabId] ?? emptySlice();
-            return {
-                byId: {
-                    ...state.byId,
-                    [tabId]: {
-                        ...current,
-                        compactionSummary:
-                            current.compactionSummary + delta,
-                    },
                 },
             };
         }),

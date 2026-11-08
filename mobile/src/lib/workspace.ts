@@ -1,142 +1,35 @@
 /**
- * Workspace lifecycle: restore tabs for one server, persist them, and tail
- * server-initiated turns through `/api/events`.
+ * Workspace lifecycle: restore tabs for one server, prune stale tabs, and
+ * start the event tail. Persistence and the SSE tail live in their own modules.
  */
-import { openSessionEvents } from "../api/events";
-import type { SessionEventFrame } from "../api/types";
 import { useAttachments } from "../state/attachments";
+import { useCatalog } from "../state/catalog";
 import { useChat } from "../state/chat";
+import { useChatProgress } from "../state/chat-progress";
 import { useDrafts } from "../state/drafts";
 import { useProjects } from "../state/projects";
-import { useTasks } from "../state/tasks";
 import { useRoute } from "../state/route";
-import { useConnection } from "../state/connection";
 import { useSessions } from "../state/sessions";
-import { tabForSession, useTabs } from "../state/tabs";
-import {
-    emptyTabsFile,
-    parseTabsFile,
-    savedWorkspace,
-    serverKey,
-    withSavedTabs,
-    type TabsFile,
-} from "../tabs/persistence";
+import { useTabs } from "../state/tabs";
+import { useTasks } from "../state/tasks";
+import { startSessionEvents, stopSessionEvents } from "./session-events";
 import { ensureLoaded, resetLoadedTabs } from "./tab-actions";
-import { dropTabStream, resetStreams, resumeTurn } from "./stream-runner";
-import { readTabsFile, writeTabsFile } from "./storage";
-
-let eventsClose: (() => void) | null = null;
-let unsubscribe: (() => void) | null = null;
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let tabFile: TabsFile = emptyTabsFile();
-let workspaceKey = "";
-let lastSignature = "";
-
-function signature(): string {
-    const state = useTabs.getState();
-    const active = state.tabs.find((tab) => tab.id === state.activeId);
-    const tabs = state.tabs
-        .filter((tab) => tab.sessionId !== null)
-        .map((tab) => `${tab.sessionId}\u0000${tab.title}`)
-        .join("\u0001");
-    return `${tabs}\u0002${active?.sessionId ?? ""}`;
-}
-
-function saveNow(): void {
-    if (!workspaceKey) {
-        return;
-    }
-    const state = useTabs.getState();
-    const active = state.tabs.find((tab) => tab.id === state.activeId);
-    tabFile = withSavedTabs(
-        tabFile,
-        workspaceKey,
-        state.tabs,
-        active?.sessionId ?? null,
-    );
-    void writeTabsFile(tabFile);
-}
-
-function scheduleSave(): void {
-    if (!workspaceKey) {
-        return;
-    }
-    const next = signature();
-    if (next === lastSignature) {
-        return;
-    }
-    lastSignature = next;
-    if (saveTimer !== null) {
-        clearTimeout(saveTimer);
-    }
-    saveTimer = setTimeout(() => {
-        saveTimer = null;
-        saveNow();
-    }, 300);
-}
-
-function installPersistence(): void {
-    unsubscribe?.();
-    unsubscribe = useTabs.subscribe(() => scheduleSave());
-}
-
-function tailActiveSessions(sessionIds: readonly string[]): void {
-    for (const sessionId of sessionIds) {
-        const tab = tabForSession(sessionId);
-        if (!tab) {
-            continue;
-        }
-        void resumeTurn(tab.id).catch(() => {
-            // A tail that cannot start is retried by the next event/snapshot.
-        });
-    }
-}
-
-function handleFrame(frame: SessionEventFrame): void {
-    switch (frame.type) {
-        case "snapshot":
-            useTasks.getState().replace(frame.tasks);
-            tailActiveSessions(frame.active);
-            return;
-        case "state":
-            if (frame.state === "active") {
-                tailActiveSessions([frame.session_id]);
-            }
-            return;
-        case "title":
-            useTabs.getState().setTitle(frame.session_id, frame.title);
-            useSessions.getState().updateTitle(frame.session_id, frame.title);
-            return;
-        case "task":
-            useTasks.getState().update(frame.task);
-            return;
-        default:
-            return;
-    }
-}
-
-export function startSessionEvents(): void {
-    eventsClose?.();
-    eventsClose = openSessionEvents(handleFrame);
-}
-
-export function stopSessionEvents(): void {
-    eventsClose?.();
-    eventsClose = null;
-}
+import {
+    flushPersistence,
+    installPersistence,
+    loadWorkspaceTabs,
+    resetPersistence,
+} from "./workspace-persistence";
+import { dropTabStream, resetStreams } from "./stream-runner";
 
 /** Restore the saved tab set for the connected server. */
 export async function bootstrapWorkspace(): Promise<void> {
     resetWorkspace();
-    const { baseUrl, username } = useConnection.getState();
-    workspaceKey = serverKey(baseUrl, username);
-    tabFile = parseTabsFile(await readTabsFile());
-    const saved = savedWorkspace(tabFile, workspaceKey);
-    useTabs.getState().hydrate(saved.tabs, saved.activeSessionId);
-    lastSignature = signature();
+    await loadWorkspaceTabs();
 
     await Promise.all([
         useSessions.getState().refresh(),
+        useCatalog.getState().refresh(),
         useProjects.getState().refresh(),
     ]);
 
@@ -156,6 +49,7 @@ export async function bootstrapWorkspace(): Promise<void> {
             for (const tabId of dead) {
                 dropTabStream(tabId);
                 useChat.getState().remove(tabId);
+                useChatProgress.getState().remove(tabId);
             }
             useTabs.getState().remove(dead);
         }
@@ -187,31 +81,22 @@ export async function bootstrapWorkspace(): Promise<void> {
 /** Drop every in-memory workspace value; the next connect restores its own. */
 export function resetWorkspace(): void {
     stopSessionEvents();
-    unsubscribe?.();
-    unsubscribe = null;
-    if (saveTimer !== null) {
-        clearTimeout(saveTimer);
-        saveTimer = null;
-    }
+    resetPersistence();
     resetStreams();
     resetLoadedTabs();
     useTabs.getState().reset();
     useChat.getState().reset();
+    useChatProgress.getState().reset();
+    useCatalog.getState().reset();
     useDrafts.getState().reset();
     useAttachments.getState().reset();
     useRoute.getState().reset();
     useSessions.getState().reset();
     useProjects.getState().reset();
     useTasks.getState().reset();
-    workspaceKey = "";
-    lastSignature = "";
-    tabFile = emptyTabsFile();
 }
 
+/** Persist a pending tab change now, e.g. when the app backgrounds. */
 export function flushWorkspace(): void {
-    if (saveTimer !== null) {
-        clearTimeout(saveTimer);
-        saveTimer = null;
-    }
-    saveNow();
+    flushPersistence();
 }

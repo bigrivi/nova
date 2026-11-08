@@ -8,9 +8,11 @@ import {
     bootstrapWorkspace,
     flushWorkspace,
     resetWorkspace,
+} from "./src/lib/workspace";
+import {
     startSessionEvents,
     stopSessionEvents,
-} from "./src/lib/workspace";
+} from "./src/lib/session-events";
 import { ChatScreen } from "./src/screens/ChatScreen";
 import { ConnectScreen } from "./src/screens/ConnectScreen";
 import { SessionsScreen } from "./src/screens/SessionsScreen";

@@ -3,23 +3,15 @@ import { create } from "zustand";
 
 import {
     deleteSession,
-    listAgents,
-    listModels,
     listSessions,
     renameSession,
     setSessionPinned,
 } from "../api/client";
-import type {
-    NovaAgent,
-    NovaModelRecord,
-    NovaSessionSummary,
-} from "../api/types";
+import type { NovaSessionSummary } from "../api/types";
 import { useTabs } from "./tabs";
 
 type SessionsState = {
     items: NovaSessionSummary[];
-    models: NovaModelRecord[];
-    agents: NovaAgent[];
     loading: boolean;
     error: string | null;
     refresh: () => Promise<void>;
@@ -33,20 +25,14 @@ type SessionsState = {
 
 export const useSessions = create<SessionsState>((set) => ({
     items: [],
-    models: [],
-    agents: [],
     loading: false,
     error: null,
 
     refresh: async () => {
         set({ loading: true, error: null });
         try {
-            const [items, models, agents] = await Promise.all([
-                listSessions(),
-                listModels().catch(() => [] as NovaModelRecord[]),
-                listAgents().catch(() => [] as NovaAgent[]),
-            ]);
-            set({ items, models, agents, loading: false });
+            const items = await listSessions();
+            set({ items, loading: false });
         } catch (error) {
             set({
                 loading: false,
@@ -96,6 +82,5 @@ export const useSessions = create<SessionsState>((set) => ({
             items: state.items.filter((item) => item.id !== sessionId),
         })),
 
-    reset: () =>
-        set({ items: [], models: [], agents: [], loading: false, error: null }),
+    reset: () => set({ items: [], loading: false, error: null }),
 }));

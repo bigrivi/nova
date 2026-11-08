@@ -9,6 +9,8 @@ import type { ApprovalRequest } from "../api/types";
 import { parseAskQuestions } from "../chat/ask";
 import { useAttachments } from "../state/attachments";
 import { useChat, chatSlice } from "../state/chat";
+import { useCatalog } from "../state/catalog";
+import { useChatProgress } from "../state/chat-progress";
 import { useDrafts } from "../state/drafts";
 import { useTabs, tabForSession } from "../state/tabs";
 import { useSessions } from "../state/sessions";
@@ -33,7 +35,7 @@ function applyPending(tabId: string, sessionId: string): Promise<void> {
             const approvals = pending.approvals ?? [];
             if (approvals.length > 0) {
                 const approval = approvals[0] as ApprovalRequest;
-                useChat.getState().setApproval(tabId, approval);
+                useChatProgress.getState().setApproval(tabId, approval);
                 useTabs.getState().setAttention(tabId, "approval");
             }
             if (pending.ask && pending.ask.length > 0) {
@@ -41,9 +43,9 @@ function applyPending(tabId: string, sessionId: string): Promise<void> {
                     questions: pending.ask,
                 });
                 if (questions.length > 0) {
-                    useChat.getState().setAsk(tabId, questions);
+                    useChatProgress.getState().setAsk(tabId, questions);
                 }
-                useChat
+                useChatProgress
                     .getState()
                     .setRequiresInput(
                         tabId,
@@ -69,6 +71,7 @@ export async function ensureLoaded(tabId: string): Promise<void> {
     }
     loading.add(tabId);
     try {
+        useChatProgress.getState().resetFor(tabId);
         await applyPending(tabId, tab.sessionId);
         const [records, route] = await Promise.all([
             listMessages(tab.sessionId),
@@ -80,7 +83,7 @@ export async function ensureLoaded(tabId: string): Promise<void> {
                 .loadHistory(tabId, tab.sessionId, recordsToMessages(records));
         }
         if (route) {
-            const model = useSessions
+            const model = useCatalog
                 .getState()
                 .models.find(
                     (entry) =>
@@ -175,6 +178,7 @@ export function closeTab(tabId?: string): string | null {
     }
     abortForTab(target);
     useChat.getState().remove(target);
+    useChatProgress.getState().remove(target);
     useDrafts.getState().clear(target);
     useAttachments.getState().clear(target);
     loaded.delete(target);

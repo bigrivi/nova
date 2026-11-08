@@ -29,32 +29,8 @@ import { VoiceInputButton } from "./VoiceInputButton";
 
 const NO_ATTACHMENTS: PendingAttachment[] = [];
 
-export function Composer({
-    tabId,
-    streaming,
-    context,
-    agentLabel,
-    modelLabel,
-    effortLabel,
-    projectLabel,
-    canPickAgent,
-    canPickEffort,
-    canPickProject,
-    canClearProject,
-    subagents,
-    showDisclaimer = false,
-    onPickAgent,
-    onPickModel,
-    onPickEffort,
-    onPickProject,
-    onClearProject,
-    onAddAttachment,
-    onSend,
-    onStop,
-}: {
-    tabId: string;
-    streaming: boolean;
-    context: ContextUsage | null;
+/** Route chips and the pickers they open. */
+export type ComposerRoute = {
     agentLabel: string;
     modelLabel: string;
     effortLabel: string | null;
@@ -64,16 +40,53 @@ export function Composer({
     canPickProject: boolean;
     canClearProject: boolean;
     subagents: NovaAgent[];
-    showDisclaimer?: boolean;
     onPickAgent: () => void;
     onPickModel: () => void;
     onPickEffort: () => void;
     onPickProject: () => void;
     onClearProject: () => void;
+};
+
+/** What the composer can do to the turn. */
+export type ComposerActions = {
     onAddAttachment: () => void;
     onSend: (text: string, attachments: PendingAttachment[]) => void;
     onStop: () => void;
+};
+
+export function Composer({
+    tabId,
+    streaming,
+    context,
+    route,
+    actions,
+    showDisclaimer = false,
+}: {
+    tabId: string;
+    streaming: boolean;
+    context: ContextUsage | null;
+    route: ComposerRoute;
+    actions: ComposerActions;
+    showDisclaimer?: boolean;
 }) {
+    const {
+        agentLabel,
+        modelLabel,
+        effortLabel,
+        projectLabel,
+        canPickAgent,
+        canPickEffort,
+        canPickProject,
+        canClearProject,
+        subagents,
+        onPickAgent,
+        onPickModel,
+        onPickEffort,
+        onPickProject,
+        onClearProject,
+    } = route;
+    const { onAddAttachment, onSend, onStop } = actions;
+
     const { theme } = useTheme();
     const text = useDrafts((state) => state.byTab[tabId] ?? "");
     const setText = useDrafts((state) => state.setText);

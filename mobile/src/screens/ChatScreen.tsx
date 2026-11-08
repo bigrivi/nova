@@ -34,7 +34,8 @@ import {
     readClipboardImage,
 } from "../lib/attachments";
 import { selectableSubagents } from "../chat/mention";
-import { groupModelsByProvider } from "../chat/models";
+import { modelPickerSections } from "../chat/models";
+import { transcriptText } from "../chat/transcript";
 import { useAttachments } from "../state/attachments";
 import {
     closeTab,
@@ -51,6 +52,8 @@ import {
     submitAskAnswers,
 } from "../lib/stream-runner";
 import { useChat } from "../state/chat";
+import { useCatalog } from "../state/catalog";
+import { useChatProgress } from "../state/chat-progress";
 import { useProjects } from "../state/projects";
 import { useRoute } from "../state/route";
 import { useSessions } from "../state/sessions";
@@ -69,8 +72,11 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
     const slice = useChat((state) =>
         activeId ? state.byId[activeId] : undefined,
     );
-    const models = useSessions((state) => state.models);
-    const agents = useSessions((state) => state.agents);
+    const progress = useChatProgress((state) =>
+        activeId ? state.byId[activeId] : undefined,
+    );
+    const models = useCatalog((state) => state.models);
+    const agents = useCatalog((state) => state.agents);
     const sessions = useSessions((state) => state.items);
     const routeModelId = useRoute((state) => state.modelId);
     const routeAgentKey = useRoute((state) => state.agentKey);
@@ -125,23 +131,6 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
         }
     };
 
-    const transcriptText = () =>
-        (slice?.messages ?? [])
-            .map((message) => {
-                const text = message.parts
-                    .filter((part) => part.type === "text")
-                    .map((part) => (part.type === "text" ? part.text : ""))
-                    .join("\n")
-                    .trim();
-                if (!text) {
-                    return "";
-                }
-                const author = message.role === "user" ? "You" : "Nova";
-                return `${author}:\n${text}`;
-            })
-            .filter(Boolean)
-            .join("\n\n");
-
     const newDraft = () => {
         useRoute.getState().setProjectId(null);
         openDraftTab();
@@ -168,23 +157,16 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
             ? (state.bySession[activeSessionId] ?? EMPTY_TASKS)
             : EMPTY_TASKS,
     );
-    const approval = slice?.approval ?? null;
-    const ask = slice?.ask ?? null;
-    const requiresInput = slice?.requiresInput ?? null;
+    const approval = progress?.approval ?? null;
+    const ask = progress?.ask ?? null;
+    const requiresInput = progress?.requiresInput ?? null;
     const hasPanels =
-        (slice?.compacting ?? false) ||
-        (slice?.todos?.length ?? 0) > 0 ||
+        (progress?.compacting ?? false) ||
+        (progress?.todos?.length ?? 0) > 0 ||
         tasks.length > 0;
 
     const modelSections = useMemo(
-        () =>
-            groupModelsByProvider(models).map((group) => ({
-                title: group.title,
-                items: group.models.map((model) => ({
-                    id: model.id,
-                    label: model.label || model.model,
-                })),
-            })),
+        () => modelPickerSections(models),
         [models],
     );
     const selectedModel =
@@ -230,40 +212,42 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
             key={active.id}
             tabId={active.id}
             streaming={streaming}
-            context={slice?.context ?? null}
-            agentLabel={agentLabel}
-            modelLabel={modelLabel}
-            effortLabel={activeEffort}
-            projectLabel={projectLabel}
-            canPickAgent={canPickAgent}
-            canPickEffort={
-                active?.sessionId === null && efforts.length > 0
-            }
-            canPickProject={active !== null}
-            canClearProject={canClearProject}
-            subagents={subagents}
-            showDisclaimer={messages.length === 0}
-            onPickAgent={() => setPicker("agent")}
-            onPickModel={() => setPicker("model")}
-            onPickEffort={() => setPicker("effort")}
-            onPickProject={() => setPicker("project")}
-            onClearProject={() => {
-                if (!active) {
-                    return;
-                }
-                useRoute.getState().setProjectId(null);
-                useChat.getState().setProjectId(active.id, null);
-                if (active.sessionId) {
-                    void useProjects
-                        .getState()
-                        .moveSession(active.sessionId, null);
-                }
+            context={progress?.context ?? null}
+            route={{
+                agentLabel,
+                modelLabel,
+                effortLabel: activeEffort,
+                projectLabel,
+                canPickAgent,
+                canPickEffort:
+                    active?.sessionId === null && efforts.length > 0,
+                canPickProject: active !== null,
+                canClearProject,
+                subagents,
+                onPickAgent: () => setPicker("agent"),
+                onPickModel: () => setPicker("model"),
+                onPickEffort: () => setPicker("effort"),
+                onPickProject: () => setPicker("project"),
+                onClearProject: () => {
+                    if (!active) {
+                        return;
+                    }
+                    useRoute.getState().setProjectId(null);
+                    useChat.getState().setProjectId(active.id, null);
+                    if (active.sessionId) {
+                        void useProjects
+                            .getState()
+                            .moveSession(active.sessionId, null);
+                    }
+                },
             }}
-            onAddAttachment={() => setAttachOpen(true)}
-            onSend={(text, attachments) =>
-                runTurn(active.id, text, attachments)
-            }
-            onStop={() => void interruptTab(active.id)}
+            actions={{
+                onAddAttachment: () => setAttachOpen(true),
+                onSend: (text, attachments) =>
+                    runTurn(active.id, text, attachments),
+                onStop: () => void interruptTab(active.id),
+            }}
+            showDisclaimer={messages.length === 0}
         />
     ) : null;
 
@@ -393,13 +377,13 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
                             {hasPanels ? (
                                 <View style={styles.panels}>
                                     <CompactionBanner
-                                        visible={slice?.compacting ?? false}
+                                        visible={progress?.compacting ?? false}
                                         summary={
-                                            slice?.compactionSummary ?? ""
+                                            progress?.compactionSummary ?? ""
                                         }
                                     />
                                     <TodoProgressPanel
-                                        todos={slice?.todos ?? null}
+                                        todos={progress?.todos ?? null}
                                     />
                                     <BackgroundTasksPanel
                                         tasks={tasks}
@@ -438,7 +422,7 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
                         label: "Share transcript",
                         onPress: () => {
                             void Share.share({
-                                message: transcriptText(),
+                                message: transcriptText(messages),
                             }).catch((error: unknown) => {
                                 Alert.alert(
                                     "Could not share",
@@ -453,7 +437,7 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
                         label: "Copy transcript",
                         onPress: () => {
                             void Clipboard.setStringAsync(
-                                transcriptText(),
+                                transcriptText(messages),
                             );
                         },
                     },

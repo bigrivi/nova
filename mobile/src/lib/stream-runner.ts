@@ -22,7 +22,12 @@ import {
     useAttachments,
     type PendingAttachment,
 } from "../state/attachments";
+import { useCatalog } from "../state/catalog";
 import { useChat, chatSlice } from "../state/chat";
+import {
+    progressSlice,
+    useChatProgress,
+} from "../state/chat-progress";
 import { useRoute } from "../state/route";
 import { useSessions } from "../state/sessions";
 import { useTabs } from "../state/tabs";
@@ -76,6 +81,7 @@ function jsonText(value: unknown): string {
 
 function applyEvent(tabId: string, event: NovaStreamEvent): void {
     const chat = useChat.getState();
+    const progress = useChatProgress.getState();
 
     // A retry line is only true until the request moves on. Heartbeats are the
     // one frame that does not mean progress; every other non-retry frame clears
@@ -125,11 +131,11 @@ function applyEvent(tabId: string, event: NovaStreamEvent): void {
             if (event.toolName === "ask_user") {
                 const questions = parseAskQuestions(event.input);
                 if (questions.length > 0) {
-                    chat.setAsk(tabId, questions);
+                    progress.setAsk(tabId, questions);
                 }
             }
             if (event.toolName === "todo_write") {
-                chat.setTodos(tabId, parseTodos(event.input));
+                progress.setTodos(tabId, parseTodos(event.input));
             }
             if (event.toolCallId) {
                 chat.upsertTool(tabId, {
@@ -160,12 +166,12 @@ function applyEvent(tabId: string, event: NovaStreamEvent): void {
             return;
         case "data-nova-approval-required": {
             const approval = parseApproval(event);
-            chat.setApproval(tabId, approval);
+            progress.setApproval(tabId, approval);
             useTabs.getState().setAttention(tabId, "approval");
             return;
         }
         case "data-nova-approval-resolved":
-            chat.setApproval(tabId, null);
+            progress.setApproval(tabId, null);
             useTabs.getState().setAttention(tabId, null);
             return;
         case "data-nova-context": {
@@ -174,24 +180,24 @@ function applyEvent(tabId: string, event: NovaStreamEvent): void {
             const limit = Number(data.limit ?? 0);
             const percent = Number(data.percent ?? 0);
             if (Number.isFinite(used) && Number.isFinite(limit) && limit > 0) {
-                chat.setContext(tabId, { used, limit, percent });
+                progress.setContext(tabId, { used, limit, percent });
             }
             return;
         }
         case "data-nova-compaction-start":
-            chat.setCompacting(tabId, true);
+            progress.setCompacting(tabId, true);
             return;
         case "data-nova-compaction-delta":
-            chat.appendCompaction(
+            progress.appendCompaction(
                 tabId,
                 String(event.data?.delta ?? ""),
             );
             return;
         case "data-nova-compaction-end":
-            chat.setCompacting(tabId, false);
+            progress.setCompacting(tabId, false);
             return;
         case "data-nova-input-required":
-            chat.setRequiresInput(
+            progress.setRequiresInput(
                 tabId,
                 String(event.data?.message ?? "The agent is waiting for input"),
             );
@@ -278,6 +284,8 @@ function startStream(options: {
                 useTabs.getState().markTurnEnded(tabId, true);
             }
             useTabs.getState().setAttention(tabId, null);
+            useChatProgress.getState().setApproval(tabId, null);
+            useChatProgress.getState().setCompacting(tabId, false);
             if (options.resuming && !sawFrame) {
                 useChat.getState().dropEmptyAssistant(tabId);
             }
@@ -324,7 +332,7 @@ export function runTurn(
               },
     );
 
-    useChat.getState().setTodos(tabId, null);
+    useChatProgress.getState().resetFor(tabId);
     useChat.getState().appendUserMessage(
         tabId,
         text,
@@ -353,7 +361,7 @@ export function runTurn(
         useRoute.getState().setProjectId(null);
     }
     const selectedModel = isDraft
-        ? useSessions
+        ? useCatalog
               .getState()
               .models.find((model) => model.id === route.modelId)
         : undefined;
@@ -401,7 +409,7 @@ export function regenerateTurn(tabId: string): void {
     if (!sessionId) {
         return;
     }
-    useChat.getState().setTodos(tabId, null);
+    useChatProgress.getState().resetFor(tabId);
     useChat.getState().setError(tabId, null);
     useChat.getState().setStreaming(tabId, true);
     startStream({
@@ -426,6 +434,7 @@ export async function resumeTurn(tabId: string): Promise<void> {
     if (status.status === "done" && status.last_seq <= cursor) {
         return;
     }
+    useChatProgress.getState().resetFor(tabId);
     useChat.getState().startAssistant(tabId);
     startStream({
         tabId,
@@ -452,7 +461,7 @@ export async function approveTab(options: {
     remember?: boolean;
 }): Promise<void> {
     const slice = chatSlice(options.tabId);
-    const approval = slice.approval;
+    const approval = progressSlice(options.tabId).approval;
     if (!approval || !slice.sessionId) {
         return;
     }
@@ -462,7 +471,7 @@ export async function approveTab(options: {
         approved: options.approved,
         remember: options.remember ?? false,
     });
-    useChat.getState().setApproval(options.tabId, null);
+    useChatProgress.getState().setApproval(options.tabId, null);
     useTabs.getState().setAttention(options.tabId, null);
     if (!ok) {
         useChat
@@ -484,28 +493,28 @@ export function submitAskAnswers(
     answers: Readonly<Record<string, string>>,
 ): void {
     const slice = chatSlice(tabId);
-    const questions = slice.ask;
+    const questions = progressSlice(tabId).ask;
     if (!questions || questions.length === 0) {
         return;
     }
     settleBeforeAnswer(tabId);
     const text = formatAskAnswers(questions, answers);
-    useChat.getState().setAsk(tabId, null);
-    useChat.getState().setRequiresInput(tabId, null);
+    useChatProgress.getState().setAsk(tabId, null);
+    useChatProgress.getState().setRequiresInput(tabId, null);
     useTabs.getState().setAttention(tabId, null);
     runTurn(tabId, text);
 }
 
 export function cancelAsk(tabId: string): void {
     const slice = chatSlice(tabId);
-    const questions = slice.ask;
+    const questions = progressSlice(tabId).ask;
     if (!questions || questions.length === 0) {
         return;
     }
     settleBeforeAnswer(tabId);
     const text = cancelAskText(questions);
-    useChat.getState().setAsk(tabId, null);
-    useChat.getState().setRequiresInput(tabId, null);
+    useChatProgress.getState().setAsk(tabId, null);
+    useChatProgress.getState().setRequiresInput(tabId, null);
     useTabs.getState().setAttention(tabId, null);
     runTurn(tabId, text);
 }

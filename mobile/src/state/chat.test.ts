@@ -123,19 +123,7 @@ describe("chat slices", () => {
         expect(slice.messages[0]!.error).toBe("boom");
     });
 
-    test("history replaces a slice and clears transient state", () => {
-        useChat.getState().setApproval("tab_a", {
-            requestId: "r",
-            command: "x",
-            description: "",
-            toolName: "shell",
-            rememberable: true,
-            family: "",
-            target: "",
-            scriptScoped: false,
-            dangerous: false,
-            workspace: "",
-        });
+    test("history replaces a slice", () => {
         useChat.getState().loadHistory("tab_a", "s1", [
             {
                 id: "m1",
@@ -148,33 +136,13 @@ describe("chat slices", () => {
         const slice = chatSlice("tab_a");
         expect(slice.sessionId).toBe("s1");
         expect(slice.messages).toHaveLength(1);
-        expect(slice.approval).toBeNull();
         expect(slice.streaming).toBe(false);
     });
 
-    test("a new assistant clears a pending question form", () => {
-        useChat.getState().setAsk("tab_a", [
-            {
-                id: "q",
-                header: "",
-                question: "Why?",
-                inputType: "text",
-                options: [],
-                multiple: false,
-                required: true,
-                default: "",
-            },
-        ]);
-        useChat.getState().startAssistant("tab_a");
-        expect(chatSlice("tab_a").ask).toBeNull();
-    });
-
-    test("history load keeps the agent and drops a stale question", () => {
+    test("history load keeps the agent", () => {
         useChat.getState().setAgent("tab_a", "research");
-        useChat.getState().setAsk("tab_a", []);
         useChat.getState().loadHistory("tab_a", "s1", []);
         expect(chatSlice("tab_a").agentKey).toBe("research");
-        expect(chatSlice("tab_a").ask).toBeNull();
     });
 
     test("a user message keeps local attachment previews", () => {

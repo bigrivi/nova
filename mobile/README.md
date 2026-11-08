@@ -303,8 +303,10 @@ src/api/chat-stream.ts          POST SSE + resume/retry
 src/api/events.ts               GET SSE session events
 src/state/connection.ts         connect/hydrate/disconnect
 src/state/tabs.ts               Zustand wrapper over src/tabs/tab-state.ts
-src/state/chat.ts               per-tab transcripts (byId, no active mirror)
-src/state/sessions.ts           session list, models, agents
+src/state/chat.ts               per-tab transcripts and turn identity
+src/state/chat-progress.ts      per-tab approval, ask, todos, context, compaction
+src/state/sessions.ts           session list and CRUD
+src/state/catalog.ts            models and agents for route chips
 src/state/drafts.ts             per-tab composer text
 src/state/attachments.ts        staged attachments per tab
 src/state/tasks.ts              background tasks by session
@@ -317,6 +319,9 @@ src/lib/date-bucket.ts           today/yesterday/last7/older (tested)
 src/chat/ask.ts                 ask_user questions, answers, validation (tested)
 src/chat/mention.ts             @subagent detection, insertion, filtering (tested)
 src/chat/todo.ts                todo_write payload parser (tested)
+src/chat/tool-state.ts          tool row state rule (tested)
+src/chat/transcript.ts          plain-text transcript for share/copy (tested)
+src/sessions/rows.ts            pinned/projects/date-bucket/search rows (tested)
 src/chat/tool-view.ts           diff/code_run/delegate view models (tested)
 src/lib/attachments.ts          picker + resize + base64
 src/lib/speech.ts               raw recording upload
