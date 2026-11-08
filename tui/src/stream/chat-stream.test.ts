@@ -4,34 +4,28 @@ import { useToastStore } from "../stores/toast-store.ts";
 import {
     requestInterrupt,
     resetInterruptGuardForTest,
+    setInterruptTransportForTest,
 } from "./chat-stream.ts";
 
-const originalFetch = globalThis.fetch;
 let calls = 0;
-
-function jsonResponse(body: unknown, status = 200): Response {
-    return new Response(JSON.stringify(body), {
-        status,
-        headers: { "Content-Type": "application/json" },
-    });
-}
 
 beforeEach(() => {
     calls = 0;
     resetInterruptGuardForTest();
+    setInterruptTransportForTest(null);
     useToastStore.setState({ message: null });
 });
 
 afterEach(() => {
-    globalThis.fetch = originalFetch;
+    setInterruptTransportForTest(null);
     useChatStore.setState({ sessionId: null, isStreaming: false });
 });
 
-function stubFetch(handler: () => Response): void {
-    globalThis.fetch = (() => {
+function stubInterrupt(outcome: boolean | null): void {
+    setInterruptTransportForTest(async () => {
         calls += 1;
-        return Promise.resolve(handler());
-    }) as unknown as typeof fetch;
+        return outcome;
+    });
 }
 
 function streamingAs(sessionId: string): void {
@@ -41,20 +35,20 @@ function streamingAs(sessionId: string): void {
 describe("requestInterrupt", () => {
     test("two immediate calls produce one fetch", async () => {
         streamingAs("s1");
-        stubFetch(() => jsonResponse({ session_id: "s1", interrupted: true }));
+        stubInterrupt(true);
         await Promise.all([requestInterrupt(), requestInterrupt()]);
         expect(calls).toBe(1);
     });
 
     test("no-op when not streaming", async () => {
-        stubFetch(() => jsonResponse({ session_id: "s1", interrupted: true }));
+        stubInterrupt(true);
         await requestInterrupt();
         expect(calls).toBe(0);
     });
 
     test("false outcome toasts nothing-to-cancel", async () => {
         streamingAs("s1");
-        stubFetch(() => jsonResponse({ session_id: "s1", interrupted: false }));
+        stubInterrupt(false);
         await requestInterrupt();
         expect(calls).toBe(1);
         expect(useToastStore.getState().message).toContain("already ended");
@@ -62,14 +56,14 @@ describe("requestInterrupt", () => {
 
     test("null outcome toasts unreachable", async () => {
         streamingAs("s1");
-        stubFetch(() => new Response("err", { status: 500 }));
+        stubInterrupt(null);
         await requestInterrupt();
         expect(useToastStore.getState().message).toContain("Could not reach");
     });
 
     test("true outcome shows no toast", async () => {
         streamingAs("s1");
-        stubFetch(() => jsonResponse({ session_id: "s1", interrupted: true }));
+        stubInterrupt(true);
         await requestInterrupt();
         expect(useToastStore.getState().message).toBeNull();
     });

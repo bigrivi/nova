@@ -180,6 +180,17 @@ export function formatAskAnswers(
 the global handler, and key repeat fires fast, so guard here for one post. */
 let lastInterruptAt = 0;
 
+type InterruptTransport = (sessionId: string) => Promise<boolean | null>;
+
+let interruptTransport: InterruptTransport = interruptChat;
+
+/** Replace the interrupt request in tests; null restores the real client. */
+export function setInterruptTransportForTest(
+    transport: InterruptTransport | null,
+): void {
+    interruptTransport = transport ?? interruptChat;
+}
+
 /** Reset the interrupt guard (tests only). */
 export function resetInterruptGuardForTest(): void {
     lastInterruptAt = 0;
@@ -200,7 +211,7 @@ export async function requestInterrupt(): Promise<void> {
         return;
     }
     lastInterruptAt = now;
-    const outcome = await interruptChat(sessionId);
+    const outcome = await interruptTransport(sessionId);
     if (outcome === false) {
         useToastStore.getState().show("Nothing to cancel: this turn already ended.");
     } else if (outcome === null) {
