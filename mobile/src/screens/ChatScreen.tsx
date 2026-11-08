@@ -1,5 +1,5 @@
 import Feather from "@expo/vector-icons/Feather";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import * as Clipboard from "expo-clipboard";
 import {
     Alert,
@@ -51,7 +51,7 @@ import {
     runTurn,
     submitAskAnswers,
 } from "../lib/stream-runner";
-import { useChat } from "../state/chat";
+import { chatSlice, useChat } from "../state/chat";
 import { useCatalog } from "../state/catalog";
 import { useChatProgress } from "../state/chat-progress";
 import { useProjects } from "../state/projects";
@@ -69,8 +69,26 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
     const tabs = useTabs((state) => state.tabs);
     const activeId = useTabs((state) => state.activeId);
     const active = tabs.find((tab) => tab.id === activeId) ?? null;
-    const slice = useChat((state) =>
-        activeId ? state.byId[activeId] : undefined,
+    const streaming = useChat((state) =>
+        activeId ? (state.byId[activeId]?.streaming ?? false) : false,
+    );
+    const messageCount = useChat((state) =>
+        activeId ? (state.byId[activeId]?.messages.length ?? 0) : 0,
+    );
+    const sliceModelId = useChat((state) =>
+        activeId ? (state.byId[activeId]?.modelId ?? null) : null,
+    );
+    const sliceEffort = useChat((state) =>
+        activeId ? (state.byId[activeId]?.effort ?? null) : null,
+    );
+    const sliceSessionId = useChat((state) =>
+        activeId ? (state.byId[activeId]?.sessionId ?? null) : null,
+    );
+    const sliceAgentKey = useChat((state) =>
+        activeId ? (state.byId[activeId]?.agentKey ?? null) : null,
+    );
+    const sliceProjectId = useChat((state) =>
+        activeId ? (state.byId[activeId]?.projectId ?? null) : null,
     );
     const progress = useChatProgress((state) =>
         activeId ? state.byId[activeId] : undefined,
@@ -106,6 +124,12 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
         );
         return () => subscription.remove();
     }, [onBack]);
+
+    const handleRegenerate = useCallback(() => {
+        if (activeId) {
+            regenerateTurn(activeId);
+        }
+    }, [activeId]);
 
     const addAttachment = async (
         source: "library" | "camera" | "document" | "clipboard",
@@ -143,15 +167,9 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
         }
     };
 
-    const messages = slice?.messages ?? [];
-    const streaming = slice?.streaming ?? false;
-    const modelId = active?.sessionId
-        ? (slice?.modelId ?? null)
-        : routeModelId;
-    const sessionEffort = active?.sessionId
-        ? (slice?.effort ?? null)
-        : routeEffort;
-    const activeSessionId = slice?.sessionId ?? active?.sessionId ?? null;
+    const modelId = active?.sessionId ? sliceModelId : routeModelId;
+    const sessionEffort = active?.sessionId ? sliceEffort : routeEffort;
+    const activeSessionId = sliceSessionId ?? active?.sessionId ?? null;
     const tasks = useTasks((state) =>
         activeSessionId
             ? (state.bySession[activeSessionId] ?? EMPTY_TASKS)
@@ -174,7 +192,7 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
     const activeAgentKey =
         active?.sessionId === null
             ? routeAgentKey
-            : (slice?.agentKey ?? null);
+            : sliceAgentKey;
     const activeAgent =
         agents.find((agent) => agent.key === activeAgentKey) ?? null;
     const agentLabel = activeAgent
@@ -192,7 +210,7 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
     const mainAgentKey =
         active?.sessionId === null
             ? (routeAgentKey ?? "main")
-            : (slice?.agentKey ?? "main");
+            : (sliceAgentKey ?? "main");
     const subagents = selectableSubagents(agents, mainAgentKey);
     const sessionProjectId = active?.sessionId
         ? (sessions.find((session) => session.id === active.sessionId)
@@ -200,8 +218,8 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
         : null;
     const activeProjectId =
         active?.sessionId === null
-            ? (slice?.projectId ?? routeProjectId)
-            : (sessionProjectId ?? slice?.projectId ?? null);
+            ? (sliceProjectId ?? routeProjectId)
+            : (sessionProjectId ?? sliceProjectId ?? null);
     const activeProject =
         projects.find((project) => project.id === activeProjectId) ?? null;
     const projectLabel = activeProject?.name ?? null;
@@ -247,7 +265,7 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
                     runTurn(active.id, text, attachments),
                 onStop: () => void interruptTab(active.id),
             }}
-            showDisclaimer={messages.length === 0}
+            showDisclaimer={messageCount === 0}
         />
     ) : null;
 
@@ -296,7 +314,7 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
                 >
                     {active?.title ?? "Nova"}
                 </Text>
-                {messages.length > 0 ? (
+                {messageCount > 0 ? (
                     <Pressable
                         onPress={() => setMenuOpen(true)}
                         style={styles.more}
@@ -325,7 +343,7 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
                 style={styles.flex}
                 behavior="padding"
             >
-                {messages.length === 0 ? (
+                {messageCount === 0 ? (
                     <View style={styles.empty}>
                         <Text
                             style={[
@@ -361,13 +379,9 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
                     <>
                         <MessageList
                             key={activeId ?? "empty"}
-                            messages={messages}
+                            tabId={activeId ?? ""}
                             approval={approval}
-                            onRegenerate={() => {
-                                if (activeId) {
-                                    regenerateTurn(activeId);
-                                }
-                            }}
+                            onRegenerate={handleRegenerate}
                         />
                         <View
                             style={{
@@ -422,7 +436,9 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
                         label: "Share transcript",
                         onPress: () => {
                             void Share.share({
-                                message: transcriptText(messages),
+                                message: transcriptText(
+                                    chatSlice(activeId).messages,
+                                ),
                             }).catch((error: unknown) => {
                                 Alert.alert(
                                     "Could not share",
@@ -437,7 +453,9 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
                         label: "Copy transcript",
                         onPress: () => {
                             void Clipboard.setStringAsync(
-                                transcriptText(messages),
+                                transcriptText(
+                                    chatSlice(activeId).messages,
+                                ),
                             );
                         },
                     },

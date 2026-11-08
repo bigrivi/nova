@@ -1,5 +1,5 @@
 import Feather from "@expo/vector-icons/Feather";
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
     ActivityIndicator,
     Pressable,
@@ -25,7 +25,7 @@ function StatusIcon({ status }: { status: TodoStatus }) {
     return <Feather name="circle" size={15} color={theme.weak} />;
 }
 
-export function TodoProgressPanel({ todos }: { todos: TodoItem[] | null }) {
+export const TodoProgressPanel = memo(function TodoProgressPanel({ todos }: { todos: TodoItem[] | null }) {
     const { theme } = useTheme();
     const [userOpen, setUserOpen] = useState<boolean | null>(null);
 
@@ -139,7 +139,7 @@ export function TodoProgressPanel({ todos }: { todos: TodoItem[] | null }) {
             ) : null}
         </View>
     );
-}
+});
 
 const styles = StyleSheet.create({
     card: {

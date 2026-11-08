@@ -1,30 +1,39 @@
 import Feather from "@expo/vector-icons/Feather";
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
     FlatList,
     Pressable,
     StyleSheet,
     View,
+    type LayoutChangeEvent,
     type NativeScrollEvent,
     type NativeSyntheticEvent,
 } from "react-native";
 
 import type { ApprovalRequest } from "../api/types";
-import type { ChatMessage } from "../state/chat";
+import { useChat, type ChatMessage } from "../state/chat";
 import { useTheme } from "../theme/useTheme";
 import { MessageItem } from "./MessageItem";
 
 const NEAR_BOTTOM = 80;
 
+/** Stable empty list: a selector must not allocate on every store update. */
+const EMPTY_MESSAGES: ChatMessage[] = [];
+
 export const MessageList = memo(function MessageList({
-    messages,
+    tabId,
     onRegenerate,
     approval,
 }: {
-    messages: ChatMessage[];
+    tabId: string;
     onRegenerate?: () => void;
     approval?: ApprovalRequest | null;
 }) {
+    // Only this subtree subscribes to the transcript, so a streamed token does
+    // not re-render the composer, pickers or background panels.
+    const messages = useChat(
+        (state) => state.byId[tabId]?.messages ?? EMPTY_MESSAGES,
+    );
     const { theme } = useTheme();
     const listRef = useRef<FlatList<ChatMessage>>(null);
     // Follow means "keep the newest content visible". It only changes while a
@@ -32,11 +41,63 @@ export const MessageList = memo(function MessageList({
     // off the way an onScroll distance check would.
     const follow = useRef(true);
     const dragging = useRef(false);
+    // A programmatic scroll can emit a momentum-end event on Android; only a
+    // recent finger interaction may turn following off.
+    const lastDragAt = useRef(0);
     const [away, setAway] = useState(false);
+    // Measured sizes beat scrollToEnd(): its offset can stop short of the
+    // content container's padding, and it runs before the last block settles.
+    const contentHeight = useRef(0);
+    const viewportHeight = useRef(0);
+    const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const scrollToEnd = useCallback(() => {
-        listRef.current?.scrollToEnd({ animated: false });
+        const offset = Math.max(
+            0,
+            contentHeight.current - viewportHeight.current,
+        );
+        listRef.current?.scrollToOffset({ offset, animated: false });
     }, []);
+
+    /**
+     * Coalesce growth into one scroll per frame, then correct once more after
+     * the stream goes quiet: markdown blocks and images settle a beat late.
+     */
+    const followToEnd = useCallback(() => {
+        if (!follow.current) {
+            return;
+        }
+        if (pending.current === null) {
+            pending.current = setTimeout(() => {
+                pending.current = null;
+                if (follow.current) {
+                    scrollToEnd();
+                }
+            }, 16);
+        }
+        if (settle.current !== null) {
+            clearTimeout(settle.current);
+        }
+        settle.current = setTimeout(() => {
+            settle.current = null;
+            if (follow.current) {
+                scrollToEnd();
+            }
+        }, 120);
+    }, [scrollToEnd]);
+
+    useEffect(
+        () => () => {
+            if (pending.current !== null) {
+                clearTimeout(pending.current);
+            }
+            if (settle.current !== null) {
+                clearTimeout(settle.current);
+            }
+        },
+        [],
+    );
 
     const readPosition = useCallback(
         (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -65,7 +126,7 @@ export const MessageList = memo(function MessageList({
     const renderItem = useCallback(
         ({ item, index }: { item: ChatMessage; index: number }) => {
             const last = index === messages.length - 1;
-            return (
+            const row = (
                 <MessageItem
                     message={item}
                     isLast={last}
@@ -77,8 +138,16 @@ export const MessageList = memo(function MessageList({
                     }
                 />
             );
+            // FlatList's content-size callback can miss growth inside a
+            // memoized cell (reasoning streams); the last row's own layout is
+            // the direct signal that the transcript grew.
+            return last ? (
+                <View onLayout={followToEnd}>{row}</View>
+            ) : (
+                row
+            );
         },
-        [messages.length, onRegenerate, approval],
+        [messages.length, onRegenerate, approval, followToEnd],
     );
 
     return (
@@ -92,24 +161,26 @@ export const MessageList = memo(function MessageList({
                 scrollEventThrottle={32}
                 onScrollBeginDrag={() => {
                     dragging.current = true;
+                    lastDragAt.current = Date.now();
                 }}
                 onScrollEndDrag={(event) => {
                     readPosition(event);
                     dragging.current = false;
+                    lastDragAt.current = Date.now();
                 }}
                 onMomentumScrollEnd={(event) => {
-                    readPosition(event);
+                    if (Date.now() - lastDragAt.current < 1500) {
+                        readPosition(event);
+                    }
                     dragging.current = false;
                 }}
-                onContentSizeChange={() => {
-                    if (follow.current) {
-                        scrollToEnd();
-                    }
+                onContentSizeChange={(_width, height) => {
+                    contentHeight.current = height;
+                    followToEnd();
                 }}
-                onLayout={() => {
-                    if (follow.current) {
-                        scrollToEnd();
-                    }
+                onLayout={(event: LayoutChangeEvent) => {
+                    viewportHeight.current = event.nativeEvent.layout.height;
+                    followToEnd();
                 }}
                 keyboardDismissMode="interactive"
                 keyboardShouldPersistTaps="handled"
@@ -126,7 +197,7 @@ export const MessageList = memo(function MessageList({
                     onPress={() => {
                         follow.current = true;
                         setAway(false);
-                        listRef.current?.scrollToEnd({ animated: true });
+                        scrollToEnd();
                     }}
                     style={[
                         styles.jump,

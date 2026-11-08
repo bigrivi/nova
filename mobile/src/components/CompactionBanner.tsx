@@ -1,4 +1,4 @@
-import { useRef, type ComponentRef } from "react";
+import { memo, useRef, type ComponentRef } from "react";
 import {
     ActivityIndicator,
     ScrollView,
@@ -9,7 +9,7 @@ import {
 
 import { useTheme } from "../theme/useTheme";
 
-export function CompactionBanner({
+export const CompactionBanner = memo(function CompactionBanner({
     visible,
     summary,
 }: {
@@ -54,7 +54,7 @@ export function CompactionBanner({
             ) : null}
         </View>
     );
-}
+});
 
 const styles = StyleSheet.create({
     wrapper: {

@@ -1,5 +1,5 @@
 import Feather from "@expo/vector-icons/Feather";
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
     ActivityIndicator,
     Pressable,
@@ -131,7 +131,7 @@ function TaskRow({
     );
 }
 
-export function BackgroundTasksPanel({
+export const BackgroundTasksPanel = memo(function BackgroundTasksPanel({
     tasks,
     onCancel,
 }: {
@@ -189,7 +189,7 @@ export function BackgroundTasksPanel({
             ) : null}
         </View>
     );
-}
+});
 
 const styles = StyleSheet.create({
     card: {
