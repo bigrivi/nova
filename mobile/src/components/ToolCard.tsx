@@ -17,6 +17,11 @@ import {
     type TimelineItem,
 } from "../chat/presentation";
 import { buildToolView, readBackgroundTaskId } from "../chat/tool-view";
+import {
+    readToolState,
+    toolStateLabel,
+    type ToolState,
+} from "../chat/tool-state";
 import { useTasks } from "../state/tasks";
 import { chatMetrics, toolStatusColors } from "../theme/tokens";
 import type { Theme } from "../theme/tokens";
@@ -27,34 +32,6 @@ import {
     ToolViewHeaderMeta,
 } from "./ToolViews";
 
-type ToolState = "waiting" | "running" | "done" | "error" | "cancelled";
-
-function toolState(
-    part: ToolPart,
-    taskStatus: string | undefined,
-    waiting: boolean,
-): ToolState {
-    if (waiting) {
-        return "waiting";
-    }
-    if (taskStatus === "failed" || taskStatus === "timed_out") {
-        return "error";
-    }
-    if (taskStatus === "cancelled" || taskStatus === "interrupted") {
-        return "cancelled";
-    }
-    if (taskStatus === "queued" || taskStatus === "running") {
-        return "running";
-    }
-    if (part.status === "error") {
-        return "error";
-    }
-    if (part.status === "running") {
-        return "running";
-    }
-    return "done";
-}
-
 function stateColors(
     state: ToolState,
     theme: Theme,
@@ -63,7 +40,7 @@ function stateColors(
         return {
             background: toolStatusColors.running.background,
             foreground: toolStatusColors.running.foreground,
-            label: state === "waiting" ? "waiting for approval" : "running",
+            label: toolStateLabel(state),
         };
     }
     if (state === "error") {
@@ -102,7 +79,11 @@ function ToolRow({
     const task = useTasks((state) =>
         taskId ? state.byId[taskId] : undefined,
     );
-    const state = toolState(part, task?.status, waiting);
+    const state = readToolState({
+        status: part.status,
+        taskStatus: task?.status,
+        waiting,
+    });
     const status = stateColors(state, theme);
     const summary = toolParamSummary(part.inputText);
     const view = buildToolView(part);

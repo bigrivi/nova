@@ -259,51 +259,6 @@ export function parseSubagentMessage(text: string): ParsedSubagent | null {
     };
 }
 
-export type ToolPartStatus = {
-    type: "running" | "complete" | "incomplete" | "requires-action";
-    reason?: string;
-    error?: unknown;
-};
-
-export type ToolOutcome = {
-    isRunning: boolean;
-    isCancelled: boolean;
-    errored: boolean;
-    requiresAction: boolean;
-};
-
-/**
- * Fold a tool part's status, error flag and detached task state into the four
- * states every tool surface must agree on.
- *
- * A detached background task outlives the tool call that returned its handle,
- * so the task's state overrides the part's "complete" rather than adding to it.
- */
-export function readToolOutcome(
-    status: ToolPartStatus | undefined,
-    isError: boolean | undefined,
-    backgroundState: string | null | undefined,
-): ToolOutcome {
-    const taskRunning =
-        backgroundState === "queued" || backgroundState === "running";
-    const taskFailed =
-        backgroundState === "failed" || backgroundState === "timed_out";
-    const isCancelled =
-        (status?.type === "incomplete" && status.reason === "cancelled") ||
-        backgroundState === "cancelled";
-    const statusError =
-        status?.type === "incomplete" && !isCancelled && status.error != null;
-
-    return {
-        isRunning: status?.type === "running" || taskRunning,
-        isCancelled,
-        errored:
-            (isError === true || statusError || taskFailed) && !taskRunning,
-        requiresAction:
-            status?.type === "requires-action" && !taskRunning && !isCancelled,
-    };
-}
-
 /** 49.5K / 1.2M, the compact counts used by the context ring. */
 export function formatTokenCount(value: number): string {
     if (value >= 1_000_000) {

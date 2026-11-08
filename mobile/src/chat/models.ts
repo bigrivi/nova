@@ -13,6 +13,24 @@ export type ModelGroup = {
  * @param models Models in the order the server listed them.
  * @returns One group per provider, in first-appearance order.
  */
+export type ModelPickerSection = {
+    title: string;
+    items: Array<{ id: string; label: string }>;
+};
+
+/** Picker rows: one section per provider, labels falling back to the model id. */
+export function modelPickerSections(
+    models: readonly NovaModelRecord[],
+): ModelPickerSection[] {
+    return groupModelsByProvider(models).map((group) => ({
+        title: group.title,
+        items: group.models.map((model) => ({
+            id: model.id,
+            label: model.label || model.model,
+        })),
+    }));
+}
+
 export function groupModelsByProvider(
     models: readonly NovaModelRecord[],
 ): ModelGroup[] {

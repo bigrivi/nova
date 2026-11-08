@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { NovaModelRecord } from "../api/types";
-import { groupModelsByProvider } from "./models";
+import { groupModelsByProvider, modelPickerSections } from "./models";
 
 function model(
     provider: string,
@@ -34,6 +34,18 @@ describe("model grouping", () => {
         expect(groups[0]!.models.map((entry) => entry.model)).toEqual([
             "a1",
             "a2",
+        ]);
+    });
+
+    test("picker sections carry ids and fall back to the model id", () => {
+        expect(
+            modelPickerSections([
+                model("agnesai", "a1", "Agnes AI"),
+                model("opencode", "o1", "OpenCode"),
+            ]),
+        ).toEqual([
+            { title: "Agnes AI", items: [{ id: "agnesai:a1", label: "a1" }] },
+            { title: "OpenCode", items: [{ id: "opencode:o1", label: "o1" }] },
         ]);
     });
 

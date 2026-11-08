@@ -9,7 +9,6 @@ import {
     formatTokenCount,
     parseAttachment,
     parseSubagentMessage,
-    readToolOutcome,
     toolParamSummary,
     type TimelinePart,
 } from "./presentation";
@@ -192,68 +191,6 @@ describe("tool summary", () => {
     test("returns raw text for invalid JSON and null for empty", () => {
         expect(toolParamSummary("not json")).toBe("not json");
         expect(toolParamSummary("   ")).toBeNull();
-    });
-});
-
-describe("tool outcome", () => {
-    test("running status wins", () => {
-        expect(readToolOutcome({ type: "running" }, false, null)).toEqual({
-            isRunning: true,
-            isCancelled: false,
-            errored: false,
-            requiresAction: false,
-        });
-    });
-
-    test("a completed call is neither running nor errored", () => {
-        expect(readToolOutcome({ type: "complete" }, false, null)).toEqual({
-            isRunning: false,
-            isCancelled: false,
-            errored: false,
-            requiresAction: false,
-        });
-    });
-
-    test("cancelled is reported; the UI checks it before errored", () => {
-        const outcome = readToolOutcome(
-            { type: "incomplete", reason: "cancelled" },
-            true,
-            null,
-        );
-        expect(outcome.isCancelled).toBe(true);
-        // The web renderer chooses its glyph by `isCancelled` first, so the
-        // lingering isError flag must not turn the row into a failure dot.
-        expect(outcome.isRunning).toBe(false);
-    });
-
-    test("an incomplete status with an error is errored", () => {
-        expect(
-            readToolOutcome({ type: "incomplete", error: "boom" }, false, null)
-                .errored,
-        ).toBe(true);
-    });
-
-    test("a detached task overrides the completed handle", () => {
-        expect(readToolOutcome({ type: "complete" }, false, "running")).toEqual({
-            isRunning: true,
-            isCancelled: false,
-            errored: false,
-            requiresAction: false,
-        });
-        expect(
-            readToolOutcome({ type: "complete" }, false, "failed").errored,
-        ).toBe(true);
-        expect(
-            readToolOutcome({ type: "complete" }, false, "cancelled")
-                .isCancelled,
-        ).toBe(true);
-    });
-
-    test("requires-action is surfaced for the alert dot", () => {
-        expect(
-            readToolOutcome({ type: "requires-action" }, false, null)
-                .requiresAction,
-        ).toBe(true);
     });
 });
 

@@ -23,36 +23,12 @@ import { PickerSheet } from "../components/PickerSheet";
 import { ProjectDialog } from "../components/ProjectDialog";
 import { TextPromptDialog } from "../components/TextPromptDialog";
 import { closeTab } from "../lib/tab-actions";
-import { dateBucket, DATE_BUCKETS, DATE_BUCKET_LABELS } from "../lib/date-bucket";
-import { filterSessionsByTitle } from "../lib/session-search";
 import { readExpandedProjects, writeExpandedProjects } from "../lib/storage";
 import { useProjects } from "../state/projects";
 import { useSessions } from "../state/sessions";
 import { tabForSession } from "../state/tabs";
+import { buildSessionRows, type Row } from "../sessions/rows";
 import { useTheme } from "../theme/useTheme";
-
-type Row =
-    | {
-          key: string;
-          kind: "header";
-          title: string;
-          createProject?: boolean;
-      }
-    | {
-          key: string;
-          kind: "project";
-          project: NovaProject;
-          count: number;
-          expanded: boolean;
-      }
-    | { key: string; kind: "project-empty"; project: NovaProject }
-    | {
-          key: string;
-          kind: "session";
-          session: NovaSessionSummary;
-          indented: boolean;
-      }
-    | { key: string; kind: "empty"; title: string; body: string };
 
 function relativeTime(ms: number): string {
     const delta = Date.now() - ms;
@@ -68,19 +44,6 @@ function relativeTime(ms: number): string {
         return `${hours}h ago`;
     }
     return `${Math.floor(hours / 24)}d ago`;
-}
-
-function sessionRows(
-    sessions: readonly NovaSessionSummary[],
-    prefix: string,
-    indented: boolean,
-): Row[] {
-    return sessions.map((session) => ({
-        key: `${prefix}-${session.id}`,
-        kind: "session",
-        session,
-        indented,
-    }));
 }
 
 export function SessionsScreen({
@@ -248,136 +211,10 @@ export function SessionsScreen({
         );
     };
 
-    const rows = useMemo<Row[]>(() => {
-        const sorted = [...items].sort((a, b) => b.updated_at - a.updated_at);
-        const searching = query.trim().length > 0;
-        if (searching) {
-            const matches = filterSessionsByTitle(sorted, query);
-            if (matches.length === 0) {
-                return [
-                    {
-                        key: "empty-search",
-                        kind: "empty",
-                        title: "No matches",
-                        body: `No conversation title contains "${query.trim()}".`,
-                    },
-                ];
-            }
-            return [
-                {
-                    key: "header-results",
-                    kind: "header",
-                    title: `${matches.length} result${matches.length === 1 ? "" : "s"}`,
-                },
-                ...sessionRows(matches, "search", false),
-            ];
-        }
-        const pinned = sorted.filter((session) => session.pinned);
-        const unpinned = sorted.filter((session) => !session.pinned);
-        const byProject = new Map<string, NovaSessionSummary[]>(
-            projects.map((project) => [project.id, []]),
-        );
-        const unprojected: NovaSessionSummary[] = [];
-        for (const session of unpinned) {
-            const bucket = session.project_id
-                ? byProject.get(session.project_id)
-                : undefined;
-            if (bucket) {
-                bucket.push(session);
-            } else {
-                unprojected.push(session);
-            }
-        }
-
-        const orderedProjects = projects
-            .map((project) => {
-                const sessions = byProject.get(project.id) ?? [];
-                const latest = sessions.length
-                    ? Math.max(...sessions.map((item) => item.updated_at))
-                    : project.updated_at;
-                return { project, sessions, latest };
-            })
-            .sort((left, right) => right.latest - left.latest);
-
-        const next: Row[] = [];
-        if (pinned.length > 0) {
-            next.push({
-                key: "header-pinned",
-                kind: "header",
-                title: "Pinned",
-            });
-            next.push(...sessionRows(pinned, "pinned", false));
-        }
-
-        next.push({
-            key: "header-projects",
-            kind: "header",
-            title: "Projects",
-            createProject: true,
-        });
-        for (const { project, sessions } of orderedProjects) {
-            const open = expanded.has(project.id);
-            next.push({
-                key: `project-${project.id}`,
-                kind: "project",
-                project,
-                count: sessions.length,
-                expanded: open,
-            });
-            if (!open) {
-                continue;
-            }
-            if (sessions.length === 0) {
-                next.push({
-                    key: `project-empty-${project.id}`,
-                    kind: "project-empty",
-                    project,
-                });
-            } else {
-                next.push(...sessionRows(sessions, `project-${project.id}`, true));
-            }
-        }
-
-        next.push({
-            key: "header-chats",
-            kind: "header",
-            title: "Chats",
-        });
-        if (unprojected.length > 0) {
-            const buckets: Record<string, NovaSessionSummary[]> = {
-                today: [],
-                yesterday: [],
-                last7Days: [],
-                older: [],
-            };
-            for (const session of unprojected) {
-                buckets[dateBucket(session.updated_at)]?.push(session);
-            }
-            for (const bucket of DATE_BUCKETS) {
-                const group = buckets[bucket] ?? [];
-                if (group.length === 0) {
-                    continue;
-                }
-                next.push({
-                    key: `header-${bucket}`,
-                    kind: "header",
-                    title: DATE_BUCKET_LABELS[bucket],
-                });
-                next.push(...sessionRows(group, bucket, false));
-            }
-        } else {
-            next.push({
-                key: "empty-chats",
-                kind: "empty",
-                title: "No conversations yet",
-                body:
-                    items.length === 0 && projects.length === 0
-                        ? "Start a conversation or create a project to group them."
-                        : "Ungrouped conversations appear here.",
-            });
-        }
-        return next;
-    }, [items, projects, expanded, query]);
+    const rows = useMemo<Row[]>(
+        () => buildSessionRows({ items, projects, expanded, query }),
+        [items, projects, expanded, query],
+    );
 
     const renderRow = ({ item }: { item: Row }) => {
         if (item.kind === "header") {

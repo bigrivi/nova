@@ -215,6 +215,34 @@ function delegateView(
     };
 }
 
+type ViewBuilder = (
+    part: ToolPart,
+    settled: boolean,
+    errored: boolean,
+) => ToolView;
+
+/** Dedicated cards, keyed by normalized tool name. Add a tool here only. */
+const VIEW_BUILDERS: Readonly<Record<string, ViewBuilder>> = {
+    edit: (part, settled, errored) =>
+        fileMutationView(
+            "edit",
+            part.inputText,
+            part.outputText,
+            settled,
+            errored,
+        ),
+    write: (part, settled, errored) =>
+        fileMutationView(
+            "write",
+            part.inputText,
+            part.outputText,
+            settled,
+            errored,
+        ),
+    code_run: (part) => codeRunView(part.inputText, part.outputText),
+    delegate_to_agent: (part) => delegateView(part.inputText, part.outputText),
+};
+
 /**
  * Pick the dedicated card for a tool call, or null for the generic row.
  *
@@ -223,23 +251,9 @@ function delegateView(
  */
 export function buildToolView(part: ToolPart): ToolView | null {
     const toolName = (part.toolName ?? "").trim().toLowerCase();
-    const settled = part.status !== "running";
-    const errored = part.status === "error";
-
-    if (toolName === "edit" || toolName === "write") {
-        return fileMutationView(
-            toolName,
-            part.inputText,
-            part.outputText,
-            settled,
-            errored,
-        );
+    const builder = VIEW_BUILDERS[toolName];
+    if (!builder) {
+        return null;
     }
-    if (toolName === "code_run") {
-        return codeRunView(part.inputText, part.outputText);
-    }
-    if (toolName === "delegate_to_agent") {
-        return delegateView(part.inputText, part.outputText);
-    }
-    return null;
+    return builder(part, part.status !== "running", part.status === "error");
 }
