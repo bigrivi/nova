@@ -222,6 +222,15 @@ nova fork <session> --title "try redis"      # copy everything
 nova fork <session> --from <message-id>      # copy up to that message
 ```
 
+## Images
+
+Dropping an image into the composer attaches it: the composer shows a chip, and
+the message carries both the picture (as a data URL) and its path.
+
+The path is not decoration. A model that cannot see pictures — or a gateway
+that drops them — still gets a file it can open with its own tools, so the
+question gets answered either way.
+
 ## Regenerate
 
 `/regenerate` re-runs the last question. The user message stays; the answer that

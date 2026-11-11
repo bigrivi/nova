@@ -157,7 +157,7 @@ test("backspace deletes the whole chip and its attachment", async () => {
     expect(submitted.at(-1)?.attachments).toEqual([]);
 });
 
-test("submitting sends the image and leaves the chip out of the message", async () => {
+test("submitting sends the image with its path and leaves the chip out", async () => {
     const path = tempPng();
     const setup = await composer();
     await act(async () => {
@@ -174,8 +174,12 @@ test("submitting sends the image and leaves the chip out of the message", async 
     await settle(setup);
 
     const last = submitted.at(-1);
-    expect(last?.message).toBe("look at this");
+    // The chip stays out of the message, but the path travels with it: a model
+    // that cannot see pictures still gets a file it can open.
+    expect(last?.message).toContain("look at this");
     expect(last?.message).not.toContain("▧");
+    expect(last?.message).toContain("Attached image:");
+    expect(last?.message).toContain(path);
     const attachments = last?.attachments as
         | { type: string; name: string; content: { image: string }[] }[]
         | undefined;

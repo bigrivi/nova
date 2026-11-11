@@ -13,7 +13,13 @@
  * Every turn is bound to one session tab. Inactive tabs keep their own stream,
  * so switching tabs never interrupts or replays a turn this client started.
  */
-import { interruptChat, resolveProject, regenerateChat, streamChat } from "../api/nova-api.ts";
+import {
+    interruptChat,
+    resolveProject,
+    regenerateChat,
+    streamChat,
+    type StreamChatOptions,
+} from "../api/nova-api.ts";
 import { regenerateTarget } from "../lib/regenerate-target.ts";
 import {
     applyStreamEvent,
@@ -54,7 +60,14 @@ async function projectIdForPath(path: string): Promise<string | null> {
     if (resolvedProject?.path === path) {
         return resolvedProject.id;
     }
-    const project = await resolveProject(path);
+    let project;
+    try {
+        project = await resolveProject(path);
+    } catch {
+        // A project lookup is a nicety; failing it must not take the turn with
+        // it. The session still runs, just without a project label.
+        return null;
+    }
     if (!project) {
         return null;
     }
@@ -195,6 +208,17 @@ export function setInterruptTransportForTest(
 /** Reset the interrupt guard (tests only). */
 export function resetInterruptGuardForTest(): void {
     lastInterruptAt = 0;
+}
+
+type StreamTransport = (options: StreamChatOptions) => Promise<void>;
+
+let streamTransport: StreamTransport = streamChat;
+
+/** Replace the stream request in tests; null restores the real client. */
+export function setStreamTransportForTest(
+    transport: StreamTransport | null,
+): void {
+    streamTransport = transport ?? streamChat;
 }
 
 /** Cancel the live turn from any ESC entry point: no-op off-stream, one post per keypress. */
@@ -482,10 +506,13 @@ async function runTurn(options: TurnOptions): Promise<void> {
                 onEvent,
             });
         } else {
-            await streamChat({
+            await streamTransport({
                 message: options.message,
                 displayText: options.displayText,
                 sessionId,
+                // The attachments carry the images themselves. Dropping them here
+                // leaves the model with a chip in the transcript and no picture.
+                attachments: options.attachments,
                 workspaceDir: WORKSPACE_DIR,
                 projectId,
                 provider: slice.provider,

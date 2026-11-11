@@ -399,10 +399,15 @@ export function Composer({
                 ? [toNovaAttachment(item.file.image)]
                 : [],
         );
+        // Both kinds carry their path. A file is read by the agent's tools; an
+        // image is usually seen inline, but a model that cannot see pictures (or
+        // a gateway that drops them) still gets a path it can open.
         const references = attachments.flatMap((item) =>
             item.file.kind === "file"
                 ? [`Attached file: \`${displayPath(item.file.path)}\``]
-                : [],
+                : item.file.kind === "image"
+                  ? [`Attached image: \`${displayPath(item.file.path)}\``]
+                  : [],
         );
         const message = [body, ...references].filter(Boolean).join("\n");
         if (!message || isStreaming) return;
