@@ -13,7 +13,8 @@
  * Every turn is bound to one session tab. Inactive tabs keep their own stream,
  * so switching tabs never interrupts or replays a turn this client started.
  */
-import { interruptChat, resolveProject, streamChat } from "../api/nova-api.ts";
+import { interruptChat, resolveProject, regenerateChat, streamChat } from "../api/nova-api.ts";
+import { regenerateTarget } from "../lib/regenerate-target.ts";
 import {
     applyStreamEvent,
     type StreamAccumulator,
@@ -34,7 +35,7 @@ import { parseTodos, useTodoStore } from "../stores/todo-store.ts";
 import { activeTab, tabForSession, setTabSequence, tabSequence, useTabStore, NEW_TAB_TITLE } from "../stores/tab-store.ts";
 import { WORKSPACE_DIR } from "../workspace.ts";
 import { truncateEnd } from "../lib/display-width.ts";
-import type { NovaAttachmentData } from "../api/types.ts";
+import type { NovaAttachmentData, NovaStreamEvent } from "../api/types.ts";
 
 export type ChatRunOptions = {
     message: string;
@@ -219,6 +220,34 @@ export async function requestInterrupt(): Promise<void> {
     }
 }
 
+/**
+ * Re-run the last answer of the active tab.
+ *
+ * The user message stays; the answer that followed it is replaced. The server
+ * drops the old answer itself, so the local bubble is reset rather than left
+ * holding two answers.
+ */
+export async function regenerateLastAnswer(): Promise<void> {
+    const tabId = ensureActiveTab();
+    const slice = chatSlice(tabId);
+    if (!slice.sessionId) {
+        useToastStore.getState().show("Nothing to regenerate: no session yet.");
+        return;
+    }
+    const target = regenerateTarget(slice.messages);
+    if (target.kind === "none") {
+        useToastStore.getState().show(target.reason);
+        return;
+    }
+    await runTurn({
+        tabId,
+        message: "",
+        regenerate: true,
+        regenerateAssistantId:
+            target.kind === "replace" ? target.messageId : undefined,
+    });
+}
+
 /** Run one user-initiated conversation round in the active tab. */
 export async function runChatStream(options: ChatRunOptions): Promise<void> {
     await runTurn({
@@ -260,6 +289,10 @@ type TurnOptions = {
     /** Sequence cursor; null/undefined starts a fresh turn. */
     resumeFromSequence?: number | null;
     attachments?: NovaAttachmentData[];
+    /** Re-run the last answer instead of sending a new message. */
+    regenerate?: boolean;
+    /** The assistant bubble the new answer replaces; absent means "append one". */
+    regenerateAssistantId?: string;
 };
 
 /** Run one conversation round: optimistically insert the message → consume the stream → finalize the state machine. */
@@ -277,7 +310,8 @@ async function runTurn(options: TurnOptions): Promise<void> {
     const runId = ++runCounter;
     const resuming = options.resumeFromSequence != null;
 
-    if (!resuming) {
+    const regenerating = options.regenerate === true;
+    if (!resuming && !regenerating) {
         const display = options.displayText ?? options.message;
         useChatStore
             .getState()
@@ -297,9 +331,15 @@ async function runTurn(options: TurnOptions): Promise<void> {
             }
         }
     }
-    const assistantId = useChatStore
-        .getState()
-        .startAssistantMessage(tabId);
+    // A regeneration replaces the answer already on screen, so it streams into
+    // the same bubble instead of adding a second one.
+    const assistantId =
+        regenerating && options.regenerateAssistantId
+            ? options.regenerateAssistantId
+            : useChatStore.getState().startAssistantMessage(tabId);
+    if (regenerating && options.regenerateAssistantId) {
+        useChatStore.getState().resetAssistantMessage(assistantId, tabId);
+    }
     if (sessionId) {
         expectOwnActive.add(sessionId);
     }
@@ -415,30 +455,51 @@ async function runTurn(options: TurnOptions): Promise<void> {
                 .failToolCall(messageId, toolCallId, message, tabId),
     };
 
+    const onEvent = (event: NovaStreamEvent): void => {
+        sawFrame = true;
+        applyStreamEvent(event, assistantId, effects, acc);
+    };
+    const onSequence = (sequence: number): void =>
+        setTabSequence(tabId, sequence);
+    const onResync = (): void =>
+        useChatStore.getState().resetAssistantMessage(assistantId, tabId);
+
     try {
-        await streamChat({
-            message: options.message,
-            displayText: options.displayText,
-            sessionId,
-            workspaceDir: WORKSPACE_DIR,
-            projectId,
-            provider: slice.provider,
-            model: slice.model,
-            agentKey: slice.agentKey,
-            reasoningEffort: slice.reasoningEffort,
-            permissionMode: usePermissionStore.getState().mode,
-            resumeFromSequence: options.resumeFromSequence ?? null,
-            signal: controller.signal,
-            onSequence: (sequence) => setTabSequence(tabId, sequence),
-            onResync: () =>
-                useChatStore
-                    .getState()
-                    .resetAssistantMessage(assistantId, tabId),
-            onEvent: (event) => {
-                sawFrame = true;
-                applyStreamEvent(event, assistantId, effects, acc);
-            },
-        });
+        if (regenerating) {
+            if (!sessionId) {
+                useChatStore.getState().failStream("No session to regenerate.", tabId);
+                return;
+            }
+            await regenerateChat({
+                sessionId,
+                provider: slice.provider,
+                model: slice.model,
+                reasoningEffort: slice.reasoningEffort,
+                permissionMode: usePermissionStore.getState().mode,
+                signal: controller.signal,
+                onSequence,
+                onResync,
+                onEvent,
+            });
+        } else {
+            await streamChat({
+                message: options.message,
+                displayText: options.displayText,
+                sessionId,
+                workspaceDir: WORKSPACE_DIR,
+                projectId,
+                provider: slice.provider,
+                model: slice.model,
+                agentKey: slice.agentKey,
+                reasoningEffort: slice.reasoningEffort,
+                permissionMode: usePermissionStore.getState().mode,
+                resumeFromSequence: options.resumeFromSequence ?? null,
+                signal: controller.signal,
+                onSequence,
+                onResync,
+                onEvent,
+            });
+        }
         if (resuming && !sawFrame) {
             // The server had already finished the turn: reattaching produced no
             // frames, so do not leave an empty assistant bubble behind.

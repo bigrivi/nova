@@ -403,6 +403,17 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     if (options.onResync && response.headers.get("x-nova-stream-resync") === "true") {
         options.onResync();
     }
+    await consumeStream(response, options);
+}
+
+/** Read an SSE body and hand every frame to *onEvent*. */
+async function consumeStream(
+    response: Response,
+    options: {
+        onEvent: (event: NovaStreamEvent) => void;
+        onSequence?: (sequence: number) => void;
+    },
+): Promise<void> {
     if (!response.body) {
         throw new Error("Stream response did not include a body.");
     }
@@ -433,4 +444,46 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
             return;
         }
     }
+}
+
+export type RegenerateChatOptions = {
+    sessionId: string;
+    provider?: string | null;
+    model?: string | null;
+    reasoningEffort?: string | null;
+    permissionMode?: string | null;
+    signal?: AbortSignal;
+    onEvent: (event: NovaStreamEvent) => void;
+    onSequence?: (sequence: number) => void;
+    onResync?: () => void;
+};
+
+/** Re-run the last answer of a session; the same stream shape as a chat turn. */
+export async function regenerateChat(
+    options: RegenerateChatOptions,
+): Promise<void> {
+    const response = await fetch(
+        buildUrl(
+            `/api/sessions/${encodeURIComponent(options.sessionId)}/regenerate`,
+        ),
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                provider: options.provider || undefined,
+                model: options.model || undefined,
+                reasoning_effort: options.reasoningEffort || undefined,
+                permission_mode: options.permissionMode || undefined,
+            }),
+            signal: options.signal,
+        },
+    );
+
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+    if (options.onResync && response.headers.get("x-nova-stream-resync") === "true") {
+        options.onResync();
+    }
+    await consumeStream(response, options);
 }

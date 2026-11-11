@@ -9,6 +9,7 @@ import {
     listModels,
     listProviders,
     listSessions,
+    regenerateChat,
     restoreCheckpoint,
     setAgentParents,
     streamChat,
@@ -219,5 +220,62 @@ describe("nova-api", () => {
         // on it, which is what makes Shift+Tab take effect without a restart.
         expect(body.permission_mode).toBe("acceptEdits");
         expect(body.message).toBe("hi");
+    });
+});
+
+describe("regenerateChat", () => {
+    function sseResponse(frames: unknown[]): Response {
+        const body = frames
+            .map((frame) => `data: ${JSON.stringify(frame)}\n\n`)
+            .join("");
+        return new Response(body, {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+        });
+    }
+
+    test("posts to the session's regenerate route", async () => {
+        mockFetch(() => sseResponse([{ type: "response.completed" }]));
+
+        const events: unknown[] = [];
+        await regenerateChat({
+            sessionId: "s1",
+            provider: "openai",
+            model: "gpt-x",
+            reasoningEffort: "high",
+            permissionMode: "ask",
+            onEvent: (event) => events.push(event),
+        });
+
+        expect(calls[0]?.url).toEndWith("/api/sessions/s1/regenerate");
+        expect(calls[0]?.init?.method).toBe("POST");
+        expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+            provider: "openai",
+            model: "gpt-x",
+            reasoning_effort: "high",
+            permission_mode: "ask",
+        });
+        expect(events).toEqual([{ type: "response.completed" }]);
+    });
+
+    test("escapes the session id", async () => {
+        mockFetch(() => sseResponse([]));
+
+        await regenerateChat({ sessionId: "a b", onEvent: () => {} });
+
+        expect(calls[0]?.url).toEndWith("/api/sessions/a%20b/regenerate");
+    });
+
+    test("surfaces the backend's refusal", async () => {
+        mockFetch(() =>
+            jsonResponse(
+                { detail: "This session has no user message to regenerate." },
+                400,
+            ),
+        );
+
+        await expect(
+            regenerateChat({ sessionId: "s1", onEvent: () => {} }),
+        ).rejects.toThrow("no user message");
     });
 });

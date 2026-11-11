@@ -17,7 +17,12 @@ import { useToastStore } from "../stores/toast-store.ts";
 import { loadModels } from "../lib/catalog.ts";
 import { ThemeOverride, useTheme } from "../context/theme.tsx";
 import { dimTheme } from "../themes/fx/dim.ts";
-import { submitAskAnswers, submitAskCancel, requestInterrupt } from "../stream/chat-stream.ts";
+import {
+    regenerateLastAnswer,
+    requestInterrupt,
+    submitAskAnswers,
+    submitAskCancel,
+} from "../stream/chat-stream.ts";
 import { startSessionEvents } from "../stream/session-events.ts";
 import { ApprovalDialog } from "./ApprovalDialog.tsx";
 import { AskUserCard } from "./AskUserCard.tsx";
@@ -441,6 +446,9 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                                 4000,
                             );
                     });
+                return;
+            case "regenerate":
+                void regenerateLastAnswer();
                 return;
             case "compact":
                 void compactOpenSession()

@@ -142,6 +142,13 @@ export const COMMANDS: CommandSpec[] = [
         aliases: ["branch"],
     },
     {
+        id: "regenerate",
+        label: "Regenerate",
+        description: "Answer the last question again, replacing the last answer",
+        usage: "/regenerate",
+        aliases: ["redo"],
+    },
+    {
         id: "compact",
         label: "Compact",
         description: "Summarise the history now to free context",

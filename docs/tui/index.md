@@ -71,6 +71,7 @@ The server port defaults to `8765` and can be set with `server.port` in `~/.nova
 | `/permissions` | Show the permission mode and the rules in force |
 | `/rewind` | Undo a turn's file changes and drop the turns after it |
 | `/tasks` | Show and cancel background tasks |
+| `/regenerate` | Answer the last question again, replacing the last answer |
 | `/schedules` | Scheduled jobs: what runs, when, and how to stop it |
 | `/compact` | Summarise the history now to free context |
 | `/fork` | Copy this conversation into a new session and switch to it |
@@ -217,6 +218,21 @@ copy would be of a history that is still being written.
 nova fork <session> --title "try redis"      # copy everything
 nova fork <session> --from <message-id>      # copy up to that message
 ```
+
+## Regenerate
+
+`/regenerate` re-runs the last question. The user message stays; the answer that
+followed it is **replaced**, not appended to — the server drops the old answer and
+the transcript bubble is reset so the new one lands in the same place.
+
+- The last message is an answer: it is replaced in place.
+- The last message is a question that has not been answered yet: a new answer is
+  appended after it.
+- There is no user message in the session: the command says so instead of
+  failing, which is what the server would answer with.
+
+The provider, model, reasoning effort and permission mode are the session's own,
+so a regenerated answer runs under the same settings as the one it replaces.
 
 ## Scheduled Jobs
 
