@@ -449,9 +449,7 @@ class Agent:
         )
         if regenerate:
             if stale_ids:
-                await self.session.rollback_messages(
-                    stale_ids, session_id=session_id
-                )
+                await self.session.rollback_messages(stale_ids, session_id=session_id)
         else:
             user_message = await self.session.add_message(
                 role="user",

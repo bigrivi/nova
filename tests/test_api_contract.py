@@ -175,7 +175,9 @@ def test_the_http_surface_is_what_the_manifest_says(schema):
     extra = served - ROUTES
 
     assert not missing, f"documented routes the app does not serve: {sorted(missing)}"
-    assert not extra, f"routes serving that the manifest does not document: {sorted(extra)}"
+    assert not extra, (
+        f"routes serving that the manifest does not document: {sorted(extra)}"
+    )
 
 
 def test_parameters_bodies_and_responses_match_the_recorded_contract(schema):
@@ -187,7 +189,9 @@ def test_parameters_bodies_and_responses_match_the_recorded_contract(schema):
         )
         pytest.skip(f"contract regenerated at {CONTRACT_PATH}")
 
-    assert CONTRACT_PATH.exists(), "missing contract snapshot; run with NOVA_REGEN_OPENAPI=1"
+    assert CONTRACT_PATH.exists(), (
+        "missing contract snapshot; run with NOVA_REGEN_OPENAPI=1"
+    )
     expected = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
 
     changed = {

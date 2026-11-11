@@ -172,9 +172,7 @@ def test_a_config_entry_must_state_its_own_transport(home: Path) -> None:
                 "providers": {
                     "opencode-go": {
                         "name": "OpenCode Go",
-                        "options": {
-                            "request_session_hook": "~/.nova/hooks/headers.py"
-                        },
+                        "options": {"request_session_hook": "~/.nova/hooks/headers.py"},
                     }
                 }
             }

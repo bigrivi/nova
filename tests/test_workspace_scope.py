@@ -103,7 +103,10 @@ def test_a_command_the_scope_cannot_bound_still_gets_the_normal_rules(
 
 def test_without_a_workspace_nothing_is_auto_allowed() -> None:
     # An unknown workspace means unknown boundaries, so the ordinary rules stand.
-    for command in ("rm -rf /Users/andy/project/build", "rm -rf /Users/andy/project/a/b"):
+    for command in (
+        "rm -rf /Users/andy/project/build",
+        "rm -rf /Users/andy/project/a/b",
+    ):
         assert _rules().classify(command, workspace=None).needs_approval, command
 
 

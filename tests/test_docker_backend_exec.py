@@ -48,12 +48,26 @@ def _make_proc(stdout_data: bytes, returncode: int = 0):
 async def test_docker_exec_success():
     backend = DockerBackend(container="mycontainer")
     prepared = backend.prepare("echo hello", "/app")
-    assert prepared.argv == ["docker", "exec", "-w", "/app", "mycontainer", "sh", "-c", "echo hello"]
+    assert prepared.argv == [
+        "docker",
+        "exec",
+        "-w",
+        "/app",
+        "mycontainer",
+        "sh",
+        "-c",
+        "echo hello",
+    ]
 
     proc = _make_proc(b"hello\n", returncode=0)
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
         ctx = _Ctx()
-        result = await run_process(prepared.argv, cwd=prepared.cwd, context=ctx, environment=prepared.environment)
+        result = await run_process(
+            prepared.argv,
+            cwd=prepared.cwd,
+            context=ctx,
+            environment=prepared.environment,
+        )
     assert result.success is True
     assert result.exit_code == 0
     assert "hello" in "".join(ctx.chunks)
@@ -68,7 +82,12 @@ async def test_docker_run_ephemeral_failure():
     proc = _make_proc(b"boom\n", returncode=1)
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
         ctx = _Ctx()
-        result = await run_process(prepared.argv, cwd=prepared.cwd, context=ctx, environment=prepared.environment)
+        result = await run_process(
+            prepared.argv,
+            cwd=prepared.cwd,
+            context=ctx,
+            environment=prepared.environment,
+        )
     assert result.success is False
     assert result.exit_code == 1
 
@@ -87,11 +106,18 @@ async def test_docker_cancellation_kills_tree():
     proc.wait = AsyncMock(side_effect=TimeoutError())
     proc.kill = MagicMock()
 
-    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)), \
-         patch("nova.tasks.executors.process.kill_process_tree") as mock_kill:
+    with (
+        patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
+        patch("nova.tasks.executors.process.kill_process_tree") as mock_kill,
+    ):
         ctx = _Ctx()
         with pytest.raises(asyncio.CancelledError):
-            await run_process(prepared.argv, cwd=prepared.cwd, context=ctx, environment=prepared.environment)
+            await run_process(
+                prepared.argv,
+                cwd=prepared.cwd,
+                context=ctx,
+                environment=prepared.environment,
+            )
         mock_kill.assert_called_once_with(9999)
 
 
@@ -108,7 +134,16 @@ async def test_docker_workdir_fallback():
 async def test_docker_container_exec_mode():
     backend = DockerBackend(container="running-ctr", workdir="/data")
     prepared = backend.prepare("ls", "/data")
-    assert prepared.argv == ["docker", "exec", "-w", "/data", "running-ctr", "sh", "-c", "ls"]
+    assert prepared.argv == [
+        "docker",
+        "exec",
+        "-w",
+        "/data",
+        "running-ctr",
+        "sh",
+        "-c",
+        "ls",
+    ]
 
 
 def test_docker_missing_image_raises():

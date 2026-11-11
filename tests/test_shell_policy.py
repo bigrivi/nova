@@ -156,7 +156,11 @@ def test_an_added_rule_keeps_its_description_as_its_identity(tmp_path) -> None:
     config = tmp_path / "permissions.json"
     _write(
         config,
-        {"ask": [{"match": r"\bnpm\s+publish\b", "description": "publishes a package"}]},
+        {
+            "ask": [
+                {"match": r"\bnpm\s+publish\b", "description": "publishes a package"}
+            ]
+        },
     )
 
     rules = load_rule_set(config)
@@ -181,7 +185,10 @@ def test_an_added_rule_keeps_its_description_as_its_identity(tmp_path) -> None:
 )
 def test_a_broken_config_leaves_the_defaults_in_place(tmp_path, payload) -> None:
     config = tmp_path / "permissions.json"
-    config.write_text(json.dumps(payload) if not isinstance(payload, str) else payload, encoding="utf-8")
+    config.write_text(
+        json.dumps(payload) if not isinstance(payload, str) else payload,
+        encoding="utf-8",
+    )
 
     rules = load_rule_set(config)
 
@@ -212,7 +219,10 @@ def test_block_is_checked_before_ask_by_default(tmp_path) -> None:
     # A command can trip both lists; the block has to win, or an ask rule could
     # become a way to make a blocked command approvable.
     config = tmp_path / "permissions.json"
-    _write(config, {"ask": [{"match": r"rm\s+-rf\s+/", "description": "asks about rm -rf /"}]})
+    _write(
+        config,
+        {"ask": [{"match": r"rm\s+-rf\s+/", "description": "asks about rm -rf /"}]},
+    )
 
     rules = load_rule_set(config)
 
@@ -225,7 +235,9 @@ def test_config_allow_is_consulted_before_the_ask_list(tmp_path) -> None:
         config,
         {
             "allow": ["docker compose *"],
-            "ask": [{"match": r"docker\s+compose\s+down", "description": "stops containers"}],
+            "ask": [
+                {"match": r"docker\s+compose\s+down", "description": "stops containers"}
+            ],
         },
     )
 
@@ -261,7 +273,11 @@ def test_a_user_configured_ask_rule_is_not_dangerous(tmp_path) -> None:
     config = tmp_path / "permissions.json"
     _write(
         config,
-        {"ask": [{"match": r"\bnpm\s+publish\b", "description": "publishes a package"}]},
+        {
+            "ask": [
+                {"match": r"\bnpm\s+publish\b", "description": "publishes a package"}
+            ]
+        },
     )
 
     decision = load_rule_set(config).classify("npm publish")

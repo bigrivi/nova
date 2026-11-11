@@ -65,7 +65,9 @@ def test_the_release_version_appears_only_once_in_the_source():
         relative = path.relative_to(ROOT)
         if relative == pathlib.Path("nova/version.py"):
             continue
-        for match in re.finditer(r'"(\d+\.\d+\.\d+)"', path.read_text(encoding="utf-8")):
+        for match in re.finditer(
+            r'"(\d+\.\d+\.\d+)"', path.read_text(encoding="utf-8")
+        ):
             offenders.append(f"{relative}: {match.group(1)}")
 
     assert not offenders, offenders
@@ -85,10 +87,7 @@ def test_the_version_module_imports_nothing():
         node
         for node in tree.body
         if isinstance(node, (ast.Import, ast.ImportFrom))
-        and not (
-            isinstance(node, ast.ImportFrom)
-            and node.module == "__future__"
-        )
+        and not (isinstance(node, ast.ImportFrom) and node.module == "__future__")
     ]
 
     assert not imports, [ast.unparse(node) for node in imports]

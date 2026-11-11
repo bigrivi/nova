@@ -397,7 +397,10 @@ async def test_config_refresh_preserves_inflight_session_state(monkeypatch, tmp_
     assert await registry_before.slot_state("session-inflight") == "active"
     assert buffer_before.last_sequence("session-inflight") == 1
     assert app.state.context.settings.providers["openrouter"].name == "OpenRouter"
-    assert app.state.context.chat_service.settings.providers["openrouter"].name == "OpenRouter"
+    assert (
+        app.state.context.chat_service.settings.providers["openrouter"].name
+        == "OpenRouter"
+    )
 
 
 def test_add_provider_endpoint_rejects_duplicate_key(monkeypatch, tmp_path):
@@ -1194,7 +1197,9 @@ def test_remember_allowlist_is_scoped_per_session():
 async def test_stream_rejects_concurrent_request_with_409(monkeypatch, tmp_path):
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     app = create_app(settings=Settings.load_config())
-    await app.state.context.chat_service._request_registry.register("sess-busy", object())
+    await app.state.context.chat_service._request_registry.register(
+        "sess-busy", object()
+    )
     client = TestClient(app)
 
     response = client.post(

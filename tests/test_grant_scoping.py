@@ -14,7 +14,9 @@ from __future__ import annotations
 from nova.tools.approval import ApprovalManager
 
 
-def _manager_with_grant(session_id: str, rule: str = "tool:web_fetch") -> ApprovalManager:
+def _manager_with_grant(
+    session_id: str, rule: str = "tool:web_fetch"
+) -> ApprovalManager:
     manager = ApprovalManager()
     manager.add_to_allowlist(rule, session_id=session_id)
     return manager
@@ -66,7 +68,10 @@ def test_the_granting_session_keeps_working() -> None:
     manager = _manager_with_grant("session-a")
 
     assert manager.allowlist_for("session-a") == {("tool:web_fetch", "", "")}
-    assert manager.pre_request("x", "", session_id="session-a", rule="tool:web_fetch") == ""
+    assert (
+        manager.pre_request("x", "", session_id="session-a", rule="tool:web_fetch")
+        == ""
+    )
 
 
 def test_an_empty_rule_is_not_recorded_either() -> None:

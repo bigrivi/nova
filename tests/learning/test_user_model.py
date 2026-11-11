@@ -18,6 +18,7 @@ async def test_update_and_load(tmp_path):
     um = UserModel(str(tmp_path / "test.db"))
     await um.connect()
     from nova.learning.skill_extractor import TurnContext
+
     turn = TurnContext(session_id="s1", messages=[], tool_call_count=5, user_id="u1")
     await um.update("u1", turn)
     profile = await um.load("u1")
@@ -35,6 +36,7 @@ async def test_render_bounded(tmp_path):
 
 def test_render_includes_preferences():
     from nova.learning.user_model import UserModel, UserProfile
+
     um = UserModel(":memory:")
     profile = UserProfile(user_id="u1", preferences=["Python", "pandas"])
     text = um.render(profile)

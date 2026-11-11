@@ -62,7 +62,9 @@ def test_a_deny_namespace_beats_a_shorter_allow_prefix_however_ordered() -> None
         ({"mcp__a__*": "deny", "mcp__b__*": "allow"}, "mcp__c__d", "allow"),
     ],
 )
-def test_the_longest_matching_prefix_decides(rules: dict, tool: str, expected: str) -> None:
+def test_the_longest_matching_prefix_decides(
+    rules: dict, tool: str, expected: str
+) -> None:
     assert ToolPolicy(rules).effect_for(tool) == expected
 
 

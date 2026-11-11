@@ -161,7 +161,9 @@ async def test_disallowed_sender_is_ignored():
     adapter = FakeAdapter("telegram")
     nova = FakeNova({"task": _turn_events()})
     core = GatewayCore(nova, {"telegram": adapter}, allowed_senders={"allowed"})
-    await core.handle_inbound("telegram", InboundMessage(sender="stranger", text="task"))
+    await core.handle_inbound(
+        "telegram", InboundMessage(sender="stranger", text="task")
+    )
     await core.wait_idle()
     assert adapter.sent == []
 

@@ -58,7 +58,9 @@ def test_endpoint_returns_every_preset(tmp_path: Path, monkeypatch) -> None:
 
 
 class _FakeClient:
-    def __init__(self, response: httpx.Response | None = None, error: Exception | None = None):
+    def __init__(
+        self, response: httpx.Response | None = None, error: Exception | None = None
+    ):
         self._response = response
         self._error = error
 
@@ -173,7 +175,11 @@ def test_a_provider_without_a_base_url_is_not_offered() -> None:
                 "env": ["REACHABLE_KEY"],
                 "npm": "@ai-sdk/openai-compatible",
             },
-            "sdk-only": {"name": "SDK Only", "env": ["SDK_KEY"], "npm": "@ai-sdk/google"},
+            "sdk-only": {
+                "name": "SDK Only",
+                "env": ["SDK_KEY"],
+                "npm": "@ai-sdk/google",
+            },
         }
     )
 

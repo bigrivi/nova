@@ -1,4 +1,3 @@
-
 import pytest
 
 from nova.learning.session_search import SessionSearch
@@ -51,11 +50,14 @@ async def test_summarize_with_mock_llm(tmp_path):
     await ss.connect()
     await ss.index_turn("s1", [{"content": "CSV sales report"}])
     hits = await ss.search("CSV")
+
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
             from nova.llm.provider import Done, TextDelta
+
             yield TextDelta(content="Summary: CSV sales report found.")
             yield Done(content="Summary: CSV sales report found.")
+
     result = await ss.summarize(hits, "CSV", MockLLM())
     assert "Summary" in result
     await ss.close()
@@ -65,11 +67,14 @@ async def test_summarize_with_mock_llm(tmp_path):
 async def test_summarize_empty_hits(tmp_path):
     ss = SessionSearch(str(tmp_path / "test.db"))
     await ss.connect()
+
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
             from nova.llm.provider import Done, TextDelta
+
             yield TextDelta(content="no")
             yield Done(content="no")
+
     result = await ss.summarize([], "q", MockLLM())
     assert "No matching" in result
     await ss.close()

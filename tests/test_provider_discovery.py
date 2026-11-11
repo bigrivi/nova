@@ -17,7 +17,9 @@ from nova.registry.discovery import DiscoveryError, discover_models, resolve_bas
 class _FakeClient:
     """Stands in for httpx.AsyncClient, recording the one request we make."""
 
-    def __init__(self, *, response: httpx.Response | None = None, error: Exception | None = None):
+    def __init__(
+        self, *, response: httpx.Response | None = None, error: Exception | None = None
+    ):
         self._response = response
         self._error = error
         self.requested_url = ""
@@ -29,7 +31,9 @@ class _FakeClient:
     async def __aexit__(self, *_exc: object) -> bool:
         return False
 
-    async def get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
+    async def get(
+        self, url: str, headers: dict[str, str] | None = None
+    ) -> httpx.Response:
         self.requested_url = url
         self.requested_headers = headers or {}
         if self._error is not None:

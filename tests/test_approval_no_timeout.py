@@ -57,7 +57,9 @@ def test_pre_request_takes_no_timeout() -> None:
     params = inspect.signature(ApprovalManager.pre_request).parameters
 
     assert "timeout" not in params
-    assert "default_timeout" not in inspect.signature(ApprovalManager.__init__).parameters
+    assert (
+        "default_timeout" not in inspect.signature(ApprovalManager.__init__).parameters
+    )
 
 
 def test_no_code_refers_to_a_deadline() -> None:

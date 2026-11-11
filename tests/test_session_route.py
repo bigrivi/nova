@@ -279,7 +279,9 @@ class TestRouteStorage:
         )
 
         source = SqliteRepository(
-            DatabaseConfig(path=client._transport.app.state.context.settings.database_path)
+            DatabaseConfig(
+                path=client._transport.app.state.context.settings.database_path
+            )
         )
         session = await source.get_session(session_id)
         assert session["provider"] == "gw"

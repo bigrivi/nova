@@ -71,7 +71,7 @@ def test_the_shared_retry_policy_is_still_single_sourced() -> None:
         # The real body, verbatim, from OpenCode Zen's free tier.
         '{"type":"error","error":{"type":"FreeUsageLimitError","message":'
         '"Free usage limit reached. Free models work in OpenCode '
-        '(https://opencode.ai); subscribe to OpenCode Go to keep going: '
+        "(https://opencode.ai); subscribe to OpenCode Go to keep going: "
         'https://opencode.ai/go"}}',
     ],
 )

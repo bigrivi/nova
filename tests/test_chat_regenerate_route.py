@@ -69,9 +69,7 @@ def test_regenerate_returns_404_for_unknown_session(monkeypatch, tmp_path) -> No
     assert response.status_code == 404
 
 
-def test_regenerate_returns_400_without_a_user_message(
-    monkeypatch, tmp_path
-) -> None:
+def test_regenerate_returns_400_without_a_user_message(monkeypatch, tmp_path) -> None:
     service = FakeRegenerateService(
         error=HTTPException(
             status_code=400,

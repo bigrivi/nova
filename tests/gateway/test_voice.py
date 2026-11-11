@@ -1,4 +1,3 @@
-
 import pytest
 
 from nova.gateway import voice

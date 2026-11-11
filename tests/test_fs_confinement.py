@@ -30,7 +30,9 @@ def _app(monkeypatch, tmp_path, server: dict):
 
 
 def _local(app):
-    return TestClient(app, client=("127.0.0.1", 40000), headers={"host": "127.0.0.1:8765"})
+    return TestClient(
+        app, client=("127.0.0.1", 40000), headers={"host": "127.0.0.1:8765"}
+    )
 
 
 def _remote(app):

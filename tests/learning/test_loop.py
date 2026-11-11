@@ -13,7 +13,9 @@ async def test_on_turn_completed_returns_immediately(tmp_path):
     settings = LearningSettings(enabled=True)
     loop = LearningLoop(settings, tmp_path / "skills", str(tmp_path / "test.db"))
     await loop.start()
-    turn = TurnContext(session_id="s1", messages=[{"role": "user", "content": "hi"}], tool_call_count=1)
+    turn = TurnContext(
+        session_id="s1", messages=[{"role": "user", "content": "hi"}], tool_call_count=1
+    )
     t0 = time.monotonic()
     await loop.on_turn_completed(turn)
     elapsed = (time.monotonic() - t0) * 1000
@@ -28,11 +30,14 @@ async def test_disabled_loop_does_nothing(tmp_path):
     settings = LearningSettings(enabled=False)
     loop = LearningLoop(settings, tmp_path / "skills", str(tmp_path / "test.db"))
     await loop.start()
-    turn = TurnContext(session_id="s1", messages=[{"role": "user", "content": "hi"}], tool_call_count=5)
+    turn = TurnContext(
+        session_id="s1", messages=[{"role": "user", "content": "hi"}], tool_call_count=5
+    )
     await loop.on_turn_completed(turn)
     await asyncio.sleep(0.1)
     # session_fts should not exist / be empty
     import aiosqlite
+
     conn = await aiosqlite.connect(str(tmp_path / "test.db"))
     try:
         cursor = await conn.execute("SELECT count(*) FROM session_fts")
@@ -49,7 +54,11 @@ async def test_search_sessions(tmp_path):
     settings = LearningSettings(enabled=True, session_search_enabled=True)
     loop = LearningLoop(settings, tmp_path / "skills", str(tmp_path / "test.db"))
     await loop.start()
-    turn = TurnContext(session_id="s1", messages=[{"role": "user", "content": "CSV sales report"}], tool_call_count=1)
+    turn = TurnContext(
+        session_id="s1",
+        messages=[{"role": "user", "content": "CSV sales report"}],
+        tool_call_count=1,
+    )
     await loop.on_turn_completed(turn)
     await asyncio.sleep(0.1)
     result = await loop.search_sessions("CSV")
@@ -64,11 +73,14 @@ async def test_background_exception_isolated(tmp_path):
     await loop.start()
     # Force index_turn to fail by closing connection
     await loop._session_search.close()
-    turn = TurnContext(session_id="s1", messages=[{"role": "user", "content": "hi"}], tool_call_count=1)
+    turn = TurnContext(
+        session_id="s1", messages=[{"role": "user", "content": "hi"}], tool_call_count=1
+    )
     # Should not raise
     await loop.on_turn_completed(turn)
     await asyncio.sleep(0.1)
     await loop.stop()
+
 
 @pytest.mark.asyncio
 async def test_loop_is_shared_across_agents(tmp_path):
@@ -82,9 +94,15 @@ async def test_loop_is_shared_across_agents(tmp_path):
 
     loop_module._loops.clear()
     settings = LearningSettings(enabled=True, nudge_interval_turns=2)
-    first = get_learning_loop("agent-a", settings, tmp_path / "skills", str(tmp_path / "test.db"))
-    second = get_learning_loop("agent-a", settings, tmp_path / "skills", str(tmp_path / "test.db"))
+    first = get_learning_loop(
+        "agent-a", settings, tmp_path / "skills", str(tmp_path / "test.db")
+    )
+    second = get_learning_loop(
+        "agent-a", settings, tmp_path / "skills", str(tmp_path / "test.db")
+    )
     assert first is second
-    other = get_learning_loop("agent-b", settings, tmp_path / "skills", str(tmp_path / "test.db"))
+    other = get_learning_loop(
+        "agent-b", settings, tmp_path / "skills", str(tmp_path / "test.db")
+    )
     assert other is not first
     loop_module._loops.clear()

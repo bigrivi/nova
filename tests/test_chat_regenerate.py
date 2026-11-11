@@ -144,6 +144,4 @@ async def test_regenerate_requires_a_user_message() -> None:
     async with isolated_agent(provider) as agent:
         session = await agent.session.create_session(persist=True)
         with pytest.raises(ValueError, match="No user message"):
-            await run_turn(
-                agent, "", session_id=session.id, regenerate=True
-            )
+            await run_turn(agent, "", session_id=session.id, regenerate=True)

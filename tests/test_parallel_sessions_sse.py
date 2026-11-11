@@ -133,7 +133,9 @@ async def test_b_same_session_second_post_returns_409(monkeypatch, tmp_path):
     """GREEN (keep green): overlapping turn on one session -> 409 Session is busy."""
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     app = create_app(settings=get_settings())
-    await app.state.context.chat_service._request_registry.register("sess-busy", object())
+    await app.state.context.chat_service._request_registry.register(
+        "sess-busy", object()
+    )
     client = TestClient(app)
 
     response = client.post(

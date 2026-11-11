@@ -87,8 +87,7 @@ def test_pending_questions_are_extracted_from_the_input_frame() -> None:
         "data": {"message": "not json"},
     }
     assert (
-        _pending_questions(b"data: " + json.dumps(malformed).encode() + b"\n\n")
-        is None
+        _pending_questions(b"data: " + json.dumps(malformed).encode() + b"\n\n") is None
     )
 
 

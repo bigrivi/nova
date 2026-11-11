@@ -79,9 +79,7 @@ def test_saved_grants_are_listed_for_a_workspace(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path, {"mode": "ask"})
     grants.add(str(workspace), "pushing", "git push *", "")
 
-    body = client.get(
-        "/api/permissions", params={"workspace": str(workspace)}
-    ).json()
+    body = client.get("/api/permissions", params={"workspace": str(workspace)}).json()
 
     assert [entry["rule"] for entry in body["saved_grants"]] == ["pushing"]
     assert body["saved_grants"][0]["family"] == "git push *"
