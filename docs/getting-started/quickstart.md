@@ -105,11 +105,12 @@ reasoning stream.
 ## Step 2: Start Chatting
 
 ```bash
-nova tui
+nova
 ```
 
 The TUI (requires [bun](https://bun.sh)) starts with your configured model and
-uses the directory where you ran `nova tui` as the session workspace.
+uses the directory where you ran `nova` as the session workspace. `nova tui` is
+the same command, named.
 Type a message and press Enter.
 
 To use the web UI instead, run:

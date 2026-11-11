@@ -37,10 +37,13 @@ The TUI spawns the Python backend (`nova serve`) itself, so there is no separate
 server step:
 
 ```bash
-nova tui
+nova              # the terminal client is what a bare `nova` opens
+nova tui          # the same, named
 ```
 
-When running directly from a source checkout, `./nova-tui` is also available.
+A bare `nova` opens this client when it is attached to a terminal, and starts
+the HTTP backend when it is not (a container entrypoint, a CI job). When running
+directly from a source checkout, `./nova-tui` is also available.
 
 Both commands preserve the directory where you launched Nova as the default
 workspace for the session. `nova tui` resolves the OpenTUI client from the

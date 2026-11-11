@@ -127,12 +127,17 @@ on `PATH`; see [Making `nova` available on PATH](getting-started/installation.md
 Then start where you prefer:
 
 ```bash
+nova                  # terminal UI (also needs bun), spawns its own backend
+nova tui              # the same thing, named
 nova serve            # HTTP backend on http://127.0.0.1:8765
 nova web              # web UI in the browser (builds frontend/dist if needed)
-nova tui              # terminal UI (also needs bun), spawns its own backend
 nova desktop          # desktop window
 nova desktop --dev    # desktop against the Vite dev server
 ```
+
+A bare `nova` opens the terminal UI when there is a terminal to draw it in, and
+starts the HTTP backend when there is not — a container entrypoint that runs
+`nova` still gets the server it used to get.
 
 ## What do you need first?
 

@@ -1,3 +1,4 @@
+import io
 import json
 import sys
 import time
@@ -235,3 +236,53 @@ def test_version_long_form_matches(monkeypatch, capsys):
         nova_main.main()
 
     assert __version__ in capsys.readouterr().out
+
+
+class _FakeTty(io.StringIO):
+    """A stream that claims to be a terminal."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+def test_bare_nova_starts_the_tui_when_a_terminal_is_attached(monkeypatch):
+    started: list[str] = []
+    monkeypatch.setattr(nova_main.sys, "stdin", _FakeTty())
+    monkeypatch.setattr(nova_main.sys, "stdout", _FakeTty())
+    monkeypatch.setattr(nova_main, "_run_tui", lambda: started.append("tui"))
+    monkeypatch.setattr(nova_main.sys, "argv", ["nova"])
+
+    nova_main.main()
+
+    assert started == ["tui"]
+
+
+def test_bare_nova_starts_the_backend_without_a_terminal(monkeypatch):
+    started: list[str] = []
+    monkeypatch.setattr(nova_main.sys, "argv", ["nova"])
+    monkeypatch.setattr(nova_main, "run_server", lambda **kw: started.append("serve"))
+    monkeypatch.setattr(
+        nova_main.asyncio, "run", lambda coro: coro.close() if coro else None
+    )
+
+    nova_main.main()
+
+    # A container entrypoint runs `nova` without a terminal; it must get the
+    # backend it used to get, not a terminal UI it cannot draw.
+    assert started == ["serve"]
+
+
+def test_the_mode_can_still_be_named_explicitly(monkeypatch):
+    started: list[str] = []
+    monkeypatch.setattr(nova_main.sys, "stdin", _FakeTty())
+    monkeypatch.setattr(nova_main.sys, "stdout", _FakeTty())
+    monkeypatch.setattr(nova_main, "_run_tui", lambda: started.append("tui"))
+    monkeypatch.setattr(nova_main, "run_server", lambda **kw: started.append("serve"))
+    monkeypatch.setattr(
+        nova_main.asyncio, "run", lambda coro: coro.close() if coro else None
+    )
+    monkeypatch.setattr(nova_main.sys, "argv", ["nova", "serve"])
+
+    nova_main.main()
+
+    assert started == ["serve"]

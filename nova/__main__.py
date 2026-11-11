@@ -220,6 +220,26 @@ def _console_exit_code(args: argparse.Namespace, settings: Settings) -> int:
         return console.EXIT_INTERRUPTED
 
 
+def _has_terminal() -> bool:
+    """Whether this process is attached to a terminal on both ends."""
+    try:
+        return bool(sys.stdin.isatty() and sys.stdout.isatty())
+    except (AttributeError, ValueError):
+        return False
+
+
+def _default_mode() -> str:
+    """Where a bare ``nova`` goes.
+
+    A person typing ``nova`` wants the terminal client, and the client starts
+    (or reuses) the backend itself. A script running without a terminal keeps
+    getting the backend, which is what every bare ``nova`` used to start -- a
+    container that runs ``nova`` as its entrypoint must not end up trying to
+    draw a terminal UI.
+    """
+    return "tui" if _has_terminal() else "serve"
+
+
 def main() -> None:
     # Internal flag: run a Python script and exit (no GUI).
     # Used by code_run in PyInstaller desktop builds where sys.executable
@@ -264,8 +284,8 @@ def main() -> None:
             "websearch-stats",
             "gateway",
         ],
-        default="serve",
-        help="Run mode: serve (HTTP backend, default), web (backend + browser UI), tui (OpenTUI client), desktop (GUI window), run (one non-interactive turn), sessions (list sessions), delete (delete a session), websearch-stats (summarise web_search backend usage), gateway (messaging gateway for Telegram/Feishu/QQ)",
+        default=_default_mode(),
+        help="Run mode: tui (terminal client; the default when there is a terminal, otherwise serve), serve (HTTP backend), web (backend + browser UI), desktop (GUI window), run (one non-interactive turn), sessions (list sessions), delete (delete a session), websearch-stats (summarise web_search backend usage), gateway (messaging gateway for Telegram/Feishu/QQ)",
     )
     parser.add_argument(
         "target",
