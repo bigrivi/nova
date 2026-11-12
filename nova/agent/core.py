@@ -33,6 +33,7 @@ from nova.llm import ChatStreamEvent, LLMProvider
 from nova.llm.images import (
     MAX_IMAGE_BYTES,
     MAX_IMAGES_BYTES,
+    downscale_image,
     image_data_url,
     image_size_bytes,
 )
@@ -95,7 +96,8 @@ def build_user_message(
         ``(message_text, image_data_urls, display_text)``. The first is what the
         model reads (documents inlined, references appended by the client); the
         last is what a transcript should show. Images over the size budget are
-        dropped with a warning rather than failing the whole message.
+        dropped with a warning rather than failing the whole message, and the
+        ones that survive are downscaled to what a provider would use anyway.
     """
     image_data: list[str] = []
     image_bytes = 0
@@ -118,7 +120,7 @@ def build_user_message(
                     )
                     continue
                 image_bytes += size
-                image_data.append(image_data_url(image_url))
+                image_data.append(downscale_image(image_data_url(image_url)))
         elif attachment.get("type") == "document":
             for content_part in attachment.get("content", []):
                 if content_part.get("type") == "text":
@@ -427,8 +429,10 @@ class Agent:
             display = decode_display_text(user_message.data) or message_text
             user_input = display
         else:
-            message_text, image_data, display = build_user_message(
-                user_input, attachments, display_text
+            # Decoding and re-encoding a multi-megabyte photo takes long enough
+            # to stall the loop this stream runs on.
+            message_text, image_data, display = await asyncio.to_thread(
+                build_user_message, user_input, attachments, display_text
             )
 
         yield AgentEvent.SESSION, session_id

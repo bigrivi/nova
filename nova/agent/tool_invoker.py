@@ -18,6 +18,7 @@ from typing import Any
 from nova.agent.events import AgentEvent, done_payload
 from nova.agent.tool_guardrails import GuardrailAction, ToolGuardrails
 from nova.llm import LLMProvider, ToolCall, ToolResult
+from nova.llm.images import downscale_image
 from nova.session.protocol import SessionProtocol
 from nova.tools.approval import ApprovalManager
 from nova.tools.behavior import TurnContext
@@ -186,6 +187,10 @@ class ToolInvoker:
                 return
 
             content, images = behavior.postprocess(result.content)
+            if images:
+                # A tool can hand back a full-size photo, and this result is
+                # replayed on every later turn. Shrink it before it is stored.
+                images = await asyncio.to_thread(_downscale_all, images)
             tool_call_id = _id_of(tool_call)
             await self._session.add_message(
                 role="tool",
@@ -435,6 +440,11 @@ def _name_of(tool_call: ToolCall) -> str:
 
 def _id_of(tool_call: ToolCall) -> str:
     return tool_call.id if hasattr(tool_call, "id") else str(tool_call)
+
+
+def _downscale_all(refs: list[str]) -> list[str]:
+    """Downscale every image a tool returned, keeping the order."""
+    return [downscale_image(ref) for ref in refs]
 
 
 def _arguments_of(tool_call: ToolCall) -> str | dict[str, Any]:

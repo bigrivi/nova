@@ -49,6 +49,9 @@ dependencies = [
     "pyyaml",
     "playwright",
     "markdownify",
+    # Image downscaling before an attachment is stored and replayed: providers
+    # resize every picture anyway, so the bytes above their limit buy nothing.
+    "pillow",
     "pywebview>=5,<7",
     "pyobjc-framework-AVFoundation; sys_platform == 'darwin'",
 ]

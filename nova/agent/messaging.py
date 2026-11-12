@@ -9,6 +9,7 @@ from nova.agent.context import AgentContext
 from nova.agent.state import TurnState
 from nova.learning.nudges import build_nudge_reminder, should_nudge
 from nova.llm import Message as LLMMessage
+from nova.llm.images import bound_images
 from nova.prompt import session_cache
 from nova.prompt.project_instructions import discover_project_instructions
 from nova.session.manager import SessionContext
@@ -193,4 +194,6 @@ class AgentMessaging:
         ]
         for note in notes:
             messages.append(LLMMessage(role="user", content=note))
-        return messages
+        # Every provider reads this one list, so the image budget belongs here
+        # rather than in four separate request builders.
+        return bound_images(messages)
