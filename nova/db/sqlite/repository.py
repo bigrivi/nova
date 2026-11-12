@@ -46,8 +46,11 @@ CREATE TABLE IF NOT EXISTS agents (
     updated_at INTEGER NOT NULL
 );
 
+-- The main agent names no route of its own: an empty model and provider mean
+-- "run on whatever the session or the user picked". A made-up route here used
+-- to win every other source and then fail with "Unsupported provider".
 INSERT OR IGNORE INTO agents (key, name, model, provider, created_at, updated_at)
-VALUES ('main', 'Nova', 'gpt-4o', 'openai', CAST(strftime('%s','now') AS INTEGER) * 1000, CAST(strftime('%s','now') AS INTEGER) * 1000);
+VALUES ('main', 'Nova', '', '', CAST(strftime('%s','now') AS INTEGER) * 1000, CAST(strftime('%s','now') AS INTEGER) * 1000);
 
 CREATE TABLE IF NOT EXISTS agent_parents (
     child_key TEXT NOT NULL,
@@ -240,7 +243,35 @@ class SqliteRepository(
         await self._conn.execute("PRAGMA foreign_keys=ON")
         await self._conn.executescript(_DDL)
         await self._migrate_schema()
+        await self._seed_builtin_agents()
         await self._conn.commit()
+
+    async def _seed_builtin_agents(self) -> None:
+        """Give the database the agents Nova ships with.
+
+        The plan agent is a primary agent that may read but not write. Its
+        persona is written into ``<home>/agents/plan/`` by the settings loader,
+        and an empty model means it runs on whichever model the session uses.
+
+        This runs after the migrations rather than in the schema script: the row
+        names the mode and posture columns, and a database created before those
+        columns existed would fail the whole script on it.
+        """
+        now = int(time.time() * 1000)
+        try:
+            await self._db.execute(
+                """INSERT OR IGNORE INTO agents
+                    (key, name, description, model, provider, posture, mode, created_at, updated_at)
+                   VALUES ('plan', 'Plan', ?, '', '', 'read_only', 'primary', ?, ?)""",
+                (
+                    "Read-only agent for exploring the codebase and planning "
+                    "work before implementation.",
+                    now,
+                    now,
+                ),
+            )
+        except Exception:
+            log.warning("could not seed the built-in plan agent", exc_info=True)
 
     async def _migrate_schema(self) -> None:
         """Idempotent additive migrations for databases created before a column existed.

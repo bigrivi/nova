@@ -41,6 +41,7 @@ from nova.prompt import PromptBuilder, PromptConfig
 from nova.session import get_session_manager
 from nova.session.models import decode_display_text, encode_display_text
 from nova.session.protocol import SessionProtocol
+from nova.settings import nova_home
 from nova.skills.service import SkillService
 from nova.tools.approval import get_approval_manager
 from nova.tools.checkpoints import begin_turn
@@ -175,7 +176,7 @@ class Agent:
         )
 
         if agent_dir is None:
-            agent_dir = Path.home() / ".nova" / "agents" / agent_key
+            agent_dir = nova_home() / "agents" / agent_key
         agent_dir.mkdir(parents=True, exist_ok=True)
         self.agent_dir = agent_dir
         self._skill_service = self._build_skill_service(agent_key, agent_dir)
@@ -266,7 +267,7 @@ class Agent:
             return SkillService(skills_dir=agent_dir.parent.parent / "skills")
         return SkillService(
             skills_dir=agent_dir / "skills",
-            fallback_dir=Path.home() / ".nova" / "skills",
+            fallback_dir=nova_home() / "skills",
         )
 
     def interrupt(self) -> None:

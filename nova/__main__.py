@@ -59,10 +59,9 @@ def _build_tui(project_root: Path, tui_dir: Path) -> Path:
         return bundle
 
     # Check a pre-built bundle downloaded by the install script.
-    from pathlib import Path as _Path
+    from nova.settings import nova_home
 
-    nova_home = _Path(os.environ.get("NOVA_HOME", str(Path.home() / ".nova")))
-    downloaded = nova_home / "tui" / "dist" / "index.js"
+    downloaded = nova_home() / "tui" / "dist" / "index.js"
     if downloaded.is_file():
         return downloaded
 

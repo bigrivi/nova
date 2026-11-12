@@ -7,6 +7,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from nova.settings import nova_home
+
 
 @dataclass
 class PlatformConfig:
@@ -28,8 +30,7 @@ class GatewayConfig:
 
 
 def _config_path() -> Path:
-    home = Path(os.getenv("NOVA_HOME", Path.home() / ".nova")).expanduser()
-    return home / "config.json"
+    return nova_home() / "config.json"
 
 
 def load_config(path: Path | str | None = None) -> GatewayConfig:

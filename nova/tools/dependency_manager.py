@@ -15,19 +15,30 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from nova.settings import nova_home
+
 log = logging.getLogger(__name__)
 
-NOVA_SITE_PACKAGES = Path.home() / ".nova" / "site-packages"
 _installed_in_session: set[str] = set()
 
 
+def site_packages_dir() -> Path:
+    """Where runtime packages are installed: ``<Nova home>/site-packages``.
+
+    A function, not a constant: the home is read from the environment, and a
+    constant would freeze whatever it said at import time.
+    """
+    return nova_home() / "site-packages"
+
+
 def init_site_packages() -> None:
-    """Ensure ~/.nova/site-packages/ exists and is on sys.path.
+    """Ensure the runtime site-packages directory exists and is on sys.path.
 
     Must be called once at startup (e.g. when building the agent).
     """
-    NOVA_SITE_PACKAGES.mkdir(parents=True, exist_ok=True)
-    path_str = str(NOVA_SITE_PACKAGES)
+    target = site_packages_dir()
+    target.mkdir(parents=True, exist_ok=True)
+    path_str = str(target)
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
@@ -42,7 +53,7 @@ def _is_importable(pkg_name: str) -> bool:
 
 
 async def ensure_deps(packages: list[str]) -> None:
-    """Install missing packages to ~/.nova/site-packages/ with session-level dedup."""
+    """Install missing packages into the runtime site-packages directory."""
     missing = [
         pkg
         for pkg in packages
@@ -56,9 +67,10 @@ async def ensure_deps(packages: list[str]) -> None:
 
 async def _install(packages: list[str]) -> None:
     log.info("Installing missing packages: %s", packages)
-    NOVA_SITE_PACKAGES.mkdir(parents=True, exist_ok=True)
+    target = site_packages_dir()
+    target.mkdir(parents=True, exist_ok=True)
 
-    pip_args = ["install", "--target", str(NOVA_SITE_PACKAGES), *packages]
+    pip_args = ["install", "--target", str(target), *packages]
 
     if getattr(sys, "frozen", False):
         pip_candidates = [

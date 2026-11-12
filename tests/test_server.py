@@ -1651,7 +1651,8 @@ def _agents_client(monkeypatch, tmp_path, name):
 
 @pytest.mark.asyncio
 async def test_agents_list_contains_seeded_main(monkeypatch, tmp_path):
-    # Fresh DBs seed only the default "main" agent via DDL (sqlite_repository).
+    # Fresh DBs seed the agents Nova ships: the default "main" and the
+    # read-only "plan", both created by the repository (sqlite_repository).
     monkeypatch.setenv("NOVA_HOME", str(tmp_path / "home"))
     settings = Settings.load_config()
     await init_db(DatabaseConfig(path=str(settings.database_path)))
@@ -1662,8 +1663,10 @@ async def test_agents_list_contains_seeded_main(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     items = {item["key"]: item for item in response.json()["items"]}
-    assert list(items) == ["main"]
+    assert list(items) == ["main", "plan"]
     assert items["main"]["kind"] == "main"
+    assert items["plan"]["mode"] == "primary"
+    assert items["plan"]["posture"] == "read_only"
 
 
 @pytest.mark.asyncio

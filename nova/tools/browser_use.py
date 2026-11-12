@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from nova.llm import Message, ToolResult
 from nova.llm.oneshot import stream_text_once
+from nova.settings import nova_home
 from nova.tools.registry import tool
 from nova.tools.web_search import TOOL as web_search_tool
 
@@ -134,7 +135,7 @@ async def _ensure_browser() -> "Page":
 
     browser_path = _detect_system_browser()
 
-    user_data_dir = str(Path.home() / ".nova" / "chrome-profile")
+    user_data_dir = str(nova_home() / "chrome-profile")
     if not os.path.isdir(os.path.join(user_data_dir, "Default")):
         _seed_profile(user_data_dir)
 

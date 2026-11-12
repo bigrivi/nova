@@ -38,6 +38,8 @@ a = Analysis(
     binaries=[*webview_binaries, *pythonnet_binaries, *clr_loader_binaries],
     datas=[
         (str(ROOT / 'frontend' / 'dist'), 'frontend/dist'),
+        # The plan agent's persona, read from beside the module at runtime.
+        (str(ROOT / 'nova' / 'agents' / 'plan'), 'nova/agents/plan'),
         *webview_datas,
         *pythonnet_datas,
         *clr_loader_datas,

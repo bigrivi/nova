@@ -18,6 +18,16 @@ from pathlib import Path
 from typing import Any
 
 
+def nova_home() -> Path:
+    """The Nova state directory: ``$NOVA_HOME``, or ``~/.nova``.
+
+    Every place that needs to know where Nova keeps its files asks here.
+    Reading ``NOVA_HOME`` at each call site is how one of them ended up
+    reading ``~/.nova`` while everything around it honoured the override.
+    """
+    return Path(os.getenv("NOVA_HOME", Path.home() / ".nova")).expanduser()
+
+
 @dataclass(frozen=True)
 class RuntimePaths:
     home: Path
@@ -244,6 +254,46 @@ def _ensure_config_file(home: Path, *, ensure: bool = True) -> Path:
     if ensure and not config_path.exists():
         _write_json(config_path, _build_default_config_payload())
     return config_path
+
+
+#: Agent personas Nova ships, as ``(agent key, file name)``. The persona is
+#: written to ``<home>/agents/<key>/`` and read from there at runtime.
+BUILTIN_AGENT_PERSONAS: tuple[tuple[str, str], ...] = (("plan", "IDENTITY.md"),)
+
+
+def _bundled_persona(key: str, filename: str) -> str | None:
+    """The persona Nova ships with, or None when the package does not carry it.
+
+    ``Path(__file__).parent`` is the house way to reach package data (see
+    ``nova.registry.presets``): it resolves in a checkout, in an installed
+    wheel, and inside the frozen desktop bundle, where ``__file__`` points into
+    the bundle.
+    """
+    source = Path(__file__).parent / "agents" / key / filename
+    try:
+        return source.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _ensure_builtin_agent_personas(home: Path) -> None:
+    """Write the bundled agent personas into ``<home>/agents/<key>/``.
+
+    A persona the user edited is theirs: an existing file is never replaced, and
+    a newer Nova must not quietly take it back.
+    """
+    for key, filename in BUILTIN_AGENT_PERSONAS:
+        target = home / "agents" / key / filename
+        if target.exists():
+            continue
+        text = _bundled_persona(key, filename)
+        if text is None:
+            logging.getLogger(__name__).warning(
+                "bundled agent persona is missing: %s/%s", key, filename
+            )
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
 
 
 def _load_config_payload(config_path: Path) -> dict[str, Any]:
@@ -734,8 +784,10 @@ class Settings:
                 passes False so a deleted config stays deleted instead of being
                 silently replaced by empty providers under a running process.
         """
-        home = Path(os.getenv("NOVA_HOME", Path.home() / ".nova")).expanduser()
+        home = nova_home()
         config_path = _ensure_config_file(home, ensure=ensure)
+        if ensure:
+            _ensure_builtin_agent_personas(home)
         config_payload = _load_config_payload(config_path)
         providers = _parse_provider_configs(
             config_payload.get("providers"), _load_credentials(home), home

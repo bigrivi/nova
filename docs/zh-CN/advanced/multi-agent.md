@@ -20,6 +20,10 @@ Agent 存在数据库里，配置项包括：
 - `model` ：用哪个模型
 - `instructions` ：系统提示词 / 身份
 
+provider 或 model 留空时，这个 Agent 会跟着会话当前使用的路由走；会话也没有路由时，
+就用你配置的第一个提供方。指向一个已经不存在的提供方的路由会被当作"没有路由"，
+所以删掉一个提供方不会把会话卡死。
+
 ## Agent 工作区文件
 
 每个 Agent 都可以在 `~/.nova/agents/<agent-key>/` 下有自己的工作区文件：
@@ -28,6 +32,23 @@ Agent 存在数据库里，配置项包括：
 - `SOUL.md` ：Agent 性格
 - `USER.md` ：用户画像
 - `MEMORY.md` ：长期记忆
+
+## Plan Agent
+
+Nova 自带一个 `plan` Agent：它是主 Agent，只能读项目、不能改项目。切到它，Nova 负责
+调研代码并给出计划；切回 `main`，再动手实现。
+
+它就是一个普通 Agent，不是特殊模式：
+
+- `mode` 是 `primary`，和其他 Agent 一样可以切换过去
+- `posture` 是 `read_only`，所以会改东西的工具（`write`、`edit`、`shell`、`code_run`）
+  根本不会出现在模型可见的工具列表里
+- 它的人格文件在 `~/.nova/agents/plan/IDENTITY.md`
+
+这份人格文件会在 Nova 第一次启动时写进你的 Nova 目录。你改过之后 Nova 不会再覆盖：
+调过的 plan Agent 是你的。
+
+plan Agent 不指定自己的模型，它跑在会话当前使用的那个模型上。
 
 ## 会话层级
 

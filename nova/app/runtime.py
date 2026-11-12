@@ -5,7 +5,7 @@ Shared runtime assembly helpers.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from nova.agent import Agent, AgentConfig
@@ -295,12 +295,79 @@ def _resolve_effort(
     return None
 
 
-def _first_configured_route(settings: Settings) -> tuple[str | None, str | None]:
-    provider = next(iter(settings.providers.keys()), None)
-    if provider is None:
-        return None, None
-    model = next(iter(settings.providers[provider].models.keys()), None)
-    return provider, model
+def _configured_provider(settings: Settings, provider: object) -> str:
+    """A provider name, when it names one that is configured.
+
+    A route to a provider that is not configured is no route at all: it would
+    win every other source and then fail with "Unsupported provider", which
+    reads like Nova is broken rather than like the provider is gone.
+    """
+    name = str(provider or "").strip()
+    if not name or name not in settings.providers:
+        return ""
+    return name
+
+
+def _route_tier(settings: Settings, provider: object, model: object) -> tuple[str, str]:
+    """A provider/model pair, when the provider is configured.
+
+    The pair matters: a provider from one source and a model from another asks
+    a provider for a model it does not serve.
+    """
+    name = _configured_provider(settings, provider)
+    if not name:
+        return "", ""
+    return name, str(model or "").strip()
+
+
+def _first_configured_provider(settings: Settings) -> str:
+    """The first provider in the configuration, or nothing."""
+    return next(iter(settings.providers.keys()), "")
+
+
+def _default_model(settings: Settings, provider: str) -> str:
+    """The first model a provider serves, by declaration or by discovery.
+
+    A provider can have nothing written down and still be usable: its models
+    arrive through discovery, which deliberately does not write them down.
+    """
+    if not provider:
+        return ""
+    config = settings.providers.get(provider)
+    if config is not None:
+        keys = list(config.models.keys())
+        if keys:
+            return keys[0]
+    from nova.registry.catalogue import load as load_catalogue
+
+    rows = load_catalogue(settings).get(provider) or {}
+    return next(iter(rows), "")
+
+
+def resolve_route(
+    settings: Settings, tiers: Sequence[tuple[object, object]]
+) -> tuple[str, str]:
+    """The provider and model a turn runs on.
+
+    Tiers are ordered by precedence. A tier whose provider is not configured is
+    no route at all -- it would otherwise win every other source and then fail
+    with "Unsupported provider" -- and a provider is never paired with a model
+    from another tier, which asks a provider for a model it does not serve.
+
+    Args:
+        settings: The loaded settings, for the configured providers.
+        tiers: ``(provider, model)`` sources, most authoritative first.
+
+    Returns:
+        The provider and model to run on. Both empty when nothing is
+        configured, which the caller reports as a missing route.
+    """
+    for provider, model in tiers:
+        name, tier_model = _route_tier(settings, provider, model)
+        if name:
+            return name, tier_model or _default_model(settings, name)
+    fallback = _first_configured_provider(settings)
+    return fallback, _default_model(settings, fallback)
 
 
 def registry_cache_key(
@@ -391,21 +458,24 @@ async def build_agent(
     if is_sub_agent:
         # A sub-agent runs on its own configured route; empty inherits the
         # caller, then falls back to the first configured route.
-        resolved_provider = ((record or {}).get("provider") or None) or provider
-        resolved_model = ((record or {}).get("model") or None) or model
-        if not resolved_provider or not resolved_model:
-            fallback_provider, fallback_model = _first_configured_route(settings)
-            resolved_provider = resolved_provider or fallback_provider
-            resolved_model = resolved_model or fallback_model
+        resolved_provider, resolved_model = resolve_route(
+            settings,
+            (
+                ((record or {}).get("provider"), (record or {}).get("model")),
+                (provider, model),
+            ),
+        )
     else:
         # Request beats session beats agent. The session tier is what makes a
         # resumed conversation run on the model it was run with, instead of
         # silently following the agent to whatever it points at now.
-        resolved_provider = (
-            provider or session_route.get("provider") or (record or {}).get("provider")
-        )
-        resolved_model = (
-            model or session_route.get("model") or (record or {}).get("model")
+        resolved_provider, resolved_model = resolve_route(
+            settings,
+            (
+                (provider, model),
+                (session_route.get("provider"), session_route.get("model")),
+                ((record or {}).get("provider"), (record or {}).get("model")),
+            ),
         )
 
     if not resolved_provider or not resolved_model:

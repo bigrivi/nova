@@ -32,6 +32,8 @@ a = Analysis(
     datas=[
         # Frontend static build output
         (str(ROOT / 'frontend' / 'dist'), 'frontend/dist'),
+        # The plan agent's persona, read from beside the module at runtime.
+        (str(ROOT / 'nova' / 'agents' / 'plan'), 'nova/agents/plan'),
         *webview_datas,
     ],
     hiddenimports=[

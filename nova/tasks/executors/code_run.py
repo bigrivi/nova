@@ -8,6 +8,7 @@ import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
+from nova.settings import nova_home
 from nova.tasks.executors.process import run_process
 from nova.tasks.models import (
     TaskExecutionContext,
@@ -69,7 +70,7 @@ class CodeRunExecutor(TaskExecutor):
             else Path(get_active_workspace() or Path.cwd())
         )
         environment = os.environ.copy()
-        nova_site = str(Path.home() / ".nova" / "site-packages")
+        nova_site = str(nova_home() / "site-packages")
         existing_python_path = environment.get("PYTHONPATH")
         environment["PYTHONPATH"] = (
             f"{nova_site}:{existing_python_path}" if existing_python_path else nova_site

@@ -9,10 +9,11 @@ RequestHookError and fails the request. Results are cached per session.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
+
+from nova.settings import nova_home
 
 HOOK_TIMEOUT_S = 5
 _MAX_CACHED_SESSIONS = 2000
@@ -30,8 +31,7 @@ def resolve_hook_path(raw: object) -> str | None:
         return None
     path = Path(str(raw).strip()).expanduser()
     if not path.is_absolute():
-        home = Path(os.getenv("NOVA_HOME", Path.home() / ".nova")).expanduser()
-        path = home / path
+        path = nova_home() / path
     return str(path)
 
 

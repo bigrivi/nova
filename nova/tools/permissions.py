@@ -27,6 +27,8 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
+from nova.settings import nova_home as _nova_home
+
 log = logging.getLogger(__name__)
 
 DEFAULT_FILENAME = "permissions.json"
@@ -103,8 +105,7 @@ DEFAULT_PAYLOAD: dict[str, Any] = {
 
 def nova_home() -> Path:
     """The Nova state directory, honouring ``NOVA_HOME`` for tests and sandboxes."""
-    override = os.getenv("NOVA_HOME")
-    return Path(override).expanduser() if override else Path.home() / ".nova"
+    return _nova_home()
 
 
 def permissions_path() -> Path:
