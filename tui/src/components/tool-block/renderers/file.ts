@@ -4,6 +4,7 @@ import type { RenderCtx, ToolRenderer } from "../types.ts";
 
 type FileArgs = {
     filePath?: string;
+    file_path?: string;
     path?: string;
     oldString?: string;
     newString?: string;
@@ -19,6 +20,9 @@ function parseArgs(raw: Record<string, unknown> | null): FileArgs | null {
 
 function filePath(args: FileArgs): string {
     if (typeof args.filePath === "string" && args.filePath.trim()) return args.filePath.trim();
+    // `read_image` spells the argument in snake_case; without this it rendered
+    // as a bare "Read file", with no path to tell one picture from another.
+    if (typeof args.file_path === "string" && args.file_path.trim()) return args.file_path.trim();
     if (typeof args.path === "string" && args.path.trim()) return args.path.trim();
     return "";
 }

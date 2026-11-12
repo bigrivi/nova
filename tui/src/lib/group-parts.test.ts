@@ -40,4 +40,18 @@ describe("groupAssistantParts", () => {
     test("shell is not an exploration tool", () => {
         expect(EXPLORATION_TOOLS.has("shell")).toBe(false);
     });
+
+    test("reading an image joins the explored group as a read", () => {
+        const parts = [
+            { type: "tool-call", toolCallId: "a", toolName: "read", args: null, argsText: "", outputText: "", status: "done" },
+            { type: "tool-call", toolCallId: "b", toolName: "read_image", args: null, argsText: "", outputText: "", status: "done" },
+        ] as any;
+        const items = groupAssistantParts("m", parts);
+        expect(items).toHaveLength(1);
+        expect(items[0]!.kind).toBe("explore");
+        if (items[0]!.kind === "explore") {
+            expect(items[0]!.parts.map((p) => p.toolName)).toEqual(["read", "read_image"]);
+            expect(explorationLabel(items[0]!.parts, explorationCompleted(items[0]!.parts))).toBe("Explored: 2 reads");
+        }
+    });
 });

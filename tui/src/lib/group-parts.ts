@@ -3,6 +3,7 @@ import type { MessagePart, ToolCallPart } from "../stores/chat-store.ts";
 
 export const EXPLORATION_TOOLS = new Set([
     "read",
+    "read_image",
     "grep",
     "glob",
     "web_search",
@@ -55,7 +56,8 @@ export function explorationCounts(parts: ToolCallPart[]): {
     let fetch = 0;
     for (const part of parts) {
         const name = part.toolName.toLowerCase();
-        if (name === "read") read++;
+        // Reading a picture is reading a file, as far as the summary goes.
+        if (name === "read" || name === "read_image") read++;
         else if (name === "web_fetch") fetch++;
         else search++;
     }

@@ -31,6 +31,14 @@ describe("tool renderers", () => {
         expect(renderer.meta?.(ctx)).toBe("2 lines");
     });
 
+    test("read_image shows the path it was given", () => {
+        // The argument is spelled in snake_case here, and a title of "Read file"
+        // says nothing about which picture was read.
+        const renderer = getRenderer("read_image");
+        const args = renderer.parseArgs({ file_path: "/tmp/shot.png" });
+        expect(renderer.subject(args!)).toBe("/tmp/shot.png");
+    });
+
     test("todo renderer uses ascii icons", () => {
         const renderer = getRenderer("todo_write");
         const args = renderer.parseArgs({
