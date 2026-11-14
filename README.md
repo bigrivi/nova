@@ -114,6 +114,14 @@ If `nova` is not on your `PATH` afterwards, add the environment's `bin/` directo
 
 Full walkthrough in [Quickstart](docs/getting-started/quickstart.md).
 
+## One backend, many clients
+
+![Nova: one backend, many clients](assets/shared-backend.svg)
+
+The TUI, the web UI, the desktop window and the mobile client all talk to the
+same backend. A prompt sent in one of them streams to the others, live, and the
+conversation is the same one wherever you open it.
+
 ## Surfaces
 
 | Surface | How to run | What it is |
