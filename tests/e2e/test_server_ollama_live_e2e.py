@@ -8,7 +8,7 @@ import pytest
 
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_OLLAMA_MODEL = "gemma4:26b"
-DEFAULT_SERVER_BASE_URL = "http://127.0.0.1:8765"
+DEFAULT_SERVER_BASE_URL = "http://127.0.0.1:51789"
 
 
 def _collect_sse_events(response: httpx.Response) -> list[dict]:

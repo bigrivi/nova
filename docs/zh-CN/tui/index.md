@@ -46,7 +46,7 @@ TypeScript 源码 `tui/src/index.tsx`。在检出目录里打包：
 cd tui && bun install && bun run build
 ```
 
-服务端口默认 `8765`，可用 `~/.nova/config.json` 里的 `server.port` 修改。TUI 读的是
+服务端口默认 `51789`，可用 `~/.nova/config.json` 里的 `server.port` 修改。TUI 读的是
 同一个文件，所以两边不会不一致。
 
 ## 对话内命令
@@ -235,7 +235,7 @@ nova serve
 nova serve --provider ollama --model gemma4:26b
 ```
 
-服务默认跑在 `http://127.0.0.1:8765`。
+服务默认跑在 `http://127.0.0.1:51789`。
 
 ## 前端模式
 

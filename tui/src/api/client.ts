@@ -8,17 +8,27 @@ import { backendPort } from "./port.ts";
 
 export const DEFAULT_API_BASE = `http://127.0.0.1:${backendPort()}`;
 
-const API_BASE = (process.env.NOVA_API_BASE_URL || DEFAULT_API_BASE).replace(
+/** Where the backend is, until the session learns otherwise. */
+let apiBase = (process.env.NOVA_API_BASE_URL || DEFAULT_API_BASE).replace(
     /\/$/,
     "",
 );
+
+/** Point the client at the backend this session found.
+ *
+ * The backend is asked for a free port, so its address is only known at
+ * runtime; every call site builds its URL here for that reason.
+ */
+export function setApiBase(url: string): void {
+    apiBase = url.replace(/\/$/, "");
+}
 
 export type JsonResponse<T> = {
     items: T[];
 };
 
 export function buildUrl(path: string): string {
-    return `${API_BASE}${path}`;
+    return `${apiBase}${path}`;
 }
 
 /** The backend's own error text, which is more useful than a status code. */

@@ -58,7 +58,7 @@ the bundle from the checkout with:
 cd tui && bun install && bun run build
 ```
 
-The server port defaults to `8765` and can be set with `server.port` in `~/.nova/config.json`. The TUI reads the same file, so both sides always agree.
+The server port defaults to `51789` and can be set with `server.port` in `~/.nova/config.json`. The TUI reads the same file, so both sides always agree.
 
 ## In-Chat Commands
 
@@ -301,7 +301,7 @@ nova serve
 nova serve --provider ollama --model gemma4:26b
 ```
 
-The server runs on `http://127.0.0.1:8765` by default.
+The server runs on `http://127.0.0.1:51789` by default.
 
 ## Frontend Mode
 

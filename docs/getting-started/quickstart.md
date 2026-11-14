@@ -120,7 +120,7 @@ nova web
 ```
 
 `nova web` builds `frontend/dist` if it is missing, serves it through the
-backend at `http://127.0.0.1:8765`, and opens your browser. For live reload
+backend at `http://127.0.0.1:51789`, and opens your browser. For live reload
 while developing the frontend, run `nova serve` and
 `cd frontend && npm run dev` in a separate terminal instead.
 

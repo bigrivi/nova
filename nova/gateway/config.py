@@ -18,7 +18,7 @@ class PlatformConfig:
 
 @dataclass
 class GatewayConfig:
-    nova_url: str = "http://127.0.0.1:8765"
+    nova_url: str = "http://127.0.0.1:51789"
     allowed_senders: set[str] = field(default_factory=set)
     platforms: dict[str, PlatformConfig] = field(default_factory=dict)
 
@@ -52,7 +52,7 @@ def load_config(path: Path | str | None = None) -> GatewayConfig:
         raw = {}
 
     nova_url = str(
-        raw.get("nova_url") or os.getenv("NOVA_URL") or "http://127.0.0.1:8765"
+        raw.get("nova_url") or os.getenv("NOVA_URL") or "http://127.0.0.1:51789"
     )
     allowed = raw.get("allowed_senders")
     allowed_senders = {str(s) for s in allowed} if isinstance(allowed, list) else set()

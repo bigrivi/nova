@@ -11,9 +11,6 @@ import os
 import shutil
 import subprocess
 import sys
-import threading
-import time
-import urllib.request
 import webbrowser
 from dataclasses import replace
 from pathlib import Path
@@ -85,20 +82,15 @@ def _build_tui(project_root: Path, tui_dir: Path) -> Path:
     return bundle
 
 
-def _open_browser_when_ready(url: str) -> None:
-    """Open the default browser once the server answers, off the main thread."""
+def _open_web_browser(url: str) -> None:
+    """Report the address and open it in the default browser.
 
-    def worker() -> None:
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            try:
-                with urllib.request.urlopen(url, timeout=1):
-                    break
-            except Exception:
-                time.sleep(0.3)
-        webbrowser.open(url)
-
-    threading.Thread(target=worker, daemon=True).start()
+    Called once the backend is serving, so there is nothing to poll: a poll of
+    a loopback address is the one request an environment proxy can turn into a
+    failure, and failing to open a browser is not worth that.
+    """
+    print(f"Nova web: opening {url}", file=sys.stderr)
+    webbrowser.open(url)
 
 
 def _print_web_search_stats(days: int) -> None:
@@ -402,7 +394,27 @@ def main() -> None:
         action="store_true",
         help="[web] Do not open the browser automatically",
     )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help=(
+            "[serve|web] Listen on this port instead of server.port"
+        ),
+    )
+    parser.add_argument(
+        "--announce",
+        action="store_true",
+        help=(
+            "[serve|web] Print the listening address on stdout as one JSON "
+            "line, once the server answers"
+        ),
+    )
     args = parser.parse_args()
+    if args.port is not None and not 1 <= args.port <= 65535:
+        # A port of zero would let two shared backends boot against the same
+        # database instead of the second one backing off to the first.
+        parser.error("--port must be between 1 and 65535")
     init_site_packages()
     configure_logging(settings, console=args.mode in ("serve", "web", "gateway"))
 
@@ -449,16 +461,25 @@ def main() -> None:
             run_desktop(settings=settings, dev=args.dev)
             return
 
+        on_ready = None
         if args.mode == "web":
+            # The web client is a client like the others: it joins the shared
+            # backend, and only starts one when nothing is serving. The address
+            # it opens is therefore the shared one, not a server of its own.
             project_root = Path(__file__).resolve().parent.parent
             settings = _web_settings(settings, project_root)
             if not args.no_open:
-                url = f"http://{settings.host}:{settings.port}"
-                print(f"Nova web: opening {url}", file=sys.stderr)
-                _open_browser_when_ready(url)
+                on_ready = _open_web_browser
 
         try:
-            asyncio.run(run_server(settings=settings))
+            asyncio.run(
+                run_server(
+                    settings=settings,
+                    port=args.port,
+                    announce=args.announce,
+                    on_ready=on_ready,
+                )
+            )
         except UnsafeBindError as error:
             print(f"nova: {error}", file=sys.stderr)
             sys.exit(2)

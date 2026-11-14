@@ -23,18 +23,18 @@ afterEach(() => {
 
 describe("backendPort", () => {
     test("reads the port the configuration names", () => {
-        // The server binds this port, so the client has to ask for the same
-        // one: asking 8765 while the server listens on 8794 leaves every
-        // screen saying "Unable to connect".
-        process.env.NOVA_HOME = home_with({ server: { port: 8794 } });
+        // The backend binds this port, so the client has to ask for the same
+        // one: asking the default while the server listens elsewhere leaves
+        // every screen saying "Unable to connect".
+        process.env.NOVA_HOME = home_with({ server: { port: 51999 } });
 
-        expect(backendPort()).toBe(8794);
+        expect(backendPort()).toBe(51999);
     });
 
     test("accepts a port written as a string", () => {
-        process.env.NOVA_HOME = home_with({ server: { port: "8794" } });
+        process.env.NOVA_HOME = home_with({ server: { port: "51999" } });
 
-        expect(backendPort()).toBe(8794);
+        expect(backendPort()).toBe(51999);
     });
 
     test("falls back when the configuration names no port", () => {

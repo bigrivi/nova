@@ -3,53 +3,66 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-import time
 
-import httpx
 from uvicorn import Server
 
-from nova.server.app import build_uvicorn_config, create_app
+from nova.server.app import run_server
 from nova.settings import Settings
 
 log = logging.getLogger(__name__)
 
 
 class ServerThread:
+    """The shared backend on a thread, for the desktop window to point at.
+
+    It runs the same server the CLI and the TUI use, so a desktop window that
+    starts while another client already serves joins that one: the thread
+    reports the incumbent's address and exits.
+    """
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.url: str | None = None
         self.server: Server | None = None
         self.thread: threading.Thread | None = None
-        self.port: int = settings.port
-        self.host: str = settings.host
+        self.ready = threading.Event()
 
     def _run(self) -> None:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        app = create_app(settings=self.settings)
-        self.server = Server(build_uvicorn_config(app, self.settings))
-        app.state.context.uvicorn_server = self.server
-        loop.run_until_complete(self.server.serve())
+        try:
+            loop.run_until_complete(
+                run_server(
+                    settings=self.settings,
+                    on_ready=self._on_ready,
+                    on_server=self._on_server,
+                )
+            )
+        except SystemExit:
+            # A port another process holds, with no incumbent to join. The
+            # window reports "not ready" from wait_until_ready instead of a
+            # traceback out of this thread.
+            log.error("the desktop backend could not start")
+        finally:
+            loop.close()
+
+    def _on_ready(self, url: str) -> None:
+        self.url = url
+        self.ready.set()
+
+    def _on_server(self, server: Server) -> None:
+        self.server = server
 
     def start(self) -> None:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
-    def stop(self, timeout: float = 5.0) -> None:
-        if self.server:
-            self.server.should_exit = True
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=timeout)
-
     def wait_until_ready(self, timeout: float = 15.0) -> bool:
-        url = f"http://{self.host}:{self.port}/health"
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            try:
-                resp = httpx.get(url, timeout=2)
-                if resp.status_code == 200:
-                    return True
-            except Exception:
-                # The server is still starting; keep polling until the deadline.
-                pass
-            time.sleep(0.3)
-        return False
+        """Wait for an address, whether this thread serves it or joined one."""
+        return self.ready.wait(timeout)
+
+    def stop(self, timeout: float = 5.0) -> None:
+        if self.server is not None:
+            self.server.should_exit = True
+        if self.thread is not None and self.thread.is_alive():
+            self.thread.join(timeout=timeout)

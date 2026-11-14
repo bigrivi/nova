@@ -134,12 +134,15 @@ playwright install chromium     # 只在你需要浏览器工具时装
 然后从你想用的界面开始：
 
 ```bash
-nova serve            # HTTP 后端，http://127.0.0.1:8765
+nova serve            # HTTP 后端，http://127.0.0.1:51789，前台运行
 nova web              # 浏览器里的 Web 界面（缺少时自动构建 frontend/dist）
-nova tui              # 终端界面（还需要 bun），会自己拉起后端
+nova tui              # 终端界面（还需要 bun），附着或拉起共享后端
 nova desktop          # 桌面窗口
 nova desktop --dev    # 桌面端连 Vite 开发服务器
 ```
+
+所有界面连的是同一个后端，跑在 `server.port`（默认 `51789`）：谁先启动谁留着它，
+其余直接附着，不会再起第二个。改 `~/.nova/config.json` 里的端口，它们一起跟着变。
 
 ## 需要准备什么？
 

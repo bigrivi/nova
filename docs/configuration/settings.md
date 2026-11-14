@@ -23,7 +23,11 @@ On startup, `Settings.ensure_directories()` creates `home`, `workspace`, `logs`,
 ```json
 {
   "providers": {},
-  "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"}
+  "server": {
+    "host": "127.0.0.1",
+    "port": 51789,
+    "log_level": "INFO"
+  }
 }
 ```
 
@@ -100,7 +104,7 @@ The `server` block in `~/.nova/config.json` controls the bind address and LAN au
 {
   "server": {
     "host": "0.0.0.0",
-    "port": 8765,
+    "port": 51789,
     "auth_user": "alice",
     "auth_password": "s3cret"
   }
@@ -159,7 +163,11 @@ cd frontend && npm run dev -- --host
   "learning": {},
   "approval_review": {},
   "terminal": {},
-  "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"}
+  "server": {
+    "host": "127.0.0.1",
+    "port": 51789,
+    "log_level": "INFO"
+  }
 }
 ```
 
@@ -172,7 +180,7 @@ cd frontend && npm run dev -- --host
 * `approval_review`: object configuring the model second opinion on flagged actions (off by default). See [Tool permissions](../tools/shell.md#model-review).
 * `web_search`: object configuring search backends and optional keys. See [Web Tools](../tools/web.md).
 * `learning`: object configuring the closed learning loop (off by default except session search). Keys: `enabled`, `nudge_interval_turns` (default 5), `skill_extraction_min_tool_calls` (default 4), `user_model_enabled` (default false), `session_search_enabled` (default true). See [Memory](../memory/index.md).
-* `server`: object with `host` (default `127.0.0.1`), `port` (default `8765`, must be 1-65535), `log_level` (default `INFO`), and optional `auth_user` / `auth_password` for LAN auth (see above). A non-object `server` or an invalid port raises `ValueError` at startup. `port` also accepts a numeric string.
+* `server`: object with `host` (default `127.0.0.1`), `port` (default `51789`, must be 1-65535), `log_level` (default `INFO`), and optional `auth_user` / `auth_password` for LAN auth (see above). A non-object `server` or an invalid port raises `ValueError` at startup. `port` also accepts a numeric string, and `0` is refused: every client asks for this one fixed port, so a backend that cannot bind backs off to the one that holds it. `nova serve --port` overrides it for one run.
 * `terminal`: where `shell` commands run. `backend` is `local` (default), `ssh`, or `docker`; the matching `ssh_host` / `ssh_user` / `ssh_port` / `ssh_key` and `docker_image` / `docker_container` / `docker_workdir` fields are only consulted when that backend is selected.
 * `gateway`: not read by `Settings.load_config`; the messaging gateway reads it from the same file (`nova/gateway/config.py`), keyed under `platforms`, plus `nova_url` and `allowed_senders`. See [Messaging Gateway](../advanced/messaging-gateway.md).
 

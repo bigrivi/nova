@@ -97,5 +97,5 @@ Remember that I use VS Code for Python
 ### 桌面应用起不来
 
 查看 `~/.nova/logs/nova.log` 里的错误详情。常见原因：
-- 8765 端口已被占用
+- 51789 端口已被占用
 - 前端资源缺失（在 `frontend/` 里跑 `npm run build`）

@@ -180,7 +180,7 @@ def test_settings_server_defaults_without_block(monkeypatch, tmp_path):
     settings = Settings.load_config()
 
     assert settings.host == "127.0.0.1"
-    assert settings.port == 8765
+    assert settings.port == 51789
     assert settings.log_level == "INFO"
     assert settings.auth_user == ""
     assert settings.auth_password == ""
@@ -192,7 +192,7 @@ def test_settings_ignores_server_env_vars(monkeypatch, tmp_path):
         home,
         {
             "providers": {},
-            "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"},
+            "server": {"host": "127.0.0.1", "port": 51789, "log_level": "INFO"},
         },
     )
     monkeypatch.setenv("NOVA_HOME", str(home))
@@ -205,7 +205,7 @@ def test_settings_ignores_server_env_vars(monkeypatch, tmp_path):
     settings = Settings.load_config()
 
     assert settings.host == "127.0.0.1"
-    assert settings.port == 8765
+    assert settings.port == 51789
     assert settings.log_level == "INFO"
     assert settings.auth_user == ""
     assert settings.auth_password == ""

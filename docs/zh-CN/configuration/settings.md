@@ -25,7 +25,7 @@
 ```json
 {
   "providers": {},
-  "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"}
+  "server": {"host": "127.0.0.1", "port": 51789, "log_level": "INFO"}
 }
 ```
 
@@ -115,7 +115,7 @@ base URL 是 `config.json` 里的那些。环境变量辅助函数存在于代�
 {
   "server": {
     "host": "0.0.0.0",
-    "port": 8765,
+    "port": 51789,
     "auth_user": "alice",
     "auth_password": "s3cret"
   }
@@ -195,7 +195,7 @@ cd frontend && npm run dev -- --host
   "learning": {},
   "approval_review": {},
   "terminal": {},
-  "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"}
+  "server": {"host": "127.0.0.1", "port": 51789, "log_level": "INFO"}
 }
 ```
 
@@ -217,7 +217,7 @@ cd frontend && npm run dev -- --host
   `nudge_interval_turns`（默认 5）、`skill_extraction_min_tool_calls`（默认 4）、
   `user_model_enabled`（默认 false）、`session_search_enabled`（默认 true）。见
   [记忆](../memory/index.md)。
-* `server`：带 `host`（默认 `127.0.0.1`）、`port`（默认 `8765`，必须是 1-65535）、
+* `server`：带 `host`（默认 `127.0.0.1`）、`port`（默认 `51789`，必须是 1-65535）、
   `log_level`（默认 `INFO`）的对象，以及可选的局域网认证 `auth_user` / `auth_password`
   （见上）。`server` 不是对象或端口非法会在启动时抛 `ValueError`。`port` 也接受数字
   字符串。

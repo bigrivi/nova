@@ -224,7 +224,11 @@ def _resolve_openai_base_url() -> str:
 def _build_default_config_payload() -> dict[str, Any]:
     return {
         "providers": {},
-        "server": {"host": "127.0.0.1", "port": 8765, "log_level": "INFO"},
+        "server": {
+            "host": "127.0.0.1",
+            "port": DEFAULT_SERVER_PORT,
+            "log_level": "INFO",
+        },
     }
 
 
@@ -334,6 +338,12 @@ def resolve_secret(value: object) -> str:
 
 
 CREDENTIALS_NAME = "credentials.json"
+
+#: The port Nova listens on when the config names none. High and odd on purpose:
+#: every client asks for this backend, so it must not be a number other software
+#: on the machine already holds, and it must be fixed so a second contender that
+#: cannot bind backs off to the one that holds it.
+DEFAULT_SERVER_PORT = 51789
 
 
 def _load_credentials(home: Path) -> dict[str, str]:
@@ -677,23 +687,28 @@ def _parse_fs_roots(raw: object) -> tuple[str, ...]:
     return tuple(item.strip() for item in value if item.strip())
 
 
+def _parse_port(raw: dict[str, Any], key: str, default: int) -> int:
+    raw_port = raw.get(key, default)
+    try:
+        port = int(str(raw_port).strip() if isinstance(raw_port, str) else raw_port)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid Nova config: 'server.{key}' must be an integer, got {raw_port!r}"
+        ) from exc
+    if not 1 <= port <= 65535:
+        raise ValueError(
+            f"Invalid Nova config: 'server.{key}' must be 1-65535, got {port}"
+        )
+    return port
+
+
 def _parse_server_config(raw: object) -> tuple[str, int, str, str, str]:
     if raw is None:
         raw = {}
     if not isinstance(raw, dict):
         raise ValueError("Invalid Nova config: 'server' must be an object")
     host = str(raw.get("host", "127.0.0.1")).strip() or "127.0.0.1"
-    raw_port = raw.get("port", 8765)
-    try:
-        port = int(str(raw_port).strip() if isinstance(raw_port, str) else raw_port)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"Invalid Nova config: 'server.port' must be an integer, got {raw_port!r}"
-        ) from exc
-    if not 1 <= port <= 65535:
-        raise ValueError(
-            f"Invalid Nova config: 'server.port' must be 1-65535, got {port}"
-        )
+    port = _parse_port(raw, "port", DEFAULT_SERVER_PORT)
     log_level = str(raw.get("log_level", "INFO")).strip().upper() or "INFO"
     auth_user = str(raw.get("auth_user", "")).strip()
     raw_password = raw.get("auth_password", "")

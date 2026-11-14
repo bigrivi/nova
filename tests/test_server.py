@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 
@@ -1104,10 +1105,14 @@ def test_unknown_route_returns_404(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_server_starts_uvicorn(monkeypatch):
-    monkeypatch.setenv("NOVA_HOME", "/tmp/nova-server-run")
+async def test_run_server_starts_uvicorn(monkeypatch, tmp_path):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path))
     settings = Settings.load_config()
     captured = {}
+
+    class FakeSocket:
+        def getsockname(self):
+            return ("127.0.0.1", 51914)
 
     class FakeConfig:
         def __init__(
@@ -1124,27 +1129,151 @@ async def test_run_server_starts_uvicorn(monkeypatch):
             captured["log_level"] = log_level
             captured["timeout_graceful_shutdown"] = timeout_graceful_shutdown
 
+        def bind_socket(self):
+            captured["bound"] = True
+            return FakeSocket()
+
     class FakeServer:
         def __init__(self, config):
             self.config = config
+            self.started = False
             captured["server_config"] = config
 
-        async def serve(self):
+        async def serve(self, sockets=None):
+            captured["sockets"] = sockets
             captured["served"] = True
+            # The port is only announced once the server answers; let the
+            # waiter see a started server before this returns.
+            self.started = True
+            await asyncio.sleep(0)
 
     monkeypatch.setattr(server_app.uvicorn, "Config", FakeConfig)
     monkeypatch.setattr(server_app.uvicorn, "Server", FakeServer)
 
-    await run_server(settings=settings)
+    await run_server(settings=settings, announce=True)
 
     assert isinstance(captured["app"], FastAPI)
     assert captured["host"] == settings.host
     assert captured["port"] == settings.port
     assert captured["log_level"] == settings.log_level.lower()
     assert captured["served"] is True
+    assert captured["bound"] is True
     assert captured["timeout_graceful_shutdown"] == (
         server_app.GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS
     )
+
+
+@pytest.mark.asyncio
+async def test_run_server_announces_the_port_it_got(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path))
+    settings = Settings.load_config()
+    announced = []
+
+    class FakeSocket:
+        def getsockname(self):
+            return ("127.0.0.1", 51914)
+
+    class FakeConfig:
+        def __init__(self, app: ASGIApp, **kwargs):
+            self.app = app
+            self.port = kwargs["port"]
+            self.host = kwargs["host"]
+
+        def bind_socket(self):
+            return FakeSocket()
+
+    class FakeServer:
+        def __init__(self, config):
+            self.config = config
+            self.started = False
+
+        async def serve(self, sockets=None):
+            self.started = True
+            await asyncio.sleep(0)
+
+    monkeypatch.setattr(server_app.uvicorn, "Config", FakeConfig)
+    monkeypatch.setattr(server_app.uvicorn, "Server", FakeServer)
+
+    await run_server(
+        settings=settings, port=51999, announce=True, on_ready=announced.append
+    )
+
+    # The address is only useful once the server answers, so it is announced
+    # from the started state and not from the configuration.
+    assert announced == ["http://127.0.0.1:51914"]
+    assert json.loads(capsys.readouterr().out.strip()) == {
+        "url": "http://127.0.0.1:51914"
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_server_joins_a_backend_that_is_already_running(
+    monkeypatch, tmp_path, capsys
+):
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path))
+    settings = Settings.load_config()
+    monkeypatch.setattr(
+        server_app.registration,
+        "find_running",
+        lambda _settings: "http://127.0.0.1:51999",
+    )
+
+    def no_second_backend(*args, **kwargs):
+        raise AssertionError("a second backend must not start")
+
+    monkeypatch.setattr(server_app.uvicorn, "Server", no_second_backend)
+    announced: list[str] = []
+
+    await run_server(settings=settings, announce=True, on_ready=announced.append)
+
+    assert announced == ["http://127.0.0.1:51999"]
+    assert json.loads(capsys.readouterr().out.strip()) == {
+        "url": "http://127.0.0.1:51999"
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_server_without_a_port_binds_the_one_in_the_config(
+    monkeypatch, tmp_path
+):
+    (tmp_path / "config.json").write_text(
+        json.dumps({"providers": {}, "server": {"port": 51999}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NOVA_HOME", str(tmp_path))
+    settings = Settings.load_config()
+    monkeypatch.setattr(server_app.registration, "find_running", lambda _settings: None)
+    captured: dict[str, object] = {}
+
+    class FakeSocket:
+        def getsockname(self):
+            return ("127.0.0.1", 51999)
+
+    class FakeConfig:
+        def __init__(self, app: ASGIApp, **kwargs):
+            self.app = app
+            self.host = kwargs["host"]
+            self.port = kwargs["port"]
+            captured["port"] = kwargs["port"]
+
+        def bind_socket(self):
+            return FakeSocket()
+
+    class FakeServer:
+        def __init__(self, config):
+            self.config = config
+            self.started = False
+
+        async def serve(self, sockets=None):
+            self.started = True
+            await asyncio.sleep(0)
+
+    monkeypatch.setattr(server_app.uvicorn, "Config", FakeConfig)
+    monkeypatch.setattr(server_app.uvicorn, "Server", FakeServer)
+
+    await run_server(settings=settings)
+
+    assert captured["port"] == 51999
 
 
 def test_approve_resolves_pending_request(monkeypatch, tmp_path):

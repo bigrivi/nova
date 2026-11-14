@@ -101,5 +101,5 @@ Remember that I use VS Code for Python
 ### Desktop app won't launch
 
 Check `~/.nova/logs/nova.log` for error details. Common issues:
-- Port 8765 is already in use
+- Port 51789 is already in use
 - Frontend assets are missing (run `npm run build` in `frontend/`)

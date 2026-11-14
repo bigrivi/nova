@@ -6,7 +6,6 @@ import time
 import pytest
 
 import nova.__main__ as nova_main
-from nova.desktop import main as desktop_main
 
 
 def _write_config(home, payload):
@@ -158,13 +157,6 @@ def test_main_desktop_dispatch(monkeypatch, tmp_path):
     assert called.get("dev") is False
 
 
-def test_desktop_window_url_maps_wildcard_host_to_loopback():
-    assert desktop_main._window_url("0.0.0.0", 8765) == "http://127.0.0.1:8765"
-    assert desktop_main._window_url("::", 8765) == "http://127.0.0.1:8765"
-    assert desktop_main._window_url("127.0.0.1", 8765) == "http://127.0.0.1:8765"
-    assert desktop_main._window_url("192.168.1.28", 8765) == "http://192.168.1.28:8765"
-
-
 def test_main_websearch_stats_prints_a_table_and_starts_nothing(
     monkeypatch, tmp_path, capsys
 ):
@@ -286,3 +278,14 @@ def test_the_mode_can_still_be_named_explicitly(monkeypatch):
     nova_main.main()
 
     assert started == ["serve"]
+
+
+def test_main_refuses_a_port_of_zero(monkeypatch):
+    # Two shared backends on port zero would both boot against the same
+    # database, so the flag refuses it instead of pretending it is "any port".
+    monkeypatch.setattr(sys, "argv", ["nova", "serve", "--port", "0"])
+
+    with pytest.raises(SystemExit) as raised:
+        nova_main.main()
+
+    assert raised.value.code == 2

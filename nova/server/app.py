@@ -5,7 +5,9 @@ FastAPI server app for frontend and desktop integration.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
@@ -13,6 +15,7 @@ from typing import TYPE_CHECKING
 import uvicorn
 from fastapi import FastAPI
 
+from nova.server import registration
 from nova.server.auth import (
     BasicAuthMiddleware,
     assert_safe_bind,
@@ -47,13 +50,22 @@ log = logging.getLogger(__name__)
 GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 
 
-def build_uvicorn_config(app: FastAPI, settings: Settings) -> uvicorn.Config:
+def build_uvicorn_config(
+    app: FastAPI, settings: Settings, port: int | None = None
+) -> uvicorn.Config:
+    """The uvicorn configuration for this backend.
+
+    Args:
+        app: The application to serve.
+        settings: Loaded settings, for the host and the default port.
+        port: A port to use instead of the configured one.
+    """
     assert_safe_bind(settings.host, get_configured_credentials(settings))
     server_settings = settings.server
     return uvicorn.Config(
         app,
         host=server_settings.host,
-        port=server_settings.port,
+        port=server_settings.port if port is None else port,
         log_level=settings.log_level.lower(),
         timeout_graceful_shutdown=int(GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS),
     )
@@ -201,9 +213,98 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-async def run_server(settings: Settings | None = None) -> None:
+def reachable_host(host: str) -> str:
+    """An address a client can actually open.
+
+    A wildcard bind is not a loadable address: WebKit refuses to navigate to
+    0.0.0.0, and a browser treats it as an unknown host.
+    """
+    if host in ("0.0.0.0", "::", ""):
+        return "127.0.0.1"
+    return host
+
+
+def _report(
+    url: str,
+    announce: bool,
+    on_ready: Callable[[str], None] | None,
+) -> None:
+    """Say where the backend is, to whoever asked."""
+    if announce:
+        print(json.dumps({"url": url}), flush=True)
+    if on_ready is not None:
+        on_ready(url)
+
+
+async def run_server(
+    settings: Settings | None = None,
+    *,
+    port: int | None = None,
+    service: bool = False,
+    announce: bool = False,
+    on_ready: Callable[[str], None] | None = None,
+    on_server: Callable[[uvicorn.Server], None] | None = None,
+) -> None:
+    """Serve the API until the process is asked to stop.
+
+    Args:
+        settings: Loaded settings.
+        port: A port to use instead of ``server.port``. A caller that names one
+            knows what it wants and gets its own server; without one, the
+            backend this state directory already has is joined instead of
+            starting a second scheduler on the same database.
+        announce: Print the address this server listens on, as one JSON line on
+            stdout, so a client that started it can find it.
+        on_ready: Called with the address once the server answers.
+        on_server: Called with the server object, for a caller that has to
+            stop it.
+    """
     settings = settings or get_settings()
+    if port is None:
+        incumbent = registration.find_running(settings)
+        if incumbent is not None:
+            log.info("Nova is already serving at %s", incumbent)
+            _report(incumbent, announce, on_ready)
+            return
+
     app = create_app(settings=settings)
-    server = uvicorn.Server(build_uvicorn_config(app, settings))
+    config = build_uvicorn_config(app, settings, port=port)
+    server = uvicorn.Server(config)
     app.state.context.uvicorn_server = server
-    await server.serve()
+    if on_server is not None:
+        on_server(server)
+
+    # Bind before the server starts: a port another backend already holds is
+    # the case where this one has to back off to that backend, and detecting
+    # it here keeps the application from booting first. The address is
+    # announced later, once `started` says the server answers, so a client that
+    # reads it can use it immediately.
+    try:
+        sock = config.bind_socket()
+    except SystemExit:
+        # Another backend took the port after the check above. It records
+        # itself once it answers, so wait for that instead of dying: two
+        # clients launching at once have to end with one backend, not two.
+        incumbent = registration.wait_for_running(settings) if port is None else None
+        if incumbent is None:
+            raise
+        log.info("Nova is already serving at %s", incumbent)
+        _report(incumbent, announce, on_ready)
+        return
+
+    address = f"http://{reachable_host(settings.server.host)}:{sock.getsockname()[1]}"
+
+    async def announce_when_ready() -> None:
+        while not server.started:
+            if server.should_exit:
+                return
+            await asyncio.sleep(0.05)
+        registration.write_registration(settings, address)
+        _report(address, announce, on_ready)
+
+    waiter = asyncio.create_task(announce_when_ready())
+    try:
+        await server.serve(sockets=[sock])
+    finally:
+        waiter.cancel()
+        registration.clear_registration(settings, pid=os.getpid())

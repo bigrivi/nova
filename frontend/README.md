@@ -30,7 +30,7 @@ npm install
 npm run dev
 ```
 
-By default, Vite proxies `/api/*` and `/health` to `http://127.0.0.1:8765`.
+By default, Vite proxies `/api/*` and `/health` to `http://127.0.0.1:51789` (Nova's default backend port).
 
 Optional overrides:
 

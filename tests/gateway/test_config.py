@@ -6,7 +6,7 @@ from nova.gateway.config import load_config
 
 def test_absent_gateway_block_yields_empty_config(tmp_path):
     config = load_config(tmp_path / "missing.json")
-    assert config.nova_url == "http://127.0.0.1:8765"
+    assert config.nova_url == "http://127.0.0.1:51789"
     assert config.enabled_platforms() == []
 
 

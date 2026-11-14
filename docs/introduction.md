@@ -127,13 +127,18 @@ on `PATH`; see [Making `nova` available on PATH](getting-started/installation.md
 Then start where you prefer:
 
 ```bash
-nova                  # terminal UI (also needs bun), spawns its own backend
+nova                  # terminal UI (also needs bun), joins or starts the shared backend
 nova tui              # the same thing, named
-nova serve            # HTTP backend on http://127.0.0.1:8765
-nova web              # web UI in the browser (builds frontend/dist if needed)
-nova desktop          # desktop window
+nova serve            # HTTP backend on http://127.0.0.1:51789, in the foreground
+nova web              # web UI in the browser, joined to the shared backend
+nova desktop          # desktop window, joined to the shared backend
 nova desktop --dev    # desktop against the Vite dev server
 ```
+
+Every surface talks to the same backend on `server.port` (default `51789`):
+whichever client starts first keeps it running, and the others join it instead
+of starting a second one. Change the port in `~/.nova/config.json` and they all
+follow.
 
 A bare `nova` opens the terminal UI when there is a terminal to draw it in, and
 starts the HTTP backend when there is not — a container entrypoint that runs

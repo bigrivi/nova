@@ -52,7 +52,6 @@ a = Analysis(
         'matplotlib',
         'numpy',
         'pandas',
-        'PIL',
         'cv2',
         'scipy',
         'PyQt5',

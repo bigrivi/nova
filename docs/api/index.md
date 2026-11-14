@@ -1,13 +1,15 @@
 # Server API
 
-The Nova server is a FastAPI app created in `nova/server/app.py` and started with `nova serve`. It listens on `127.0.0.1:8765` by default and shares the same Python runtime as the TUI, frontend, and desktop shell. All paths below are relative to that host.
+The Nova server is a FastAPI app created in `nova/server/app.py` and started with `nova serve`. It listens on `127.0.0.1:51789` by default and shares the same Python runtime as the TUI, frontend, and desktop shell. All paths below are relative to that host.
+
+The TUI, `nova web` and the desktop app do not start servers of their own: they share one background backend on `server.port` (default `51789`), which records its address in `~/.nova/server.json`. The first client to start it keeps it running; the rest join it, and `nova serve` is the same server on the same port.
 
 This page walks through the routes a client needs to carry a conversation: sessions, filesystem, models, chat, agents, and memories. The server exposes more — schedules, tasks, git, permissions, projects, MCP servers, events, speech, checkpoints, fork and compact — and `nova/server/routers/` is the authoritative list. Treat this page as the walkthrough, not the catalogue.
 
 Base URL in development:
 
 ```text
-http://127.0.0.1:8765
+http://127.0.0.1:51789
 ```
 
 ## Conventions

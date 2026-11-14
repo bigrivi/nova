@@ -81,3 +81,19 @@ def test_the_default_host_is_loopback_and_needs_nothing(monkeypatch, tmp_path):
     config = build_uvicorn_config(FastAPI(), settings)
 
     assert config.host == "127.0.0.1"
+
+
+def test_the_configured_port_is_used_when_none_is_given(monkeypatch, tmp_path):
+    settings = _settings(monkeypatch, tmp_path, {"port": 8794})
+
+    config = build_uvicorn_config(FastAPI(), settings)
+
+    assert config.port == 8794
+
+
+def test_a_given_port_overrides_the_configured_one(monkeypatch, tmp_path):
+    settings = _settings(monkeypatch, tmp_path, {"port": 8794})
+
+    config = build_uvicorn_config(FastAPI(), settings, port=51999)
+
+    assert config.port == 51999

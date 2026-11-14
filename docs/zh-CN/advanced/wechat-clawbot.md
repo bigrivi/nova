@@ -42,7 +42,7 @@ npm start
 值得有一个专用 Agent，这样微信的轮次有自己的模型、会话和人格：
 
 ```bash
-curl -X POST http://127.0.0.1:8765/api/agents \
+curl -X POST http://127.0.0.1:51789/api/agents \
   -H 'content-type: application/json' \
   -d '{"key":"weixin","name":"WeChat","model":"<model>","provider":"<provider>"}'
 
