@@ -88,10 +88,14 @@ Start whichever surface you want:
 ```bash
 nova tui            # terminal UI, from any directory (needs bun)
 nova web            # web UI in the browser
-nova serve          # HTTP backend on http://127.0.0.1:8765
+nova serve          # HTTP backend on http://127.0.0.1:51789
 nova desktop        # desktop window
 ```
 
+Every surface talks to **one** backend per `NOVA_HOME`: whichever client starts
+first keeps it running, and the others join instead of starting a second one.
+A message sent in one window streams to all of them, so a conversation started
+in the TUI can be watched (and continued) from the web UI or the desktop app.
 <details>
 <summary>Install from source instead</summary>
 
@@ -115,9 +119,9 @@ Full walkthrough in [Quickstart](docs/getting-started/quickstart.md).
 | Surface | How to run | What it is |
 |---------|------------|------------|
 | TUI | `nova tui` or `./nova-tui` | Bun + React + OpenTUI terminal client. Streams text, reasoning, tool calls, and inline diffs. |
-| Server | `nova serve` | FastAPI backend on `http://127.0.0.1:8765`, AI SDK compatible SSE stream at `POST /api/chat/stream`. |
-| Web UI | `nova web` | Serves the built frontend at the backend and opens a browser. |
-| Desktop | `nova desktop [--dev]` | PyWebView window hosting the built frontend. `python build.py --clean` to package. |
+| Server | `nova serve` | FastAPI backend on `http://127.0.0.1:51789`, AI SDK compatible SSE stream at `POST /api/chat/stream`. |
+| Web UI | `nova web` | Joins the shared backend (starts one if none is running) and opens a browser. |
+| Desktop | `nova desktop [--dev]` | PyWebView window hosting the built frontend, joined to the same backend. `python build.py --clean` to package. |
 | Mobile | `cd mobile && bun run android`, or install the Android APK from a `mobile-v*` release | React Native (Expo) client for Android. Connects to `nova serve` over the same HTTP/SSE API; no agent logic on the phone. |
 | Script | `nova run "…" [--json]` | One turn with no UI and no server. Exit code `2` means it stopped for a human. |
 
