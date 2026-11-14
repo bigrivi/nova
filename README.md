@@ -4,16 +4,26 @@
     <img src="assets/logo-light.svg" alt="Nova" width="320">
   </picture>
 </p>
+<h1 align="center">Your own AI agent, on your own machine.</h1>
 <p align="center">
-  One agent runtime. Four surfaces. Your machine.<br/>
-  Terminal, web, desktop and HTTP share one loop, one memory, one tool registry.
+  One open source runtime for your terminal, browser, desktop and phone —<br/>
+  on Ollama or any model.
 </p>
 
 <p align="center">
   <a href="https://github.com/bigrivi/nova/actions/workflows/ci.yml"><img src="https://github.com/bigrivi/nova/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/bigrivi/nova/releases"><img src="https://img.shields.io/github/v/release/bigrivi/nova" alt="Latest release"></a>
   <a href="https://bigrivi.github.io/nova/"><img src="https://img.shields.io/badge/docs-bigrivi.github.io%2Fnova-blue.svg" alt="Docs"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
   <img src="https://img.shields.io/badge/python-3.12%2B-blue.svg" alt="Python 3.12+">
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#surfaces">Surfaces</a> ·
+  <a href="#why-nova">Why Nova</a> ·
+  <a href="https://bigrivi.github.io/nova/">Docs</a> ·
+  <a href="docs/troubleshooting/faq.md">FAQ</a>
 </p>
 
 <p align="center">
@@ -27,37 +37,16 @@ live in `~/.nova/`, and it runs whichever model you point it at. Use Ollama with
 API key and nothing leaves the machine, or connect any OpenAI-compatible, Responses,
 or Anthropic endpoint and keep the same agent.
 
-One Python core drives a terminal TUI, an HTTP server, a web frontend, and a desktop
-app. They share the agent loop, the tool registry, and the SQLite store. Nothing sits
-behind an account: the model, the memory and the tool policy are files you own, and
-the whole install is one `curl` line or one signed release bundle.
+One Python core holds the agent loop, the tool registry and the SQLite store. A
+terminal TUI, a web app, a desktop window, a mobile app and an HTTP API all sit on
+top of it. Nothing sits behind an account: the model, the memory and the tool policy
+are files you own, and the whole install is one `curl` line or one signed release
+bundle.
 
 <p align="center">
   <img src="assets/nova-tui-demo.gif" width="900"
        alt="Nova TUI over three turns: it explains the repository's architecture, recalls a preference stored in an earlier session, and asks for approval before running a bash subshell">
 </p>
-
-## Why Nova
-
-Most hosted assistants are products. The model, the memory, and the interface belong
-to whoever runs the server, and you get what they ship this quarter. Nova assumes a
-personal agent has to meet three requirements before it is worth trusting with your
-files and your shell.
-
-- It works offline. With Ollama nothing leaves the machine: not your prompts, not
-  your files, not your memories. The same agent code runs against a hosted model
-  when you want the extra capability, so cutting the network is a configuration
-  change and not a different product.
-- It is readable. What Nova may run, who it is, and what it keeps about you are
-  Markdown and JSON files under `~/.nova/`. Read them, edit them, put them in git.
-  You should not have to trust a prompt you have never seen with a shell.
-- Its memory outlives a conversation. A chat that forgets between sessions is only
-  useful for the session it is in. Nova stores memories in SQLite with a scope and
-  a type, so a preference you give on Monday still applies on Friday.
-
-Nova is not a hosted product, a coding-only agent, or a framework you build on. It
-is one runtime you install and point at a model, and the four surfaces are views onto
-the same conversation.
 
 ## Quick start
 
@@ -120,6 +109,48 @@ If `nova` is not on your `PATH` afterwards, add the environment's `bin/` directo
 </details>
 
 Full walkthrough in [Quickstart](docs/getting-started/quickstart.md).
+
+## Surfaces
+
+| Surface | How to run | What it is |
+|---------|------------|------------|
+| TUI | `nova tui` or `./nova-tui` | Bun + React + OpenTUI terminal client. Streams text, reasoning, tool calls, and inline diffs. |
+| Server | `nova serve` | FastAPI backend on `http://127.0.0.1:8765`, AI SDK compatible SSE stream at `POST /api/chat/stream`. |
+| Web UI | `nova web` | Serves the built frontend at the backend and opens a browser. |
+| Desktop | `nova desktop [--dev]` | PyWebView window hosting the built frontend. `python build.py --clean` to package. |
+| Mobile | `cd mobile && bun run android`, or install the Android APK from a `mobile-v*` release | React Native (Expo) client for Android. Connects to `nova serve` over the same HTTP/SSE API; no agent logic on the phone. |
+| Script | `nova run "…" [--json]` | One turn with no UI and no server. Exit code `2` means it stopped for a human. |
+
+The mobile client is a React Native app that connects to a running server over the
+same HTTP/SSE API; [mobile/README.md](mobile/README.md) covers pairing it with
+`nova serve`.
+
+<p align="center">
+  <img src="assets/hero-desktop.png" width="760"
+       alt="Nova's web and desktop UI, showing a conversation with tool calls and a streamed answer">
+</p>
+
+## Why Nova
+
+Most hosted assistants are products. The model, the memory, and the interface belong
+to whoever runs the server, and you get what they ship this quarter. Nova assumes a
+personal agent has to meet three requirements before it is worth trusting with your
+files and your shell.
+
+- It works offline. With Ollama nothing leaves the machine: not your prompts, not
+  your files, not your memories. The same agent code runs against a hosted model
+  when you want the extra capability, so cutting the network is a configuration
+  change and not a different product.
+- It is readable. What Nova may run, who it is, and what it keeps about you are
+  Markdown and JSON files under `~/.nova/`. Read them, edit them, put them in git.
+  You should not have to trust a prompt you have never seen with a shell.
+- Its memory outlives a conversation. A chat that forgets between sessions is only
+  useful for the session it is in. Nova stores memories in SQLite with a scope and
+  a type, so a preference you give on Monday still applies on Friday.
+
+Nova is not a hosted product, a coding-only agent, or a framework you build on. It
+is one runtime you install and point at a model, and every surface is a view onto the
+same conversation.
 
 ## How Nova is different
 
@@ -207,19 +238,6 @@ It also drives a Playwright browser, reads images, loads skills from
 `~/.nova/skills/`, connects MCP servers, and delegates work to sub-agents. Long
 conversations stay usable through two-layer context compaction.
 
-## Surfaces
-
-| Surface | How to run | What it is |
-|---------|------------|------------|
-| TUI | `nova tui` or `./nova-tui` | Bun + React + OpenTUI terminal client. Streams text, reasoning, tool calls, and inline diffs. |
-| Server | `nova serve` | FastAPI backend on `http://127.0.0.1:8765`, AI SDK compatible SSE stream at `POST /api/chat/stream`. |
-| Web UI | `nova web` | Serves the built frontend at the backend and opens a browser. |
-| Desktop | `nova desktop [--dev]` | PyWebView window hosting the built frontend. `python build.py --clean` to package. |
-| Script | `nova run "…" [--json]` | One turn with no UI and no server. Exit code `2` means it stopped for a human. |
-
-The server is the hub for the frontend and the desktop app. The TUI can start its
-own backend.
-
 ## Built-in tools
 
 27 tools ship by default, and connected MCP servers add more at runtime. What they
@@ -292,33 +310,38 @@ State is separate: sessions, memories, skills, and permission grants live under
 
 ## Documentation
 
+**Get started** —
 [Quickstart](docs/getting-started/quickstart.md) ·
 [Installation](docs/getting-started/installation.md) ·
 [What is Nova?](docs/introduction.md) ·
+[FAQ](docs/troubleshooting/faq.md)
+
+**Configure** —
 [Providers](docs/configuration/providers.md) ·
 [Settings](docs/configuration/settings.md) ·
 [Tools](docs/tools/index.md) ·
+[MCP](docs/advanced/mcp.md)
+
+**Go deeper** —
 [Security Model](docs/advanced/security.md) ·
 [Memory](docs/memory/index.md) ·
 [Skills](docs/skills/index.md) ·
-[MCP](docs/advanced/mcp.md) ·
 [Multi-Agent](docs/advanced/multi-agent.md) ·
 [Compaction](docs/advanced/compaction.md) ·
 [TUI](docs/tui/index.md) ·
 [Desktop](docs/desktop/index.md) ·
-[API](docs/api/index.md) ·
-[FAQ](docs/troubleshooting/faq.md)
+[API](docs/api/index.md)
 
 ## Development
 
 ```bash
 pip install -e .[dev]           # pythonpath comes from pyproject.toml, no PYTHONPATH needed
-pytest                          # 2700+ tests, no stubs needed
+pytest                          # 2900+ tests, no stubs needed
 pytest tests/test_server.py -q  # run a subset
 RUN_LIVE_OLLAMA_SERVER_E2E=1 pytest tests/e2e -q   # live Ollama, opt in
 ```
 
-About 43k lines of Python in `nova/`, 27k in `frontend/src`, and 18k in `tui/src`.
+About 47k lines of Python in `nova/`, 29k in `frontend/src`, and 24k in `tui/src`.
 The `nova` console script is defined in `pyproject.toml`. The frontend and the TUI
 have their own installs:
 

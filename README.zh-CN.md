@@ -4,13 +4,15 @@
     <img src="assets/logo-light.svg" alt="Nova" width="320">
   </picture>
 </p>
+<h1 align="center">你自己的 AI Agent，跑在你自己的机器上。</h1>
 <p align="center">
-  一个运行时，四个入口，都在你的机器上。<br/>
-  终端、网页、桌面、API 共用同一个循环、同一份记忆、同一套工具。
+  一套开源运行时，驱动你的终端、浏览器、桌面和手机——<br/>
+  Ollama 或任意模型。
 </p>
 
 <p align="center">
   <a href="https://github.com/bigrivi/nova/actions/workflows/ci.yml"><img src="https://github.com/bigrivi/nova/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/bigrivi/nova/releases"><img src="https://img.shields.io/github/v/release/bigrivi/nova" alt="最新发布"></a>
   <a href="https://bigrivi.github.io/nova/"><img src="https://img.shields.io/badge/docs-bigrivi.github.io%2Fnova-blue.svg" alt="文档"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="许可证：Apache-2.0"></a>
   <img src="https://img.shields.io/badge/python-3.12%2B-blue.svg" alt="Python 3.12+">
@@ -26,9 +28,9 @@ Nova 是一个开源的个人 Agent。它有身份、有记忆、有技能，都
 由你指定。用 Ollama 且不填 API key，什么都不离开这台机器；也可以接任意
 OpenAI-compatible、Responses 或 Anthropic 端点，Agent 还是同一个。
 
-一套 Python 内核驱动四个界面：终端 TUI、HTTP 服务、Web 前端、桌面应用。它们共用
-Agent 循环、工具注册表和 SQLite 存储。没有账号挡在中间：模型、记忆、工具策略都是
-你自己的文件，整个安装是一条 `curl` 或一个签名发布包。
+一套 Python 内核承载 Agent 循环、工具注册表和 SQLite 存储。终端 TUI、Web 界面、
+桌面窗口、手机和 HTTP API 都建在它之上。没有账号挡在中间：模型、记忆、工具策略
+都是你自己的文件，整个安装是一条 `curl` 或一个签名发布包。
 
 ## 为什么是 Nova
 
@@ -44,7 +46,7 @@ Agent 循环、工具注册表和 SQLite 存储。没有账号挡在中间：模
   SQLite，带作用域和类型，所以你周一说过的偏好，周五照样生效。
 
 Nova 不是托管产品，不是只会写代码的 Agent，也不是给你二次开发的框架。它是装好、
-指向一个模型就能用的运行时，四个界面是同一段对话的不同视图。
+指向一个模型就能用的运行时，每个端都是同一段对话的不同视图。
 
 ## 快速开始
 
@@ -183,7 +185,7 @@ Nova 扫描目录、建立结构、移动文件。
 让模型总结在那之前的内容。触发阈值是 `GET /api/sessions/{id}/context` 能读到的 token
 估算值，所以 TUI 和 Agent 对剩余空间的判断一致。
 
-## 四个入口
+## 各个入口
 
 | 入口 | 怎么起 | 是什么 |
 |------|--------|--------|
@@ -191,8 +193,10 @@ Nova 扫描目录、建立结构、移动文件。
 | 服务端 | `nova serve` | FastAPI 后端，`http://127.0.0.1:8765`，AI SDK 兼容 SSE 流在 `POST /api/chat/stream`。 |
 | Web | `nova web` | 由后端托管构建好的前端，并打开浏览器。 |
 | 桌面端 | `nova desktop [--dev]` | PyWebView 窗口托管构建好的前端。`python build.py --clean` 打包。 |
+| 手机端 | `cd mobile && bun run android`，或从 `mobile-v*` 发布装 Android APK | React Native（Expo）Android 客户端。通过同一个 HTTP/SSE API 连 `nova serve`；手机上不放 Agent 逻辑。 |
 
-前端和桌面应用以后端为枢纽。TUI 可以自己拉起一个后端。
+手机端是 React Native 客户端，通过同一个 HTTP/SSE API 连到运行中的服务端；配对
+`nova serve` 的步骤见 [mobile/README.md](mobile/README.md)。
 
 ## 内置工具
 
@@ -275,12 +279,12 @@ MCP 服务可以是 stdio 或 HTTP：
 
 ```bash
 pip install -e .[dev]           # pythonpath 由 pyproject.toml 提供，不需要 PYTHONPATH
-pytest                          # 2700+ 个测试，不需要桩
+pytest                          # 2900+ 个测试，不需要桩
 pytest tests/test_server.py -q  # 跑一个子集
 RUN_LIVE_OLLAMA_SERVER_E2E=1 pytest tests/e2e -q   # 真实 Ollama，需显式开启
 ```
 
-大约 4.3 万行 Python（`nova/`）、2.7 万行前端（`frontend/src`）、1.8 万行 TUI
+大约 4.7 万行 Python（`nova/`）、2.9 万行前端（`frontend/src`）、2.4 万行 TUI
 （`tui/src`）。`nova` 命令行入口定义在 `pyproject.toml`。前端和 TUI 各自装依赖：
 
 ```bash

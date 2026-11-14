@@ -137,13 +137,13 @@ check are anchored to that tag.
 
 ## Project layout
 
-* `nova/` is the shared Python runtime. It holds the agent loop, tools, providers, persistence, and server. Keep agent logic, tools, providers, and persistence here so all four surfaces stay consistent. That rule is stated in the README.
+* `nova/` is the shared Python runtime. It holds the agent loop, tools, providers, persistence, and server. Keep agent logic, tools, providers, and persistence here so every surface stays consistent. That rule is stated in the README.
 * `tui/` is the Bun and OpenTUI terminal client. Source lives in `tui/src`, `bun run typecheck` checks types, and `bun run build` bundles the client to `tui/dist`. `nova tui` runs `tui/dist/index.js` when present, otherwise `tui/src/index.tsx`.
 * `frontend/` is the React web UI built with Vite, assistant-ui, Tailwind, and Zustand. Source lives in `frontend/src`, build is `npm run build`.
 * `tests/` is the Python suite run by `pytest`, including `tests/e2e` for the opt-in live tests.
 * `docs/` holds the documentation site. Start at `docs/index.md`.
 
-About 43k lines of Python live in `nova/`, 27k in `frontend/src`, and 18k in `tui/src`.
+About 47k lines of Python live in `nova/`, 29k in `frontend/src`, and 24k in `tui/src`.
 
 ## Questions
 
