@@ -14,6 +14,7 @@
  * so switching tabs never interrupts or replays a turn this client started.
  */
 import {
+    editMessage,
     interruptChat,
     resolveProject,
     regenerateChat,
@@ -270,6 +271,44 @@ export async function regenerateLastAnswer(): Promise<void> {
         regenerateAssistantId:
             target.kind === "replace" ? target.messageId : undefined,
     });
+}
+
+/**
+ * Replace a question and answer it again.
+ *
+ * The server drops the messages after it and puts back the files the agent
+ * changed, so the transcript has to be told about both: the question keeps its
+ * place with the new text, and everything after it goes away. The answer that
+ * follows is a regeneration -- the last question in the session is the edited
+ * one, and the server re-runs it.
+ */
+export async function editAndResend(
+    messageId: string,
+    text: string,
+): Promise<void> {
+    const tabId = ensureActiveTab();
+    const sessionId = chatSlice(tabId).sessionId;
+    if (!sessionId) {
+        useToastStore.getState().show("Nothing to edit: no session yet.");
+        return;
+    }
+    try {
+        const report = await editMessage(sessionId, messageId, text);
+        useChatStore.getState().replaceMessageText(messageId, text, tabId);
+        useChatStore.getState().dropMessagesAfter(messageId, tabId);
+        const skipped = report.skipped.length;
+        useToastStore.getState().show(
+            `Edited the question · restored ${report.restored.length + report.deleted.length} file(s), dropped ${report.dropped_messages} message(s)` +
+                (skipped ? `, ${skipped} skipped` : ""),
+            5000,
+        );
+        await regenerateLastAnswer();
+    } catch (err) {
+        useToastStore.getState().show(
+            `Edit failed: ${err instanceof Error ? err.message : String(err)}`,
+            5000,
+        );
+    }
 }
 
 /** Run one user-initiated conversation round in the active tab. */

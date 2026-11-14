@@ -55,7 +55,22 @@ export const useMenuStore = create<MenuState>((set) => ({
     handlers: { owner: 0 },
     show: (items, selectedIndex, height, anchor, owner) =>
         set({ items, selectedIndex, height, anchor, owner }),
-    setAnchor: (anchor) => set({ anchor }),
+    // The composer republishes the anchor on a timer while the menu is open.
+    // A new object every tick would re-render every subscriber of the menu
+    // (the whole shell) for a position that did not move.
+    setAnchor: (anchor) =>
+        set((state) => {
+            const current = state.anchor;
+            if (
+                current.x === anchor.x &&
+                current.y === anchor.y &&
+                current.width === anchor.width &&
+                current.edgeY === anchor.edgeY
+            ) {
+                return state;
+            }
+            return { anchor };
+        }),
     setHandlers: (handlers) => set({ handlers }),
     hover: (index) => {
         const state = useMenuStore.getState();

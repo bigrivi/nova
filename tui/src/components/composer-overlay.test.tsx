@@ -15,6 +15,7 @@ const { useChatStore } = await import("../stores/chat-store.ts");
 mock.module("../stream/chat-stream.ts", () => ({
     runChatStream: async () => {},
     interruptChat: async () => {},
+    editAndResend: async () => {},
 }));
 
 async function settle(setup: { flush: () => Promise<void> }): Promise<void> {
@@ -22,6 +23,20 @@ async function settle(setup: { flush: () => Promise<void> }): Promise<void> {
         await setup.flush();
         await new Promise((resolve) => setTimeout(resolve, 30));
     }
+}
+
+/** Every render is torn down after its test: a composer that stays alive keeps
+ *  publishing its anchor into the process-wide menu store, and the next test
+ *  then measures a menu that two composers are fighting over. */
+const setups: Array<{ renderer: { destroy: () => void } }> = [];
+
+async function render(
+    node: Parameters<typeof testRender>[0],
+    options: { width: number; height: number },
+) {
+    const setup = await testRender(node, options);
+    setups.push(setup);
+    return setup;
 }
 
 async function type(
@@ -40,7 +55,7 @@ function rowOf(frame: string, needle: string): number {
 test("the menu renders above the input, clear of the status bar", async () => {
     useChatStore.setState({ isStreaming: false, sessionId: null });
     // Launch layout: one centred card, nothing else on screen.
-    const setup = await testRender(
+    const setup = await render(
         <AppProvider>
             <ComposerShell variant="card" height={24} />
         </AppProvider>,
@@ -64,7 +79,7 @@ test("the menu renders above the input, clear of the status bar", async () => {
 });
 
 test("closing the composer clears the published menu", async () => {
-    const setup = await testRender(
+    const setup = await render(
         <AppProvider>
             <ComposerShell height={24} />
         </AppProvider>,
@@ -97,7 +112,7 @@ test("the menu scrolls to keep a selection below the fold visible", async () => 
         1,
     );
 
-    const setup = await testRender(
+    const setup = await render(
         <AppProvider>
             <box flexDirection="column" width="100%" height={24}>
                 <MenuOverlay anchorY={20} anchorX={0} anchorWidth={80} />
@@ -114,6 +129,9 @@ test("the menu scrolls to keep a selection below the fold visible", async () => 
 });
 
 afterEach(() => {
+    for (const setup of setups.splice(0)) {
+        setup.renderer.destroy();
+    }
     // The menu store is process-wide: a seeded menu would float over every later
     // test that renders App.
     useMenuStore.getState().clear();
@@ -161,7 +179,7 @@ async function step(setup: { flush: () => Promise<void> }): Promise<void> {
 
 test("clicking a command row runs it", async () => {
     const commands: string[] = [];
-    const setup = await testRender(
+    const setup = await render(
         <AppProvider>
             <ComposerShell
                 height={24}

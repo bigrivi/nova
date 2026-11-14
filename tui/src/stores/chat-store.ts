@@ -152,6 +152,14 @@ type ChatState = ChatSlice & {
     completeStream: (tabId?: string | null) => void;
     failStream: (error: string, tabId?: string | null) => void;
     dropMessage: (messageId: string, tabId?: string | null) => void;
+    /** Replace the text of a message in place, for an edited question. */
+    replaceMessageText: (
+        messageId: string,
+        text: string,
+        tabId?: string | null,
+    ) => void;
+    /** Drop every message after *messageId*, for an edited question. */
+    dropMessagesAfter: (messageId: string, tabId?: string | null) => void;
     resetAssistantMessage: (
         messageId: string,
         tabId?: string | null,
@@ -664,6 +672,26 @@ export const useChatStore = create<ChatState>((set) => {
                 messages: slice.messages.filter((msg) => msg.id !== messageId),
             })),
 
+        replaceMessageText: (messageId, text, tabId) =>
+            writeSlice(tabId, (slice) => ({
+                messages: patchMessage(slice.messages, messageId, (msg) => ({
+                    ...msg,
+                    parts: msg.parts.map((part) =>
+                        part.type === "text" ? { ...part, text } : part,
+                    ),
+                })),
+            })),
+
+        dropMessagesAfter: (messageId, tabId) =>
+            writeSlice(tabId, (slice) => {
+                const index = slice.messages.findIndex(
+                    (msg) => msg.id === messageId,
+                );
+                if (index < 0) return slice;
+                return { ...slice, messages: slice.messages.slice(0, index + 1) };
+            }),
+
+
         loadHistory: (sessionId, messages, tabId) =>
             writeSlice(tabId, () => ({
                 sessionId,
@@ -773,3 +801,17 @@ export function useTabStreaming(tabId: string): boolean {
             : (state.byId[tabId]?.isStreaming ?? false),
     );
 }
+
+/**
+ * True while the tab shows the launch screen: nothing has been asked yet.
+ *
+ * The launch screen is not a mode the app remembers — it is what an empty
+ * conversation looks like. A tab that has loaded a session, is answering, or
+ * holds a message is not launching, and a tab that has none of those is. One
+ * definition, so the shell and anything that asks the same question cannot
+ * disagree.
+ */
+export const selectIsLaunching = (state: ChatState): boolean =>
+    state.messages.length === 0 &&
+    !state.isStreaming &&
+    state.sessionId === null;

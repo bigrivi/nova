@@ -44,6 +44,13 @@ export const COMMANDS: CommandSpec[] = [
         aliases: [],
     },
     {
+        id: "sidebar",
+        label: "Sidebar",
+        description: "Show or hide the session panel",
+        usage: "/sidebar",
+        aliases: [],
+    },
+    {
         id: "connect",
         label: "Connect Provider",
         description: "Connect a provider and discover its models",
@@ -84,6 +91,20 @@ export const COMMANDS: CommandSpec[] = [
         description: "Undo a turn's file changes and drop the turns after it",
         usage: "/rewind",
         aliases: ["undo"],
+    },
+    {
+        id: "edit",
+        label: "Edit a Question",
+        description: "Replace a question you asked earlier and answer it again",
+        usage: "/edit",
+        aliases: [],
+    },
+    {
+        id: "stats",
+        label: "Stats",
+        description: "Tokens used and estimated cost, for this session or all of them",
+        usage: "/stats",
+        aliases: ["usage", "cost"],
     },
     {
         id: "schedules",

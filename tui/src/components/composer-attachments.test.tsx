@@ -28,6 +28,7 @@ mock.module("../stream/chat-stream.ts", () => ({
         submitted.push(options);
     },
     interruptChat: async () => {},
+    editAndResend: async () => {},
 }));
 
 const PNG = Buffer.from("89504e470d0a1a0a", "hex");

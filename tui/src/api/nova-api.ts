@@ -12,6 +12,7 @@ import type {
     NovaAgentRecord,
     NovaAttachmentData,
     NovaCheckpoint,
+    NovaEditReport,
     NovaMessageRecord,
     NovaModelCreateRequest,
     NovaModelRecord,
@@ -99,6 +100,24 @@ export async function restoreCheckpoint(
     return request<NovaRestoreReport>(
         `/api/sessions/${sessionId}/checkpoints/${checkpointId}/restore`,
         { method: "POST" },
+    );
+}
+
+/**
+ * Replace a question and answer it again.
+ *
+ * The server drops the messages after it and puts back the files the agent
+ * changed, so the turn that follows answers the new question.
+ */
+export async function editMessage(
+    sessionId: string,
+    messageId: string,
+    text: string,
+    force: boolean = false,
+): Promise<NovaEditReport> {
+    return request<NovaEditReport>(
+        `/api/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/edit`,
+        jsonInit("POST", { text, force }),
     );
 }
 

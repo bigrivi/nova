@@ -1,4 +1,6 @@
+import { useRef } from "react";
 import { useTheme } from "../context/theme.tsx";
+import { useScreenStore } from "../stores/screen-store.ts";
 import type { TuiMessage } from "../stores/chat-store.ts";
 
 export function UserMessage({ message }: { message: TuiMessage }) {
@@ -6,6 +8,10 @@ export function UserMessage({ message }: { message: TuiMessage }) {
     const part = message.parts[0]?.type === "text" ? message.parts[0] : undefined;
     const text = part?.text ?? "";
     const images = part?.images ?? [];
+    // A click (no drag) opens the message's actions; a drag is a text
+    // selection, which already copied itself on mouseup.
+    const dragged = useRef(false);
+
     return (
         <box
             flexDirection="column"
@@ -16,6 +22,21 @@ export function UserMessage({ message }: { message: TuiMessage }) {
             minHeight={3}
             justifyContent="center"
             backgroundColor={theme.background.raised}
+            onMouseDown={() => {
+                dragged.current = false;
+            }}
+            onMouseMove={() => {
+                dragged.current = true;
+            }}
+            onMouseUp={(event) => {
+                if (event.button !== 0) return;
+                if (dragged.current) return;
+                useScreenStore.getState().open({
+                    kind: "message-actions",
+                    messageId: message.id,
+                    text,
+                });
+            }}
         >
             <box flexDirection="row" gap={1}>
                 <text fg={theme.primary.muted} content=">" />

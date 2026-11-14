@@ -42,8 +42,9 @@ import {
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
+import { useEditStore } from "../stores/edit-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
-import { runChatStream, requestInterrupt } from "../stream/chat-stream.ts";
+import { runChatStream, requestInterrupt, editAndResend } from "../stream/chat-stream.ts";
 import { useTheme } from "../context/theme.tsx";
 import { WORKSPACE_DIR } from "../workspace.ts";
 import { useMenuStore } from "../stores/menu-store.ts";
@@ -82,6 +83,10 @@ export function Composer({
     const askActive = useAskUserStore((state) => state.active) !== null;
     const approvalPending = useApprovalStore((state) => state.pending) !== null;
     const screenCurrent = useScreenStore((state) => state.current) !== null;
+    // The question being replaced, if any. The text lives in the composer
+    // until it is sent.
+    const editingMessageId = useEditStore((state) => state.messageId);
+    const editingOriginal = useEditStore((state) => state.originalText);
     // Keep these calls separate: `||` would skip the later store hooks when an
     // earlier modal is open, desyncing React's hook chain.
     const modalOpen = askActive || approvalPending || screenCurrent;
@@ -166,6 +171,20 @@ export function Composer({
             textareaRef.current?.focus();
         }
     }, [modalOpen]);
+
+    // An edited question arrives as text, not as a keystroke: the composer
+    // holds it until it is sent or abandoned.
+    useEffect(() => {
+        if (!editingMessageId) return;
+        const input = textareaRef.current;
+        if (!input) return;
+        input.setText(editingOriginal);
+        // The cursor goes to the end: the usual edit is a correction at the end
+        // of the sentence, and a cursor at the start makes every keystroke a
+        // rewrite of the first word.
+        input.cursorOffset = editingOriginal.length;
+        input.focus();
+    }, [editingMessageId, editingOriginal]);
 
     const chipOf = (file: PastedFile): string =>
         `▧ ${truncateMiddle(file.kind === "image" ? file.name : displayPath(file.path), CHIP_NAME_WIDTH)} ×`;
@@ -352,6 +371,16 @@ export function Composer({
 
     async function submitCurrent(): Promise<void> {
         const value = textareaRef.current?.plainText ?? "";
+        // An edited question is sent as an edit, whatever it starts with: the
+        // user is replacing a question, not typing a command.
+        if (editingMessageId) {
+            const text = value.trim();
+            if (!text || isStreaming) return;
+            clearComposer();
+            useEditStore.getState().clear();
+            await editAndResend(editingMessageId, text);
+            return;
+        }
         // Commands first: if input starts with / and is a known command, execute it directly (without relying on the async suggestions state)
         if (value.trim().startsWith("/")) {
             const parsed = parseCommand(value);
@@ -435,6 +464,13 @@ export function Composer({
         // textarea must not insert a tab for Shift+Tab.
         if (event.shift && event.name === "tab") {
             cycleMode();
+            event.preventDefault();
+            return;
+        }
+        // Escape abandons an edit: the question keeps the text it had.
+        if (event.name === "escape" && editingMessageId) {
+            useEditStore.getState().clear();
+            textareaRef.current?.clear();
             event.preventDefault();
             return;
         }
@@ -649,6 +685,14 @@ export function Composer({
                       borderColor: theme.text.muted,
                   })}
         >
+            {editingMessageId ? (
+                <box flexDirection="row" gap={1}>
+                    <text
+                        fg={theme.feedback.running}
+                        content="editing an earlier question · esc to cancel"
+                    />
+                </box>
+            ) : null}
             <box flexDirection="row" flexGrow={1}>
                 <text fg={theme.primary.muted} content="> " height={textareaHeight} />
                 <textarea

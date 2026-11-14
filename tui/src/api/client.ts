@@ -4,7 +4,9 @@
  *  file instead of another hundred lines to the same one.
  */
 
-export const DEFAULT_API_BASE = "http://127.0.0.1:8765";
+import { backendPort } from "./port.ts";
+
+export const DEFAULT_API_BASE = `http://127.0.0.1:${backendPort()}`;
 
 const API_BASE = (process.env.NOVA_API_BASE_URL || DEFAULT_API_BASE).replace(
     /\/$/,

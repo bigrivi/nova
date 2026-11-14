@@ -98,6 +98,12 @@ export function CommitScreen() {
                     ) : null}
                 </box>
                 <text fg={theme.text.base} content={plan.message} />
+                {plan.generated === false ? (
+                    <text
+                        fg={theme.feedback.running}
+                        content="  (placeholder — the model could not write a message)"
+                    />
+                ) : null}
                 {error ? (
                     <text fg={theme.feedback.error} content={error} />
                 ) : null}

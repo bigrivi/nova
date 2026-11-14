@@ -12,6 +12,11 @@ export type Screen =
     | { kind: "delete-agent" }
     | { kind: "permissions" }
     | { kind: "rewind" }
+    | { kind: "edit" }
+    | { kind: "message-actions"; messageId: string; text: string }
+    | { kind: "copy-code-block"; blocks: string[] }
+    | { kind: "copy-code-block"; blocks: string[] }
+    | { kind: "stats" }
     | { kind: "tasks" }
     | { kind: "mcp" }
     | { kind: "memory" }

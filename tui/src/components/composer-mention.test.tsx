@@ -19,6 +19,7 @@ mock.module("../stream/chat-stream.ts", () => ({
         submitted.push(options);
     },
     interruptChat: async () => {},
+    editAndResend: async () => {},
 }));
 
 async function settle(setup: { flush: () => Promise<void> }): Promise<void> {

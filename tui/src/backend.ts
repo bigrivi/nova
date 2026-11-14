@@ -1,11 +1,12 @@
 /** Python backend process lifecycle management: spawn or reuse `python -m nova serve`, health check */
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { WORKSPACE_DIR } from "./workspace.ts";
 import { setTimeout as sleep } from "node:timers/promises";
-import { DEFAULT_API_BASE } from "./api/client.ts";
+import { backendPort } from "./api/port.ts";
+
+export { backendPort };
 
 /** "../.." because this file lives in tui/src/ */
 const PROJECT_ROOT = process.env.NOVA_PROJECT_ROOT
@@ -20,21 +21,6 @@ const HEALTH_POLL_INTERVAL_MS = 300;
 const STOP_GRACE_MS = 2_000;
 
 let child: ChildProcess | null = null;
-
-export function backendPort(): number {
-    try {
-        const home = process.env.NOVA_HOME || join(homedir(), ".nova");
-        const raw = readFileSync(join(home, "config.json"), "utf-8");
-        const port = (JSON.parse(raw) as { server?: { port?: unknown } })?.server?.port;
-        const n = typeof port === "string" ? Number(port.trim()) : Number(port);
-        if (Number.isInteger(n) && n >= 1 && n <= 65535) {
-            return n;
-        }
-    } catch {
-        // fall through to the default below
-    }
-    return Number(new URL(DEFAULT_API_BASE).port);
-}
 
 function pickPython(): string {
     // Explicit env var takes priority; otherwise probe the known venvs in order

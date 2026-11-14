@@ -117,6 +117,8 @@ export type NovaGitDiff = {
 export type NovaCommitPlan = {
     files: { path: string; status: string; staged: boolean }[];
     message: string;
+    /** False when the message is a placeholder the model did not write. */
+    generated?: boolean;
     truncated: boolean;
 };
 
@@ -200,6 +202,15 @@ export type NovaRestoreReport = {
     skipped: { path: string; reason: string }[];
     dropped_messages: number;
     chat_truncated: boolean;
+};
+
+/** What an edited question cost: the files put back and the messages dropped. */
+export type NovaEditReport = {
+    message_id: string;
+    restored: string[];
+    deleted: string[];
+    skipped: { path: string; reason: string }[];
+    dropped_messages: number;
 };
 
 /** One scheduled job. Timestamps are ISO strings from the wire contract. */
@@ -333,4 +344,42 @@ export type NovaStreamEvent = {
     input?: NovaJsonObject;
     output?: NovaJsonValue;
     elapsedMs?: number;
+};
+
+/** One model's share of a usage report. */
+export type NovaStatsModel = {
+    model: string;
+    input: number;
+    output: number;
+    cache_read: number;
+    messages: number;
+    /** Absent when the catalogue states no price for this model. */
+    cost?: number;
+};
+
+/** Usage totals: exact tokens, estimated cost. */
+export type NovaStats = {
+    scope: "session" | "all";
+    days: number | null;
+    since: number | null;
+    tokens: {
+        input: number;
+        output: number;
+        cache_read: number;
+        total: number;
+    };
+    cost: {
+        total: number;
+        /** False when at least one model had no known price. */
+        priced: boolean;
+        unpriced_models: number;
+    };
+    messages: number;
+    by_model: NovaStatsModel[];
+    session: {
+        turns: number;
+        messages: number;
+        started_at: number;
+        updated_at: number;
+    } | null;
 };
