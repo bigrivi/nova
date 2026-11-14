@@ -8,7 +8,7 @@
         "dev": "bun run src/index.tsx",
         "typecheck": "bun --bun tsc --noEmit",
         "build": "bun build src/index.tsx --target=bun --outdir=dist --external '@opentui/*' --external 'react' --external 'react/*'",
-        "test": "bun test"
+        "test": "bun test --concurrency=1"
     },
     "dependencies": {
         "@opentui/core": "0.4.5",
