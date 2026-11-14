@@ -19,6 +19,7 @@ from nova.server.session_service import SessionService
 from nova.server.stream_buffer import StreamBuffer
 from nova.settings import Settings, reload_settings
 from nova.speech.service import SpeechService
+from nova.tts.service import TTSService
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +45,10 @@ def get_session_service(request: Request) -> SessionService:
 
 def get_speech_service(request: Request) -> SpeechService:
     return context_of(request).speech_service
+
+
+def get_tts_service(request: Request) -> TTSService:
+    return context_of(request).tts_service
 
 
 def get_settings(request: Request) -> Settings:
@@ -115,6 +120,8 @@ def refresh_settings(request: Request) -> Settings:
     context.settings = refreshed_settings
     context.settings_mtime = config_mtime(refreshed_settings)
     context.speech_service.update_settings(refreshed_settings)
+    if hasattr(context, "tts_service"):
+        context.tts_service.update_settings(refreshed_settings)
     update_settings = getattr(context.chat_service, "update_settings", None)
     if callable(update_settings):
         update_settings(refreshed_settings)

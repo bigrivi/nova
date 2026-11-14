@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from nova.scheduler.service import SchedulerService
     from nova.speech.service import SpeechService
     from nova.tasks.models import TaskRecord
+    from nova.tts.service import TTSService
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ class AppContext:
     background_task_manager: BackgroundTaskManager
     chat_service: ChatService
     speech_service: SpeechService
+    tts_service: TTSService
     data_source: DataSourceProtocol | None = None
     scheduler: SchedulerService | None = None
     wake_scheduler: object | None = None
@@ -103,6 +105,7 @@ class AppContext:
 def build_context(settings: Settings) -> AppContext:
     """Assemble the server's handles and connect the listeners between them."""
     from nova.speech.service import SpeechService
+    from nova.tts.service import TTSService
 
     # Process-level streaming runtime, owned by the context rather than
     # ChatService so a settings reload never orphans in-flight parallel sessions.
@@ -128,6 +131,7 @@ def build_context(settings: Settings) -> AppContext:
         background_task_manager=task_manager,
         chat_service=chat_service,
         speech_service=SpeechService(settings),
+        tts_service=TTSService(settings),
     )
     # Push task lifecycle instead of letting the client poll /api/tasks.
     task_manager.set_listener(context.publish_task)

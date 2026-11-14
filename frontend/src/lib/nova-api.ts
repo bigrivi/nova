@@ -564,6 +564,45 @@ export async function cancelSpeechRecording(): Promise<void> {
     }
 }
 
+export type TtsStatus = {
+    enabled: boolean;
+    reason?: string | null;
+    provider?: string | null;
+    voice?: string | null;
+    model?: string | null;
+    language?: string | null;
+};
+
+export async function getTtsStatus(): Promise<TtsStatus> {
+    try {
+        const response = await apiFetch("/api/tts/status");
+        if (!response.ok) {
+            return { enabled: false };
+        }
+        return (await response.json()) as TtsStatus;
+    } catch {
+        return { enabled: false };
+    }
+}
+
+/** Synthesize text to audio and return a playable object URL. Caller must revoke. */
+export async function synthesizeTts(
+    text: string,
+    voice?: string,
+    speed?: number,
+): Promise<string> {
+    const response = await apiFetch("/api/tts/synthesize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice, speed }),
+    });
+    if (!response.ok) {
+        throw new Error(await parseErrorMessage(response));
+    }
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+}
+
 /**
  * Record a session's model and reasoning level.
  *

@@ -38,6 +38,7 @@ from nova.server.routers import (
     speech,
     system,
     tasks,
+    tts,
 )
 from nova.settings import Settings, get_settings
 from nova.tasks.manager import shutdown_background_task_manager
@@ -187,6 +188,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         speech,
         permissions,
         git,
+        tts,
     ):
         app.include_router(module.router)
 

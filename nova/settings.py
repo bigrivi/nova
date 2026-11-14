@@ -95,6 +95,30 @@ class TranscriptionSettings:
         return bool(self.api_key.strip())
 
 
+@dataclass(frozen=True)
+class TTSSettings:
+    """Text-to-speech, overridable via config.json ``tts`` block.
+
+    Mirrors the transcription bring-your-own-key pattern: a provider selects
+    the backend (edge/openai/azure/breeze/custom), base_url/api_key point at
+    it, and an empty configuration disables voice output.
+    """
+
+    provider: str = "edge"
+    api_key: str = field(default="", repr=False)
+    base_url: str = ""
+    model: str = "tts-1"
+    voice: str = "alloy"
+    language: str = "en"
+    speed: float = 1.0
+
+    @property
+    def enabled(self) -> bool:
+        if self.provider == "edge":
+            return True
+        return bool(self.base_url.strip() or self.api_key.strip())
+
+
 WEB_SEARCH_PROVIDERS = ("auto", "exa", "parallel", "keenable")
 
 
@@ -535,6 +559,31 @@ def _parse_transcription_config(raw: object) -> TranscriptionSettings:
     )
 
 
+def _parse_tts_config(raw: object) -> TTSSettings:
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid Nova config: 'tts' must be an object")
+    provider = str(raw.get("provider", "edge")).strip().lower() or "edge"
+    try:
+        speed = float(raw.get("speed", 1.0))
+    except (TypeError, ValueError):
+        speed = 1.0
+    if speed <= 0:
+        speed = 1.0
+    api_key = str(raw.get("api_key", "")).strip()
+    base_url = str(raw.get("base_url", "")).strip()
+    return TTSSettings(
+        provider=provider,
+        api_key=api_key,
+        base_url=base_url,
+        model=str(raw.get("model", "tts-1")).strip() or "tts-1",
+        voice=str(raw.get("voice", "alloy")).strip() or "alloy",
+        language=str(raw.get("language", "en")).strip() or "en",
+        speed=speed,
+    )
+
+
 def _parse_web_search_config(raw: object) -> WebSearchSettings:
     if raw is None:
         raw = {}
@@ -760,6 +809,9 @@ class Settings:
     # Voice-to-text (Groq Whisper by default). Empty api_key disables it.
     transcription: TranscriptionSettings = field(default_factory=TranscriptionSettings)
 
+    # Text-to-speech. Empty/disabled unless configured (edge provider is always on).
+    tts: TTSSettings = field(default_factory=TTSSettings)
+
     # Web search backends. Keys optional; keyless works out of the box.
     web_search: WebSearchSettings = field(default_factory=WebSearchSettings)
 
@@ -825,7 +877,18 @@ class Settings:
         learning = _parse_learning_config(config_payload.get("learning"))
         terminal = _parse_terminal_config(config_payload.get("terminal"))
         compaction = _parse_compaction_config(config_payload.get("compaction"))
-        transcription = _parse_transcription_config(config_payload.get("transcription"))
+        # Support both the legacy flat layout (``transcription`` = STT,
+        # top-level ``tts``) and the new nested layout where both live under
+        # ``transcription`` as ``stt`` / ``tts``.
+        _raw_trans = config_payload.get("transcription")
+        if isinstance(_raw_trans, dict) and ("stt" in _raw_trans or "tts" in _raw_trans):
+            _stt_raw = _raw_trans.get("stt")
+            _tts_raw = _raw_trans.get("tts")
+        else:
+            _stt_raw = _raw_trans
+            _tts_raw = config_payload.get("tts")
+        transcription = _parse_transcription_config(_stt_raw)
+        tts = _parse_tts_config(_tts_raw)
         web_search = _parse_web_search_config(config_payload.get("web_search"))
         host, port, log_level, auth_user, auth_password = _parse_server_config(
             config_payload.get("server")
@@ -849,6 +912,7 @@ class Settings:
             mcp_non_prefixed_servers=mcp_non_prefixed_servers,
             compaction=compaction,
             transcription=transcription,
+            tts=tts,
             web_search=web_search,
             approval_review=approval_review,
             learning=learning,

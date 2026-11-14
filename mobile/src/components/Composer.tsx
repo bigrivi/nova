@@ -25,7 +25,6 @@ import { useDrafts } from "../state/drafts";
 import { chatMetrics } from "../theme/tokens";
 import { useTheme } from "../theme/useTheme";
 import { ImagePreview } from "./ImagePreview";
-import { VoiceInputButton } from "./VoiceInputButton";
 
 const NO_ATTACHMENTS: PendingAttachment[] = [];
 
@@ -52,6 +51,7 @@ export type ComposerActions = {
     onAddAttachment: () => void;
     onSend: (text: string, attachments: PendingAttachment[]) => void;
     onStop: () => void;
+    onVoiceConversation?: () => void;
 };
 
 export function Composer({
@@ -85,7 +85,7 @@ export function Composer({
         onPickProject,
         onClearProject,
     } = route;
-    const { onAddAttachment, onSend, onStop } = actions;
+    const { onAddAttachment, onSend, onStop, onVoiceConversation } = actions;
 
     const { theme } = useTheme();
     const text = useDrafts((state) => state.byTab[tabId] ?? "");
@@ -451,15 +451,15 @@ export function Composer({
                             {streaming ? "Working" : "Enter for a new line"}
                         </Text>
                     </View>
-                    {!streaming ? (
-                        <VoiceInputButton
-                            onTranscript={(transcript) => {
-                                const next = [text.trim(), transcript]
-                                    .filter(Boolean)
-                                    .join(" ");
-                                setText(tabId, next);
-                            }}
-                        />
+                    {onVoiceConversation ? (
+                        <Pressable
+                            onPress={onVoiceConversation}
+                            style={styles.voiceButton}
+                            accessibilityRole="button"
+                            accessibilityLabel="Start voice conversation"
+                        >
+                            <Feather name="mic" size={14} color="#fff" />
+                        </Pressable>
                     ) : null}
                     {streaming ? (
                         <Pressable
@@ -514,7 +514,7 @@ export function Composer({
                     Nova can make mistakes. Check important information.
                 </Text>
             ) : null}
-        </View>
+            </View>
     );
 }
 
@@ -675,6 +675,15 @@ const styles = StyleSheet.create({
     },
     hint: {
         fontSize: 11,
+    },
+    voiceButton: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        marginRight: 6,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#1f1f1f",
     },
     action: {
         width: chatMetrics.composerControlSize,

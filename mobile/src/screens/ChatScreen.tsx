@@ -60,6 +60,7 @@ import { useSessions } from "../state/sessions";
 import { useTasks } from "../state/tasks";
 import { useTabs } from "../state/tabs";
 import { useTheme } from "../theme/useTheme";
+import { VoiceConversationButton } from "../components/VoiceConversationButton";
 
 const EMPTY_TASKS: never[] = [];
 
@@ -101,6 +102,7 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
     const routeProjectId = useRoute((state) => state.projectId);
     const routeEffort = useRoute((state) => state.reasoningEffort);
     const projects = useProjects((state) => state.items);
+    const [voiceConvActive, setVoiceConvActive] = useState(false);
     const [picker, setPicker] = useState<
         "model" | "agent" | "project" | "effort" | null
     >(null);
@@ -264,6 +266,7 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
                 onSend: (text, attachments) =>
                     runTurn(active.id, text, attachments),
                 onStop: () => void interruptTab(active.id),
+                onVoiceConversation: () => setVoiceConvActive(true),
             }}
             showDisclaimer={messageCount === 0}
         />
@@ -427,6 +430,15 @@ export function ChatScreen({ onBack }: { onBack: () => void }) {
                     </>
                 )}
             </KeyboardAvoidingView>
+
+            {active && voiceConvActive ? (
+                <VoiceConversationButton
+                    tabId={active.id}
+                    streaming={streaming}
+                    active
+                    onToggle={setVoiceConvActive}
+                />
+            ) : null}
 
             <ActionSheet
                 visible={menuOpen}
