@@ -46,6 +46,10 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     // Docked beside the transcript when both fit; otherwise the panel takes the
     // screen (see Sidebar).
     const docked = dimensions.width >= SIDEBAR_DOCK_MIN_WIDTH;
+    // The launch screen is the whole terminal: the mark, the card, the hint.
+    // The panel has nothing to say before there is a session, so it stays out
+    // of the way until there is one.
+    const showPanel = sidebarOpen && !launching;
 
     // Open on a wide terminal by default, like opencode's session.sidebar: auto.
     // Only once, on mount: a manual toggle later wins over a resize.
@@ -129,14 +133,12 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                         <StatusBar />
                     </ThemeOverride>
                 </box>
-                {sidebarOpen && docked ? (
-                    <Sidebar presentation="docked" />
-                ) : null}
+                {showPanel && docked ? <Sidebar presentation="docked" /> : null}
             </box>
             {/* Narrow terminal: the panel takes the screen instead of squeezing
                 the transcript. It is painted over the shell, which stays mounted
                 so a draft in the composer survives opening and closing it. */}
-            {sidebarOpen && !docked ? (
+            {showPanel && !docked ? (
                 <Sidebar presentation="fullscreen" />
             ) : null}
             <ScreenHost />

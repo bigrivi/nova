@@ -83,6 +83,26 @@ test("a narrow terminal gives the panel the whole screen", async () => {
     expect(frame).not.toContain("Nova TUI");
 });
 
+test("the launch screen keeps the panel away", async () => {
+    // No session yet: this is the launch screen.
+    useTodoStore.setState({ todos: TODOS });
+    useChatStore.setState({
+        messages: [],
+        sessionId: null,
+        isStreaming: false,
+    });
+    useSidebarStore.setState({ open: true });
+
+    const setup = await render(120);
+    const frame = setup.captureCharFrame();
+    setup.renderer.destroy();
+
+    // The panel would show the todo list; the launch screen must not.
+    expect(frame).not.toContain("wire the panel");
+    // The card is drawn, centred in the whole terminal.
+    expect(frame).toContain("╭");
+});
+
 test("the panel stays closed on a narrow terminal", async () => {
     seed(false);
     const setup = await render(80);
