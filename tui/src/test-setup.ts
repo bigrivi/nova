@@ -6,10 +6,6 @@
  * frame a later file asserts on, and which file runs first is not the same on
  * every platform. Restoring the state each store had before any test ran is
  * what makes the suite order-independent.
- *
- * The test script runs one file at a time for that reason: a reset in one file
- * would otherwise wipe a store another file's test is still using, which reads
- * as a random failure in whichever test happened to be in flight.
  */
 import { beforeEach } from "bun:test";
 
