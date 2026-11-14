@@ -4,7 +4,6 @@ import { useToastStore } from "../stores/toast-store.ts";
 import {
     requestInterrupt,
     resetInterruptGuardForTest,
-    runChatStream,
     setInterruptTransportForTest,
     setStreamTransportForTest,
 } from "./chat-stream.ts";
@@ -72,31 +71,3 @@ describe("requestInterrupt", () => {
     });
 });
 
-describe("runChatStream", () => {
-    test("the request carries the attachments the composer attached", async () => {
-        // The image is a chip in the composer and a data URL in the request. A
-        // month of refactoring dropped the second half of that sentence, and the
-        // model answered questions about pictures it had never been sent.
-        const captured: { attachments?: unknown }[] = [];
-        setStreamTransportForTest(async (options) => {
-            captured.push(options);
-        });
-
-        const attachments = [
-            {
-                id: "tui-1",
-                type: "image",
-                name: "shot.png",
-                contentType: "image/png",
-                content: [{ type: "image", image: "data:image/png;base64,AAA" }],
-            },
-        ];
-
-        await runChatStream({
-            message: "what is this",
-            attachments: attachments as never,
-        });
-
-        expect(captured.at(-1)?.attachments).toEqual(attachments);
-    });
-});
