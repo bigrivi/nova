@@ -87,10 +87,39 @@ test("a question replaces the composer and gives it back", async () => {
     expect(setup.captureCharFrame()).toContain(COMPOSER);
 });
 
+test("an approval from another session leaves this tab's composer alone", async () => {
+    const setup = await render();
+    act(() => useChatStore.setState({ sessionId: "another-session" }));
+
+    act(() => useApprovalStore.getState().setPending(APPROVAL));
+    await settle(setup);
+
+    const frame = setup.captureCharFrame();
+    expect(frame).toContain(COMPOSER);
+    expect(frame).not.toContain("rm -rf build");
+});
+
+test("a question from another tab leaves this tab's composer alone", async () => {
+    const setup = await render();
+    act(() => useChatStore.setState({ sessionId: "s1" }));
+
+    // The default active tab is null; a question owned by some other tab must
+    // not take over this one.
+    act(() => useAskUserStore.getState().setActive([QUESTION], "another-tab"));
+    await settle(setup);
+
+    const frame = setup.captureCharFrame();
+    expect(frame).toContain(COMPOSER);
+    expect(frame).not.toContain("Which branch?");
+});
+
 test("an approval replaces the composer and gives it back", async () => {
     const setup = await render();
     expect(setup.captureCharFrame()).toContain(COMPOSER);
 
+    // An approval belongs to the session on screen; the dialog only appears
+    // there.
+    act(() => useChatStore.setState({ sessionId: "s1" }));
     act(() => useApprovalStore.getState().setPending(APPROVAL));
     await settle(setup);
     const approving = setup.captureCharFrame();

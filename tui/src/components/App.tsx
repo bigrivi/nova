@@ -4,8 +4,6 @@
  *  the startup requests in ../hooks/. */
 import { useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useApprovalStore } from "../stores/approval-store.ts";
-import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { selectIsLaunching, useChatStore } from "../stores/chat-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
 import { ThemeOverride, useTheme } from "../context/theme.tsx";
@@ -27,7 +25,6 @@ import { dispatchCommand } from "../commands/dispatch.ts";
 import { useAppBootstrap } from "../hooks/useAppBootstrap.ts";
 import { useGlobalKeys } from "../hooks/useGlobalKeys.ts";
 import { useSessionBootstrap } from "../hooks/useSessionBootstrap.ts";
-import { focusSession, selectTab } from "../lib/tab-actions.ts";
 
 export type ExitHandler = () => void;
 
@@ -35,14 +32,6 @@ export type ExitHandler = () => void;
 const ANIMATE = motionEnabled(process.env);
 
 export function App({ onExit }: { onExit: ExitHandler }) {
-    const askQuestions = useAskUserStore((state) => state.active);
-    const askTabId = useAskUserStore((state) => state.activeTabId);
-    const approvalSessionId = useApprovalStore(
-        (state) => state.pending?.sessionId ?? null,
-    );
-    const approvalRequestId = useApprovalStore(
-        (state) => state.pending?.requestId ?? null,
-    );
     // Derived booleans, not the values behind them: the transcript changes on
     // every token, and a subscription to it would re-render the whole shell.
     // A null session means nothing has been loaded yet; `loadHistory` sets both
@@ -95,20 +84,6 @@ export function App({ onExit }: { onExit: ExitHandler }) {
         () => (hasScreen ? dimTheme(theme) : null),
         [hasScreen, theme],
     );
-
-    // A background approval or question owns the modal: bring its tab forward so
-    // the dialog and the transcript it refers to cannot disagree.
-    useEffect(() => {
-        if (approvalSessionId) {
-            focusSession(approvalSessionId);
-        }
-    }, [approvalRequestId, approvalSessionId]);
-
-    useEffect(() => {
-        if (askQuestions && askTabId) {
-            selectTab(askTabId);
-        }
-    }, [askQuestions, askTabId]);
 
     useGlobalKeys({ onExit });
 

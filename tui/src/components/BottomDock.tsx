@@ -8,6 +8,7 @@ import { useTheme } from "../context/theme.tsx";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
+import { useTabStore } from "../stores/tab-store.ts";
 import { submitAskAnswers, submitAskCancel } from "../stream/chat-stream.ts";
 import { ApprovalDialog } from "./ApprovalDialog.tsx";
 import { AskUserCard } from "./AskUserCard.tsx";
@@ -44,10 +45,21 @@ export function BottomDock({
     onCommand,
 }: BottomDockProps) {
     const askQuestions = useAskUserStore((state) => state.active);
+    const askTabId = useAskUserStore((state) => state.activeTabId);
     const approval = useApprovalStore((state) => state.pending);
     const needsModel = useChatStore((state) => !state.provider || !state.model);
+    // The dialog belongs to the tab that raised it. Showing it on another tab
+    // asked the user to answer a question about a transcript they cannot see.
+    const activeTabId = useTabStore((state) => state.activeId);
+    const activeSessionId = useChatStore((state) => state.sessionId);
+    // A question with no tab is the shell's own (a headless turn), so it is
+    // shown wherever the user happens to be.
+    const askMine =
+        askQuestions !== null && (askTabId === null || askTabId === activeTabId);
+    const approvalMine =
+        approval !== null && approval.sessionId === activeSessionId;
 
-    if (askQuestions) {
+    if (askMine) {
         return (
             <AskUserCard
                 questions={askQuestions}
@@ -58,7 +70,7 @@ export function BottomDock({
             />
         );
     }
-    if (approval) {
+    if (approvalMine) {
         return <ApprovalDialog pending={approval} />;
     }
     return (

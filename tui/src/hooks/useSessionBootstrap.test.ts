@@ -1,20 +1,12 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
 
 import {
     applyPendingAttention,
-    restoreActiveTab,
     syncAgentsFromSessions,
 } from "./useSessionBootstrap.ts";
-import {
-    hydrateTabs,
-    resetTabPersistenceForTest,
-} from "../lib/tab-persistence.ts";
+import { resetTabPersistenceForTest } from "../lib/tab-persistence.ts";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useTabStore } from "../stores/tab-store.ts";
-import { WORKSPACE_DIR } from "../workspace.ts";
 
 type Session = {
     id: string;
@@ -25,27 +17,6 @@ type Session = {
 
 function session(id: string, agentKey = ""): Session {
     return { id, title: null, updated_at: 0, agent_key: agentKey };
-}
-
-/** Restore one tab for *sessionId* and make it the session to come back to. */
-function persistTab(sessionId: string): void {
-    const home = mkdtempSync(join(tmpdir(), "nova-tabs-"));
-    previousHome = process.env.NOVA_HOME;
-    process.env.NOVA_HOME = home;
-    writeFileSync(
-        join(home, "tui-tabs.json"),
-        JSON.stringify({
-            version: 1,
-            cwd: {
-                [resolve(WORKSPACE_DIR)]: {
-                    tabs: [{ sessionId, title: sessionId }],
-                    activeSessionId: sessionId,
-                },
-            },
-        }),
-    );
-    resetTabPersistenceForTest();
-    hydrateTabs();
 }
 
 let previousHome: string | undefined;
@@ -107,18 +78,3 @@ test("a pending prompt badges the tab that waits for the user", () => {
     ).toBeNull();
 });
 
-test("the session from last run is restored when it still exists", () => {
-    persistTab("s1");
-    const tab = useTabStore.getState().tabs[0]!;
-    expect(useTabStore.getState().activeId).toBeNull();
-
-    restoreActiveTab([session("s1")]);
-    expect(useTabStore.getState().activeId).toBe(tab.id);
-});
-
-test("a restored session that was pruned is not brought back", () => {
-    persistTab("s1");
-
-    restoreActiveTab([]);
-    expect(useTabStore.getState().activeId).toBeNull();
-});

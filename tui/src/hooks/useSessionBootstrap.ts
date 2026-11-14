@@ -10,10 +10,8 @@ import type {
     NovaPendingSummary,
     NovaSessionSummary,
 } from "../api/types.ts";
-import { selectTab } from "../lib/tab-actions.ts";
 import {
     pruneRestoredTabs,
-    restoredActiveSessionId,
 } from "../lib/tab-persistence.ts";
 import { useChatStore } from "../stores/chat-store.ts";
 import { useTabStore } from "../stores/tab-store.ts";
@@ -65,21 +63,6 @@ export function applyPendingAttention(pending: NovaPendingSummary): void {
     }
 }
 
-/** Return to the session that was on screen last run, unless the prune
- *  removed it or the user already picked something. */
-export function restoreActiveTab(sessions: NovaSessionSummary[]): void {
-    const restored = restoredActiveSessionId();
-    if (!restored) return;
-    if (!sessions.some((session) => session.id === restored)) return;
-    const state = useTabStore.getState();
-    if (state.tabs.length === 0 || state.activeId !== null) return;
-    if (useChatStore.getState().sessionId !== null) return;
-    const tab = state.tabs.find((item) => item.sessionId === restored);
-    if (tab) {
-        selectTab(tab.id);
-    }
-}
-
 /** Load the session list on launch and fold it into the tab store. */
 export function useSessionBootstrap(
     onSavedSessions: (count: number) => void,
@@ -111,7 +94,6 @@ export function useSessionBootstrap(
             syncSessionTitles(sessions);
             syncAgentsFromSessions(sessions, startupTabIds);
             applyPendingAttention(pending);
-            restoreActiveTab(sessions);
         },
     );
 }
