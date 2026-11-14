@@ -86,7 +86,7 @@ shape is the same and [Providers](docs/configuration/providers.md) has each vari
 Start whichever surface you want:
 
 ```bash
-nova tui            # terminal UI, from any directory (needs bun)
+nova                # terminal UI, from any directory (needs bun)
 nova web            # web UI in the browser
 nova serve          # HTTP backend on http://127.0.0.1:51789
 nova desktop        # desktop window
@@ -126,7 +126,7 @@ conversation is the same one wherever you open it.
 
 | Surface | How to run | What it is |
 |---------|------------|------------|
-| TUI | `nova tui` or `./nova-tui` | Bun + React + OpenTUI terminal client. Streams text, reasoning, tool calls, and inline diffs. |
+| TUI | `nova` (or `./nova-tui` from a checkout) | Bun + React + OpenTUI terminal client. Streams text, reasoning, tool calls, and inline diffs. |
 | Server | `nova serve` | FastAPI backend on `http://127.0.0.1:51789`, AI SDK compatible SSE stream at `POST /api/chat/stream`. |
 | Web UI | `nova web` | Joins the shared backend (starts one if none is running) and opens a browser. |
 | Desktop | `nova desktop [--dev]` | PyWebView window hosting the built frontend, joined to the same backend. `python build.py --clean` to package. |

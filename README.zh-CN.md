@@ -84,7 +84,7 @@ JSON
 然后起你想用的界面：
 
 ```bash
-nova tui            # 终端界面，任意目录下都能起（需要 bun）
+nova                # 终端界面，任意目录下都能起（需要 bun）
 nova web            # 浏览器里的 Web 界面
 nova serve          # HTTP 后端，http://127.0.0.1:8765
 nova desktop        # 桌面窗口
@@ -189,7 +189,7 @@ Nova 扫描目录、建立结构、移动文件。
 
 | 入口 | 怎么起 | 是什么 |
 |------|--------|--------|
-| TUI | `nova tui` 或 `./nova-tui` | Bun + React + OpenTUI 终端客户端。流式输出文本、推理、工具调用和行内 diff。 |
+| TUI | `nova`（在仓库里也可以 `./nova-tui`） | Bun + React + OpenTUI 终端客户端。流式输出文本、推理、工具调用和行内 diff。 |
 | 服务端 | `nova serve` | FastAPI 后端，`http://127.0.0.1:8765`，AI SDK 兼容 SSE 流在 `POST /api/chat/stream`。 |
 | Web | `nova web` | 由后端托管构建好的前端，并打开浏览器。 |
 | 桌面端 | `nova desktop [--dev]` | PyWebView 窗口托管构建好的前端。`python build.py --clean` 打包。 |
