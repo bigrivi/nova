@@ -137,11 +137,6 @@ The mobile client is a React Native app that connects to a running server over t
 same HTTP/SSE API; [mobile/README.md](mobile/README.md) covers pairing it with
 `nova serve`.
 
-<p align="center">
-  <img src="assets/hero-desktop.png" width="760"
-       alt="Nova's web and desktop UI, showing a conversation with tool calls and a streamed answer">
-</p>
-
 ## Why Nova
 
 Most hosted assistants are products. The model, the memory, and the interface belong
