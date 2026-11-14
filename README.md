@@ -4,10 +4,10 @@
     <img src="assets/logo-light.svg" alt="Nova" width="320">
   </picture>
 </p>
-<h1 align="center">Your own AI agent, on your own machine.</h1>
+<h1 align="center">The open source personal agent that runs everywhere.</h1>
 <p align="center">
-  One open source runtime for your terminal, browser, desktop and phone —<br/>
-  on Ollama or any model.
+  One runtime, one memory, one conversation —<br/>
+  terminal, browser, desktop and phone. Ollama locally, or any model.
 </p>
 
 <p align="center">

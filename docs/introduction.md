@@ -1,8 +1,8 @@
 # What is Nova?
 
-Nova is your open source AI agent on desktop, terminal, web, and API.
+Nova is your open source personal agent on desktop, terminal, web, API, and phone.
 
-It lives on your own machine and helps with everyday work -- research, writing, file and data handling, running local commands -- not just coding. The same Python core powers four surfaces: a terminal TUI, an HTTP server, a web frontend, and a desktop app, so what you learn in one place works everywhere.
+It lives on your own machine and helps with everyday work -- research, writing, file and data handling, running local commands -- not just coding. The same Python core powers every surface -- a terminal TUI, an HTTP server, a web frontend, a desktop window and a phone -- so a conversation started in one place continues in another.
 
 ## How is it different from a hosted chat assistant?
 

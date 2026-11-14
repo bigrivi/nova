@@ -4,10 +4,10 @@
     <img src="assets/logo-light.svg" alt="Nova" width="320">
   </picture>
 </p>
-<h1 align="center">你自己的 AI Agent，跑在你自己的机器上。</h1>
+<h1 align="center">开源的个人 Agent，哪儿都能跑。</h1>
 <p align="center">
-  一套开源运行时，驱动你的终端、浏览器、桌面和手机——<br/>
-  Ollama 或任意模型。
+  一套运行时、一份记忆、一段对话——<br/>
+  终端、浏览器、桌面和手机。本地 Ollama，或任意模型。
 </p>
 
 <p align="center">
