@@ -204,6 +204,13 @@ class MemoryActionResponse(BaseModel):
     memory_id: str
 
 
+class MessageEditRequest(BaseModel):
+    """A question being replaced by an edited one."""
+
+    text: str
+    force: bool = False
+
+
 class MessageRecord(BaseModel):
     id: str
     session_id: str

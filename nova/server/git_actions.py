@@ -93,17 +93,28 @@ async def plan_commit(sessions: SessionService, session_id: str) -> dict[str, An
 
     paths = [entry["path"] for entry in selected]
     patch = await git_diff(workspace, paths=paths)
-    message = await _commit_message(sessions, session_id, patch["diff"])
+    message, generated = await _commit_message(sessions, session_id, patch["diff"])
     return {
         "files": selected,
         "message": message,
+        # False means the message is a placeholder: the model could not write
+        # one, and the user should know before they commit it.
+        "generated": generated,
         "truncated": patch["truncated"],
     }
 
 
-async def _commit_message(sessions: SessionService, session_id: str, patch: str) -> str:
+async def _commit_message(
+    sessions: SessionService, session_id: str, patch: str
+) -> tuple[str, bool]:
+    """The proposed commit message, and whether the model wrote it.
+
+    The second value is the honest one: a message that fell back to a
+    placeholder was not written for this change, and the user has to be able
+    to tell the difference before they commit it.
+    """
     if not patch.strip():
-        return "chore: update files"
+        return "chore: update files", False
     provider, model = await sessions.route_of(session_id)
     from nova.app.runtime import build_llm
 
@@ -118,7 +129,7 @@ async def _commit_message(sessions: SessionService, session_id: str, patch: str)
     cleaned = _clean_message(raw or "")
     # A generated message is a convenience, not a gate: the user already agreed
     # to commit these files, and failing here would strand them.
-    return cleaned or "chore: update files"
+    return (cleaned, True) if cleaned else ("chore: update files", False)
 
 
 def _clean_message(raw: str) -> str:

@@ -88,6 +88,7 @@ async def test_plan_includes_only_paths_the_session_touched(
 
     assert [entry["path"] for entry in plan["files"]] == ["touched.txt"]
     assert plan["message"] == "feat(git): add commit planning"
+    assert plan["generated"] is True
     assert "touched.txt" in fake_model[0]
 
 
@@ -122,6 +123,8 @@ async def test_plan_falls_back_when_the_model_returns_nothing(
     # The user already agreed to commit these files; a failed model call must not
     # strand them.
     assert plan["message"] == "chore: update files"
+    # But the message is a placeholder, and the panel has to be able to say so.
+    assert plan["generated"] is False
 
 
 @pytest.mark.asyncio

@@ -658,6 +658,35 @@
       ]
     }
   },
+  "GET /api/stats": {
+    "parameters": [
+      [
+        "days",
+        "query",
+        false
+      ],
+      [
+        "session_id",
+        "query",
+        false
+      ]
+    ],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
   "GET /api/tasks": {
     "parameters": [
       [
@@ -1435,6 +1464,37 @@
   },
   "POST /api/sessions/{session_id}/fork": {
     "parameters": [
+      [
+        "session_id",
+        "path",
+        true
+      ]
+    ],
+    "request": [
+      "application/json"
+    ],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ],
+      "422": [
+        [
+          "application/json",
+          "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/sessions/{session_id}/messages/{message_id}/edit": {
+    "parameters": [
+      [
+        "message_id",
+        "path",
+        true
+      ],
       [
         "session_id",
         "path",

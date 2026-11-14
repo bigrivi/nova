@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from nova.server.deps import get_session_service
 from nova.server.schemas import (
     ForkSessionRequest,
+    MessageEditRequest,
     MessageListResponse,
     RenameSessionRequest,
     SessionActionResponse,
@@ -113,6 +114,53 @@ async def restore_checkpoint(
         )
     except SessionBusy as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/api/sessions/{session_id}/messages/{message_id}/edit")
+async def edit_message(
+    session_id: str,
+    message_id: str,
+    body: MessageEditRequest,
+    sessions: SessionService = Depends(get_session_service),
+) -> dict[str, object]:
+    """Replace a question and answer it again.
+
+    The messages after it are dropped and the files the agent changed are put
+    back, so the turn that follows answers the new question from the state the
+    old question left behind.
+    """
+    from nova.session.errors import SessionBusy
+
+    try:
+        return await sessions.edit_message(
+            session_id,
+            message_id,
+            body.text,
+            force=body.force,
+        )
+    except SessionBusy as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.get("/api/stats")
+async def stats(
+    session_id: str | None = None,
+    days: int | None = None,
+    sessions: SessionService = Depends(get_session_service),
+) -> dict[str, object]:
+    """Token and cost totals: one session by default, every session on request.
+
+    Cost is an estimate priced from the catalogue, and a model the catalogue
+    cannot price is reported as unknown rather than free.
+    """
+    try:
+        return await sessions.usage(session_id, days)
     except FileNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 

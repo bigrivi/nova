@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import time
 
 from nova.app import build_agent
 from nova.constants import DEFAULT_AGENT_KEY
@@ -45,6 +46,19 @@ def normalize_workspace_dir(workspace_dir: str | None) -> str | None:
         return str(Path(workspace_dir.strip()).expanduser().resolve())
     except OSError:
         return workspace_dir.strip()
+
+
+def _content_with_attachments(original: str, text: str) -> str:
+    """The new question, keeping the attachment references the client appended.
+
+    A message can carry ``Attached file: `path` `` lines: they are how the model
+    learns that a file exists. Replacing the question must not silently drop
+    them -- the files are still attached, and the model still has to be told.
+    """
+    references = [
+        line for line in original.splitlines() if line.startswith("Attached ")
+    ]
+    return "\n".join([text, *references]) if references else text
 
 
 class SessionService:
@@ -266,6 +280,143 @@ class SessionService:
             "skipped": report.skipped,
             "dropped_messages": dropped,
             "chat_truncated": chat_truncated,
+        }
+
+    async def edit_message(
+        self,
+        session_id: str,
+        message_id: str,
+        text: str,
+        *,
+        force: bool = False,
+    ) -> dict[str, object]:
+        """Replace a question and answer it again.
+
+        The message keeps its place and its id, so the checkpoint that belongs
+        to it still names a real turn; everything after it is dropped -- the
+        answers, the tool calls, and the files the agent changed in the turns
+        that followed. The turn that follows runs on the new text.
+
+        Args:
+            session_id: Session the message belongs to.
+            message_id: The user message to replace.
+            text: The question as it should now read.
+            force: Restore files that changed after the agent wrote them.
+
+        Returns:
+            The restore report, how many messages were dropped, and the id of
+            the message that now carries the new text.
+
+        Raises:
+            SessionBusy: when a turn is still streaming in this session.
+            FileNotFoundError: when the message does not exist.
+            ValueError: when the message is not a question, or the text is empty.
+        """
+        from nova import checkpoints as checkpoint_store
+        from nova.session.errors import SessionBusy
+
+        if await _turn_is_running(self._request_registry, session_id):
+            raise SessionBusy(session_id, "edit")
+
+        new_text = text.strip()
+        if not new_text:
+            raise ValueError("The edited question is empty")
+
+        response = await self.list_messages(session_id)
+        ids = [message.id for message in response.items]
+        if message_id not in ids:
+            raise FileNotFoundError(f"Message {message_id} not found in {session_id}")
+        target = response.items[ids.index(message_id)]
+        if target.role != "user":
+            raise ValueError("Only a question can be edited")
+
+        # The files first: the restore reads the checkpoint the old turn wrote,
+        # and the checkpoints are dropped below.
+        try:
+            report = checkpoint_store.restore_files(session_id, message_id, force=force)
+        except FileNotFoundError:
+            # A turn that changed no file has no checkpoint: there is nothing to
+            # put back, which is not a failure.
+            report = checkpoint_store.RestoreReport()
+
+        stale = ids[ids.index(message_id) + 1 :]
+        data_source = await self._get_data_source()
+        dropped = await data_source.delete_messages(session_id, stale) if stale else 0
+
+        content = _content_with_attachments(target.content or "", new_text)
+        await data_source.update_message_content(message_id, content)
+        # The old turn is gone, so its rewind point is too. The turn that
+        # follows records a fresh one under the same message id.
+        checkpoint_store.discard_checkpoints_from(session_id, message_id)
+
+        return {
+            "message_id": message_id,
+            "restored": report.restored,
+            "deleted": report.deleted,
+            "skipped": report.skipped,
+            "dropped_messages": dropped,
+        }
+
+    async def usage(
+        self,
+        session_id: str | None = None,
+        days: int | None = None,
+    ) -> dict[str, object]:
+        """Token and cost totals, for one session or for every session.
+
+        The cost is an estimate: prices come from the catalogue, and a model it
+        does not price is reported as unknown rather than free. Tokens are what
+        the provider reported, summed.
+
+        Args:
+            session_id: Restrict to this session; None counts every session.
+            days: Only messages newer than this many days, when set.
+
+        Returns:
+            Totals, the per-model breakdown, and the session's own facts when
+            one was named.
+
+        Raises:
+            FileNotFoundError: when *session_id* names a session that is gone.
+        """
+        from nova.registry import pricing
+
+        since = None
+        if days is not None and days > 0:
+            since = int(time.time() * 1000) - days * 86_400_000
+
+        data_source = await self._get_data_source()
+        rows = await data_source.usage_by_model(session_id, since)
+        cost = pricing.usage_cost(self._settings, rows)
+
+        totals = {
+            "input": sum(int(row.get("input") or 0) for row in rows),
+            "output": sum(int(row.get("output") or 0) for row in rows),
+            "cache_read": sum(int(row.get("cache_read") or 0) for row in rows),
+        }
+        totals["total"] = totals["input"] + totals["output"]
+
+        session = None
+        if session_id is not None:
+            record = await data_source.get_session(session_id)
+            if record is None:
+                raise FileNotFoundError(f"Session {session_id} not found")
+            session = {
+                "turns": int(record.get("turn_count") or 0),
+                "messages": int(record.get("message_count") or 0),
+                "started_at": int(record.get("created_at") or 0),
+                "updated_at": int(record.get("updated_at") or 0),
+            }
+
+        return {
+            "scope": "session" if session_id is not None else "all",
+            "days": days,
+            "since": since,
+            "tokens": totals,
+            "cost": cost,
+            "messages": sum(int(row.get("messages") or 0) for row in rows),
+            "by_model": rows,
+            "session": session,
         }
 
     async def compact(self, session_id: str) -> dict[str, object]:

@@ -160,6 +160,9 @@ def forget(settings: Settings, provider: str) -> bool:
 LIMIT_KEY = "limit"
 LEVELS_KEY = "reasoning_effort_levels"
 SOURCE_KEY = "_context_source"
+#: Dollars per million tokens, as the catalogue states them. Kept so a
+#: spending report can price a turn instead of only counting its tokens.
+COST_KEY = "cost"
 #: Set when the catalogue says this model cannot answer a chat turn. Nova hides
 #: it rather than offering a picker entry that cannot work.
 HIDDEN_KEY = "_hidden"
@@ -218,6 +221,16 @@ def _catalogue_spec(
                     ]
         if levels:
             spec[LEVELS_KEY] = levels
+
+    cost = entry.get("cost")
+    if isinstance(cost, dict):
+        prices = {
+            str(key): float(value)
+            for key, value in cost.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+        if prices:
+            spec[COST_KEY] = prices
 
     # A model may speak a different transport than its provider: models.dev
     # says so per row, and the base URL usually moves with it. Recorded only
@@ -358,6 +371,14 @@ def _fill(target: dict[str, Any], spec: dict[str, Any]) -> bool:
                     continue
                 if current.get("context") == value.get("context"):
                     continue
+            target[key] = value
+            changed = True
+            continue
+        if key == COST_KEY:
+            # Prices move; unlike a provider's own facts, the catalogue is
+            # allowed to replace its earlier answer.
+            if target.get(key) == value:
+                continue
             target[key] = value
             changed = True
             continue

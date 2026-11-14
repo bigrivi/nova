@@ -84,6 +84,7 @@ def _row_to_message(row_dict: dict[str, Any]) -> Message:
         tokens_input=row_dict.get("tokens_input"),
         tokens_output=row_dict.get("tokens_output"),
         cache_read_tokens=row_dict.get("cache_read_tokens"),
+        cost=row_dict.get("cost"),
         variant=row_dict.get("variant"),
         reasoning_effort=row_dict.get("reasoning_effort"),
         data=row_dict.get("data"),
@@ -128,8 +129,8 @@ class SqliteMessageMixin(MessageStore):
         async with self._lock:
             await self._db.execute(
                 """INSERT INTO messages
-                (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output, cache_read_tokens, provider_meta, model, error, variant, reasoning_effort)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (id, session_id, role, content, data, tool_calls, tool_call_id, time_created, summary, images, reasoning_content, group_id, reasoning_elapsed_ms, tokens_input, tokens_output, cache_read_tokens, cost, provider_meta, model, error, variant, reasoning_effort)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     msg_id,
                     message.session_id,
@@ -147,6 +148,7 @@ class SqliteMessageMixin(MessageStore):
                     message.tokens_input,
                     message.tokens_output,
                     message.cache_read_tokens,
+                    message.cost,
                     provider_meta_json,
                     message.model,
                     message.error,
@@ -270,6 +272,48 @@ class SqliteMessageMixin(MessageStore):
                 (content, content, message_id),
             )
             await self._db.commit()
+
+    async def usage_by_model(
+        self,
+        session_id: str | None = None,
+        since: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Token totals per model, for one session or every session.
+
+        Only assistant messages count: they are the ones that name a model and
+        carry the tokens the provider charged for a reply.
+
+        Args:
+            session_id: Restrict to this session; None counts them all.
+            since: Only messages created after this epoch millisecond.
+
+        Returns:
+            One row per model, largest first: ``model``, ``input``,
+            ``output``, ``cache_read``, ``messages``. Messages that recorded no
+            model are grouped under ``""``.
+        """
+        await self._ensure_connected()
+        conditions = ["role = 'assistant'"]
+        params: list[object] = []
+        if session_id is not None:
+            conditions.append("session_id = ?")
+            params.append(session_id)
+        if since is not None:
+            conditions.append("time_created >= ?")
+            params.append(since)
+        sql = (
+            "SELECT coalesce(model, '') AS model,"
+            " count(*) AS messages,"
+            " coalesce(sum(tokens_input), 0) AS input,"
+            " coalesce(sum(tokens_output), 0) AS output,"
+            " coalesce(sum(cache_read_tokens), 0) AS cache_read"
+            " FROM messages WHERE "
+            + " AND ".join(conditions)
+            + " GROUP BY coalesce(model, '')"
+            " ORDER BY (coalesce(sum(tokens_input), 0) + coalesce(sum(tokens_output), 0)) DESC"
+        )
+        cursor = await self._db.execute(sql, tuple(params))
+        return [dict(row) for row in await cursor.fetchall()]
 
     async def delete_messages(self, session_id: str, message_ids: list[str]) -> int:
         await self._ensure_connected()

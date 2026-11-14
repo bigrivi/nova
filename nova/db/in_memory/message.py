@@ -67,6 +67,33 @@ class InMemoryMessageMixin(MessageStore):
             messages = messages[: filter_value.limit]
         return messages
 
+    async def usage_by_model(
+        self,
+        session_id: str | None = None,
+        since: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Token totals per model, for one session or every session."""
+        rows: dict[str, dict[str, Any]] = {}
+        for message in self._messages.values():
+            if message.role != "assistant":
+                continue
+            if session_id is not None and message.session_id != session_id:
+                continue
+            if since is not None and message.time_created < since:
+                continue
+            key = message.model or ""
+            row = rows.setdefault(
+                key,
+                {"model": key, "input": 0, "output": 0, "cache_read": 0, "messages": 0},
+            )
+            row["messages"] += 1
+            row["input"] += message.tokens_input or 0
+            row["output"] += message.tokens_output or 0
+            row["cache_read"] += message.cache_read_tokens or 0
+        return sorted(
+            rows.values(), key=lambda row: row["input"] + row["output"], reverse=True
+        )
+
     async def compress_messages(self, session_id: str, target_count: int = 50) -> None:
         messages = await self.get_messages(
             session_id, MessageFilter(include_compacted=True)

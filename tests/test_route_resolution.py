@@ -10,7 +10,6 @@ like Nova is broken rather than like the provider is gone.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 

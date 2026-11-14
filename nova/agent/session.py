@@ -134,9 +134,32 @@ class AgentSession:
             tokens_input=reader.tokens_input,
             tokens_output=reader.tokens_output,
             cache_read_tokens=reader.cache_read_tokens,
+            cost=self._turn_cost(reader),
             provider_meta=reader.provider_meta,
             model=self.ctx.config.model,
             reasoning_effort=self.ctx.config.reasoning_effort,
+        )
+
+    def _turn_cost(self, reader: TurnStreamReader) -> float | None:
+        """What this call cost, priced from the catalogue; None when unknown.
+
+        Recorded per message rather than per session so a report can price the
+        turns that used a paid model without averaging them with the free ones.
+        """
+        from nova.registry.pricing import estimate_cost
+        from nova.settings import get_settings
+
+        try:
+            settings = get_settings()
+        except Exception:
+            log.debug("no settings; the turn's cost cannot be priced", exc_info=True)
+            return None
+        return estimate_cost(
+            settings,
+            self.ctx.config.model,
+            reader.tokens_input,
+            reader.tokens_output,
+            reader.cache_read_tokens,
         )
 
     async def resolve_session(
