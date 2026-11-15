@@ -5,11 +5,10 @@ import { join } from "node:path";
 import {
     hydrateTabs,
     installTabPersistence,
-    loadActiveSessionId,
+    loadEnabled,
     loadTabs,
     pruneRestoredTabs,
     resetTabPersistenceForTest,
-    restoredActiveSessionId,
     saveTabs,
     tabsPath,
 } from "./tab-persistence.ts";
@@ -139,36 +138,32 @@ describe("tab persistence", () => {
         expect(payload.version).toBe(1);
     });
 
-    test("the active session is saved and restored", () => {
-        saveTabs(CWD, [tab("s1", "First"), tab("s2", "Second")], "s2");
-        expect(loadTabs(CWD).map((item) => item.sessionId)).toEqual([
-            "s1",
-            "s2",
-        ]);
-        expect(loadActiveSessionId(CWD)).toBe("s2");
+    test("the tab mode flag is saved, restored and defaults to on", () => {
+        expect(loadEnabled()).toBe(true);
+
+        saveTabs(CWD, [tab("s1", "First")], false);
+        expect(loadEnabled()).toBe(false);
 
         useTabStore.getState().reset();
+        expect(useTabStore.getState().enabled).toBe(true);
         hydrateTabs(CWD);
-        expect(restoredActiveSessionId()).toBe("s2");
-        expect(useTabStore.getState().tabs.map((item) => item.sessionId)).toEqual(
-            ["s1", "s2"],
-        );
+        expect(useTabStore.getState().enabled).toBe(false);
+        expect(
+            useTabStore.getState().tabs.map((item) => item.sessionId),
+        ).toEqual(["s1"]);
     });
 
-    test("selecting a tab persists the active session", () => {
+    test("turning the mode off is persisted immediately", () => {
         const uninstall = installTabPersistence(CWD);
         try {
-            const first = useTabStore
+            useTabStore
                 .getState()
                 .create({ sessionId: "s1", title: "First" });
-            const second = useTabStore
-                .getState()
-                .create({ sessionId: "s2", title: "Second" });
-            useTabStore.getState().select(second.id);
+            useTabStore.getState().setEnabled(false);
+            expect(loadEnabled()).toBe(false);
 
-            expect(loadActiveSessionId(CWD)).toBe("s2");
-            useTabStore.getState().select(first.id);
-            expect(loadActiveSessionId(CWD)).toBe("s1");
+            useTabStore.getState().setEnabled(true);
+            expect(loadEnabled()).toBe(true);
         } finally {
             uninstall();
         }

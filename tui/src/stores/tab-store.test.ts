@@ -137,6 +137,14 @@ describe("tab store", () => {
         expect(tabSequence(tab.id)).toBe(0);
     });
 
+    test("tab mode is on by default and survives a reset", () => {
+        expect(useTabStore.getState().enabled).toBe(true);
+        useTabStore.getState().setEnabled(false);
+        expect(useTabStore.getState().enabled).toBe(false);
+        useTabStore.getState().reset();
+        expect(useTabStore.getState().enabled).toBe(true);
+    });
+
     test("hydrate fills an empty store and dedupes", () => {
         useTabStore.getState().hydrate([
             { sessionId: "s1", title: "First" },

@@ -49,6 +49,8 @@ type TabState = {
     closed: ClosedTab[];
     /** Whether the terminal window owns focus; a blurred tab does not count as viewed. */
     focused: boolean;
+    /** False means single-session mode: the strip is hidden and switching replaces the view. */
+    enabled: boolean;
 
     create: (options?: {
         sessionId?: string | null;
@@ -66,6 +68,7 @@ type TabState = {
     clearUnread: (id: string) => void;
     setAttention: (id: string, attention: TabAttention | null) => void;
     setFocused: (focused: boolean) => void;
+    setEnabled: (enabled: boolean) => void;
     cycle: (offset: 1 | -1) => void;
     reset: () => void;
 };
@@ -79,6 +82,7 @@ export const useTabStore = create<TabState>((set, get) => ({
     activeId: null,
     closed: [],
     focused: true,
+    enabled: true,
 
     create: (options = {}) => {
         const tab: SessionTab = {
@@ -257,6 +261,8 @@ export const useTabStore = create<TabState>((set, get) => ({
                 : state.tabs,
         })),
 
+    setEnabled: (enabled) => set({ enabled }),
+
     cycle: (offset) => {
         const state = get();
         if (state.tabs.length === 0) return;
@@ -273,7 +279,13 @@ export const useTabStore = create<TabState>((set, get) => ({
 
     reset: () => {
         sequences.clear();
-        set({ tabs: [], activeId: null, closed: [], focused: true });
+        set({
+            tabs: [],
+            activeId: null,
+            closed: [],
+            focused: true,
+            enabled: true,
+        });
     },
 }));
 

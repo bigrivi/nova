@@ -30,6 +30,13 @@ export const COMMANDS: CommandSpec[] = [
         aliases: [],
     },
     {
+        id: "tabs",
+        label: "Tabs",
+        description: "Show or hide the session tab strip",
+        usage: "/tabs [on|off]",
+        aliases: [],
+    },
+    {
         id: "sessions",
         label: "Sessions",
         description: "Browse and load sessions",

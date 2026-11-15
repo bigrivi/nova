@@ -10,6 +10,7 @@ import { useChatStore } from "../stores/chat-store.ts";
 import { useCtxStore } from "../stores/ctx-store.ts";
 import { useScreenStore, type Screen } from "../stores/screen-store.ts";
 import { useSidebarStore } from "../stores/sidebar-store.ts";
+import { useTabStore } from "../stores/tab-store.ts";
 import { useToastStore } from "../stores/toast-store.ts";
 import { regenerateLastAnswer } from "../stream/chat-stream.ts";
 
@@ -77,21 +78,49 @@ function openVariants(): void {
         });
 }
 
+/** Show or hide the tab strip. The tabs behind it keep working either way. */
+function setTabMode(args: Args): void {
+    const value = (args ?? "").trim().toLowerCase();
+    const enabled =
+        value === "on"
+            ? true
+            : value === "off"
+              ? false
+              : !useTabStore.getState().enabled;
+    useTabStore.getState().setEnabled(enabled);
+    useToastStore
+        .getState()
+        .show(enabled ? "Session tabs on" : "Session tabs off", 2500);
+}
+
+/** A command that only makes sense while the tab strip is on screen. */
+function requireTabs(action: () => void): void {
+    if (!useTabStore.getState().enabled) {
+        useToastStore
+            .getState()
+            .show("Session tabs are off — /tabs on to use them", 3000);
+        return;
+    }
+    action();
+}
+
 // A Map, not an object: ids like "constructor" must not resolve to a
 // prototype member.
 const COMMAND_TABLE = new Map<string, CommandHandler>([
     ["new", () => openDraftTab()],
-    ["close", () => closeTab()],
+    ["close", () => requireTabs(() => closeTab())],
     [
         "reopen",
-        () => {
-            if (!reopenLastClosed()) {
-                useToastStore
-                    .getState()
-                    .show("No closed tab to reopen", 3000);
-            }
-        },
+        () =>
+            requireTabs(() => {
+                if (!reopenLastClosed()) {
+                    useToastStore
+                        .getState()
+                        .show("No closed tab to reopen", 3000);
+                }
+            }),
     ],
+    ["tabs", (_ctx, args) => setTabMode(args)],
     [
         "clear",
         () => {

@@ -90,3 +90,35 @@ test("ctrl+c exits, with and without a screen open", async () => {
     await settle(setup);
     expect(exits).toBe(1);
 });
+
+test("the tab shortcuts do nothing while tab mode is off", async () => {
+    const setup = await render(() => {});
+    const tab = useTabStore.getState().create({ sessionId: "s2" });
+    useTabStore.getState().select(tab.id);
+    act(() => useTabStore.getState().setEnabled(false));
+
+    press(setup, "\x17"); // ctrl+w
+    await settle(setup);
+    expect(useTabStore.getState().tabs.length).toBe(1);
+
+    press(setup, "\x14"); // ctrl+t
+    await settle(setup);
+    expect(useTabStore.getState().tabs.length).toBe(1);
+
+    press(setup, "\x1b[1;3B"); // alt+down
+    await settle(setup);
+    expect(useTabStore.getState().activeId).toBe(tab.id);
+});
+
+test("the strip is not drawn while tab mode is off", async () => {
+    const setup = await render(() => {});
+    useTabStore
+        .getState()
+        .create({ sessionId: "s2", title: "Visible Tab" });
+    await settle(setup);
+    expect(setup.captureCharFrame()).toContain("Visible Tab");
+
+    act(() => useTabStore.getState().setEnabled(false));
+    await settle(setup);
+    expect(setup.captureCharFrame()).not.toContain("Visible Tab");
+});

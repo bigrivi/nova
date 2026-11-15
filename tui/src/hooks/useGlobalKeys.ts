@@ -20,6 +20,7 @@ import { useExpandStore } from "../stores/expand-store.ts";
 import { cycleMode } from "../stores/permission-store.ts";
 import { useScreenStore } from "../stores/screen-store.ts";
 import { useSidebarStore } from "../stores/sidebar-store.ts";
+import { useTabStore } from "../stores/tab-store.ts";
 import { requestInterrupt } from "../stream/chat-stream.ts";
 
 type GlobalKeyBinding = {
@@ -27,16 +28,23 @@ type GlobalKeyBinding = {
     run: (key: KeyEvent) => void;
 };
 
+/** Tab mode can be off, and then the strip is not on screen: the shortcuts
+ *  that move between invisible tabs would be a blind action. */
+function tabsEnabled(): boolean {
+    return useTabStore.getState().enabled;
+}
+
 /** These belong to the session, so they stay live while a screen is open. */
 const GLOBAL_BINDINGS: GlobalKeyBinding[] = [
     {
-        match: (key) => key.ctrl && key.name === "tab",
+        match: (key) => tabsEnabled() && key.ctrl && key.name === "tab",
         // Ctrl+Tab is checked first: ctrl+shift+tab must not fall through to
         // the permission-mode cycle below.
         run: (key) => cycleTabs(key.shift ? -1 : 1),
     },
     {
         match: (key) =>
+            tabsEnabled() &&
             (key.meta || key.option) &&
             (key.name === "down" || key.name === "up"),
         run: (key) => cycleTabs(key.name === "down" ? 1 : -1),
@@ -60,11 +68,11 @@ export function useGlobalKeys({ onExit }: { onExit: () => void }): void {
     const screenGuardedBindings = useMemo<GlobalKeyBinding[]>(
         () => [
             {
-                match: (key) => key.ctrl && key.name === "w",
+                match: (key) => tabsEnabled() && key.ctrl && key.name === "w",
                 run: () => closeTab(),
             },
             {
-                match: (key) => key.ctrl && key.name === "t",
+                match: (key) => tabsEnabled() && key.ctrl && key.name === "t",
                 // Ctrl+Shift+T only reaches us as distinct on terminals that
                 // encode the modifier; /reopen covers the rest.
                 run: (key) => {
@@ -76,7 +84,8 @@ export function useGlobalKeys({ onExit }: { onExit: () => void }): void {
                 },
             },
             {
-                match: (key) => key.ctrl && /^[1-9]$/.test(key.name),
+                match: (key) =>
+                    tabsEnabled() && key.ctrl && /^[1-9]$/.test(key.name),
                 run: (key) => selectTabIndex(Number(key.name) - 1),
             },
             {

@@ -56,11 +56,36 @@ describe("dispatchCommand", () => {
     });
 
     test("warns when there is no closed tab to reopen", () => {
-        useTabStore.setState({ closed: [] });
+        useTabStore.setState({ closed: [], enabled: true });
         const { ctx } = makeCtx();
         dispatchCommand("reopen", "", ctx);
-        expect(useToastStore.getState().message).toBe(
+        expect(useToastStore.getState().message).toContain(
             "No closed tab to reopen",
+        );
+    });
+
+    test("the tabs command switches the strip on and off", () => {
+        useTabStore.setState({ enabled: true });
+        const { ctx } = makeCtx();
+
+        dispatchCommand("tabs", "", ctx);
+        expect(useTabStore.getState().enabled).toBe(false);
+
+        dispatchCommand("tabs", "on", ctx);
+        expect(useTabStore.getState().enabled).toBe(true);
+
+        dispatchCommand("tabs", "off", ctx);
+        expect(useTabStore.getState().enabled).toBe(false);
+    });
+
+    test("closing and reopening are refused while the strip is hidden", () => {
+        useTabStore.setState({ enabled: false, closed: [] });
+        const { ctx } = makeCtx();
+
+        dispatchCommand("close", "", ctx);
+        dispatchCommand("reopen", "", ctx);
+        expect(useToastStore.getState().message).toContain(
+            "Session tabs are off",
         );
     });
 });

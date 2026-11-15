@@ -15,6 +15,7 @@ import { ScreenHost } from "./screens/ScreenHost.tsx";
 import { MenuOverlay } from "./MenuOverlay.tsx";
 import { useMenuStore } from "../stores/menu-store.ts";
 import { useSidebarStore } from "../stores/sidebar-store.ts";
+import { useTabStore } from "../stores/tab-store.ts";
 import { StatusBar } from "./StatusBar.tsx";
 import { Toast } from "./Toast.tsx";
 import { SessionTabBar } from "./SessionTabBar.tsx";
@@ -42,6 +43,9 @@ export function App({ onExit }: { onExit: ExitHandler }) {
     const [savedSessions, setSavedSessions] = useState(0);
     const menuAnchor = useMenuStore((state) => state.anchor);
     const sidebarOpen = useSidebarStore((state) => state.open);
+    // Tab mode can be turned off; the strip is then not drawn at all, while the
+    // tabs behind it keep working.
+    const tabsEnabled = useTabStore((state) => state.enabled);
     const dimensions = useTerminalDimensions();
     // Docked beside the transcript when both fit; otherwise the panel takes the
     // screen (see Sidebar).
@@ -120,7 +124,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                             flexShrink={1}
                             minHeight={0}
                         >
-                            <SessionTabBar />
+                            {tabsEnabled ? <SessionTabBar /> : null}
                             {launching ? null : <MessageList />}
                             <BottomDock
                                 launching={launching}
