@@ -4,14 +4,15 @@ import {
     MicIcon,
     XIcon,
 } from "lucide-react";
-import { type RefObject, useEffect, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { transcribeAudioBlob } from "../../lib/nova-api";
 import {
-    cancelSpeechRecording,
-    startSpeechRecording,
-    stopSpeechRecording,
-} from "../../lib/nova-api";
+    canRecordInBrowser,
+    startBrowserRecording,
+    type BrowserRecording,
+} from "../../lib/browser-recorder";
 import { formatElapsed } from "../../lib/format-elapsed";
 import { useComposerStore } from "../../stores/composer-store";
 import { useSpeechStore } from "../../stores/speech-store";
@@ -48,9 +49,8 @@ function insertAtCaret(
  * panel: elapsed time, a cancel that discards the audio, and a send that
  * stops recording and drops the transcript at the caret.
  *
- * Recording itself runs in the backend (the desktop webview exposes no
- * microphone API); this component only tracks the phase and places the
- * resulting text.
+ * Recording runs in the browser/webview (MediaRecorder) and uploads the bytes
+ * to the transcription route; the server never touches a microphone.
  */
 export function VoiceInputButton({
     composerRef,
@@ -63,16 +63,25 @@ export function VoiceInputButton({
     const startedAt = useSpeechStore((state) => state.startedAt);
     const setPhase = useSpeechStore((state) => state.setPhase);
     const setError = useSpeechStore((state) => state.setError);
+    const browserRecording = useRef<BrowserRecording | null>(null);
 
-    if (!enabled) {
+    useEffect(
+        () => () => {
+            browserRecording.current?.cancel();
+            browserRecording.current = null;
+        },
+        [],
+    );
+
+    if (!enabled || !canRecordInBrowser()) {
         return null;
     }
 
     async function start() {
         setError(null);
-        setPhase("recording", Date.now());
         try {
-            await startSpeechRecording();
+            browserRecording.current = await startBrowserRecording();
+            setPhase("recording", Date.now());
         } catch (error) {
             setError(error instanceof Error ? error.message : String(error));
             setPhase("idle");
@@ -85,7 +94,13 @@ export function VoiceInputButton({
         }
         setPhase("transcribing");
         try {
-            const transcript = await stopSpeechRecording();
+            const recording = browserRecording.current;
+            browserRecording.current = null;
+            if (!recording) {
+                return;
+            }
+            const blob = await recording.stop();
+            const transcript = await transcribeAudioBlob(blob);
             if (transcript) {
                 insertAtCaret(composerRef, transcript);
             }
@@ -101,7 +116,8 @@ export function VoiceInputButton({
             return;
         }
         try {
-            await cancelSpeechRecording();
+            browserRecording.current?.cancel();
+            browserRecording.current = null;
         } catch (error) {
             setError(error instanceof Error ? error.message : String(error));
         } finally {

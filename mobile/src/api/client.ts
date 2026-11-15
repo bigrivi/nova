@@ -322,7 +322,17 @@ export type TtsStatus = {
     voice?: string | null;
 };
 
-export async function getTtsStatus(): Promise<TtsStatus> {
+let ttsStatusPromise: Promise<TtsStatus> | null = null;
+
+/** Cached for the app session: one request no matter how many messages mount. */
+export function getTtsStatus(): Promise<TtsStatus> {
+    if (!ttsStatusPromise) {
+        ttsStatusPromise = fetchTtsStatus();
+    }
+    return ttsStatusPromise;
+}
+
+async function fetchTtsStatus(): Promise<TtsStatus> {
     try {
         const payload = await requestJson<TtsStatus>("/api/tts/status");
         return {

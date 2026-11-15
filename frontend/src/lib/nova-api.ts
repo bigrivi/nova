@@ -540,28 +540,29 @@ export async function getSpeechStatus(): Promise<SpeechStatus> {
     }
 }
 
-/** Begin a native microphone recording. Throws with the server message. */
-export async function startSpeechRecording(): Promise<void> {
-    const response = await apiFetch("/api/speech/start", { method: "POST" });
-    if (!response.ok) {
-        throw new Error(await parseErrorMessage(response));
-    }
-}
 
-/** Stop recording and return the transcript (possibly empty). */
-export async function stopSpeechRecording(): Promise<string> {
-    const payload = await parseJson<{ text: string }>(
-        await apiFetch("/api/speech/stop", { method: "POST" }),
+
+
+/** Upload a client-recorded audio blob and return the transcript. */
+export async function transcribeAudioBlob(blob: Blob): Promise<string> {
+    const suffix =
+        blob.type.includes("ogg") || blob.type.includes("opus")
+            ? ".ogg"
+            : blob.type.includes("mp4") || blob.type.includes("m4a")
+              ? ".m4a"
+              : blob.type.includes("wav")
+                ? ".wav"
+                : ".webm";
+    const response = await apiFetch(
+        `/api/speech/transcribe?suffix=${encodeURIComponent(suffix)}`,
+        {
+            method: "POST",
+            headers: { "Content-Type": blob.type || "application/octet-stream" },
+            body: blob,
+        },
     );
+    const payload = await parseJson<{ text: string }>(response);
     return payload.text ?? "";
-}
-
-/** Abandon the take in progress; the audio is discarded, not transcribed. */
-export async function cancelSpeechRecording(): Promise<void> {
-    const response = await apiFetch("/api/speech/cancel", { method: "POST" });
-    if (!response.ok) {
-        throw new Error(await parseErrorMessage(response));
-    }
 }
 
 export type TtsStatus = {
@@ -573,7 +574,17 @@ export type TtsStatus = {
     language?: string | null;
 };
 
-export async function getTtsStatus(): Promise<TtsStatus> {
+let ttsStatusPromise: Promise<TtsStatus> | null = null;
+
+/** Cached for the page session: one request no matter how many messages mount. */
+export function getTtsStatus(): Promise<TtsStatus> {
+    if (!ttsStatusPromise) {
+        ttsStatusPromise = fetchTtsStatus();
+    }
+    return ttsStatusPromise;
+}
+
+async function fetchTtsStatus(): Promise<TtsStatus> {
     try {
         const response = await apiFetch("/api/tts/status");
         if (!response.ok) {

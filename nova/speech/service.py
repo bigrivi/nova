@@ -1,14 +1,12 @@
-"""Speech service: capability gate, recording lifecycle, transcription."""
+"""Speech service: capability gate plus transcription."""
 
 from __future__ import annotations
 
 import logging
-import time
 from pathlib import Path
 
 from nova.settings import Settings
 from nova.speech import client as transcribe_client
-from nova.speech.recorder import Recorder, create_recorder
 
 logger = logging.getLogger(__name__)
 
@@ -21,99 +19,34 @@ class TranscriptionError(RuntimeError):
 
 
 class SpeechService:
-    """Owns one recorder; transcribes with the configured provider key."""
+    """Transcribes client-recorded audio with the configured provider key."""
 
-    def __init__(
-        self,
-        settings: Settings,
-        recorder: Recorder | None = None,
-    ) -> None:
+    def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._unavailable_reason: str = ""
-        self._started_at: float | None = None
-        if recorder is not None:
-            self._recorder: Recorder | None = recorder
-            return
-        try:
-            self._recorder = create_recorder()
-        except RuntimeError as exc:
-            logger.info("Voice input disabled: %s", exc)
-            self._unavailable_reason = str(exc)
-            self._recorder = None
 
     def status(self) -> dict[str, object]:
-        """Capability report for the composer microphone button."""
+        """Capability report for the composer microphone button.
+
+        Recording is a client concern (browser or app microphone), so a headless
+        server still reports the capability when a transcription provider exists.
+        """
         transcription = self._settings.transcription
         if not transcription.enabled:
             return {
                 "enabled": False,
-                "reason": "transcription api_key is not configured",
-            }
-        if self._recorder is None:
-            return {
-                "enabled": False,
-                "reason": self._unavailable_reason
-                or "no audio recorder for this platform",
+                "reason": "transcription is not configured",
             }
         return {
             "enabled": True,
             "provider": transcription.provider,
             "model": transcription.model,
-            "recording": self._recorder.recording,
-            # Lets a reloaded window resume the readout instead of
-            # restarting the clock at zero.
-            "recording_since_ms": (
-                int(self._started_at * 1000) if self._started_at is not None else None
-            ),
         }
-
-    def _require_recorder(self) -> Recorder:
-        if self._recorder is None:
-            raise RuntimeError(
-                self._unavailable_reason or "no audio recorder for this platform"
-            )
-        return self._recorder
-
-    def start(self) -> dict[str, object]:
-        """Begin recording. Raises RuntimeError when unavailable or busy."""
-        gate = self.status()
-        if not gate["enabled"]:
-            raise RuntimeError(str(gate.get("reason", "unavailable")))
-        self._require_recorder().start()
-        self._started_at = time.time()
-        return {"recording": True}
-
-    async def stop_and_transcribe(self) -> dict[str, object]:
-        """Stop recording, transcribe the audio, delete the temp file."""
-        audio_path = self._require_recorder().stop()
-        self._started_at = None
-        try:
-            return await self.transcribe_file(audio_path)
-        finally:
-            _discard(audio_path)
-
-    def cancel(self) -> dict[str, object]:
-        """Stop recording and throw the audio away without transcribing.
-
-        Raises RuntimeError when nothing is recording, or when the platform has
-        no recorder at all. The gate has to be repeated here rather than left to
-        the recorder: on such a platform there is no recorder to raise, and
-        dereferencing None surfaced as a 500 from the route instead of the 409
-        every other rejection produces.
-        """
-        if self._recorder is None:
-            raise RuntimeError(
-                self._unavailable_reason or "no audio recorder for this platform"
-            )
-        _discard(self._recorder.stop())
-        self._started_at = None
-        return {"recording": False}
 
     async def transcribe_file(self, audio_path: Path) -> dict[str, object]:
         """Transcribe an existing audio file with the configured provider."""
         transcription = self._settings.transcription
         if not transcription.enabled:
-            raise RuntimeError("transcription api_key is not configured")
+            raise RuntimeError("transcription is not configured")
         size = audio_path.stat().st_size
         if size == 0:
             return {"text": ""}
@@ -135,12 +68,5 @@ class SpeechService:
         return {"text": text}
 
     def update_settings(self, settings: Settings) -> None:
-        """Swap settings in place so a config reload never drops a take."""
+        """Swap settings in place so a config reload never drops a request."""
         self._settings = settings
-
-
-def _discard(path: Path) -> None:
-    try:
-        path.unlink(missing_ok=True)
-    except OSError:
-        logger.warning("Could not delete temp recording %s", path)
