@@ -5,8 +5,17 @@ import { File, Paths } from "expo-file-system";
 import { apiUrl, authHeader } from "../api/client";
 
 let activePlayer: ReturnType<typeof createAudioPlayer> | null = null;
+let stopResolver: (() => void) | null = null;
+
+export function stopSpeaking(): void {
+    activePlayer?.remove();
+    activePlayer = null;
+    stopResolver?.();
+    stopResolver = null;
+}
 
 export async function speakText(text: string): Promise<void> {
+    stopSpeaking();
     const t0 = Date.now();
     const response = await fetch(apiUrl("/api/tts/synthesize"), {
         method: "POST",
@@ -38,8 +47,10 @@ export async function speakText(text: string): Promise<void> {
             finished = true;
             clearInterval(timer);
             sub.remove();
+            stopResolver = null;
             resolve();
         };
+        stopResolver = finish;
         const sub = player.addListener("playbackStatusUpdate", (status: any) => {
             if (status?.didJustFinish) {
                 finish();

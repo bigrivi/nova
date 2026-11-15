@@ -315,6 +315,27 @@ export async function getSpeechStatus(): Promise<SpeechStatus> {
     }
 }
 
+export type TtsStatus = {
+    enabled: boolean;
+    reason?: string | null;
+    provider?: string | null;
+    voice?: string | null;
+};
+
+export async function getTtsStatus(): Promise<TtsStatus> {
+    try {
+        const payload = await requestJson<TtsStatus>("/api/tts/status");
+        return {
+            enabled: payload.enabled === true,
+            reason: payload.reason,
+            provider: payload.provider,
+            voice: payload.voice,
+        };
+    } catch {
+        return { enabled: false };
+    }
+}
+
 export type SessionRoute = {
     provider: string | null;
     model: string | null;

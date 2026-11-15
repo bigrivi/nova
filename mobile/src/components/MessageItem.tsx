@@ -1,6 +1,6 @@
 import Feather from "@expo/vector-icons/Feather";
 import * as Clipboard from "expo-clipboard";
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
     Image,
     Pressable,
@@ -10,6 +10,8 @@ import {
 } from "react-native";
 
 import { buildTimelineItems, parseSubagentMessage } from "../chat/presentation";
+import { getTtsStatus } from "../api/client";
+import { speakText, stopSpeaking } from "../lib/tts";
 import type { ApprovalRequest } from "../api/types";
 import type { ChatMessage, ChatPart } from "../state/chat";
 import { chatMetrics } from "../theme/tokens";
@@ -93,6 +95,37 @@ function AssistantMessage({
                 .join("\n"),
         [message.parts],
     );
+    const [ttsEnabled, setTtsEnabled] = useState(false);
+    const [playing, setPlaying] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+        void getTtsStatus().then((status) => {
+            if (!cancelled) setTtsEnabled(status.enabled);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    useEffect(() => () => stopSpeaking(), []);
+
+    const togglePlay = async () => {
+        if (playing) {
+            stopSpeaking();
+            setPlaying(false);
+            return;
+        }
+        if (!copyText.trim()) return;
+        setPlaying(true);
+        try {
+            await speakText(copyText);
+        } catch (error) {
+            console.log("TTS failed:", error);
+        } finally {
+            setPlaying(false);
+        }
+    };
 
     // The web inserts an `indicator` part while the assistant is running with
     // no content to show. Reproduce that: no parts, a completed reasoning
@@ -176,6 +209,23 @@ function AssistantMessage({
 
             {!streaming && isLast && (copyText || onRegenerate) ? (
                 <View style={styles.actionsRow}>
+                    {ttsEnabled && copyText ? (
+                        <Pressable
+                            onPress={() => void togglePlay()}
+                            style={styles.copyButton}
+                            accessibilityRole="button"
+                            accessibilityLabel={playing ? "Stop reading" : "Read answer aloud"}
+                        >
+                            <Feather
+                                name={playing ? "pause" : "volume-2"}
+                                size={13}
+                                color={theme.weak}
+                            />
+                            <Text style={[styles.copyText, { color: theme.weak }]}>
+                                {playing ? "Stop" : "Listen"}
+                            </Text>
+                        </Pressable>
+                    ) : null}
                     {copyText ? (
                         <Pressable
                             onPress={() =>
