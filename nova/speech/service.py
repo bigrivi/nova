@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from nova.settings import Settings
 from nova.speech import client as transcribe_client
@@ -42,22 +41,26 @@ class SpeechService:
             "model": transcription.model,
         }
 
-    async def transcribe_file(self, audio_path: Path) -> dict[str, object]:
-        """Transcribe an existing audio file with the configured provider."""
+    async def transcribe(
+        self, audio: bytes, *, suffix: str = ".wav"
+    ) -> dict[str, object]:
+        """Transcribe in-memory audio with the configured provider."""
         transcription = self._settings.transcription
         if not transcription.enabled:
             raise RuntimeError("transcription is not configured")
-        size = audio_path.stat().st_size
-        if size == 0:
+        if not audio:
             return {"text": ""}
-        if size > MAX_AUDIO_BYTES:
+        if len(audio) > MAX_AUDIO_BYTES:
             raise RuntimeError(
-                f"Audio is {size // 1024 // 1024}MB; "
+                f"Audio is {len(audio) // 1024 // 1024}MB; "
                 "the 25MB provider limit was exceeded"
             )
+        if not suffix.startswith("."):
+            suffix = "." + suffix
         try:
-            text = await transcribe_client.transcribe_file(
-                audio_path,
+            text = await transcribe_client.transcribe_bytes(
+                audio,
+                filename=f"audio{suffix}",
                 base_url=transcription.base_url,
                 api_key=transcription.api_key,
                 model=transcription.model,

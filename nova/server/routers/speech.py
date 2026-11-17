@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from nova.server.deps import get_speech_service
@@ -24,9 +21,8 @@ async def speech_transcribe(
     """Transcribe an uploaded audio file.
 
     The body is the raw audio; the file suffix arrives as a query parameter so
-    the provider gets the right container. A raw body keeps the route free of
-    a multipart dependency, and a caller that already holds a file does not
-    have to re-encode it.
+    the provider gets the right container. The bytes go straight to the
+    provider, so no temp file is written for a request that only forwards them.
     """
     payload = await request.body()
     if not payload:
@@ -35,19 +31,12 @@ async def speech_transcribe(
         raise HTTPException(status_code=413, detail="audio file too large")
 
     suffix = request.query_params.get("suffix", ".wav")
-    if not suffix.startswith("."):
-        suffix = "." + suffix
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as handle:
-        handle.write(payload)
-    path = Path(handle.name)
     try:
-        return await service.transcribe_file(path)
+        return await service.transcribe(payload, suffix=suffix)
     except TranscriptionError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    finally:
-        path.unlink(missing_ok=True)
 
 
 @router.get("/api/speech/status")

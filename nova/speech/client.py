@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 import httpx
 
@@ -28,8 +27,9 @@ _CONTENT_TYPES = {
 }
 
 
-def _content_type(path: Path) -> str:
-    return _CONTENT_TYPES.get(path.suffix.lower(), "application/octet-stream")
+def _content_type(filename: str) -> str:
+    suffix = filename[filename.rfind(".") :].lower() if "." in filename else ""
+    return _CONTENT_TYPES.get(suffix, "application/octet-stream")
 
 
 def _form_data(model: str, language: str) -> dict[str, str]:
@@ -40,15 +40,19 @@ def _form_data(model: str, language: str) -> dict[str, str]:
     return data
 
 
-async def transcribe_file(
-    audio_path: Path,
+async def transcribe_bytes(
+    audio: bytes,
     *,
+    filename: str,
     base_url: str,
     api_key: str,
     model: str,
     language: str,
 ) -> str:
-    """Send ``audio_path`` for transcription and return the plain text.
+    """Send in-memory audio for transcription and return the plain text.
+
+    The client already holds the bytes (the request body), so a temp file would
+    only add a write/read round trip and a cleanup obligation.
 
     Raises RuntimeError with a human-readable message on any failure so the
     router can answer 502 without leaking the key or the raw payload.
@@ -56,19 +60,12 @@ async def transcribe_file(
     url = base_url.rstrip("/") + "/audio/transcriptions"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
-            # httpx's multipart encoder reads the handle synchronously, so
-            # wrapping the open in a thread would not move the read off the
-            # loop; only a streaming upload would, and that needs a different
-            # request shape.
-            with open(audio_path, "rb") as handle:  # noqa: ASYNC230
-                response = await client.post(
-                    url,
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    files={
-                        "file": (audio_path.name, handle, _content_type(audio_path)),
-                    },
-                    data=_form_data(model, language),
-                )
+            response = await client.post(
+                url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                files={"file": (filename, audio, _content_type(filename))},
+                data=_form_data(model, language),
+            )
     except httpx.HTTPError as exc:
         raise RuntimeError(f"Transcription request failed: {exc}") from exc
     if response.status_code == 401:

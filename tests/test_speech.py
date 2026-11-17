@@ -71,8 +71,6 @@ def test_transcribe_posts_openai_compatible_multipart(monkeypatch, tmp_path) -> 
 
     settings = _settings_with_key(monkeypatch, tmp_path)
     service = SpeechService(settings)
-    audio = tmp_path / "take.m4a"
-    audio.write_bytes(b"fake-audio-bytes")
 
     transport = _FakeTransport(httpx.Response(200, json={"text": "你好"}))
     real_client = httpx.AsyncClient
@@ -83,7 +81,7 @@ def test_transcribe_posts_openai_compatible_multipart(monkeypatch, tmp_path) -> 
             super().__init__(*args, **kwargs)
 
     monkeypatch.setattr(client_module.httpx, "AsyncClient", _SpyClient)
-    result = _run(service.transcribe_file(audio))
+    result = _run(service.transcribe(b"fake-audio-bytes", suffix=".m4a"))
 
     assert result == {"text": "你好"}
     assert len(transport.requests) == 1
@@ -103,8 +101,6 @@ def test_transcribe_rejects_bad_key_as_transcription_error(
 
     settings = _settings_with_key(monkeypatch, tmp_path)
     service = SpeechService(settings)
-    audio = tmp_path / "take.m4a"
-    audio.write_bytes(b"x")
 
     transport = _FakeTransport(
         httpx.Response(401, json={"error": {"message": "bad key"}})
@@ -118,15 +114,13 @@ def test_transcribe_rejects_bad_key_as_transcription_error(
 
     monkeypatch.setattr(client_module.httpx, "AsyncClient", _SpyClient)
     with pytest.raises(TranscriptionError, match="401"):
-        _run(service.transcribe_file(audio))
+        _run(service.transcribe(b"x", suffix=".m4a"))
 
 
 def test_empty_audio_returns_empty_text(monkeypatch, tmp_path) -> None:
     settings = _settings_with_key(monkeypatch, tmp_path)
     service = SpeechService(settings)
-    audio = tmp_path / "empty.m4a"
-    audio.write_bytes(b"")
-    assert _run(service.transcribe_file(audio)) == {"text": ""}
+    assert _run(service.transcribe(b"")) == {"text": ""}
 
 
 def test_routes_registered(monkeypatch, tmp_path) -> None:
