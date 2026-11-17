@@ -4,6 +4,7 @@ import type { Theme } from "./types.ts";
 export const everforestDarkTheme: Theme = {
     background: {
         base: "#232a2e",
+        panel: "#2e3436",
         raised: "#383d3d",
     },
     text: {

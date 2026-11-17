@@ -4,6 +4,7 @@ import type { Theme } from "./types.ts";
 export const tokyoNightDayTheme: Theme = {
     background: {
         base: "#e1e2e7",
+        panel: "#d1d5e0",
         raised: "#c1c7d9",
     },
     text: {

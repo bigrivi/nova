@@ -4,6 +4,7 @@ import type { Theme } from "./types.ts";
 export const kanagawaWaveTheme: Theme = {
     background: {
         base: "#1f1f28",
+        panel: "#2a2930",
         raised: "#343338",
     },
     text: {

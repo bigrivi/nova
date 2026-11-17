@@ -4,6 +4,7 @@ import type { Theme } from "./types.ts";
 export const catppuccinLatteTheme: Theme = {
     background: {
         base: "#eff1f5",
+        panel: "#e1e3e9",
         raised: "#d2d4dc",
     },
     text: {

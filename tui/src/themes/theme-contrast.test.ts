@@ -118,6 +118,22 @@ describe("surfaces and rules", () => {
         }
     });
 
+    test("docked chrome sits between the canvas and a raised panel", () => {
+        // The session panel is a permanent column, not a floating surface. When
+        // it borrowed `raised` it was the same fill as a user bubble, so a
+        // 40-column strip read as one giant message. `panel` has to stay a
+        // visible step off the canvas without becoming a bubble itself.
+        for (const [name, theme] of Object.entries(themes)) {
+            const { base, panel, raised } = theme.background;
+            expect({ name, onCanvas: contrastRatio(panel, base) })
+                .toMatchObject({ name });
+            expect({ name, offRaised: contrastRatio(panel, raised) })
+                .toMatchObject({ name });
+            expect(contrastRatio(panel, base)).toBeGreaterThan(1.05);
+            expect(contrastRatio(panel, raised)).toBeGreaterThan(1.05);
+        }
+    });
+
     test("markdown rules stay visible against the canvas", () => {
         // table borders used to sit at 1.34:1 and looked like missing text
         for (const [name, theme] of Object.entries(themes)) {

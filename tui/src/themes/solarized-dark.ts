@@ -4,6 +4,7 @@ import type { Theme } from "./types.ts";
 export const solarizedDarkTheme: Theme = {
     background: {
         base: "#002b36",
+        panel: "#0c353f",
         raised: "#183f48",
     },
     text: {

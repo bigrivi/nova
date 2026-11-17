@@ -4,6 +4,7 @@ import type { Theme } from "./types.ts";
 export const claudeTheme: Theme = {
     background: {
         base: "#1f1e1d",
+        panel: "#2a2928",
         raised: "#353433",
     },
     text: {

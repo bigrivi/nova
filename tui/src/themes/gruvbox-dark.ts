@@ -4,6 +4,7 @@ import type { Theme } from "./types.ts";
 export const gruvboxDarkTheme: Theme = {
     background: {
         base: "#282828",
+        panel: "#333230",
         raised: "#3d3c37",
     },
     text: {

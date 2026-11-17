@@ -4,6 +4,7 @@ import type { Theme } from "./types.ts";
 export const catppuccinMochaTheme: Theme = {
     background: {
         base: "#1e1e2e",
+        panel: "#282839",
         raised: "#313244",
     },
     text: {

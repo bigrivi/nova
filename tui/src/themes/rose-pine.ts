@@ -4,6 +4,7 @@ import type { Theme } from "./types.ts";
 export const rosePineTheme: Theme = {
     background: {
         base: "#232136",
+        panel: "#2e2c41",
         raised: "#38364b",
     },
     text: {

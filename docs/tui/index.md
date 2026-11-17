@@ -345,7 +345,7 @@ surface with the foreground drawn on it:
 
 | Group | Use |
 | --- | --- |
-| `background.base` / `background.raised` | Canvas, and the step above it for panels and bubbles |
+| `background.base` / `background.panel` / `background.raised` | Canvas, the docked chrome that sits beside it, and the raised step for panels and bubbles |
 | `text.base` / `text.muted` / `text.faint` | Body copy, secondary copy at AA contrast, decoration (placeholders) |
 | `primary.base` / `primary.foreground` / `primary.muted` | Selection fill, text on that fill, the accent used as text |
 | `border.base` | Hairlines and dividers |
@@ -358,6 +358,8 @@ Three rules keep the palette honest:
   `text.faint` is the only token allowed below that.
 - `background.raised` has to differ from `background.base` by at least 1.3:1,
   otherwise a borderless panel is invisible.
+- `background.panel` sits strictly between the canvas and `raised`, so a docked
+  column never competes with the content it sits beside.
 - Components never blend colours to express a state. Semantic values are
   written down in the theme; `themes/fx/dim.ts` is the one exception, and it
   only dims the transcript behind a modal.

@@ -277,7 +277,7 @@ npm run dev
 
 | 分组 | 用途 |
 | --- | --- |
-| `background.base` / `background.raised` | 画布，以及抬高一层的面板/气泡底色 |
+| `background.base` / `background.panel` / `background.raised` | 画布、贴着画布常驻的停靠栏，以及抬高一层的面板/气泡底色 |
 | `text.base` / `text.muted` / `text.faint` | 正文、达到 AA 对比度的次要文字、装饰性文字（占位符） |
 | `primary.base` / `primary.foreground` / `primary.muted` | 选中填充、填充上的文字、当文字用的强调色 |
 | `border.base` | 分隔线与面板描边 |
@@ -290,6 +290,8 @@ npm run dev
   允许低于这个值。
 - `background.raised` 与 `background.base` 的对比度至少 1.3:1，否则无边框面板
   会"消失"。
+- `background.panel` 严格位于画布与 `raised` 之间，停靠栏因此不会和它旁边的
+  内容抢视觉重心。
 - 组件不靠运行时混色表达状态：语义色一律在主题里写明，唯一例外是
   `themes/fx/dim.ts`，它只负责把弹框背后的对话区压暗。
 

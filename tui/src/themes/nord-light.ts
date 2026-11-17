@@ -4,6 +4,7 @@ import type { Theme } from "./types.ts";
 export const nordLightTheme: Theme = {
     background: {
         base: "#e5e9f0",
+        panel: "#d6dbe3",
         raised: "#c7ccd5",
     },
     text: {

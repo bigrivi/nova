@@ -4,6 +4,7 @@ import type { Theme } from "./types.ts";
 export const kanagawaLotusTheme: Theme = {
     background: {
         base: "#f2ecbc",
+        panel: "#e3deb4",
         raised: "#d4cfab",
     },
     text: {

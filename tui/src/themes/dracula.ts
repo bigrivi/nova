@@ -4,6 +4,7 @@ import type { Theme } from "./types.ts";
 export const draculaTheme: Theme = {
     background: {
         base: "#282a36",
+        panel: "#34353f",
         raised: "#3f4048",
     },
     text: {

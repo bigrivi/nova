@@ -4,6 +4,7 @@ import type { Theme } from "./types.ts";
 export const lightTheme: Theme = {
     background: {
         base: "#ffffff",
+        panel: "#eeeff1",
         raised: "#dddfe2",
     },
     text: {

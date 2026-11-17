@@ -5,10 +5,14 @@
  *  is drawn on it. Names state the job, not the shade.
  */
 export type Theme = {
-    /** Layers, lightest job first: the canvas, then raised panels. */
+    /** Layers, lightest job first: canvas, docked chrome, then raised panels. */
     background: {
         /** Application canvas. Everything else is drawn on it. */
         base: string;
+        /** Docked chrome that stays on screen beside the content (the session
+         *  panel). Sits between the canvas and `raised`, so a panel never reads
+         *  as a floating surface: content is the brightest layer, not chrome. */
+        panel: string;
         /** One step above the canvas: modal panels, user bubbles, cards. */
         raised: string;
     };
