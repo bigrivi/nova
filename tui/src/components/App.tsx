@@ -21,7 +21,7 @@ import { Toast } from "./Toast.tsx";
 import { SessionTabBar } from "./SessionTabBar.tsx";
 import { BottomDock } from "./BottomDock.tsx";
 import { Sidebar } from "./sidebar/Sidebar.tsx";
-import { SIDEBAR_DOCK_MIN_WIDTH } from "./sidebar/layout.ts";
+import { SIDEBAR_DOCK_MIN_WIDTH, SIDEBAR_WIDTH } from "./sidebar/layout.ts";
 import { dispatchCommand } from "../commands/dispatch.ts";
 import { useAppBootstrap } from "../hooks/useAppBootstrap.ts";
 import { useGlobalKeys } from "../hooks/useGlobalKeys.ts";
@@ -102,7 +102,7 @@ export function App({ onExit }: { onExit: ExitHandler }) {
         <box
             width="100%"
             height="100%"
-            flexDirection="column"
+            flexDirection="row"
             flexGrow={1}
             padding={0}
             gap={0}
@@ -124,7 +124,16 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                             flexShrink={1}
                             minHeight={0}
                         >
-                            {tabsEnabled ? <SessionTabBar /> : null}
+                            {tabsEnabled ? (
+                                <SessionTabBar
+                                    width={
+                                        dimensions.width -
+                                        (showPanel && docked
+                                            ? SIDEBAR_WIDTH
+                                            : 0)
+                                    }
+                                />
+                            ) : null}
                             {launching ? null : <MessageList />}
                             <BottomDock
                                 launching={launching}
@@ -137,13 +146,9 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                         <StatusBar />
                     </ThemeOverride>
                 </box>
-                {showPanel && docked ? <Sidebar presentation="docked" /> : null}
             </box>
-            {/* Narrow terminal: the panel takes the screen instead of squeezing
-                the transcript. It is painted over the shell, which stays mounted
-                so a draft in the composer survives opening and closing it. */}
-            {showPanel && !docked ? (
-                <Sidebar presentation="fullscreen" />
+            {showPanel && docked ? (
+                <Sidebar />
             ) : null}
             <ScreenHost />
             <MenuOverlay

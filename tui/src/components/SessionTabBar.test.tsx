@@ -99,6 +99,25 @@ describe("session tab bar", () => {
         }
     });
 
+    test("lays out inside the width it is given, not the whole terminal", async () => {
+        for (const id of ["s1", "s2", "s3", "s4", "s5", "s6"]) {
+            useTabStore.getState().create({ sessionId: id, title: id });
+        }
+        const setup = await testRender(<SessionTabBar width={40} />, {
+            width: 120,
+            height: 3,
+        });
+        try {
+            await settle(setup);
+            const row = setup.captureCharFrame().split("\n")[0] ?? "";
+            // A strip laid out for the terminal would fit all six tabs.
+            expect(row).toContain("›");
+            expect(row).not.toContain("s6");
+        } finally {
+            setup.renderer.destroy();
+        }
+    });
+
     test("shows a close glyph on hover and closes that tab", async () => {
         const { first, second } = seed();
         const setup = await render();

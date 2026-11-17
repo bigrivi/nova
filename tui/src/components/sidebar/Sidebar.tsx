@@ -23,7 +23,6 @@ import { McpPanel } from "./McpPanel.tsx";
 import { SIDEBAR_WIDTH } from "./layout.ts";
 import { TodoPanel } from "./TodoPanel.tsx";
 
-export type SidebarPresentation = "docked" | "fullscreen";
 
 function SidebarHeader() {
     const theme = useTheme();
@@ -34,7 +33,7 @@ function SidebarHeader() {
         tabs.find((tab) => tab.sessionId === sessionId)?.title ?? "New session";
 
     return (
-        <box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
+        <box flexDirection="column" flexShrink={0}  paddingY={1}>
             <text
                 fg={theme.text.base}
                 attributes={TextAttributes.BOLD}
@@ -56,7 +55,7 @@ function SidebarFooter() {
     const path = shortenPath(WORKSPACE_DIR, homedir(), SIDEBAR_WIDTH - 2);
 
     return (
-        <box flexDirection="column" flexShrink={0} paddingX={1} paddingY={1}>
+        <box flexDirection="column" flexShrink={0} paddingY={1}>
             <text fg={theme.text.muted} content={path} wrapMode="none" />
             {app.branch ? (
                 <text
@@ -69,39 +68,23 @@ function SidebarFooter() {
     );
 }
 
-export function Sidebar({
-    presentation,
-}: {
-    presentation: SidebarPresentation;
-}) {
+export function Sidebar() {
     const theme = useTheme();
-    const fullscreen = presentation === "fullscreen";
 
     return (
         <box
             flexDirection="column"
             flexShrink={0}
             minHeight={0}
-            width={fullscreen ? "100%" : SIDEBAR_WIDTH}
-            // A docked panel sits on a raised surface; fullscreen owns the canvas.
-            backgroundColor={
-                fullscreen ? theme.background.base : theme.background.raised
-            }
-            border={fullscreen ? undefined : ["left"]}
-            borderColor={theme.border.base}
-            {...(fullscreen
-                ? {
-                      position: "absolute" as const,
-                      left: 0,
-                      right: 0,
-                      top: 0,
-                      bottom: 0,
-                  }
-                : {})}
+            paddingX={2}
+            width={SIDEBAR_WIDTH}
+            // Docked chrome, not a floating surface: `panel` sits between the
+            // canvas and `raised`, so the strip does not read as a user bubble.
+            backgroundColor={theme.background.panel}
         >
             <SidebarHeader />
             <scrollbox flexGrow={1} minHeight={0} scrollY>
-                <box flexDirection="column" gap={1} paddingX={1} paddingBottom={1}>
+                <box flexDirection="column" gap={1}  paddingBottom={1}>
                     <ContextPanel />
                     <TodoPanel />
                     <CompactingPanel />

@@ -163,6 +163,7 @@ export function SearchableList<T extends SearchableItem>({
                 marginLeft={MARKER_WIDTH}
                 flexGrow={1}
                 focused
+                marginTop={1}
                 value={query}
                 placeholder="Filter…"
                 placeholderColor={theme.text.faint}

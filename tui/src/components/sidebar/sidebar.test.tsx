@@ -73,14 +73,38 @@ test("a wide terminal docks the panel beside the transcript", async () => {
     expect(frame).toContain("Nova TUI");
 });
 
-test("a narrow terminal gives the panel the whole screen", async () => {
+test("a narrow terminal has no room to dock the panel", async () => {
     seed(true);
     const setup = await render(80);
     const frame = setup.captureCharFrame();
     setup.renderer.destroy();
 
-    expect(frame).toContain("wire the panel");
-    expect(frame).not.toContain("Nova TUI");
+    // 40 columns of panel beside 72 columns of transcript do not fit, and the
+    // panel is not painted over the transcript instead.
+    expect(frame).not.toContain("wire the panel");
+    expect(frame).toContain("hello");
+});
+
+test("the docked panel is not painted in the user bubble's colour", async () => {
+    seed(true);
+    const setup = await render(120);
+    const frame = setup.captureCharFrame();
+    const spans = setup.captureSpans() as unknown as {
+        lines: { spans: { text: string; bg: { buffer: ArrayLike<number> } }[] }[];
+    };
+    const rowOf = (text: string) =>
+        frame.split("\n").findIndex((line) => line.includes(text));
+    const bgOf = (row: number, text: string) =>
+        Array.from(
+            spans.lines[row]!.spans.find((span) => span.text.includes(text))!
+                .bg.buffer,
+        );
+    const panelBg = bgOf(rowOf("wire the panel"), "wire the panel");
+    const bubbleBg = bgOf(rowOf("hello"), "hello");
+    setup.renderer.destroy();
+
+    // Both were `background.raised`, so the strip read as one tall message.
+    expect(panelBg).not.toEqual(bubbleBg);
 });
 
 test("the launch screen keeps the panel away", async () => {
@@ -171,10 +195,9 @@ test("context usage leads the panel body", async () => {
     expect(tokenLine).toBeLessThan(todoLine);
 });
 
-test("a draft survives a fullscreen panel opening and closing", async () => {
-    seed(false);
-    // Narrow: the panel covers the screen, so the composer stays mounted under it.
-    const setup = await render(80);
+test("a draft survives the panel opening and closing", async () => {
+    seed(true);
+    const setup = await render(120);
 
     await act(async () => {
         setup.renderer.stdin.emit("data", Buffer.from("draft text"));
@@ -186,12 +209,14 @@ test("a draft survives a fullscreen panel opening and closing", async () => {
         setup.renderer.stdin.emit("data", Buffer.from("\x02"));
     });
     await settle(setup);
-    expect(setup.captureCharFrame()).toContain("wire the panel");
+    expect(setup.captureCharFrame()).not.toContain("wire the panel");
+    expect(setup.captureCharFrame()).toContain("draft text");
 
     await act(async () => {
         setup.renderer.stdin.emit("data", Buffer.from("\x02"));
     });
     await settle(setup);
+    expect(setup.captureCharFrame()).toContain("wire the panel");
     expect(setup.captureCharFrame()).toContain("draft text");
     setup.renderer.destroy();
 });

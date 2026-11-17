@@ -259,7 +259,9 @@ function TabItem({
     );
 }
 
-export function SessionTabBar() {
+/** `width` is the strip's own column budget: a docked sidebar takes part of
+ *  the terminal, and a strip laid out for the whole width would run under it. */
+export function SessionTabBar({ width }: { width?: number }) {
     const theme = useTheme();
     const dimensions = useTerminalDimensions();
     const tabs = useTabStore((state) => state.tabs);
@@ -277,7 +279,7 @@ export function SessionTabBar() {
     const showAdd = activeTab?.sessionId !== null;
     const available = Math.max(
         1,
-        dimensions.width - (showAdd ? TAB_ADD_WIDTH : 0),
+        (width ?? dimensions.width) - (showAdd ? TAB_ADD_WIDTH : 0),
     );
     const layout = adaptiveTabLayout(
         tabs,
@@ -327,7 +329,8 @@ export function SessionTabBar() {
                     flexShrink={0}
                     fg={addHovered ? theme.text.base : theme.text.muted}
                     onMouseOver={() => setAddHovered(true)}
-                    onMouseOut={() => setAddHovered(false)}                    onMouseUp={(event) => {
+                    onMouseOut={() => setAddHovered(false)}
+                    onMouseUp={(event) => {
                         if (screenOpen) return;
                         if (event.button !== 0) return;
                         openDraftTab();

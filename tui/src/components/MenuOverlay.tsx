@@ -104,9 +104,7 @@ export function MenuOverlay({
             zIndex={100}
             flexDirection="column"
             paddingX={1}
-            border
-            borderStyle="single"
-            borderColor={theme.border.base}
+            paddingY={1}
             backgroundColor={theme.background.raised}
         >
             <scrollbox
