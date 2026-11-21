@@ -35,6 +35,33 @@ describe("tab layout", () => {
         );
     });
 
+    test("keeps the active tab the widest in both allocation modes", () => {
+        for (const available of [40, 76, 110, 131, 132, 133, 200]) {
+            for (let active = 0; active < 6; active += 1) {
+                const id = String(active);
+                const layout = adaptiveTabLayout(tabs(6), id, available);
+                const slot = layout.visible.findIndex((tab) => tab.id === id);
+                expect(layout.widths[slot]).toBe(Math.max(...layout.widths));
+            }
+        }
+    });
+
+    test("hands the spare column to the active tab, not the leftmost", () => {
+        expect(adaptiveTabLayout(tabs(4), "3", 109).widths).toEqual([
+            27, 27, 27, 28,
+        ]);
+        expect(adaptiveTabLayout(tabs(4), "0", 109).widths).toEqual([
+            28, 27, 27, 27,
+        ]);
+    });
+
+    test("does not drop the emphasis one column past the roomy threshold", () => {
+        const below = adaptiveTabLayout(tabs(6), "0", TAB_WIDTH * 6 - 1);
+        const at = adaptiveTabLayout(tabs(6), "0", TAB_WIDTH * 6);
+        expect(below.widths[0]).toBe(TAB_WIDTH);
+        expect(at.widths[0]).toBe(TAB_WIDTH);
+    });
+
     test("never goes below the readable minimum", () => {
         const layout = adaptiveTabLayout(tabs(6), "0", 40);
         expect(layout.widths.every((width) => width >= TAB_MIN_WIDTH)).toBe(

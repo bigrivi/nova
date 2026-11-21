@@ -12,6 +12,7 @@ import {
     hydrateTabs,
     installTabPersistence,
 } from "./lib/tab-persistence.ts";
+import { ensureStartupDraft } from "./lib/tab-actions.ts";
 
 if (!process.env.OTUI_ASSET_ROOT) {
     process.env.OTUI_ASSET_ROOT = join(import.meta.dir, "..", "node_modules");
@@ -47,6 +48,9 @@ async function main(): Promise<void> {
     // frame, then persist every later change. Drafts are not stored.
     hydrateTabs(WORKSPACE_DIR);
     installTabPersistence(WORKSPACE_DIR);
+    // opencode starts on a fresh session tab, so the launch screen is a tab the
+    // user can leave or type into, not a mode without one.
+    ensureStartupDraft();
 
     // The Composer/Filter inputs own focus; clicking a scrollbox or a message
     // must not steal it, otherwise typing stops after a wheel/selection.

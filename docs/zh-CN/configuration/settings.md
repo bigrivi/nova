@@ -258,11 +258,8 @@ cd frontend && npm run dev -- --host
 | `model` | `whisper-large-v3-turbo` | Whisper 模型名。 |
 | `language` | `zh` | ISO 639-1 代码，如 `zh` 或 `en`。 |
 
-单次录音上限 24 MB，静音的一段不会产生提供方调用。在 Linux 上，`/api/speech/status` 会
-报告麦克风不可用，按钮保持隐藏。key 从不离开服务端：前端只调用 `/api/speech/status`、
-`/api/speech/start`、`/api/speech/stop` 和 `/api/speech/cancel`（丢弃音频，不产生提供方
-调用）。`/api/speech/status` 携带 `recording` 和 `recording_since_ms`，所以录音中途重新
-加载的窗口会接着显示已用时间，而不是报一个互相冲突的「已在进行中」错误。
+单次录音上限 24 MB，静音的一段不会产生提供方调用。录音发生在客户端，服务端不提供录音
+接口：前端只调用 `/api/speech/status` 和 `/api/speech/transcribe`。
 
 ### `model` 和 `model_provider` 不会被读取
 

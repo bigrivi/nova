@@ -769,6 +769,30 @@
       ]
     }
   },
+  "GET /api/tts/status": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "object"
+        ]
+      ]
+    }
+  },
+  "GET /api/tts/voices": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          "array"
+        ]
+      ]
+    }
+  },
   "GET /health": {
     "parameters": [],
     "request": [],
@@ -1545,42 +1569,6 @@
       ]
     }
   },
-  "POST /api/speech/cancel": {
-    "parameters": [],
-    "request": [],
-    "responses": {
-      "200": [
-        [
-          "application/json",
-          "object"
-        ]
-      ]
-    }
-  },
-  "POST /api/speech/start": {
-    "parameters": [],
-    "request": [],
-    "responses": {
-      "200": [
-        [
-          "application/json",
-          "object"
-        ]
-      ]
-    }
-  },
-  "POST /api/speech/stop": {
-    "parameters": [],
-    "request": [],
-    "responses": {
-      "200": [
-        [
-          "application/json",
-          "object"
-        ]
-      ]
-    }
-  },
   "POST /api/speech/transcribe": {
     "parameters": [],
     "request": [],
@@ -1615,6 +1603,18 @@
         [
           "application/json",
           "#/components/schemas/HTTPValidationError"
+        ]
+      ]
+    }
+  },
+  "POST /api/tts/synthesize": {
+    "parameters": [],
+    "request": [],
+    "responses": {
+      "200": [
+        [
+          "application/json",
+          null
         ]
       ]
     }

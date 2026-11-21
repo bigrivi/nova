@@ -259,9 +259,9 @@ function TabItem({
     );
 }
 
-/** `width` is the strip's own column budget: a docked sidebar takes part of
- *  the terminal, and a strip laid out for the whole width would run under it. */
-export function SessionTabBar({ width }: { width?: number }) {
+/** The strip spans the terminal above both panes, so it needs no width prop:
+ *  a docked panel starts below it rather than shortening it. */
+export function SessionTabBar() {
     const theme = useTheme();
     const dimensions = useTerminalDimensions();
     const tabs = useTabStore((state) => state.tabs);
@@ -279,7 +279,7 @@ export function SessionTabBar({ width }: { width?: number }) {
     const showAdd = activeTab?.sessionId !== null;
     const available = Math.max(
         1,
-        (width ?? dimensions.width) - (showAdd ? TAB_ADD_WIDTH : 0),
+        dimensions.width - (showAdd ? TAB_ADD_WIDTH : 0),
     );
     const layout = adaptiveTabLayout(
         tabs,

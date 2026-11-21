@@ -114,11 +114,11 @@ ROUTES = {
     "DELETE /api/schedules/{job_id}",
     "POST /api/schedules/{job_id}/run",
     "GET /api/events",
-    "POST /api/speech/start",
-    "POST /api/speech/stop",
-    "POST /api/speech/cancel",
     "POST /api/speech/transcribe",
     "GET /api/speech/status",
+    "GET /api/tts/status",
+    "GET /api/tts/voices",
+    "POST /api/tts/synthesize",
     "GET /api/mcp-servers",
 }
 

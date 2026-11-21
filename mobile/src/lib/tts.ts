@@ -36,8 +36,6 @@ export async function speakText(text: string): Promise<void> {
     await file.write(bytes);
     console.log("TTS write ms:", Date.now() - t0);
 
-    activePlayer?.remove();
-    activePlayer?.remove();
     const player = createAudioPlayer(file.uri);
     activePlayer = player;
     await new Promise<void>((resolve, reject) => {

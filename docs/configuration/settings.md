@@ -210,7 +210,9 @@ The composer's microphone button appears only when `transcription` is configured
 | `model` | `whisper-large-v3-turbo` | Whisper model name. |
 | `language` | `zh` | ISO 639-1 code such as `zh` or `en`. |
 
-Takes are capped at 24 MB and a silent take costs no provider call. On Linux, `/api/speech/status` reports the microphone as unavailable and the button stays hidden. The key never leaves the server: the frontend only calls `/api/speech/status`, `/api/speech/start`, `/api/speech/stop`, and `/api/speech/cancel` (discards the audio without a provider call). `/api/speech/status` carries `recording` and `recording_since_ms`, so a window that reloads mid-take resumes the elapsed-time readout instead of showing a conflicting "already in progress" error.
+Takes are capped at 24 MB and a silent take costs no provider call. Recording happens
+in the client, so the server exposes no record endpoint: the frontend only calls
+`/api/speech/status` and `/api/speech/transcribe`.
 
 ### `model` and `model_provider` are not read
 

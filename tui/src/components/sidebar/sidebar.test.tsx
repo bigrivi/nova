@@ -7,6 +7,7 @@ const { AppProvider } = await import("../../context/app.tsx");
 const { useChatStore } = await import("../../stores/chat-store.ts");
 const { useCtxStore } = await import("../../stores/ctx-store.ts");
 const { useSidebarStore } = await import("../../stores/sidebar-store.ts");
+const { useTabStore } = await import("../../stores/tab-store.ts");
 const { useTodoStore } = await import("../../stores/todo-store.ts");
 
 const TODOS = [
@@ -52,6 +53,7 @@ function seed(open: boolean): void {
 afterEach(() => {
     useSidebarStore.setState({ open: false });
     useTodoStore.setState({ todos: [] });
+    useTabStore.getState().reset();
     useCtxStore.getState().clear();
     useChatStore.setState({
         messages: [],
@@ -83,6 +85,26 @@ test("a narrow terminal has no room to dock the panel", async () => {
     // panel is not painted over the transcript instead.
     expect(frame).not.toContain("wire the panel");
     expect(frame).toContain("hello");
+});
+
+test("the tab strip spans the terminal above the docked panel", async () => {
+    seed(true);
+    for (const id of ["s1", "s2", "s3", "s4", "s5", "s6"]) {
+        useTabStore.getState().create({ sessionId: id, title: `TAB-${id}` });
+    }
+    const setup = await render(120);
+    const lines = setup.captureCharFrame().split("\n");
+    setup.renderer.destroy();
+
+    // The strip owns the first row and runs the whole width, so the panel
+    // starts one row lower instead of shortening it. Docked at 120 columns the
+    // panel starts at 80, and a strip laid out for the transcript column alone
+    // could not paint a tab past that.
+    const strip = lines.findIndex((line) => line.includes("TAB-s1"));
+    const panel = lines.findIndex((line) => line.includes("wire the panel"));
+    expect(strip).toBe(0);
+    expect(panel).toBeGreaterThan(strip);
+    expect(lines[0]!.slice(80).trim()).not.toBe("");
 });
 
 test("the docked panel is not painted in the user bubble's colour", async () => {

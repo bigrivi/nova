@@ -21,7 +21,7 @@ import { Toast } from "./Toast.tsx";
 import { SessionTabBar } from "./SessionTabBar.tsx";
 import { BottomDock } from "./BottomDock.tsx";
 import { Sidebar } from "./sidebar/Sidebar.tsx";
-import { SIDEBAR_DOCK_MIN_WIDTH, SIDEBAR_WIDTH } from "./sidebar/layout.ts";
+import { SIDEBAR_DOCK_MIN_WIDTH } from "./sidebar/layout.ts";
 import { dispatchCommand } from "../commands/dispatch.ts";
 import { useAppBootstrap } from "../hooks/useAppBootstrap.ts";
 import { useGlobalKeys } from "../hooks/useGlobalKeys.ts";
@@ -102,38 +102,34 @@ export function App({ onExit }: { onExit: ExitHandler }) {
         <box
             width="100%"
             height="100%"
-            flexDirection="row"
+            flexDirection="column"
             flexGrow={1}
             padding={0}
             gap={0}
             marginBottom={1}
             backgroundColor={theme.background.base}
         >
+            {/* The strip spans the terminal above both panes, like a browser
+                tab bar: the panel starts one row down instead of losing a row
+                of its own height. */}
+            <ThemeOverride value={quiet}>
+                {tabsEnabled ? <SessionTabBar /> : null}
+            </ThemeOverride>
             <box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
-                <box
-                    flexDirection="column"
-                    flexGrow={1}
-                    flexShrink={1}
-                    minWidth={0}
-                    minHeight={0}
-                >
-                    <ThemeOverride value={quiet}>
+                <ThemeOverride value={quiet}>
+                    <box
+                        flexDirection="column"
+                        flexGrow={1}
+                        flexShrink={1}
+                        minWidth={0}
+                        minHeight={0}
+                    >
                         <box
                             flexDirection="column"
                             flexGrow={1}
                             flexShrink={1}
                             minHeight={0}
                         >
-                            {tabsEnabled ? (
-                                <SessionTabBar
-                                    width={
-                                        dimensions.width -
-                                        (showPanel && docked
-                                            ? SIDEBAR_WIDTH
-                                            : 0)
-                                    }
-                                />
-                            ) : null}
                             {launching ? null : <MessageList />}
                             <BottomDock
                                 launching={launching}
@@ -144,12 +140,10 @@ export function App({ onExit }: { onExit: ExitHandler }) {
                             />
                         </box>
                         <StatusBar />
-                    </ThemeOverride>
-                </box>
+                    </box>
+                </ThemeOverride>
+                {showPanel && docked ? <Sidebar /> : null}
             </box>
-            {showPanel && docked ? (
-                <Sidebar />
-            ) : null}
             <ScreenHost />
             <MenuOverlay
                 anchorY={menuAnchor.y}

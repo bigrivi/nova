@@ -45,6 +45,24 @@ export function markTabLoaded(id: string): void {
     loadedTabs.add(id);
 }
 
+/** A draft the user never typed into: no session, no message, no turn.
+ *
+ *  Walking away from one means it was only an offer to start a conversation,
+ *  so it must not keep a slot in the strip. A draft that already holds a
+ *  message is a live turn whose session id has not arrived yet.
+ */
+function isUntouchedDraft(id: string | null): boolean {
+    if (id === null) {
+        return false;
+    }
+    const tab = useTabStore.getState().tabs.find((item) => item.id === id);
+    if (!tab || tab.sessionId !== null) {
+        return false;
+    }
+    const slice = chatSlice(id);
+    return slice.messages.length === 0 && !slice.isStreaming;
+}
+
 export function selectTab(id: string): void {
     const store = useTabStore.getState();
     const tab = store.tabs.find((item) => item.id === id);
@@ -57,7 +75,12 @@ export function selectTab(id: string): void {
         return;
     }
     const previous = store.activeId;
-    useChatStore.getState().activate(id, previous);
+    const abandoned = isUntouchedDraft(previous) ? previous : null;
+    if (abandoned) {
+        useTabStore.getState().removeTabs([abandoned]);
+        useChatStore.getState().remove(abandoned);
+    }
+    useChatStore.getState().activate(id, abandoned ? null : previous);
     store.select(id);
     useCtxStore.getState().clear();
     ensureLoaded(tab);
@@ -92,6 +115,14 @@ export function openDraftTab(): string {
     const tab = useTabStore.getState().create();
     selectTab(tab.id);
     return tab.id;
+}
+
+/** Land on a draft tab, so the launch screen is a tab like any other. */
+export function ensureStartupDraft(): void {
+    if (activeTab()) {
+        return;
+    }
+    openDraftTab();
 }
 
 /** Find or create the tab for a session without selecting it yet.

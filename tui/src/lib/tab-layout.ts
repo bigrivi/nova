@@ -1,8 +1,10 @@
 /** Horizontal tab-strip layout, ported from opencode's adaptiveSessionTabLayout.
  *
- *  The active tab keeps its preferred width; the rest share what is left, down to
- *  a readable minimum. When the strip cannot show every tab, a sticky window of
- *  tabs is rendered between `‹N` and `N›` overflow markers.
+ *  The active tab is never narrower than its neighbours: with room to spare the
+ *  strip shares evenly and gives the leftover cells to the active tab, and under
+ *  pressure the active tab holds its preferred width while the rest share what is
+ *  left, down to a readable minimum. When the strip cannot show every tab, a
+ *  sticky window of tabs is rendered between `‹N` and `N›` overflow markers.
  */
 
 export const TAB_MIN_WIDTH = 8;
@@ -110,11 +112,19 @@ export function adaptiveTabLayout<T extends TabLayoutItem>(
         : contentWidth;
 
     if (roomy || activeIndex === -1) {
+        const lead =
+            activeIndex === -1 ? 0 : Math.max(0, activeIndex - solved.start);
         const width = Math.floor(total / visible.length);
         const remainder = total - width * visible.length;
+        // Spare cells go to the active tab first: handing them out by position
+        // made the selected tab the narrowest of the strip.
+        const offset = (index: number) =>
+            (index - lead + visible.length) % visible.length;
         return {
             visible,
-            widths: visible.map((_, index) => width + Number(index < remainder)),
+            widths: visible.map(
+                (_, index) => width + Number(offset(index) < remainder),
+            ),
             before,
             after,
             start: solved.start,
@@ -122,26 +132,41 @@ export function adaptiveTabLayout<T extends TabLayoutItem>(
         };
     }
 
-    const inactiveWidth =
-        visible.length === 1
-            ? 0
-            : Math.min(
-                  TAB_WIDTH,
-                  Math.max(
-                      TAB_MIN_WIDTH,
-                      Math.floor(
-                          (total - Math.min(TAB_WIDTH, total)) /
-                              (visible.length - 1),
-                      ),
-                  ),
-              );
-    const activeWidth =
-        visible.length === 1 ? total : total - inactiveWidth * (visible.length - 1);
+    if (visible.length === 1) {
+        return {
+            visible,
+            widths: [total],
+            before,
+            after,
+            start: solved.start,
+            total,
+        };
+    }
+
+    const activeSlot = visible.findIndex((tab) => tab.id === activeId);
+    const inactiveWidth = Math.min(
+        TAB_WIDTH,
+        Math.max(
+            TAB_MIN_WIDTH,
+            Math.floor((total - TAB_WIDTH) / (visible.length - 1)),
+        ),
+    );
+    // Capping the active tab keeps the strip monotone: uncapped it swallowed
+    // every leftover column, so it grew widest right where the roomy path
+    // drops the emphasis. The cells the cap frees go back to the inactive tabs.
+    const activeWidth = Math.min(
+        TAB_WIDTH,
+        total - inactiveWidth * (visible.length - 1),
+    );
+    const spare = total - activeWidth - inactiveWidth * (visible.length - 1);
 
     return {
         visible,
-        widths: visible.map((tab) =>
-            tab.id === activeId ? activeWidth : inactiveWidth,
+        widths: visible.map((tab, index) =>
+            tab.id === activeId
+                ? activeWidth
+                : inactiveWidth +
+                  Number((index < activeSlot ? index : index - 1) < spare),
         ),
         before,
         after,
