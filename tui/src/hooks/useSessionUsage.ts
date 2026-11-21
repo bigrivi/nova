@@ -1,52 +1,29 @@
 /** This session's token and cost totals.
  *
- *  Read when the panel opens and again when a turn ends: the totals only move
- *  when the agent answers, so there is nothing to poll for. Same rule the web
- *  UI follows for context usage: the stream carries the live part, one REST
- *  read covers the rest.
+ *  Read once per session and kept in a bucket: the totals only move when the
+ *  agent answers, so a tab switch reads the cached numbers. The stream's turn
+ *  end refreshes the bucket for whichever tab finished, active or not.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 
-import { fetchStats } from "../api/stats.ts";
 import type { NovaStats } from "../api/types.ts";
-import { logWarn } from "../lib/errors.ts";
+import { refreshSessionStats } from "../lib/session-usage.ts";
 import { useChatStore } from "../stores/chat-store.ts";
+import { useSessionStats, useUsageStore } from "../stores/usage-store.ts";
 
 export function useSessionUsage(): NovaStats | null {
     const sessionId = useChatStore((state) => state.sessionId);
-    const isStreaming = useChatStore((state) => state.isStreaming);
-    const [stats, setStats] = useState<NovaStats | null>(null);
-    const [reloadKey, setReloadKey] = useState(0);
-    const streaming = useRef(false);
+    const stats = useSessionStats(sessionId);
 
-    // A turn that just finished changed the totals; a turn that just started
-    // did not, so only the falling edge refetches.
+    // A session seen for the first time has no bucket yet; one read fills it.
     useEffect(() => {
-        if (streaming.current && !isStreaming) {
-            setReloadKey((value) => value + 1);
+        if (
+            sessionId &&
+            useUsageStore.getState().byId[sessionId] === undefined
+        ) {
+            refreshSessionStats(sessionId);
         }
-        streaming.current = isStreaming;
-    }, [isStreaming]);
-
-    useEffect(() => {
-        if (!sessionId) {
-            setStats(null);
-            return;
-        }
-        let cancelled = false;
-        void fetchStats(sessionId)
-            .then((next) => {
-                if (!cancelled) {
-                    setStats(next);
-                }
-            })
-            .catch((err: unknown) => {
-                logWarn("loading session usage failed", err);
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [sessionId, reloadKey]);
+    }, [sessionId]);
 
     return stats;
 }

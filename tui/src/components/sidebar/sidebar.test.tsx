@@ -9,11 +9,25 @@ const { useCtxStore } = await import("../../stores/ctx-store.ts");
 const { useSidebarStore } = await import("../../stores/sidebar-store.ts");
 const { useTabStore } = await import("../../stores/tab-store.ts");
 const { useTodoStore } = await import("../../stores/todo-store.ts");
+const { useUsageStore } = await import("../../stores/usage-store.ts");
 
 const TODOS = [
     { content: "wire the panel", status: "in_progress" as const, priority: "high" as const },
     { content: "ship it", status: "pending" as const, priority: "low" as const },
 ];
+
+function stats(cost: number, turns: number) {
+    return {
+        scope: "session" as const,
+        days: null,
+        since: null,
+        tokens: { input: 0, output: 0, cache_read: 0, total: 0 },
+        cost: { total: cost, priced: true, unpriced_models: 0 },
+        messages: 1,
+        by_model: [],
+        session: { turns, messages: 1, started_at: 0, updated_at: 0 },
+    };
+}
 
 async function settle(setup: { flush: () => Promise<void> }): Promise<void> {
     for (let pass = 0; pass < 4; pass += 1) {
@@ -34,7 +48,7 @@ async function render(width: number) {
 }
 
 function seed(open: boolean): void {
-    useTodoStore.setState({ todos: TODOS });
+    useTodoStore.setState({ byId: { s1: TODOS } });
     useChatStore.setState({
         messages: [
             {
@@ -52,7 +66,7 @@ function seed(open: boolean): void {
 
 afterEach(() => {
     useSidebarStore.setState({ open: false });
-    useTodoStore.setState({ todos: [] });
+    useTodoStore.setState({ byId: {} });
     useTabStore.getState().reset();
     useCtxStore.getState().clear();
     useChatStore.setState({
@@ -131,7 +145,7 @@ test("the docked panel is not painted in the user bubble's colour", async () => 
 
 test("the launch screen keeps the panel away", async () => {
     // No session yet: this is the launch screen.
-    useTodoStore.setState({ todos: TODOS });
+    useTodoStore.setState({ byId: { s1: TODOS } });
     useChatStore.setState({
         messages: [],
         sessionId: null,
@@ -179,10 +193,12 @@ test("ctrl+b closes and reopens the panel", async () => {
 
 test("the todo counter counts settled items", async () => {
     useTodoStore.setState({
-        todos: [
-            { content: "first task", status: "completed", priority: "high" },
-            { content: "second task", status: "pending", priority: "low" },
-        ],
+        byId: {
+            s1: [
+                { content: "first task", status: "completed", priority: "high" },
+                { content: "second task", status: "pending", priority: "low" },
+            ],
+        },
     });
     useChatStore.setState({ messages: [], sessionId: "s1", isStreaming: false });
     useSidebarStore.setState({ open: true });
@@ -194,6 +210,71 @@ test("the todo counter counts settled items", async () => {
     expect(frame).toContain("(1/2)");
 });
 
+test("todo rows use the bracketed markers", async () => {
+    seed(true);
+    const setup = await render(120);
+    const frame = setup.captureCharFrame();
+    setup.renderer.destroy();
+
+    expect(frame).toContain("[•] wire the panel");
+    expect(frame).toContain("[ ] ship it");
+});
+
+test("the panel shows only the active session's todos", async () => {
+    useTodoStore.setState({
+        byId: {
+            s1: [
+                { content: "first session task", status: "pending", priority: "low" },
+            ],
+            s2: [
+                { content: "second session task", status: "in_progress", priority: "high" },
+            ],
+        },
+    });
+    useChatStore.setState({ messages: [], sessionId: "s1", isStreaming: false });
+    useSidebarStore.setState({ open: true });
+
+    const setup = await render(120);
+    expect(setup.captureCharFrame()).toContain("first session task");
+    expect(setup.captureCharFrame()).not.toContain("second session task");
+
+    await act(async () => {
+        useChatStore.setState({ sessionId: "s2" });
+    });
+    await settle(setup);
+
+    expect(setup.captureCharFrame()).toContain("second session task");
+    expect(setup.captureCharFrame()).not.toContain("first session task");
+    setup.renderer.destroy();
+});
+
+test("switching sessions reads each session's cached context and spend", async () => {
+    useCtxStore.setState({
+        byId: {
+            s1: { used: 111, limit: 1000, percent: 11 },
+            s2: { used: 222, limit: 1000, percent: 22 },
+        },
+    });
+    useUsageStore.setState({ byId: { s1: stats(1, 2), s2: stats(3, 4) } });
+    useChatStore.setState({ messages: [], sessionId: "s1", isStreaming: false });
+    useSidebarStore.setState({ open: true });
+
+    const setup = await render(120);
+    expect(setup.captureCharFrame()).toContain("111 tokens");
+    expect(setup.captureCharFrame()).toContain("$1.00 spent · 2 turns");
+
+    await act(async () => {
+        useChatStore.setState({ sessionId: "s2" });
+    });
+    await settle(setup);
+
+    const frame = setup.captureCharFrame();
+    expect(frame).toContain("222 tokens");
+    expect(frame).toContain("$3.00 spent · 4 turns");
+    expect(frame).not.toContain("111 tokens");
+    setup.renderer.destroy();
+});
+
 test("context usage leads the panel body", async () => {
     seed(true);
     const setup = await render(120);
@@ -201,7 +282,7 @@ test("context usage leads the panel body", async () => {
     // Seed the context window after mount: the status bar's own one-shot read
     // would otherwise clobber (or supply) the value depending on the backend.
     await act(async () => {
-        useCtxStore.getState().setCtx(387451, 1000000, 39);
+        useCtxStore.getState().setCtx("s1", 387451, 1000000, 39);
     });
     await settle(setup);
     const frame = setup.captureCharFrame();

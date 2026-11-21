@@ -5,7 +5,6 @@
  *  the wrong slice.
  */
 import { useChatStore } from "../stores/chat-store.ts";
-import { useCtxStore } from "../stores/ctx-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useApprovalStore } from "../stores/approval-store.ts";
 import {
@@ -80,9 +79,10 @@ export function selectTab(id: string): void {
         useTabStore.getState().removeTabs([abandoned]);
         useChatStore.getState().remove(abandoned);
     }
-    useChatStore.getState().activate(id, abandoned ? null : previous);
+    useChatStore
+        .getState()
+        .activate(id, abandoned ? null : previous, tab.sessionId);
     store.select(id);
-    useCtxStore.getState().clear();
     ensureLoaded(tab);
 }
 
@@ -164,12 +164,13 @@ export function closeTab(id?: string): void {
     const next = store.close(target);
     useChatStore.getState().remove(target);
     if (next && next !== previous) {
-        useChatStore.getState().activate(next, null);
+        const nextTab = useTabStore
+            .getState()
+            .tabs.find((item) => item.id === next);
+        useChatStore.getState().activate(next, null, nextTab?.sessionId ?? null);
         useTabStore.getState().select(next);
-        useCtxStore.getState().clear();
     } else if (next === null) {
         useChatStore.getState().activate(null, null);
-        useCtxStore.getState().clear();
     }
 }
 
@@ -181,7 +182,7 @@ export function reopenLastClosed(): string | null {
     if (!tab) {
         return null;
     }
-    useChatStore.getState().activate(tab.id, previous);
+    useChatStore.getState().activate(tab.id, previous, tab.sessionId);
     useTabStore.getState().select(tab.id);
     ensureLoaded(tab);
     return tab.id;

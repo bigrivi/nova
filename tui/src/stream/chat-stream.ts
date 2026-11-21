@@ -22,6 +22,7 @@ import {
     type StreamChatOptions,
 } from "../api/nova-api.ts";
 import { regenerateTarget } from "../lib/regenerate-target.ts";
+import { refreshSessionStats } from "../lib/session-usage.ts";
 import {
     applyStreamEvent,
     type StreamAccumulator,
@@ -458,13 +459,17 @@ async function runTurn(options: TurnOptions): Promise<void> {
                 );
         },
         setCtx: (used, limit, percent) => {
-            if (isActive()) {
-                useCtxStore.getState().setCtx(used, limit, percent);
+            const sessionId = chatSlice(tabId).sessionId;
+            if (sessionId) {
+                useCtxStore
+                    .getState()
+                    .setCtx(sessionId, used, limit, percent);
             }
         },
         setTodos: (input) => {
-            if (isActive()) {
-                useTodoStore.getState().setTodos(parseTodos(input));
+            const sessionId = chatSlice(tabId).sessionId;
+            if (sessionId) {
+                useTodoStore.getState().setTodos(sessionId, parseTodos(input));
             }
         },
         startCompaction: (messages, tokens) => {
@@ -596,6 +601,9 @@ async function runTurn(options: TurnOptions): Promise<void> {
             liveSessionId ?? chatSlice(tabId).sessionId;
         if (finishedSessionId) {
             expectOwnActive.delete(finishedSessionId);
+            // The turn changed this session's spend, so refresh its bucket even
+            // when the tab is in the background; a later switch reads it.
+            refreshSessionStats(finishedSessionId);
             // A wake went active while this stream was still draining; tail it
             // now that the local stream is gone.
             if (pendingTail.delete(finishedSessionId)) {

@@ -176,7 +176,11 @@ type ChatState = ChatSlice & {
         tabId?: string | null,
     ) => void;
     clearMessages: (tabId?: string | null) => void;
-    activate: (nextId: string | null, previousId: string | null) => void;
+    activate: (
+        nextId: string | null,
+        previousId: string | null,
+        sessionId?: string | null,
+    ) => void;
     remove: (tabId: string) => void;
     reset: () => void;
 };
@@ -715,16 +719,22 @@ export const useChatStore = create<ChatState>((set) => {
         clearMessages: (tabId) =>
             writeSlice(tabId, () => ({ messages: [], isStreaming: false })),
 
-        activate: (nextId, previousId) =>
+        activate: (nextId, previousId, sessionId = null) =>
             set((state) => {
                 const byId = { ...state.byId };
                 if (previousId && previousId !== nextId) {
                     byId[previousId] = topSlice(state);
                 }
+                const stored = nextId != null ? byId[nextId] : undefined;
+                // Seed the id a tab already knows: a tab whose history has not
+                // arrived yet would otherwise read as the launch screen and
+                // unmount the shell's panels for the length of the fetch.
                 const next =
-                    nextId != null
-                        ? (byId[nextId] ?? emptySlice(state))
-                        : emptySlice(state);
+                    stored != null
+                        ? stored.sessionId === null && sessionId !== null
+                            ? { ...stored, sessionId }
+                            : stored
+                        : { ...emptySlice(state), sessionId };
                 return { ...next, byId };
             }),
 

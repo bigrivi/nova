@@ -8,7 +8,8 @@
  */
 import { useTheme } from "../../context/theme.tsx";
 import { useSessionUsage } from "../../hooks/useSessionUsage.ts";
-import { useCtxStore } from "../../stores/ctx-store.ts";
+import { useChatStore } from "../../stores/chat-store.ts";
+import { useCtx } from "../../stores/ctx-store.ts";
 import { PanelHeading } from "./PanelHeading.tsx";
 
 /** `~` marks a total that is missing at least one model's price. */
@@ -18,9 +19,8 @@ function money(total: number, priced: boolean): string {
 
 export function ContextPanel() {
     const theme = useTheme();
-    const used = useCtxStore((state) => state.used);
-    const limit = useCtxStore((state) => state.limit);
-    const percent = useCtxStore((state) => state.percent);
+    const sessionId = useChatStore((state) => state.sessionId);
+    const { used, limit, percent } = useCtx(sessionId);
     const stats = useSessionUsage();
 
     // No window known yet (fresh session) and nothing spent: an empty block.

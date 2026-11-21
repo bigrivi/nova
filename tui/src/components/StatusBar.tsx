@@ -9,7 +9,6 @@
 import { useEffect } from "react";
 import { homedir } from "node:os";
 import { useTerminalDimensions } from "@opentui/react";
-import { getSessionContext } from "../api/nova-api.ts";
 import { useTheme } from "../context/theme.tsx";
 import {
     modelLabel,
@@ -17,6 +16,7 @@ import {
 } from "../lib/catalog.ts";
 import { useApp } from "../context/app.tsx";
 import { displayWidth } from "../lib/display-width.ts";
+import { ensureSessionContext } from "../lib/session-context.ts";
 import { deriveAgentStatus, lastAssistantStatus } from "../lib/status.ts";
 import {
     SHORTCUTS_COMPACT,
@@ -29,7 +29,7 @@ import { useApprovalStore } from "../stores/approval-store.ts";
 import { useAskUserStore } from "../stores/ask-user-store.ts";
 import { useChatStore } from "../stores/chat-store.ts";
 import { MODE_LABEL, usePermissionStore } from "../stores/permission-store.ts";
-import { useCtxStore } from "../stores/ctx-store.ts";
+import { useCtx } from "../stores/ctx-store.ts";
 import { WORKSPACE_DIR } from "../workspace.ts";
 import { ContextMeter } from "./status/ContextMeter.tsx";
 import { ShortcutHints } from "./status/ShortcutHints.tsx";
@@ -54,9 +54,7 @@ export function StatusBar() {
     );
     const hasApproval = useApprovalStore((state) => state.pending !== null);
     const hasQuestion = useAskUserStore((state) => state.active !== null);
-    const used = useCtxStore((state) => state.used);
-    const limit = useCtxStore((state) => state.limit);
-    const percent = useCtxStore((state) => state.percent);
+    const { used, limit, percent } = useCtx(sessionId);
     const mode = usePermissionStore((state) => state.mode);
     const modeColor =
         mode === "dontAsk"
@@ -69,26 +67,12 @@ export function StatusBar() {
     const app = useApp();
     const branch = app.branch;
 
-    // Live turns are driven by SSE data-nova-context; on a session switch fetch
-    // once so a tab that is already streaming shows its own meter immediately.
+    // Live turns are driven by SSE data-nova-context; a session seen for the
+    // first time gets one read, and every later switch reads its own bucket.
     useEffect(() => {
-        if (!sessionId) {
-            useCtxStore.getState().clear();
-            return;
+        if (sessionId) {
+            ensureSessionContext(sessionId);
         }
-        let cancelled = false;
-        void getSessionContext(sessionId)
-            .then((ctx) => {
-                if (!cancelled) {
-                    useCtxStore
-                        .getState()
-                        .setCtx(ctx.used, ctx.limit, ctx.percent);
-                }
-            })
-            .catch(() => {});
-        return () => {
-            cancelled = true;
-        };
     }, [sessionId]);
 
     const status = deriveAgentStatus({

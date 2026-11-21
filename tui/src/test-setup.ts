@@ -27,6 +27,7 @@ import * as sidebar from "./stores/sidebar-store.ts";
 import * as tab from "./stores/tab-store.ts";
 import * as toast from "./stores/toast-store.ts";
 import * as todo from "./stores/todo-store.ts";
+import * as usage from "./stores/usage-store.ts";
 
 type Resettable = {
     getState: () => unknown;
@@ -56,6 +57,7 @@ const modules = [
     tab,
     toast,
     todo,
+    usage,
 ];
 
 const stores = modules.flatMap((module) =>

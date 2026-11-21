@@ -125,7 +125,10 @@ const COMMAND_TABLE = new Map<string, CommandHandler>([
         "clear",
         () => {
             useChatStore.getState().clearMessages();
-            useCtxStore.getState().clear();
+            const sessionId = useChatStore.getState().sessionId;
+            if (sessionId) {
+                useCtxStore.getState().clear(sessionId);
+            }
         },
     ],
     ["quit", (ctx) => ctx.onExit()],

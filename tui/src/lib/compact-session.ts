@@ -24,6 +24,6 @@ export async function compactOpenSession(): Promise<string> {
         .loadHistory(sessionId, recordsToMessages(records));
 
     const ctx = await getSessionContext(sessionId);
-    useCtxStore.getState().setCtx(ctx.used, ctx.limit, ctx.percent);
+    useCtxStore.getState().setCtx(sessionId, ctx.used, ctx.limit, ctx.percent);
     return "Context compacted";
 }

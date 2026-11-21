@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { useChatStore } from "../stores/chat-store.ts";
+import { selectIsLaunching, useChatStore } from "../stores/chat-store.ts";
 import { useTabStore } from "../stores/tab-store.ts";
 import { ensureStartupDraft, selectTab } from "./tab-actions.ts";
 
@@ -69,5 +69,31 @@ describe("draft tabs", () => {
         expect(tabs).toHaveLength(1);
         expect(tabs[0]?.sessionId).toBeNull();
         expect(useTabStore.getState().activeId).toBe(tabs[0]!.id);
+    });
+});
+
+describe("switching tabs", () => {
+    test("a session tab is never mistaken for the launch screen before history arrives", () => {
+        const draft = useTabStore.getState().create();
+        const saved = useTabStore.getState().create({ sessionId: "s1" });
+        selectTab(draft.id);
+
+        selectTab(saved.id);
+
+        const state = useChatStore.getState();
+        expect(state.sessionId).toBe("s1");
+        expect(state.messages).toEqual([]);
+        expect(selectIsLaunching(state)).toBe(false);
+    });
+
+    test("a draft still lands on the launch screen", () => {
+        const saved = useTabStore.getState().create({ sessionId: "s1" });
+        const draft = useTabStore.getState().create();
+        selectTab(saved.id);
+
+        selectTab(draft.id);
+
+        expect(useChatStore.getState().sessionId).toBeNull();
+        expect(selectIsLaunching(useChatStore.getState())).toBe(true);
     });
 });

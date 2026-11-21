@@ -3,20 +3,23 @@
  *  The transcript shows todo_write calls as they happen; this is the one place
  *  the whole list is visible at once, which is what makes it worth a panel.
  */
+import { TextAttributes } from "@opentui/core";
 import { useTheme } from "../../context/theme.tsx";
-import { useTodoStore, type TodoItem } from "../../stores/todo-store.ts";
+import { useChatStore } from "../../stores/chat-store.ts";
+import { useTodos, type TodoItem } from "../../stores/todo-store.ts";
 import { PanelHeading } from "./PanelHeading.tsx";
 
 const GLYPH: Record<TodoItem["status"], string> = {
-    pending: "○",
-    in_progress: "◐",
-    completed: "✓",
-    cancelled: "✗",
+    pending: "[ ]",
+    in_progress: "[•]",
+    completed: "[✓]",
+    cancelled: "[-]",
 };
 
 export function TodoPanel() {
     const theme = useTheme();
-    const todos = useTodoStore((state) => state.todos);
+    const sessionId = useChatStore((state) => state.sessionId);
+    const todos = useTodos(sessionId);
 
     if (todos.length === 0) return null;
 
@@ -28,8 +31,12 @@ export function TodoPanel() {
         <box flexDirection="column" flexShrink={0}>
             <PanelHeading label="Todos" detail={`(${done}/${todos.length})`} />
             {todos.map((todo) => {
-                const settled =
-                    todo.status === "completed" || todo.status === "cancelled";
+                const fg =
+                    todo.status === "in_progress"
+                        ? theme.feedback.running
+                        : todo.status === "cancelled"
+                          ? theme.text.faint
+                          : theme.text.muted;
                 return (
                     <box
                         key={`${todo.status}:${todo.content}`}
@@ -38,19 +45,18 @@ export function TodoPanel() {
                     >
                         <text
                             flexShrink={0}
-                            fg={
-                                todo.status === "in_progress"
-                                    ? theme.primary.base
-                                    : settled
-                                      ? theme.feedback.success
-                                      : theme.text.faint
-                            }
+                            fg={fg}
                             content={GLYPH[todo.status]}
                         />
                         <text
-                            fg={settled ? theme.text.faint : theme.text.muted}
+                            fg={fg}
                             content={todo.content}
                             wrapMode="none"
+                            attributes={
+                                todo.status === "cancelled"
+                                    ? TextAttributes.STRIKETHROUGH
+                                    : undefined
+                            }
                         />
                     </box>
                 );

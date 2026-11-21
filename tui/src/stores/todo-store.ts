@@ -53,13 +53,34 @@ function parsePriority(value: unknown): "high" | "medium" | "low" {
 }
 
 type TodoState = {
-    todos: TodoItem[];
-    setTodos: (todos: TodoItem[]) => void;
-    clear: () => void;
+    byId: Record<string, TodoItem[]>;
+    setTodos: (sessionId: string, todos: TodoItem[]) => void;
+    clear: (sessionId?: string) => void;
 };
 
+const NO_TODOS: TodoItem[] = [];
+
 export const useTodoStore = create<TodoState>((set) => ({
-    todos: [],
-    setTodos: (todos) => set({ todos }),
-    clear: () => set({ todos: [] }),
+    byId: {},
+    setTodos: (sessionId, todos) =>
+        set((state) => ({ byId: { ...state.byId, [sessionId]: todos } })),
+    clear: (sessionId) =>
+        set((state) => {
+            if (sessionId === undefined) {
+                return { byId: {} };
+            }
+            if (!(sessionId in state.byId)) {
+                return state;
+            }
+            const byId = { ...state.byId };
+            delete byId[sessionId];
+            return { byId };
+        }),
 }));
+
+/** One session's list; a tab switch swaps the list rather than mixing them. */
+export function useTodos(sessionId: string | null): TodoItem[] {
+    return useTodoStore((state) =>
+        sessionId === null ? NO_TODOS : (state.byId[sessionId] ?? NO_TODOS),
+    );
+}
