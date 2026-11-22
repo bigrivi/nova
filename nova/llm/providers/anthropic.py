@@ -23,6 +23,10 @@ from nova.llm.provider import (
     ReasoningDelta,
     TextDelta,
     ToolCall,
+    ToolInputDelta,
+    ToolInputEnd,
+    ToolInputError,
+    ToolInputStart,
 )
 from nova.llm.request_hook import run_request_hook, run_session_hook
 from nova.llm.stream_driver import (
@@ -214,6 +218,8 @@ class _AnthropicStreamParser(StreamParser):
         self._thinking_state: dict[int, dict] = {}
         self._final_thinking_blocks: list[dict] = []
         self._stop_reason: str | None = None
+        # A malformed tool call is terminal for that call, not a failed turn.
+        self._input_error = False
 
     def feed(self, event: dict, acc: StreamAccumulator) -> Iterable[ChatStreamEvent]:
         event_type = event.get("type", "")
@@ -280,6 +286,11 @@ class _AnthropicStreamParser(StreamParser):
                     "arguments": "",
                     "yielded": False,
                 }
+                if self._tool_calls[block_index]["name"]:
+                    yield ToolInputStart(
+                        id=str(self._tool_calls[block_index]["id"]),
+                        name=str(self._tool_calls[block_index]["name"]),
+                    )
                 initial_tool_input = content_block.get("input")
                 if isinstance(initial_tool_input, dict) and initial_tool_input:
                     try:
@@ -348,6 +359,12 @@ class _AnthropicStreamParser(StreamParser):
                     acc.guard_tool_args(
                         len(str(self._tool_calls[block_index]["arguments"]))
                     )
+                    if self._tool_calls[block_index]["name"]:
+                        yield ToolInputDelta(
+                            id=str(self._tool_calls[block_index]["id"]),
+                            name=str(self._tool_calls[block_index]["name"]),
+                            delta=partial_json,
+                        )
             return
 
         if event_type == "content_block_stop":
@@ -359,7 +376,27 @@ class _AnthropicStreamParser(StreamParser):
                 and not tool_call_state.get("yielded")
             ):
                 tool_call_state["yielded"] = True
-                yield _state_to_tool_call(tool_call_state)
+                arguments_text = str(
+                    tool_call_state.get("arguments")
+                    or tool_call_state.get("initial_input")
+                    or "{}"
+                )
+                yield ToolInputEnd(
+                    id=str(tool_call_state["id"]),
+                    name=str(tool_call_state["name"]),
+                )
+                try:
+                    json.loads(arguments_text)
+                except json.JSONDecodeError:
+                    self._input_error = True
+                    tool_call_state["invalid"] = True
+                    yield ToolInputError(
+                        id=str(tool_call_state["id"]),
+                        name=str(tool_call_state["name"]),
+                        raw=arguments_text,
+                    )
+                else:
+                    yield _state_to_tool_call(tool_call_state)
             thinking_block = self._thinking_state.get(block_index)
             if thinking_block is not None:
                 if thinking_block.get("type") == "thinking":
@@ -436,7 +473,7 @@ class _AnthropicStreamParser(StreamParser):
         recovered = [
             _state_to_tool_call(state)
             for _index, state in sorted(self._tool_calls.items())
-            if state.get("name")
+            if state.get("name") and not state.get("invalid")
         ]
         if not self.finished:
             detail = (
@@ -463,7 +500,7 @@ class _AnthropicStreamParser(StreamParser):
         final_tool_calls = [
             _state_to_tool_call(tool_call_state)
             for _index, tool_call_state in sorted(self._tool_calls.items())
-            if tool_call_state.get("name")
+            if tool_call_state.get("name") and not tool_call_state.get("invalid")
         ]
         # A turn that produced neither answer text nor a tool call is a failure
         # whatever the wire said about ending: reporting it as Done is what
@@ -476,7 +513,7 @@ class _AnthropicStreamParser(StreamParser):
         #   closes its thinking block announcing the tool call it intends to
         #   make, never emits that tool_use block, and ends the turn. Nothing
         #   is wrong with the transport; there is simply no answer.
-        if not acc.content and not final_tool_calls:
+        if not acc.content and not final_tool_calls and not self._input_error:
             if self._stop_reason == "max_tokens":
                 error = output_limit_error("stop_reason=max_tokens")
             else:

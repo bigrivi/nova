@@ -72,6 +72,15 @@ describe("tool views", () => {
         expect(view.plain).toBeNull();
     });
 
+    test("a write with no arguments yet says it is preparing", () => {
+        const view = buildToolView(part("write", "", "", "running"));
+        if (view?.kind !== "file-mutation") {
+            throw new Error("expected file mutation");
+        }
+        expect(view.label).toBe("Preparing write");
+        expect(view.path).toBeNull();
+    });
+
     test("write without a diff falls back to plain text", () => {
         const view = buildToolView(
             part(

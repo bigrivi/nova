@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { mutationVerbKey } from "./file-mutation-verb";
 
+const running = { hasResult: false, isError: false, hasInput: true };
+
 describe("mutationVerbKey", () => {
     it("claims a write only once the call has settled successfully", () => {
         expect(
-            mutationVerbKey("write", { hasResult: true, isError: false }),
+            mutationVerbKey("write", { ...running, hasResult: true }),
         ).toBe("tools.wrote");
         expect(
-            mutationVerbKey("edit", { hasResult: true, isError: false }),
+            mutationVerbKey("edit", { ...running, hasResult: true }),
         ).toBe("tools.edited");
     });
 
@@ -16,11 +18,17 @@ describe("mutationVerbKey", () => {
         // The approval window is the case this exists for: the card used to say
         // "Wrote <file>" while the prompt was still on screen and nothing had
         // been written.
+        expect(mutationVerbKey("write", running)).toBe("tools.writing");
+        expect(mutationVerbKey("edit", running)).toBe("tools.editing");
+    });
+
+    it("says it is preparing a write before any arguments arrive", () => {
         expect(
-            mutationVerbKey("write", { hasResult: false, isError: false }),
-        ).toBe("tools.writing");
+            mutationVerbKey("write", { ...running, hasInput: false }),
+        ).toBe("tools.preparingWrite");
+        // Edit keeps its existing verb; only write gets the preparing header.
         expect(
-            mutationVerbKey("edit", { hasResult: false, isError: false }),
+            mutationVerbKey("edit", { ...running, hasInput: false }),
         ).toBe("tools.editing");
     });
 
@@ -29,19 +37,19 @@ describe("mutationVerbKey", () => {
         // ran -- so the past tense would be a claim about a write that did not
         // happen.
         expect(
-            mutationVerbKey("write", { hasResult: true, isError: true }),
+            mutationVerbKey("write", { ...running, hasResult: true, isError: true }),
         ).toBe("tools.writing");
         expect(
-            mutationVerbKey("edit", { hasResult: true, isError: true }),
+            mutationVerbKey("edit", { ...running, hasResult: true, isError: true }),
         ).toBe("tools.editing");
     });
 
     it("reads any non-edit tool as a write", () => {
         expect(
-            mutationVerbKey("WRITE", { hasResult: true, isError: false }),
+            mutationVerbKey("WRITE", { ...running, hasResult: true }),
         ).toBe("tools.wrote");
         expect(
-            mutationVerbKey(" write ", { hasResult: true, isError: false }),
+            mutationVerbKey(" write ", { ...running, hasResult: true }),
         ).toBe("tools.wrote");
     });
 });

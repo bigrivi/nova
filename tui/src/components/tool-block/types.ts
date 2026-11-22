@@ -20,6 +20,8 @@ export type ResultView =
 export interface ToolRenderer<A = unknown> {
     parseArgs(raw: Record<string, unknown> | null): A | null;
     verbs: { running: string; done: string; error: string };
+    /** Header while arguments are still being generated; the subject is unknown. */
+    preparing?: string;
     subject(args: A): string;
     meta?(ctx: RenderCtx<A>): string | undefined;
     result?(ctx: RenderCtx<A>): ResultView;

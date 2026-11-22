@@ -188,6 +188,7 @@
     "tools.editing": "编辑中",
     "tools.wrote": "已写入",
     "tools.writing": "写入中",
+    "tools.preparingWrite": "准备写入",
     "tools.delegateToAgent": "已委派给子智能体",
     "tools.delegatedTo": "已委派给{{target}}",
     "tools.delegatedRunning": "后台运行中…",

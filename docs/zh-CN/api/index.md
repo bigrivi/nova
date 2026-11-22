@@ -375,8 +375,12 @@ data: [DONE]\n
 | `start-step` / `finish-step` | 多轮运行内部的轮次边界 |
 | `text-start` / `text-delta` / `text-end` | 流式文本，按 `id` 分组 |
 | `reasoning-start` / `reasoning-delta` / `reasoning-end` | 模型推理 / 思考。`reasoning-end` 可能带 `elapsedMs` |
-| `tool-input-start` / `tool-input-available` | 宣布一次工具调用，带 `toolCallId`、`toolName` 和解析后的 `input` |
+| `tool-input-start` / `tool-input-delta` / `tool-input-available` | 宣布工具调用、流式参数文本，以及解析后的 `input`；均带 `toolCallId`，start/available 还带 `toolName` |
+| `tool-input-error` | 参数文本结束但无法解析；带 `toolCallId`、`toolName`、`input`、`errorText` |
 | `tool-output-available` | 工具结果，带 `toolCallId` 和 `output` |
+| `tool-output-error` | 工具执行失败，带 `toolCallId` 和 `errorText` |
+| `tool-output-denied` | 审批或策略拒绝，工具未执行；带 `toolCallId` |
+| `tool-approval-request` / `tool-approval-response` | 标准 AI SDK 审批帧，与 `data-nova-approval-*` 并存 |
 | `data-nova-session` | 新建会话的 id，`{"sessionId": "..."}` |
 | `data-nova-approval-required` | 需要 shell 或工具审批。携带 `sessionId`、`requestId`、`command`、`description`、`toolName`、`toolCallId`、`rememberable`、`family`、`target`、`scriptScoped`、`dangerous` 和 `workspace`。`rememberable: false` 表示客户端不能提供「记住」；`target` 是工具即将触碰的精确路径（shell 命令为空）；`scriptScoped: true` 表示记住只覆盖按钮上方那段行内脚本；`dangerous: true` 表示 shell 内置危险层触发（仅展示）；`workspace` 是路径被判定的工作区，没有活动工作区时为空 |
 | `data-nova-heartbeat` | 等待审批期间的心跳 |

@@ -16,13 +16,19 @@ export type MutationVerbKey =
     | "tools.edited"
     | "tools.wrote"
     | "tools.editing"
-    | "tools.writing";
+    | "tools.writing"
+    | "tools.preparingWrite";
 
 export type MutationVerbInput = {
     /** Whether the call has a result at all; false while it is still running. */
     hasResult: boolean;
     /** Whether the settled result was flagged as an error (a rejection is one). */
     isError: boolean;
+    /**
+     * Whether any arguments have arrived. A call announced by
+     * `tool-input-start` has none yet: the model is still composing the payload.
+     */
+    hasInput: boolean;
 };
 
 /**
@@ -30,9 +36,10 @@ export type MutationVerbInput = {
  *
  * @param toolName - The tool the call names; `edit` is distinguished from
  *     `write`, every other value reads as a write.
- * @param input - Whether the call has settled, and whether it settled badly.
- * @returns The past tense once the call succeeded, the progressive form
- *     otherwise.
+ * @param input - Whether the call has settled, how it settled, and whether its
+ *     arguments have arrived.
+ * @returns "Preparing write" until arguments arrive, the past tense once the
+ *     call succeeded, the progressive form otherwise.
  */
 export function mutationVerbKey(
     toolName: string,
@@ -42,6 +49,9 @@ export function mutationVerbKey(
     const finished = input.hasResult && !input.isError;
     if (isEdit) {
         return finished ? "tools.edited" : "tools.editing";
+    }
+    if (!input.hasResult && !input.hasInput) {
+        return "tools.preparingWrite";
     }
     return finished ? "tools.wrote" : "tools.writing";
 }

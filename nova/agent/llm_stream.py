@@ -63,6 +63,7 @@ class TurnStreamReader:
 
         self._text_started = False
         self._reasoning_started = False
+        self._reasoning_ended = False
         self._reasoning_started_at: float | None = None
 
     async def consume(
@@ -92,7 +93,8 @@ class TurnStreamReader:
                 elif chunk_type == "text_delta":
                     if not self._text_started:
                         self._text_started = True
-                        if self.reasoning:
+                        if self.reasoning and not self._reasoning_ended:
+                            self._reasoning_ended = True
                             self.reasoning_elapsed_ms = self._reasoning_elapsed()
                             await self._emit(AgentEvent.REASONING_END)
                             yield AgentEvent.REASONING_END, self.reasoning_elapsed_ms
@@ -131,6 +133,34 @@ class TurnStreamReader:
                     )
                     return
 
+                elif chunk_type == "tool_input_start":
+                    # The model has stopped thinking and begun composing tool
+                    # arguments. Close the reasoning block now rather than at
+                    # stream end, which may be a long write away.
+                    if (
+                        self.reasoning
+                        and not self._reasoning_ended
+                        and not self._text_started
+                    ):
+                        self._reasoning_ended = True
+                        self.reasoning_elapsed_ms = self._reasoning_elapsed()
+                        await self._emit(AgentEvent.REASONING_END)
+                        yield AgentEvent.REASONING_END, self.reasoning_elapsed_ms
+                    await self._emit(AgentEvent.TOOL_INPUT_START, chunk)
+                    yield AgentEvent.TOOL_INPUT_START, chunk
+
+                elif chunk_type == "tool_input_delta":
+                    await self._emit(AgentEvent.TOOL_INPUT_DELTA, chunk)
+                    yield AgentEvent.TOOL_INPUT_DELTA, chunk
+
+                elif chunk_type == "tool_input_end":
+                    await self._emit(AgentEvent.TOOL_INPUT_END, chunk)
+                    yield AgentEvent.TOOL_INPUT_END, chunk
+
+                elif chunk_type == "tool_input_error":
+                    await self._emit(AgentEvent.TOOL_INPUT_ERROR, chunk)
+                    yield AgentEvent.TOOL_INPUT_ERROR, chunk
+
                 elif chunk_type == "tool_call":
                     self._absorb_tool_call(chunk)
 
@@ -148,7 +178,8 @@ class TurnStreamReader:
         finally:
             # The delta channels must be closed even when the stream ended early,
             # but a generator that is being torn down can no longer yield.
-            if self.reasoning and not self._text_started:
+            if self.reasoning and not self._reasoning_ended and not self._text_started:
+                self._reasoning_ended = True
                 self.reasoning_elapsed_ms = self._reasoning_elapsed()
                 await self._emit(AgentEvent.REASONING_END)
                 if not closing:

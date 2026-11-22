@@ -136,6 +136,9 @@ class ToolResult:
     content: str = ""
     error: str | None = None
     requires_input: bool = False
+    # The tool never ran because a policy or the user refused it. Distinct from
+    # an execution failure: the AI SDK gives it its own `tool-output-denied` frame.
+    denied: bool = False
 
 
 @dataclass
@@ -151,6 +154,71 @@ class TextDelta(ChatEvent):
 
     type: str = "text_delta"
     content: str = ""
+
+
+@dataclass
+class ToolInputStart(ChatEvent):
+    """The model has begun composing a tool call's arguments.
+
+    Providers know the id and name before the argument JSON is complete. Emitting
+    this lets a client draw the tool block while a large payload is still being
+    generated, instead of showing the finished call only after the last brace.
+    """
+
+    type: str = "tool_input_start"
+    id: str = ""
+    name: str = ""
+
+    def model_dump(self) -> dict:
+        return {"type": self.type, "id": self.id, "name": self.name}
+
+
+@dataclass
+class ToolInputDelta(ChatEvent):
+    """A chunk of the tool call's raw argument text."""
+
+    type: str = "tool_input_delta"
+    id: str = ""
+    name: str = ""
+    delta: str = ""
+
+    def model_dump(self) -> dict:
+        return {
+            "type": self.type,
+            "id": self.id,
+            "name": self.name,
+            "delta": self.delta,
+        }
+
+
+@dataclass
+class ToolInputEnd(ChatEvent):
+    """The argument text is complete; execution has not started yet."""
+
+    type: str = "tool_input_end"
+    id: str = ""
+    name: str = ""
+
+    def model_dump(self) -> dict:
+        return {"type": self.type, "id": self.id, "name": self.name}
+
+
+@dataclass
+class ToolInputError(ChatEvent):
+    """The argument text ended but could not be decoded into a tool call."""
+
+    type: str = "tool_input_error"
+    id: str = ""
+    name: str = ""
+    raw: str = ""
+
+    def model_dump(self) -> dict:
+        return {
+            "type": self.type,
+            "id": self.id,
+            "name": self.name,
+            "raw": self.raw,
+        }
 
 
 @dataclass
@@ -246,7 +314,18 @@ class RetryNotice(ChatEvent):
     reason: str = ""
 
 
-ChatStreamEvent = TextDelta | ReasoningDelta | ToolCall | Done | Error | RetryNotice
+ChatStreamEvent = (
+    TextDelta
+    | ReasoningDelta
+    | ToolInputStart
+    | ToolInputDelta
+    | ToolInputEnd
+    | ToolInputError
+    | ToolCall
+    | Done
+    | Error
+    | RetryNotice
+)
 
 
 class LLMProvider(ABC):

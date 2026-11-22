@@ -48,6 +48,11 @@ export function ToolBlock({ part }: { part: ToolCallPartData }) {
         if (status === "blocked" && activeRenderer.blockedTitle) {
             return activeRenderer.blockedTitle(ctxArgs);
         }
+        // Arguments have not arrived yet: the call is still being composed, so
+        // there is no path or line count to show.
+        if (status === "running" && args === null && activeRenderer.preparing) {
+            return activeRenderer.preparing;
+        }
         const verb =
             status === "running"
                 ? activeRenderer.verbs.running

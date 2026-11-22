@@ -20,6 +20,10 @@ from nova.llm.provider import (
     ReasoningDelta,
     TextDelta,
     ToolCall,
+    ToolInputDelta,
+    ToolInputEnd,
+    ToolInputError,
+    ToolInputStart,
 )
 from nova.llm.reasoning import apply_effort
 from nova.llm.request_hook import run_request_hook, run_session_hook
@@ -59,7 +63,7 @@ def _collect_tool_calls(tool_calls_by_index: dict[int, dict]) -> list[ToolCall]:
             arguments=str(v.get("arguments") or "{}"),
         )
         for _, v in sorted(tool_calls_by_index.items())
-        if v.get("name") and v.get("emitted")
+        if v.get("name") and v.get("emitted") and not v.get("invalid")
     ]
     if emitted:
         return emitted
@@ -70,7 +74,7 @@ def _collect_tool_calls(tool_calls_by_index: dict[int, dict]) -> list[ToolCall]:
             arguments=str(v.get("arguments") or "{}"),
         )
         for _, v in sorted(tool_calls_by_index.items())
-        if v.get("name")
+        if v.get("name") and not v.get("invalid")
     ]
 
 
@@ -148,6 +152,8 @@ class _ResponsesStreamParser(StreamParser):
                     "id": event.get("item_id", f"call_{output_index}"),
                     "name": "",
                     "arguments": "",
+                    "ended": False,
+                    "invalid": False,
                     "emitted": False,
                 }
             if event.get("delta"):
@@ -157,6 +163,13 @@ class _ResponsesStreamParser(StreamParser):
                 acc.guard_tool_args(
                     len(str(self._tool_calls[output_index].get("arguments", "")))
                 )
+                state = self._tool_calls[output_index]
+                if state.get("name"):
+                    yield ToolInputDelta(
+                        id=str(state["id"]),
+                        name=str(state["name"]),
+                        delta=str(event["delta"]),
+                    )
             return
         if event_type == "response.output_item.added":
             item = event.get("item", {})
@@ -168,8 +181,15 @@ class _ResponsesStreamParser(StreamParser):
                     "id": item.get("call_id", item.get("id", f"call_{output_index}")),
                     "name": item.get("name", ""),
                     "arguments": arguments,
+                    "ended": False,
+                    "invalid": False,
                     "emitted": False,
                 }
+                if item.get("name"):
+                    yield ToolInputStart(
+                        id=str(self._tool_calls[output_index]["id"]),
+                        name=str(item["name"]),
+                    )
             return
         if event_type == "response.output_item.done":
             item = event.get("item", {})
@@ -183,26 +203,50 @@ class _ResponsesStreamParser(StreamParser):
                     call_state["name"] = item["name"]
                 if call_state.get("name") and not call_state.get("emitted"):
                     call_state["emitted"] = True
-                    yield ToolCall(
-                        id=str(call_state["id"]),
-                        name=str(call_state["name"]),
-                        arguments=str(call_state["arguments"] or "{}"),
-                    )
+                    yield from self._finish_tool_input(call_state)
             return
         if event_type == "response.function_call_arguments.done":
             output_index = event.get("output_index", 0)
             pending = self._tool_calls.get(output_index)
             if pending and pending.get("name") and not pending.get("emitted"):
                 pending["emitted"] = True
-                yield ToolCall(
-                    id=str(pending["id"]),
-                    name=str(pending["name"]),
-                    arguments=str(pending.get("arguments") or "{}"),
-                )
+                yield from self._finish_tool_input(pending)
             return
 
         # unknown -> ignore
         return
+
+    def _finish_tool_input(self, state: dict) -> list[ChatStreamEvent]:
+        events: list[ChatStreamEvent] = []
+        if not state.get("ended"):
+            state["ended"] = True
+            events.append(
+                ToolInputEnd(
+                    id=str(state["id"]),
+                    name=str(state["name"]),
+                )
+            )
+        arguments = str(state.get("arguments") or "{}")
+        try:
+            json.loads(arguments)
+        except json.JSONDecodeError:
+            state["invalid"] = True
+            events.append(
+                ToolInputError(
+                    id=str(state["id"]),
+                    name=str(state["name"]),
+                    raw=arguments,
+                )
+            )
+        else:
+            events.append(
+                ToolCall(
+                    id=str(state["id"]),
+                    name=str(state["name"]),
+                    arguments=arguments,
+                )
+            )
+        return events
 
     def build_done(self, acc: StreamAccumulator) -> Done:
         return Done(

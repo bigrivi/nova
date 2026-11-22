@@ -14,7 +14,13 @@ from inspect import iscoroutinefunction
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nova.llm import ToolCall
+    from nova.llm import (
+        ToolCall,
+        ToolInputDelta,
+        ToolInputEnd,
+        ToolInputError,
+        ToolInputStart,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +51,10 @@ class AgentEvent(Enum):
     TEXT_END = "text_end"
 
     # Tool execution
+    TOOL_INPUT_START = "tool_input_start"
+    TOOL_INPUT_DELTA = "tool_input_delta"
+    TOOL_INPUT_END = "tool_input_end"
+    TOOL_INPUT_ERROR = "tool_input_error"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
 
@@ -86,7 +96,18 @@ class EventBus:
             self._handlers[event].remove(handler)
 
     async def emit(
-        self, event: AgentEvent, data: dict[str, Any] | str | ToolCall | None = None
+        self,
+        event: AgentEvent,
+        data: (
+            dict[str, Any]
+            | str
+            | ToolCall
+            | ToolInputStart
+            | ToolInputDelta
+            | ToolInputEnd
+            | ToolInputError
+            | None
+        ) = None,
     ) -> None:
         for handler in self._handlers.get(event, []):
             try:

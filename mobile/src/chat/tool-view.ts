@@ -160,13 +160,16 @@ function fileMutationView(
         ? splitMutationOutput(text)
         : { headline: "", diff: null };
     const isEdit = toolName === "edit";
-    const verb = isEdit
-        ? settled && !errored
-            ? "Edited"
-            : "Editing"
-        : settled && !errored
-          ? "Wrote"
-          : "Writing";
+    const preparing = !isEdit && !settled && Object.keys(args).length === 0;
+    const verb = preparing
+        ? "Preparing write"
+        : isEdit
+          ? settled && !errored
+              ? "Edited"
+              : "Editing"
+          : settled && !errored
+            ? "Wrote"
+            : "Writing";
     const name = path ? baseName(path) : null;
 
     return {

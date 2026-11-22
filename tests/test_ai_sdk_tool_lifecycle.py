@@ -20,7 +20,14 @@ import json
 import pytest
 
 from nova.agent.events import AgentEvent
-from nova.llm import ToolCall, ToolResult
+from nova.llm import (
+    ToolCall,
+    ToolInputDelta,
+    ToolInputEnd,
+    ToolInputError,
+    ToolInputStart,
+    ToolResult,
+)
 from nova.server.ai_sdk_stream import UNANSWERED_TOOL_MESSAGE, AISDKStreamAdapter
 
 
@@ -60,6 +67,38 @@ def call(tool_call_id: str = "call-1", name: str = "shell") -> tuple:
     return (
         AgentEvent.TOOL_CALL,
         ToolCall(id=tool_call_id, name=name, arguments='{"command":"ls"}'),
+    )
+
+
+def start(tool_call_id: str = "call-1", name: str = "write") -> tuple:
+    return (
+        AgentEvent.TOOL_INPUT_START,
+        ToolInputStart(id=tool_call_id, name=name),
+    )
+
+
+def delta(
+    text: str = '{"filePath":', tool_call_id: str = "call-1", name: str = "write"
+) -> tuple:
+    return (
+        AgentEvent.TOOL_INPUT_DELTA,
+        ToolInputDelta(id=tool_call_id, name=name, delta=text),
+    )
+
+
+def input_end(tool_call_id: str = "call-1", name: str = "write") -> tuple:
+    return (
+        AgentEvent.TOOL_INPUT_END,
+        ToolInputEnd(id=tool_call_id, name=name),
+    )
+
+
+def input_error(
+    raw: str = '{"filePath":', tool_call_id: str = "call-1", name: str = "write"
+) -> tuple:
+    return (
+        AgentEvent.TOOL_INPUT_ERROR,
+        ToolInputError(id=tool_call_id, name=name, raw=raw),
     )
 
 
@@ -114,10 +153,130 @@ def test_an_answered_call_produces_no_guard_frame(success: bool) -> None:
         [call(), result(success=success), (AgentEvent.DONE, {"reason": "completed"})]
     )
 
-    outputs = [f for f in frames if f["type"] == "tool-output-available"]
-    assert len(outputs) == 1, outputs
+    terminal = [
+        f["type"]
+        for f in frames
+        if f["type"] in ("tool-output-available", "tool-output-error")
+    ]
+    assert terminal == ["tool-output-available" if success else "tool-output-error"], (
+        terminal
+    )
     # A failed result emits its own error frame carrying the tool's message;
     # the guard must not add a second, contradictory one.
+    guard = [
+        f
+        for f in frames
+        if f["type"] == "data-nova-tool-error"
+        and f["data"]["message"] == UNANSWERED_TOOL_MESSAGE
+    ]
+    assert guard == []
+
+
+def test_a_denied_call_ends_with_the_denied_frame() -> None:
+    denied = (
+        AgentEvent.TOOL_RESULT,
+        {
+            "tool": "shell",
+            "tool_call_id": "call-1",
+            "result": ToolResult(
+                success=False,
+                denied=True,
+                content="Tool call rejected by user",
+            ),
+        },
+    )
+    frames = drive([call(), denied, (AgentEvent.DONE, {"reason": "completed"})])
+
+    terminal = [
+        f["type"]
+        for f in frames
+        if f["type"]
+        in ("tool-output-available", "tool-output-error", "tool-output-denied")
+    ]
+    assert terminal == ["tool-output-denied"]
+    custom = [f for f in frames if f["type"] == "data-nova-tool-error"]
+    assert custom and custom[0]["data"]["message"] == "Tool call rejected by user"
+
+
+def test_a_started_call_is_announced_once_and_before_its_input() -> None:
+    frames = drive(
+        [
+            start(),
+            call(name="write"),
+            result(),
+            (AgentEvent.DONE, {"reason": "completed"}),
+        ]
+    )
+
+    starts = [f for f in frames if f["type"] == "tool-input-start"]
+    assert [f["toolCallId"] for f in starts] == ["call-1"]
+    types = [f["type"] for f in frames]
+    assert types.index("tool-input-start") < types.index("tool-input-available")
+    assert types.index("tool-input-available") < types.index("tool-output-available")
+
+
+def test_input_deltas_reach_the_wire_and_end_adds_no_frame() -> None:
+    frames = drive(
+        [
+            start(),
+            delta('{"filePath":'),
+            delta('"/tmp/x"}'),
+            input_end(),
+            call(name="write"),
+            result(),
+            (AgentEvent.DONE, {"reason": "completed"}),
+        ]
+    )
+
+    types = [f["type"] for f in frames]
+    assert types == [
+        "tool-input-start",
+        "tool-input-delta",
+        "tool-input-delta",
+        "tool-input-available",
+        "tool-output-available",
+        "finish",
+    ]
+    text = "".join(
+        f["inputTextDelta"] for f in frames if f["type"] == "tool-input-delta"
+    )
+    assert text == '{"filePath":"/tmp/x"}'
+
+
+def test_a_started_call_that_never_executes_is_answered_at_the_terminal_frame() -> None:
+    frames = drive([start(), (AgentEvent.DONE, {"reason": "stopped"})])
+
+    guard = [
+        f["data"]["toolCallId"]
+        for f in frames
+        if f["type"] == "data-nova-tool-error"
+        and f["data"]["message"] == UNANSWERED_TOOL_MESSAGE
+    ]
+    assert guard == ["call-1"]
+
+
+def test_a_malformed_input_is_answered_with_the_input_error_frame() -> None:
+    frames = drive(
+        [
+            start(),
+            delta('{"filePath":'),
+            input_end(),
+            input_error('{"filePath":'),
+            (AgentEvent.DONE, {"reason": "completed"}),
+        ]
+    )
+
+    types = [f["type"] for f in frames]
+    assert types == [
+        "tool-input-start",
+        "tool-input-delta",
+        "tool-input-error",
+        "data-nova-tool-error",
+        "finish",
+    ]
+    error = next(f for f in frames if f["type"] == "tool-input-error")
+    assert error["toolCallId"] == "call-1"
+    assert error["errorText"] == "Invalid tool arguments"
     guard = [
         f
         for f in frames

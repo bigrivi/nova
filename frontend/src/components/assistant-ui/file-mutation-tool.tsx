@@ -120,11 +120,13 @@ function buildViewModel(
         : { headline: "", diff: null };
 
     // The verb says what happened, not what the tool is: a call still waiting for
-    // approval has not written anything yet, and a rejected one never will.
+    // approval has not written anything yet, and a rejected one never will. An
+    // announced call with no arguments yet is still composing its payload.
     const verb = t(
         mutationVerbKey(normalizedName, {
             hasResult: result !== undefined,
             isError,
+            hasInput: Object.keys(normalizedArgs).length > 0,
         }),
     );
     return {

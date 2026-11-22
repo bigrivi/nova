@@ -359,8 +359,12 @@ AI SDK UI message parts emitted by the server (from `nova/server/ai_sdk_stream.p
 | `start-step` / `finish-step` | Turn boundaries inside a multi-turn run |
 | `text-start` / `text-delta` / `text-end` | Streaming text, grouped by `id` |
 | `reasoning-start` / `reasoning-delta` / `reasoning-end` | Model reasoning / thinking. `reasoning-end` may include `elapsedMs` |
-| `tool-input-start` / `tool-input-available` | Tool call announced, with `toolCallId`, `toolName`, and parsed `input` |
+| `tool-input-start` / `tool-input-delta` / `tool-input-available` | Tool call announced, its argument text streamed, then the parsed `input`; each carries `toolCallId`, and start/available carry `toolName` |
+| `tool-input-error` | Argument text ended but could not be decoded; carries `toolCallId`, `toolName`, `input`, `errorText` |
 | `tool-output-available` | Tool result, with `toolCallId` and `output` |
+| `tool-output-error` | Tool execution failed, with `toolCallId` and `errorText` |
+| `tool-output-denied` | Tool never ran because approval or policy refused it, with `toolCallId` |
+| `tool-approval-request` / `tool-approval-response` | Standard AI SDK approval pair, in addition to `data-nova-approval-*` |
 | `data-nova-session` | Session id for a newly created session, `{"sessionId": "..."}` |
 | `data-nova-approval-required` | Shell or tool approval needed. Carries `sessionId`, `requestId`, `command`, `description`, `toolName`, `toolCallId`, `rememberable`, `family`, `target`, `scriptScoped`, `dangerous`, and `workspace`. `rememberable: false` means the client must not offer to remember it; `target` is the exact path the tool is about to touch (empty for a shell command); `scriptScoped: true` means remembering covers only the inline script above the buttons; `dangerous: true` means the shell's built-in danger layer fired (display only); `workspace` is the directory the path was judged against, empty when none is active |
 | `data-nova-heartbeat` | Keepalive while waiting for approval |

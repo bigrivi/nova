@@ -189,6 +189,7 @@
     "tools.editing": "Editing",
     "tools.wrote": "Wrote",
     "tools.writing": "Writing",
+    "tools.preparingWrite": "Preparing write",
     "tools.delegateToAgent": "Delegated to sub-agent",
     "tools.delegatedTo": "Delegated to {{target}}",
     "tools.delegatedRunning": "Running in background…",

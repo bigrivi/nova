@@ -18,6 +18,8 @@ from nova.llm.provider import (
     ReasoningDelta,
     TextDelta,
     ToolCall,
+    ToolInputEnd,
+    ToolInputStart,
 )
 from nova.llm.stream_driver import StreamParser
 from nova.llm.user_agent import default_user_agent
@@ -53,12 +55,26 @@ class _OllamaStreamParser(StreamParser):
             for tc in tool_calls_delta:
                 index = tc.get("index", 0)
                 if index != self._current_tool_index:
-                    self._tool_calls[index] = {"name": "", "arguments": ""}
+                    self._tool_calls[index] = {
+                        "name": "",
+                        "arguments": "",
+                        "started": False,
+                        "ended": False,
+                    }
                     self._current_tool_index = index
 
                 func = tc.get("function", {})
                 if func.get("name"):
                     self._tool_calls[index]["name"] = func["name"]
+                if (
+                    not self._tool_calls[index]["started"]
+                    and self._tool_calls[index]["name"]
+                ):
+                    self._tool_calls[index]["started"] = True
+                    yield ToolInputStart(
+                        id=f"call_{index}",
+                        name=self._tool_calls[index]["name"],
+                    )
                 if func.get("arguments"):
                     try:
                         existing = json.loads(
@@ -80,6 +96,15 @@ class _OllamaStreamParser(StreamParser):
                         id=f"call_{index}",
                         name=self._tool_calls[index]["name"],
                         arguments=self._tool_calls[index]["arguments"] or "{}",
+                    )
+
+        if event.get("done"):
+            for index, state in self._tool_calls.items():
+                if state.get("started") and not state.get("ended"):
+                    state["ended"] = True
+                    yield ToolInputEnd(
+                        id=f"call_{index}",
+                        name=state["name"],
                     )
 
         if delta:

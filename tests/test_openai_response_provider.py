@@ -5,7 +5,15 @@ import json
 import aiohttp
 import pytest
 
-from nova.llm.provider import Done, Error, Message, TextDelta, ToolCall
+from nova.llm.provider import (
+    Done,
+    Error,
+    Message,
+    TextDelta,
+    ToolCall,
+    ToolInputDelta,
+    ToolInputError,
+)
 from nova.llm.providers.openai_responses import OpenAIResponsesProvider
 
 # The Responses API sends the whole response as ONE `response.completed` SSE
@@ -282,7 +290,15 @@ async def test_a_normal_turn_still_produces_text_tool_call_and_done(monkeypatch)
         (
             b'data: {"type":"response.output_item.added","output_index":0,'
             b'"item":{"type":"function_call","call_id":"call_1","name":"lookup",'
-            b'"arguments":"{\\"q\\":1}"}}\n'
+            b'"arguments":""}}\n'
+        ),
+        (
+            b'data: {"type":"response.function_call_arguments.delta",'
+            b'"output_index":0,"delta":"{\\"q\\""}\n'
+        ),
+        (
+            b'data: {"type":"response.function_call_arguments.delta",'
+            b'"output_index":0,"delta":":1}"}\n'
         ),
         b'data: {"type":"response.function_call_arguments.done","output_index":0}\n',
         _completed_line("hello", {"input_tokens": 11, "output_tokens": 22}),
@@ -298,15 +314,57 @@ async def test_a_normal_turn_still_produces_text_tool_call_and_done(monkeypatch)
     ]
 
     kinds = [type(event).__name__ for event in collected]
-    assert kinds == ["TextDelta", "TextDelta", "ToolCall", "Done"]
+    assert kinds == [
+        "TextDelta",
+        "TextDelta",
+        "ToolInputStart",
+        "ToolInputDelta",
+        "ToolInputDelta",
+        "ToolInputEnd",
+        "ToolCall",
+        "Done",
+    ]
     assert "".join(e.content for e in collected if isinstance(e, TextDelta)) == "hello"
     tool_call = next(e for e in collected if isinstance(e, ToolCall))
     assert (tool_call.id, tool_call.name) == ("call_1", "lookup")
+    deltas = "".join(e.delta for e in collected if isinstance(e, ToolInputDelta))
+    assert deltas == tool_call.arguments
     done = collected[-1]
     assert done.content == "hello"
     assert done.tokens_input == 11
     assert done.tokens_output == 22
     assert [tc.name for tc in done.tool_calls] == ["lookup"]
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_tool_call_ends_as_input_error(monkeypatch):
+    """Unparsable arguments must not be collected as an executable call."""
+    lines = [
+        b'data: {"type":"response.output_item.added","output_index":0,'
+        b'"item":{"type":"function_call","call_id":"call_bad","name":"write",'
+        b'"arguments":""}}\n',
+        b'data: {"type":"response.function_call_arguments.delta",'
+        b'"output_index":0,"delta":"{\\"q\\":"}\n',
+        b'data: {"type":"response.function_call_arguments.done","output_index":0}\n',
+        _completed_line("", {"input_tokens": 1, "output_tokens": 1}),
+    ]
+    _install_fake(monkeypatch, _FakeResponse(lines=lines))
+    provider = OpenAIResponsesProvider(api_key="k")
+
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="gpt-5"
+        )
+    ]
+
+    kinds = [type(event).__name__ for event in collected]
+    assert "ToolInputError" in kinds
+    assert any(isinstance(event, ToolInputError) for event in collected)
+    assert "ToolCall" not in kinds
+    done = collected[-1]
+    assert isinstance(done, Done)
+    assert done.tool_calls == []
 
 
 def test_build_body_sets_prompt_cache_key_from_session():

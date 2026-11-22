@@ -14,6 +14,10 @@ from nova.llm.provider import (
     ReasoningDelta,
     TextDelta,
     ToolCall,
+    ToolInputDelta,
+    ToolInputEnd,
+    ToolInputError,
+    ToolInputStart,
 )
 from nova.llm.providers.anthropic import (
     AnthropicProvider,
@@ -1058,10 +1062,66 @@ async def test_chat_stream_tool_use_chunked_json(monkeypatch):
     assert tool_calls[0].id == "toolu_1"
     assert tool_calls[0].name == "read"
     assert tool_calls[0].arguments == '{"path": "a.txt"}'
+    input_events = [
+        type(event).__name__
+        for event in collected
+        if isinstance(event, (ToolInputStart, ToolInputDelta, ToolInputEnd, ToolCall))
+    ]
+    assert input_events == [
+        "ToolInputStart",
+        "ToolInputDelta",
+        "ToolInputDelta",
+        "ToolInputEnd",
+        "ToolCall",
+    ]
+    deltas = "".join(
+        event.delta for event in collected if isinstance(event, ToolInputDelta)
+    )
+    assert deltas == '{"path": "a.txt"}'
     done = collected[-1]
     assert isinstance(done, Done)
     assert len(done.tool_calls) == 1
     assert done.tool_calls[0].arguments == '{"path": "a.txt"}'
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_reports_malformed_tool_arguments(monkeypatch):
+    """The block must end as an input error rather than a bogus executable call."""
+    events = [
+        {
+            "type": "content_block_start",
+            "index": 1,
+            "content_block": {
+                "type": "tool_use",
+                "id": "toolu_bad",
+                "name": "write",
+                "input": {},
+            },
+        },
+        {
+            "type": "content_block_delta",
+            "index": 1,
+            "delta": {"type": "input_json_delta", "partial_json": '{"filePath": '},
+        },
+        {"type": "content_block_stop", "index": 1},
+        {"type": "message_stop"},
+    ]
+    response = _FakeResponse(status=200, sse_lines=_sse_lines(events))
+    _install_fake(monkeypatch, response)
+    provider = AnthropicProvider(api_key="k")
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [Message(role="user", content="hi")], model="claude-3-opus-20240229"
+        )
+    ]
+    kinds = [type(event).__name__ for event in collected]
+    assert "ToolInputError" in kinds
+    assert any(isinstance(event, ToolInputError) for event in collected)
+    assert "ToolCall" not in kinds
+    done = collected[-1]
+    assert isinstance(done, Done)
+    assert done.tool_calls == []
 
 
 @pytest.mark.asyncio

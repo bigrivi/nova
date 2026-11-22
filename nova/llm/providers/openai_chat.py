@@ -22,6 +22,10 @@ from nova.llm.provider import (
     ReasoningDelta,
     TextDelta,
     ToolCall,
+    ToolInputDelta,
+    ToolInputEnd,
+    ToolInputError,
+    ToolInputStart,
 )
 from nova.llm.reasoning import apply_effort
 from nova.llm.request_hook import run_request_hook, run_session_hook
@@ -109,26 +113,59 @@ class _OpenAIChatStreamParser(StreamParser):
                         "id": tc.get("id", f"call_{index}"),
                         "name": "",
                         "arguments": "",
+                        "started": False,
+                        "got_id": bool(tc.get("id")),
+                        "ended": False,
+                        "invalid": False,
                         "yielded": False,
                     }
 
                 if tc.get("id"):
                     self._tool_calls[index]["id"] = tc["id"]
+                    self._tool_calls[index]["got_id"] = True
 
                 func = tc.get("function", {})
                 if func.get("name"):
                     self._tool_calls[index]["name"] = func["name"]
+                if (
+                    not self._tool_calls[index]["started"]
+                    and self._tool_calls[index]["got_id"]
+                    and self._tool_calls[index]["name"]
+                ):
+                    self._tool_calls[index]["started"] = True
+                    yield ToolInputStart(
+                        id=str(self._tool_calls[index]["id"]),
+                        name=str(self._tool_calls[index]["name"]),
+                    )
                 if func.get("arguments"):
-                    self._tool_calls[index]["arguments"] += func["arguments"]
-                    acc.guard_tool_args(len(str(self._tool_calls[index]["arguments"])))
+                    argument_delta = str(func["arguments"])
+                    current = str(self._tool_calls[index]["arguments"] or "")
+                    self._tool_calls[index]["arguments"] = current + argument_delta
+                    acc.guard_tool_args(len(current + argument_delta))
+                    if self._tool_calls[index]["started"]:
+                        yield ToolInputDelta(
+                            id=str(self._tool_calls[index]["id"]),
+                            name=str(self._tool_calls[index]["name"]),
+                            delta=argument_delta,
+                        )
 
                 arguments = str(self._tool_calls[index]["arguments"] or "")
-                if self._tool_calls[index]["name"] and arguments:
+                if (
+                    self._tool_calls[index]["name"]
+                    and arguments
+                    and not self._tool_calls[index]["yielded"]
+                ):
                     try:
                         json.loads(arguments)
                     except json.JSONDecodeError:
                         pass
                     else:
+                        if not self._tool_calls[index]["ended"]:
+                            self._tool_calls[index]["ended"] = True
+                            yield ToolInputEnd(
+                                id=str(self._tool_calls[index]["id"]),
+                                name=str(self._tool_calls[index]["name"]),
+                            )
                         self._tool_calls[index]["yielded"] = True
                         yield ToolCall(
                             id=str(self._tool_calls[index]["id"]),
@@ -146,6 +183,21 @@ class _OpenAIChatStreamParser(StreamParser):
             self._finish_reason = finish_reason
         if finish_reason == "tool_calls":
             self.finished = True
+            for state in self._tool_calls.values():
+                if not state["started"] or state["yielded"]:
+                    continue
+                state["invalid"] = True
+                if not state["ended"]:
+                    state["ended"] = True
+                    yield ToolInputEnd(
+                        id=str(state["id"]),
+                        name=str(state["name"]),
+                    )
+                yield ToolInputError(
+                    id=str(state["id"]),
+                    name=str(state["name"]),
+                    raw=str(state["arguments"] or ""),
+                )
 
     def build_done(self, acc: StreamAccumulator) -> Done | Error:
         tool_calls = [
@@ -155,7 +207,7 @@ class _OpenAIChatStreamParser(StreamParser):
                 arguments=str(tool_state["arguments"] or "{}"),
             )
             for _, tool_state in sorted(self._tool_calls.items())
-            if tool_state["name"]
+            if tool_state["name"] and not tool_state.get("invalid")
         ]
         # A turn that hit the output-token limit without producing any answer
         # (all budget spent on reasoning) is a failure, not an empty answer.

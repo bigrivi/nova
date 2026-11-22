@@ -277,10 +277,15 @@ describe("applyStreamEvent tool branches", () => {
         );
 
         const part = toolCallOf(messages[0]!, "call-10") as
-            | { isError?: boolean; errorMessage?: string }
+            | { isError?: boolean; errorMessage?: string; result?: unknown }
             | null;
         expect(part?.isError).toBe(true);
         expect(part?.errorMessage).toBe("Refused: not provably read-only.");
+        // Without a `tool-output-available`, the part must still carry a result
+        // so the card leaves its running state.
+        expect(part?.result).toEqual({
+            error: "Refused: not provably read-only.",
+        });
     });
 
     it("drops a stale error when a result arrives later for the same call", () => {

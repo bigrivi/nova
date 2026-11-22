@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from nova.llm.provider import Done, Error
+from nova.llm.provider import (
+    Done,
+    Error,
+    ToolCall,
+    ToolInputDelta,
+    ToolInputEnd,
+    ToolInputError,
+    ToolInputStart,
+)
 from nova.llm.providers.openai_chat import OpenAIProvider
 
 
@@ -188,6 +196,74 @@ async def test_chat_stream_length_with_partial_answer_is_done(monkeypatch):
     done = collected[-1]
     assert isinstance(done, Done)
     assert done.content == "partial"
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_announces_a_tool_call_before_arguments_finish(monkeypatch):
+    """The block must exist while a large argument payload is still arriving."""
+    lines = [
+        b'data: {"choices": [{"delta": {"tool_calls": [{"index": 0, '
+        b'"id": "call_1", "function": {"name": "write", '
+        b'"arguments": "{\\"filePath\\": \\"/tmp/x\\","}}]}}]}\n',
+        b'data: {"choices": [{"delta": {"tool_calls": [{"index": 0, '
+        b'"function": {"arguments": " \\"content\\": \\"hello\\"}"}}]}}]}\n',
+        b"data: [DONE]\n",
+    ]
+    _install_fake(monkeypatch, _FakeResponse(lines=lines))
+    provider = OpenAIProvider(api_key="k")
+
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [{"role": "user", "content": "hi"}], model="gpt-5"
+        )
+    ]
+
+    kinds = [type(event).__name__ for event in collected]
+    assert kinds == [
+        "ToolInputStart",
+        "ToolInputDelta",
+        "ToolInputDelta",
+        "ToolInputEnd",
+        "ToolCall",
+        "Done",
+    ]
+    start = next(e for e in collected if isinstance(e, ToolInputStart))
+    call = next(e for e in collected if isinstance(e, ToolCall))
+    deltas = "".join(e.delta for e in collected if isinstance(e, ToolInputDelta))
+    assert (start.id, start.name) == ("call_1", "write")
+    assert start.id == call.id, "start and call must pair on the same id"
+    assert deltas == call.arguments, "deltas must spell the final arguments"
+    assert any(isinstance(e, ToolInputEnd) for e in collected)
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_reports_malformed_tool_arguments(monkeypatch):
+    """A call whose arguments never parse ends as an input error, not a call."""
+    lines = [
+        b'data: {"choices": [{"delta": {"tool_calls": [{"index": 0, '
+        b'"id": "call_bad", "function": {"name": "write", '
+        b'"arguments": "{\\"filePath\\": "}}]}}]}\n',
+        b'data: {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]}\n',
+        b"data: [DONE]\n",
+    ]
+    _install_fake(monkeypatch, _FakeResponse(lines=lines))
+    provider = OpenAIProvider(api_key="k")
+
+    collected = [
+        event
+        async for event in provider.chat_stream(
+            [{"role": "user", "content": "hi"}], model="gpt-5"
+        )
+    ]
+
+    kinds = [type(event).__name__ for event in collected]
+    assert "ToolInputError" in kinds
+    assert any(isinstance(event, ToolInputError) for event in collected)
+    assert "ToolCall" not in kinds
+    done = collected[-1]
+    assert isinstance(done, Done)
+    assert done.tool_calls == []
 
 
 def test_tool_result_with_image_keeps_its_role_and_call_id():

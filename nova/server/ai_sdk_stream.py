@@ -284,13 +284,15 @@ class AISDKStreamAdapter:
             self._active_reasoning_id = None
         return chunks
 
-    def _on_tool_call(self, data: object) -> list[bytes]:
-        chunks: list[bytes] = []
-        tool_name = getattr(data, "name", str(data))
-        tool_call_id = getattr(data, "id", "") or f"tool_{uuid.uuid4().hex}"
-        tool_input = _parse_tool_input(getattr(data, "arguments", ""))
+    def _on_tool_input_start(self, data: object) -> list[bytes]:
+        tool_call_id = getattr(data, "id", "") or ""
+        tool_name = getattr(data, "name", "") or ""
+        # An id-less call cannot be paired with its later result or the guard
+        # frame; leave it to `_on_tool_call`, which can generate an id.
+        if not tool_call_id or tool_call_id in self._open_tool_calls:
+            return []
         self._open_tool_calls[tool_call_id] = tool_name
-        chunks.append(
+        return [
             encode_ai_sdk_sse(
                 {
                     "type": "tool-input-start",
@@ -298,7 +300,78 @@ class AISDKStreamAdapter:
                     "toolName": tool_name,
                 }
             )
-        )
+        ]
+
+    def _on_tool_input_delta(self, data: object) -> list[bytes]:
+        tool_call_id = getattr(data, "id", "") or ""
+        delta = getattr(data, "delta", "") or ""
+        if not tool_call_id or not delta:
+            return []
+        return [
+            encode_ai_sdk_sse(
+                {
+                    "type": "tool-input-delta",
+                    "toolCallId": tool_call_id,
+                    "inputTextDelta": delta,
+                }
+            )
+        ]
+
+    def _on_tool_input_end(self, data: object) -> list[bytes]:
+        # AI SDK has no `tool-input-end` frame: the complete input is published
+        # by `tool-input-available` when the call becomes executable.
+        return []
+
+    def _on_tool_input_error(self, data: object) -> list[bytes]:
+        tool_call_id = getattr(data, "id", "") or ""
+        tool_name = getattr(data, "name", "") or ""
+        raw = getattr(data, "raw", "") or ""
+        if not tool_call_id:
+            return []
+        # This is terminal for the input: the call will never execute, so the
+        # turn-end guard must not answer it a second time.
+        self._open_tool_calls.pop(tool_call_id, None)
+        message = "Invalid tool arguments"
+        return [
+            encode_ai_sdk_sse(
+                {
+                    "type": "tool-input-error",
+                    "toolCallId": tool_call_id,
+                    "toolName": tool_name,
+                    "input": raw,
+                    "errorText": message,
+                }
+            ),
+            encode_ai_sdk_sse(
+                {
+                    "type": "data-nova-tool-error",
+                    "data": {
+                        "toolName": tool_name,
+                        "toolCallId": tool_call_id,
+                        "message": message,
+                    },
+                }
+            ),
+        ]
+
+    def _on_tool_call(self, data: object) -> list[bytes]:
+        chunks: list[bytes] = []
+        tool_name = getattr(data, "name", str(data))
+        tool_call_id = getattr(data, "id", "") or f"tool_{uuid.uuid4().hex}"
+        tool_input = _parse_tool_input(getattr(data, "arguments", ""))
+        if tool_call_id not in self._open_tool_calls:
+            # Providers that only report a finished call still need the start
+            # frame, so the client can pair the input and the result.
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "tool-input-start",
+                        "toolCallId": tool_call_id,
+                        "toolName": tool_name,
+                    }
+                )
+            )
+        self._open_tool_calls[tool_call_id] = tool_name
         chunks.append(
             encode_ai_sdk_sse(
                 {
@@ -317,17 +390,44 @@ class AISDKStreamAdapter:
         result = data["result"]
         tool_call_id = data.get("tool_call_id", "")
         tool_name = data["tool"]
+        success = bool(getattr(result, "success", False))
+        denied = bool(getattr(result, "denied", False))
+        message = getattr(result, "content", "") or getattr(result, "error", "")
         self._open_tool_calls.pop(tool_call_id, None)
-        chunks.append(
-            encode_ai_sdk_sse(
-                {
-                    "type": "tool-output-available",
-                    "toolCallId": tool_call_id,
-                    "output": _parse_tool_output(result),
-                }
+        if denied:
+            # Approval or policy refusal: the tool never ran, which is a
+            # different terminal state from an execution error.
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "tool-output-denied",
+                        "toolCallId": tool_call_id,
+                    }
+                )
             )
-        )
-        if not getattr(result, "success", False):
+        elif not success:
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "tool-output-error",
+                        "toolCallId": tool_call_id,
+                        "errorText": message or "Tool failed",
+                    }
+                )
+            )
+        else:
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "tool-output-available",
+                        "toolCallId": tool_call_id,
+                        "output": _parse_tool_output(result),
+                    }
+                )
+            )
+        if not success:
+            # Nova clients still key their error styling off this namespaced
+            # part; standard clients read the output frame above.
             chunks.append(
                 encode_ai_sdk_sse(
                     {
@@ -335,8 +435,7 @@ class AISDKStreamAdapter:
                         "data": {
                             "toolName": tool_name,
                             "toolCallId": tool_call_id,
-                            "message": getattr(result, "content", "")
-                            or getattr(result, "error", ""),
+                            "message": message,
                         },
                     }
                 )
@@ -351,13 +450,25 @@ class AISDKStreamAdapter:
     def _on_approval_result(self, data: object) -> list[bytes]:
         chunks: list[bytes] = []
         data_payload = data if isinstance(data, dict) else {}
+        approval_id = str(data_payload.get("id", ""))
+        approved = bool(data_payload.get("approved", False))
+        if approval_id:
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "tool-approval-response",
+                        "approvalId": approval_id,
+                        "approved": approved,
+                    }
+                )
+            )
         chunks.append(
             encode_ai_sdk_sse(
                 {
                     "type": "data-nova-approval-resolved",
                     "data": {
-                        "requestId": data_payload.get("id", ""),
-                        "approved": bool(data_payload.get("approved", False)),
+                        "requestId": approval_id,
+                        "approved": approved,
                     },
                 }
             )
@@ -373,27 +484,51 @@ class AISDKStreamAdapter:
         # dialog there is no workspace on a turn deciding every path against one.
         from nova.tools.workspace_context import get_active_workspace
 
+        approval_id = str(data_payload.get("id", ""))
+        tool_call_id = str(data_payload.get("toolCallId", ""))
+        workspace = get_active_workspace() or ""
         chunks.append(
             encode_ai_sdk_sse(
                 {
                     "type": "data-nova-approval-required",
                     "data": {
                         "sessionId": data_payload.get("sessionId", ""),
-                        "requestId": data_payload.get("id", ""),
+                        "requestId": approval_id,
                         "command": data_payload.get("command", ""),
                         "description": data_payload.get("description", ""),
-                        "toolCallId": data_payload.get("toolCallId", ""),
+                        "toolCallId": tool_call_id,
                         "toolName": data_payload.get("toolName", ""),
                         "rememberable": data_payload.get("rememberable", True),
                         "family": data_payload.get("family", ""),
                         "target": data_payload.get("target", ""),
                         "scriptScoped": bool(data_payload.get("digest", "")),
                         "dangerous": data_payload.get("dangerous", False),
-                        "workspace": get_active_workspace() or "",
+                        "workspace": workspace,
                     },
                 }
             )
         )
+        if approval_id and tool_call_id:
+            chunks.append(
+                encode_ai_sdk_sse(
+                    {
+                        "type": "tool-approval-request",
+                        "toolCallId": tool_call_id,
+                        "approvalId": approval_id,
+                        "approvalDescriptor": {
+                            "sessionId": data_payload.get("sessionId", ""),
+                            "toolName": data_payload.get("toolName", ""),
+                            "command": data_payload.get("command", ""),
+                            "target": data_payload.get("target", ""),
+                            "family": data_payload.get("family", ""),
+                            "rememberable": data_payload.get("rememberable", True),
+                            "dangerous": data_payload.get("dangerous", False),
+                            "workspace": workspace,
+                        },
+                        "reason": data_payload.get("description", ""),
+                    }
+                )
+            )
         return chunks
 
     def _on_compaction_start(self, data: object) -> list[bytes]:
@@ -548,6 +683,10 @@ _HANDLERS: dict[AgentEvent, Callable[[AISDKStreamAdapter, object], list[bytes]]]
     AgentEvent.REASONING_START: AISDKStreamAdapter._on_reasoning_start,
     AgentEvent.REASONING_DELTA: AISDKStreamAdapter._on_reasoning_delta,
     AgentEvent.REASONING_END: AISDKStreamAdapter._on_reasoning_end,
+    AgentEvent.TOOL_INPUT_START: AISDKStreamAdapter._on_tool_input_start,
+    AgentEvent.TOOL_INPUT_DELTA: AISDKStreamAdapter._on_tool_input_delta,
+    AgentEvent.TOOL_INPUT_END: AISDKStreamAdapter._on_tool_input_end,
+    AgentEvent.TOOL_INPUT_ERROR: AISDKStreamAdapter._on_tool_input_error,
     AgentEvent.TOOL_CALL: AISDKStreamAdapter._on_tool_call,
     AgentEvent.TOOL_RESULT: AISDKStreamAdapter._on_tool_result,
     AgentEvent.APPROVAL_HEARTBEAT: AISDKStreamAdapter._on_approval_heartbeat,

@@ -564,14 +564,19 @@ export function applyStreamEvent(
             return messages;
         }
         const reason = event.data?.message;
+        const message =
+            typeof reason === "string" && reason.trim()
+                ? reason.trim()
+                : "Tool failed";
         return upsertAssistantToolCall(messages, assistantMessageId, {
             toolCallId,
             isError: true,
-            // The reason is the only part of a server-side refusal a user can
-            // act on, so it travels with the part instead of being dropped.
-            ...(typeof reason === "string" && reason.trim()
-                ? { errorMessage: reason.trim() }
-                : {}),
+            // The server now sends a standard `tool-output-error`/`-denied`
+            // frame instead of `tool-output-available`, so this part needs a
+            // local result to leave the running state. The reason remains the
+            // only part of a refusal a user can act on.
+            output: { error: message },
+            errorMessage: message,
         });
     }
 

@@ -100,6 +100,7 @@ export const readImageRenderer: ToolRenderer<FileArgs> = {
 export const writeRenderer: ToolRenderer<FileArgs> = {
     parseArgs,
     verbs: { running: "Writing", done: "Wrote", error: "Failed to write" },
+    preparing: "Preparing write",
     subject,
     meta: (ctx) => {
         const lines = contentLines(ctx.args);

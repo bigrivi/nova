@@ -13,6 +13,10 @@ from nova.llm.provider import (
     ReasoningDelta,
     TextDelta,
     ToolCall,
+    ToolInputDelta,
+    ToolInputEnd,
+    ToolInputError,
+    ToolInputStart,
     ToolResult,
 )
 from nova.llm.providers.anthropic import AnthropicProvider
@@ -35,5 +39,9 @@ __all__ = [
     "ReasoningDelta",
     "TextDelta",
     "ToolCall",
+    "ToolInputDelta",
+    "ToolInputEnd",
+    "ToolInputError",
+    "ToolInputStart",
     "ToolResult",
 ]

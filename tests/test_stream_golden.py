@@ -114,7 +114,7 @@ def test_tool_call_and_result_stay_paired_and_in_order():
     assert output["toolCallId"] == "call-1", "the result must answer the same call"
 
 
-def test_a_failed_tool_adds_the_error_part_after_the_output():
+def test_a_failed_tool_emits_the_error_frame_then_the_part():
     frames = _frames(
         [
             (AgentEvent.TURN_START, None),
@@ -136,7 +136,7 @@ def test_a_failed_tool_adds_the_error_part_after_the_output():
         "start-step",
         "tool-input-start",
         "tool-input-available",
-        "tool-output-available",
+        "tool-output-error",
         "data-nova-tool-error",
         "finish-step",
     ]
@@ -168,14 +168,28 @@ def test_approval_required_and_resolved_are_a_pair():
         "start",
         "start-step",
         "data-nova-approval-required",
+        "tool-approval-request",
+        "tool-approval-response",
         "data-nova-approval-resolved",
         "finish-step",
     ]
     required = frames[2]["data"]
-    resolved = frames[3]["data"]
+    request = frames[3]
+    response = frames[4]
+    resolved = frames[5]["data"]
     assert required["requestId"] == "req-1"
     assert required["rememberable"] is False
     assert required["workspace"] == ""
+    assert request["type"] == "tool-approval-request"
+    assert request["approvalId"] == "req-1"
+    assert request["toolCallId"] == "call-1"
+    assert request["approvalDescriptor"]["rememberable"] is False
+    assert request["reason"] == "delete"
+    assert response == {
+        "type": "tool-approval-response",
+        "approvalId": "req-1",
+        "approved": False,
+    }
     assert resolved == {"requestId": "req-1", "approved": False}
 
 

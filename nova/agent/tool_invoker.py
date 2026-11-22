@@ -369,7 +369,12 @@ class ToolInvoker:
         return {
             "tool": _name_of(tool_call),
             "tool_call_id": tool_call_id,
-            "result": ToolResult(success=False, content=content, error=content),
+            "result": ToolResult(
+                success=False,
+                content=content,
+                error=content,
+                denied=True,
+            ),
         }
 
     async def persist_cancelled(
