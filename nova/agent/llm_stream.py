@@ -137,6 +137,10 @@ class TurnStreamReader:
                     # The model has stopped thinking and begun composing tool
                     # arguments. Close the reasoning block now rather than at
                     # stream end, which may be a long write away.
+                    log.info(
+                        f"[Turn {self._turn_count}] Tool input start: "
+                        f"{getattr(chunk, 'name', '')}"
+                    )
                     if (
                         self.reasoning
                         and not self._reasoning_ended

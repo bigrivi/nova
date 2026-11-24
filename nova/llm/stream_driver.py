@@ -184,8 +184,10 @@ async def drive_stream(
             yield Error(message=runaway.message)
             return
         if parser.stopped:
+            trace.end("stopped", content=len(accumulator.content))
             return
         if parser.finished:
+            trace.end("finished", content=len(accumulator.content))
             break
 
     if parser.finished:

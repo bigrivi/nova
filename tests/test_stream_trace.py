@@ -34,49 +34,31 @@ def _lines(records) -> list[str]:
 
 
 class TestLineAccounting:
-    def test_it_counts_reads_and_records_the_head(self, caplog):
+    def test_it_counts_reads_without_logging_their_content(self, caplog):
         trace = StreamTrace("p", "m")
         with caplog.at_level(logging.INFO, logger=module.__name__):
             trace.opened()
             for i in range(3):
                 trace.line(b'data: {"i":%d}\n' % i)
         assert trace.reads == 3
-        assert trace._head == ['data: {"i":0}', 'data: {"i":1}', 'data: {"i":2}']
-
-    def test_the_head_stops_at_the_log_cap_but_reads_keep_counting(self, caplog):
-        trace = StreamTrace("p", "m")
-        with caplog.at_level(logging.INFO, logger=module.__name__):
-            for _ in range(module._HEAD_LINES * 4):
-                trace.line(b"data: x\n")
-        assert trace.reads == module._HEAD_LINES * 4
-        assert len(trace._head) == module._HEAD_LINES
-        # One log line per head entry, plus the open: no per-line spam.
-        assert len(_lines(caplog.records)) == module._HEAD_LINES
-
-    def test_the_tail_keeps_the_last_lines(self, caplog):
-        trace = StreamTrace("p", "m")
-        with caplog.at_level(logging.INFO, logger=module.__name__):
-            for i in range(module._TAIL_LINES * 3):
-                trace.line(f"line-{i}\n".encode())
-        assert list(trace._tail) == [
-            f"line-{i}"
-            for i in range(
-                module._TAIL_LINES * 3 - module._TAIL_LINES, module._TAIL_LINES * 3
-            )
-        ]
-
-    def test_a_long_line_is_truncated_in_the_log(self, caplog):
-        trace = StreamTrace("p", "m")
-        with caplog.at_level(logging.INFO, logger=module.__name__):
-            trace.line(b"x" * (module._MAX_LINE_CHARS * 3))
-        assert len(trace._head[0]) == module._MAX_LINE_CHARS
+        assert [m for m in _lines(caplog.records) if "data:" in m] == []
 
     def test_it_accepts_bytes_and_str_alike(self, caplog):
         trace = StreamTrace("p", "m")
         with caplog.at_level(logging.INFO, logger=module.__name__):
             trace.line(b"a\n")
             trace.line("b\n")
-        assert trace._head == ["a", "b"]
+        assert trace.reads == 2
+        assert caplog.records == []
+
+    def test_a_flood_logs_nothing_per_line(self, caplog, clock):
+        trace = StreamTrace("p", "m")
+        with caplog.at_level(logging.INFO, logger=module.__name__):
+            for _ in range(200):
+                trace.line(b"data: x\n")
+                clock.advance(module._BEAT_SECONDS / 400)
+        assert trace.reads == 200
+        assert caplog.records == []
 
 
 class TestHeartbeat:
@@ -120,25 +102,22 @@ class TestHeartbeat:
 
 
 class TestTermination:
-    def test_end_reports_the_reason_counts_and_both_ends(self, caplog, clock):
+    def test_end_reports_the_reason_counts_and_elapsed(self, caplog, clock):
         trace = StreamTrace("openai-responses", "muse")
         with caplog.at_level(logging.INFO, logger=module.__name__):
-            for i in range(module._HEAD_LINES + 2):
-                trace.line(f"line-{i}\n".encode())
+            for _ in range(7):
+                trace.line(b"data: x\n")
             trace.idle_read()
             clock.advance(2.5)
             trace.end("peer closed", content=42)
-        end = [m for m in _lines(caplog.records) if m.startswith("Stream end")]
-        assert len(end) == 1, end
-        assert "reason=peer closed" in end[0]
-        assert f"reads={module._HEAD_LINES + 2}" in end[0]
-        assert "idle=1" in end[0]
-        assert "2.5s" in end[0]
-        assert "content=42" in end[0]
-        head = [m for m in _lines(caplog.records) if m.startswith("Stream head")]
-        assert "line-0" in head[0]
-        tail = [m for m in _lines(caplog.records) if m.startswith("Stream tail")]
-        assert f"line-{module._HEAD_LINES + 1}" in tail[0]
+        assert len(caplog.records) == 1, _lines(caplog.records)
+        end = caplog.records[0].getMessage()
+        assert end.startswith("Stream end")
+        assert "reason=peer closed" in end
+        assert "reads=7" in end
+        assert "idle=1" in end
+        assert "2.5s" in end
+        assert "content=42" in end
 
     def test_mark_names_an_event_with_the_read_count(self, caplog):
         trace = StreamTrace("p", "m")

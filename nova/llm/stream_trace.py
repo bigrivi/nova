@@ -5,13 +5,18 @@ A turn that never finishes leaves exactly one entry in the log - the
 peer went silent, kept sending skippable lines forever, or answered normally
 and lost the connection, so it cannot tell those apart. This records what the
 socket actually delivered: how many reads happened, how many timed out empty,
-what the first and last lines were, and how the loop stopped.
+and how the loop stopped.
+
+Line contents are not logged. A chat frame carries the conversation, so an
+excerpt per turn is both the bulk of the log and a copy of user text where
+nobody expects to find it. When the frames themselves need reading, trace the
+parser for the run under investigation and delete it afterwards.
 
 Deliberately an observer only. It never changes how a read loop terminates,
 because the termination behaviour is the thing under investigation: a fix
 written before the fault is reproduced is a hypothesis, and rewriting the loop
 would also destroy the evidence. Keep it cheap enough to leave in - a healthy
-stream logs a handful of lines per turn.
+stream logs one line at the start, nothing while it runs, and one at the end.
 
 Usage:
     trace = StreamTrace("openai-responses", model)
@@ -27,16 +32,8 @@ from __future__ import annotations
 
 import logging
 import time
-from collections import deque
 
 log = logging.getLogger(__name__)
-
-# The head of a stream is logged verbatim, since the opening frames say which
-# wire format the peer actually speaks. The tail is kept in memory and logged
-# at the end, since that is what a truncated stream ends on.
-_HEAD_LINES = 5
-_TAIL_LINES = 5
-_MAX_LINE_CHARS = 160
 
 # A stream that neither ends nor is quiet produces no log lines at all, so the
 # counts are reported on a timer: a silent peer shows reads=0 with idle
@@ -58,8 +55,6 @@ class StreamTrace:
         self._model = model
         self._started = time.monotonic()
         self._last_beat = self._started
-        self._head: list[str] = []
-        self._tail: deque[str] = deque(maxlen=_TAIL_LINES)
         self.reads = 0
         self.idle_polls = 0
 
@@ -76,21 +71,9 @@ class StreamTrace:
         """Record one line delivered by the peer.
 
         Args:
-            raw: The raw line as read, decoded only for the log excerpt.
+            raw: The raw line as read. Counted, never logged.
         """
         self.reads += 1
-        text = (
-            raw.decode("utf-8", "replace")
-            if isinstance(raw, (bytes, bytearray))
-            else str(raw)
-        )
-        excerpt = text.strip()[:_MAX_LINE_CHARS]
-        if len(self._head) < _HEAD_LINES:
-            self._head.append(excerpt)
-            log.info(
-                "Stream line %d provider=%s %r", self.reads, self._provider, excerpt
-            )
-        self._tail.append(excerpt)
         self._beat()
 
     def idle_read(self) -> None:
@@ -130,8 +113,6 @@ class StreamTrace:
             self.elapsed,
             detail,
         )
-        log.info("Stream head provider=%s lines=%r", self._provider, self._head)
-        log.info("Stream tail provider=%s lines=%r", self._provider, list(self._tail))
 
     def _beat(self) -> None:
         """Log the running counts once per beat so a hung turn stays visible."""

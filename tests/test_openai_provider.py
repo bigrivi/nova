@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from nova.llm.provider import (
@@ -235,6 +237,33 @@ async def test_chat_stream_announces_a_tool_call_before_arguments_finish(monkeyp
     assert start.id == call.id, "start and call must pair on the same id"
     assert deltas == call.arguments, "deltas must spell the final arguments"
     assert any(isinstance(e, ToolInputEnd) for e in collected)
+
+
+@pytest.mark.asyncio
+async def test_a_stream_that_finishes_still_records_its_end(monkeypatch, caplog):
+    """The normal exit is the one the trace can least afford to miss.
+
+    A turn that never ends is diagnosed from these counts, so a turn that ends
+    on its own terminal frame has to leave the same line behind.
+    """
+    lines = [
+        b'data: {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]}\n',
+        b"data: [DONE]\n",
+    ]
+    _install_fake(monkeypatch, _FakeResponse(lines=lines))
+    provider = OpenAIProvider(api_key="k")
+
+    with caplog.at_level(logging.INFO, logger="nova.llm.stream_trace"):
+        [
+            event
+            async for event in provider.chat_stream(
+                [{"role": "user", "content": "hi"}], model="gpt-5"
+            )
+        ]
+
+    ends = [m for m in caplog.messages if m.startswith("Stream end")]
+    assert len(ends) == 1, ends
+    assert "reason=finished" in ends[0]
 
 
 @pytest.mark.asyncio
