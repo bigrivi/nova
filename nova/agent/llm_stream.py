@@ -5,6 +5,10 @@ deltas, tool-call fragments, a terminal ``done`` frame and errors - and the
 reader has to keep start/end bookkeeping for the two delta channels while it
 goes. Holding that state in one object keeps the turn loop free of the ten
 accumulator variables it used to thread through nine levels of nesting.
+
+Each provider chunk class gets one ``_on_*`` handler that returns the events to
+hand the streaming consumer; ``consume`` only drives the loop, stops when an
+outcome is reached and closes whatever is still open on the way out.
 """
 
 from __future__ import annotations
@@ -13,14 +17,37 @@ import logging
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import Any, assert_never
 
 from nova.agent.events import AgentEvent, done_payload, error_payload
-
-if TYPE_CHECKING:
-    from nova.llm import ChatStreamEvent
+from nova.llm.provider import (
+    ChatStreamEvent,
+    Done,
+    Error,
+    ReasoningDelta,
+    RetryNotice,
+    TextDelta,
+    ToolCall,
+    ToolInputDelta,
+    ToolInputEnd,
+    ToolInputError,
+    ToolInputStart,
+)
 
 log = logging.getLogger(__name__)
+
+# Mirrors ``EventBus.emit``'s data parameter, so ``_emit`` can be that bound
+# method and nothing wider.
+EventData = (
+    dict[str, Any]
+    | str
+    | ToolCall
+    | ToolInputStart
+    | ToolInputDelta
+    | ToolInputEnd
+    | ToolInputError
+    | None
+)
 
 
 class TurnOutcome(Enum):
@@ -39,7 +66,7 @@ class TurnStreamReader:
 
     def __init__(
         self,
-        emit: Callable[..., Awaitable[None]],
+        emit: Callable[[AgentEvent, EventData], Awaitable[None]],
         stop_if_aborted: Callable[[], Awaitable[dict | None]],
         turn_count: int = 0,
     ) -> None:
@@ -49,7 +76,7 @@ class TurnStreamReader:
 
         self.content = ""
         self.reasoning = ""
-        self.tool_calls: dict[str, Any] = {}
+        self.tool_calls: dict[str, ToolCall] = {}
         self.done_content = ""
         self.tokens_input: int | None = None
         self.tokens_output: int | None = None
@@ -79,96 +106,11 @@ class TurnStreamReader:
                     yield AgentEvent.DONE, stop_payload
                     return
 
-                chunk_type = getattr(chunk, "type", None)
+                for pair in await self._dispatch(chunk):
+                    yield pair
 
-                if chunk_type == "reasoning_delta":
-                    if not self._reasoning_started:
-                        self._reasoning_started = True
-                        self._reasoning_started_at = time.monotonic()
-                        await self._emit(AgentEvent.REASONING_START)
-                        yield AgentEvent.REASONING_START, None
-                    self.reasoning += getattr(chunk, "content", "")
-                    yield AgentEvent.REASONING_DELTA, getattr(chunk, "content", "")
-
-                elif chunk_type == "text_delta":
-                    if not self._text_started:
-                        self._text_started = True
-                        if self.reasoning and not self._reasoning_ended:
-                            self._reasoning_ended = True
-                            self.reasoning_elapsed_ms = self._reasoning_elapsed()
-                            await self._emit(AgentEvent.REASONING_END)
-                            yield AgentEvent.REASONING_END, self.reasoning_elapsed_ms
-                        await self._emit(AgentEvent.TEXT_START)
-                        yield AgentEvent.TEXT_START, None
-                    self.content += getattr(chunk, "content", "")
-                    yield AgentEvent.TEXT_DELTA, getattr(chunk, "content", "")
-
-                elif chunk_type == "retry":
-                    # Forwarded immediately and not accumulated: this describes
-                    # a wait that is happening now, and the client renders it as
-                    # a transient line rather than as part of the answer.
-                    yield (
-                        AgentEvent.RETRY,
-                        {
-                            "attempt": getattr(chunk, "attempt", 0),
-                            "total": getattr(chunk, "total", 0),
-                            "wait_seconds": getattr(chunk, "wait_seconds", 0.0),
-                            "reason": getattr(chunk, "reason", ""),
-                        },
-                    )
-
-                elif chunk_type == "done":
-                    if getattr(chunk, "aborted", False):
-                        self.outcome = TurnOutcome.STOPPED
-                        yield AgentEvent.DONE, done_payload("stopped", self.content)
-                        return
-                    self._absorb_done(chunk)
-
-                elif chunk_type == "error":
-                    self.outcome = TurnOutcome.FAILED
-                    self.error_message = getattr(chunk, "message", "")
-                    yield (
-                        AgentEvent.ERROR,
-                        error_payload("llm_error", getattr(chunk, "message", "")),
-                    )
+                if self.outcome is not TurnOutcome.CONTINUE:
                     return
-
-                elif chunk_type == "tool_input_start":
-                    # The model has stopped thinking and begun composing tool
-                    # arguments. Close the reasoning block now rather than at
-                    # stream end, which may be a long write away.
-                    log.info(
-                        f"[Turn {self._turn_count}] Tool input start: "
-                        f"{getattr(chunk, 'name', '')}"
-                    )
-                    if (
-                        self.reasoning
-                        and not self._reasoning_ended
-                        and not self._text_started
-                    ):
-                        self._reasoning_ended = True
-                        self.reasoning_elapsed_ms = self._reasoning_elapsed()
-                        await self._emit(AgentEvent.REASONING_END)
-                        yield AgentEvent.REASONING_END, self.reasoning_elapsed_ms
-                    await self._emit(AgentEvent.TOOL_INPUT_START, chunk)
-                    yield AgentEvent.TOOL_INPUT_START, chunk
-
-                elif chunk_type == "tool_input_delta":
-                    await self._emit(AgentEvent.TOOL_INPUT_DELTA, chunk)
-                    yield AgentEvent.TOOL_INPUT_DELTA, chunk
-
-                elif chunk_type == "tool_input_end":
-                    await self._emit(AgentEvent.TOOL_INPUT_END, chunk)
-                    yield AgentEvent.TOOL_INPUT_END, chunk
-
-                elif chunk_type == "tool_input_error":
-                    await self._emit(AgentEvent.TOOL_INPUT_ERROR, chunk)
-                    yield AgentEvent.TOOL_INPUT_ERROR, chunk
-
-                elif chunk_type == "tool_call":
-                    self._absorb_tool_call(chunk)
-
-                self._absorb_batched_tool_calls(chunk)
 
         except GeneratorExit:
             closing = True
@@ -182,41 +124,170 @@ class TurnStreamReader:
         finally:
             # The delta channels must be closed even when the stream ended early,
             # but a generator that is being torn down can no longer yield.
-            if self.reasoning and not self._reasoning_ended and not self._text_started:
-                self._reasoning_ended = True
-                self.reasoning_elapsed_ms = self._reasoning_elapsed()
-                await self._emit(AgentEvent.REASONING_END)
-                if not closing:
-                    yield AgentEvent.REASONING_END, self.reasoning_elapsed_ms
-            if self._text_started:
-                await self._emit(AgentEvent.TEXT_END, self.content)
-                if not closing:
-                    yield AgentEvent.TEXT_END, self.content
+            if closing:
+                await self._close_channels()
+            else:
+                for pair in await self._close_channels():
+                    yield pair
 
     @property
     def final_content(self) -> str:
         return self.content or self.done_content
 
-    def collected_tool_calls(self) -> list:
+    def collected_tool_calls(self) -> list[ToolCall]:
+        return [tool_call for tool_call in self.tool_calls.values() if tool_call.name]
+
+    async def _dispatch(self, chunk: ChatStreamEvent) -> list[tuple[AgentEvent, Any]]:
+        match chunk:
+            case ReasoningDelta():
+                return await self._on_reasoning_delta(chunk)
+            case TextDelta():
+                return await self._on_text_delta(chunk)
+            case RetryNotice():
+                return self._on_retry(chunk)
+            case Done():
+                return self._on_done(chunk)
+            case Error():
+                return self._on_error(chunk)
+            case ToolInputStart():
+                return await self._on_tool_input_start(chunk)
+            case ToolInputDelta():
+                return await self._on_tool_input_delta(chunk)
+            case ToolInputEnd():
+                return await self._on_tool_input_end(chunk)
+            case ToolInputError():
+                return await self._on_tool_input_error(chunk)
+            case ToolCall():
+                return self._on_tool_call(chunk)
+            case _:
+                assert_never(chunk)
+
+    async def _on_reasoning_delta(
+        self, chunk: ReasoningDelta
+    ) -> list[tuple[AgentEvent, Any]]:
+        pairs: list[tuple[AgentEvent, Any]] = []
+        if not self._reasoning_started:
+            self._reasoning_started = True
+            self._reasoning_started_at = time.monotonic()
+            pairs += await self._forward(AgentEvent.REASONING_START)
+        self.reasoning += chunk.content
+        pairs += await self._forward(
+            AgentEvent.REASONING_DELTA, chunk.content, emit=False
+        )
+        return pairs
+
+    async def _on_text_delta(self, chunk: TextDelta) -> list[tuple[AgentEvent, Any]]:
+        pairs: list[tuple[AgentEvent, Any]] = []
+        if not self._text_started:
+            # Close reasoning before opening text, so a client never sees both
+            # channels open at once. The guard in ``_close_reasoning`` reads
+            # ``_text_started``, so it must still be False here.
+            pairs += await self._close_reasoning()
+            self._text_started = True
+            pairs += await self._forward(AgentEvent.TEXT_START)
+        self.content += chunk.content
+        pairs += await self._forward(AgentEvent.TEXT_DELTA, chunk.content, emit=False)
+        return pairs
+
+    def _on_retry(self, chunk: RetryNotice) -> list[tuple[AgentEvent, Any]]:
+        # Forwarded immediately and not accumulated: this describes a wait that
+        # is happening now, and the client renders it as a transient line rather
+        # than as part of the answer.
         return [
-            tool_call
-            for tool_call in self.tool_calls.values()
-            if hasattr(tool_call, "name") and tool_call.name
+            (
+                AgentEvent.RETRY,
+                {
+                    "attempt": chunk.attempt,
+                    "total": chunk.total,
+                    "wait_seconds": chunk.wait_seconds,
+                    "reason": chunk.reason,
+                },
+            )
         ]
+
+    def _on_done(self, chunk: Done) -> list[tuple[AgentEvent, Any]]:
+        if chunk.aborted:
+            self.outcome = TurnOutcome.STOPPED
+            return [(AgentEvent.DONE, done_payload("stopped", self.content))]
+        self._absorb_done(chunk)
+        self._absorb_batched_tool_calls(chunk)
+        return []
+
+    def _on_error(self, chunk: Error) -> list[tuple[AgentEvent, Any]]:
+        self.outcome = TurnOutcome.FAILED
+        self.error_message = chunk.message
+        return [(AgentEvent.ERROR, error_payload("llm_error", chunk.message))]
+
+    async def _on_tool_input_start(
+        self, chunk: ToolInputStart
+    ) -> list[tuple[AgentEvent, Any]]:
+        # The model has stopped thinking and begun composing tool arguments.
+        # Close the reasoning block now rather than at stream end, which may be a
+        # long write away.
+        log.info(f"[Turn {self._turn_count}] Tool input start: {chunk.name}")
+        pairs = await self._close_reasoning()
+        pairs += await self._forward(AgentEvent.TOOL_INPUT_START, chunk)
+        return pairs
+
+    async def _on_tool_input_delta(
+        self, chunk: ToolInputDelta
+    ) -> list[tuple[AgentEvent, Any]]:
+        return await self._forward(AgentEvent.TOOL_INPUT_DELTA, chunk)
+
+    async def _on_tool_input_end(
+        self, chunk: ToolInputEnd
+    ) -> list[tuple[AgentEvent, Any]]:
+        return await self._forward(AgentEvent.TOOL_INPUT_END, chunk)
+
+    async def _on_tool_input_error(
+        self, chunk: ToolInputError
+    ) -> list[tuple[AgentEvent, Any]]:
+        return await self._forward(AgentEvent.TOOL_INPUT_ERROR, chunk)
+
+    def _on_tool_call(self, chunk: ToolCall) -> list[tuple[AgentEvent, Any]]:
+        self._absorb_tool_call(chunk)
+        return []
+
+    async def _forward(
+        self,
+        event: AgentEvent,
+        data: EventData = None,
+        *,
+        emit: bool = True,
+    ) -> list[tuple[AgentEvent, Any]]:
+        """Hand an event to the consumer, and to subscribers when ``emit``."""
+        if emit:
+            await self._emit(event, data)
+        return [(event, data)]
+
+    async def _close_reasoning(self) -> list[tuple[AgentEvent, Any]]:
+        if not (
+            self.reasoning and not self._reasoning_ended and not self._text_started
+        ):
+            return []
+        self._reasoning_ended = True
+        self.reasoning_elapsed_ms = self._reasoning_elapsed()
+        await self._emit(AgentEvent.REASONING_END, None)
+        return [(AgentEvent.REASONING_END, self.reasoning_elapsed_ms)]
+
+    async def _close_channels(self) -> list[tuple[AgentEvent, Any]]:
+        pairs = await self._close_reasoning()
+        if self._text_started:
+            await self._emit(AgentEvent.TEXT_END, self.content)
+            pairs.append((AgentEvent.TEXT_END, self.content))
+        return pairs
 
     def _reasoning_elapsed(self) -> int | None:
         if self._reasoning_started_at is None:
             return None
         return int((time.monotonic() - self._reasoning_started_at) * 1000)
 
-    def _absorb_done(self, chunk: ChatStreamEvent) -> None:
-        self.done_content = getattr(chunk, "content", "") or self.done_content
-        self.tokens_input = getattr(chunk, "tokens_input", None) or self.tokens_input
-        self.tokens_output = getattr(chunk, "tokens_output", None) or self.tokens_output
-        self.cache_read_tokens = (
-            getattr(chunk, "cache_read_tokens", None) or self.cache_read_tokens
-        )
-        self.provider_meta = getattr(chunk, "provider_meta", None) or self.provider_meta
+    def _absorb_done(self, chunk: Done) -> None:
+        self.done_content = chunk.content or self.done_content
+        self.tokens_input = chunk.tokens_input or self.tokens_input
+        self.tokens_output = chunk.tokens_output or self.tokens_output
+        self.cache_read_tokens = chunk.cache_read_tokens or self.cache_read_tokens
+        self.provider_meta = chunk.provider_meta or self.provider_meta
         self._log_usage()
 
     def _log_usage(self) -> None:
@@ -239,18 +310,11 @@ class TurnStreamReader:
             f"tokens_out={self.tokens_output} cache_read={cached} hit={hit}"
         )
 
-    def _absorb_tool_call(self, chunk: ChatStreamEvent) -> None:
-        identifier = getattr(chunk, "id", None) or getattr(chunk, "name", "")
+    def _absorb_tool_call(self, chunk: ToolCall) -> None:
+        identifier = chunk.id or chunk.name
         if identifier:
-            self.tool_calls[str(identifier)] = chunk
+            self.tool_calls[identifier] = chunk
 
-    def _absorb_batched_tool_calls(self, chunk: ChatStreamEvent) -> None:
-        batched = getattr(chunk, "tool_calls", None)
-        if not batched:
-            return
-        for tool_call in batched:
-            identifier = getattr(tool_call, "id", None) or getattr(
-                tool_call, "name", ""
-            )
-            if identifier:
-                self.tool_calls[str(identifier)] = tool_call
+    def _absorb_batched_tool_calls(self, chunk: Done) -> None:
+        for tool_call in chunk.tool_calls or []:
+            self._absorb_tool_call(tool_call)
