@@ -39,6 +39,8 @@ export type TuiMessage = {
     parts: MessagePart[];
     status: "streaming" | "done" | "error";
     error?: string;
+    /** The user interrupted this turn; the answer ends where it stopped. */
+    stopped?: boolean;
     /** Backend message id of a server-injected wake turn, for replay dedup. */
     wakeFor?: string;
     /** Server-set marker for messages the user did not type (e.g. subagent). */
@@ -150,6 +152,7 @@ type ChatState = ChatSlice & {
         tabId?: string | null,
     ) => void;
     completeStream: (tabId?: string | null) => void;
+    stopStream: (tabId?: string | null) => void;
     failStream: (error: string, tabId?: string | null) => void;
     dropMessage: (messageId: string, tabId?: string | null) => void;
     /** Replace the text of a message in place, for an edited question. */
@@ -645,6 +648,22 @@ export const useChatStore = create<ChatState>((set) => {
                 ),
             })),
 
+        stopStream: (tabId) =>
+            writeSlice(tabId, (slice) => ({
+                isStreaming: false,
+                retry: null,
+                messages: slice.messages.map((msg) =>
+                    msg.status === "streaming"
+                        ? {
+                              ...msg,
+                              status: "done",
+                              stopped: true,
+                              parts: settleParts(msg.parts),
+                          }
+                        : msg,
+                ),
+            })),
+
         failStream: (error, tabId) =>
             writeSlice(tabId, (slice) => ({
                 isStreaming: false,
@@ -667,6 +686,8 @@ export const useChatStore = create<ChatState>((set) => {
                     ...msg,
                     status: "streaming",
                     error: undefined,
+                    // Regenerating a cancelled answer must not inherit its marker.
+                    stopped: undefined,
                     parts: [{ type: "pending" }],
                 })),
             })),

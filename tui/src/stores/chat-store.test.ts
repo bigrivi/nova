@@ -48,6 +48,14 @@ describe("chat-store messages", () => {
         expect(messages()[0]?.parts).toEqual([]);
     });
 
+    test("stopStream keeps the partial answer and marks it stopped", () => {
+        useChatStore.getState().startAssistantMessage();
+        useChatStore.getState().stopStream();
+        expect(useChatStore.getState().isStreaming).toBe(false);
+        expect(messages()[0]?.status).toBe("done");
+        expect(messages()[0]?.stopped).toBe(true);
+    });
+
     test("failStream carries the error", () => {
         useChatStore.getState().startAssistantMessage();
         useChatStore.getState().failStream("nope");

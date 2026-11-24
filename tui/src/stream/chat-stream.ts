@@ -417,6 +417,7 @@ async function runTurn(options: TurnOptions): Promise<void> {
     controllers.set(tabId, controller);
     const isActive = () => useTabStore.getState().activeId === tabId;
     let sawFrame = false;
+    let sawAbort = false;
 
     const effects: StreamEffects = {
         runId,
@@ -525,6 +526,9 @@ async function runTurn(options: TurnOptions): Promise<void> {
 
     const onEvent = (event: NovaStreamEvent): void => {
         sawFrame = true;
+        if (event.type === "abort") {
+            sawAbort = true;
+        }
         applyStreamEvent(event, assistantId, effects, acc);
     };
     const onSequence = (sequence: number): void =>
@@ -578,7 +582,13 @@ async function runTurn(options: TurnOptions): Promise<void> {
             useChatStore.getState().completeStream(tabId);
             return;
         }
-        useChatStore.getState().completeStream(tabId);
+        // A cancelled turn keeps its partial answer, but says so: the abort
+        // frame is the only record that the model was cut off rather than done.
+        if (sawAbort) {
+            useChatStore.getState().stopStream(tabId);
+        } else {
+            useChatStore.getState().completeStream(tabId);
+        }
         useTabStore.getState().markTurnEnded(tabId, true);
         clearStaleApproval(runId, false);
     } catch (err) {

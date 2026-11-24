@@ -39,6 +39,11 @@ export function AssistantMessage({ message }: { message: TuiMessage }) {
                     />
                 ),
             )}
+            {message.stopped ? (
+                <box marginTop={1}>
+                    <text fg={theme.text.muted} content="■ stopped by you" />
+                </box>
+            ) : null}
             {message.error ? (
                 <box marginTop={1}><text fg={theme.feedback.error} content={message.error} /></box>
             ) : null}
