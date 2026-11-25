@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import Protocol
 
-from novakit.agent.config import AgentConfig
+from novakit.agent.config import CoreConfig
 from novakit.agent.llm_stream import TurnOutcome, TurnStreamReader
 from novakit.agent.overflow import is_context_overflow
 from novakit.agent.state import TurnState
@@ -53,7 +53,7 @@ class AgentSessionContext:
     """Dependencies used for session resolution and turn persistence."""
 
     session: SessionProtocol
-    config: AgentConfig
+    config: CoreConfig
     compaction: CompactorState | None
     agent_key: str
     storage: SessionRouteStorage | None = None

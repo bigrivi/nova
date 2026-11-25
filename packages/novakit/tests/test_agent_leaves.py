@@ -2,6 +2,7 @@
 
 import pytest
 
+from novakit import CoreConfig
 from novakit.agent import (
     AgentConfig,
     build_user_message,
@@ -15,6 +16,10 @@ from novakit.agent.overflow import (
     is_context_overflow,
 )
 from novakit.session.models import Message
+
+
+def test_agent_config_satisfies_narrow_core_protocol() -> None:
+    assert isinstance(AgentConfig(), CoreConfig)
 
 
 def test_agent_config_defaults_cover_nova_compat_fields() -> None:

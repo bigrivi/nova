@@ -1,7 +1,7 @@
 """Agent runtime primitives shared by Nova and standalone novakit users."""
 
 from novakit.agent.compaction import CompactionError
-from novakit.agent.config import AgentConfig
+from novakit.agent.config import AgentConfig, CoreConfig
 from novakit.agent.core import (
     Agent,
     AgentOptions,
@@ -49,6 +49,7 @@ __all__ = [
     "ChatAgent",
     "ChatOptions",
     "CompactionError",
+    "CoreConfig",
     "EventData",
     "GuardrailAction",
     "GuardrailObservation",

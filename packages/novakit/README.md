@@ -23,10 +23,19 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+The runtime depends on the narrow `CoreConfig` protocol (`model`, `provider`,
+`max_iterations`, `reasoning_effort`). `AgentConfig` remains a concrete,
+Nova-compatible superset with the original field order.
+
 The default session lives only in the `Agent` instance. Pass
 `AgentOptions(session=..., tools=..., events=...)` to supply your own dependencies,
 or `AgentPorts(compactor=..., approval=..., begin_turn=...)` for host-specific
-capabilities. Tools that request approval are safely refused unless an approval
-manager is supplied. `novakit` guarantees that every tool call announced by its
-invoker receives a terminal result; broader stream-end cleanup remains the host
-server or UI's responsibility.
+capabilities. A custom `SessionProtocol` controls persistence; a `Compactor`
+controls context compaction, and the core never falls back to Nova's database.
+
+Approvals use a process-local `InMemoryApprovalManager` by default. Subscribe to
+`APPROVAL_REQUIRED` and call `agent.resolve_approval(request_id, approved)` to
+answer; inject another manager through `AgentPorts` when different policy is
+needed. `novakit` guarantees that every tool call announced by its invoker
+receives a terminal result; broader stream-end cleanup remains the host server
+or UI's responsibility.

@@ -46,6 +46,8 @@ if TYPE_CHECKING:
 class Agent(CoreAgent):
     """Nova composition root for the shared novakit runtime."""
 
+    config: AgentConfig
+
     def __init__(
         self,
         dependencies: AgentDependencies,

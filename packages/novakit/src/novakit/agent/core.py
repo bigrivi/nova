@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from novakit.agent.compaction import CompactionError
-from novakit.agent.config import AgentConfig
+from novakit.agent.config import AgentConfig, CoreConfig
 from novakit.agent.messages import build_user_message, count_user_turns
 from novakit.agent.ports import AgentPorts, BeginTurn, Compactor
 from novakit.agent.services import NoopBackground, StaticPromptProvider
@@ -32,7 +32,7 @@ from novakit.session.models import (
     encode_display_text,
 )
 from novakit.session.protocol import SessionProtocol
-from novakit.tools.approval import ApprovalManager
+from novakit.tools.approval import ApprovalManager, InMemoryApprovalManager
 from novakit.tools.registry import ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ class AgentOptions:
 class AgentRuntimeDependencies:
     """Fully wired services supplied by a host adapter to the shared runtime."""
 
-    config: AgentConfig
+    config: CoreConfig
     llm: LLMProvider | None
     session: SessionProtocol
     tool_registry: ToolRegistry
@@ -134,7 +134,7 @@ class Agent:
 
     def __init__(
         self,
-        config: AgentConfig,
+        config: CoreConfig,
         llm: LLMProvider | None,
         *,
         options: AgentOptions | None = None,
@@ -179,7 +179,7 @@ class Agent:
                 background=background,
                 session_service=session_service,
                 compactor=ports.compactor,
-                approval=ports.approval,
+                approval=ports.approval or InMemoryApprovalManager(),
                 guardrails=resolved.guardrails or ToolGuardrails(),
                 begin_turn=ports.begin_turn or _noop_begin_turn,
             ),
@@ -742,6 +742,7 @@ __all__ = [
     "AgentOptions",
     "AgentRuntimeDependencies",
     "ChatOptions",
+    "CoreConfig",
     "PreparedRequest",
     "build_user_message",
 ]

@@ -1,5 +1,6 @@
 """Tool registration and generic execution behavior."""
 
+from novakit.tools.approval import ApprovalManager, InMemoryApprovalManager
 from novakit.tools.behavior import (
     DefaultToolBehavior,
     PreExecutionCheck,
@@ -10,7 +11,9 @@ from novakit.tools.context import ToolContext
 from novakit.tools.registry import Tool, ToolRegistry, get_registry, tool
 
 __all__ = [
+    "ApprovalManager",
     "DefaultToolBehavior",
+    "InMemoryApprovalManager",
     "PreExecutionCheck",
     "Tool",
     "ToolBehavior",

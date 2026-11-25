@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import asyncio
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,13 @@ from novakit.llm import (
     ToolResult,
 )
 from novakit.session import InMemorySession
-from novakit.tools import ToolRegistry, tool
+from novakit.tools import (
+    DefaultToolBehavior,
+    PreExecutionCheck,
+    ToolRegistry,
+    TurnContext,
+    tool,
+)
 
 
 class ScriptedProvider(LLMProvider):
@@ -115,6 +122,35 @@ def test_constructor_delegates_all_state_to_runtime_initializer() -> None:
     }
 
 
+@dataclass
+class MinimalConfig:
+    model: str = "test"
+    provider: str = "test"
+    max_iterations: int = 2
+    reasoning_effort: str | None = None
+
+
+class _ApprovalBehavior(DefaultToolBehavior):
+    async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
+        assert ctx.approval_manager is not None
+        request_id = ctx.approval_manager.pre_request(
+            "guarded", session_id=ctx.session_id
+        )
+        return PreExecutionCheck(approval_request={"id": request_id})
+
+
+@pytest.mark.asyncio
+async def test_agent_accepts_narrow_core_config() -> None:
+    agent = Agent(
+        MinimalConfig(),
+        ScriptedProvider([[TextDelta(content="ok")]]),
+    )
+
+    frames = await collect(agent, "hello")
+
+    assert frames[-1][1]["content"] == "ok"
+
+
 @pytest.mark.asyncio
 async def test_plain_turn_uses_memory_session_and_static_prompt() -> None:
     provider = ScriptedProvider([[TextDelta(content="hello")]])
@@ -178,6 +214,41 @@ async def test_tool_turn_persists_pair_and_continues() -> None:
         ("tool", "echo:hi"),
         ("assistant", "done"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_default_agent_can_resolve_tool_approval() -> None:
+    provider = ScriptedProvider(
+        [
+            [ToolCall(id="call-1", name="guarded", arguments="{}")],
+            [TextDelta(content="done")],
+        ]
+    )
+    registry = ToolRegistry()
+    executed = False
+
+    async def guarded() -> ToolResult:
+        nonlocal executed
+        executed = True
+        return ToolResult(content="ran")
+
+    registry.register(guarded, name="guarded")
+    registry.set_behavior("guarded", _ApprovalBehavior())
+    agent = Agent(
+        AgentConfig(model="test", max_iterations=3),
+        provider,
+        options=AgentOptions(tools=registry),
+    )
+    frames: list[AgentEventFrame] = []
+
+    async for event, data in agent.chat_stream("go"):
+        frames.append((event, data))
+        if event is AgentEvent.APPROVAL_REQUIRED:
+            assert agent.resolve_approval(data["id"], True) is True
+
+    assert executed is True
+    assert frames[-1][1]["content"] == "done"
+    assert any(event is AgentEvent.TOOL_RESULT for event, _ in frames)
 
 
 @pytest.mark.asyncio

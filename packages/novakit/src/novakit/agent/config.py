@@ -1,14 +1,23 @@
-"""Agent configuration shared by Nova and standalone novakit users.
+"""Core agent configuration plus Nova's backward-compatible superset.
 
-The core only reads ``model``/``provider``/``max_iterations``/``reasoning_effort``;
-the remaining fields are Nova tool-layer options the core ignores.
-``shortcut: carries Nova compatibility fields; split into a narrow CoreConfig
-once the SDK stabilises, which needs a migration.``
+The runtime depends only on :class:`CoreConfig`. :class:`AgentConfig` remains
+the concrete Nova-compatible configuration with the original field order.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
+
+
+@runtime_checkable
+class CoreConfig(Protocol):
+    """Configuration fields read by the shared agent turn loop."""
+
+    model: str
+    provider: str
+    max_iterations: int
+    reasoning_effort: str | None
 
 
 @dataclass
@@ -41,4 +50,4 @@ class AgentConfig:
     shell_read_only: bool = False
 
 
-__all__ = ["AgentConfig"]
+__all__ = ["AgentConfig", "CoreConfig"]
