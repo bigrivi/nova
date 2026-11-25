@@ -6,26 +6,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-
-class ApprovalManager(Protocol):
-    """Approval port required by tool behavior contexts."""
-
-    def pre_request(
-        self,
-        command: str,
-        description: str = "",
-        session_id: str = "",
-        rule: str = "",
-        family: str = "",
-        digest: str = "",
-        tool_name: str = "",
-        target: str = "",
-        dangerous: bool = False,
-    ) -> str: ...
-
-    def is_granted(
-        self, rule: str, family: str, digest: str, session_id: str
-    ) -> bool: ...
+from novakit.tools.approval import ApprovalManager
 
 
 @dataclass

@@ -5,31 +5,18 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from novakit.agent.messages import convert_to_llm_messages, count_user_turns
+from novakit.agent.state import TurnState
 from novakit.llm import Message as LLMMessage
 from novakit.llm.images import bound_images
 
 from nova.agent.context import MessagingContext
-from nova.agent.state import TurnState
 from nova.learning.nudges import build_nudge_reminder, should_nudge
 from nova.prompt import session_cache
 from nova.prompt.project_instructions import discover_project_instructions
 from nova.session.manager import SessionContext
 
 log = logging.getLogger(__name__)
-
-
-def count_user_turns(messages: list) -> int:
-    """How many user turns this conversation has, including the current one."""
-    return sum(
-        1
-        for message in messages
-        if (
-            message.get("role")
-            if isinstance(message, dict)
-            else getattr(message, "role", None)
-        )
-        == "user"
-    )
 
 
 class AgentMessaging:
@@ -79,53 +66,7 @@ class AgentMessaging:
         set_active_workspace(effective)
 
     def convert_to_llm_messages(self, loaded_messages: list) -> list:
-        resolved_tool_call_ids = {
-            loaded_message.tool_call_id
-            for loaded_message in loaded_messages
-            if loaded_message.role == "tool" and loaded_message.tool_call_id
-        }
-        declared_tool_call_ids: set[str] = set()
-        for loaded_message in loaded_messages:
-            if loaded_message.role == "assistant" and loaded_message.tool_calls:
-                for tool_call in loaded_message.tool_calls:
-                    tool_call_identifier = (
-                        tool_call.get("id") if isinstance(tool_call, dict) else None
-                    )
-                    if tool_call_identifier:
-                        declared_tool_call_ids.add(tool_call_identifier)
-
-        converted_messages: list = []
-        for loaded_message in loaded_messages:
-            if (
-                loaded_message.role == "tool"
-                and loaded_message.tool_call_id not in declared_tool_call_ids
-            ):
-                continue
-            llm_message = LLMMessage(
-                role=loaded_message.role, content=loaded_message.content
-            )
-            if loaded_message.tool_calls:
-                llm_message.tool_calls = [
-                    tool_call
-                    for tool_call in loaded_message.tool_calls
-                    if (
-                        isinstance(tool_call, dict)
-                        and tool_call.get("id")
-                        and tool_call["id"] in resolved_tool_call_ids
-                    )
-                ]
-            if loaded_message.tool_call_id:
-                llm_message.tool_call_id = loaded_message.tool_call_id
-            if loaded_message.images:
-                llm_message.images = loaded_message.images
-            if loaded_message.reasoning_content:
-                llm_message.reasoning_content = loaded_message.reasoning_content
-            if loaded_message.provider_meta:
-                llm_message.provider_meta = loaded_message.provider_meta
-            if loaded_message.model:
-                llm_message.model = loaded_message.model
-            converted_messages.append(llm_message)
-        return converted_messages
+        return convert_to_llm_messages(loaded_messages)
 
     async def build_messages(self, loaded_messages: list | None = None) -> list:
         ctx = self.ctx

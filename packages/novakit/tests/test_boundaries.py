@@ -53,6 +53,7 @@ def test_core_objects_do_not_touch_the_user_directory(tmp_path: Path) -> None:
     home = tmp_path / "home"
     nova_home = tmp_path / "nova-home"
     code = """
+from novakit import Agent, AgentConfig
 from novakit.llm import FakerLLMProvider, Message
 from novakit.session import SessionContext
 from novakit.tools import ToolRegistry
@@ -60,9 +61,11 @@ from novakit.tools import ToolRegistry
 provider = FakerLLMProvider(seed=1)
 session = SessionContext.create("developer-agent")
 registry = ToolRegistry()
+agent = Agent(AgentConfig(model="fake"), provider)
 assert provider is not None
 assert session.id
 assert registry.tools == {}
+assert agent.session is not None
 assert Message(role="user", content="hello").content == "hello"
 """
     env = dict(os.environ)

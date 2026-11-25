@@ -10,6 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from novakit.agent.config import AgentConfig
+from novakit.agent.tool_guardrails import ToolGuardrails
 from novakit.events import EventBus
 from novakit.session.protocol import SessionProtocol
 from novakit.tools.registry import ToolRegistry
@@ -17,7 +19,6 @@ from novakit.tools.registry import ToolRegistry
 from nova.agent.compaction import CompactionController
 from nova.agent.context import AgentDependencies
 from nova.agent.hierarchy import AgentHierarchy
-from nova.agent.tool_guardrails import ToolGuardrails
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.learning.loop import get_learning_loop
 from nova.prompt import PromptBuilder, PromptConfig
@@ -31,7 +32,7 @@ if TYPE_CHECKING:
 
     from novakit.llm import LLMProvider
 
-    from nova.agent.core import Agent, AgentConfig
+    from nova.agent.core import Agent
     from nova.db import DataSourceProtocol
     from nova.learning.loop import LearningLoop
 
@@ -107,8 +108,6 @@ def build_agent_dependencies(
     Returns:
         A complete, immutable dependency description for ``Agent``.
     """
-    from nova.agent.core import AgentConfig
-
     resolved_config = config or AgentConfig()
     if agent_dir is None:
         agent_dir = nova_home() / "agents" / agent_key

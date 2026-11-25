@@ -78,6 +78,20 @@ def test_agent_init_only_wires_prepared_dependencies(
     assert agent.session_service.ctx.session is dependencies.session
 
 
+def test_create_uses_the_module_level_assembly_seam(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    dependencies = _dependencies(tmp_path / "agent", MagicMock(name="skill_service"))
+    assembly = MagicMock(return_value=dependencies)
+    monkeypatch.setattr("nova.agent.core.build_agent_dependencies", assembly)
+
+    agent = Agent.create(config=AgentConfig(model="test-model"))
+
+    assembly.assert_called_once()
+    assert agent.config is dependencies.config
+    assert agent.session is dependencies.session
+
+
 @pytest.mark.asyncio
 async def test_cached_registry_rebinds_skill_tools_to_the_new_agent(
     tmp_path: Path,

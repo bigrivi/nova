@@ -12,17 +12,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from novakit.agent.session import AgentSessionContext as AgentSessionContext
 from novakit.events import EventBus
 
 if TYPE_CHECKING:
+    from novakit.agent.config import AgentConfig
+    from novakit.agent.tool_guardrails import ToolGuardrails
     from novakit.llm.provider import LLMProvider
     from novakit.session.protocol import SessionProtocol
     from novakit.tools.registry import ToolRegistry
 
     from nova.agent.compaction import CompactionController
-    from nova.agent.core import AgentConfig
     from nova.agent.hierarchy import AgentHierarchy
-    from nova.agent.tool_guardrails import ToolGuardrails
     from nova.db import DataSourceProtocol
     from nova.learning.loop import LearningLoop
     from nova.prompt import PromptBuilder
@@ -82,14 +83,4 @@ class BackgroundContext:
     on_title_updated: Callable[[str, str], None] | None
     is_sub_agent: bool
     background_tasks: set
-    agent_key: str
-
-
-@dataclass(frozen=True)
-class AgentSessionContext:
-    """Dependencies used for session resolution and turn persistence."""
-
-    session: SessionProtocol
-    config: AgentConfig
-    compaction: CompactionController
     agent_key: str

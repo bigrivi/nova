@@ -13,10 +13,9 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-
-from nova.agent.events import AgentEvent
-from nova.agent.llm_stream import TurnOutcome, TurnStreamReader
-from nova.llm.provider import (
+from novakit.agent import TurnOutcome, TurnStreamReader
+from novakit.events import AgentEvent
+from novakit.llm.provider import (
     ChatEvent,
     ChatStreamEvent,
     Done,

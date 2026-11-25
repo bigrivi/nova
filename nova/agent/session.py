@@ -1,166 +1,43 @@
-"""Session helpers for the Agent: resolution, persistence, and overflow recovery."""
+"""Nova session adapter: pricing and default persistent storage."""
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from nova.agent.background import AgentBackground
+from novakit.agent.llm_stream import TurnStreamReader
+from novakit.agent.session import AgentSession as CoreAgentSession
+from novakit.agent.session import AgentSessionContext as AgentSessionContext
+from novakit.agent.session import SessionRouteStorage
 
-from nova.agent.context import AgentSessionContext
-from nova.agent.llm_stream import TurnOutcome, TurnStreamReader
-from nova.agent.overflow import is_context_overflow
-from nova.agent.state import TurnState
-from nova.db import SessionStore
-from nova.session.manager import SessionContext
+from nova.db import get_default_data_source
 
 log = logging.getLogger(__name__)
 
 
-class AgentSession:
-    """Composed service: session resolution and turn persistence."""
+class AgentSession(CoreAgentSession):
+    """Nova pricing and persistent-route extensions to the shared session service."""
 
-    def __init__(
-        self,
-        ctx: AgentSessionContext,
-        state: TurnState,
-        background: AgentBackground,
+    async def record_session_route(
+        self, storage: SessionRouteStorage | None = None
     ) -> None:
-        self.ctx = ctx
-        self.state = state
-        self.background = background
-
-    async def record_session_route(self, data_source: SessionStore) -> None:
-        """Stamp the route this session is running with onto the session row.
-
-        Written once per request, not per model call: the route was resolved
-        before the turn began and cannot change between iterations, so a tool
-        loop must not rewrite the same row on every pass. The write is also
-        skipped when the row already holds this route -- a conversation that
-        keeps its model should not look modified on every turn.
-
-        Reopening an old conversation restores what it actually ran with,
-        instead of whatever the agent happens to point at today.
+        """Record the route, falling back to Nova's default data source.
 
         Args:
-            data_source: Store containing the current session row.
+            storage: Optional explicit store; Nova's default store is used otherwise.
         """
-        session = self.ctx.session.get_current_session()
-        if session is None:
-            return
-        try:
-            await data_source.update_session_route_if_changed(
-                session.id,
-                self.ctx.config.provider,
-                self.ctx.config.model,
-                self.ctx.config.reasoning_effort,
-            )
-        except Exception as error:
-            # The route is a convenience for the next visit, not state the turn
-            # depends on; failing to record it must not fail the turn.
-            log.warning("[Session %s] could not record route: %s", session.id, error)
-
-    def try_overflow_recovery(self, error_message: str | None) -> bool:
-        """Whether to compact and re-run after the provider rejected the request.
-
-        Token pressure normally decides to compact, which means an overflowing
-        request is possible whenever the estimate was low. The provider saying so
-        outright is a better signal than any estimate, so it takes precedence and
-        the failed turn is replayed. One attempt per user request: a second
-        overflow means the fixed prompt alone does not fit, and retrying cannot
-        change that.
-
-        Args:
-            error_message: Provider error text to classify.
-
-        Returns:
-            True when the caller should compact and retry once.
-        """
-        if self.state.overflow_recovered:
-            return False
-        if not is_context_overflow(error_message):
-            return False
-        self.state.overflow_recovered = True
-        if self.ctx.compaction is not None:
-            self.ctx.compaction.force_next = True
-        log.warning(
-            "Provider rejected the request as too large; compacting and retrying once"
-        )
-        return True
-
-    async def persist_failed_turn(
-        self,
-        reader: TurnStreamReader,
-        group_id: str | None,
-    ) -> None:
-        """Keep the text a failed turn produced, so a reload does not lose it.
-
-        The turn is over either way. Without this, text the user watched arrive
-        exists only in the stream: nothing is written, so reopening the session
-        shows a turn that produced nothing at all.
-
-        A user abort is deliberately excluded. They asked for the turn to stop,
-        and the contract there is that history is left as it was - the existing
-        interrupt tests pin that.
-
-        Args:
-            reader: The finished turn, holding the text and the failure reason.
-            group_id: Tool-call group the turn belongs to, if any.
-        """
-        if reader.outcome is not TurnOutcome.FAILED or not reader.content:
-            return
-        await self.ctx.session.add_message(
-            role="assistant",
-            content=reader.content,
-            reasoning_content=reader.reasoning or None,
-            group_id=group_id,
-            reasoning_elapsed_ms=reader.reasoning_elapsed_ms,
-            error=reader.error_message or "turn failed",
-            model=self.ctx.config.model,
-            reasoning_effort=self.ctx.config.reasoning_effort,
-        )
-
-    async def persist_assistant_message(
-        self,
-        reader: TurnStreamReader,
-        tool_calls: list,
-        group_id: str | None,
-    ) -> None:
-        """Persist one completed assistant turn and its tool calls.
-
-        Args:
-            reader: Finished stream reader containing text, reasoning and usage.
-            tool_calls: Valid, normalized calls to store with the assistant turn.
-            group_id: Tool-call group shared by the model turn and its results.
-        """
-        await self.ctx.session.add_message(
-            role="assistant",
-            content=reader.final_content,
-            tool_calls=[
-                tool_call.model_dump()
-                if hasattr(tool_call, "model_dump")
-                else tool_call
-                for tool_call in tool_calls
-            ]
-            or None,
-            reasoning_content=reader.reasoning or None,
-            group_id=group_id,
-            reasoning_elapsed_ms=reader.reasoning_elapsed_ms,
-            tokens_input=reader.tokens_input,
-            tokens_output=reader.tokens_output,
-            cache_read_tokens=reader.cache_read_tokens,
-            cost=self._turn_cost(reader),
-            provider_meta=reader.provider_meta,
-            model=self.ctx.config.model,
-            reasoning_effort=self.ctx.config.reasoning_effort,
-        )
+        resolved_storage = storage or self.ctx.storage
+        if resolved_storage is None:
+            resolved_storage = await get_default_data_source()
+        await super().record_session_route(resolved_storage)
 
     def _turn_cost(self, reader: TurnStreamReader) -> float | None:
-        """What this call cost, priced from the catalogue; None when unknown.
+        """Price this call from Nova's configured model catalogue.
 
-        Recorded per message rather than per session so a report can price the
-        turns that used a paid model without averaging them with the free ones.
+        Args:
+            reader: Finished reader containing token usage.
+
+        Returns:
+            Estimated cost, or None when settings or pricing are unavailable.
         """
         from nova.registry.pricing import estimate_cost
         from nova.settings import get_settings
@@ -178,30 +55,5 @@ class AgentSession:
             reader.cache_read_tokens,
         )
 
-    async def resolve_session(
-        self,
-        session_id: str | None,
-        user_input: str,
-        workspace_dir: str | None,
-        project_id: str | None = None,
-    ) -> SessionContext:
-        """Load the requested session, creating one when it is absent."""
-        if session_id and await self.ctx.session.load_session(session_id):
-            current = self.ctx.session.get_current_session()
-            if current is None:
-                raise RuntimeError("session vanished while loading")
-            log.info("[Session %s] Reused", session_id)
-            return current
-        await self.ctx.session.create_session(
-            persist=True,
-            first_message=user_input,
-            agent_key=self.ctx.agent_key,
-            workspace_dir=workspace_dir,
-            project_id=project_id,
-        )
-        current = self.ctx.session.get_current_session()
-        if current is None:
-            raise RuntimeError("session was not created")
-        log.info("[Session %s] Created", current.id)
-        self.background.maybe_schedule_title_generation(current, user_input)
-        return current
+
+__all__ = ["AgentSession", "AgentSessionContext"]

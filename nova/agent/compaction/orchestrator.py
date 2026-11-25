@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+from novakit.agent.compaction import CompactionError
 from novakit.events import AgentEvent
 from novakit.llm import LLMProvider
 from novakit.session.models import NewMessage
@@ -61,15 +62,6 @@ if TYPE_CHECKING:
     from nova.session.manager import SessionContext
 
 log = logging.getLogger(__name__)
-
-
-class CompactionError(RuntimeError):
-    """Raised when a required summary cannot be generated.
-
-    Compaction is load-bearing: a turn that must compact but cannot would
-    otherwise continue with an oversized history and fail later for an
-    unrelated-looking reason, so the failure is surfaced to the caller instead.
-    """
 
 
 async def prepare_compaction(

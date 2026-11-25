@@ -1,5 +1,6 @@
 """Session models and the storage-facing session protocol."""
 
+from novakit.session.memory import InMemorySession
 from novakit.session.models import (
     DISPLAY_TEXT_KEY,
     Message,
@@ -14,6 +15,7 @@ from novakit.session.protocol import SessionProtocol
 
 __all__ = [
     "DISPLAY_TEXT_KEY",
+    "InMemorySession",
     "Message",
     "MessageFilter",
     "NewMessage",

@@ -5,6 +5,7 @@ models, and agent event frames. It intentionally has no user-directory or
 persistence defaults.
 """
 
+from novakit.agent import Agent, AgentConfig, AgentOptions
 from novakit.events import AgentEvent, AgentEventFrame, EventBus
 from novakit.llm import LLMProvider, Message
 from novakit.session import Message as SessionMessage
@@ -13,8 +14,11 @@ from novakit.tools import ToolRegistry, tool
 from novakit.version import __version__
 
 __all__ = [
+    "Agent",
+    "AgentConfig",
     "AgentEvent",
     "AgentEventFrame",
+    "AgentOptions",
     "EventBus",
     "LLMProvider",
     "Message",

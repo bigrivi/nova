@@ -6,6 +6,7 @@ from novakit.tools.behavior import (
     ToolBehavior,
     TurnContext,
 )
+from novakit.tools.context import ToolContext
 from novakit.tools.registry import Tool, ToolRegistry, get_registry, tool
 
 __all__ = [
@@ -13,6 +14,7 @@ __all__ = [
     "PreExecutionCheck",
     "Tool",
     "ToolBehavior",
+    "ToolContext",
     "ToolRegistry",
     "TurnContext",
     "get_registry",

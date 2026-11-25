@@ -1,19 +1,5 @@
-"""Mutable state for one turn.
+"""Compatibility alias for turn state now implemented by novakit."""
 
-An Agent is rebuilt for every request, so state that resets on construction
-lives here: services receive this object instead of reaching back into the
-agent that created them.
-"""
+from novakit.agent.state import TurnState as TurnState
 
-from __future__ import annotations
-
-from dataclasses import dataclass
-
-
-@dataclass
-class TurnState:
-    """Prompt inputs that change within a turn."""
-
-    workspace: str | None = None
-    base_system_prompt: str | None = None
-    overflow_recovered: bool = False
+__all__ = ["TurnState"]

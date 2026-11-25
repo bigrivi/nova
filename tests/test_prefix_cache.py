@@ -646,7 +646,7 @@ async def test_every_llm_call_logs_its_cache_read(caplog):
     ]
     capturer = _CapturingProvider(scripts)
     async with _isolated_agent(capturer, model="gpt-5") as (agent, database):
-        caplog.set_level(logging.INFO, logger="nova.agent.llm_stream")
+        caplog.set_level(logging.INFO, logger="novakit.agent.llm_stream")
         async for _event, _data in agent.chat_stream("hello"):
             pass
 
@@ -683,7 +683,7 @@ async def test_a_silent_provider_logs_unknown_not_zero(caplog):
     scripts = [[TextDelta(content="hi"), Done(content="hi", tokens_input=1000)]]
     capturer = _CapturingProvider(scripts)
     async with _isolated_agent(capturer, model="gpt-5") as (agent, _db):
-        caplog.set_level(logging.INFO, logger="nova.agent.llm_stream")
+        caplog.set_level(logging.INFO, logger="novakit.agent.llm_stream")
         async for _event, _data in agent.chat_stream("hello"):
             pass
 
