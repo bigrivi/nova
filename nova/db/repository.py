@@ -3,11 +3,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from novakit.session.models import Message, MessageFilter, NewMessage
+
     from nova.memory.models import MemoryRecord, MemorySearchFilters
     from nova.project.models import Project
     from nova.scheduler.models import ScheduledJob
     from nova.session.manager import SessionContext
-    from nova.session.models import Message, MessageFilter, NewMessage
 
 
 class SessionStore(Protocol):

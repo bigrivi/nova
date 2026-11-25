@@ -10,28 +10,30 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from novakit.events import EventBus
+from novakit.session.protocol import SessionProtocol
+from novakit.tools.registry import ToolRegistry
+
 from nova.agent.compaction import CompactionController
 from nova.agent.context import AgentDependencies
-from nova.agent.events import EventBus
 from nova.agent.hierarchy import AgentHierarchy
 from nova.agent.tool_guardrails import ToolGuardrails
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.learning.loop import get_learning_loop
 from nova.prompt import PromptBuilder, PromptConfig
 from nova.session import get_session_manager
-from nova.session.protocol import SessionProtocol
 from nova.settings import get_settings, nova_home
 from nova.skills.service import SkillService
 from nova.tools.approval import get_approval_manager
-from nova.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from novakit.llm import LLMProvider
+
     from nova.agent.core import Agent, AgentConfig
     from nova.db import DataSourceProtocol
     from nova.learning.loop import LearningLoop
-    from nova.llm import LLMProvider
 
 
 def _build_skill_service(agent_key: str, agent_dir: Path) -> SkillService:

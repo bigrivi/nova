@@ -6,11 +6,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import aiosqlite
-
-from nova.llm.provider import Done, Error, TextDelta
+from novakit.llm.provider import Done, Error, TextDelta
 
 if TYPE_CHECKING:
-    from nova.llm.provider import LLMProvider
+    from novakit.llm.provider import LLMProvider
 
 
 @dataclass

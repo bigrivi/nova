@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nova.llm import ToolResult
-from nova.tools.registry import tool
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
 
 if TYPE_CHECKING:
     from nova.learning.loop import LearningLoop

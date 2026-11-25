@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from nova.llm import LLMProvider, Message
-from nova.llm.oneshot import stream_text_once
+from novakit.llm import LLMProvider, Message
+from novakit.llm.oneshot import stream_text_once
 
 from .messages import (
     content_of,

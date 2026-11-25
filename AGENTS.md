@@ -7,9 +7,9 @@ the things that cost time to infer.
 
 ```bash
 .venv/bin/pytest -q                  # full Python suite from the repo root; no PYTHONPATH needed
-.venv/bin/ruff check nova tests      # CI gate
+.venv/bin/ruff check nova packages/novakit/src/novakit packages/novakit/tests tests      # CI gate
 .venv/bin/mypy                       # CI gate; config in pyproject.toml
-.venv/bin/ruff format nova tests
+.venv/bin/ruff format nova packages/novakit/src/novakit packages/novakit/tests tests
 cd frontend && npm run typecheck     # = tsc -b. This is the real type gate.
 cd frontend && npx vitest run        # there is no `npm test` script
 cd tui && bun run typecheck && bun run build

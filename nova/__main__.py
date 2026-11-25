@@ -398,9 +398,7 @@ def main() -> None:
         "--port",
         type=int,
         default=None,
-        help=(
-            "[serve|web] Listen on this port instead of server.port"
-        ),
+        help=("[serve|web] Listen on this port instead of server.port"),
     )
     parser.add_argument(
         "--announce",

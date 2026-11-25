@@ -337,7 +337,8 @@ class ConfigService:
     @staticmethod
     def _fit_effort(provider: str, model: str, effort: str | None) -> str | None:
         """Keep *effort* only when the model declares it, else drop it."""
-        from nova.llm.reasoning import fit_effort, resolve_effort_levels
+        from novakit.llm.reasoning import fit_effort, resolve_effort_levels
+
         from nova.settings import get_settings
 
         if not effort:

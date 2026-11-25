@@ -9,9 +9,10 @@ session instead of guessing.
 import logging
 import time
 
-from nova.llm import ToolResult
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
+
 from nova.tasks.models import TaskRecord
-from nova.tools.registry import tool
 
 log = logging.getLogger(__name__)
 

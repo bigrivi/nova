@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
+from novakit.session.models import Message
+
 from nova.db.in_memory.agent import InMemoryAgentMixin
 from nova.db.in_memory.memory import InMemoryMemoryMixin
 from nova.db.in_memory.message import InMemoryMessageMixin
@@ -11,7 +13,6 @@ from nova.db.in_memory.schedule import InMemoryScheduleMixin
 from nova.db.in_memory.session import InMemorySessionMixin
 from nova.db.repository import NovaRepository
 from nova.scheduler.models import ScheduledJob
-from nova.session.models import Message
 
 if TYPE_CHECKING:
     pass

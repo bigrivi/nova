@@ -881,7 +881,9 @@ class Settings:
         # top-level ``tts``) and the new nested layout where both live under
         # ``transcription`` as ``stt`` / ``tts``.
         _raw_trans = config_payload.get("transcription")
-        if isinstance(_raw_trans, dict) and ("stt" in _raw_trans or "tts" in _raw_trans):
+        if isinstance(_raw_trans, dict) and (
+            "stt" in _raw_trans or "tts" in _raw_trans
+        ):
             _stt_raw = _raw_trans.get("stt")
             _tts_raw = _raw_trans.get("tts")
         else:

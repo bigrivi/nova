@@ -6,8 +6,9 @@ import time
 import uuid
 from typing import Any
 
+from novakit.session.models import Message, MessageFilter, NewMessage
+
 from nova.db.repository import MessageStore
-from nova.session.models import Message, MessageFilter, NewMessage
 
 
 class InMemoryMessageMixin(MessageStore):

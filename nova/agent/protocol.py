@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from typing import Protocol
 
-from nova.agent.events import AgentEventFrame
+from novakit.events import AgentEventFrame
 
 
 class InterruptibleAgent(Protocol):

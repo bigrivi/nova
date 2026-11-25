@@ -4,9 +4,10 @@ Write tool - write file contents.
 
 import difflib
 
-from nova.llm import ToolResult
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
+
 from nova.tools.checkpoints import record_write
-from nova.tools.registry import tool
 from nova.tools.workspace_context import resolve_path
 
 

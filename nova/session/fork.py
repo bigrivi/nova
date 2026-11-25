@@ -15,10 +15,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from novakit.session.models import Message, NewMessage
+
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db.repository import NovaRepository
 from nova.session.manager import SessionContext
-from nova.session.models import Message, NewMessage
 
 log = logging.getLogger(__name__)
 

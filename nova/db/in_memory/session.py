@@ -6,9 +6,10 @@ import json
 import time
 from typing import TYPE_CHECKING, Any
 
+from novakit.session.models import Message
+
 from nova.db.repository import SessionStore
 from nova.db.timestamps import to_milliseconds
-from nova.session.models import Message
 
 if TYPE_CHECKING:
     from nova.session.manager import SessionContext

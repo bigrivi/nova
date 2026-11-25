@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import logging
 
-from nova.llm.oneshot import stream_text_once
-from nova.llm.provider import LLMProvider, Message
+from novakit.llm.oneshot import stream_text_once
+from novakit.llm.provider import LLMProvider, Message
 
 log = logging.getLogger(__name__)
 

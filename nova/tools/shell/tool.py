@@ -12,14 +12,15 @@ import logging
 import os
 import re
 
-from nova.llm import ToolResult
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
+
 from nova.tasks.manager import (
     TaskLimitError,
     get_background_task_manager,
     resolve_foreground_wait,
 )
 from nova.tasks.models import TERMINAL_STATUSES
-from nova.tools.registry import tool
 from nova.tools.shell_utils import normalize_path
 from nova.tools.task_results import background_task_result, completed_task_result
 from nova.tools.workspace_context import get_active_workspace

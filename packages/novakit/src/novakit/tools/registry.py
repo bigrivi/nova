@@ -1,0 +1,205 @@
+"""
+Tool registry.
+"""
+
+import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, TypeVar
+
+if TYPE_CHECKING:
+    from novakit.tools.behavior import ToolBehavior
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+_tool_metadata: dict = {}
+
+
+def tool(
+    name: str | None = None,
+    description: str = "",
+    parameters: dict | None = None,
+) -> Callable[[F], F]:
+    """Tool decorator."""
+
+    def decorator(func: F) -> F:
+        tool_name = name or func.__name__
+        _tool_metadata[tool_name] = {
+            "name": tool_name,
+            "description": description or func.__doc__ or "",
+            "parameters": parameters or {},
+            "func": func,
+        }
+        return func
+
+    return decorator
+
+
+@dataclass
+class Tool:
+    """Tool definition."""
+
+    name: str
+    description: str
+    func: Callable
+    params_schema: dict = field(default_factory=dict)
+    read_only: bool = True
+    concurrent_safe: bool = True
+    # Whether this tool arrived from an MCP server rather than Nova's own
+    # registry. It changes how the call is gated, not whether it runs: an MCP
+    # tool is resolved by name alone, because Nova's per-argument rules infer
+    # what a call *targets* from the argument names of the built-in tools, and
+    # those inferences do not transfer to an arbitrary server's schema.
+    from_mcp: bool = False
+
+
+class ToolRegistry:
+    """Tool registry."""
+
+    tools: dict[str, Tool]
+    _behaviors: dict[str, Any]
+
+    def __init__(self, source: "ToolRegistry | None" = None) -> None:
+        if source is not None:
+            self.tools = dict(source.tools)
+            self._behaviors = dict(getattr(source, "_behaviors", {}))
+        else:
+            self.tools = {}
+            self._behaviors = {}
+
+    def register(self, func: Callable, name: str | None = None) -> None:
+        """Register a tool function using decorator metadata."""
+        tool_name = name or func.__name__
+        metadata = _tool_metadata.get(tool_name, {})
+        t = Tool(
+            name=metadata.get("name", tool_name),
+            description=metadata.get("description", ""),
+            func=func,
+            params_schema=metadata.get("parameters", {}),
+        )
+        self.tools[t.name] = t
+
+    def set_behavior(self, name: str, behavior: "ToolBehavior") -> None:
+        """Bind a ToolBehavior to a registered tool."""
+        self._behaviors[name] = behavior
+
+    def behavior_for(self, name: str) -> "ToolBehavior":
+        """Get the ToolBehavior for *name*, or a no-op default."""
+        from novakit.tools.behavior import DefaultToolBehavior
+
+        return self._behaviors.get(name, DefaultToolBehavior())
+
+    def has_behavior(self, name: str) -> bool:
+        """Whether *name* has a behaviour bound, as opposed to the no-op default.
+
+        ``behavior_for`` cannot answer this: it hands back a fresh
+        ``DefaultToolBehavior()`` for an unbound tool, so a caller that wrapped
+        "whatever behaviour this tool has" would wrap the default and discard the
+        real one.
+        """
+        return name in self._behaviors
+
+    def register_by_metadata(self, tool_name: str) -> bool:
+        """Register a tool from global metadata."""
+        metadata = _tool_metadata.get(tool_name)
+        if not metadata:
+            return False
+        func = metadata.get("func")
+        if not func:
+            return False
+        self.register(func, tool_name)
+        return True
+
+    def register_direct(
+        self,
+        name: str,
+        description: str,
+        func: Callable,
+        params_schema: dict,
+        from_mcp: bool = False,
+    ) -> None:
+        self.tools[name] = Tool(
+            name=name,
+            description=description,
+            func=func,
+            params_schema=params_schema,
+            from_mcp=from_mcp,
+        )
+
+    def unregister(self, name: str) -> None:
+        """Unregister a tool."""
+        self.tools.pop(name, None)
+
+    def get(self, name: str) -> Tool | None:
+        """Get a tool by name."""
+        return self.tools.get(name)
+
+    def list_tools(self) -> list[Tool]:
+        """List all registered tools."""
+        return list(self.tools.values())
+
+    def get_schema(self) -> list[dict]:
+        """Return all tool schemas for LLM consumption."""
+        schemas = []
+        for tool in self.tools.values():
+            schemas.append(
+                {
+                    # "name": tool.name,
+                    # "description": tool.description,
+                    # "parameters": self._convert_schema(tool.params_schema),
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": self._convert_schema(tool.params_schema),
+                    },
+                }
+            )
+        return schemas
+
+    def _convert_schema(self, schema: dict) -> dict:
+        """Convert a schema into OpenAI function-calling format."""
+        if not schema:
+            return {"type": "object", "properties": {}}
+
+        return {
+            "type": "object",
+            "properties": schema.get("properties", {}),
+            "required": schema.get("required", []),
+        }
+
+    async def call(self, name: str, **kwargs: object) -> dict[str, Any]:
+        """Invoke a tool."""
+        tool = self.get(name)
+        if not tool:
+            return {"success": False, "error": f"Tool {name} not found"}
+
+        try:
+            # Execute the tool function.
+            if asyncio.iscoroutinefunction(tool.func):
+                result = await tool.func(**kwargs)
+            else:
+                result = tool.func(**kwargs)
+
+            # Normalize the result format.
+            if isinstance(result, dict):
+                if "success" not in result:
+                    return {"success": True, "result": result}
+                return result
+
+            return {"success": True, "result": result}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+# Global tool registry.
+_registry: ToolRegistry | None = None
+
+
+def get_registry() -> ToolRegistry:
+    """Get the global tool registry."""
+    global _registry
+    if _registry is None:
+        _registry = ToolRegistry()
+    return _registry

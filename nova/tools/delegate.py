@@ -8,10 +8,11 @@ model must not wait or poll.
 
 import logging
 
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
+
 from nova.agent.spawn import MAX_SPAWN_DEPTH, SPAWN_DEPTH
 from nova.constants import DEFAULT_AGENT_KEY
-from nova.llm import ToolResult
-from nova.tools.registry import tool
 
 log = logging.getLogger(__name__)
 

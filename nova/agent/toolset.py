@@ -10,9 +10,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from novakit.tools.registry import ToolRegistry
+
 from nova.mcp.manager import MCPManager
 from nova.tools.approval import ApprovalManager
-from nova.tools.registry import ToolRegistry
 
 # Types only. `ToolPolicy` and `PolicyToolBehavior` are deliberately imported
 # inside the methods that use them, so this block must not pull them in eagerly
@@ -204,8 +205,9 @@ class ToolsetBuilder:
         """
         from copy import deepcopy
 
+        from novakit.tools.registry import _tool_metadata
+
         from nova.tools.delegate import delegate_to_agent
-        from nova.tools.registry import _tool_metadata
 
         metadata = _tool_metadata["delegate_to_agent"]
         schema = deepcopy(metadata["parameters"])

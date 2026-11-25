@@ -8,14 +8,15 @@ import logging
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from novakit.llm import FakerLLMProvider, LLMProvider
+from novakit.tools.registry import ToolRegistry
+
 from nova.agent import Agent, AgentConfig
 from nova.agent.posture import READ_ONLY, normalize_posture, resolve_allowed_tools
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
-from nova.llm import (
+from nova.llm.providers import (
     AnthropicProvider,
-    FakerLLMProvider,
-    LLMProvider,
     OllamaProvider,
     OpenAIProvider,
     OpenAIResponsesProvider,
@@ -23,7 +24,6 @@ from nova.llm import (
 from nova.prompt import PromptConfig
 from nova.settings import Settings, get_settings
 from nova.tools.permissions import load_permission_mode, permissions_path
-from nova.tools.registry import ToolRegistry
 
 log = logging.getLogger(__name__)
 
@@ -254,7 +254,8 @@ def _resolve_effort(
     different model - or a hand-edited one the provider would reject - is
     dropped instead of sent.
     """
-    from nova.llm.reasoning import fit_effort, resolve_effort_levels
+    from novakit.llm.reasoning import fit_effort, resolve_effort_levels
+
     from nova.registry.catalogue import spec_for
 
     try:

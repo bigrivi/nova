@@ -43,7 +43,10 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Awaitable, Callable
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from novakit.llm.provider import LLMProvider
 
 log = logging.getLogger(__name__)
 
@@ -135,7 +138,7 @@ def parse_verdict(raw: str | None) -> Verdict:
 
 
 def build_reviewer(
-    llm: object | None,
+    llm: LLMProvider | None,
     model: str,
     *,
     timeout: float = 20.0,
@@ -143,7 +146,7 @@ def build_reviewer(
     """A reviewer backed by *llm*, or one that always escalates.
 
     Args:
-        llm: Anything with `stream_text_once`-compatible behaviour, or None.
+        llm: Provider to ask, or None to always escalate.
         model: Model to ask.
         timeout: Seconds before giving up and escalating.
 
@@ -156,11 +159,11 @@ def build_reviewer(
         if llm is None:
             return "escalate"
         try:
-            from nova.llm.oneshot import stream_text_once
-            from nova.llm.provider import Message
+            from novakit.llm.oneshot import stream_text_once
+            from novakit.llm.provider import Message
 
             text = await stream_text_once(
-                llm,  # type: ignore[arg-type]
+                llm,
                 messages=[
                     Message(role="system", content=SYSTEM),
                     Message(

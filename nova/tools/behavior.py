@@ -12,9 +12,13 @@ orchestration loop in Agent._run_turn.
 
 import json
 import logging
-from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Protocol
+
+from novakit.tools.behavior import (
+    DefaultToolBehavior,
+    PreExecutionCheck,
+    ToolBehavior,
+    TurnContext,
+)
 
 from nova.tools.approval import ApprovalManager
 from nova.tools.approval_review import Reviewer
@@ -24,100 +28,6 @@ from nova.tools.tool_policy import EXTERNAL_DIRECTORY_ACTION, ToolPolicy, path_t
 from nova.tools.workspace_context import get_active_workspace
 
 log = logging.getLogger(__name__)
-
-
-# ── Data types ─────────────────────────────────────────────────────
-
-
-@dataclass
-class PreExecutionCheck:
-    """Result of a before_execute hook."""
-
-    allowed: bool = True
-    reject_reason: str | None = None
-    approval_request: dict | None = None
-
-
-@dataclass
-class TurnContext:
-    """Mutable context passed through tool behavior hooks.
-
-    Created fresh per tool invocation in Agent._run_turn.
-    Behaviours mutate this to communicate side-effects back to the
-    orchestrator.
-    """
-
-    approval_manager: ApprovalManager | None = None
-    event_emitter: Callable | None = None
-    session_id: str = ""
-
-
-# ── Protocol & defaults ────────────────────────────────────────────
-
-
-class ToolBehavior(Protocol):
-    """Protocol for tool-specific behaviour hooks.
-
-    Every hook has a sensible default (see DefaultToolBehavior) so that
-    tools remain fully backward-compatible without any behaviour class.
-    """
-
-    def normalize_input(self, args: dict) -> dict:
-        """Repair a model-supplied argument set before it is announced.
-
-        Runs before the call is announced, persisted, or executed, so a repaired
-        value is the same one in all three. Without it a tool that silently
-        fills in a missing field (ask_user numbering questions whose id the
-        model omitted) publishes that repair only in its result, and the
-        announcement the client actually renders disagrees with it.
-
-        Implementations return the argument set to use; the default is
-        unchanged.
-        """
-        ...
-
-    async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
-        """Called *before* the tool function is invoked.
-
-        Implementations may:
-        - Inspect / mutate *args* in-place (e.g. inject dependencies).
-        - Return ``PreExecutionCheck(allowed=False, ...)`` to reject.
-        - Return ``PreExecutionCheck(approval_request={...})`` to trigger
-          the approval-heartbeat flow in the orchestrator.
-        """
-        ...
-
-    def postprocess(self, raw_content: str) -> tuple[str, list | None]:
-        """Post-process the tool result content.
-
-        Returns ``(text, images_or_None)``.  The default is a no-op
-        that returns content unchanged and ``images=None``.
-        """
-        ...
-
-    def on_success(self, ctx: TurnContext) -> None:
-        """Called after a *successful* tool execution.
-
-        Use to set side-effect flags on *ctx* (e.g. mark memory as
-        modified) that the orchestrator will read after the call.
-        """
-        ...
-
-
-class DefaultToolBehavior:
-    """Default no-op behaviour — safe for every tool."""
-
-    def normalize_input(self, args: dict) -> dict:
-        return args
-
-    async def before_execute(self, args: dict, ctx: TurnContext) -> PreExecutionCheck:
-        return PreExecutionCheck()
-
-    def postprocess(self, raw_content: str) -> tuple[str, list | None]:
-        return raw_content, None
-
-    def on_success(self, ctx: TurnContext) -> None:
-        pass
 
 
 # ── Concrete behaviours ────────────────────────────────────────────

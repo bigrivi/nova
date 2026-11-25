@@ -2,8 +2,9 @@
 Read tool - file reader.
 """
 
-from nova.llm import ToolResult
-from nova.tools.registry import tool
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
+
 from nova.tools.workspace_context import resolve_path
 
 

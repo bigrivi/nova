@@ -15,14 +15,15 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from enum import Enum
 from typing import Any
 
-from nova.agent.events import AgentEvent, AgentEventFrame, done_payload
+from novakit.events import AgentEvent, AgentEventFrame, done_payload
+from novakit.llm import LLMProvider, ToolCall, ToolResult
+from novakit.llm.images import downscale_image
+from novakit.session.protocol import SessionProtocol
+from novakit.tools.registry import Tool, ToolRegistry
+
 from nova.agent.tool_guardrails import GuardrailAction, ToolGuardrails
-from nova.llm import LLMProvider, ToolCall, ToolResult
-from nova.llm.images import downscale_image
-from nova.session.protocol import SessionProtocol
 from nova.tools.approval import ApprovalManager
 from nova.tools.behavior import TurnContext
-from nova.tools.registry import Tool, ToolRegistry
 
 log = logging.getLogger(__name__)
 

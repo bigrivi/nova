@@ -8,9 +8,10 @@ import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from nova.agent.events import AgentEvent
-from nova.llm import LLMProvider
-from nova.session.models import NewMessage
+from novakit.events import AgentEvent
+from novakit.llm import LLMProvider
+from novakit.session.models import NewMessage
+
 from nova.settings import get_settings
 
 from .messages import (

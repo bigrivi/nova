@@ -12,11 +12,12 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from novakit.llm.oneshot import stream_text_once
+from novakit.llm.provider import Message
+
 from nova import checkpoints
 from nova.git import diff as git_diff
 from nova.git import status as git_status
-from nova.llm.oneshot import stream_text_once
-from nova.llm.provider import Message
 from nova.server.session_service import SessionService
 
 log = logging.getLogger(__name__)

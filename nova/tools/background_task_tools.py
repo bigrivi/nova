@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 
-from nova.llm import ToolResult
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
+
 from nova.tasks.manager import get_background_task_manager
-from nova.tools.registry import tool
 
 
 @tool(

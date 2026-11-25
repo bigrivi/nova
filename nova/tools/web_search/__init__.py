@@ -32,10 +32,10 @@ import itertools
 import logging
 
 import httpx
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
 
-from nova.llm import ToolResult
 from nova.settings import get_settings
-from nova.tools.registry import tool
 from nova.tools.web_search.base import (
     EMPTY_RESULT_MESSAGE,
     SearchBackend,

@@ -1,5 +1,5 @@
-from nova.llm import ToolResult
-from nova.tools.registry import tool
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
 
 _STATUS_MARKERS = {
     "completed": "✅",

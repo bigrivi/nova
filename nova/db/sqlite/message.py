@@ -9,9 +9,14 @@ import uuid
 from typing import Any
 
 import aiosqlite
+from novakit.session.models import (
+    Message,
+    MessageFilter,
+    NewMessage,
+    decode_display_text,
+)
 
 from nova.db.repository import MessageStore
-from nova.session.models import Message, MessageFilter, NewMessage, decode_display_text
 
 
 def _legacy_content(data: str | None) -> str:

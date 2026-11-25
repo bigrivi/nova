@@ -10,7 +10,7 @@ Clone and install the Python package in editable mode:
 
 ```bash
 git clone https://github.com/bigrivi/nova.git && cd nova
-pip install -e ".[dev]"
+pip install -e packages/novakit -e ".[dev]"
 ```
 
 That puts the `nova` console script on your PATH, as defined in `pyproject.toml`.
@@ -70,7 +70,7 @@ The frontend dev server proxies `/api/*` to the backend. You can override the ta
 
 CI runs on every push to `main` and on every pull request. The workflow is `.github/workflows/ci.yml` and it has three jobs:
 
-* **Python tests**: installs with `pip install -e ".[dev]"` then runs `pytest -q` on Python 3.12.
+* **Python tests**: installs with `pip install -e packages/novakit -e ".[dev]"` then runs `pytest -q` on Python 3.12.
 * **Frontend typecheck and build**: runs `npm ci` and `npm run build` in `frontend/` on Node 22, which executes `tsc -b && vite build`.
 * **TUI typecheck and build**: runs `bun install --frozen-lockfile`, `bun run typecheck`, and `bun run build` in `tui/`. Typecheck executes `bun --bun tsc --noEmit`; build bundles the client to `tui/dist`.
 

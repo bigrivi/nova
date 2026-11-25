@@ -1,9 +1,6 @@
-"""
-LLM module.
-"""
+"""Nova compatibility exports for the novakit LLM layer."""
 
-from nova.llm.faker import FakerLLMProvider
-from nova.llm.provider import (
+from novakit.llm import (
     ChatEvent,
     ChatStreamEvent,
     Done,
@@ -19,10 +16,12 @@ from nova.llm.provider import (
     ToolInputStart,
     ToolResult,
 )
-from nova.llm.providers.anthropic import AnthropicProvider
-from nova.llm.providers.ollama import OllamaProvider
-from nova.llm.providers.openai_chat import OpenAIProvider
-from nova.llm.providers.openai_responses import OpenAIResponsesProvider
+from novakit.llm.faker import FakerLLMProvider
+
+from .providers.anthropic import AnthropicProvider
+from .providers.ollama import OllamaProvider
+from .providers.openai_chat import OpenAIProvider
+from .providers.openai_responses import OpenAIResponsesProvider
 
 __all__ = [
     "AnthropicProvider",

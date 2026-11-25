@@ -15,10 +15,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from nova.llm.provider import Done, Error, TextDelta
+from novakit.llm.provider import Done, Error, TextDelta
 
 if TYPE_CHECKING:
-    from nova.llm.provider import LLMProvider
+    from novakit.llm.provider import LLMProvider
 
 log = logging.getLogger(__name__)
 

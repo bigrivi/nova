@@ -22,6 +22,7 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
+    "novakit",
     "aiohttp",
     "aiosqlite",
     "fastapi>=0.141.1",
@@ -86,6 +87,12 @@ Homepage = "https://github.com/bigrivi/nova"
 Repository = "https://github.com/bigrivi/nova"
 Issues = "https://github.com/bigrivi/nova/issues"
 
+[tool.uv.workspace]
+members = ["packages/novakit"]
+
+[tool.uv.sources]
+novakit = { workspace = true }
+
 [tool.setuptools.dynamic]
 # Read from the module that holds the literal, not from the package: setuptools
 # resolves `attr` by importing the target, and importing `nova` pulls in aiohttp
@@ -105,7 +112,7 @@ nova = ["*.json", "agents/*/*.md"]
 # interpreter; missing third-party stubs are ignored rather than silenced file
 # by file.
 python_version = "3.12"
-files = ["nova"]
+files = ["nova", "packages/novakit/src/novakit"]
 exclude = ["^build/", "^dist/", "^site/"]
 ignore_missing_imports = true
 warn_unused_ignores = true

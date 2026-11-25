@@ -1,6 +1,7 @@
 """Formatting shared by synchronous and background task tools."""
 
-from nova.llm import ToolResult
+from novakit.llm import ToolResult
+
 from nova.tasks.models import TaskRecord
 from nova.tasks.serialization import background_task_content
 

@@ -9,10 +9,11 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
-from nova.llm import Message, ToolResult
-from nova.llm.oneshot import stream_text_once
+from novakit.llm import Message, ToolResult
+from novakit.llm.oneshot import stream_text_once
+from novakit.tools.registry import tool
+
 from nova.settings import nova_home
-from nova.tools.registry import tool
 from nova.tools.web_search import TOOL as web_search_tool
 
 if TYPE_CHECKING:

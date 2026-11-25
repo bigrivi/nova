@@ -1,16 +1,15 @@
 import asyncio
 import json
 import time
-import uuid
 from contextvars import ContextVar
-from dataclasses import dataclass, field
 from typing import Any
+
+from novakit.session.models import Message, MessageFilter, NewMessage, SessionContext
+from novakit.session.protocol import SessionProtocol
 
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import get_default_data_source
 from nova.db.repository import NovaRepository
-from nova.session.models import Message, MessageFilter, NewMessage
-from nova.session.protocol import SessionProtocol
 
 
 def default_session_title(user_message: str | None = None) -> str:
@@ -23,38 +22,6 @@ def default_session_title(user_message: str | None = None) -> str:
     if user_message:
         return user_message.strip()
     return "New Session"
-
-
-@dataclass
-class SessionContext:
-    id: str
-    agent_key: str = DEFAULT_AGENT_KEY
-    created_at: int = 0
-    updated_at: int = 0
-    metadata: dict[str, Any] = field(default_factory=dict)
-    title: str | None = None
-    parent_id: str | None = None
-    #: The session this one was copied from, and the last message it copied.
-    forked_from: str | None = None
-    fork_point_message_id: str | None = None
-    workspace_dir: str | None = None
-    project_id: str | None = None
-    summary_goal: str | None = None
-    summary_accomplished: str | None = None
-    summary_remaining: str | None = None
-    compacted_at: int | None = None
-    message_count: int = 0
-    turn_count: int = 0
-
-    @classmethod
-    def create(cls, agent_key: str = DEFAULT_AGENT_KEY) -> "SessionContext":
-        now = int(time.time() * 1000)
-        return cls(
-            id=str(uuid.uuid4()),
-            agent_key=agent_key,
-            created_at=now,
-            updated_at=now,
-        )
 
 
 _current_session: ContextVar[SessionContext | None] = ContextVar(

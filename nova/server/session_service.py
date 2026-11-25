@@ -6,6 +6,8 @@ import inspect
 import logging
 import time
 
+from novakit.session.models import decode_display_text
+
 from nova.app import build_agent
 from nova.constants import DEFAULT_AGENT_KEY
 from nova.db import DataSourceProtocol, get_default_data_source
@@ -19,7 +21,6 @@ from nova.server.schemas import (
 )
 from nova.server.stream_buffer import StreamBuffer
 from nova.session.history_projection import get_user_visible_history
-from nova.session.models import decode_display_text
 from nova.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -582,7 +583,7 @@ class SessionService:
         later GET hands back is always a level the model actually accepts.
         """
         if provider and model and reasoning_effort:
-            from nova.llm.reasoning import fit_effort, resolve_effort_levels
+            from novakit.llm.reasoning import fit_effort, resolve_effort_levels
 
             provider_config = self._settings.providers.get(provider)
             if provider_config is not None:

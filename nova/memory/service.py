@@ -10,9 +10,10 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 
+from novakit.llm import Message as LLMMessage
+from novakit.llm.oneshot import stream_text_once
+
 from nova.db.repository import MemoryStore
-from nova.llm import Message as LLMMessage
-from nova.llm.oneshot import stream_text_once
 from nova.memory.models import (
     VALID_MEMORY_SCOPES,
     VALID_MEMORY_TYPES,

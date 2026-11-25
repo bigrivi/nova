@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from novakit.llm.images import MAX_IMAGE_BYTES, image_size_bytes
 from pydantic import BaseModel, Field, model_validator
-
-from nova.llm.images import MAX_IMAGE_BYTES, image_size_bytes
 
 
 class AttachmentData(BaseModel):

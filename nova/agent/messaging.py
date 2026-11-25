@@ -5,11 +5,12 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from novakit.llm import Message as LLMMessage
+from novakit.llm.images import bound_images
+
 from nova.agent.context import MessagingContext
 from nova.agent.state import TurnState
 from nova.learning.nudges import build_nudge_reminder, should_nudge
-from nova.llm import Message as LLMMessage
-from nova.llm.images import bound_images
 from nova.prompt import session_cache
 from nova.prompt.project_instructions import discover_project_instructions
 from nova.session.manager import SessionContext

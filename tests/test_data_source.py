@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from novakit.session import models as novakit_models
 
 from nova.db import (
     DataSourceConfig,
@@ -23,9 +24,9 @@ async def test_default_aio_sqlite_provider_is_registered(tmp_path):
     await db.connect()
 
     assert isinstance(db, SqliteRepository)
-    assert Session.__module__ == "nova.session.models"
-    assert SharedMessage.__module__ == "nova.session.models"
-    assert SharedMessageFilter.__module__ == "nova.session.models"
+    assert Session is novakit_models.Session
+    assert SharedMessage is novakit_models.Message
+    assert SharedMessageFilter is novakit_models.MessageFilter
     await db.close()
 
 

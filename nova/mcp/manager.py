@@ -5,12 +5,13 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from nova.llm import ToolResult
+from novakit.llm import ToolResult
+from novakit.tools.registry import ToolRegistry
+
 from nova.mcp.client import McpClient
 from nova.mcp.naming import allocate
 from nova.mcp.transport import McpError, create_transport
 from nova.settings import get_settings
-from nova.tools.registry import ToolRegistry
 
 log = logging.getLogger(__name__)
 

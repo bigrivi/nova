@@ -4,13 +4,14 @@ Code Run tool - execute Python code.
 
 import asyncio
 
-from nova.llm import ToolResult
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
+
 from nova.tasks.manager import (
     TaskLimitError,
     get_background_task_manager,
     resolve_foreground_wait,
 )
-from nova.tools.registry import tool
 from nova.tools.task_results import background_task_result, completed_task_result
 
 # Kept local rather than reusing manager.DEFAULT_FOREGROUND_WAIT_SECONDS, which

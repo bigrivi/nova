@@ -2,8 +2,9 @@
 Nova - General-purpose agent system.
 """
 
+from novakit.llm import LLMProvider, Message
+
 from nova.agent import Agent, AgentConfig, AgentEvent
-from nova.llm import LLMProvider, Message
 from nova.session import SessionManager, get_session_manager
 from nova.settings import Settings, get_settings
 from nova.tools import ToolRegistry, tool

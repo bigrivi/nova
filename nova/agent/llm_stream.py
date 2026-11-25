@@ -19,8 +19,8 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from enum import Enum
 from typing import Any, assert_never
 
-from nova.agent.events import AgentEvent, AgentEventFrame, done_payload, error_payload
-from nova.llm.provider import (
+from novakit.events import AgentEvent, AgentEventFrame, done_payload, error_payload
+from novakit.llm.provider import (
     ChatStreamEvent,
     Done,
     Error,

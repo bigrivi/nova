@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from novakit.session.models import Message, MessageFilter
+
 from nova.db.repository import MessageStore
-from nova.session.models import Message, MessageFilter
 
 VISIBLE_HISTORY_TOOL_NAMES = frozenset({"edit", "write"})
 _SNIPPED_TOOL_RESULT_MARKER = " chars snipped ...]"

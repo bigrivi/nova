@@ -13,7 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from nova.llm.reasoning import resolve_effort_levels
+from novakit.llm.reasoning import resolve_effort_levels
+
 from nova.llm.tokenizer import resolve_context_window
 from nova.registry import catalogue as catalogue_module
 from nova.settings import Settings

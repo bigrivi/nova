@@ -1,8 +1,9 @@
 import json
 
-from nova.llm import ToolResult
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
+
 from nova.skills.service import SkillService
-from nova.tools.registry import tool
 
 
 class SkillTools:

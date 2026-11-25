@@ -12,7 +12,8 @@ from nova.learning.skill_extractor import SkillExtractor, TurnContext
 from nova.learning.user_model import UserModel
 
 if TYPE_CHECKING:
-    from nova.llm.provider import LLMProvider
+    from novakit.llm.provider import LLMProvider
+
     from nova.settings import LearningSettings
 
 log = logging.getLogger(__name__)

@@ -10,13 +10,14 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from nova.llm import LLMProvider
-from nova.llm import Message as LLMMessage
-from nova.llm.oneshot import stream_text_once
+from novakit.llm import LLMProvider
+from novakit.llm import Message as LLMMessage
+from novakit.llm.oneshot import stream_text_once
 
 if TYPE_CHECKING:
+    from novakit.session.protocol import SessionProtocol
+
     from nova.db import DataSourceProtocol
-    from nova.session.protocol import SessionProtocol
 
 log = logging.getLogger(__name__)
 

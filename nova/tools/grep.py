@@ -1,8 +1,9 @@
 import re
 from pathlib import Path
 
-from nova.llm import ToolResult
-from nova.tools.registry import tool
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
+
 from nova.tools.search_paths import _relative_to
 from nova.tools.workspace_context import get_active_workspace, resolve_path
 

@@ -4,10 +4,10 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 import httpx
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
 
-from nova.llm import ToolResult
 from nova.settings import get_settings
-from nova.tools.registry import tool
 
 LOGGER = logging.getLogger(__name__)
 

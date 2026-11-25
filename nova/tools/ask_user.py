@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from nova.llm import ToolResult
-from nova.tools.registry import tool
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
 
 if TYPE_CHECKING:
     from nova.tools.behavior import PreExecutionCheck, TurnContext

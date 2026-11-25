@@ -7,8 +7,9 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from novakit.session.models import Message as StoredMessage
+
     from nova.session.manager import SessionContext
-    from nova.session.models import Message as StoredMessage
 
 
 def is_summary(message: StoredMessage | dict[str, Any]) -> bool:

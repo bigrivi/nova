@@ -1,5 +1,7 @@
 from typing import Any
 
+from novakit.tools.registry import ToolRegistry, tool
+
 from nova.tools.ask_user import TOOL as ask_user
 from nova.tools.background_task_tools import (
     background_task_cancel,
@@ -14,7 +16,6 @@ from nova.tools.glob import TOOL as glob
 from nova.tools.grep import TOOL as grep
 from nova.tools.image import read_image
 from nova.tools.read import TOOL as read
-from nova.tools.registry import ToolRegistry, tool
 from nova.tools.shell import TOOL as shell
 from nova.tools.subagent_status import TOOL as subagent_status
 from nova.tools.todo_write import TOOL as todo_write

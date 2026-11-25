@@ -10,11 +10,12 @@ while still giving every call an explicit owner.
 
 from __future__ import annotations
 
-from nova.llm import ToolResult
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
+
 from nova.memory.models import MemoryRecord, MemoryWriteRequest
 from nova.memory.service import MemoryService
 from nova.prompt.threat_patterns import has_threats
-from nova.tools.registry import tool
 
 
 def _format_memory(record: MemoryRecord) -> str:

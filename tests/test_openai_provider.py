@@ -253,7 +253,7 @@ async def test_a_stream_that_finishes_still_records_its_end(monkeypatch, caplog)
     _install_fake(monkeypatch, _FakeResponse(lines=lines))
     provider = OpenAIProvider(api_key="k")
 
-    with caplog.at_level(logging.INFO, logger="nova.llm.stream_trace"):
+    with caplog.at_level(logging.INFO, logger="novakit.llm.stream_trace"):
         [
             event
             async for event in provider.chat_stream(

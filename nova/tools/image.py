@@ -8,8 +8,9 @@ import json
 import os
 from pathlib import Path
 
-from nova.llm import ToolResult
-from nova.tools.registry import tool
+from novakit.llm import ToolResult
+from novakit.tools.registry import tool
+
 from nova.tools.workspace_context import resolve_path
 
 SUPPORTED_FORMATS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
