@@ -70,6 +70,10 @@ class AgentEvent(Enum):
     APPROVAL_RESULT = "approval_result"
 
 
+# One item in an agent event stream: the event kind and its payload.
+AgentEventFrame = tuple[AgentEvent, Any]
+
+
 def done_payload(reason: str, content: str | None = None) -> dict[str, Any]:
     return {"reason": reason, "content": content}
 

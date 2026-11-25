@@ -31,7 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from nova.agent import Agent
+from nova.agent.protocol import InterruptibleAgent
 
 if TYPE_CHECKING:
     from nova.server.stream_buffer import StreamBuffer
@@ -178,7 +178,7 @@ class RequestRegistry:
 
     # ── registration ──
 
-    async def register(self, session_id: str, agent: Agent) -> None:
+    async def register(self, session_id: str, agent: InterruptibleAgent) -> None:
         """Bind *agent* to *session_id* (active state, touch, bump sequence)."""
         lock = await self._session_lock(session_id)
         async with lock, self._map_lock:
@@ -286,8 +286,16 @@ class RequestRegistry:
     async def _interrupt_owner(self, session_id: str, owner: object) -> bool:
         """Call an owner's interrupt hook, reporting False when it has none.
 
-        The hook may be sync or a coroutine, so the same call serves the live
-        Agent and the test doubles.
+        The hook may be sync or a coroutine. ``owner`` stays object-typed because
+        reservations and test doubles also occupy slots; ``register`` is the
+        point where a live owner must satisfy ``InterruptibleAgent``.
+
+        Args:
+            session_id: Slot being interrupted.
+            owner: Current slot owner.
+
+        Returns:
+            True when an interrupt hook ran without raising.
         """
         interrupt_fn = getattr(owner, "interrupt", None)
         if interrupt_fn is None:

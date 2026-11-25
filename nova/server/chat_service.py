@@ -11,7 +11,8 @@ from typing import Any, Literal
 
 from fastapi import HTTPException
 
-from nova.agent import AgentEvent
+from nova.agent.events import AgentEvent, AgentEventFrame
+from nova.agent.protocol import ChatAgent
 from nova.app import build_agent
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.project.service import ProjectService
@@ -280,8 +281,8 @@ class ChatService:
     async def _agent_event_stream(
         self,
         request: ChatRequest,
-    ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
-        agent = await build_agent(
+    ) -> AsyncGenerator[AgentEventFrame, None]:
+        agent: ChatAgent = await build_agent(
             agent_key=request.agent_key,
             provider=request.provider,
             model=request.model,

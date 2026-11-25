@@ -40,7 +40,7 @@ CI runs four jobs: `pytest -q`, `ruff check nova tests` + `mypy`, frontend
   tests actually ran — it hides the notice.
 - `tests/conftest.py` autouse fixtures point `NOVA_HOME` at a tmpdir and reset the
   process-global `SessionManager` and `BackgroundTaskManager`. Any test that builds an
-  `Agent()` depends on that isolation; a manager leaked from an earlier test points at a
+  `Agent.create()` depends on that isolation; a manager leaked from an earlier test points at a
   closed connection.
 - Live Ollama e2e is opt-in: `RUN_LIVE_OLLAMA_SERVER_E2E=1 pytest tests/e2e -q`.
 - `mypy` is configured in `pyproject.toml` (`files = ["nova"]`, Python 3.12) and the

@@ -315,7 +315,7 @@ async def test_faker_tool_call_uses_existing_agent_execution_loop(tmp_path):
         tool_call_probability=1,
     )
     session_manager = SessionManager(data_source=repository)
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(model="fake", max_iterations=3),
         llm_provider=provider,
         session_manager=session_manager,

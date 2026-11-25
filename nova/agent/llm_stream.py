@@ -19,7 +19,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from enum import Enum
 from typing import Any, assert_never
 
-from nova.agent.events import AgentEvent, done_payload, error_payload
+from nova.agent.events import AgentEvent, AgentEventFrame, done_payload, error_payload
 from nova.llm.provider import (
     ChatStreamEvent,
     Done,
@@ -96,7 +96,7 @@ class TurnStreamReader:
     async def consume(
         self,
         chunks: AsyncGenerator[ChatStreamEvent, None],
-    ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
+    ) -> AsyncGenerator[AgentEventFrame, None]:
         closing = False
         try:
             async for chunk in chunks:
@@ -137,7 +137,7 @@ class TurnStreamReader:
     def collected_tool_calls(self) -> list[ToolCall]:
         return [tool_call for tool_call in self.tool_calls.values() if tool_call.name]
 
-    async def _dispatch(self, chunk: ChatStreamEvent) -> list[tuple[AgentEvent, Any]]:
+    async def _dispatch(self, chunk: ChatStreamEvent) -> list[AgentEventFrame]:
         match chunk:
             case ReasoningDelta():
                 return await self._on_reasoning_delta(chunk)
@@ -162,34 +162,32 @@ class TurnStreamReader:
             case _:
                 assert_never(chunk)
 
-    async def _on_reasoning_delta(
-        self, chunk: ReasoningDelta
-    ) -> list[tuple[AgentEvent, Any]]:
-        pairs: list[tuple[AgentEvent, Any]] = []
+    async def _on_reasoning_delta(self, chunk: ReasoningDelta) -> list[AgentEventFrame]:
+        events: list[AgentEventFrame] = []
         if not self._reasoning_started:
             self._reasoning_started = True
             self._reasoning_started_at = time.monotonic()
-            pairs += await self._forward(AgentEvent.REASONING_START)
+            events += await self._forward(AgentEvent.REASONING_START)
         self.reasoning += chunk.content
-        pairs += await self._forward(
+        events += await self._forward(
             AgentEvent.REASONING_DELTA, chunk.content, emit=False
         )
-        return pairs
+        return events
 
-    async def _on_text_delta(self, chunk: TextDelta) -> list[tuple[AgentEvent, Any]]:
-        pairs: list[tuple[AgentEvent, Any]] = []
+    async def _on_text_delta(self, chunk: TextDelta) -> list[AgentEventFrame]:
+        events: list[AgentEventFrame] = []
         if not self._text_started:
             # Close reasoning before opening text, so a client never sees both
             # channels open at once. The guard in ``_close_reasoning`` reads
             # ``_text_started``, so it must still be False here.
-            pairs += await self._close_reasoning()
+            events += await self._close_reasoning()
             self._text_started = True
-            pairs += await self._forward(AgentEvent.TEXT_START)
+            events += await self._forward(AgentEvent.TEXT_START)
         self.content += chunk.content
-        pairs += await self._forward(AgentEvent.TEXT_DELTA, chunk.content, emit=False)
-        return pairs
+        events += await self._forward(AgentEvent.TEXT_DELTA, chunk.content, emit=False)
+        return events
 
-    def _on_retry(self, chunk: RetryNotice) -> list[tuple[AgentEvent, Any]]:
+    def _on_retry(self, chunk: RetryNotice) -> list[AgentEventFrame]:
         # Forwarded immediately and not accumulated: this describes a wait that
         # is happening now, and the client renders it as a transient line rather
         # than as part of the answer.
@@ -205,7 +203,7 @@ class TurnStreamReader:
             )
         ]
 
-    def _on_done(self, chunk: Done) -> list[tuple[AgentEvent, Any]]:
+    def _on_done(self, chunk: Done) -> list[AgentEventFrame]:
         if chunk.aborted:
             self.outcome = TurnOutcome.STOPPED
             return [(AgentEvent.DONE, done_payload("stopped", self.content))]
@@ -213,38 +211,36 @@ class TurnStreamReader:
         self._absorb_batched_tool_calls(chunk)
         return []
 
-    def _on_error(self, chunk: Error) -> list[tuple[AgentEvent, Any]]:
+    def _on_error(self, chunk: Error) -> list[AgentEventFrame]:
         self.outcome = TurnOutcome.FAILED
         self.error_message = chunk.message
         return [(AgentEvent.ERROR, error_payload("llm_error", chunk.message))]
 
     async def _on_tool_input_start(
         self, chunk: ToolInputStart
-    ) -> list[tuple[AgentEvent, Any]]:
+    ) -> list[AgentEventFrame]:
         # The model has stopped thinking and begun composing tool arguments.
         # Close the reasoning block now rather than at stream end, which may be a
         # long write away.
         log.info(f"[Turn {self._turn_count}] Tool input start: {chunk.name}")
-        pairs = await self._close_reasoning()
-        pairs += await self._forward(AgentEvent.TOOL_INPUT_START, chunk)
-        return pairs
+        events = await self._close_reasoning()
+        events += await self._forward(AgentEvent.TOOL_INPUT_START, chunk)
+        return events
 
     async def _on_tool_input_delta(
         self, chunk: ToolInputDelta
-    ) -> list[tuple[AgentEvent, Any]]:
+    ) -> list[AgentEventFrame]:
         return await self._forward(AgentEvent.TOOL_INPUT_DELTA, chunk)
 
-    async def _on_tool_input_end(
-        self, chunk: ToolInputEnd
-    ) -> list[tuple[AgentEvent, Any]]:
+    async def _on_tool_input_end(self, chunk: ToolInputEnd) -> list[AgentEventFrame]:
         return await self._forward(AgentEvent.TOOL_INPUT_END, chunk)
 
     async def _on_tool_input_error(
         self, chunk: ToolInputError
-    ) -> list[tuple[AgentEvent, Any]]:
+    ) -> list[AgentEventFrame]:
         return await self._forward(AgentEvent.TOOL_INPUT_ERROR, chunk)
 
-    def _on_tool_call(self, chunk: ToolCall) -> list[tuple[AgentEvent, Any]]:
+    def _on_tool_call(self, chunk: ToolCall) -> list[AgentEventFrame]:
         self._absorb_tool_call(chunk)
         return []
 
@@ -254,13 +250,13 @@ class TurnStreamReader:
         data: EventData = None,
         *,
         emit: bool = True,
-    ) -> list[tuple[AgentEvent, Any]]:
+    ) -> list[AgentEventFrame]:
         """Hand an event to the consumer, and to subscribers when ``emit``."""
         if emit:
             await self._emit(event, data)
         return [(event, data)]
 
-    async def _close_reasoning(self) -> list[tuple[AgentEvent, Any]]:
+    async def _close_reasoning(self) -> list[AgentEventFrame]:
         if not (
             self.reasoning and not self._reasoning_ended and not self._text_started
         ):
@@ -270,12 +266,12 @@ class TurnStreamReader:
         await self._emit(AgentEvent.REASONING_END, None)
         return [(AgentEvent.REASONING_END, self.reasoning_elapsed_ms)]
 
-    async def _close_channels(self) -> list[tuple[AgentEvent, Any]]:
-        pairs = await self._close_reasoning()
+    async def _close_channels(self) -> list[AgentEventFrame]:
+        events = await self._close_reasoning()
         if self._text_started:
             await self._emit(AgentEvent.TEXT_END, self.content)
-            pairs.append((AgentEvent.TEXT_END, self.content))
-        return pairs
+            events.append((AgentEvent.TEXT_END, self.content))
+        return events
 
     def _reasoning_elapsed(self) -> int | None:
         if self._reasoning_started_at is None:

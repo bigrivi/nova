@@ -39,7 +39,7 @@ async def test_workspace_switch_reloads_project_instructions(tmp_path) -> None:
     database = SqliteRepository(DatabaseConfig(path=":memory:"))
     await database.connect()
     try:
-        agent = Agent(
+        agent = Agent.create(
             config=AgentConfig(model="test-model"),
             llm_provider=FakerLLMProvider(),
             session_manager=SessionManager(data_source=database),

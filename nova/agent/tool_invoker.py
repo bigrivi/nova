@@ -15,7 +15,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from enum import Enum
 from typing import Any
 
-from nova.agent.events import AgentEvent, done_payload
+from nova.agent.events import AgentEvent, AgentEventFrame, done_payload
 from nova.agent.tool_guardrails import GuardrailAction, ToolGuardrails
 from nova.llm import LLMProvider, ToolCall, ToolResult
 from nova.llm.images import downscale_image
@@ -85,7 +85,7 @@ class ToolInvoker:
         self,
         tool_calls: list,
         group_id: str | None = None,
-    ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
+    ) -> AsyncGenerator[AgentEventFrame, None]:
         current_session = self._session.get_current_session()
         session_id = (
             current_session.id if current_session and current_session.id else ""
@@ -232,7 +232,7 @@ class ToolInvoker:
         tool_call: ToolCall,
         all_tool_calls: list,
         group_id: str | None,
-    ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
+    ) -> AsyncGenerator[AgentEventFrame, None]:
         """Emit the tool-call event, checking for an abort on either side of it.
 
         The user can interrupt between the announcement and the execution, and a
@@ -381,7 +381,7 @@ class ToolInvoker:
         self,
         tool_calls: list,
         group_id: str | None,
-    ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
+    ) -> AsyncGenerator[AgentEventFrame, None]:
         """Write a cancelled result for every declared call that did not run.
 
         An unanswered tool call breaks the assistant->tool pairing the provider

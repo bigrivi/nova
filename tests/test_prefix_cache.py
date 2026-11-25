@@ -471,7 +471,7 @@ async def _isolated_agent(provider: LLMProvider, **agent_kwargs):
     db_module._db = database
     session_manager_module._manager = None
     try:
-        agent = Agent(config=AgentConfig(**agent_kwargs), llm_provider=provider)
+        agent = Agent.create(config=AgentConfig(**agent_kwargs), llm_provider=provider)
         yield agent, database
     finally:
         await database.close()

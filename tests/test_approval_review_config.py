@@ -81,7 +81,7 @@ def _agent(**kwargs):
 
     from nova.agent.core import Agent, AgentConfig
 
-    return Agent(
+    return Agent.create(
         config=AgentConfig(model="big-model", provider="big", **kwargs),
         llm_provider=MagicMock(name="agent_llm"),
     )

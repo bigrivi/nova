@@ -1480,7 +1480,7 @@ async def test_chat_stream_loads_messages_once_per_request():
 
         database.get_messages = counted
 
-        agent = Agent(
+        agent = Agent.create(
             config=AgentConfig(model="test-model", max_iterations=1),
             llm_provider=ScriptedProvider([[TextDelta(content="hello")]]),
         )
@@ -1491,7 +1491,7 @@ async def test_chat_stream_loads_messages_once_per_request():
         assert calls["n"] == 1
 
         calls["n"] = 0
-        agent2 = Agent(
+        agent2 = Agent.create(
             config=AgentConfig(model="test-model", max_iterations=3),
             llm_provider=ScriptedProvider(
                 [
@@ -1753,7 +1753,7 @@ class TestCompactionCircuitBreaker:
             def get_max_tokens(self, model):
                 return 128000
 
-        return Agent(
+        return Agent.create(
             config=AgentConfig(model="test-model"), llm_provider=UnusedProvider()
         )
 
@@ -1936,7 +1936,7 @@ class TestInLoopCompaction:
                     [TextDelta(content="done")],
                 ]
             )
-            agent = Agent(
+            agent = Agent.create(
                 config=AgentConfig(model="test-model", max_iterations=5),
                 llm_provider=provider,
             )
@@ -1988,7 +1988,7 @@ class TestInLoopCompaction:
                     [TextDelta(content="done")],
                 ]
             )
-            agent = Agent(
+            agent = Agent.create(
                 config=AgentConfig(model="test-model", max_iterations=5),
                 llm_provider=provider,
             )
@@ -2030,7 +2030,7 @@ class TestInLoopCompaction:
                     [TextDelta(content="done")],
                 ]
             )
-            agent = Agent(
+            agent = Agent.create(
                 config=AgentConfig(model="test-model", max_iterations=5),
                 llm_provider=provider,
             )
@@ -2062,7 +2062,7 @@ class TestInLoopCompaction:
                     [TextDelta(content="done")],
                 ]
             )
-            agent = Agent(
+            agent = Agent.create(
                 config=AgentConfig(model="test-model", max_iterations=5),
                 llm_provider=provider,
             )

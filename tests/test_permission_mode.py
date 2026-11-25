@@ -606,7 +606,7 @@ def _agent(mode: str):  # type: ignore[no-untyped-def]
 
     from nova.agent.core import Agent, AgentConfig
 
-    return Agent(
+    return Agent.create(
         config=AgentConfig(model="big-model", provider="big", permission_mode=mode),
         llm_provider=MagicMock(name="agent_llm"),
     )

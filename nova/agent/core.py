@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -5,26 +7,28 @@ import uuid
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
 
+from nova.agent.assembly import build_agent_dependencies
 from nova.agent.background import AgentBackground
-from nova.agent.compaction import CompactionController, CompactionError
-from nova.agent.events import (
-    AgentEvent,
-    EventBus,
+from nova.agent.compaction import CompactionError
+from nova.agent.context import (
+    AgentDependencies,
+    AgentSessionContext,
+    BackgroundContext,
+    MessagingContext,
 )
+from nova.agent.events import AgentEvent, AgentEventFrame, EventBus
 from nova.agent.events import (
     done_payload as _done_payload,
 )
 from nova.agent.events import (
     error_payload as _error_payload,
 )
-from nova.agent.hierarchy import AgentHierarchy
 from nova.agent.llm_stream import TurnOutcome, TurnStreamReader
 from nova.agent.messaging import AgentMessaging, count_user_turns
 from nova.agent.session import AgentSession
 from nova.agent.state import TurnState
-from nova.agent.tool_guardrails import ToolGuardrails
 from nova.agent.tool_invoker import ToolInvoker, has_parsable_arguments
 from nova.agent.toolset import ToolsetBuilder
 from nova.constants import DEFAULT_AGENT_KEY
@@ -37,15 +41,15 @@ from nova.llm.images import (
     image_data_url,
     image_size_bytes,
 )
-from nova.prompt import PromptBuilder, PromptConfig
-from nova.session import get_session_manager
-from nova.session.models import decode_display_text, encode_display_text
+from nova.prompt import PromptConfig
+from nova.session.manager import SessionContext
+from nova.session.models import Message, decode_display_text, encode_display_text
 from nova.session.protocol import SessionProtocol
-from nova.settings import nova_home
-from nova.skills.service import SkillService
-from nova.tools.approval import get_approval_manager
 from nova.tools.checkpoints import begin_turn
 from nova.tools.registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from nova.learning.loop import LearningLoop
 
 log = logging.getLogger(__name__)
 
@@ -133,11 +137,120 @@ def build_user_message(
     )
 
 
+@dataclass(frozen=True)
+class ChatOptions:
+    """Optional inputs that shape one chat request."""
+
+    attachments: list[dict] | None = None
+    workspace_dir: str | None = None
+    project_id: str | None = None
+    message_variant: str | None = None
+    display_text: str | None = None
+    regenerate: bool = False
+
+
+@dataclass(frozen=True)
+class PreparedRequest:
+    """User input and session state prepared before the model loop starts."""
+
+    current_session: SessionContext
+    session_id: str
+    user_input: str
+    message_text: str
+    image_data: list[str]
+    display: str
+    user_message: Message | None
+    stale_ids: list[str]
+    regenerate: bool
+    attachment_count: int
+    message_variant: str | None
+
+
 class Agent:
-    """Nova agent: chat stream, tool use, session management."""
+    """Nova agent runtime: one prepared dependency graph per request."""
 
     def __init__(
         self,
+        dependencies: AgentDependencies,
+        *,
+        parent_agent: Agent | None = None,
+        depth: int = 0,
+    ) -> None:
+        """Wire prepared dependencies without performing I/O or global lookups.
+
+        Args:
+            dependencies: Fully assembled runtime dependencies.
+            parent_agent: In-memory parent used by hierarchy lookups.
+            depth: Delegation depth for spawn limits.
+        """
+        self.config = dependencies.config
+        self.agent_key = dependencies.agent_key
+        self.agent_dir = dependencies.agent_dir
+        self.llm = dependencies.llm
+        self._review_llm = dependencies.review_llm
+        self._review_model = dependencies.review_model
+        self.session = dependencies.session
+        self._data_source = dependencies.data_source
+        self.tool_registry = dependencies.tool_registry
+        self._events = dependencies.events
+        self.parent_agent = parent_agent
+        self.is_sub_agent = dependencies.is_sub_agent
+        self.depth = depth
+        self.allowed_tools = dependencies.allowed_tools
+        self._hierarchy = dependencies.hierarchy
+        self._skill_service = dependencies.skill_service
+        self._prompt_builder = dependencies.prompt_builder
+        self._compaction = dependencies.compaction
+        self._guardrails = dependencies.guardrails
+        self._approval = dependencies.approval
+        self.learning_loop = dependencies.learning_loop
+
+        self._abort_event = asyncio.Event()
+        self.state = TurnState()
+        self._skill_tools: Any = None
+        # Fire-and-forget work needs a strong reference until it finishes.
+        self._background_tasks: set[asyncio.Task] = set()
+
+        self.messaging = AgentMessaging(
+            MessagingContext(
+                agent_dir=self.agent_dir,
+                agent_key=self.agent_key,
+                is_sub_agent=self.is_sub_agent,
+                skill_service=self._skill_service,
+                prompt_builder=self._prompt_builder,
+                session=self.session,
+                learning_loop=self.learning_loop,
+            ),
+            self.state,
+        )
+        self.background = AgentBackground(
+            BackgroundContext(
+                llm=self.llm,
+                config=self.config,
+                tool_registry=self.tool_registry,
+                session=self.session,
+                data_source=self._data_source,
+                learning_loop=self.learning_loop,
+                on_title_updated=dependencies.on_title_updated,
+                is_sub_agent=self.is_sub_agent,
+                background_tasks=self._background_tasks,
+                agent_key=self.agent_key,
+            )
+        )
+        self.session_service = AgentSession(
+            AgentSessionContext(
+                session=self.session,
+                config=self.config,
+                compaction=self._compaction,
+                agent_key=self.agent_key,
+            ),
+            self.state,
+            self.background,
+        )
+
+    @classmethod
+    def create(
+        cls,
         config: AgentConfig | None = None,
         llm_provider: LLMProvider | None = None,
         review_llm: LLMProvider | None = None,
@@ -145,130 +258,91 @@ class Agent:
         session_manager: SessionProtocol | None = None,
         agent_key: str = DEFAULT_AGENT_KEY,
         agent_dir: Path | None = None,
-        parent_agent: Optional["Agent"] = None,
+        parent_agent: Agent | None = None,
         is_sub_agent: bool = False,
         depth: int = 0,
         allowed_tools: frozenset[str] | None = None,
         prompt_config: PromptConfig | None = None,
         data_source: DataSourceProtocol | None = None,
         on_title_updated: Callable[[str, str], None] | None = None,
-    ) -> None:
-        self.config = config or AgentConfig()
-        self.agent_key = agent_key
-        self.llm = llm_provider
-        # Optional separate provider for the permission reviewer. None means "use
-        # the agent's own", which is the default and the previous behaviour.
-        self._review_llm = review_llm
-        self._review_model = review_model
-        self.session = session_manager or get_session_manager()
-        self._data_source = data_source
-        self._on_title_updated = on_title_updated
-        self.tool_registry = ToolRegistry()
-        self._events = EventBus()
-        self.parent_agent = parent_agent
-        self.is_sub_agent = is_sub_agent
-        self.depth = depth
-        self.allowed_tools = allowed_tools
-        self._hierarchy = AgentHierarchy(
+        *,
+        tool_registry: ToolRegistry | None = None,
+        events: EventBus | None = None,
+        learning_loop: LearningLoop | None = None,
+    ) -> Agent:
+        """Assemble dependencies and construct an Agent.
+
+        This is the public construction seam. ``__init__`` itself only wires
+        already-prepared objects, so tests and alternate composition roots can
+        provide fakes without touching the filesystem or process globals.
+
+        Args:
+            config: Runtime configuration.
+            llm_provider: Completion provider.
+            review_llm: Optional provider used by permission reviewers.
+            review_model: Model used by the reviewer.
+            session_manager: Session implementation.
+            agent_key: Stable agent identity.
+            agent_dir: Agent home directory.
+            parent_agent: In-memory parent for hierarchy lookups.
+            is_sub_agent: Whether this is a delegated child.
+            depth: Delegation depth.
+            allowed_tools: Optional tool allowlist.
+            prompt_config: Identity and prompt inputs.
+            data_source: Persistent store.
+            on_title_updated: Callback for generated titles.
+            tool_registry: Prepared registry, including cached toolsets.
+            events: Prepared event bus.
+            learning_loop: Explicit learning loop, primarily for tests.
+
+        Returns:
+            A fully wired Agent.
+        """
+        dependencies = build_agent_dependencies(
+            config=config,
+            llm_provider=llm_provider,
+            review_llm=review_llm,
+            review_model=review_model,
+            session_manager=session_manager,
             agent_key=agent_key,
-            data_source=data_source,
+            agent_dir=agent_dir,
             parent_agent=parent_agent,
-        )
-
-        if agent_dir is None:
-            agent_dir = nova_home() / "agents" / agent_key
-        agent_dir.mkdir(parents=True, exist_ok=True)
-        self.agent_dir = agent_dir
-        self._skill_service = self._build_skill_service(agent_key, agent_dir)
-        self._skill_service.scan_skills()
-        self._prompt_builder = PromptBuilder(
-            prompt_config or PromptConfig.from_agent_dir(agent_dir),
-            agent_key=agent_key,
             is_sub_agent=is_sub_agent,
+            allowed_tools=allowed_tools,
+            prompt_config=prompt_config,
             data_source=data_source,
-            child_agent_records=self._hierarchy.child_agent_records,
+            on_title_updated=on_title_updated,
+            tool_registry=tool_registry,
+            events=events,
+            learning_loop=learning_loop,
         )
-        self._abort_event = asyncio.Event()
-        self.state = TurnState()
-        self._skill_tools: Any = None
-        self._compaction = CompactionController(
-            model=self.config.model, provider=self.config.provider
-        )
+        return cls(dependencies, parent_agent=parent_agent, depth=depth)
 
-        # Fire-and-forget work (title generation, memory review) is reachable
-        # from a turn, so these tasks need a strong reference for as long as
-        # they run: asyncio only holds a weak one, and a collected task is
-        # silently dropped mid-flight.
-        self._background_tasks: set[asyncio.Task] = set()
-        self._guardrails = ToolGuardrails()
-        self._approval = get_approval_manager()
+    def replace_tool_registry(self, registry: ToolRegistry) -> None:
+        """Replace the registry and keep background work on the same object.
 
-        # Closed learning loop (opt-in). The loop is shared per agent key: a
-        # new Agent is built per request, so a loop held on the agent would
-        # reset its turn counter every turn and never reach the nudge interval.
-        from nova.settings import get_settings
+        ``tool_registry`` remains the single source of truth. Other composed
+        services read it through this reference, so cached toolsets cannot leave
+        title generation or memory review using a stale, empty registry.
 
-        _settings = get_settings()
-        self._learning_loop = None
-        if (
-            getattr(_settings, "learning", None) is not None
-            and _settings.learning.enabled
-        ):
-            from nova.learning.loop import get_learning_loop
+        Args:
+            registry: Prepared registry to install.
+        """
+        self.tool_registry = registry
+        self.background.ctx.tool_registry = registry
 
-            skills_dir = (
-                self._skill_service.skills_dir
-                if hasattr(self._skill_service, "skills_dir")
-                else (self.agent_dir / "skills")
-            )
-            self._learning_loop = get_learning_loop(
-                agent_key,
-                settings=_settings.learning,
-                skills_dir=skills_dir,
-                db_path=str(_settings.database_path),
-                llm=self.llm,
-                model=self.config.model,
-            )
+    def rebind_skill_tools(self) -> None:
+        """Bind skill tools to this agent after installing a cached registry.
 
-        # AgentContext: shared state for composed services (long-term direction).
-        from nova.agent.context import AgentContext
+        The cached tool functions belong to the agent that built the registry.
+        Rebinding makes them close over this agent's skill service instead.
+        """
+        from nova.skills.tools import SkillTools
 
-        self.ctx = AgentContext(
-            agent=self,
-            agent_key=self.agent_key,
-            agent_dir=self.agent_dir,
-            session=self.session,
-            llm=self.llm,
-            config=self.config,
-            skill_service=self._skill_service,
-            tool_registry=self.tool_registry,
-            approval=self._approval,
-            events=self._events,
-            background_tasks=self._background_tasks,
-            learning_loop=self._learning_loop,
-            on_title_updated=self._on_title_updated,
-            data_source=self._data_source,
-            is_sub_agent=self.is_sub_agent,
-            review_llm=self._review_llm,
-            review_model=self._review_model,
-            allowed_tools=self.allowed_tools,
-            prompt_builder=self._prompt_builder,
-            compaction=self._compaction,
-            guardrails=self._guardrails,
-        )
-        # Composed services. Created after the context so they can read it.
-        self.messaging = AgentMessaging(self.ctx, self.state)
-        self.background = AgentBackground(self.ctx, self.state)
-        self.session_service = AgentSession(self.ctx, self.state, self.background)
-
-    @staticmethod
-    def _build_skill_service(agent_key: str, agent_dir: Path) -> SkillService:
-        if agent_key == DEFAULT_AGENT_KEY:
-            return SkillService(skills_dir=agent_dir.parent.parent / "skills")
-        return SkillService(
-            skills_dir=agent_dir / "skills",
-            fallback_dir=nova_home() / "skills",
-        )
+        self._skill_tools = SkillTools(self._skill_service)
+        for name in ("list_skills", "load_skill", "install_skill"):
+            if self.allowed_tools is None or name in self.allowed_tools:
+                self.tool_registry.register(getattr(self._skill_tools, name), name=name)
 
     def interrupt(self) -> None:
         """Interrupt the current execution; the user can trigger this at any time."""
@@ -278,11 +352,24 @@ class Agent:
     def resolve_approval(
         self, approval_request_id: str, approved: bool, remember: bool = False
     ) -> bool:
-        """Resolve a pending approval request (called from server route)."""
+        """Resolve a pending approval request.
+
+        Args:
+            approval_request_id: Identifier returned in the approval event.
+            approved: Whether the user allowed the action.
+            remember: Persist the decision as a grant for future requests.
+
+        Returns:
+            True when the pending request was found and resolved.
+        """
         return self._approval.resolve(approval_request_id, approved, remember)
 
     async def _stop_if_aborted(self) -> dict[str, Any] | None:
-        """Return a done payload when execution should stop."""
+        """Return a done payload when execution should stop.
+
+        Returns:
+            The stopped payload after notifying subscribers, or None.
+        """
         if self._abort_event.is_set():
             payload = _done_payload("stopped", "Stopped by user")
             await self._events.emit(AgentEvent.DONE, payload)
@@ -290,9 +377,21 @@ class Agent:
         return None
 
     def on(self, event: AgentEvent, handler: Callable) -> None:
+        """Subscribe to an in-process agent event.
+
+        Args:
+            event: Event to observe.
+            handler: Sync or async callback invoked with event and payload.
+        """
         self._events.on(event, handler)
 
     def off(self, event: AgentEvent, handler: Callable) -> None:
+        """Remove an in-process event subscription.
+
+        Args:
+            event: Event previously subscribed to.
+            handler: Callback to remove.
+        """
         self._events.off(event, handler)
 
     async def _emit_approval(self, data: dict) -> None:
@@ -304,7 +403,7 @@ class Agent:
         tool_schemas: list[dict[str, Any]] | None,
         group_id: str | None = None,
         loaded_messages: list | None = None,
-    ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
+    ) -> AsyncGenerator[AgentEventFrame, None]:
         stop_payload = await self._stop_if_aborted()
         if stop_payload:
             yield AgentEvent.DONE, stop_payload
@@ -325,7 +424,7 @@ class Agent:
                 # error as terminal and returns, which abandons this generator
                 # at the yield - so anything written after it would never run,
                 # and the text the user watched arrive would be lost.
-                await self.session_service._persist_failed_turn(reader, group_id)
+                await self.session_service.persist_failed_turn(reader, group_id)
             yield event, data
         if reader.outcome is not TurnOutcome.CONTINUE:
             return
@@ -346,7 +445,7 @@ class Agent:
             log.info(
                 f"[Turn {turn_count}] Calling tool: {tool_call.name}({tool_call.arguments})"
             )
-        await self.session_service._persist_assistant_message(
+        await self.session_service.persist_assistant_message(
             reader, tool_calls, group_id
         )
 
@@ -393,24 +492,81 @@ class Agent:
         message_variant: str | None = None,
         display_text: str | None = None,
         regenerate: bool = False,
-    ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
+    ) -> AsyncGenerator[AgentEventFrame, None]:
+        """Stream one user request through preparation, model turns and tools.
+
+        Args:
+            user_input: User text or document reference.
+            session_id: Session to resume. A new session is created when omitted.
+            attachments: Client attachment payloads.
+            workspace_dir: Workspace associated with the request.
+            project_id: Optional project associated with the workspace.
+            message_variant: Client-defined message variant.
+            display_text: Text shown in the transcript when it differs from the
+                model-facing content.
+            regenerate: Replace the last assistant response instead of appending
+                a new user turn.
+
+        Yields:
+            Session, text, reasoning, tool and terminal event frames.
+
+        Raises:
+            ValueError: If regeneration is requested without a user turn.
+            RuntimeError: If the Agent has no LLM provider.
+        """
         self._abort_event.clear()
         # Per-request latch: one compact-and-retry per user request. Reset here,
         # not only in __init__, so a reused Agent still recovers on later requests.
         self.state.overflow_recovered = False
 
+        prepared = await self._prepare_request(
+            user_input,
+            session_id,
+            ChatOptions(
+                attachments=attachments,
+                workspace_dir=workspace_dir,
+                project_id=project_id,
+                message_variant=message_variant,
+                display_text=display_text,
+                regenerate=regenerate,
+            ),
+        )
+        async for frame in self._start_request(prepared):
+            yield frame
+        async for frame in self._run_request(prepared):
+            yield frame
+
+    async def _prepare_request(
+        self,
+        user_input: str,
+        session_id: str | None,
+        options: ChatOptions,
+    ) -> PreparedRequest:
+        """Resolve the session and build the user message without emitting events.
+
+        Args:
+            user_input: Text supplied by the caller.
+            session_id: Existing session to resume, or None to create one.
+            options: Attachment, workspace, display and regeneration inputs.
+
+        Returns:
+            All state needed to announce, persist and run the request.
+
+        Raises:
+            ValueError: If regeneration is requested but no user turn exists.
+        """
         current_session = await self.session_service.resolve_session(
             session_id,
-            "" if regenerate else user_input,
-            workspace_dir,
-            project_id,
+            "" if options.regenerate else user_input,
+            options.workspace_dir,
+            options.project_id,
         )
-        session_id = current_session.id if current_session else ""
+        resolved_session_id = current_session.id if current_session else ""
         self.messaging.apply_active_workspace(current_session)
 
         stale_ids: list[str] = []
-        user_message = None
-        if regenerate:
+        user_message: Message | None = None
+        if options.regenerate:
             history = await self.session.get_messages()
             index = next(
                 (
@@ -428,52 +584,104 @@ class Agent:
             message_text = user_message.content
             image_data = user_message.images or []
             display = decode_display_text(user_message.data) or message_text
-            user_input = display
+            resolved_input = display
         else:
             # Decoding and re-encoding a multi-megabyte photo takes long enough
             # to stall the loop this stream runs on.
             message_text, image_data, display = await asyncio.to_thread(
-                build_user_message, user_input, attachments, display_text
+                build_user_message,
+                user_input,
+                options.attachments,
+                options.display_text,
             )
+            resolved_input = user_input
 
-        yield AgentEvent.SESSION, session_id
-        await self._events.emit(AgentEvent.START, user_input)
-        yield AgentEvent.START, user_input
+        return PreparedRequest(
+            current_session=current_session,
+            session_id=resolved_session_id,
+            user_input=resolved_input,
+            message_text=message_text,
+            image_data=image_data,
+            display=display,
+            user_message=user_message,
+            stale_ids=stale_ids,
+            regenerate=options.regenerate,
+            attachment_count=len(options.attachments or []),
+            message_variant=options.message_variant,
+        )
+
+    async def _start_request(
+        self, prepared: PreparedRequest
+    ) -> AsyncGenerator[AgentEventFrame, None]:
+        """Announce the request, persist its user message and open a checkpoint.
+
+        Args:
+            prepared: Session and message state produced by ``_prepare_request``.
+
+        Yields:
+            The session and start frames, in that order.
+
+        Raises:
+            RuntimeError: If neither regeneration nor persistence produced a
+                user message.
+        """
+        yield AgentEvent.SESSION, prepared.session_id
+        await self._events.emit(AgentEvent.START, prepared.user_input)
+        yield AgentEvent.START, prepared.user_input
 
         log.info(
             "[Session %s] Chat start agent=%s provider=%s model=%s workspace=%s "
             "input_chars=%d attachments=%d regenerate=%s",
-            session_id,
+            prepared.session_id,
             self.agent_key,
             self.config.provider,
             self.config.model,
             self.state.workspace or "",
-            len(message_text),
-            len(attachments or []),
-            regenerate,
+            len(prepared.message_text),
+            prepared.attachment_count,
+            prepared.regenerate,
         )
-        if regenerate:
-            if stale_ids:
-                await self.session.rollback_messages(stale_ids, session_id=session_id)
+        user_message = prepared.user_message
+        if prepared.regenerate:
+            if prepared.stale_ids:
+                await self.session.rollback_messages(
+                    prepared.stale_ids, session_id=prepared.session_id
+                )
         else:
             user_message = await self.session.add_message(
                 role="user",
-                content=message_text,
-                images=image_data or None,
-                variant=message_variant,
-                data=encode_display_text(display, message_text),
+                content=prepared.message_text,
+                images=prepared.image_data or None,
+                variant=prepared.message_variant,
+                data=encode_display_text(prepared.display, prepared.message_text),
             )
         if user_message is None:  # unreachable: every branch above sets it
             raise RuntimeError("chat turn has no user message")
         # The turn's own user message is the rewind point: the client already
         # has its id, so `/rewind` can name the same moment the transcript does.
         begin_turn(
-            session_id=session_id,
+            session_id=prepared.session_id,
             checkpoint_id=user_message.id,
-            label=display or message_text,
+            label=prepared.display or prepared.message_text,
             workspace=self.state.workspace,
         )
 
+    async def _run_request(
+        self, prepared: PreparedRequest
+    ) -> AsyncGenerator[AgentEventFrame, None]:
+        """Run compaction and model/tool turns until the request terminates.
+
+        Args:
+            prepared: Session and message state produced by ``_prepare_request``.
+
+        Yields:
+            Compaction, turn, tool and terminal event frames.
+
+        Raises:
+            RuntimeError: If no LLM provider is configured.
+        """
+        session_id = prepared.session_id
+        current_session = prepared.current_session
         tool_schemas = (
             self.tool_registry.get_schema() if self.tool_registry.tools else None
         )
@@ -490,7 +698,7 @@ class Agent:
         request_messages_before = len(session_messages)
         # The route is decided before the turn starts and stays put for the whole
         # request, so it is stamped once here rather than before every model call.
-        await self.session_service._record_session_route(data_source)
+        await self.session_service.record_session_route(data_source)
         for _ in range(self.config.max_iterations):
             turn_count += 1
             if turn_count > 1:
@@ -546,7 +754,7 @@ class Agent:
                     done_payload = data
                 elif event == AgentEvent.ERROR:
                     message = data.get("message") if isinstance(data, dict) else data
-                    if self.session_service._try_overflow_recovery(message):
+                    if self.session_service.try_overflow_recovery(message):
                         # The provider refused the request as too large. The error
                         # is not surfaced: the client sees one turn, not a failure
                         # followed by a silent retry.
@@ -587,7 +795,7 @@ class Agent:
                 )
                 log.info("[Session %s] Done reason=%s", session_id, reason)
                 if reason in ("completed", "requires_input"):
-                    self.background._maybe_schedule_memory_review(
+                    self.background.maybe_schedule_memory_review(
                         count_user_turns(session_messages)
                     )
                 await self.background.schedule_request_learning(
@@ -642,24 +850,44 @@ class Agent:
             pass
         return {"compacted": self._compaction.compacted}
 
-    def add_sub_agent(self, sub_agent: "Agent") -> None:
-        """Add a sub-agent to this agent's list of sub-agents."""
+    def add_sub_agent(self, sub_agent: Agent) -> None:
+        """Add a sub-agent to this agent's in-memory hierarchy.
+
+        Args:
+            sub_agent: Child runtime to mount under this agent.
+        """
         self._hierarchy.add_sub_agent(self, sub_agent)
 
-    def get_sub_agents(self) -> list["Agent"]:
-        """Get all sub-agents of this agent."""
+    def get_sub_agents(self) -> list[Agent]:
+        """Return the in-memory child agents.
+
+        Returns:
+            A copy of the current child list.
+        """
         return self._hierarchy.sub_agents()
 
-    def get_runtime_parent(self) -> Optional["Agent"]:
-        """Get the parent agent this instance is mounted under (in-memory, single)."""
+    def get_runtime_parent(self) -> Agent | None:
+        """Return the in-memory parent, which may differ from persisted parents.
+
+        Returns:
+            The mounted parent runtime, or None.
+        """
         return self.parent_agent
 
     async def get_sub_agent_records(self) -> list[dict]:
-        """Get child agent rows from the database (may differ from live sub-agents)."""
+        """Return persisted child rows, which may differ from live children.
+
+        Returns:
+            Child records from the agent graph.
+        """
         return await self._hierarchy.child_agent_records()
 
     async def get_parent_agent_records(self) -> list[dict]:
-        """Get all parent agent rows from the database (M2M; may be multiple)."""
+        """Return all persisted parent rows for this agent.
+
+        Returns:
+            Parent records from the many-to-many agent graph.
+        """
         return await self._hierarchy.parent_agent_records()
 
     async def get_primary_parent_record(self) -> dict | None:
@@ -668,6 +896,9 @@ class Agent:
         This is the database's ordering, not necessarily the same parent
         as get_runtime_parent() returns; the two models are not guaranteed
         to agree.
+
+        Returns:
+            The first persisted parent record, or None.
         """
         return await self._hierarchy.first_parent_agent_record()
 
@@ -681,6 +912,9 @@ class Agent:
         result, leaving the two frames describing one call differently -- which
         is how a question whose id the model omitted ended up announced without
         one and impossible to map an answer back to.
+
+        Args:
+            tool_calls: Model-produced calls to repair in place.
         """
         for tool_call in tool_calls:
             name = getattr(tool_call, "name", None)
@@ -706,6 +940,15 @@ class Agent:
                 tool_call.arguments = json.dumps(normalized, ensure_ascii=False)
 
     def _executable_tool_calls(self, tool_calls: list, turn_count: int) -> list:
+        """Drop calls whose arguments cannot be parsed before execution.
+
+        Args:
+            tool_calls: Calls collected from the model stream.
+            turn_count: Current model turn number for diagnostics.
+
+        Returns:
+            Calls with parsable JSON object arguments.
+        """
         executable = []
         for tool_call in tool_calls:
             if has_parsable_arguments(tool_call):
@@ -722,7 +965,20 @@ class Agent:
         tool_calls: list,
         group_id: str | None,
         turn_count: int,
-    ) -> AsyncGenerator[tuple[AgentEvent, Any], None]:
+    ) -> AsyncGenerator[AgentEventFrame, None]:
+        """Execute one model turn's tool calls and forward their event frames.
+
+        Args:
+            tool_calls: Valid, normalized calls to execute.
+            group_id: Group shared by the model turn and its tool results.
+            turn_count: Current model turn number for logs.
+
+        Yields:
+            Tool announcement, approval, result and terminal frames.
+
+        Raises:
+            RuntimeError: If no LLM provider is configured.
+        """
         llm = self.llm
         if llm is None:
             raise RuntimeError("Agent has no LLM provider")
@@ -744,9 +1000,16 @@ class Agent:
             yield event, data
 
     def register_tool(self, func: Callable, name: str | None = None) -> None:
+        """Register one tool for this agent.
+
+        Args:
+            func: Tool callable carrying Nova tool metadata.
+            name: Optional registry name override.
+        """
         self.tool_registry.register(func, name)
 
     async def register_all_tools(self) -> None:
+        """Build the configured builtin, skill, MCP and policy toolset."""
         from nova.tools.approval_review import build_reviewer
         from nova.tools.permissions import ensure_permissions_file, permissions_path
         from nova.tools.tool_policy import load_tool_policy
@@ -776,7 +1039,7 @@ class Agent:
             shell_read_only=self.config.shell_read_only,
             # Without this the loop exists but its tool is never registered, so
             # an enabled learning loop offers the agent nothing to search with.
-            learning_loop=self.ctx.learning_loop,
+            learning_loop=self.learning_loop,
         )
         await builder.build()
         self._skill_tools = builder.skill_tools

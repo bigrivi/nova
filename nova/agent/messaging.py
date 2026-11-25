@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from nova.agent.context import AgentContext
+from nova.agent.context import MessagingContext
 from nova.agent.state import TurnState
 from nova.learning.nudges import build_nudge_reminder, should_nudge
 from nova.llm import Message as LLMMessage
@@ -38,7 +38,7 @@ class AgentMessaging:
     that created it, so it can be built with a mock context in tests.
     """
 
-    def __init__(self, ctx: AgentContext, state: TurnState) -> None:
+    def __init__(self, ctx: MessagingContext, state: TurnState) -> None:
         if ctx.prompt_builder is None:
             raise ValueError("AgentMessaging requires ctx.prompt_builder")
         self.ctx = ctx

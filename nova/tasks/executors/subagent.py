@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from nova.agent.protocol import ChatAgent
 from nova.agent.spawn import SPAWN_DEPTH
 from nova.tasks.models import (
     TaskExecutionContext,
@@ -49,7 +50,9 @@ class SubagentExecutor(TaskExecutor):
         context.set_metadata("target", target)
 
         session_manager = get_session_manager()
-        sub_agent = await build_agent(agent_key=target, is_sub_agent=True, depth=depth)
+        sub_agent: ChatAgent = await build_agent(
+            agent_key=target, is_sub_agent=True, depth=depth
+        )
         session = await session_manager.create_session(
             persist=True,
             first_message=task_message,

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from nova.agent.background import AgentBackground
 
-from nova.agent.context import AgentContext
+from nova.agent.context import AgentSessionContext
 from nova.agent.llm_stream import TurnOutcome, TurnStreamReader
 from nova.agent.overflow import is_context_overflow
 from nova.agent.state import TurnState
@@ -23,7 +23,7 @@ class AgentSession:
 
     def __init__(
         self,
-        ctx: AgentContext,
+        ctx: AgentSessionContext,
         state: TurnState,
         background: AgentBackground,
     ) -> None:
@@ -31,7 +31,7 @@ class AgentSession:
         self.state = state
         self.background = background
 
-    async def _record_session_route(self, data_source: SessionStore) -> None:
+    async def record_session_route(self, data_source: SessionStore) -> None:
         """Stamp the route this session is running with onto the session row.
 
         Written once per request, not per model call: the route was resolved
@@ -42,6 +42,9 @@ class AgentSession:
 
         Reopening an old conversation restores what it actually ran with,
         instead of whatever the agent happens to point at today.
+
+        Args:
+            data_source: Store containing the current session row.
         """
         session = self.ctx.session.get_current_session()
         if session is None:
@@ -58,7 +61,7 @@ class AgentSession:
             # depends on; failing to record it must not fail the turn.
             log.warning("[Session %s] could not record route: %s", session.id, error)
 
-    def _try_overflow_recovery(self, error_message: str | None) -> bool:
+    def try_overflow_recovery(self, error_message: str | None) -> bool:
         """Whether to compact and re-run after the provider rejected the request.
 
         Token pressure normally decides to compact, which means an overflowing
@@ -67,6 +70,12 @@ class AgentSession:
         the failed turn is replayed. One attempt per user request: a second
         overflow means the fixed prompt alone does not fit, and retrying cannot
         change that.
+
+        Args:
+            error_message: Provider error text to classify.
+
+        Returns:
+            True when the caller should compact and retry once.
         """
         if self.state.overflow_recovered:
             return False
@@ -80,7 +89,7 @@ class AgentSession:
         )
         return True
 
-    async def _persist_failed_turn(
+    async def persist_failed_turn(
         self,
         reader: TurnStreamReader,
         group_id: str | None,
@@ -112,12 +121,19 @@ class AgentSession:
             reasoning_effort=self.ctx.config.reasoning_effort,
         )
 
-    async def _persist_assistant_message(
+    async def persist_assistant_message(
         self,
         reader: TurnStreamReader,
         tool_calls: list,
         group_id: str | None,
     ) -> None:
+        """Persist one completed assistant turn and its tool calls.
+
+        Args:
+            reader: Finished stream reader containing text, reasoning and usage.
+            tool_calls: Valid, normalized calls to store with the assistant turn.
+            group_id: Tool-call group shared by the model turn and its results.
+        """
         await self.ctx.session.add_message(
             role="assistant",
             content=reader.final_content,
@@ -187,5 +203,5 @@ class AgentSession:
         if current is None:
             raise RuntimeError("session was not created")
         log.info("[Session %s] Created", current.id)
-        self.background._maybe_schedule_title_generation(current, user_input)
+        self.background.maybe_schedule_title_generation(current, user_input)
         return current

@@ -373,7 +373,7 @@ async def test_agent_can_complete_memory_tool_flow(db):
         memory_type="preference",
     )
 
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(model="test-model", max_iterations=3),
         llm_provider=MemoryToolFlowProvider(),
     )
@@ -430,7 +430,7 @@ class SaveSessionMemoryProvider(LLMProvider):
 
 @pytest.mark.asyncio
 async def test_agent_injects_current_session_id_into_save_memory(db):
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(model="test-model", max_iterations=3),
         llm_provider=SaveSessionMemoryProvider(),
     )

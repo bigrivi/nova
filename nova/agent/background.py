@@ -6,8 +6,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable
 
-from nova.agent.context import AgentContext
-from nova.agent.state import TurnState
+from nova.agent.context import BackgroundContext
 from nova.agent.title_generator import generate_session_title
 from nova.session.manager import SessionContext, default_session_title
 
@@ -17,9 +16,8 @@ log = logging.getLogger(__name__)
 class AgentBackground:
     """Composed service: fire-and-forget work reachable from a turn."""
 
-    def __init__(self, ctx: AgentContext, state: TurnState) -> None:
+    def __init__(self, ctx: BackgroundContext) -> None:
         self.ctx = ctx
-        self.state = state
 
     def _spawn(self, coro: Awaitable[None]) -> None:
         """Run *coro* in the background, holding it until it finishes."""
@@ -27,9 +25,15 @@ class AgentBackground:
         self.ctx.background_tasks.add(task)
         task.add_done_callback(self.ctx.background_tasks.discard)
 
-    def _maybe_schedule_title_generation(
+    def maybe_schedule_title_generation(
         self, session: SessionContext, first_message: str
     ) -> None:
+        """Schedule title generation when this agent has a title callback.
+
+        Args:
+            session: Newly created session.
+            first_message: First user message used to derive the title.
+        """
         if self.ctx.is_sub_agent or self.ctx.on_title_updated is None:
             return
         self._spawn(self.generate_title_in_background(session, first_message))
@@ -37,6 +41,12 @@ class AgentBackground:
     async def generate_title_in_background(
         self, session: SessionContext, first_message: str
     ) -> None:
+        """Generate and apply a session title without blocking the turn.
+
+        Args:
+            session: Newly created session.
+            first_message: First user message used to derive the title.
+        """
         if self.ctx.llm is None or self.ctx.on_title_updated is None:
             return
         session_id = session.id
@@ -72,7 +82,7 @@ class AgentBackground:
                 "[Session %s] Title generation task failed: %s", session_id, exception
             )
 
-    def _maybe_schedule_memory_review(self, turn_count: int) -> None:
+    def maybe_schedule_memory_review(self, turn_count: int) -> None:
         """Review memory every ``memory_review_interval`` user turns.
 
         The turn count is passed in from the conversation's own history rather
@@ -80,6 +90,9 @@ class AgentBackground:
         counter kept in its state would reset before the interval was ever
         reached. Compaction folds old turns out of that history, so the count
         restarts there -- review then fires sooner than the interval, never later.
+
+        Args:
+            turn_count: Number of user turns in the current conversation.
         """
         interval = self.ctx.config.memory_review_interval
         if interval <= 0 or turn_count % interval:
@@ -87,6 +100,7 @@ class AgentBackground:
         self._spawn(self.run_memory_review())
 
     async def run_memory_review(self) -> None:
+        """Review durable memory using the current session and tool schemas."""
         if self.ctx.llm is None:
             return
         from nova.agent.memory_review import MemoryReviewer

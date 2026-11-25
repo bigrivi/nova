@@ -69,7 +69,7 @@ async def test_interrupt_during_text_stream_stops_without_rolling_back_history(d
             [TextDelta(content="partial"), TextDelta(content=" output")],
         ]
     )
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(model="test-model", max_iterations=1),
         llm_provider=provider,
     )
@@ -117,7 +117,7 @@ async def test_interrupt_after_tool_call_stops_before_tool_execution(db):
             ]
         ]
     )
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(model="test-model", max_iterations=1),
         llm_provider=provider,
     )
@@ -158,7 +158,7 @@ async def test_interrupt_after_tool_result_stops_agent_loop_before_next_iteratio
             [TextDelta(content="should not run")],
         ]
     )
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(model="test-model", max_iterations=3),
         llm_provider=provider,
     )
@@ -197,7 +197,7 @@ async def test_breaking_after_stopped_by_user_does_not_raise_generator_exit(db):
             [TextDelta(content="partial"), TextDelta(content=" output")],
         ]
     )
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(model="test-model", max_iterations=1),
         llm_provider=provider,
     )
@@ -223,7 +223,7 @@ async def test_tool_failure_returns_to_model_context_and_allows_next_iteration(d
             [TextDelta(content="should not run")],
         ]
     )
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(model="test-model", max_iterations=3),
         llm_provider=provider,
     )
@@ -266,7 +266,7 @@ async def test_done_content_is_preserved_when_provider_returns_error_without_tex
             ]
         ]
     )
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(model="test-model", max_iterations=1),
         llm_provider=provider,
     )
@@ -308,7 +308,7 @@ async def test_a_failed_turn_keeps_the_text_that_had_already_streamed(db):
             ]
         ]
     )
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(model="test-model", max_iterations=1),
         llm_provider=provider,
     )
@@ -328,7 +328,7 @@ async def test_a_failed_turn_keeps_the_text_that_had_already_streamed(db):
 async def test_a_failed_turn_with_no_text_writes_no_message(db):
     """A turn that produced nothing must not leave an empty assistant row."""
     provider = ScriptedProvider([[Error(message="boom")]])
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(model="test-model", max_iterations=1),
         llm_provider=provider,
     )
@@ -352,7 +352,7 @@ async def test_interrupt_while_a_prompt_is_pending_cancels_the_call(db):
     provider = ScriptedProvider(
         [[ToolCall(id="tool-1", name="shell", arguments='{"command":"ls"}')]]
     )
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(model="test-model", max_iterations=1), llm_provider=provider
     )
 

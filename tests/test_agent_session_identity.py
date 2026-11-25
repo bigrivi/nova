@@ -30,7 +30,7 @@ async def test_new_session_persists_agent_key() -> None:
         }
     )
     session_manager = SessionManager(data_source=database)
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(model="test-model"),
         session_manager=session_manager,
         agent_key="programming-mentor",

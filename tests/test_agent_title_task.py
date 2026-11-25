@@ -58,7 +58,7 @@ async def title_agent(
     session_manager_module._manager = None
     titles: list[tuple[str, str]] = []
     try:
-        agent = Agent(
+        agent = Agent.create(
             config=AgentConfig(model="test-model"),
             llm_provider=StubProvider(outcome),
             agent_dir=agent_dir,

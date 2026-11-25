@@ -51,7 +51,7 @@ async def isolated_agent(provider: LLMProvider, **agent_kwargs):
     db_module._db = database
     session_manager_module._manager = None
     try:
-        agent = Agent(
+        agent = Agent.create(
             config=AgentConfig(model="test-model", **agent_kwargs),
             llm_provider=provider,
         )

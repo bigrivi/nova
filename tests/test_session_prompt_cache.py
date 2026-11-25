@@ -60,7 +60,7 @@ async def _catalog():
 
 
 def _agent() -> Agent:
-    return Agent(
+    return Agent.create(
         config=AgentConfig(model="test-model", provider="test-provider"),
         llm_provider=_Provider(),
     )

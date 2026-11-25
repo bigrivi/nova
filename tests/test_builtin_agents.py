@@ -67,7 +67,7 @@ def test_the_agent_directory_follows_the_home(monkeypatch, tmp_path):
     db_module._db = database
     session_manager_module._manager = None
     try:
-        agent = Agent(
+        agent = Agent.create(
             config=None,
             llm_provider=FakerLLMProvider(),
             agent_key="plan",

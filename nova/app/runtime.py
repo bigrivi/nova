@@ -22,7 +22,6 @@ from nova.llm import (
 )
 from nova.prompt import PromptConfig
 from nova.settings import Settings, get_settings
-from nova.skills.tools import SkillTools
 from nova.tools.permissions import load_permission_mode, permissions_path
 from nova.tools.registry import ToolRegistry
 
@@ -525,7 +524,7 @@ async def build_agent(
     # part of the registry cache key below, so each mode keeps its own tools.
     permission_mode = permission_mode or load_permission_mode(permissions_path())
 
-    agent = Agent(
+    agent = Agent.create(
         config=AgentConfig(
             model=resolved_model,
             provider=resolved_provider,
@@ -561,20 +560,15 @@ async def build_agent(
     reg_key = registry_cache_key(
         agent_key,
         resolved_model,
-        agent.is_sub_agent,
+        is_sub_agent,
         posture_marker,
         permission_mode,
-        learning_enabled=bool(agent.ctx.learning_loop),
+        learning_enabled=bool(agent.learning_loop),
     )
     cached_registry = _registry_cache.get(reg_key)
     if cached_registry is not None:
-        agent.tool_registry = ToolRegistry(source=cached_registry)
-        agent._skill_tools = SkillTools(agent._skill_service)
-        for skill_tool in ("list_skills", "load_skill", "install_skill"):
-            if allowed_tools is None or skill_tool in allowed_tools:
-                agent.tool_registry.register(
-                    getattr(agent._skill_tools, skill_tool), name=skill_tool
-                )
+        agent.replace_tool_registry(ToolRegistry(source=cached_registry))
+        agent.rebind_skill_tools()
     else:
         await agent.register_all_tools()
         _registry_cache[reg_key] = agent.tool_registry

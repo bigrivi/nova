@@ -58,7 +58,7 @@ def _write_config(*, learning: bool) -> None:
 
 
 def _agent() -> Agent:
-    return Agent(
+    return Agent.create(
         config=AgentConfig(model="test-model", provider="test-provider"),
         llm_provider=MagicMock(name="agent_llm"),
     )

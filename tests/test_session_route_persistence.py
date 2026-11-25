@@ -65,7 +65,7 @@ async def _drain(agent: Agent, prompt: str, session_id: str | None = None) -> st
 @pytest.mark.asyncio
 async def test_a_turn_stamps_the_route_it_ran_with() -> None:
     async with _catalog() as database:
-        agent = Agent(
+        agent = Agent.create(
             config=AgentConfig(
                 model="test-model", provider="test-provider", reasoning_effort="high"
             ),
@@ -94,7 +94,7 @@ async def test_the_same_route_is_not_written_twice(monkeypatch) -> None:
 
         monkeypatch.setattr(database, "update_session_route_if_changed", spy)
 
-        agent = Agent(
+        agent = Agent.create(
             config=AgentConfig(model="test-model", provider="test-provider"),
             llm_provider=_ScriptedProvider(),
         )
@@ -107,13 +107,13 @@ async def test_the_same_route_is_not_written_twice(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_a_changed_route_is_written(monkeypatch) -> None:
     async with _catalog() as database:
-        first = Agent(
+        first = Agent.create(
             config=AgentConfig(model="model-a", provider="provider-a"),
             llm_provider=_ScriptedProvider(),
         )
         session_id = await _drain(first, "hello")
 
-        second = Agent(
+        second = Agent.create(
             config=AgentConfig(model="model-b", provider="provider-b"),
             llm_provider=_ScriptedProvider(),
         )
@@ -154,7 +154,7 @@ async def test_one_write_per_request_even_with_several_model_calls(monkeypatch) 
             yield Done(content="done", tool_calls=[])
 
         provider.chat_stream = two_calls  # type: ignore[method-assign]
-        agent = Agent(
+        agent = Agent.create(
             config=AgentConfig(model="test-model", provider="test-provider"),
             llm_provider=provider,
         )
@@ -183,11 +183,11 @@ async def test_two_sessions_keep_independent_models(monkeypatch) -> None:
         )
 
     async with _catalog():
-        first = Agent(
+        first = Agent.create(
             config=AgentConfig(model="model-a", provider="provider-a"),
             llm_provider=_ScriptedProvider(),
         )
-        second = Agent(
+        second = Agent.create(
             config=AgentConfig(model="model-b", provider="provider-b"),
             llm_provider=_ScriptedProvider(),
         )

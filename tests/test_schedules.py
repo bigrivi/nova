@@ -710,6 +710,11 @@ async def test_build_agent_dontask_override_refuses_approval_tool(
             model="fake",
             is_sub_agent=False,
         )
+        assert asking.background.ctx.tool_registry is asking.tool_registry, (
+            "a cached registry must replace the object in every composed service, "
+            "not only the Agent attribute"
+        )
+        assert "shell" in asking.background.ctx.tool_registry.tools
         asked = await asking.tool_registry.behavior_for("shell").before_execute(
             {"command": "git push --force origin main"},
             TurnContext(session_id="s1"),
