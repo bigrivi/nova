@@ -101,7 +101,7 @@ async def generate_summary(
 ) -> str | None:
     """Generate a summary with the LLM. Returns ``None`` when it cannot.
 
-    Routed through :func:`nova.llm.oneshot.stream_text_once` rather than a bare
+    Routed through :func:`novakit.llm.oneshot.stream_text_once` rather than a bare
     one-shot call: the request shape is not free (some gateways only serve
     streaming, agent-shaped requests), and streaming lets the caller show the
     summary while it is being written.

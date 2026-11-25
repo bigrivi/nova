@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from novakit.session.models import NewMessage, Session
 
 from nova.db import (
     DataSourceConfig,
@@ -14,7 +15,6 @@ from nova.db import (
 from nova.memory.models import MemoryRecord, MemorySearchFilters
 from nova.memory.repository import MemoryRepository
 from nova.session.manager import SessionManager
-from nova.session.models import NewMessage, Session
 
 
 @pytest.mark.asyncio

@@ -4,8 +4,7 @@ import json
 
 import aiohttp
 import pytest
-
-from nova.llm.provider import (
+from novakit.llm.provider import (
     Done,
     Error,
     Message,
@@ -14,6 +13,7 @@ from nova.llm.provider import (
     ToolInputDelta,
     ToolInputError,
 )
+
 from nova.llm.providers.openai_responses import OpenAIResponsesProvider
 
 # The Responses API sends the whole response as ONE `response.completed` SSE

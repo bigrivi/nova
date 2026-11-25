@@ -27,8 +27,7 @@ The observed failure that started this, from the free OpenCode Zen endpoint:
 from __future__ import annotations
 
 import pytest
-
-from nova.llm.provider import (
+from novakit.llm.provider import (
     QUOTA_429_MARKERS,
     RETRY_STATUS_CODES,
     is_terminal_429,

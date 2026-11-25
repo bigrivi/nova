@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import pytest
-
-from nova.llm.policy import RetryBudget
+from novakit.llm.policy import RetryBudget
 
 STATUSES = frozenset({500, 502, 503, 504, 529})
 

@@ -8,6 +8,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from novakit.session.models import Session
 from starlette.types import ASGIApp
 
 import nova.server.app as server_app
@@ -19,7 +20,6 @@ from nova.memory.service import MemoryService
 from nova.server import create_app, run_server
 from nova.server.auth import check_basic_auth, get_configured_credentials
 from nova.server.request_registry import RequestRegistry
-from nova.session.models import Session
 from nova.settings import Settings, get_settings
 from nova.tools.approval import get_approval_manager
 

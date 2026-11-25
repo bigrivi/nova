@@ -53,7 +53,7 @@ async def test_summarize_with_mock_llm(tmp_path):
 
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import Done, TextDelta
+            from novakit.llm.provider import Done, TextDelta
 
             yield TextDelta(content="Summary: CSV sales report found.")
             yield Done(content="Summary: CSV sales report found.")
@@ -70,7 +70,7 @@ async def test_summarize_empty_hits(tmp_path):
 
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import Done, TextDelta
+            from novakit.llm.provider import Done, TextDelta
 
             yield TextDelta(content="no")
             yield Done(content="no")

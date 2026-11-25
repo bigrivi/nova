@@ -5,9 +5,7 @@ from __future__ import annotations
 import base64
 import io
 
-from PIL import Image
-
-from nova.llm.images import (
+from novakit.llm.images import (
     DEFAULT_IMAGE_MIME,
     DOWNSCALE_BYTES,
     DOWNSCALE_MAX_EDGE,
@@ -18,7 +16,8 @@ from nova.llm.images import (
     image_size_bytes,
     parse_image_ref,
 )
-from nova.llm.provider import Message
+from novakit.llm.provider import Message
+from PIL import Image
 
 
 class TestParseImageRef:

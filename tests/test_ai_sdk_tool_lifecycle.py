@@ -18,9 +18,8 @@ from __future__ import annotations
 import json
 
 import pytest
-
-from nova.agent.events import AgentEvent
-from nova.llm import (
+from novakit.events import AgentEvent
+from novakit.llm import (
     ToolCall,
     ToolInputDelta,
     ToolInputEnd,
@@ -28,6 +27,7 @@ from nova.llm import (
     ToolInputStart,
     ToolResult,
 )
+
 from nova.server.ai_sdk_stream import UNANSWERED_TOOL_MESSAGE, AISDKStreamAdapter
 
 

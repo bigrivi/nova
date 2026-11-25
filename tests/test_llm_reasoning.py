@@ -8,8 +8,7 @@ guess is a 400 from the provider, so an undeclared model offers no control.
 from __future__ import annotations
 
 import pytest
-
-from nova.llm.reasoning import (
+from novakit.llm.reasoning import (
     apply_effort,
     fit_effort,
     resolve_effort_levels,

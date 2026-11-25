@@ -10,8 +10,7 @@ import importlib
 import json
 
 import pytest
-
-from nova.llm import ToolResult
+from novakit.llm import ToolResult
 
 browser_use_module = importlib.import_module("nova.tools.browser_use")
 

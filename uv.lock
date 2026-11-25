@@ -6,12 +6,6 @@ resolution-markers = [
     "python_full_version < '3.15'",
 ]
 
-[manifest]
-members = [
-    "nova",
-    "novakit",
-]
-
 [[package]]
 name = "aiohappyeyeballs"
 version = "2.7.1"
@@ -1218,7 +1212,7 @@ requires-dist = [
     { name = "lark-oapi", marker = "extra == 'gateway'" },
     { name = "markdownify" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
-    { name = "novakit", editable = "packages/novakit" },
+    { name = "novakit", editable = "../novakit" },
     { name = "pillow" },
     { name = "playwright" },
     { name = "pyinstaller", marker = "extra == 'build'" },
@@ -1245,21 +1239,10 @@ dev = [{ name = "types-regex", specifier = ">=2026.9.29.20261005" }]
 [[package]]
 name = "novakit"
 version = "0.1.0"
-source = { editable = "packages/novakit" }
+source = { editable = "../novakit" }
 dependencies = [
     { name = "aiohttp" },
     { name = "tiktoken" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-]
-images = [
-    { name = "pillow" },
 ]
 
 [package.metadata]
@@ -1269,6 +1252,7 @@ requires-dist = [
     { name = "pillow", marker = "extra == 'images'" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.17.4,<0.18" },
     { name = "tiktoken" },
 ]

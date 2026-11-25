@@ -1,4 +1,4 @@
--e ./packages/novakit
+-e ../novakit
 aiohttp
 aiosqlite
 fastapi>=0.141.1

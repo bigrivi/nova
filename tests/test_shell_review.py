@@ -10,8 +10,8 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from novakit.llm.provider import Done, TextDelta
 
-from nova.llm.provider import Done, TextDelta
 from nova.tools.approval_review import build_reviewer, parse_verdict
 
 

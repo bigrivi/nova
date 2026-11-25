@@ -15,9 +15,9 @@ from __future__ import annotations
 import json
 
 import pytest
+from novakit.llm.provider import ToolCall
 
 from nova.agent.core import Agent
-from nova.llm.provider import ToolCall
 from nova.tools.ask_user import AskUserToolBehavior, normalize_questions
 from nova.tools.behavior import DefaultToolBehavior
 
@@ -144,7 +144,7 @@ def test_a_tool_without_a_behavior_is_left_alone() -> None:
 
 
 def _registry_with(behavior):
-    from nova.tools.registry import ToolRegistry
+    from novakit.tools.registry import ToolRegistry
 
     registry = ToolRegistry()
     registry.set_behavior("ask_user", behavior)

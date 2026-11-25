@@ -6,12 +6,12 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from novakit.tools.registry import ToolRegistry
 
 from nova.agent.posture import READ_ONLY_TOOLS, allowed_tools_for
 from nova.agent.toolset import ToolsetBuilder
 from nova.skills.service import SkillService
 from nova.tools.approval import get_approval_manager
-from nova.tools.registry import ToolRegistry
 
 
 async def _build(allowed_tools) -> ToolRegistry:

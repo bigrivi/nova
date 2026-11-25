@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import pytest
-
-from nova.agent.overflow import is_context_overflow
+from novakit.agent.overflow import is_context_overflow
 
 
 class TestErrorTextPatterns:

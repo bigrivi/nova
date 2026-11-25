@@ -8,10 +8,11 @@ overwrite an existing file.
 
 from __future__ import annotations
 
+from novakit.tools.registry import _tool_metadata
+
 import nova.tools.edit
 import nova.tools.write  # noqa: F401
 from nova.prompt.builder import PromptBuilder, PromptConfig
-from nova.tools.registry import _tool_metadata
 
 
 def test_prompt_prefers_edit_for_existing_files() -> None:

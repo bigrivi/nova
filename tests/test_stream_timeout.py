@@ -10,8 +10,8 @@ a caller can still opt into an overall deadline by passing one explicitly.
 from __future__ import annotations
 
 import pytest
+from novakit.llm.provider import STREAM_IDLE_TIMEOUT_SECONDS
 
-from nova.llm.provider import STREAM_IDLE_TIMEOUT_SECONDS
 from nova.llm.providers.anthropic import AnthropicProvider
 from nova.llm.providers.ollama import OllamaProvider
 from nova.llm.providers.openai_chat import OpenAIProvider

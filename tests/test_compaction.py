@@ -7,6 +7,7 @@ import contextlib
 from unittest.mock import MagicMock, patch
 
 import pytest
+from novakit.session.models import NewMessage
 
 from nova.agent.compaction import (
     SUMMARY_MESSAGE_MAX_CHARS,
@@ -26,7 +27,6 @@ from nova.agent.compaction import (
     tool_call_ids_of,
     tool_calls_of,
 )
-from nova.session.models import NewMessage
 
 
 class MockMessage:
@@ -419,11 +419,12 @@ class TestForcedCompaction:
 async def test_compact_orphaned_tool_response_is_also_compacted():
     """When split separates tool_call assistant from its response, the orphaned
     tool response is also compacted to avoid tool message without preceding tool_calls."""
+    from novakit.session.models import MessageFilter
+
     from nova.agent.compaction import compact
     from nova.db.config import DatabaseConfig
     from nova.db.sqlite.repository import SqliteRepository
     from nova.session.manager import SessionContext
-    from nova.session.models import MessageFilter
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -467,7 +468,7 @@ async def test_compact_orphaned_tool_response_is_also_compacted():
         ):
 
             async def fake_chat_stream(**_kwargs):
-                from nova.llm.provider import Done
+                from novakit.llm.provider import Done
 
                 yield Done(content="Summary of conversation")
 
@@ -511,7 +512,7 @@ class StubSummaryProvider:
         self.calls = 0
 
     async def chat_stream(self, messages, model="m", tools=None, **kwargs):
-        from nova.llm.provider import Done, TextDelta
+        from novakit.llm.provider import Done, TextDelta
 
         self.calls += 1
         if self._fail:
@@ -558,7 +559,7 @@ async def test_summary_failure_never_poisons_the_context():
 
     class ErroringProvider(StubSummaryProvider):
         async def chat_stream(self, messages, model="m", tools=None, **kwargs):
-            from nova.llm.provider import Error
+            from novakit.llm.provider import Error
 
             yield Error(message="HTTP 403: request rejected by gateway")
 
@@ -743,8 +744,9 @@ async def test_context_frames_drop_across_a_compaction(monkeypatch):
     pre-compaction tokens_input was still accepted after the compaction, so the
     post-compaction frame re-used it and the bar never moved.
     """
+    from novakit.events import AgentEvent
+
     from nova.agent.compaction import CompactionController
-    from nova.agent.events import AgentEvent
     from nova.db.config import DatabaseConfig
     from nova.db.sqlite.repository import SqliteRepository
     from nova.session.manager import SessionContext
@@ -822,8 +824,9 @@ async def test_context_limit_is_the_compaction_threshold(monkeypatch):
     never use. The denominator must therefore be the same threshold the
     compaction decision uses.
     """
+    from novakit.events import AgentEvent
+
     from nova.agent.compaction import CompactionController, compaction_threshold
-    from nova.agent.events import AgentEvent
     from nova.db.config import DatabaseConfig
     from nova.db.sqlite.repository import SqliteRepository
     from nova.session.manager import SessionContext
@@ -1000,7 +1003,7 @@ async def test_a_transient_summary_failure_is_retried_once():
             self.attempts = 0
 
         async def chat_stream(self, messages, model="m", tools=None, **kwargs):
-            from nova.llm.provider import Error
+            from novakit.llm.provider import Error
 
             self.attempts += 1
             if self.attempts == 1:
@@ -1437,13 +1440,14 @@ class TestKeepBudget:
 @pytest.mark.asyncio
 async def test_chat_stream_loads_messages_once_per_request():
     """chat_stream owns the single message load; turn 1 reuses it, later turns reload."""
+    from novakit.events import AgentEvent
+    from novakit.llm import ToolResult
+    from novakit.llm.provider import Done, LLMProvider, TextDelta, ToolCall
+
     from nova import Agent, AgentConfig
-    from nova.agent.core import AgentEvent
     from nova.db import database as db_module
     from nova.db.config import DatabaseConfig
     from nova.db.sqlite.repository import SqliteRepository
-    from nova.llm import ToolResult
-    from nova.llm.provider import Done, LLMProvider, TextDelta, ToolCall
 
     class ScriptedProvider(LLMProvider):
         def __init__(self, scripts):
@@ -1735,8 +1739,9 @@ class TestCompactionSummaryContract:
 
 class TestCompactionCircuitBreaker:
     def _agent(self):
+        from novakit.llm.provider import Done, LLMProvider
+
         from nova import Agent, AgentConfig
-        from nova.llm.provider import Done, LLMProvider
 
         class UnusedProvider(LLMProvider):
             async def chat(
@@ -1851,7 +1856,7 @@ class TestInLoopCompaction:
 
     @staticmethod
     def _provider(scripts):
-        from nova.llm.provider import Done, LLMProvider
+        from novakit.llm.provider import Done, LLMProvider
 
         class ScriptedProvider(LLMProvider):
             def __init__(self):
@@ -1868,8 +1873,9 @@ class TestInLoopCompaction:
             async def chat_stream(self, messages, model="m", tools=None, **kwargs):
                 # The same method serves both turn calls and the compaction
                 # summary call; the summary is identified by its system prompt.
+                from novakit.llm.provider import TextDelta
+
                 from nova.agent.compaction import SUMMARY_SYSTEM_PROMPT
-                from nova.llm.provider import TextDelta
 
                 if any(
                     getattr(message, "content", None) == SUMMARY_SYSTEM_PROMPT
@@ -1922,11 +1928,12 @@ class TestInLoopCompaction:
     @pytest.mark.asyncio
     async def test_layer1_trims_bulky_tool_output_mid_request(self):
         """The non-LLM layer is what saves a runaway tool loop, and it runs per turn."""
+        from novakit.events import AgentEvent
+        from novakit.llm import ToolResult
+        from novakit.llm.provider import TextDelta, ToolCall
+
         from nova import Agent, AgentConfig
         from nova.agent.compaction import SNIP_MARKER
-        from nova.agent.core import AgentEvent
-        from nova.llm import ToolResult
-        from nova.llm.provider import TextDelta, ToolCall
 
         async with self._isolated_store():
             provider = self._provider(
@@ -1969,10 +1976,11 @@ class TestInLoopCompaction:
     @pytest.mark.asyncio
     async def test_layer2_fires_mid_request_when_trimming_is_not_enough(self):
         """Assistant text cannot be trimmed by Layer 1, so Layer 2 must step in."""
+        from novakit.events import AgentEvent
+        from novakit.llm import ToolResult
+        from novakit.llm.provider import TextDelta, ToolCall
+
         from nova import Agent, AgentConfig
-        from nova.agent.core import AgentEvent
-        from nova.llm import ToolResult
-        from nova.llm.provider import TextDelta, ToolCall
 
         async with self._isolated_store():
             provider = self._provider(
@@ -2018,10 +2026,11 @@ class TestInLoopCompaction:
 
     @pytest.mark.asyncio
     async def test_small_request_never_compacts(self):
+        from novakit.events import AgentEvent
+        from novakit.llm import ToolResult
+        from novakit.llm.provider import TextDelta, ToolCall
+
         from nova import Agent, AgentConfig
-        from nova.agent.core import AgentEvent
-        from nova.llm import ToolResult
-        from nova.llm.provider import TextDelta, ToolCall
 
         async with self._isolated_store():
             provider = self._provider(
@@ -2049,11 +2058,12 @@ class TestInLoopCompaction:
 
     @pytest.mark.asyncio
     async def test_open_breaker_skips_summarising_but_keeps_trimming(self):
+        from novakit.events import AgentEvent
+        from novakit.llm import ToolResult
+        from novakit.llm.provider import TextDelta, ToolCall
+
         from nova import Agent, AgentConfig
         from nova.agent.compaction import SNIP_MARKER
-        from nova.agent.core import AgentEvent
-        from nova.llm import ToolResult
-        from nova.llm.provider import TextDelta, ToolCall
 
         async with self._isolated_store():
             provider = self._provider(
@@ -2286,11 +2296,12 @@ async def test_compact_does_not_touch_reasoning_content_with_provider_meta():
     unchanged. Reuses the StubSummaryProvider harness from existing compact
     tests.
     """
+    from novakit.session.models import MessageFilter
+
     from nova.agent.compaction import compact
     from nova.db.config import DatabaseConfig
     from nova.db.sqlite.repository import SqliteRepository
     from nova.session.manager import SessionContext
-    from nova.session.models import MessageFilter
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()
@@ -2358,11 +2369,12 @@ async def test_compaction_pipeline_never_rewrites_reasoning_content_when_provide
     """
     import copy
 
+    from novakit.session.models import MessageFilter
+
     from nova.agent.compaction import SNIP_MARKER, compact, snip_old_tool_results
     from nova.db.config import DatabaseConfig
     from nova.db.sqlite.repository import SqliteRepository
     from nova.session.manager import SessionContext
-    from nova.session.models import MessageFilter
 
     db = SqliteRepository(DatabaseConfig(path=":memory:"))
     await db.connect()

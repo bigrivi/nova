@@ -5,11 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from novakit.tools.registry import ToolRegistry, _tool_metadata
 
 from nova.agent.toolset import ToolsetBuilder
 from nova.skills.service import SkillService
 from nova.tools.approval import get_approval_manager
-from nova.tools.registry import ToolRegistry, _tool_metadata
 
 
 class _FakeDataSource:

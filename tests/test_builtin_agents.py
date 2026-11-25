@@ -11,12 +11,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from novakit.llm.faker import FakerLLMProvider
 
 from nova.agent.core import Agent
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
-from nova.llm.faker import FakerLLMProvider
 from nova.session import manager as session_manager_module
 from nova.settings import Settings, nova_home
 

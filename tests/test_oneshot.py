@@ -1,4 +1,4 @@
-"""nova.llm.oneshot: the single encoding of an agent-shaped one-shot call."""
+"""novakit.llm.oneshot: the single encoding of an agent-shaped one-shot call."""
 
 from __future__ import annotations
 
@@ -6,9 +6,8 @@ import asyncio
 import logging
 
 import pytest
-
-from nova.llm.oneshot import stream_text_once
-from nova.llm.provider import Done, Error, Message, TextDelta
+from novakit.llm.oneshot import stream_text_once
+from novakit.llm.provider import Done, Error, Message, TextDelta
 
 
 class StubProvider:

@@ -8,10 +8,10 @@ nothing to do, and that comes back as ``compacted: False`` rather than an error.
 from __future__ import annotations
 
 import pytest
+from novakit.llm.provider import Done
+from novakit.session.models import NewMessage
 
-from nova.llm.provider import Done
 from nova.server.session_service import SessionService
-from nova.session.models import NewMessage
 from nova.settings import get_settings
 from tests.test_agent_chat_stream import ScriptedProvider, isolated_agent
 

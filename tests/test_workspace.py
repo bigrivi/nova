@@ -4,13 +4,13 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from novakit.session.models import Session
 
 from nova.db.config import DatabaseConfig
 from nova.db.in_memory.repository import InMemoryRepository
 from nova.db.sqlite.repository import SqliteRepository
 from nova.prompt.builder import PromptBuilder, PromptConfig
 from nova.server.fs_browse import list_directory
-from nova.session.models import Session
 from nova.tools.glob import glob as glob_fn
 from nova.tools.grep import grep as grep_fn
 from nova.tools.workspace_context import get_active_workspace, set_active_workspace

@@ -12,12 +12,12 @@ reason -- something other than the turn's own accounting was used:
 from __future__ import annotations
 
 import pytest
+from novakit.session.models import NewMessage, Session
 
 from nova.agent.compaction import compaction_threshold
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
 from nova.server.session_service import SessionService
-from nova.session.models import NewMessage, Session
 from nova.settings import get_settings
 
 

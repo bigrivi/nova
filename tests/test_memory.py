@@ -1,11 +1,11 @@
 import pytest
 import pytest_asyncio
+from novakit.events import AgentEvent
+from novakit.llm.provider import Done, LLMProvider, TextDelta, ToolCall
 
 from nova import Agent, AgentConfig
-from nova.agent.core import AgentEvent
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
-from nova.llm.provider import Done, LLMProvider, TextDelta, ToolCall
 from nova.memory.models import MemoryRecord, MemoryWriteRequest
 from nova.memory.service import MemoryService
 from nova.memory.tools import MemoryTools
@@ -573,8 +573,9 @@ def test_search_tells_the_agent_that_the_user_outranks_memory():
     had just been told was never stored. The rule belongs in the tool it called
     to get there.
     """
+    import novakit.tools.registry as registry
+
     import nova.memory.tools  # noqa: F401 -- registers the schemas
-    import nova.tools.registry as registry
 
     description = registry._tool_metadata["search_memory"].get("description", "")
     assert "stale" in description and "the user is right" in description, (

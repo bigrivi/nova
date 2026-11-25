@@ -301,9 +301,10 @@ class TestTheToolAxisInDontAsk:
 async def _built(policy: ToolPolicy, mode: str, sub_agent: bool = True):  # type: ignore[no-untyped-def]
     import tempfile
 
+    from novakit.tools.registry import ToolRegistry
+
     from nova.agent.toolset import ToolsetBuilder
     from nova.skills.service import SkillService
-    from nova.tools.registry import ToolRegistry
 
     with tempfile.TemporaryDirectory() as tmp:
         registry = ToolRegistry()
@@ -436,9 +437,10 @@ class TestAcceptEdits:
 async def _built(policy: ToolPolicy, mode: str, sub_agent: bool = True):  # type: ignore[no-untyped-def]
     import tempfile
 
+    from novakit.tools.registry import ToolRegistry
+
     from nova.agent.toolset import ToolsetBuilder
     from nova.skills.service import SkillService
-    from nova.tools.registry import ToolRegistry
 
     with tempfile.TemporaryDirectory() as tmp:
         registry = ToolRegistry()

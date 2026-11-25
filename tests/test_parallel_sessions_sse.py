@@ -22,11 +22,11 @@ import threading
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
+from novakit.session.models import Session
 
 from nova.db.config import DatabaseConfig
 from nova.db.database import close_db, init_db
 from nova.server import create_app
-from nova.session.models import Session
 from nova.settings import get_settings
 from nova.tools.approval import get_approval_manager
 

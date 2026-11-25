@@ -19,13 +19,13 @@ import contextlib
 from types import SimpleNamespace
 
 import pytest
+from novakit.llm import Message
+from novakit.llm.provider import Done, LLMProvider, TextDelta
 
 from nova import Agent, AgentConfig
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
-from nova.llm import Message
-from nova.llm.provider import Done, LLMProvider, TextDelta
 from nova.llm.providers.anthropic import AnthropicProvider
 from nova.session import manager as session_manager_module
 from nova.session.history_projection import get_user_visible_history

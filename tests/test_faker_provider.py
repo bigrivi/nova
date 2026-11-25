@@ -4,12 +4,9 @@ import asyncio
 import json
 
 import pytest
-
-from nova import Agent, AgentConfig
-from nova.agent.core import AgentEvent
-from nova.db.in_memory.repository import InMemoryRepository
-from nova.llm.faker import FakerLLMProvider
-from nova.llm.provider import (
+from novakit.events import AgentEvent
+from novakit.llm.faker import FakerLLMProvider
+from novakit.llm.provider import (
     Done,
     Error,
     LLMProvider,
@@ -18,6 +15,9 @@ from nova.llm.provider import (
     ToolCall,
     ToolResult,
 )
+
+from nova import Agent, AgentConfig
+from nova.db.in_memory.repository import InMemoryRepository
 from nova.session.manager import SessionManager
 
 
@@ -703,7 +703,7 @@ async def test_faker_stream_delay_invokes_sleep_between_chunks(monkeypatch):
     async def fake_sleep(duration: float) -> None:
         recorded.append(duration)
 
-    monkeypatch.setattr("nova.llm.faker.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("novakit.llm.faker.asyncio.sleep", fake_sleep)
     provider = FakerLLMProvider(seed=1, reasoning_probability=1, stream_delay=0.05)
 
     events = [
@@ -723,7 +723,7 @@ async def test_faker_no_stream_delay_skips_sleep(monkeypatch):
     async def fake_sleep(duration: float) -> None:
         recorded.append(duration)
 
-    monkeypatch.setattr("nova.llm.faker.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("novakit.llm.faker.asyncio.sleep", fake_sleep)
     provider = FakerLLMProvider(seed=1, reasoning_probability=1, stream_delay=0.0)
 
     _ = [

@@ -6,11 +6,11 @@ from pathlib import Path
 import aiosqlite
 import pytest
 import pytest_asyncio
+from novakit.session.models import MessageFilter, NewMessage, Session
 
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
-from nova.session.models import MessageFilter, NewMessage, Session
 from nova.settings import get_settings
 
 

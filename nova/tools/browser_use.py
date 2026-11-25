@@ -17,9 +17,8 @@ from nova.settings import nova_home
 from nova.tools.web_search import TOOL as web_search_tool
 
 if TYPE_CHECKING:
+    from novakit.tools.context import ToolContext
     from playwright.async_api import BrowserContext, Page
-
-    from nova.tools.context import ToolContext
 
 log = logging.getLogger(__name__)
 

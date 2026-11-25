@@ -6,9 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from novakit.agent.state import TurnState
 
 from nova.agent.messaging import AgentMessaging
-from nova.agent.state import TurnState
 from nova.prompt.builder import PromptBuilder, PromptConfig
 from nova.tools.workspace_context import get_active_workspace, set_active_workspace
 

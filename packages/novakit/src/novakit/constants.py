@@ -1,1 +1,0 @@
-DEFAULT_AGENT_KEY = "main"

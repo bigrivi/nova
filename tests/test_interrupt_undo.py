@@ -2,13 +2,13 @@ import asyncio
 
 import pytest
 import pytest_asyncio
+from novakit.events import AgentEvent
+from novakit.llm import ToolResult
+from novakit.llm.provider import Done, Error, LLMProvider, TextDelta, ToolCall
 
 from nova import Agent, AgentConfig
-from nova.agent.core import AgentEvent
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
-from nova.llm import ToolResult
-from nova.llm.provider import Done, Error, LLMProvider, TextDelta, ToolCall
 
 
 def _done_reason(data) -> str:

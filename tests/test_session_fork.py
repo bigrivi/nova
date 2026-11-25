@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import pytest
 import pytest_asyncio
+from novakit.session.models import NewMessage
 
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
 from nova.session.fork import ForkPointNotFound, fork_session
-from nova.session.models import NewMessage
 
 
 @pytest_asyncio.fixture

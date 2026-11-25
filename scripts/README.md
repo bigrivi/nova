@@ -52,13 +52,3 @@ Nova 的权限系统有两层测试，**这一层覆盖单层覆盖不到的部�
 
 新增规则时，`--local-only` 里加一条断言。它比单元测试慢不到一秒，
 但它经过真实的 `ShellToolBehavior` 与 `decide`，而不是手工拼的 registry。
-
-## novakit wheel 冒烟
-
-```bash
-bash scripts/smoke_novakit_wheel.sh
-```
-
-该脚本构建 `novakit` wheel、安装到独立临时目录，并验证顶层 `Agent` 能纯内存
-完成一次对话、wheel 含 `py.typed`，且导入过程不会加载 `nova`。临时产物会保留，
-路径在脚本结束时打印。

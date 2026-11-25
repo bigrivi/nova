@@ -12,17 +12,18 @@ import asyncio
 import contextlib
 
 import pytest
+from novakit.agent import build_user_message
+from novakit.events import AgentEvent
+from novakit.llm import ToolResult
+from novakit.llm.faker import FakerLLMProvider
+from novakit.llm.provider import Done, Error, LLMProvider, TextDelta, ToolCall
+from novakit.session.models import NewMessage
 
 from nova import Agent, AgentConfig
-from nova.agent.core import AgentEvent, build_user_message
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
-from nova.llm import ToolResult
-from nova.llm.faker import FakerLLMProvider
-from nova.llm.provider import Done, Error, LLMProvider, TextDelta, ToolCall
 from nova.session import manager as session_manager_module
-from nova.session.models import NewMessage
 
 
 class ScriptedProvider(LLMProvider):
@@ -128,7 +129,7 @@ class TestBuildUserMessage:
         assert images == ["data:image/png;base64,QUJD"]
 
     def test_oversized_image_is_dropped(self):
-        from nova.llm.images import MAX_IMAGE_BYTES
+        from novakit.llm.images import MAX_IMAGE_BYTES
 
         oversized = "A" * ((MAX_IMAGE_BYTES // 3) * 4 + 8)
         attachments = [
@@ -297,7 +298,7 @@ class TestChatStreamCorePaths:
 
     @pytest.mark.asyncio
     async def test_provider_error_propagates_as_error_event(self):
-        from nova.llm.provider import Error
+        from novakit.llm.provider import Error
 
         provider = ScriptedProvider([[Error(message="upstream boom")]])
         async with isolated_agent(provider) as (agent, _db):

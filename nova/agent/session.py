@@ -6,7 +6,6 @@ import logging
 
 from novakit.agent.llm_stream import TurnStreamReader
 from novakit.agent.session import AgentSession as CoreAgentSession
-from novakit.agent.session import AgentSessionContext as AgentSessionContext
 from novakit.agent.session import SessionRouteStorage
 
 from nova.db import get_default_data_source
@@ -56,4 +55,4 @@ class AgentSession(CoreAgentSession):
         )
 
 
-__all__ = ["AgentSession", "AgentSessionContext"]
+__all__ = ["AgentSession"]

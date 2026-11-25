@@ -22,10 +22,10 @@ import json
 import sys
 
 import pytest
+from novakit.tools.registry import ToolRegistry
 
 from nova.mcp.manager import MCPManager
 from nova.settings import get_settings
-from nova.tools.registry import ToolRegistry
 
 
 def _write_mcp_config(home, servers: dict) -> None:

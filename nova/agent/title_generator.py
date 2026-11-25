@@ -127,7 +127,7 @@ async def generate_session_title(
             (attestation headers) resolve the same identity as the conversation.
         tools: The caller's tool schemas, forwarded so the request matches the
             shape of a normal turn for gateways that require it; see
-            :mod:`nova.llm.oneshot`.
+            :mod:`novakit.llm.oneshot`.
 
     Returns:
         The cleaned title, or None if the call failed, timed out, or produced

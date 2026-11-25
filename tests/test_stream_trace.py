@@ -7,9 +7,8 @@ from __future__ import annotations
 import logging
 
 import pytest
-
-from nova.llm import stream_trace as module
-from nova.llm.stream_trace import StreamTrace
+from novakit.llm import stream_trace as module
+from novakit.llm.stream_trace import StreamTrace
 
 
 class _Clock:

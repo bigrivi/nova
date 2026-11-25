@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from novakit.llm.provider import Done, Error, LLMProvider
 
 from nova import Agent, AgentConfig
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
-from nova.llm.provider import Done, Error, LLMProvider
 from nova.session import manager as session_manager_module
 
 FIRST_MESSAGE = "你好，帮我看看这个 bug"

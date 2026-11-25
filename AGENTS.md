@@ -7,9 +7,9 @@ the things that cost time to infer.
 
 ```bash
 .venv/bin/pytest -q                  # full Python suite from the repo root; no PYTHONPATH needed
-.venv/bin/ruff check nova packages/novakit/src/novakit packages/novakit/tests tests      # CI gate
+.venv/bin/ruff check nova tests      # CI gate
 .venv/bin/mypy                       # CI gate; config in pyproject.toml
-.venv/bin/ruff format nova packages/novakit/src/novakit packages/novakit/tests tests
+.venv/bin/ruff format nova tests
 cd frontend && npm run typecheck     # = tsc -b. This is the real type gate.
 cd frontend && npx vitest run        # there is no `npm test` script
 cd tui && bun run typecheck && bun run build
@@ -58,7 +58,7 @@ handler — which requires a live stream — cannot clear it. That is exactly ho
 
 Three layers enforce it, and removing any one is how it comes back:
 
-- `ToolInvoker` answers every terminal path it owns (`nova/agent/tool_invoker.py`).
+- `ToolInvoker` answers every terminal path it owns (`novakit.agent.tool_invoker`).
 - `AISDKStreamAdapter` answers whatever is still open on `DONE`/`ERROR`
   (`nova/server/ai_sdk_stream.py`), so a path that forgets cannot reach a client.
 - The TUI settles leftovers at stream end (`tui/src/stores/chat-store.ts`
@@ -82,12 +82,15 @@ forever.
   (`$NOVA_HOME`, then git root → workspace). `nova/prompt/threat_patterns.py` regex-screens
   untrusted text before it becomes context; a hit drops the content and leaves a
   placeholder — it matches shapes, not meaning, so a miss is not a guarantee.
-- `nova/llm/policy.py` holds `TransportPolicy` (retry and timeout budgets). 429 goes
+- `novakit.llm.policy` holds `TransportPolicy` (retry and timeout budgets). 429 goes
   through `is_terminal_429`: quota-exhaustion bodies fail fast, everything else is
   retried with `Retry-After` honoured. The default is *retry*, which is the
-  counter-intuitive direction on purpose.
-- One Python core in `nova/` drives all four surfaces (`serve`, `web`, `tui`, `desktop`).
-  Agent logic, tools, providers, and persistence stay there so the four cannot diverge.
+  counter-intuitive direction on purpose. Nova imports `novakit.llm.policy`
+  directly; the old `nova.llm.policy` module has been removed.
+- One Python application core in `nova/` drives all four surfaces (`serve`, `web`,
+  `tui`, `desktop`). The reusable agent runtime, tools, providers, and session models
+  live in the sibling `novakit` repository; Nova owns prompt, memory, skills,
+  persistence, and other application adapters.
 
 ## Do not commit
 

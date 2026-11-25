@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 
+from novakit.llm.faker import FakerLLMProvider
+
 from nova.app.runtime import _llm_cache, build_llm
-from nova.llm.faker import FakerLLMProvider
 
 
 def _write_config(home, payload):

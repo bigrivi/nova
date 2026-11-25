@@ -6,13 +6,13 @@ import asyncio
 import contextlib
 
 import pytest
+from novakit.events import AgentEvent
+from novakit.llm.provider import Done, LLMProvider, TextDelta
 
 from nova import Agent, AgentConfig
-from nova.agent.core import AgentEvent
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
-from nova.llm.provider import Done, LLMProvider, TextDelta
 from nova.session import manager as session_manager_module
 
 

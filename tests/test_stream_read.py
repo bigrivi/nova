@@ -17,9 +17,8 @@ import asyncio
 
 import pytest
 from aiohttp import SocketTimeoutError
-
-from nova.llm.stream_read import StreamAborted, StreamPoller, StreamTimeout
-from nova.llm.stream_trace import StreamTrace
+from novakit.llm.stream_read import StreamAborted, StreamPoller, StreamTimeout
+from novakit.llm.stream_trace import StreamTrace
 
 POLL = 0.01
 

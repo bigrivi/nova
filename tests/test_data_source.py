@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import pytest
 from novakit.session import models as novakit_models
+from novakit.session.models import Message as SharedMessage
+from novakit.session.models import MessageFilter as SharedMessageFilter
+from novakit.session.models import Session
 
 from nova.db import (
     DataSourceConfig,
@@ -13,9 +16,6 @@ from nova.db import (
     set_data_source_config,
 )
 from nova.db.sqlite.repository import SqliteRepository
-from nova.session.models import Message as SharedMessage
-from nova.session.models import MessageFilter as SharedMessageFilter
-from nova.session.models import Session
 
 
 @pytest.mark.asyncio

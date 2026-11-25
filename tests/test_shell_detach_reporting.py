@@ -16,11 +16,11 @@ from typing import Any, NamedTuple
 
 import pytest
 import pytest_asyncio
+from novakit.tools.registry import _tool_metadata
 
 from nova.tasks.executors import ShellExecutor
 from nova.tasks.manager import BackgroundTaskManager
 from nova.tasks.models import TaskRecord, TaskStatus
-from nova.tools.registry import _tool_metadata
 
 shell_module = importlib.import_module("nova.tools.shell.tool")
 

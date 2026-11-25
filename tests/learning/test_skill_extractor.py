@@ -7,7 +7,7 @@ from nova.learning.skill_extractor import SkillExtractor, TurnContext
 async def test_no_extraction_below_threshold(tmp_path):
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import Done, TextDelta
+            from novakit.llm.provider import Done, TextDelta
 
             yield TextDelta(content='{"action": "create", "name": "x", "content": "y"}')
             yield Done(content='{"action": "create", "name": "x", "content": "y"}')
@@ -25,7 +25,7 @@ async def test_no_extraction_below_threshold(tmp_path):
 async def test_extraction_above_threshold_writes_skill(tmp_path):
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import Done, TextDelta
+            from novakit.llm.provider import Done, TextDelta
 
             yield TextDelta(
                 content='{"action": "create", "name": "csv-agg", "content": "# CSV Aggregator\\nDo stuff."}'
@@ -73,7 +73,7 @@ async def test_extraction_failure_does_not_raise(tmp_path):
 async def test_new_skill_is_version_stamped(tmp_path):
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import Done, TextDelta
+            from novakit.llm.provider import Done, TextDelta
 
             yield TextDelta(
                 content='{"action": "create", "name": "v-skill", "content": "# V Skill"}'
@@ -93,7 +93,7 @@ async def test_new_skill_is_version_stamped(tmp_path):
 async def test_improve_bumps_version(tmp_path):
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import Done, TextDelta
+            from novakit.llm.provider import Done, TextDelta
 
             yield TextDelta(content="# Revised Skill\nnow with weekly grouping")
             yield Done(content="# Revised Skill\nnow with weekly grouping")
@@ -121,7 +121,7 @@ async def test_similar_name_merges_instead_of_creating(tmp_path):
 
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import Done, TextDelta
+            from novakit.llm.provider import Done, TextDelta
 
             body = '{"action": "create", "name": "csv-aggregation-json", "content": "# CSV Aggregate\\nread csv group by column output json"}'
             yield TextDelta(content=body)
@@ -146,7 +146,7 @@ async def test_identical_content_is_a_no_op(tmp_path):
 
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import Done, TextDelta
+            from novakit.llm.provider import Done, TextDelta
 
             body = '{"action": "update", "name": "same-skill", "content": "# Same\\nread csv group by column output json"}'
             yield TextDelta(content=body)
@@ -163,7 +163,7 @@ async def test_identical_content_is_a_no_op(tmp_path):
 async def test_none_action_is_a_no_op(tmp_path):
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import Done, TextDelta
+            from novakit.llm.provider import Done, TextDelta
 
             yield TextDelta(content='{"action": "none"}')
             yield Done(content='{"action": "none"}')
@@ -181,7 +181,7 @@ async def test_none_action_is_a_no_op(tmp_path):
 async def test_create_with_references(tmp_path):
     class MockLLM:
         async def chat_stream(self, messages, model="gpt-4o", **kw):
-            from nova.llm.provider import Done, TextDelta
+            from novakit.llm.provider import Done, TextDelta
 
             body = '{"action": "create", "name": "csv-analysis", "content": "# CSV Analysis", "references": {"csv.md": "# CSV notes"}}'
             yield TextDelta(content=body)

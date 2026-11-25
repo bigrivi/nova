@@ -354,7 +354,7 @@ class CompactionController:
         ``compacted`` records whether history actually changed, so the caller
         knows when to reload it. ``tools`` is forwarded to the summary call so
         the request is shaped like an agent turn (see
-        :mod:`nova.llm.oneshot`).
+        :mod:`novakit.llm.oneshot`).
         """
         self.compacted = False
         # A forced run is consumed here so the latch cannot survive a turn that

@@ -7,9 +7,10 @@ import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from novakit.llm import ToolResult
+from novakit.tools.registry import ToolRegistry
 
 from nova import __version__
-from nova.llm import ToolResult
 from nova.mcp.client import McpClient
 from nova.mcp.manager import _build_wrapper, init_mcp_servers, shutdown_clients
 from nova.mcp.transport import (
@@ -18,7 +19,6 @@ from nova.mcp.transport import (
     StdioTransport,
     create_transport,
 )
-from nova.tools.registry import ToolRegistry
 
 # ══════════════════════════════════════════════
 # helpers

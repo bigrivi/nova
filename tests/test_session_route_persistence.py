@@ -12,12 +12,12 @@ import asyncio
 import contextlib
 
 import pytest
+from novakit.llm.provider import Done, LLMProvider, TextDelta
 
 from nova import Agent, AgentConfig
 from nova.db import database as db_module
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
-from nova.llm.provider import Done, LLMProvider, TextDelta
 from nova.session import manager as session_manager_module
 
 
@@ -126,7 +126,7 @@ async def test_a_changed_route_is_written(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_one_write_per_request_even_with_several_model_calls(monkeypatch) -> None:
     """A tool loop must not restamp the row once per iteration."""
-    from nova.llm.provider import ToolCall
+    from novakit.llm.provider import ToolCall
 
     async with _catalog() as database:
         calls: list[tuple] = []

@@ -6,11 +6,13 @@ Thanks for considering a contribution. This guide covers the setup and workflow 
 
 Nova requires Python 3.12 or newer.
 
-Clone and install the Python package in editable mode:
+Clone Nova and the standalone SDK next to each other:
 
 ```bash
-git clone https://github.com/bigrivi/nova.git && cd nova
-pip install -e packages/novakit -e ".[dev]"
+git clone https://github.com/bigrivi/nova.git
+git clone https://github.com/bigrivi/novakit.git
+cd nova
+pip install -e ../novakit -e ".[dev]"
 ```
 
 That puts the `nova` console script on your PATH, as defined in `pyproject.toml`.
@@ -39,7 +41,7 @@ pytest
 
 You do not need `PYTHONPATH=.`; `pyproject.toml` already sets `[tool.pytest.ini_options] pythonpath` to `.`. A plain `pytest` is enough.
 
-At present the suite reports 392 passed and 6 skipped. The skipped tests are the live Ollama end to end suite. It only runs when you opt in:
+At present the suite reports 2972 passed and 12 skipped. The skipped tests are the live Ollama end to end suite. It only runs when you opt in:
 
 ```bash
 RUN_LIVE_OLLAMA_SERVER_E2E=1 pytest tests/e2e -q
@@ -68,11 +70,13 @@ The frontend dev server proxies `/api/*` to the backend. You can override the ta
 
 ## Continuous integration
 
-CI runs on every push to `main` and on every pull request. The workflow is `.github/workflows/ci.yml` and it has three jobs:
+CI runs on every push to `main` and on every pull request. The workflow is `.github/workflows/ci.yml` and it has five jobs:
 
-* **Python tests**: installs with `pip install -e packages/novakit -e ".[dev]"` then runs `pytest -q` on Python 3.12.
+* **Python tests**: checks out `bigrivi/novakit`, installs it with `pip install -e ./.deps/novakit -e ".[dev]"`, then runs `pytest -q` on Python 3.12.
+* **Types and lint**: checks the Nova source and tests with Ruff and mypy on Python 3.12.
 * **Frontend typecheck and build**: runs `npm ci` and `npm run build` in `frontend/` on Node 22, which executes `tsc -b && vite build`.
-* **TUI typecheck and build**: runs `bun install --frozen-lockfile`, `bun run typecheck`, and `bun run build` in `tui/`. Typecheck executes `bun --bun tsc --noEmit`; build bundles the client to `tui/dist`.
+* **TUI typecheck, test and build**: runs `bun install --frozen-lockfile`, typecheck, tests, and build in `tui/`.
+* **Mobile typecheck, test and bundle**: runs the corresponding Bun checks and Android export in `mobile/`.
 
 Please run the relevant checks locally before opening a pull request:
 

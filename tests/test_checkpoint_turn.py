@@ -11,10 +11,10 @@ import json
 from pathlib import Path
 
 import pytest
+from novakit.events import AgentEvent
+from novakit.llm.provider import Done, ToolCall
 
 from nova import checkpoints
-from nova.agent.core import AgentEvent
-from nova.llm.provider import Done, ToolCall
 from nova.server.session_service import SessionService
 from nova.settings import get_settings
 from tests.test_agent_chat_stream import ScriptedProvider, isolated_agent

@@ -123,6 +123,8 @@ def run_probe(home: Path, workspace: Path) -> list[tuple[str, bool, str]]:
     checks: list[tuple[str, bool, str]] = []
 
     async def build():
+        from novakit.tools.registry import ToolRegistry
+
         from nova.agent.toolset import ToolsetBuilder
 
         # Settings are loaded for the side effect of resolving the NOVA_HOME
@@ -130,7 +132,6 @@ def run_probe(home: Path, workspace: Path) -> list[tuple[str, bool, str]]:
         # the live server reads.
         from nova.settings import get_settings
         from nova.tools.approval import ApprovalManager
-        from nova.tools.registry import ToolRegistry
 
         get_settings()
         registry = ToolRegistry()
@@ -161,8 +162,8 @@ def run_probe(home: Path, workspace: Path) -> list[tuple[str, bool, str]]:
     # Registered after build() because that is the real order -- MCP tools land
     # on top of the built-ins -- and the policy pass is re-run so the new tool
     # picks up a behaviour.
-    from nova.llm import ToolResult
-    from nova.tools.registry import ToolRegistry
+    from novakit.llm import ToolResult
+    from novakit.tools.registry import ToolRegistry
 
     registry.register_direct(
         name="mcp_edit",

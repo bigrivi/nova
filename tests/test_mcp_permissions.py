@@ -15,12 +15,12 @@ one of them is worse than no change:
 from __future__ import annotations
 
 import pytest
+from novakit.llm import ToolResult
+from novakit.tools.registry import ToolRegistry
 
 from nova.agent.toolset import ToolsetBuilder
-from nova.llm import ToolResult
 from nova.tools.approval import ApprovalManager
 from nova.tools.behavior import PolicyToolBehavior, TurnContext
-from nova.tools.registry import ToolRegistry
 from nova.tools.tool_policy import ToolPolicy
 from nova.tools.workspace_context import set_active_workspace
 

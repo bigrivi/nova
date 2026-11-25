@@ -12,13 +12,13 @@ import logging
 from types import SimpleNamespace
 
 import pytest
+from novakit.llm.provider import Done, LLMProvider, TextDelta
+from novakit.session.models import Message as SessionMessage
 
 from nova.agent import memory_review
 from nova.agent.memory_review import MIN_MESSAGES_TO_REVIEW, MemoryReviewer
 from nova.db.in_memory.repository import InMemoryRepository
-from nova.llm.provider import Done, LLMProvider, TextDelta
 from nova.memory.models import MemorySearchFilters
-from nova.session.models import Message as SessionMessage
 
 
 class RecordingProvider(LLMProvider):

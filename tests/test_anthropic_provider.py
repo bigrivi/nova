@@ -5,8 +5,7 @@ import json
 
 import aiohttp
 import pytest
-
-from nova.llm.provider import (
+from novakit.llm.provider import (
     Done,
     Error,
     LLMProvider,
@@ -19,6 +18,7 @@ from nova.llm.provider import (
     ToolInputError,
     ToolInputStart,
 )
+
 from nova.llm.providers.anthropic import (
     AnthropicProvider,
     _default_max_output_tokens,

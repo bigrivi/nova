@@ -10,8 +10,8 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from novakit.events import AgentEvent
 
-from nova.agent.events import AgentEvent
 from nova.agent.spawn import SPAWN_DEPTH
 from nova.tasks.executors import SubagentExecutor
 from nova.tasks.models import TaskExecutionResult

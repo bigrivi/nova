@@ -5,8 +5,7 @@ from __future__ import annotations
 import logging
 
 import pytest
-
-from nova.llm.provider import (
+from novakit.llm.provider import (
     Done,
     Error,
     ToolCall,
@@ -15,6 +14,7 @@ from nova.llm.provider import (
     ToolInputError,
     ToolInputStart,
 )
+
 from nova.llm.providers.openai_chat import OpenAIProvider
 
 

@@ -1,9 +1,10 @@
+from novakit.session.models import Message
+
 from nova.session.history_projection import (
     VISIBLE_HISTORY_TOOL_NAMES,
     build_user_visible_history_filter,
     project_user_visible_history,
 )
-from nova.session.models import Message
 
 
 def _message(

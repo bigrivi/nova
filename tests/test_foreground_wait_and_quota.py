@@ -21,10 +21,10 @@ from typing import Any, NamedTuple
 
 import pytest
 import pytest_asyncio
+from novakit.tools.registry import _tool_metadata
 
 from nova.tasks.executors import CodeRunExecutor, ShellExecutor
 from nova.tasks.manager import BackgroundTaskManager
-from nova.tools.registry import _tool_metadata
 
 SHELL_WAIT = 60
 CODE_RUN_WAIT = 60

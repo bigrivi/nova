@@ -212,7 +212,7 @@ async def test_a_failed_offload_still_returns_the_trimmed_text(monkeypatch, tmp_
 
 @pytest.mark.asyncio
 async def test_char_limit_is_exposed_in_the_schema():
-    from nova.tools.registry import _tool_metadata
+    from novakit.tools.registry import _tool_metadata
 
     schema = _tool_metadata["web_fetch"]["parameters"]["properties"]["char_limit"]
 
@@ -222,6 +222,6 @@ async def test_char_limit_is_exposed_in_the_schema():
 
 def test_the_description_points_at_web_fetch():
     """The model must be told the split exists; Nova relies on it."""
-    from nova.tools.registry import _tool_metadata
+    from novakit.tools.registry import _tool_metadata
 
     assert "web_search" in _tool_metadata["web_fetch"]["description"]

@@ -1,4 +1,4 @@
-"""Nova compatibility exports for the novakit LLM layer."""
+"""Nova LLM providers and shared novakit message types."""
 
 from novakit.llm import (
     ChatEvent,

@@ -487,10 +487,11 @@ def inprocess_tools(rules_path: Path | None) -> set[str]:
     import asyncio
     import tempfile as _tf
 
+    from novakit.tools.registry import ToolRegistry
+
     from nova.agent.toolset import ToolsetBuilder
     from nova.skills.service import SkillService
     from nova.tools.approval import ApprovalManager
-    from nova.tools.registry import ToolRegistry
     from nova.tools.tool_policy import load_tool_policy
 
     async def build() -> set[str]:

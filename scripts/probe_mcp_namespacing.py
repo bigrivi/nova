@@ -84,9 +84,10 @@ for line in sys.stdin:
 
 def run_registry_checks(workspace: Path) -> list[tuple[str, bool, str]]:
     checks: list[tuple[str, bool, str]] = []
-    from nova.llm import ToolResult
+    from novakit.llm import ToolResult
+    from novakit.tools.registry import ToolRegistry
+
     from nova.mcp.manager import MCPManager
-    from nova.tools.registry import ToolRegistry
 
     registry = ToolRegistry()
     for built_in in ("edit", "read", "write"):

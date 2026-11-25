@@ -4,8 +4,8 @@ import json
 
 import aiohttp
 import pytest
+from novakit.llm.provider import Done, Error, Message, TextDelta
 
-from nova.llm.provider import Done, Error, Message, TextDelta
 from nova.llm.providers.ollama import OllamaProvider
 
 # aiohttp's StreamReader caps a single line at its high-water mark (~128 KiB)

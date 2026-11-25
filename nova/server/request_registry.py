@@ -31,7 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from nova.agent.protocol import InterruptibleAgent
+from novakit.agent.protocol import InterruptibleAgent
 
 if TYPE_CHECKING:
     from nova.server.stream_buffer import StreamBuffer

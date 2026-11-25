@@ -13,11 +13,11 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from novakit.session.models import NewMessage
 
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
 from nova.server.session_service import SessionService
-from nova.session.models import NewMessage
 from nova.settings import get_settings
 from nova.tools import checkpoints as capture
 

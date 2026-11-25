@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from novakit.session.models import MessageFilter, NewMessage, Session
 
 from nova.db.config import DatabaseConfig
 from nova.db.in_memory.repository import InMemoryRepository
@@ -12,7 +13,6 @@ from nova.db.sqlite.repository import SqliteRepository
 from nova.memory.models import MemoryRecord, MemorySearchFilters
 from nova.project.models import Project
 from nova.scheduler.models import ScheduledJob
-from nova.session.models import MessageFilter, NewMessage, Session
 
 
 @pytest_asyncio.fixture(params=["sqlite", "memory"])

@@ -59,7 +59,7 @@ async def make_session(client, title: str) -> str:
     """Create a session the way a turn does, since there is no create route."""
     import uuid
 
-    from nova.session.models import Session
+    from novakit.session.models import Session
 
     service = client._transport.app.state.context.chat_service
     data_source = await service._get_data_source()

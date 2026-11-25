@@ -62,8 +62,9 @@ def test_roster_preamble_treats_at_mention_as_explicit_delegation() -> None:
 def test_delegate_tool_description_names_no_specific_agents() -> None:
     """Same guarantee for the `delegate_to_agent` tool description, which
     the model also reads when deciding whether to delegate."""
+    from novakit.tools.registry import _tool_metadata
+
     import nova.tools.delegate  # noqa: F401 — importing registers the tool metadata
-    from nova.tools.registry import _tool_metadata
 
     description = _tool_metadata["delegate_to_agent"]["description"]
 

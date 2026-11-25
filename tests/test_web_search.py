@@ -245,7 +245,7 @@ def test_limit_is_clamped(requested, expected):
 
 
 def test_limit_bounds_are_published_in_the_schema():
-    from nova.tools.registry import _tool_metadata
+    from novakit.tools.registry import _tool_metadata
 
     schema = _tool_metadata["web_search"]["parameters"]["properties"]["limit"]
 

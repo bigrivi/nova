@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import pytest
+from novakit.session.models import NewMessage
 
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
 from nova.session.manager import SessionContext
-from nova.session.models import NewMessage
 
 MARKER = "summary_position_backfill"
 

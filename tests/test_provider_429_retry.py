@@ -27,10 +27,9 @@ from datetime import UTC
 import aiohttp
 import pytest
 from multidict import CIMultiDict
-
-from nova.llm.http_provider import HttpProvider
-from nova.llm.policy import StreamPolicy, TransportPolicy
-from nova.llm.provider import (
+from novakit.llm.http_provider import HttpProvider
+from novakit.llm.policy import StreamPolicy, TransportPolicy
+from novakit.llm.provider import (
     MAX_RETRIES,
     RETRY_429_MAX_ATTEMPTS,
     RETRY_429_TOTAL_BUDGET,
@@ -293,7 +292,7 @@ async def test_an_absurd_retry_after_is_capped(no_sleep) -> None:
         no_sleep,
     )
 
-    from nova.llm.provider import RETRY_429_MAX_WAIT
+    from novakit.llm.provider import RETRY_429_MAX_WAIT
 
     assert no_sleep == [RETRY_429_MAX_WAIT]
 

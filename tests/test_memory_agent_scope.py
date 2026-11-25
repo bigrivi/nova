@@ -113,8 +113,9 @@ async def test_delete_agent_memory_targets_only_owner(service):
 
 
 def test_sub_agent_does_not_register_memory_tools():
+    from novakit.tools.registry import ToolRegistry
+
     from nova.agent.toolset import _MEMORY_TOOL_NAMES, ToolsetBuilder
-    from nova.tools.registry import ToolRegistry
 
     class _StubSkillService:
         def list_skills(self):

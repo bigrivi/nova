@@ -7,11 +7,11 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from novakit.events import EventBus
+from novakit.tools.registry import ToolRegistry
 
 from nova.agent.context import AgentDependencies
 from nova.agent.core import Agent, AgentConfig
-from nova.agent.events import EventBus
-from nova.tools.registry import ToolRegistry
 
 
 def _dependencies(

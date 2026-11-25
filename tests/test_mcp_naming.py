@@ -20,6 +20,7 @@ import os
 import sys
 
 import pytest
+from novakit.tools.registry import ToolRegistry
 
 from nova.mcp.manager import MCPManager
 from nova.mcp.naming import (
@@ -30,7 +31,6 @@ from nova.mcp.naming import (
     sanitize,
 )
 from nova.settings import Settings, get_settings
-from nova.tools.registry import ToolRegistry
 
 # ── the shape of a name ───────────────────────────────────────────────
 

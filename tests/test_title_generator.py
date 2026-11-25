@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 import pytest
+from novakit.llm.provider import Done, Error, Message, TextDelta
 
 from nova.agent.title_generator import (
     MAX_TITLE_LENGTH,
@@ -14,7 +15,6 @@ from nova.agent.title_generator import (
     clean_title,
     generate_session_title,
 )
-from nova.llm.provider import Done, Error, Message, TextDelta
 
 
 class StubProvider:

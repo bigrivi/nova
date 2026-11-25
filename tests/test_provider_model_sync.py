@@ -497,7 +497,8 @@ def test_config_wins_on_every_layer_it_can_reach(home: Path, monkeypatch) -> Non
     A catalogue is a snapshot of somebody else's claim; config.json is the
     operator's decision. If these ever disagree, the file has to win.
     """
-    from nova.llm.reasoning import resolve_effort_levels
+    from novakit.llm.reasoning import resolve_effort_levels
+
     from nova.llm.tokenizer import resolve_context_window
     from nova.registry import catalogue as catalogue_module
     from nova.server.routers.config import build_model_list_response

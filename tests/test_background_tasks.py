@@ -6,11 +6,11 @@ import sys
 from collections.abc import Mapping
 
 import pytest
+from novakit.tools.registry import ToolRegistry
 
 from nova.tasks.executors import CodeRunExecutor, ShellExecutor
 from nova.tasks.manager import BackgroundTaskManager, TaskLimitError
 from nova.tasks.models import TaskExecutionContext, TaskExecutionResult
-from nova.tools.registry import ToolRegistry
 
 
 @pytest.mark.asyncio

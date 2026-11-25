@@ -31,13 +31,8 @@ import itertools
 import json
 
 import pytest
-
-from nova import Agent, AgentConfig
-from nova.agent.core import AgentEvent
-from nova.db import database as db_module
-from nova.db.config import DatabaseConfig
-from nova.db.sqlite.repository import SqliteRepository
-from nova.llm.provider import (
+from novakit.events import AgentEvent
+from novakit.llm.provider import (
     Done,
     LLMProvider,
     Message,
@@ -45,6 +40,12 @@ from nova.llm.provider import (
     TextDelta,
     ToolCall,
 )
+from novakit.session.models import MessageFilter
+
+from nova import Agent, AgentConfig
+from nova.db import database as db_module
+from nova.db.config import DatabaseConfig
+from nova.db.sqlite.repository import SqliteRepository
 from nova.llm.providers.anthropic import AnthropicProvider
 from nova.llm.providers.openai_chat import OpenAIProvider
 from nova.llm.providers.openai_responses import OpenAIResponsesProvider
@@ -52,7 +53,6 @@ from nova.llm.tokenizer import estimate_tokens_by_type
 from nova.memory.models import MemoryWriteRequest
 from nova.memory.service import MemoryService
 from nova.session import manager as session_manager_module
-from nova.session.models import MessageFilter
 
 _PROVIDERS = ("anthropic", "openai", "openai_response")
 
@@ -607,7 +607,7 @@ async def test_real_agent_chain_prefix_stable_across_turns(provider_name: str):
 
 @pytest.mark.asyncio
 async def test_reader_absorbs_cache_read_tokens():
-    from nova.agent.llm_stream import TurnStreamReader
+    from novakit.agent.llm_stream import TurnStreamReader
 
     async def _emit(*args, **kwargs) -> None:
         return None

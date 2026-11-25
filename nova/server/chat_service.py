@@ -10,9 +10,9 @@ from collections.abc import AsyncGenerator, Callable
 from typing import Any, Literal
 
 from fastapi import HTTPException
+from novakit.agent.protocol import ChatAgent
 from novakit.events import AgentEvent, AgentEventFrame
 
-from nova.agent.protocol import ChatAgent
 from nova.app import build_agent
 from nova.db import DataSourceProtocol, get_default_data_source
 from nova.project.service import ProjectService

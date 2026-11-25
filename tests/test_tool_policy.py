@@ -220,9 +220,10 @@ async def test_a_denial_is_never_overridable_by_a_grant() -> None:
 
 async def _built(policy: ToolPolicy):
     """A toolset built the way the agent builds one."""
+    from novakit.tools.registry import ToolRegistry
+
     from nova.agent.toolset import ToolsetBuilder
     from nova.skills.service import SkillService
-    from nova.tools.registry import ToolRegistry
 
     with tempfile.TemporaryDirectory() as tmp:
         registry = ToolRegistry()
@@ -304,9 +305,10 @@ async def test_the_models_own_rejection_wins_over_an_allowing_policy() -> None:
 
 @pytest.mark.asyncio
 async def test_the_reviewer_clears_a_gated_tool_when_the_builder_has_one() -> None:
+    from novakit.tools.registry import ToolRegistry
+
     from nova.agent.toolset import ToolsetBuilder
     from nova.skills.service import SkillService
-    from nova.tools.registry import ToolRegistry
 
     async def reviewer(subject: str, reason: str) -> str:
         return "approve"
@@ -346,8 +348,9 @@ async def test_a_denied_tool_is_not_registered() -> None:
     still spends a round trip and still lets a prompt injection aim at it;
     removing it means the model never sees the option.
     """
+    from novakit.tools.registry import ToolRegistry
+
     from nova.agent.toolset import ToolsetBuilder
-    from nova.tools.registry import ToolRegistry
     from nova.tools.tool_policy import ToolPolicy
 
     registry = ToolRegistry()
@@ -381,8 +384,9 @@ async def test_a_namespace_deny_also_unregisters() -> None:
     namespaces, so a denied server disappears from the schema entirely -- the
     stronger of the two behaviours, and the one the docs promise.
     """
+    from novakit.tools.registry import ToolRegistry
+
     from nova.agent.toolset import ToolsetBuilder
-    from nova.tools.registry import ToolRegistry
     from nova.tools.tool_policy import ToolPolicy
 
     registry = ToolRegistry()
@@ -413,8 +417,9 @@ async def test_an_ask_tool_stays_registered() -> None:
     def web_fetch(**kwargs: object) -> str:
         return "fetched"
 
+    from novakit.tools.registry import ToolRegistry
+
     from nova.agent.toolset import ToolsetBuilder
-    from nova.tools.registry import ToolRegistry
     from nova.tools.tool_policy import ToolPolicy
 
     registry = ToolRegistry()
@@ -531,10 +536,11 @@ async def test_a_gated_tool_prompt_says_what_the_tool_does() -> None:
     import tempfile
     from pathlib import Path as _Path
 
+    from novakit.tools.registry import ToolRegistry
+
     from nova.agent.toolset import ToolsetBuilder
     from nova.skills.service import SkillService
     from nova.tools.behavior import TurnContext
-    from nova.tools.registry import ToolRegistry
     from nova.tools.tool_policy import ToolPolicy
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -565,10 +571,11 @@ async def test_the_tool_name_reaches_the_frame_the_frontend_reads() -> None:
     import tempfile
     from pathlib import Path as _Path
 
+    from novakit.tools.registry import ToolRegistry
+
     from nova.agent.toolset import ToolsetBuilder
     from nova.skills.service import SkillService
     from nova.tools.behavior import TurnContext
-    from nova.tools.registry import ToolRegistry
     from nova.tools.tool_policy import ToolPolicy
 
     with tempfile.TemporaryDirectory() as tmp:

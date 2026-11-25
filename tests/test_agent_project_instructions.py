@@ -10,11 +10,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from novakit.llm.faker import FakerLLMProvider
 
 from nova import Agent, AgentConfig
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
-from nova.llm.faker import FakerLLMProvider
 from nova.session.manager import SessionManager
 
 

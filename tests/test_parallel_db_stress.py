@@ -16,10 +16,10 @@ import sqlite3
 
 import pytest
 import pytest_asyncio
+from novakit.session.models import MessageFilter, NewMessage, Session
 
 from nova.db.config import DatabaseConfig
 from nova.db.sqlite.repository import SqliteRepository
-from nova.session.models import MessageFilter, NewMessage, Session
 
 N_SESSIONS = 8
 N_WRITES = 20

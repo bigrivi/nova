@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import json
 
-from nova.agent.events import AgentEvent
+from novakit.events import AgentEvent
+
 from nova.server.ai_sdk_stream import AISDKStreamAdapter
 
 

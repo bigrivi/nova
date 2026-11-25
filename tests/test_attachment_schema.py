@@ -1,9 +1,9 @@
 """Attachment validation: empty or oversized image payloads are refused."""
 
 import pytest
+from novakit.llm.images import MAX_IMAGE_BYTES
 from pydantic import ValidationError
 
-from nova.llm.images import MAX_IMAGE_BYTES
 from nova.server.schemas import AttachmentData
 
 

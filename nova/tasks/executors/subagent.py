@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from nova.agent.protocol import ChatAgent
+from novakit.agent.protocol import ChatAgent
+
 from nova.agent.spawn import SPAWN_DEPTH
 from nova.tasks.models import (
     TaskExecutionContext,
