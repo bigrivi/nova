@@ -89,7 +89,7 @@ forever.
   directly; the old `nova.llm.policy` module has been removed.
 - One Python application core in `nova/` drives all four surfaces (`serve`, `web`,
   `tui`, `desktop`). The reusable agent runtime, tools, providers, and session models
-  live in the sibling `novakit` repository; Nova owns prompt, memory, skills,
+  live in the standalone `novakit` package; Nova owns prompt, memory, skills,
   persistence, and other application adapters.
 
 ## Do not commit

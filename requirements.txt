@@ -1,5 +1,4 @@
-# Local development mode: keep the novakit checkout next to nova.
--e ../novakit
+novakit>=0.1,<1
 aiohttp
 aiosqlite
 fastapi>=0.141.1

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from novakit.agent.hierarchy import InMemoryHierarchy
+from novakit.agent.hierarchy import AgentNode, InMemoryHierarchy
 
 from nova.db import AgentStore, get_default_data_source
 
@@ -24,14 +24,18 @@ class AgentHierarchy:
         self.agent_key = agent_key
         self.parent_agent = parent_agent
         self._data_source = data_source
-        self._memory = InMemoryHierarchy(agent_key, parent_agent)
+        self._memory = InMemoryHierarchy(
+            agent_key, cast("AgentNode | None", parent_agent)
+        )
 
     async def _store(self) -> AgentStore:
         return self._data_source or await get_default_data_source()
 
     def add_sub_agent(self, owner: Agent, sub_agent: Agent) -> None:
         """Attach a live child without touching persisted agent records."""
-        self._memory.add_sub_agent(owner, sub_agent)
+        self._memory.add_sub_agent(
+            cast("AgentNode", owner), cast("AgentNode", sub_agent)
+        )
 
     def sub_agents(self) -> list[Agent]:
         """Return a snapshot of the currently attached child agents."""

@@ -32,20 +32,21 @@ extracted. If a release carries no manifest entry for your platform, the bundle 
 Use this when you are working on Nova itself:
 
 ```bash
-# Clone Nova and its SDK as siblings
+# Clone the repository
 git clone https://github.com/bigrivi/nova.git
-git clone https://github.com/bigrivi/novakit.git
 cd nova
 
-# Install Nova and the local novakit checkout
-uv sync
+# Install Nova as an editable package; novakit is resolved from PyPI
+pip install -e .
+# or: uv sync
 ```
 
 ## Making `nova` Available on PATH
 
-`uv sync` creates the `nova` launcher in `.venv/bin`. The command only works from
-any directory if that directory is on your `PATH`, or you invoke it through
-`uv run nova`.
+`pip install -e .` writes the `nova` launcher into the `bin/` directory of
+the Python environment you installed into. `uv sync` creates the same launcher
+in `.venv/bin`. The command only works from any directory if that directory is
+on your `PATH`.
 
 Find the directory first:
 
@@ -58,7 +59,7 @@ Then choose one of the approaches below.
 ### A. Put a virtualenv on PATH
 
 ```bash
-# From the Nova checkout, with ../novakit already cloned
+# From the Nova checkout
 uv sync
 # Add this checkout's venv to PATH (run from the repo root)
 echo "export PATH=\"$PWD/.venv/bin:\$PATH\"" >> ~/.zshrc
@@ -69,18 +70,42 @@ This pins the path to this checkout, so moving or renaming the repo breaks the
 command. For Bash, append to `~/.bashrc` instead. Each project environment has
 to be added separately.
 
-### B. pipx and uv tool
+### B. pipx (recommended for end users)
 
-These installation modes are unavailable until `novakit` is published as a
-standalone distribution. During local development, use `uv sync` or `uv run nova`.
+pipx installs Nova into its own isolated environment and adds a shim to a
+directory that is already on `PATH`.
 
-### C. User-level Python install
+```bash
+brew install pipx                 # macOS; or: python3 -m pip install --user pipx
+pipx ensurepath                   # adds ~/.local/bin to PATH
+cd nova
+pipx install -e .                 # creates ~/.local/bin/nova
+```
 
-User-level installation is also unavailable until `novakit` is published. Use
-the project virtualenv created by `uv sync`.
+Open a new shell after `ensurepath` so the `PATH` change takes effect.
 
-On macOS, Homebrew Python is marked externally managed (PEP 668), so installing
-into it is refused by default. Approach A avoids that.
+### C. uv tool
+
+```bash
+cd nova
+uv tool install -e .
+uv tool update-shell              # ensures ~/.local/bin is on PATH
+```
+
+### D. User-level Python install
+
+If you installed with a system or user-level Python instead of a virtualenv,
+add its script directory to `PATH`:
+
+```bash
+python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))"
+# macOS example: /Users/<you>/Library/Python/3.12/bin
+echo 'export PATH="$HOME/Library/Python/3.12/bin:$PATH"' >> ~/.zshrc
+```
+
+On macOS, Homebrew Python is marked externally managed (PEP 668), so
+`pip install` into it is refused by default. Approaches A, B, and C avoid
+that.
 
 ### Verify
 
