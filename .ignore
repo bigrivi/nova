@@ -1,0 +1,3 @@
+# Keep local orchestration notes visible to search tools while git ignores them.
+!.slim/deepwork/
+!.slim/deepwork/**

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from nova.skills.catalog import SkillCatalog
+from novakit.skills.catalog import SkillCatalog
+from novakit.skills.models import SkillDocument, SkillInstallResult, SkillSummary
+from novakit.skills.scanner import load_skill_document, scan_skills_dir
+
 from nova.skills.installer import install_skill_from_clawhub
-from nova.skills.models import SkillDocument, SkillInstallResult, SkillSummary
-from nova.skills.scanner import load_skill_document, scan_skills_dir
 
 
 def _is_within(root: Path, path: Path) -> bool:

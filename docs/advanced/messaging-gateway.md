@@ -13,7 +13,7 @@ Python-native equivalent that covers several platforms from one process.
 - The `gateway` extra installed, for the platform SDKs you use:
 
 ```bash
-pip install -e ".[gateway]"
+uv sync --extra gateway
 ```
 
 ## Configuration
@@ -110,7 +110,7 @@ caffeinate -i nova gateway
 | Yuanbao | `token` | Not implemented: no public long-poll API. Enabling it is skipped with a warning. |
 
 The optional SDKs are imported when the platform starts, so a missing one only
-affects that platform. `pip install -e ".[gateway]"` covers QQ, Feishu and
+affects that platform. `uv sync --extra gateway` covers QQ, Feishu and
 DingTalk; install the SDK of any other platform by hand.
 
 ## How a message becomes an answer

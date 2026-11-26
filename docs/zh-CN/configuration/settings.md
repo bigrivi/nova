@@ -299,7 +299,7 @@ Agent 决定 `shell`、`code_run`、`glob`、`grep` 这类工具在哪个目录�
 
 ## CLI 入口
 
-安装后的入口是 `nova` 控制台脚本（`pip install -e .` 会把它放进 `PATH`）：
+安装后的入口是 `nova` 控制台脚本（`uv sync` 会把它放进 `.venv/bin`）：
 
 ```bash
 nova serve        # 启动 FastAPI 服务

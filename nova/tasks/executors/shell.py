@@ -5,7 +5,8 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 
-from nova.tasks.executors.process import run_process
+from novakit.tasks.process import run_process
+
 from nova.tasks.models import (
     TaskExecutionContext,
     TaskExecutionResult,

@@ -10,9 +10,8 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
 import httpx
-
-from nova.skills.models import SkillInstallResult
-from nova.skills.scanner import SKILL_FILE_NAME, load_skill_document
+from novakit.skills.models import SkillInstallResult
+from novakit.skills.scanner import SKILL_FILE_NAME, load_skill_document
 
 DEFAULT_CLAWHUB_DOWNLOAD_BASE_URL = "https://wry-manatee-359.convex.site"
 

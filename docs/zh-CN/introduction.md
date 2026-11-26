@@ -123,9 +123,11 @@ Nova 不绑定任何一家。你可以：
 从源码安装：
 
 ```bash
-git clone https://github.com/bigrivi/nova.git && cd nova
-pip install -e .                # Python 3.12+
-playwright install chromium     # 只在你需要浏览器工具时装
+git clone https://github.com/bigrivi/nova.git
+git clone https://github.com/bigrivi/novakit.git
+cd nova
+uv sync                        # Python 3.12+
+playwright install chromium    # 只在你需要浏览器工具时装
 ```
 
 如果 `nova` 命令找不到，说明当前环境的 `bin/` 目录不在 `PATH` 上；见
@@ -148,7 +150,7 @@ nova desktop --dev    # 桌面端连 Vite 开发服务器
 
 两样东西：
 
-1. **Nova 本身** —— clone 仓库，跑 `pip install -e .`。要求 Python 3.12+。要用终端
+1. **Nova 本身** —— 把 Nova 和 `novakit` 克隆为兄弟目录，然后运行 `uv sync`。要求 Python 3.12+。要用终端
    界面的话，再装 [bun](https://bun.sh)。
 2. **一个模型** —— 要么本地装 [Ollama](https://ollama.com)，不需要 API key；要么一个
    托管提供方的 API key。

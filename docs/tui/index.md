@@ -48,7 +48,7 @@ directly from a source checkout, `./nova-tui` is also available.
 Both commands preserve the directory where you launched Nova as the default
 workspace for the session. `nova tui` resolves the OpenTUI client from the
 installed Nova checkout, so it can be run from any directory after an
-editable install (`pip install -e .`). The TUI needs [bun](https://bun.sh).
+editable install (`uv sync`). The TUI needs [bun](https://bun.sh).
 
 `nova tui` prefers the bundled client at `tui/dist/index.js` and falls back to
 the TypeScript source at `tui/src/index.tsx` when the bundle is absent. Build

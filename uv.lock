@@ -1256,7 +1256,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.17.4,<0.18" },
     { name = "tiktoken" },
 ]
-provides-extras = ["images", "dev"]
+provides-extras = ["images", "mcp", "dev"]
 
 [[package]]
 name = "packaging"

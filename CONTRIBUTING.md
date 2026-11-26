@@ -17,6 +17,11 @@ pip install -e ../novakit -e ".[dev]"
 
 That puts the `nova` console script on your PATH, as defined in `pyproject.toml`.
 
+Until `novakit` is published, `pip install -e .` by itself cannot resolve the SDK.
+Use the sibling checkout and command above, or run `uv sync --extra dev` from the
+Nova root. CI uses the same sibling layout and temporarily tracks `novakit@main`;
+the ref will be pinned after the current integration changes are committed.
+
 Frontend work needs Node dependencies:
 
 ```bash
@@ -72,8 +77,8 @@ The frontend dev server proxies `/api/*` to the backend. You can override the ta
 
 CI runs on every push to `main` and on every pull request. The workflow is `.github/workflows/ci.yml` and it has five jobs:
 
-* **Python tests**: checks out `bigrivi/novakit`, installs it with `pip install -e ./.deps/novakit -e ".[dev]"`, then runs `pytest -q` on Python 3.12.
-* **Types and lint**: checks the Nova source and tests with Ruff and mypy on Python 3.12.
+* **Python tests**: checks out Nova and `bigrivi/novakit@main` as siblings, runs `uv sync --locked --extra dev` in `nova/`, then runs `uv run pytest -q` on Python 3.12.
+* **Types and lint**: uses the same sibling layout, then runs Ruff and mypy against the Nova source and tests on Python 3.12.
 * **Frontend typecheck and build**: runs `npm ci` and `npm run build` in `frontend/` on Node 22, which executes `tsc -b && vite build`.
 * **TUI typecheck, test and build**: runs `bun install --frozen-lockfile`, typecheck, tests, and build in `tui/`.
 * **Mobile typecheck, test and bundle**: runs the corresponding Bun checks and Android export in `mobile/`.

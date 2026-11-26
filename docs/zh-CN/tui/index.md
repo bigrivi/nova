@@ -36,7 +36,7 @@ nova tui
 在源码检出目录里，也可以直接用 `./nova-tui`。
 
 两个命令都会把你启动 Nova 时所在的目录保留为这次会话的默认工作区。`nova tui`
-从已安装的 Nova 检出里解析 OpenTUI 客户端，所以在 `pip install -e .` 之后可以从
+从已安装的 Nova 检出里解析 OpenTUI 客户端，所以在 `uv sync` 之后可以从
 任意目录运行。TUI 需要 [bun](https://bun.sh)。
 
 `nova tui` 优先使用打包好的客户端 `tui/dist/index.js`，没有打包时才回退到

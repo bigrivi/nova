@@ -1,3 +1,4 @@
+# Local development mode: keep the novakit checkout next to nova.
 -e ../novakit
 aiohttp
 aiosqlite

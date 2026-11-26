@@ -5,15 +5,19 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from novakit.events import AgentEventFrame
+from novakit.agent.llm_stream import EventData
+from novakit.events import AgentEvent, AgentEventFrame
 from novakit.llm import LLMProvider
-from novakit.session.models import SessionContext
+from novakit.session.models import Message, SessionContext
 
 from nova.db import get_default_data_source
 
 if TYPE_CHECKING:
     from nova.agent.compaction import CompactionController
     from nova.db import DataSourceProtocol
+
+
+Emit = Callable[[AgentEvent, EventData], Awaitable[None]]
 
 
 class NovaCompactor:
@@ -43,11 +47,11 @@ class NovaCompactor:
 
     async def maybe_compact(
         self,
-        messages: list,
-        session: SessionContext | dict | None,
+        messages: list[Message | dict[str, object]],
+        session: SessionContext | dict[str, object] | None,
         llm: LLMProvider,
-        emit: Callable[..., Awaitable[None]],
-        tools: list[dict] | None = None,
+        emit: Emit,
+        tools: list[dict[str, object]] | None = None,
     ) -> AsyncGenerator[AgentEventFrame, None]:
         """Run compaction with Nova's explicit or default persistent store.
 

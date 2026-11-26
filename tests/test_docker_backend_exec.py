@@ -6,8 +6,8 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from novakit.tasks.process import run_process
 
-from nova.tasks.executors.process import run_process
 from nova.tools.shell.backends.docker import DockerBackend
 
 
@@ -108,7 +108,7 @@ async def test_docker_cancellation_kills_tree():
 
     with (
         patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)),
-        patch("nova.tasks.executors.process.kill_process_tree") as mock_kill,
+        patch("novakit.tasks.process.kill_process_tree") as mock_kill,
     ):
         ctx = _Ctx()
         with pytest.raises(asyncio.CancelledError):

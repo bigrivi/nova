@@ -116,9 +116,11 @@ You do not need to know which tool ran, just as you do not need to know how your
 Install from a clone:
 
 ```bash
-git clone https://github.com/bigrivi/nova.git && cd nova
-pip install -e .                # Python 3.12+
-playwright install chromium     # only if you want the browser tools
+git clone https://github.com/bigrivi/nova.git
+git clone https://github.com/bigrivi/novakit.git
+cd nova
+uv sync                        # Python 3.12+
+playwright install chromium    # only if you want the browser tools
 ```
 
 If the `nova` command is not found, the environment's `bin/` directory is not
@@ -148,7 +150,7 @@ starts the HTTP backend when there is not — a container entrypoint that runs
 
 You need two things:
 
-1. **Nova itself** -- clone the repo and run `pip install -e .`. Requires Python 3.12+. If you want the terminal UI, also install [bun](https://bun.sh).
+1. **Nova itself** -- clone Nova and `novakit` as sibling directories and run `uv sync`. Requires Python 3.12+. If you want the terminal UI, also install [bun](https://bun.sh).
 2. **A model** -- either a local install of [Ollama](https://ollama.com) with no API key, or an API key for a hosted provider.
 
 Configuration lives at `~/.nova/config.json`. The only top-level keys the code reads are `providers`, `mcp_servers`, and `compaction`. A minimal example:

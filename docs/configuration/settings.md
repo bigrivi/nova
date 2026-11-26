@@ -242,7 +242,7 @@ The `~/.nova/workspace/` directory from settings is the fallback initial workspa
 
 ## CLI Entry Point
 
-The installed entry point is the `nova` console script (`pip install -e .` puts it on `PATH`):
+The installed entry point is the `nova` console script (`uv sync` puts it in `.venv/bin`):
 
 ```bash
 nova serve        # start the FastAPI server

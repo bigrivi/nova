@@ -102,9 +102,11 @@ in the TUI can be watched (and continued) from the web UI or the desktop app.
 For development, or to keep Nova in a virtualenv you control:
 
 ```bash
-git clone https://github.com/bigrivi/nova.git && cd nova
-pip install -e .
-playwright install chromium     # only for the browser tools
+git clone https://github.com/bigrivi/nova.git
+git clone https://github.com/bigrivi/novakit.git
+cd nova
+uv sync                     # add --extra dev for development
+playwright install chromium # only for the browser tools
 ```
 
 If `nova` is not on your `PATH` afterwards, add the environment's `bin/` directory
@@ -342,8 +344,8 @@ State is separate: sessions, memories, skills, and permission grants live under
 ## Development
 
 ```bash
-pip install -e .[dev]           # pythonpath comes from pyproject.toml, no PYTHONPATH needed
-pytest                          # 2900+ tests, no stubs needed
+uv sync --locked --extra dev   # installs Nova and the sibling novakit checkout
+uv run pytest                  # 2900+ tests, no stubs needed
 pytest tests/test_server.py -q  # run a subset
 RUN_LIVE_OLLAMA_SERVER_E2E=1 pytest tests/e2e -q   # live Ollama, opt in
 ```

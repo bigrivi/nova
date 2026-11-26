@@ -18,35 +18,61 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: nova
+          persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: bigrivi/novakit
-          path: .deps/novakit
+          path: novakit
+          # Temporary local-package mode; pin after the novakit integration commit.
           ref: main
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ./.deps/novakit -e ".[dev]"
-      - run: pytest -q
+          cache-dependency-path: nova/pyproject.toml
+      - name: Install uv
+        run: python -m pip install uv
+      - name: Sync local SDK and Nova
+        run: uv sync --locked --extra dev
+        working-directory: nova
+      - name: Run tests
+        run: uv run pytest -q
+        working-directory: nova
 
   types:
     name: Types and lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: nova
+          persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: bigrivi/novakit
-          path: .deps/novakit
+          path: novakit
+          # Temporary local-package mode; pin after the novakit integration commit.
           ref: main
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ./.deps/novakit -e ".[dev]"
-      - run: ruff check nova tests
-      - run: mypy
+          cache-dependency-path: nova/pyproject.toml
+      - name: Install uv
+        run: python -m pip install uv
+      - name: Sync local SDK and Nova
+        run: uv sync --locked --extra dev
+        working-directory: nova
+      - name: Lint
+        run: uv run ruff check nova tests
+        working-directory: nova
+      - name: Type check
+        run: uv run mypy
+        working-directory: nova
 
   frontend:
     name: Frontend typecheck and build

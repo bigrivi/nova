@@ -99,10 +99,43 @@ def resolve_context_limit(model: str, provider: str) -> int:
     return window
 
 
+class NovaTokenResolver:
+    """Token estimation and context limits backed by Nova's tokenizer.
+
+    Estimates and limits route through this module's functions, so provider
+    configuration and catalogue discovery apply exactly as elsewhere in Nova.
+    """
+
+    def estimate_messages(self, messages: list, model: str) -> int:
+        """Estimate tokens for *messages* taken in isolation.
+
+        Args:
+            messages: History to estimate.
+            model: Model id the estimate is planned against.
+
+        Returns:
+            Estimated token count.
+        """
+        return estimate_messages_tokens(messages, model)
+
+    def context_limit(self, model: str, provider: str) -> int:
+        """Return the context window to plan against.
+
+        Args:
+            model: Model id to look up.
+            provider: Provider the model runs on.
+
+        Returns:
+            Context window in tokens.
+        """
+        return resolve_context_limit(model, provider)
+
+
 __all__ = [
     "CHARS_PER_TOKEN_TEXT",
     "CHARS_PER_TOKEN_TOOL",
     "DEFAULT_CONTEXT_WINDOW",
+    "NovaTokenResolver",
     "count_cjk_chars",
     "estimate_message_tokens",
     "estimate_messages_tokens",

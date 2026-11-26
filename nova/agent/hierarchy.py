@@ -1,13 +1,10 @@
-"""Agent relationship queries.
-
-The in-process parent/child links and the persisted agent graph are both
-plain lookups with no bearing on how a turn runs, so they live outside the
-agent runtime.
-"""
+"""Nova agent hierarchy: live links plus persisted graph queries."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+from novakit.agent.hierarchy import InMemoryHierarchy
 
 from nova.db import AgentStore, get_default_data_source
 
@@ -27,18 +24,18 @@ class AgentHierarchy:
         self.agent_key = agent_key
         self.parent_agent = parent_agent
         self._data_source = data_source
-        self._sub_agents: list[Agent] = []
+        self._memory = InMemoryHierarchy(agent_key, parent_agent)
 
     async def _store(self) -> AgentStore:
         return self._data_source or await get_default_data_source()
 
     def add_sub_agent(self, owner: Agent, sub_agent: Agent) -> None:
-        sub_agent.parent_agent = owner
-        sub_agent.is_sub_agent = True
-        self._sub_agents.append(sub_agent)
+        """Attach a live child without touching persisted agent records."""
+        self._memory.add_sub_agent(owner, sub_agent)
 
     def sub_agents(self) -> list[Agent]:
-        return self._sub_agents.copy()
+        """Return a snapshot of the currently attached child agents."""
+        return cast(list[Agent], self._memory.sub_agents())
 
     async def child_agent_records(self) -> list[dict]:
         store = await self._store()

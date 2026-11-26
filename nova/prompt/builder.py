@@ -9,14 +9,23 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from novakit.prompt.composition import (
+    PromptEnvironment,
+    format_available_skills,
+    format_subagent_roster,
+    join_sections,
+    render_project_instructions,
+)
+
 from nova.prompt.project_instructions import ProjectInstructions
 from nova.prompt.threat_patterns import has_threats
 from nova.settings import get_settings
 from nova.tools.shell_utils import get_shell_label
 
 if TYPE_CHECKING:
+    from novakit.skills.models import SkillSummary
+
     from nova.db.repository import DataSourceProtocol
-    from nova.skills.models import SkillSummary
 
 log = logging.getLogger(__name__)
 
@@ -117,11 +126,7 @@ class PromptBuilder:
 {available_skills}
 
 # Environment
-- Current date: {date}
-- Home: {home}
-- Workspace: {workspace_dir}
-- Platform: {platform}
-- Shell: {shell}
+{environment}
 """
 
     def __init__(
@@ -173,17 +178,7 @@ class PromptBuilder:
         except Exception as error:
             log.warning("Failed to refresh sub-agent roster: %s", error)
             children = []
-        lines = []
-        for child in children:
-            key = child.get("key")
-            if not key:
-                continue
-            access = (
-                "read-only" if child.get("posture") == "read_only" else "full access"
-            )
-            description = (child.get("description") or "").strip() or "(no description)"
-            lines.append(f"- `{key}` ({access}): {description}")
-        self.config.subagent_roster = "\n".join(lines)
+        self.config.subagent_roster = format_subagent_roster(children)
 
     def build(
         self,
@@ -204,22 +199,24 @@ class PromptBuilder:
         parts = []
         settings = get_settings()
 
-        available_skills_section = self._build_available_skills_section(
-            available_skills
-        )
+        available_skills_section = format_available_skills(available_skills)
 
         identity = self.config.identity_content or DEFAULT_AGENT_IDENTITY
+        environment = PromptEnvironment(
+            date=date or datetime.now().astimezone().strftime("%Y-%m-%d %A"),
+            home=str(settings.home),
+            workspace=workspace_override
+            or self.config.workspace_dir
+            or str(settings.workspace_dir),
+            platform=self._get_platform(),
+            shell=get_shell_label(),
+        )
         parts.append(
             self.SYSTEM_PROMPT_TEMPLATE.format(
                 identity=identity,
                 available_skills=available_skills_section,
-                date=date or datetime.now().astimezone().strftime("%Y-%m-%d %A"),
-                home=settings.home,
-                workspace_dir=workspace_override
-                or self.config.workspace_dir
-                or str(settings.workspace_dir),
-                platform=self._get_platform(),
-                shell=get_shell_label(),
+                environment=environment.render(),
+                home=str(settings.home),
             )
         )
 
@@ -229,10 +226,9 @@ class PromptBuilder:
         if terminal_section:
             parts.append(terminal_section)
 
-        if project_instructions is not None and (
-            project_instructions.text.strip() or project_instructions.flagged
-        ):
-            parts.append(self._build_project_instructions_section(project_instructions))
+        project_section = render_project_instructions(project_instructions)
+        if project_section is not None:
+            parts.append(project_section)
 
         if self.config.subagent_roster:
             parts.append(
@@ -293,7 +289,7 @@ class PromptBuilder:
         if nudge_reminder:
             parts.append(nudge_reminder)
 
-        return "\n\n".join(parts)
+        return join_sections(*parts)
 
     def _get_platform(self) -> str:
         import platform
@@ -344,53 +340,3 @@ class PromptBuilder:
             f"All `shell` commands run via the '{backend}' backend, NOT on "
             "the local machine."
         )
-
-    def _build_project_instructions_section(
-        self, instructions: ProjectInstructions
-    ) -> str:
-        """Render the project instruction block.
-
-        Project conventions outrank the agent's persona (Soul) but not the
-        system-level Working Style above. Sources are listed so the user can
-        see which files are in effect; individually dropped files are named
-        rather than silently omitted.
-        """
-        lines = ["## Project Instructions", ""]
-        if instructions.text.strip():
-            lines.append(instructions.text)
-            lines.append("")
-        if instructions.sources:
-            lines.append("In effect from: " + ", ".join(instructions.sources))
-            lines.append("")
-        if instructions.flagged:
-            lines.append(
-                "Omitted as potential injection: " + "; ".join(instructions.flagged)
-            )
-        return "\n".join(lines).rstrip()
-
-    def _build_available_skills_section(
-        self, available_skills: list[SkillSummary] | None
-    ) -> str:
-        if not available_skills:
-            return "- No skills currently installed in the runtime catalog."
-
-        lines = []
-        for skill in available_skills:
-            name = str(getattr(skill, "name", "") or "").strip() or "unknown-skill"
-            # Keep the prompt compact: only a short hint here. Full descriptions
-            # are available via list_skills/load_skill so the model can fetch them
-            # on demand instead of paying for every skill on every turn.
-            description = (
-                str(getattr(skill, "description", "") or "").strip()
-                or "(no description)"
-            )
-            # First sentence, capped, to stay one line.
-            first_sentence = description.split(". ")[0].split("\n")[0].strip()
-            if len(first_sentence) > 80:
-                first_sentence = first_sentence[:77].rstrip() + "..."
-            lines.append(f"- {name}: {first_sentence}")
-        lines.append(
-            "- Descriptions above are abbreviated. Call `list_skills` for full "
-            "details, or `load_skill` with the exact name once you have chosen."
-        )
-        return "\n".join(lines)

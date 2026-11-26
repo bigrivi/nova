@@ -88,6 +88,8 @@ Repository = "https://github.com/bigrivi/nova"
 Issues = "https://github.com/bigrivi/nova/issues"
 
 [tool.uv.sources]
+# Local development mode until novakit is published. CI uses the same sibling
+# layout and temporarily tracks main until the integration commit is pinned.
 novakit = { path = "../novakit", editable = true }
 
 [tool.setuptools.dynamic]

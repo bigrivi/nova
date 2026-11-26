@@ -15,7 +15,10 @@ import re
 from dataclasses import dataclass, field
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from novakit.compaction.config import CompactionConfig
 
 
 def nova_home() -> Path:
@@ -211,6 +214,28 @@ class CompactionSettings:
     summary_keep_tokens: int = 20000
     max_consecutive_failures: int = 3  # stop auto-compacting after this many failures
     default_context_window: int = 128000  # assumed window when a model is unknown
+
+    def to_compaction_config(self) -> CompactionConfig:
+        """Translate Nova compaction tuning into a novakit CompactionConfig.
+
+        ``default_context_window`` is intentionally not mapped: it feeds
+        Nova's tokenizer fallback (see :mod:`nova.llm.tokenizer`), while
+        novakit resolves unknown models through its own tables.
+
+        Returns:
+            The equivalent novakit compaction configuration.
+        """
+        from novakit.compaction.config import CompactionConfig
+
+        return CompactionConfig(
+            output_reserve_tokens=self.output_reserve_tokens,
+            summary_reserve_tokens=self.summary_reserve_tokens,
+            snip_max_chars=self.snip_max_chars,
+            snip_tool_output_token_budget=self.snip_tool_output_token_budget,
+            snip_preserve_last_n_messages=self.snip_preserve_last_n_messages,
+            summary_keep_tokens=self.summary_keep_tokens,
+            max_consecutive_failures=self.max_consecutive_failures,
+        )
 
 
 def _default_model_for_provider_type(provider_type: str) -> str:

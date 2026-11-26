@@ -12,7 +12,7 @@ Nova，再把回答送回去。
 - 装上 `gateway` extra，包含你要用的平台 SDK：
 
 ```bash
-pip install -e ".[gateway]"
+uv sync --extra gateway
 ```
 
 ## 配置
@@ -106,8 +106,8 @@ caffeinate -i nova gateway
 | 企业微信 | `corp_id`, `secret` | 未实现：接口基于回调，而网关刻意不开入站端口。启用会被跳过并打 warning。 |
 | 腾讯元宝 | `token` | 未实现：没有公开的 long-poll 接口。启用会被跳过并打 warning。 |
 
-平台 SDK 在该平台启动时才 import，所以缺一个只影响那一个平台。`pip install -e
-".[gateway]"` 覆盖 QQ、飞书、钉钉；其他平台的 SDK 自行安装。
+平台 SDK 在该平台启动时才 import，所以缺一个只影响那一个平台。`uv sync
+--extra gateway` 覆盖 QQ、飞书、钉钉；其他平台的 SDK 自行安装。
 
 ## 一条消息如何变成回答
 

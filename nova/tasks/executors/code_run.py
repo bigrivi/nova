@@ -8,8 +8,9 @@ import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
+from novakit.tasks.process import run_process
+
 from nova.settings import nova_home
-from nova.tasks.executors.process import run_process
 from nova.tasks.models import (
     TaskExecutionContext,
     TaskExecutionResult,

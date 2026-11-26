@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from novakit.skills.scanner import SkillParseError, load_skill_document
 
-from nova.skills.scanner import SkillParseError, load_skill_document
 from nova.skills.service import SkillService
 from nova.tools.edit import edit
 from nova.tools.write import write

@@ -1,21 +1,31 @@
-"""Compaction orchestration: prepare, run, and the controller that gates it."""
+"""Nova compatibility facade over novakit's portable compaction runtime."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from novakit.agent.compaction import CompactionError
-from novakit.events import AgentEvent
+from novakit.compaction import (
+    CompactionConfig,
+    CompactionStore,
+    DefaultCompactor,
+    TokenResolver,
+    ToolOutputSink,
+)
+from novakit.compaction import compact as _compact
+from novakit.compaction import estimate_context_tokens as _estimate_context_tokens
+from novakit.compaction import estimate_tokens as _estimate_tokens
+from novakit.compaction import prepare_compaction as _prepare_compaction
+from novakit.compaction import run_compaction_plan as _run_compaction_plan
+from novakit.compaction import snip_tool_results_in_store as _snip_tool_results_in_store
+from novakit.compaction.policy import compaction_threshold as _compaction_threshold
+from novakit.events import AgentEventFrame
 from novakit.llm import LLMProvider
-from novakit.session.models import NewMessage
+from novakit.session.models import Message, SessionContext
 
-from nova.settings import get_settings
-
-from .messages import (
+from nova.agent.compaction.messages import (
     compacted_at_of,
     contains_summary,
     content_of,
@@ -32,21 +42,18 @@ from .messages import (
     tool_call_ids_of,
     tool_calls_of,
 )
-from .policy import (
+from nova.agent.compaction.policy import (
     SNIP_MARKER,
     CompactionPlan,
-    compaction_threshold,
-    estimate_context_tokens,
-    estimate_tokens,
     evaluate_compaction,
     find_split_point,
     first_safe_boundary,
-    get_context_limit,
     offload_tool_output,
     should_compact,
     snip_old_tool_results,
 )
-from .summary import (
+from nova.agent.compaction.store import DataSourceCompactionStore
+from nova.agent.compaction.summary import (
     CONTINUATION_INSTRUCTION,
     NEW_SUMMARY_ANCHOR,
     PREVIOUS_SUMMARY_ANCHOR,
@@ -56,41 +63,172 @@ from .summary import (
     format_for_summary,
     generate_summary,
 )
+from nova.llm.tokenizer import NovaTokenResolver, resolve_context_limit
+from nova.settings import get_settings
 
 if TYPE_CHECKING:
     from nova.db.data_source import DataSourceProtocol
-    from nova.session.manager import SessionContext
 
 log = logging.getLogger(__name__)
+
+
+class _ControllerResolver(NovaTokenResolver):
+    """Resolver whose context lookup remains patchable in this module."""
+
+    def context_limit(self, model: str, provider: str) -> int:
+        return get_context_limit(model, provider)
+
+
+class _ControllerStore:
+    """Late-bound store used by the compatibility controller."""
+
+    def __init__(self, store: CompactionStore | None = None) -> None:
+        self._store = store
+
+    def bind(self, store: CompactionStore) -> None:
+        self._store = store
+
+    def _delegate(self) -> CompactionStore:
+        if self._store is None:
+            raise RuntimeError("compaction requires a data source or store")
+        return self._store
+
+    async def update_message_content(self, message_id: str, content: str) -> None:
+        await self._delegate().update_message_content(message_id, content)
+
+    async def add_summary(
+        self, session_id: str, content: str, time_created: int
+    ) -> Message:
+        return await self._delegate().add_summary(session_id, content, time_created)
+
+    async def mark_messages_compacted_by_ids(
+        self, session_id: str, message_ids: list[str]
+    ) -> None:
+        await self._delegate().mark_messages_compacted_by_ids(session_id, message_ids)
+
+    async def update_session_compacted_at(
+        self, session_id: str, timestamp: int
+    ) -> None:
+        await self._delegate().update_session_compacted_at(session_id, timestamp)
+
+    async def get_messages(self, session_id: str) -> list:
+        return await self._delegate().get_messages(session_id)
+
+
+def get_context_limit(model: str, provider: str) -> int:
+    """Return Nova's configured or discovered context window for a model.
+
+    Args:
+        model: Model id to look up.
+        provider: Provider the model runs on.
+
+    Returns:
+        Context window in tokens.
+    """
+    return resolve_context_limit(model, provider)
+
+
+def estimate_tokens(messages: list, model: str = "unknown") -> int:
+    """Estimate tokens for messages in isolation.
+
+    Args:
+        messages: History to measure.
+        model: Model id the estimate is planned against.
+
+    Returns:
+        Estimated token count.
+    """
+    return _estimate_tokens(messages, model, resolver=_ControllerResolver())
+
+
+def estimate_context_tokens(
+    messages: list,
+    model: str = "unknown",
+    compacted_at: int | None = None,
+) -> int:
+    """Estimate absolute context size using provider-accounting anchors.
+
+    Args:
+        messages: History to measure.
+        model: Model id the estimate is planned against.
+        compacted_at: Last successful compaction time.
+
+    Returns:
+        Absolute context size in tokens.
+    """
+    return _estimate_context_tokens(
+        messages,
+        model,
+        compacted_at,
+        resolver=_ControllerResolver(),
+    )
+
+
+def compaction_threshold(model_max_tokens: int) -> int:
+    """Return the compaction trigger threshold for a context window.
+
+    Args:
+        model_max_tokens: Raw provider context window.
+
+    Returns:
+        Token threshold after reserving reply and summary headroom.
+    """
+    return _compaction_threshold(
+        model_max_tokens,
+        get_settings().compaction.to_compaction_config(),
+    )
+
+
+def _tool_output_sink(session_id: str) -> ToolOutputSink:
+    settings = get_settings()
+    directory = str(settings.home / "sessions" / session_id / "tool-output")
+
+    def sink(message_id: str, content: str) -> str | None:
+        return offload_tool_output(directory, message_id, content)
+
+    return sink
+
+
+def _store(db: DataSourceProtocol | None) -> CompactionStore:
+    if db is None:
+        raise RuntimeError("compaction requires a data source")
+    return DataSourceCompactionStore(db)
 
 
 async def prepare_compaction(
     session_id: str,
     messages: list,
     last_compacted_at: int | None,
-    db: DataSourceProtocol,
+    db: DataSourceProtocol | None,
     model: str = "gpt-4o",
     provider: str = "ollama",
     force: bool = False,
 ) -> CompactionPlan:
-    """Evaluate *messages*, run Layer 1 snipping when needed, then re-evaluate.
+    """Evaluate history and run Layer 1 through Nova's persistence adapter.
 
-    The caller owns *messages*; Layer 1 trims them in place so the caller's copy
-    stays consistent with what was written back to the database.
+    Args:
+        session_id: Session being planned.
+        messages: Caller-owned visible history.
+        last_compacted_at: Last successful compaction time.
+        db: Nova data source owning messages.
+        model: Model id to plan against.
+        provider: Provider the model runs on.
+        force: Skip token pressure after an overflow rejection.
+
+    Returns:
+        A portable compaction plan.
     """
-    plan = evaluate_compaction(
-        session_id, messages, last_compacted_at, model, provider, force=force
-    )
-    if not plan.over_threshold:
-        return plan
-
-    # Layer 1 answers to token pressure alone. Gating it on Layer 2's split
-    # point would leave a runaway tool loop untouched whenever the history
-    # cannot be split safely - exactly the case where trimming is the only
-    # defence left.
-    await snip_tool_results_in_db(db, session_id, messages)
-    return evaluate_compaction(
-        session_id, messages, last_compacted_at, model, provider, force=force
+    return await _prepare_compaction(
+        session_id,
+        messages,
+        last_compacted_at,
+        _store(db),
+        model,
+        provider,
+        force=force,
+        config=get_settings().compaction.to_compaction_config(),
+        resolver=_ControllerResolver(),
+        sink=_tool_output_sink(session_id),
     )
 
 
@@ -104,42 +242,53 @@ async def run_compaction_plan(
     tools: list[dict] | None = None,
     on_delta: Callable[[str], None] | None = None,
 ) -> bool:
-    """Execute a prepared compaction plan against caller-owned *messages*."""
-    if not plan.needs_compaction:
-        return False
-    return await compact(
-        plan.session_id,
-        db,
+    """Execute a prepared plan through Nova's persistence adapter.
+
+    Args:
+        plan: Plan returned by :func:`prepare_compaction`.
+        db: Nova data source owning messages.
+        llm: Provider used for summary generation.
+        model: Model id to summarize with.
+        provider: Provider the model runs on.
+        messages: Caller-owned history, if already loaded.
+        tools: Tool schemas forwarded to the summary request.
+        on_delta: Callback receiving summary chunks.
+
+    Returns:
+        Whether history changed.
+    """
+    return await _run_compaction_plan(
+        plan,
+        _store(db),
         llm,
         model,
         provider,
         messages=messages,
-        split_index=plan.split_index or None,
         tools=tools,
         on_delta=on_delta,
+        config=get_settings().compaction.to_compaction_config(),
+        resolver=_ControllerResolver(),
     )
 
 
 async def snip_tool_results_in_db(
     db: DataSourceProtocol, session_id: str, messages: list
 ) -> None:
-    """Layer 1: trim old tool results stored in the database."""
-    settings = get_settings()
-    comp = settings.compaction
-    snip_old_tool_results(
-        messages,
-        max_chars=comp.snip_max_chars,
-        preserve_last_n_messages=comp.snip_preserve_last_n_messages,
-        tool_output_token_budget=comp.snip_tool_output_token_budget,
-        offload_dir=str(settings.home / "sessions" / session_id / "tool-output"),
-    )
+    """Trim and persist old tool results through Nova's data source.
 
-    for message in messages:
-        if role_of(message) != "tool":
-            continue
-        content = content_of(message)
-        if SNIP_MARKER in content:
-            await db.update_message_content(id_of(message), content)
+    Args:
+        db: Nova data source owning messages.
+        session_id: Session whose offload directory should be used.
+        messages: Caller-owned history to trim in place.
+    """
+    await _snip_tool_results_in_store(
+        _store(db),
+        session_id,
+        messages,
+        config=get_settings().compaction.to_compaction_config(),
+        resolver=_ControllerResolver(),
+        sink=_tool_output_sink(session_id),
+    )
 
 
 async def compact(
@@ -153,152 +302,158 @@ async def compact(
     tools: list[dict] | None = None,
     on_delta: Callable[[str], None] | None = None,
 ) -> bool:
-    """Run session compaction (Layer 2). Returns whether history was compacted.
+    """Run Layer 2 compaction through Nova's persistence adapter.
 
-    A failed summary leaves the session untouched: writing the failure text as a
-    summary would poison the context it is supposed to compress, and marking the
-    old messages compacted would discard them for nothing.
+    Args:
+        session_id: Session being compacted.
+        db: Nova data source owning messages.
+        llm: Provider used for summary generation.
+        model: Model id to summarize with.
+        provider: Provider the model runs on.
+        messages: Caller-owned history, if already loaded.
+        split_index: Explicit split, or None to choose one.
+        tools: Tool schemas forwarded to the summary request.
+        on_delta: Callback receiving summary chunks.
+
+    Returns:
+        Whether history changed.
+
+    Raises:
+        CompactionError: When summary generation fails.
     """
-    messages = messages if messages is not None else await db.get_messages(session_id)
-
-    if not messages:
-        return False
-
-    before_tokens = estimate_tokens(messages)
-    comp = get_settings().compaction
-    split = (
-        split_index
-        if split_index is not None
-        else find_split_point(
-            messages,
-            keep_tokens=min(
-                comp.summary_keep_tokens,
-                compaction_threshold(get_context_limit(model, provider)) // 2,
-            ),
+    store = _store(db)
+    history = messages if messages is not None else await store.get_messages(session_id)
+    config = get_settings().compaction.to_compaction_config()
+    if split_index is None:
+        threshold = _compaction_threshold(
+            get_context_limit(model, provider),
+            config,
         )
-    )
-    if split <= 0:
-        return False
-
-    old = messages[:split]
-    recent = messages[split:]
-    old_text = format_for_summary(old)
-
-    log.info(
-        f"[Compaction] session={session_id}, before={len(messages)} msgs, {before_tokens} tokens, split at={split}"
-    )
-
-    summary = await generate_summary(
-        old_text,
+        split_index = find_split_point(
+            history,
+            keep_tokens=min(config.summary_keep_tokens, threshold // 2),
+        )
+    return await _compact(
+        session_id,
+        store,
         llm,
         model,
-        has_previous_summary=contains_summary(old),
+        provider,
+        messages=history,
+        split_index=split_index,
         tools=tools,
         on_delta=on_delta,
+        config=config,
+        resolver=_ControllerResolver(),
     )
-    if summary is None:
-        log.warning(
-            "[Compaction] session=%s aborted: summary generation failed", session_id
-        )
-        raise CompactionError(f"summary generation failed for session {session_id}")
-
-    now_ms = int(time.time() * 1000)
-    # The summary stands in for the history it replaces, so it is stamped at
-    # that boundary rather than at "now". The prompt then reads in
-    # chronological order (the summary leads), the next compaction finds it
-    # inside the portion it folds in - keeping exactly one summary instead of
-    # piling a new one beside it - and it is not counted as growth since the
-    # last compaction. Session updated_at is untouched (see add_message).
-    boundary_ms = min(created_at_of(m) for m in recent) - 1 if recent else now_ms
-    await db.add_message(
-        NewMessage(
-            session_id=session_id,
-            role="assistant",
-            content=(
-                f"[Previous conversation summary]\n{summary}\n\n{CONTINUATION_INSTRUCTION}"
-            ),
-            summary=True,
-            time_created=boundary_ms,
-        )
-    )
-    # Also compact tool responses whose tool_call assistant was compacted
-    compacted_tc_ids = set()
-    for m in old:
-        if role_of(m) != "assistant":
-            continue
-        compacted_tc_ids.update(tool_call_ids_of(m))
-
-    orphan_ids = []
-    for m in recent:
-        if role_of(m) != "tool":
-            continue
-        if tool_call_id_of(m) in compacted_tc_ids:
-            orphan_ids.append(id_of(m))
-
-    if orphan_ids:
-        log.info(
-            "[Compaction] also compacting %d orphaned tool responses", len(orphan_ids)
-        )
-
-    old_ids = [id_of(m) for m in old]
-    await db.mark_messages_compacted_by_ids(session_id, old_ids + orphan_ids)
-    await db.update_session_compacted_at(session_id, now_ms)
-
-    after_tokens = estimate_tokens(recent)
-    log.info(
-        f"[Compaction] session={session_id}, compacted={len(old)} msgs, after={len(recent) + 1} msgs, {after_tokens} tokens"
-    )
-    return True
-
-
-#: Per-message cap for ordinary messages folded into the summariser transcript.
-#: Bounds what one oversized tool result or pasted blob can contribute: about
-#: 2000 characters is roughly 500 English tokens, room for a code block or a
-#: short explanation, while a single runaway message still cannot crowd out the
-#: rest of the history. Summaries are exempt (see format_for_summary).
 
 
 class CompactionController:
-    """Per-agent compaction policy: what to run, and when to stop trying.
+    """Compatibility facade preserving Nova's existing controller interface."""
 
-    Owns the consecutive-failure counter, so the circuit breaker state lives
-    next to the compaction logic it guards rather than on the agent.
-    """
+    def __init__(
+        self,
+        model: str,
+        provider: str,
+        *,
+        store: CompactionStore | None = None,
+        config: CompactionConfig | None = None,
+        resolver: TokenResolver | None = None,
+        sink: ToolOutputSink | None = None,
+    ) -> None:
+        """Bind a model route and optional host dependencies.
 
-    def __init__(self, model: str, provider: str) -> None:
-        self.model = model
-        self.provider = provider
-        self.consecutive_failures = 0
-        self.compacted = False
-        # Set by the caller when the provider rejected a request as too large, so
-        # the next plan ignores token pressure. Consumed on the next run.
-        self.force_next = False
+        Args:
+            model: Model id to plan and summarize with.
+            provider: Provider the model runs on.
+            store: Optional persistence adapter; a data source may be bound later.
+            config: Explicit compaction tuning, or Nova settings when omitted.
+            resolver: Token/context resolver, or Nova's facade when omitted.
+            sink: Optional full-tool-output offload callback.
+        """
+        self._store = _ControllerStore(store)
+        self._config = config or get_settings().compaction.to_compaction_config()
+        self._resolver = resolver or _ControllerResolver()
+        self._sink = sink
+        self._default = DefaultCompactor(
+            model,
+            provider,
+            store=self._store,
+            config=self._config,
+            resolver=self._resolver,
+            sink=self._sink,
+        )
+
+    @property
+    def model(self) -> str:
+        """Model id used for planning and summary generation."""
+        return self._default.model
+
+    @property
+    def provider(self) -> str:
+        """Provider used for context resolution."""
+        return self._default.provider
+
+    @property
+    def consecutive_failures(self) -> int:
+        """Current consecutive summary-failure count."""
+        return self._default.consecutive_failures
+
+    @consecutive_failures.setter
+    def consecutive_failures(self, value: int) -> None:
+        self._default.consecutive_failures = value
+
+    @property
+    def compacted(self) -> bool:
+        """Whether the last pass changed history."""
+        return self._default.compacted
+
+    @property
+    def force_next(self) -> bool:
+        """Whether the next pass must ignore token pressure."""
+        return self._default.force_next
+
+    @force_next.setter
+    def force_next(self, value: bool) -> None:
+        self._default.force_next = value
 
     def summarising_allowed(self) -> bool:
-        limit = get_settings().compaction.max_consecutive_failures
-        if limit <= 0:
-            return True
-        if self.consecutive_failures < limit:
-            return True
-        log.warning(
-            "Auto-compaction disabled for this agent after %d consecutive failures",
-            self.consecutive_failures,
-        )
-        return False
+        """Return whether the circuit breaker permits another summary attempt."""
+        return self._default.summarising_allowed()
+
+    def record_result(
+        self,
+        compacted: bool,
+        session: SessionContext | dict[str, Any] | None,
+    ) -> None:
+        """Record one compaction outcome in the shared breaker state.
+
+        Args:
+            compacted: Whether history changed.
+            session: Session stamped on success.
+        """
+        self._default.record_result(compacted, session)
 
     async def plan(
         self,
         messages: list,
         session: SessionContext | dict[str, Any] | None,
-        db: DataSourceProtocol,
+        db: DataSourceProtocol | None = None,
         force: bool = False,
     ) -> CompactionPlan | None:
-        """Decide whether Layer 2 should run, after Layer 1 has had its chance.
+        """Plan compaction while preserving Nova's legacy data-source argument.
 
-        Layer 1 lives inside ``prepare_compaction`` and never calls a model, so it
-        runs even while the circuit breaker is open; only the summarisation step
-        is gated.
+        Args:
+            messages: Caller-owned history.
+            session: Active session context or row.
+            db: Optional data source bound for this plan.
+            force: Skip token pressure and the breaker gate.
+
+        Returns:
+            A runnable plan, or None when no summary should run.
         """
+        if db is not None:
+            self._store.bind(_store(db))
         plan = await prepare_compaction(
             session_id=session_id_of(session) or "",
             messages=messages,
@@ -310,35 +465,9 @@ class CompactionController:
         )
         if not plan.needs_compaction:
             return None
-        # The breaker guards speculative auto-compaction: repeated attempts that
-        # only the token estimate triggered. A forced run is not speculative. It
-        # follows a provider rejection that only compaction can clear, and the
-        # caller latches it to at most one attempt per user request (see
-        # TurnState.overflow_recovered), so it cannot loop. Gating it here would
-        # block the one action that can make the pending request succeed, leaving
-        # the session to re-fail every request until a human intervenes.
         if not force and not self.summarising_allowed():
             return None
         return plan
-
-    def record_result(
-        self, compacted: bool, session: SessionContext | dict[str, Any] | None
-    ) -> None:
-        """Fold one compaction outcome into the consecutive-failure streak.
-
-        Forced (overflow-driven) runs share this streak with automatic ones: the
-        counter measures whether summarisation currently works, which is true
-        regardless of what triggered the attempt, and a success clears it either
-        way. Only the gate in :meth:`plan` exempts forced runs; keeping a single
-        counter means the breaker re-arms from a forced success and no second
-        piece of state can drift out of sync.
-        """
-        if compacted:
-            self.consecutive_failures = 0
-            set_compacted_at(session, int(time.time() * 1000))
-            return
-        self.consecutive_failures += 1
-        log.warning("Compaction failed (%d consecutive)", self.consecutive_failures)
 
     async def maybe_compact(
         self,
@@ -348,112 +477,44 @@ class CompactionController:
         llm: LLMProvider,
         emit: Callable[..., Awaitable[None]],
         tools: list[dict] | None = None,
-    ) -> AsyncGenerator[tuple[AgentEvent, dict[str, Any]], None]:
-        """Compact if needed, announcing it around the summarisation call.
+    ) -> AsyncGenerator[AgentEventFrame, None]:
+        """Run compaction with Nova's data source and portable event contract.
 
-        ``compacted`` records whether history actually changed, so the caller
-        knows when to reload it. ``tools`` is forwarded to the summary call so
-        the request is shaped like an agent turn (see
-        :mod:`novakit.llm.oneshot`).
+        Args:
+            messages: Current visible history.
+            session: Active session context or row.
+            db: Nova data source owning messages.
+            llm: Provider used for summary generation.
+            emit: Event callback for context and compaction frames.
+            tools: Tool schemas forwarded to the summary request.
+
+        Yields:
+            Context and compaction event frames.
         """
-        self.compacted = False
-        # A forced run is consumed here so the latch cannot survive a turn that
-        # ends up not needing a plan at all.
-        force = self.force_next
-        self.force_next = False
-        # Always emit current context usage so the TUI can render the ctx bar
-        # with the same numbers the compaction decision uses.
-        try:
-            compacted_at = compacted_at_of(session)
-            used = estimate_context_tokens(messages, self.model, compacted_at)
-            # Report against the compaction threshold, not the raw window. The
-            # reserve is headroom the history can never use (the reply plus the
-            # summarisation request), so a raw-window denominator shows the bar
-            # short of full at the very moment compaction fires. Deriving it from
-            # compaction_threshold keeps the figure and the trigger in lockstep.
-            limit = compaction_threshold(get_context_limit(self.model, self.provider))
-            percent = int(used / limit * 100) if limit else 0
-            ctx_payload = {"used": used, "limit": limit, "percent": percent}
-            await emit(AgentEvent.CONTEXT_UPDATE, ctx_payload)
-            yield AgentEvent.CONTEXT_UPDATE, ctx_payload
-        except Exception:
-            # The context pill is informational; never abort a turn for it.
-            pass
-
-        plan = await self.plan(messages, session, db, force=force)
-        if plan is None:
-            return
-
-        payload = {
-            "message_count": plan.message_count,
-            "token_count": plan.token_count,
-            "reason": "overflow" if force else "threshold",
-        }
-        await emit(AgentEvent.COMPACTION_START, payload)
-        yield AgentEvent.COMPACTION_START, payload
-
-        # The summary is written by a nested (awaited) call, so its chunks land
-        # on a callback rather than arriving from this generator. Bridge them
-        # through a queue so partial text reaches the client as it is produced.
-        deltas: asyncio.Queue[str | None] = asyncio.Queue()
-
-        async def summarise() -> bool:
-            try:
-                return await run_compaction_plan(
-                    plan,
-                    db=db,
-                    llm=llm,
-                    model=self.model,
-                    provider=self.provider,
-                    messages=messages,
-                    tools=tools,
-                    on_delta=deltas.put_nowait,
-                )
-            finally:
-                # Close the drain below even if summarising raised, so the
-                # generator cannot deadlock waiting on a missing sentinel.
-                deltas.put_nowait(None)
-
-        task = asyncio.create_task(summarise())
-        while True:
-            chunk = await deltas.get()
-            if chunk is None:
-                break
-            yield AgentEvent.COMPACTION_DELTA, {"delta": chunk}
-        try:
-            compacted = await task
-        except CompactionError:
-            # Count the failure before surfacing it, so the streak reflects it
-            # even though the turn ends here.
-            self.record_result(False, session)
-            raise
-        self.record_result(compacted, session)
-
-        await emit(AgentEvent.COMPACTION_END, payload)
-        yield AgentEvent.COMPACTION_END, payload
-        self.compacted = compacted
-        if compacted and session is not None:
-            try:
-                fresh = await db.get_messages(session_id_of(session) or "")
-                used_after = estimate_context_tokens(
-                    fresh, self.model, compacted_at_of(session)
-                )
-                limit_after = compaction_threshold(
-                    get_context_limit(self.model, self.provider)
-                )
-                percent_after = (
-                    int(used_after / limit_after * 100) if limit_after else 0
-                )
-                ctx_after = {
-                    "used": used_after,
-                    "limit": limit_after,
-                    "percent": percent_after,
-                }
-                await emit(AgentEvent.CONTEXT_UPDATE, ctx_after)
-                yield AgentEvent.CONTEXT_UPDATE, ctx_after
-            except Exception:
-                # Informational frame; the compaction already succeeded.
-                pass
+        self._store.bind(_store(db))
+        if self._sink is None:
+            failures = self.consecutive_failures
+            was_compacted = self.compacted
+            force_next = self.force_next
+            self._default = DefaultCompactor(
+                self.model,
+                self.provider,
+                store=self._store,
+                config=self._config,
+                resolver=self._resolver,
+                sink=_tool_output_sink(session_id_of(session) or ""),
+            )
+            self._default.consecutive_failures = failures
+            self._default.compacted = was_compacted
+            self._default.force_next = force_next
+        async for frame in self._default.maybe_compact(
+            messages,
+            session,
+            llm,
+            emit,
+            tools=tools,
+        ):
+            yield frame
 
 
 __all__ = [
@@ -479,6 +540,7 @@ __all__ = [
     "find_split_point",
     "first_safe_boundary",
     "format_for_summary",
+    "generate_summary",
     "get_context_limit",
     "id_of",
     "is_summary",
